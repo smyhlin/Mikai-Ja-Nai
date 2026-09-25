@@ -1,0 +1,282 @@
+"""Composition root for the embedded Mikai player."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from mikai_ui.fullscreen_manager import FullscreenManager
+from mikai_ui.mpv_backend import MPVAdapter
+from mikai_ui.player_controller import PlaybackState, PlayerController
+from mikai_ui.player_controls import PlayerControlsWidget, format_time
+from mikai_ui.player_overlay import PlayerOverlayWidget
+from mikai_ui.theme.metrics import (
+    PLAYER_DEFAULT_HEIGHT,
+    PLAYER_DEFAULT_WIDTH,
+    PLAYER_MIN_HEIGHT,
+    PLAYER_MIN_WIDTH,
+    SPACING_LARGE,
+    SPACING_MEDIUM,
+)
+
+log = logging.getLogger(__name__)
+_fmt_time = format_time
+
+
+class PlayerDialog(QDialog):
+    """Own widget composition and connect user intent to PlayerController."""
+
+    runtimeRequested = Signal()
+
+    def __init__(
+        self,
+        caption: str,
+        url: str,
+        qualities: dict[int, str] | None = None,
+        initial_height: int | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._caption = caption
+        self._url = url
+        self._qualities = dict(qualities or {})
+        self._runtime_dir: Path | None = None
+        self._closed = False
+        self._showing = False
+
+        self.setObjectName("playerWindow")
+        self.setWindowTitle(f"Mikai Player — {caption}")
+        self.setMinimumSize(PLAYER_MIN_WIDTH, PLAYER_MIN_HEIGHT)
+        self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setMouseTracking(True)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self._header = QWidget(self)
+        self._header.setObjectName("playerHeader")
+        header_layout = QHBoxLayout(self._header)
+        header_layout.setContentsMargins(
+            SPACING_LARGE, SPACING_MEDIUM, SPACING_LARGE, SPACING_MEDIUM
+        )
+        self._title = QLabel(caption, self._header)
+        self._title.setObjectName("heading")
+        self._title.setWordWrap(True)
+        header_layout.addWidget(self._title, 1)
+        root.addWidget(self._header)
+
+        self._stage = QWidget(self)
+        self._stage.setObjectName("videoStage")
+        self._stage.setMouseTracking(True)
+        root.addWidget(self._stage, 1)
+
+        self._video = QWidget(self._stage)
+        self._video.setObjectName("videoSurface")
+        self._video.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self._video.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, False)
+        self._video.setMouseTracking(True)
+
+        self._controls = PlayerControlsWidget()
+        self._controls.set_qualities(self._qualities, initial_height)
+        self._overlay = PlayerOverlayWidget(self._controls, self._stage)
+        self._overlay.set_mouse_sources(self._stage, self._video)
+        self._overlay.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+
+        # Compatibility aliases for code that used to inspect the dialog's UI.
+        self._chrome = self._controls
+        self._timeline = self._controls.timeline
+        self._time_label = self._controls.time_label
+        self._pause_btn = self._controls.play_button
+        self._back_btn = self._controls.rewind_button
+        self._fwd_btn = self._controls.forward_button
+        self._stop_btn = self._controls.stop_button
+        self._mute_btn = self._controls.mute_button
+        self._vol_slider = self._controls.volume_slider
+        self._speed_combo = self._controls.speed_combo
+        self._quality_combo = self._controls.quality_combo
+
+        self._controller = PlayerController(
+            url,
+            self._qualities,
+            initial_height,
+            self,
+        )
+        self._controller.stateChanged.connect(self._on_state_changed)
+        self._controller.qualitySwitching.connect(self._overlay.show_quality_notice)
+        self._controller.seekFeedback.connect(self._overlay.show_seek_feedback)
+        self._controller.seekFeedback.connect(self._show_controls)
+        self._fullscreen = FullscreenManager(self)
+        self._fullscreen.fullscreenChanged.connect(self._on_fullscreen_changed)
+        self._connect_controls()
+        self._overlay.videoClicked.connect(self._controller.toggle_play_pause)
+        self._overlay.videoDoubleClicked.connect(self._fullscreen.toggle)
+        self._overlay.retryRequested.connect(self._retry_playback)
+        self._overlay.detailsRequested.connect(self._show_error_details)
+
+        self._install_shortcuts()
+        self._on_state_changed(self._controller.state)
+        self._sync_stage_geometry()
+
+    @property
+    def controller(self) -> PlayerController:
+        return self._controller
+
+    @property
+    def status_text(self) -> str:
+        return self._overlay.status_title.text()
+
+    @staticmethod
+    def format_time(seconds: float) -> str:
+        return format_time(seconds)
+
+    def _connect_controls(self) -> None:
+        controls = self._controls
+        controller = self._controller
+        controls.playPauseRequested.connect(controller.toggle_play_pause)
+        controls.stopRequested.connect(controller.stop)
+        controls.rewindRequested.connect(lambda: controller.rewind(10))
+        controls.forwardRequested.connect(lambda: controller.forward(10))
+        controls.seekStarted.connect(controller.begin_seek)
+        controls.seekPreviewChanged.connect(controller.preview_seek)
+        controls.seekFinished.connect(controller.finish_seek)
+        controls.volumeChanged.connect(controller.set_volume)
+        controls.muteRequested.connect(controller.toggle_mute)
+        controls.speedChanged.connect(controller.set_speed)
+        controls.qualityChanged.connect(controller.set_quality)
+        controls.fullscreenRequested.connect(self._fullscreen.toggle)
+
+    def _install_shortcuts(self) -> None:
+        shortcuts = (
+            ("Space", self._toggle_play_pause),
+            ("Left", lambda: self._controller.rewind(10)),
+            ("Right", lambda: self._controller.forward(10)),
+            ("F", self._fullscreen.toggle),
+            ("M", self._controller.toggle_mute),
+            ("Up", lambda: self._change_volume(5)),
+            ("Down", lambda: self._change_volume(-5)),
+            ("Esc", self._exit_fullscreen),
+        )
+        self._shortcuts: list[QShortcut] = []
+        for key, callback in shortcuts:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(lambda command=callback: self._handle_shortcut(command))
+            self._shortcuts.append(shortcut)
+
+    def _handle_shortcut(self, command: Callable[[], None]) -> None:
+        self._overlay.show_controls()
+        command()
+
+    def _toggle_play_pause(self) -> None:
+        focus = self.focusWidget()
+        if isinstance(focus, QAbstractButton):
+            return
+        self._controller.toggle_play_pause()
+
+    def _change_volume(self, delta: int) -> None:
+        self._controller.set_volume(self._controller.state.volume + delta)
+
+    def _exit_fullscreen(self) -> None:
+        if self._fullscreen.is_fullscreen:
+            self._fullscreen.exit()
+
+    def start_player(self, runtime_dir: Path | None = None) -> None:
+        if self._closed:
+            return
+        if self._controller.adapter is not None:
+            return
+        self._runtime_dir = Path(runtime_dir) if runtime_dir is not None else None
+        try:
+            adapter = MPVAdapter(self._video, mpv_path=self._runtime_dir)
+            self._controller.attach_adapter(adapter)
+            self._controller.load()
+        except Exception as exc:
+            log.exception("player startup failed")
+            self._controller.fail(str(exc))
+
+    def show_error(self, message: str) -> None:
+        self._controller.fail(message)
+
+    def _retry_playback(self) -> None:
+        if self._controller.adapter is None:
+            self.runtimeRequested.emit()
+        else:
+            self._controller.retry()
+
+    def _show_error_details(self) -> None:
+        details = self._overlay.details_text().strip()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Playback details")
+        box.setText("The player could not open this stream.")
+        box.setDetailedText(details or "No technical details were reported.")
+        box.exec()
+
+    def _on_state_changed(self, state: PlaybackState) -> None:
+        if self._closed:
+            return
+        self._overlay.set_playback_state(state)
+
+    def _on_fullscreen_changed(self, fullscreen: bool) -> None:
+        self._header.setVisible(not fullscreen)
+        self._controls.set_fullscreen(fullscreen)
+        self._overlay.set_fullscreen(fullscreen)
+        self._sync_stage_geometry()
+        QTimer.singleShot(0, self._sync_stage_geometry)
+
+    def _show_controls(self) -> None:
+        self._overlay.show_controls()
+
+    def show(self) -> None:
+        # Open in fullscreen for the focused player experience, while the
+        # manager retains the dialog geometry for reliable restoration.
+        super().show()
+        if not self._showing and not self._fullscreen.is_fullscreen:
+            self._showing = True
+            try:
+                self._fullscreen.enter()
+            finally:
+                self._showing = False
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            fullscreen = self.isFullScreen()
+            self._header.setVisible(not fullscreen)
+            self._controls.set_fullscreen(fullscreen)
+            self._overlay.set_fullscreen(fullscreen)
+            self._sync_stage_geometry()
+            QTimer.singleShot(0, self._sync_stage_geometry)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_stage_geometry()
+
+    def _sync_stage_geometry(self) -> None:
+        if not hasattr(self, "_stage"):
+            return
+        area = self._stage.rect()
+        self._video.setGeometry(area)
+        self._overlay.setGeometry(area)
+        self._video.lower()
+        self._overlay.raise_()
+
+    def closeEvent(self, event) -> None:
+        self._closed = True
+        self._controller.close()
+        super().closeEvent(event)

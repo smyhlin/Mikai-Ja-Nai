@@ -1,0 +1,986 @@
+from __future__ import annotations
+
+import logging
+import json
+import sys
+from datetime import datetime
+
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QStackedWidget,
+    QScrollArea,
+    QTabBar,
+    QVBoxLayout,
+    QWidget,
+)
+
+from mikai_backend import (
+    AiringEntry,
+    AnimeRepository,
+    AnimeSummary,
+    ImageVariant,
+    MikaiClient,
+    PosterSet,
+    ScheduleResult,
+    SearchResult,
+    Titles,
+    UpdatesResult,
+)
+from mikai_ui.rate_limit_label import RateLimitLabel
+from mikai_ui.settings_dialog import SettingsDialog, make_gear_icon
+from mikai_ui.theme import FG, build_stylesheet
+from mikai_ui.theme.metrics import SEARCH_POSTER_HEIGHT, SEARCH_POSTER_WIDTH
+from mikai_ui.theme.metrics import (
+    HOME_CARD_HEIGHT,
+    HOME_CARD_WIDTH,
+    HOME_CAROUSEL_SCROLL_STEP,
+    HOME_POSTER_HEIGHT,
+    HOME_POSTER_WIDTH,
+)
+from mikai_ui.title_page import TitlePage
+from mikai_ui.workers import Runner
+
+log = logging.getLogger(__name__)
+
+
+class SearchPage(QWidget):
+    open_requested = Signal(str, object)
+    settings_requested = Signal()
+
+    def __init__(
+        self, runner: Runner, repository: AnimeRepository, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self._runner = runner
+        self._repository = repository
+        self._entries: list[AnimeSummary] = []
+        self._request_seq = 0
+        self._browse_mode = True
+        self._current_query = ""
+        self._page = 1
+        self._pages = 1
+        self._page_size = 24
+        self._thumb_cache: dict[str, bytes] = {}
+        self._icons: dict[str, QPixmap] = {}
+        self._carousel_labels: dict[str, list[QLabel]] = {}
+        self._carousel_cards: dict[str, list[tuple[str, str]]] = {}
+        self._carousel_entries: dict[str, list[AnimeSummary]] = {}
+        self._feed_seq = {
+            "ongoing": 0,
+            "popular": 0,
+            "updates": 0,
+            "schedule": 0,
+        }
+        self._carousel_sections: dict[str, QWidget] = {}
+        self._feed_sections: dict[str, QWidget] = {}
+        self._feed_rows: dict[str, QVBoxLayout] = {}
+        self._settings = QSettings("Mikai", "Mikai Wrapper")
+        self._recent_items = self._read_recent_titles()
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(14)
+
+        top_row = QHBoxLayout()
+        heading = QLabel("Mikai")
+        heading.setObjectName("heading")
+        top_row.addWidget(heading)
+        top_row.addStretch()
+
+        self._rate_label = RateLimitLabel(repository)
+        top_row.addWidget(self._rate_label)
+
+        self._settings_btn = QPushButton()
+        self._settings_btn.setObjectName("settingsChip")
+        self._settings_btn.setIcon(make_gear_icon(18, FG))
+        self._settings_btn.setIconSize(QSize(18, 18))
+        self._settings_btn.setToolTip("Налаштування токена API")
+        self._settings_btn.clicked.connect(self.settings_requested)
+        top_row.addWidget(self._settings_btn)
+
+        root.addLayout(top_row)
+
+        search_row = QHBoxLayout()
+        self._query = QLineEdit()
+        self._query.setPlaceholderText("Пошук за назвою — Enter або кнопка")
+        self._query.setClearButtonEnabled(True)
+        self._query.returnPressed.connect(self._search)
+        button = QPushButton("Пошук")
+        button.setObjectName("primary")
+        button.clicked.connect(self._search)
+        search_row.addWidget(self._query)
+        search_row.addWidget(button)
+        root.addLayout(search_row)
+
+        self._results_heading = QLabel("Зараз виходять · оновлені найсвіжішими серіями")
+        self._results_heading.setObjectName("sectionHeading")
+        root.addWidget(self._results_heading)
+
+        self._status = QLabel("")
+        self._status.setObjectName("status")
+        root.addWidget(self._status)
+
+        self._discovery = QWidget()
+        discovery_layout = QVBoxLayout(self._discovery)
+        discovery_layout.setContentsMargins(0, 0, 0, 0)
+        discovery_layout.setSpacing(14)
+        self._recent_carousel = self._build_carousel("Нещодавно відкриті", "recent")
+        self._recent_carousel.setVisible(bool(self._recent_items))
+        self._ongoing_carousel = self._build_carousel("Зараз виходять", "ongoing")
+        self._popular_carousel = self._build_carousel("Популярні на Mikai", "popular")
+        self._updates_section = self._build_feed_section("Останні оновлення", "updates")
+        self._schedule_section = self._build_feed_section("Розклад виходу", "schedule")
+        discovery_layout.addWidget(self._recent_carousel)
+        discovery_layout.addWidget(self._ongoing_carousel)
+        discovery_layout.addWidget(self._popular_carousel)
+        discovery_layout.addWidget(self._updates_section)
+        discovery_layout.addWidget(self._schedule_section)
+        discovery_layout.addStretch()
+        self._discovery_scroll = QScrollArea()
+        self._discovery_scroll.setObjectName("discoveryScroll")
+        self._discovery_scroll.setWidgetResizable(True)
+        self._discovery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._discovery_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._discovery_scroll.setWidget(self._discovery)
+        root.addWidget(self._discovery_scroll, stretch=1)
+
+        self._format_bar = QTabBar()
+        self._format_bar.setExpanding(False)
+        self._format_bar.setDrawBase(False)
+        self._format_bar.hide()
+        self._format_bar.currentChanged.connect(self._apply_format_filter)
+        root.addWidget(self._format_bar)
+
+        self._results = QListWidget()
+        self._results.setIconSize(QSize(SEARCH_POSTER_WIDTH, SEARCH_POSTER_HEIGHT))
+        self._results.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._results.itemClicked.connect(self._open)
+        self._results.itemActivated.connect(self._open)
+        root.addWidget(self._results, stretch=1)
+        self._results.hide()
+
+        self._pager = QWidget()
+        pager_row = QHBoxLayout(self._pager)
+        pager_row.setContentsMargins(0, 0, 0, 0)
+        self._previous = QPushButton("← Попередня")
+        self._previous.clicked.connect(lambda: self._change_page(-1))
+        self._page_label = QLabel("")
+        self._page_label.setObjectName("muted")
+        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._next = QPushButton("Наступна →")
+        self._next.clicked.connect(lambda: self._change_page(1))
+        pager_row.addStretch()
+        pager_row.addWidget(self._previous)
+        pager_row.addWidget(self._page_label)
+        pager_row.addWidget(self._next)
+        pager_row.addStretch()
+        self._pager.hide()
+        root.addWidget(self._pager)
+
+        QTimer.singleShot(0, self._load_ongoing)
+        if self._recent_items:
+            self._show_carousel("recent", SearchResult(items=self._recent_items))
+
+    def _build_carousel(self, heading: str, key: str) -> QWidget:
+        section = QWidget()
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        header = QHBoxLayout()
+        title = QLabel(heading)
+        title.setObjectName("sectionHeading")
+        header.addWidget(title)
+        header.addStretch()
+        previous, next_button = QPushButton("←"), QPushButton("→")
+        for button in (previous, next_button):
+            button.setObjectName("carouselControl")
+            header.addWidget(button)
+        layout.addLayout(header)
+
+        state_row = QHBoxLayout()
+        state = QLabel("Добірка ще не завантажена")
+        state.setObjectName("muted")
+        state.setWordWrap(True)
+        retry = QPushButton("Повторити")
+        retry.setObjectName("secondary")
+        retry.clicked.connect(lambda _checked=False, feed=key: self._request_recommendation(feed))
+        retry.hide()
+        state_row.addWidget(state, stretch=1)
+        state_row.addWidget(retry)
+        layout.addLayout(state_row)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("animeCarousel")
+        scroll.setWidgetResizable(False)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFixedHeight(HOME_CARD_HEIGHT + 12)
+        track = QWidget()
+        track.setObjectName("animeCarouselTrack")
+        cards = QHBoxLayout(track)
+        cards.setContentsMargins(2, 2, 2, 2)
+        cards.setSpacing(10)
+        scroll.setWidget(track)
+        layout.addWidget(scroll)
+        bar = scroll.horizontalScrollBar()
+        previous.clicked.connect(lambda: bar.setValue(bar.value() - HOME_CAROUSEL_SCROLL_STEP))
+        next_button.clicked.connect(lambda: bar.setValue(bar.value() + HOME_CAROUSEL_SCROLL_STEP))
+        previous.setEnabled(False)
+        bar.rangeChanged.connect(
+            lambda minimum, maximum, left=previous, right=next_button, current=bar: (
+                left.setEnabled(current.value() > minimum),
+                right.setEnabled(current.value() < maximum),
+            )
+        )
+        bar.valueChanged.connect(
+            lambda value, left=previous, right=next_button, current=bar: (
+                left.setEnabled(value > current.minimum()),
+                right.setEnabled(value < current.maximum()),
+            )
+        )
+        section._carousel_cards = cards
+        section._carousel_scroll = scroll
+        section._carousel_state = state
+        section._carousel_retry = retry
+        scroll.hide()
+        self._carousel_labels[key] = []
+        self._carousel_sections[key] = section
+        return section
+
+    def _build_feed_section(self, heading: str, key: str) -> QWidget:
+        section = QWidget()
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        title = QLabel(heading)
+        title.setObjectName("sectionHeading")
+        header.addWidget(title)
+        header.addStretch()
+        retry = QPushButton("Оновити")
+        retry.setObjectName("textAction")
+        retry.clicked.connect(
+            lambda _checked=False, feed=key: (
+                self._load_updates() if feed == "updates" else self._load_schedule()
+            )
+        )
+        header.addWidget(retry)
+        layout.addLayout(header)
+
+        state = QLabel("Завантаження…")
+        state.setObjectName("muted")
+        layout.addWidget(state)
+        rows_host = QWidget()
+        rows = QVBoxLayout(rows_host)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(4)
+        rows_host.hide()
+        layout.addWidget(rows_host)
+
+        section._feed_state = state
+        section._feed_retry = retry
+        section._feed_rows_host = rows_host
+        self._feed_sections[key] = section
+        self._feed_rows[key] = rows
+        return section
+
+    def _read_recent_titles(self) -> list[AnimeSummary]:
+        try:
+            records = json.loads(self._settings.value("home/recentTitles", "[]", str))
+        except TypeError, ValueError:
+            return []
+        items = []
+        for record in records if isinstance(records, list) else []:
+            if not isinstance(record, dict) or not record.get("ref"):
+                continue
+            poster = str(record.get("poster") or "")
+            items.append(
+                AnimeSummary(
+                    ref=str(record["ref"]),
+                    titles=Titles(ua=str(record.get("title") or "")),
+                    poster=PosterSet(big=ImageVariant(webp=poster)) if poster else PosterSet(),
+                )
+            )
+        return items[:12]
+
+    def record_recent_title(self, ref: str, title: str, poster: str) -> None:
+        if not ref:
+            return
+        self._recent_items = [item for item in self._recent_items if item.ref != ref]
+        item = AnimeSummary(
+            ref=ref,
+            titles=Titles(ua=title),
+            poster=PosterSet(big=ImageVariant(webp=poster)) if poster else PosterSet(),
+        )
+        self._recent_items.insert(0, item)
+        self._recent_items = self._recent_items[:12]
+        self._settings.setValue(
+            "home/recentTitles",
+            json.dumps(
+                [
+                    {
+                        "ref": recent.ref,
+                        "title": recent.titles.display_name,
+                        "poster": recent.poster_url or "",
+                    }
+                    for recent in self._recent_items
+                ],
+                ensure_ascii=False,
+            ),
+        )
+        self._recent_carousel.show()
+        self._show_carousel("recent", SearchResult(items=self._recent_items))
+
+    def _show_carousel(self, key: str, result: SearchResult) -> None:
+        section = self._carousel_sections[key]
+        section.show()
+        section._carousel_retry.hide()
+        cards = section._carousel_cards
+        self._carousel_entries[key] = result.items[:18]
+        if not result.items:
+            section._carousel_state.setText("Наразі немає тайтлів у цій добірці.")
+            section._carousel_scroll.hide()
+            return
+        section._carousel_state.setText(f"{len(result.items[:18])} тайтлів")
+        self._carousel_cards = {
+            url: [record for record in records if record[0] != key]
+            for url, records in self._carousel_cards.items()
+        }
+        for anime in result.items[:18]:
+            image_key = anime.thumb_url or anime.poster_url
+            if image_key:
+                self._carousel_cards.setdefault(image_key, []).append(
+                    (key, anime.titles.display_name)
+                )
+        while cards.count():
+            item = cards.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        labels: list[QLabel] = []
+        for anime in result.items[:18]:
+            card = QPushButton()
+            card.setObjectName("animeCard")
+            card.setFixedSize(HOME_CARD_WIDTH, HOME_CARD_HEIGHT)
+            card.setToolTip(anime.titles.display_name)
+            card.clicked.connect(
+                lambda _checked=False, ref=anime.ref, poster=anime.poster_url: (
+                    self.open_requested.emit(ref, poster)
+                )
+            )
+            column = QVBoxLayout(card)
+            column.setContentsMargins(8, 8, 8, 8)
+            column.setSpacing(6)
+            poster = QLabel("Постер недоступний")
+            poster.setObjectName("carouselPoster")
+            poster.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            poster.setFixedSize(HOME_POSTER_WIDTH, HOME_POSTER_HEIGHT)
+            poster.setWordWrap(True)
+            poster.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            column.addWidget(poster, alignment=Qt.AlignmentFlag.AlignHCenter)
+            kind = QLabel((anime.format or "Аніме").upper())
+            kind.setObjectName("carouselKind")
+            kind.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            kind.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            column.addWidget(kind)
+            name = QLabel(anime.titles.display_name)
+            name.setObjectName("carouselTitle")
+            name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            name.setWordWrap(True)
+            name.setFixedHeight(34)
+            name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            column.addWidget(name)
+            cards.addWidget(card)
+            labels.append(poster)
+            image_key = anime.thumb_url or anime.poster_url
+            if image_key and image_key in self._thumb_cache:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(self._thumb_cache[image_key]) and not pixmap.isNull():
+                    poster.setText("")
+                    poster.setPixmap(
+                        pixmap.scaled(
+                            poster.size(),
+                            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+        track = section._carousel_scroll.widget()
+        cards.activate()
+        margins = cards.contentsMargins()
+        track_width = (
+            margins.left()
+            + margins.right()
+            + len(result.items[:18]) * HOME_CARD_WIDTH
+            + max(0, len(result.items[:18]) - 1) * cards.spacing()
+        )
+        track.setFixedSize(track_width, HOME_CARD_HEIGHT + 4)
+        section._carousel_scroll.widget().show()
+        section._carousel_scroll.show()
+        self._carousel_labels[key] = labels
+        missing = [
+            item
+            for item in result.items[:18]
+            if (item.thumb_url or item.poster_url)
+            and (item.thumb_url or item.poster_url) not in self._thumb_cache
+        ]
+        if missing:
+            self._runner.run(
+                lambda: self._fetch_carousel_posters(missing),
+                self._apply_carousel_thumbs,
+                lambda message: log.debug("carousel posters unavailable: %s", message),
+            )
+
+    def _fetch_carousel_posters(self, entries: list[AnimeSummary]) -> dict[str, bytes]:
+        fetched: dict[str, bytes] = {}
+        for anime in entries:
+            cache_key = anime.thumb_url or anime.poster_url
+            if not cache_key:
+                continue
+            candidates = [
+                anime.poster.small.webp,
+                anime.poster.small.jpg,
+                anime.poster.medium.webp,
+                anime.poster.medium.jpg,
+                anime.poster.big.webp,
+                anime.poster.big.jpg,
+            ]
+            seen: set[str] = set()
+            for url in candidates:
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                try:
+                    fetched[cache_key] = self._repository.fetch_bytes(url)
+                    break
+                except Exception as exc:  # noqa: BLE001 - another poster variant may work.
+                    log.debug("poster variant failed for %s (%s): %s", anime.ref, url, exc)
+        return fetched
+
+    def _apply_carousel_thumbs(self, fetched: dict[str, bytes]) -> None:
+        self._thumb_cache.update(fetched)
+        for url, data in fetched.items():
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(data) or pixmap.isNull():
+                continue
+            for key, title in self._carousel_cards.get(url, []):
+                for label in self._carousel_labels.get(key, []):
+                    # A poster URL can be shared by several cards and feeds.
+                    card = label.parentWidget()
+                    if card and card.toolTip() == title:
+                        label.setText("")
+                        label.setPixmap(
+                            pixmap.scaled(
+                                label.size(),
+                                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                Qt.TransformationMode.SmoothTransformation,
+                            )
+                        )
+
+    def _load_ongoing(self) -> None:
+        self._query.clear()
+        self._browse_mode = True
+        self._show_discovery()
+        self._current_query = ""
+        self._page_size = 24
+        self._page = 1
+        self._pages = 1
+        self._entries = []
+        self._results.clear()
+        self._pager.hide()
+        self._results_heading.setText("Рекомендації")
+        self._status.setText(
+            "Натисніть картку, щоб відкрити тайтл · пошук за назвою доступний вище"
+        )
+        self._request_recommendation("ongoing")
+        self._request_recommendation("popular")
+        self._load_updates()
+        self._load_schedule()
+
+    def _request_recommendation(self, key: str) -> None:
+        section = self._carousel_sections[key]
+        self._feed_seq[key] += 1
+        seq = self._feed_seq[key]
+        section._carousel_state.setText("Завантаження добірки…")
+        section._carousel_retry.hide()
+        if not self._carousel_entries.get(key):
+            section._carousel_scroll.hide()
+        browse = getattr(
+            self._repository,
+            "browse_ongoing" if key == "ongoing" else "browse_popular",
+            None,
+        )
+        if browse is None and key == "popular":
+            section._carousel_state.setText("Ця добірка недоступна для цього джерела даних.")
+            return
+        request = lambda: (
+            browse(page=1, limit=18) if browse else self._repository.search("", page=1, limit=18)
+        )
+
+        def on_result(result: SearchResult) -> None:
+            if seq != self._feed_seq[key]:
+                return
+            self._rate_label.refresh()
+            self._show_carousel(key, result)
+
+        def on_error(message: str) -> None:
+            if seq != self._feed_seq[key]:
+                return
+            self._rate_label.refresh()
+            section._carousel_state.setText(f"Не вдалося завантажити: {message}")
+            section._carousel_retry.show()
+
+        self._runner.run(request, on_result, on_error)
+
+    def _load_updates(self) -> None:
+        section = self._feed_sections["updates"]
+        self._feed_seq["updates"] += 1
+        seq = self._feed_seq["updates"]
+        getter = getattr(self._repository, "get_updates", None)
+        if getter is None:
+            section._feed_state.setText("Стрічка оновлень недоступна для цього джерела даних.")
+            section._feed_rows_host.hide()
+            return
+        section._feed_state.setText("Завантаження нових серій…")
+        section._feed_retry.setEnabled(False)
+
+        def on_result(result: UpdatesResult) -> None:
+            if seq != self._feed_seq["updates"]:
+                return
+            self._rate_label.refresh()
+            section._feed_retry.setEnabled(True)
+            rows = []
+            for update in result.items[:5]:
+                anime = update.anime
+                if not anime.ref:
+                    continue
+                team = update.team_name or ", ".join(
+                    entry.name for entry in update.teams if entry.name
+                )
+                kind = {"voice": "озвучення", "sub": "субтитри"}.get(update.kind, update.kind)
+                parts = [f"Серія {update.episode}" if update.episode is not None else "Нова серія"]
+                if team:
+                    parts.append(team)
+                if kind:
+                    parts.append(kind)
+                if update.provider:
+                    parts.append(update.provider.capitalize())
+                when = self._format_feed_time(update.published_at)
+                if when:
+                    parts.append(when)
+                rows.append((anime, " · ".join(parts)))
+            self._show_feed_rows(
+                "updates",
+                rows,
+                f"{len(rows)} останніх оновлень" if rows else "Нових оновлень поки немає.",
+            )
+
+        def on_error(message: str) -> None:
+            if seq != self._feed_seq["updates"]:
+                return
+            self._rate_label.refresh()
+            section._feed_retry.setEnabled(True)
+            section._feed_state.setText(f"Не вдалося завантажити оновлення: {message}")
+            section._feed_rows_host.hide()
+
+        self._runner.run(lambda: getter(page=1, limit=12), on_result, on_error)
+
+    def _load_schedule(self) -> None:
+        section = self._feed_sections["schedule"]
+        self._feed_seq["schedule"] += 1
+        seq = self._feed_seq["schedule"]
+        getter = getattr(self._repository, "get_schedule", None)
+        if getter is None:
+            section._feed_state.setText("Розклад недоступний для цього джерела даних.")
+            section._feed_rows_host.hide()
+            return
+        section._feed_state.setText("Завантаження розкладу…")
+        section._feed_retry.setEnabled(False)
+
+        def on_result(result: ScheduleResult) -> None:
+            if seq != self._feed_seq["schedule"]:
+                return
+            self._rate_label.refresh()
+            section._feed_retry.setEnabled(True)
+            days = (
+                ("monday", "Пн"),
+                ("tuesday", "Вт"),
+                ("wednesday", "Ср"),
+                ("thursday", "Чт"),
+                ("friday", "Пт"),
+                ("saturday", "Сб"),
+                ("sunday", "Нд"),
+            )
+            today = datetime.now().weekday()
+            ordered_days = days[today:] + days[:today]
+            rows = []
+            for key, label in ordered_days:
+                entries = sorted(result.days.get(key, []), key=lambda entry: entry.airing)
+                for entry in entries:
+                    if entry.finished or not entry.anime.ref:
+                        continue
+                    when = self._format_feed_time(entry.airing, time_only=True)
+                    details = [label]
+                    if when:
+                        details.append(when)
+                    if entry.episode is not None:
+                        details.append(f"Серія {entry.episode}")
+                    rows.append((entry.anime, " · ".join(details)))
+                    if len(rows) >= 5:
+                        break
+                if len(rows) >= 5:
+                    break
+            self._show_feed_rows(
+                "schedule",
+                rows,
+                f"{len(rows)} найближчих виходів" if rows else "У розкладі поки немає виходів.",
+            )
+
+        def on_error(message: str) -> None:
+            if seq != self._feed_seq["schedule"]:
+                return
+            self._rate_label.refresh()
+            section._feed_retry.setEnabled(True)
+            section._feed_state.setText(f"Не вдалося завантажити розклад: {message}")
+            section._feed_rows_host.hide()
+
+        self._runner.run(getter, on_result, on_error)
+
+    def _show_feed_rows(
+        self, key: str, entries: list[tuple[AnimeSummary, str]], empty_text: str
+    ) -> None:
+        section = self._feed_sections[key]
+        rows = self._feed_rows[key]
+        while rows.count():
+            item = rows.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        if not entries:
+            section._feed_state.setText(empty_text)
+            section._feed_state.show()
+            section._feed_rows_host.hide()
+            return
+        section._feed_state.setText(empty_text)
+        section._feed_state.hide()
+        for anime, details in entries:
+            row = QWidget()
+            row.setObjectName("homeFeedRow")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(10, 4, 10, 4)
+            row_layout.setSpacing(12)
+            title = QPushButton(anime.titles.display_name)
+            title.setObjectName("homeFeedTitle")
+            title.setToolTip(anime.titles.display_name)
+            title.clicked.connect(
+                lambda _checked=False, ref=anime.ref, poster=anime.poster_url: (
+                    self.open_requested.emit(ref, poster)
+                )
+            )
+            meta = QLabel(details)
+            meta.setObjectName("homeFeedMeta")
+            meta.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row_layout.addWidget(title, 1)
+            row_layout.addWidget(meta)
+            rows.addWidget(row)
+        section._feed_rows_host.show()
+
+    @staticmethod
+    def _format_feed_time(timestamp: str, *, time_only: bool = False) -> str:
+        if not timestamp:
+            return ""
+        try:
+            value = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone()
+        except ValueError:
+            return ""
+        return value.strftime("%H:%M" if time_only else "%d.%m · %H:%M")
+
+    def _fetch_page(self, page: int) -> None:
+        self._status.setText("Завантаження добірки…" if self._browse_mode else "Пошук…")
+        self._previous.setEnabled(False)
+        self._next.setEnabled(False)
+        if not self._browse_mode:
+            self._run_results_request(
+                lambda: self._repository.search(
+                    self._current_query, page=page, limit=self._page_size
+                ),
+                page,
+            )
+            return
+        browse = getattr(self._repository, "browse_ongoing", None)
+        if browse is None:
+            self._run_results_request(
+                lambda: self._repository.search("", page=page, limit=self._page_size), page
+            )
+        else:
+            self._run_results_request(lambda: browse(page=page, limit=self._page_size), page)
+
+    def _run_results_request(self, fn, requested_page: int) -> None:
+        self._request_seq += 1
+        request_seq = self._request_seq
+
+        def on_results(result: SearchResult) -> None:
+            if request_seq == self._request_seq:
+                self._on_results(result, requested_page)
+
+        def on_error(message: str) -> None:
+            if request_seq == self._request_seq:
+                self._on_error(message)
+
+        self._runner.run(fn, on_results, on_error)
+
+    def _search(self) -> None:
+        query = self._query.text().strip()
+        if not query:
+            self._load_ongoing()
+            return
+        self._browse_mode = False
+        self._current_query = query
+        self._page_size = 20
+        self._page = 1
+        self._pages = 1
+        self._entries = []
+        self._results.clear()
+        self._pager.hide()
+        self._results_heading.setText("Результати пошуку")
+        self._show_search_results()
+        self._fetch_page(1)
+
+    def _show_discovery(self) -> None:
+        self._discovery.show()
+        self._results.hide()
+        self._format_bar.hide()
+        self._results_heading.show()
+
+    def _show_search_results(self) -> None:
+        self._discovery.hide()
+        self._results.show()
+        self._results_heading.show()
+
+    def _on_results(self, result: SearchResult, requested_page: int = 1) -> None:
+        self._rate_label.refresh()
+        self._page = result.page or requested_page
+        self._pages = max(
+            1,
+            result.pages
+            if result.pages is not None
+            else ((result.total or len(result.items)) + self._page_size - 1) // self._page_size,
+        )
+        self._entries = result.items
+        total = result.total
+        if not self._entries:
+            self._status.setText("Нічого не знайдено")
+        else:
+            self._status.setText(f"Знайдено: {total if total is not None else len(self._entries)}")
+        self._rebuild_format_bar()
+        self._populate_rows()
+        self._update_pager()
+        needed = sorted(
+            thumb
+            for thumb in {entry.thumb_url for entry in self._entries}
+            if thumb and thumb not in self._thumb_cache
+        )
+        if needed:
+            self._runner.run(
+                lambda: self._fetch_thumbs(needed),
+                self._apply_thumbs,
+                self._thumbs_failed,
+            )
+
+    def _rebuild_format_bar(self) -> None:
+        counts: dict[str, int] = {}
+        for entry in self._entries:
+            fmt = entry.format or "unknown"
+            counts[fmt] = counts.get(fmt, 0) + 1
+        order = ("tv", "movie", "special", "ova", "ona", "music", "other", "unknown")
+        present = [fmt for fmt in order if counts.get(fmt)]
+        self._format_bar.blockSignals(True)
+        while self._format_bar.count():
+            self._format_bar.removeTab(0)
+        if len(present) >= 2:
+            self._format_bar.addTab(f"Усі ({len(self._entries)})")
+            self._format_bar.setTabData(0, "all")
+            for index, fmt in enumerate(present, start=1):
+                self._format_bar.addTab(f"{fmt.upper()} ({counts[fmt]})")
+                self._format_bar.setTabData(index, fmt)
+            self._format_bar.setCurrentIndex(0)
+            self._format_bar.show()
+        else:
+            self._format_bar.hide()
+        self._format_bar.blockSignals(False)
+
+    def _apply_format_filter(self) -> None:
+        self._populate_rows()
+
+    def _populate_rows(self) -> None:
+        self._results.clear()
+        wanted = "all"
+        if self._format_bar.isVisible():
+            index = self._format_bar.currentIndex()
+            data = self._format_bar.tabData(index) if index >= 0 else None
+            if isinstance(data, str):
+                wanted = data
+        for entry in self._entries:
+            if wanted != "all" and (entry.format or "unknown") != wanted:
+                continue
+            year = entry.year
+            meta = " · ".join(
+                part for part in (str(year) if year else "", (entry.format or "").upper()) if part
+            )
+            name = entry.titles.display_name
+            label = f"{name}  ·  {meta}" if meta else name
+            thumb = entry.thumb_url
+            item = QListWidgetItem(label)
+            item.setToolTip(label)
+            item.setData(
+                Qt.ItemDataRole.UserRole,
+                {"ref": entry.ref, "poster": entry.poster_url, "thumb": thumb},
+            )
+            icon = self._icon_for(thumb)
+            if icon is not None:
+                item.setIcon(icon)
+            self._results.addItem(item)
+
+    def _icon_for(self, thumb: str | None) -> QPixmap | None:
+        if not thumb or thumb not in self._thumb_cache:
+            return None
+        if thumb not in self._icons:
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(self._thumb_cache[thumb]) or pixmap.isNull():
+                return None
+            self._icons[thumb] = pixmap
+        return self._icons[thumb]
+
+    def _fetch_thumbs(self, urls: list[str]) -> dict[str, bytes]:
+        fetched: dict[str, bytes] = {}
+        for url in urls:
+            try:
+                fetched[url] = self._repository.fetch_bytes(url)
+            except Exception as exc:  # noqa: BLE001 - thumbnails are optional to search results.
+                log.warning("thumbnail fetch failed for %s: %s", url, exc)
+        return fetched
+
+    def _apply_thumbs(self, fetched: dict[str, bytes]) -> None:
+        self._thumb_cache.update(fetched)
+        for row in range(self._results.count()):
+            item = self._results.item(row)
+            data = item.data(Qt.ItemDataRole.UserRole) or {}
+            icon = self._icon_for(data.get("thumb"))
+            if icon is not None:
+                item.setIcon(icon)
+
+    def _thumbs_failed(self, message: str) -> None:
+        log.warning("thumbnail batch failed: %s", message)
+
+    def _on_error(self, message: str) -> None:
+        self._rate_label.refresh()
+        self._status.setText(message)
+        self._update_pager()
+
+    def _update_pager(self) -> None:
+        self._pager.setVisible(self._pages > 1)
+        self._page_label.setText(f"{self._page} / {self._pages}")
+        self._previous.setEnabled(self._page > 1)
+        self._next.setEnabled(self._page < self._pages)
+
+    def _change_page(self, delta: int) -> None:
+        page = self._page + delta
+        if 1 <= page <= self._pages:
+            self._fetch_page(page)
+
+    def _open(self, item: QListWidgetItem) -> None:
+        data = item.data(Qt.ItemDataRole.UserRole) or {}
+        ref = data.get("ref")
+        if ref:
+            self.open_requested.emit(ref, data.get("poster"))
+
+
+class MainWindow(QWidget):
+    def __init__(self, repository: AnimeRepository) -> None:
+        super().__init__()
+        self._repository = repository
+        self._runner = Runner(self)
+        self._title: TitlePage | None = None
+        self._title_ref: str | None = None
+        self._title_poster: str | None = None
+        self._title_history: list[tuple[str, str | None]] = []
+
+        self.setWindowTitle("Mikai Wrapper")
+        self.setMinimumSize(860, 620)
+        self.resize(1080, 760)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack)
+
+        self._search = SearchPage(self._runner, repository)
+        self._search.open_requested.connect(self.open_title)
+        self._search.settings_requested.connect(self.open_settings)
+        self._stack.addWidget(self._search)
+
+    def open_settings(self) -> None:
+        dlg = SettingsDialog(self._repository, self._runner, self)
+        dlg.exec()
+
+    def open_title(self, ref: str, poster: object, *, preserve_history: bool = False) -> None:
+        if not preserve_history:
+            self._title_history.clear()
+        self._dispose_title()
+        self._title_ref = ref
+        self._title_poster = poster if isinstance(poster, str) else None
+        self._title = TitlePage(self._runner, self._repository, ref, self._title_poster)
+        self._title.recent_title_loaded.connect(self._search.record_recent_title)
+        self._title.back_requested.connect(self.go_search)
+        self._title.settings_requested.connect(self.open_settings)
+        self._title.related_open_requested.connect(self._open_related)
+        self._stack.addWidget(self._title)
+        self._stack.setCurrentWidget(self._title)
+
+    def _open_related(self, ref: str, poster: object) -> None:
+        if self._title_ref is not None:
+            self._title_history.append((self._title_ref, self._title_poster))
+        self.open_title(ref, poster, preserve_history=True)
+
+    def go_search(self) -> None:
+        if self._title_history:
+            ref, poster = self._title_history.pop()
+            self.open_title(ref, poster, preserve_history=True)
+            return
+        self._dispose_title()
+        self._title_ref = None
+        self._title_poster = None
+        self._stack.setCurrentWidget(self._search)
+
+    def _dispose_title(self) -> None:
+        if self._title is None:
+            return
+        self._title.shutdown()
+        self._stack.removeWidget(self._title)
+        self._title.deleteLater()
+        self._title = None
+
+    def closeEvent(self, event) -> None:
+        self._dispose_title()
+        super().closeEvent(event)
+
+
+def main() -> None:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Mikai Wrapper")
+    app.setStyle("Fusion")
+    app.setStyleSheet(build_stylesheet())
+    window = MainWindow(MikaiClient())
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
