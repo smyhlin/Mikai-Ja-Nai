@@ -5,6 +5,7 @@ import json
 import sys
 from datetime import datetime
 
+import shiboken6
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -42,6 +43,8 @@ from mikai_ui.theme.metrics import (
     HOME_CARD_HEIGHT,
     HOME_CARD_WIDTH,
     HOME_CAROUSEL_SCROLL_STEP,
+    HOME_FEED_POSTER_HEIGHT,
+    HOME_FEED_POSTER_WIDTH,
     HOME_POSTER_HEIGHT,
     HOME_POSTER_WIDTH,
 )
@@ -69,6 +72,7 @@ class SearchPage(QWidget):
         self._pages = 1
         self._page_size = 24
         self._thumb_cache: dict[str, bytes] = {}
+        self._feed_poster_labels: dict[str, list[tuple[str, QLabel]]] = {}
         self._icons: dict[str, QPixmap] = {}
         self._carousel_labels: dict[str, list[QLabel]] = {}
         self._carousel_cards: dict[str, list[tuple[str, str]]] = {}
@@ -664,18 +668,30 @@ class SearchPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         if not entries:
+            self._feed_poster_labels[key] = []
             section._feed_state.setText(empty_text)
             section._feed_state.show()
             section._feed_rows_host.hide()
             return
         section._feed_state.setText(empty_text)
         section._feed_state.hide()
+        posters: list[tuple[str, QLabel]] = []
         for anime, details in entries:
             row = QWidget()
             row.setObjectName("homeFeedRow")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(10, 4, 10, 4)
             row_layout.setSpacing(12)
+            thumb = anime.thumb_url
+            if thumb:
+                poster = QLabel(row)
+                poster.setObjectName("homeFeedPoster")
+                poster.setFixedSize(HOME_FEED_POSTER_WIDTH, HOME_FEED_POSTER_HEIGHT)
+                poster.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                poster.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                posters.append((thumb, poster))
+                self._apply_poster(thumb, poster)
+                row_layout.addWidget(poster, 0, Qt.AlignmentFlag.AlignVCenter)
             title = QPushButton(anime.titles.display_name)
             title.setObjectName("homeFeedTitle")
             title.setToolTip(anime.titles.display_name)
@@ -691,6 +707,8 @@ class SearchPage(QWidget):
             row_layout.addWidget(meta)
             rows.addWidget(row)
         section._feed_rows_host.show()
+        self._feed_poster_labels[key] = posters
+        self._request_feed_posters()
 
     @staticmethod
     def _format_feed_time(timestamp: str, *, time_only: bool = False) -> str:
@@ -875,6 +893,41 @@ class SearchPage(QWidget):
             icon = self._icon_for(data.get("thumb"))
             if icon is not None:
                 item.setIcon(icon)
+
+    def _apply_poster(self, thumb: str, label: QLabel) -> None:
+        icon = self._icon_for(thumb)
+        if icon is None:
+            return
+        label.setPixmap(
+            icon.scaled(
+                label.size(),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
+    def _request_feed_posters(self) -> None:
+        needed = sorted(
+            {
+                thumb
+                for posters in self._feed_poster_labels.values()
+                for thumb, _ in posters
+                if thumb and thumb not in self._thumb_cache
+            }
+        )
+        if needed:
+            self._runner.run(
+                lambda: self._fetch_thumbs(needed),
+                self._apply_feed_posters,
+                self._thumbs_failed,
+            )
+
+    def _apply_feed_posters(self, fetched: dict[str, bytes]) -> None:
+        self._thumb_cache.update(fetched)
+        for posters in self._feed_poster_labels.values():
+            for thumb, label in posters:
+                if shiboken6.isValid(label):
+                    self._apply_poster(thumb, label)
 
     def _thumbs_failed(self, message: str) -> None:
         log.warning("thumbnail batch failed: %s", message)

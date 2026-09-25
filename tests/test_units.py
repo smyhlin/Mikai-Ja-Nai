@@ -827,6 +827,12 @@ def test_home_feed_renders_recent_updates_and_schedule(app):
             .findChild(QLabel, "homeFeedMeta")
             .text()
         )
+        # Every feed row exposes a poster slot sourced from the API thumb URL.
+        for key in ("updates", "schedule"):
+            row = page._feed_rows[key].itemAt(0).widget()
+            assert row.findChild(QLabel, "homeFeedPoster") is not None
+        assert [thumb for thumb, _ in page._feed_poster_labels["updates"]] == [BLACK.thumb_url]
+        assert [thumb for thumb, _ in page._feed_poster_labels["schedule"]] == [JACK.thumb_url]
         assert BLACK.ref in page._settings.values["home/recentTitles"]
     finally:
         page._runner._pool.waitForDone(10000)

@@ -106,6 +106,8 @@ def build_stylesheet() -> str:
     QPushButton#homeFeedTitle {{ text-align: left; background: transparent; border: none;
         padding: {SPACING_XS}px; font-weight: 600; }}
     QLabel#homeFeedMeta {{ background: transparent; color: {MUTED}; font-size: 12px; }}
+    QLabel#homeFeedPoster {{ background: {SURFACE_HOVER}; border: 1px solid {BORDER};
+        border-radius: {RADIUS_SMALL}px; }}
     QScrollArea#animeCarousel {{ background: transparent; border: none; }}
     QScrollArea#discoveryScroll {{ background: transparent; border: none; }}
     QWidget#animeCarouselTrack {{ background: transparent; }}
