@@ -18,7 +18,7 @@ from conftest import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea
+from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QWidget
 
 from mikai_backend import (
     AnimeDetail,
@@ -456,16 +456,18 @@ def test_player_dialog_controls(app):
     assert dlg.isFullScreen()
     assert not dlg._header.isVisible()
     assert dlg.layout().contentsMargins().left() == 0
-    assert dlg._overlay.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    assert not dlg._overlay.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-    assert dlg._overlay.parent() is dlg._stage
-    assert dlg._chrome.parent() is dlg._overlay
+    # The mpv surface is a native window: any widget spanning it is composited on
+    # top and hides the video, so nothing may overlap the video surface.
     assert dlg._video.parent() is dlg._stage
-    assert dlg._stage.rect().contains(dlg._overlay.geometry())
-    assert dlg._video.geometry() == dlg._stage.rect()
+    assert dlg._chrome.parent() is dlg._stage
+    assert not dlg._overlay.isVisible()
+    assert dlg._video.width() > 0 and dlg._video.height() > 0
+    for child in dlg._stage.children():
+        if not isinstance(child, QWidget) or child is dlg._video or not child.isVisible():
+            continue
+        assert not child.geometry().contains(dlg._video.rect())
     QTest.qWait(220)
     assert dlg._chrome.geometry().height() >= dlg._chrome.sizeHint().height()
-    assert dlg._overlay.rect().contains(dlg._chrome.geometry())
     dlg._overlay.hide_controls()
     QTest.qWait(220)
     assert not dlg._chrome.isVisible()

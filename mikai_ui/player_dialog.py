@@ -85,17 +85,38 @@ class PlayerDialog(QDialog):
         self._stage.setMouseTracking(True)
         root.addWidget(self._stage, 1)
 
+        # The video surface and the chrome are laid out, never overlapped. A native
+        # window stacked over the mpv surface paints opaque and hides the video, so
+        # the controls get their own band and the video takes the rest.
+        stage_layout = QVBoxLayout(self._stage)
+        stage_layout.setContentsMargins(0, 0, 0, 0)
+        stage_layout.setSpacing(0)
+
         self._video = QWidget(self._stage)
         self._video.setObjectName("videoSurface")
         self._video.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         self._video.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, False)
         self._video.setMouseTracking(True)
+        stage_layout.addWidget(self._video, 1)
 
-        self._controls = PlayerControlsWidget()
+        self._controls = PlayerControlsWidget(self._stage)
         self._controls.set_qualities(self._qualities, initial_height)
+        stage_layout.addWidget(self._controls, 0)
+
+        # The overlay is an event filter and state presenter only. It must never be
+        # given the stage rect: any widget spanning the video occludes the mpv surface.
         self._overlay = PlayerOverlayWidget(self._controls, self._stage)
         self._overlay.set_mouse_sources(self._stage, self._video)
-        self._overlay.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self._overlay.hide()
+
+        # The status card and the toast are small opaque panels that do float over
+        # the video, so each earns a small native handle. What must never happen is a
+        # full-stage native window over the video: it paints opaque and hides it.
+        for panel in (self._overlay.status_card, self._overlay.toast):
+            panel.setParent(self._stage)
+            panel.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+            panel.raise_()
+        self._overlay.toastShown.connect(self._layout_panels)
 
         # Compatibility aliases for code that used to inspect the dialog's UI.
         self._chrome = self._controls
@@ -231,6 +252,7 @@ class PlayerDialog(QDialog):
         if self._closed:
             return
         self._overlay.set_playback_state(state)
+        self._layout_panels()
 
     def _on_fullscreen_changed(self, fullscreen: bool) -> None:
         self._header.setVisible(not fullscreen)
@@ -267,14 +289,32 @@ class PlayerDialog(QDialog):
         super().resizeEvent(event)
         self._sync_stage_geometry()
 
+    def _layout_panels(self) -> None:
+        area = self._stage.rect()
+
+        def center(widget: QWidget) -> None:
+            hint = widget.sizeHint()
+            width = min(area.width() - 2 * SPACING_LARGE, max(hint.width(), 1))
+            height = max(hint.height(), 1)
+            widget.setGeometry(
+                area.x() + (area.width() - width) // 2,
+                area.y() + max(SPACING_LARGE, area.height() // 4),
+                width,
+                height,
+            )
+
+        if self._overlay.status_card.isVisible():
+            center(self._overlay.status_card)
+        if self._overlay.toast.isVisible():
+            center(self._overlay.toast)
+        for panel in (self._overlay.status_card, self._overlay.toast):
+            if panel.isVisible():
+                panel.raise_()
+
     def _sync_stage_geometry(self) -> None:
         if not hasattr(self, "_stage"):
             return
-        area = self._stage.rect()
-        self._video.setGeometry(area)
-        self._overlay.setGeometry(area)
-        self._video.lower()
-        self._overlay.raise_()
+        self._layout_panels()
 
     def closeEvent(self, event) -> None:
         self._closed = True

@@ -20,7 +20,6 @@ from mikai_ui.theme.metrics import (
     PLAYER_BAR_MIN_HEIGHT,
     SINGLE_CLICK_DELAY_MS,
     SPACING_LARGE,
-    SPACING_MEDIUM,
     SPACING_SMALL,
     SPINNER_HEIGHT,
     SPINNER_WIDTH,
@@ -37,6 +36,7 @@ class PlayerOverlayWidget(QWidget):
     videoClicked = Signal()
     videoDoubleClicked = Signal()
     mouseActivity = Signal()
+    toastShown = Signal()
 
     def __init__(
         self,
@@ -52,14 +52,17 @@ class PlayerOverlayWidget(QWidget):
         self._click_timer.timeout.connect(self.videoClicked)
 
         self.setObjectName("playerOverlay")
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # The overlay is a non-native canvas and must stay that way. A full-stage
+        # native window is opaque and hides the mpv surface; a layered one (the only
+        # way to get translucency) composites as black over it. The dialog parents
+        # the controls and the toast to the stage instead, so nothing here forces
+        # this widget to become native.
         self.setMouseTracking(True)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(SPACING_LARGE, SPACING_MEDIUM, SPACING_LARGE, SPACING_MEDIUM)
-        root.setSpacing(0)
-        root.addStretch(1)
-
+        # No layout here on purpose: this widget holds logic and event filters only.
+        # The status card and toast are reparented to the stage by the dialog, which
+        # owns their placement, because a native child of this widget would drag the
+        # whole overlay native and hide the video again.
         self.status_card = QWidget(self)
         self.status_card.setObjectName("playerStatusCard")
         self.status_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -104,28 +107,12 @@ class PlayerOverlayWidget(QWidget):
             child.setMouseTracking(True)
             child.installEventFilter(self)
 
-        card_row = QHBoxLayout()
-        card_row.addStretch(1)
-        card_row.addWidget(self.status_card)
-        card_row.addStretch(1)
-        root.addLayout(card_row)
-        root.addStretch(1)
-
         self.toast = QLabel("", self)
         self.toast.setObjectName("playerToast")
         self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.toast.hide()
         self.toast.setMouseTracking(True)
         self.toast.installEventFilter(self)
-        toast_row = QHBoxLayout()
-        toast_row.addStretch(1)
-        toast_row.addWidget(self.toast)
-        toast_row.addStretch(1)
-        root.addLayout(toast_row)
-
-        root.addSpacing(SPACING_MEDIUM)
-        self.controls.setParent(self)
-        root.addWidget(self.controls)
         self._controls_height = max(PLAYER_BAR_MIN_HEIGHT, self.controls.sizeHint().height())
         self._animation = QPropertyAnimation(self.controls, b"maximumHeight", self)
         self._animation.setDuration(ANIMATION_DURATION_MS)
@@ -186,6 +173,7 @@ class PlayerOverlayWidget(QWidget):
     def show_toast(self, text: str) -> None:
         self.toast.setText(text)
         self.toast.show()
+        self.toastShown.emit()
         self._toast_timer.start()
 
     def set_fullscreen(self, fullscreen: bool) -> None:
