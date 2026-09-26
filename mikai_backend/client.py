@@ -336,6 +336,8 @@ def _parse_summary(entry: dict[str, Any]) -> AnimeSummary:
         titles=_parse_titles(entry.get("titles") or {}),
         year=entry.get("year"),
         format=entry.get("format") or "",
+        status=entry.get("status") or "",
+        episodes=entry.get("episodes"),
         poster=_parse_posters((entry.get("images") or {}).get("poster")),
     )
 

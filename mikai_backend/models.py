@@ -89,12 +89,22 @@ class Scores:
     mal_count: int = 0
 
 
+MIKAI_PAGE_URL = "https://mikai.me/anime/"
+
+
+def anime_page_url(ref: str) -> str:
+    """Public website page for a title ref, bare Mikai id or prefixed form."""
+    return f"{MIKAI_PAGE_URL}{ref}"
+
+
 @dataclass(frozen=True)
 class AnimeSummary:
     ref: str = ""
     titles: Titles = field(default_factory=Titles)
     year: int | None = None
     format: str = ""
+    status: str = ""
+    episodes: int | None = None
     poster: PosterSet = field(default_factory=PosterSet)
 
     @property

@@ -44,6 +44,11 @@ class Runner(QObject):
         # bound concurrent thumbnail/quality extraction requests
         self._pool.setMaxThreadCount(4)
         self._tasks: set[Task] = set()
+        self._bulk_pool = QThreadPool(self)
+        # the home page and the episode grid fan out one task per card; on the shared
+        # pool that would queue a title the user just opened behind the whole feed
+        self._bulk_pool.setMaxThreadCount(4)
+        self._bulk_tasks: set[Task] = set()
 
     def run(
         self,
@@ -51,17 +56,39 @@ class Runner(QObject):
         on_ok: Callable[[Any], None],
         on_err: Callable[[str], None],
     ) -> None:
+        self._start(self._pool, self._tasks, fn, on_ok, on_err)
+
+    def run_bulk(
+        self,
+        fn: Callable[..., Any],
+        on_ok: Callable[[Any], None],
+        on_err: Callable[[str], None],
+    ) -> None:
+        self._start(self._bulk_pool, self._bulk_tasks, fn, on_ok, on_err)
+
+    def wait_for_done(self, timeout_ms: int) -> bool:
+        self._bulk_pool.waitForDone(timeout_ms)
+        return self._pool.waitForDone(timeout_ms)
+
+    def _start(
+        self,
+        pool: QThreadPool,
+        tasks: set[Task],
+        fn: Callable[..., Any],
+        on_ok: Callable[[Any], None],
+        on_err: Callable[[str], None],
+    ) -> None:
         task = Task(fn)
-        self._tasks.add(task)
+        tasks.add(task)
 
         def _done(result: Any) -> None:
-            self._tasks.discard(task)
+            tasks.discard(task)
             on_ok(result)
 
         def _failed(message: str) -> None:
-            self._tasks.discard(task)
+            tasks.discard(task)
             on_err(message)
 
         task.signals.finished.connect(_done)
         task.signals.failed.connect(_failed)
-        self._pool.start(task)
+        pool.start(task)

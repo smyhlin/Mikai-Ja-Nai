@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from mikai_backend import AnimeRepository
+from mikai_ui import feeds
 from mikai_ui.theme import ACCENT, FG
 from mikai_ui.theme.widgets import make_icon
 from mikai_ui.workers import Runner
@@ -34,8 +36,9 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._repository = repository
         self._runner = runner
+        self._settings = QSettings("Mikai", "Mikai Wrapper")
 
-        self.setWindowTitle("Налаштування токена API")
+        self.setWindowTitle("Налаштування")
         self.setMinimumWidth(480)
 
         root = QVBoxLayout(self)
@@ -86,6 +89,24 @@ class SettingsDialog(QDialog):
         self._quota_timer.start()
         self._refresh_quota()
 
+        feeds_title = QLabel("Блоки головної сторінки")
+        feeds_title.setObjectName("sectionHeading")
+        root.addWidget(feeds_title)
+        feeds_hint = QLabel(
+            "Вимкнений блок не завантажується і не витрачає запити API. Пошук і сторінка "
+            "тайтлу працюють завжди."
+        )
+        feeds_hint.setObjectName("muted")
+        feeds_hint.setWordWrap(True)
+        root.addWidget(feeds_hint)
+        self._feed_boxes: dict[str, QCheckBox] = {}
+        current_feeds = feeds.enabled(self._settings)
+        for key in feeds.ALL_FEEDS:
+            box = QCheckBox(feeds.FEED_LABELS[key])
+            box.setChecked(key in current_feeds)
+            root.addWidget(box)
+            self._feed_boxes[key] = box
+
         self._status = QLabel("")
         self._status.setObjectName("status")
         self._status.setWordWrap(True)
@@ -101,7 +122,7 @@ class SettingsDialog(QDialog):
         self._cancel_btn.clicked.connect(self.reject)
         self._save_btn = QPushButton("Зберегти")
         self._save_btn.setObjectName("primary")
-        self._save_btn.clicked.connect(self._save_token)
+        self._save_btn.clicked.connect(self._save)
 
         buttons_row.addWidget(self._cancel_btn)
         buttons_row.addWidget(self._save_btn)
@@ -164,7 +185,9 @@ class SettingsDialog(QDialog):
             count += " · запити продовжаться автоматично після оновлення ліміту"
         self._quota.setText(count)
 
-    def _save_token(self) -> None:
+    def _save(self) -> None:
         token = self._token_input.text().strip() or None
         self._repository.set_api_key(token)
+        chosen = {key for key, box in self._feed_boxes.items() if box.isChecked()}
+        feeds.save(self._settings, chosen)
         self.accept()

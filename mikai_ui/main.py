@@ -3,18 +3,21 @@ from __future__ import annotations
 import logging
 import json
 import sys
+from dataclasses import replace
 from datetime import datetime
 
 import shiboken6
-from PySide6.QtCore import QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QScrollArea,
@@ -25,8 +28,10 @@ from PySide6.QtWidgets import (
 
 from mikai_backend import (
     AiringEntry,
+    AnimeDetail,
     AnimeRepository,
     AnimeSummary,
+    anime_page_url,
     ImageVariant,
     MikaiClient,
     PosterSet,
@@ -35,6 +40,8 @@ from mikai_backend import (
     Titles,
     UpdatesResult,
 )
+from mikai_ui import feeds
+from mikai_ui.title_card import TitleCard
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import SettingsDialog, make_gear_icon
 from mikai_ui.theme import FG, build_stylesheet
@@ -45,13 +52,19 @@ from mikai_ui.theme.metrics import (
     HOME_CAROUSEL_SCROLL_STEP,
     HOME_FEED_POSTER_HEIGHT,
     HOME_FEED_POSTER_WIDTH,
-    HOME_POSTER_HEIGHT,
-    HOME_POSTER_WIDTH,
 )
 from mikai_ui.title_page import TitlePage
 from mikai_ui.workers import Runner
 
 log = logging.getLogger(__name__)
+
+
+def _is_remote_url(value: str | None) -> bool:
+    return bool(value) and value.startswith(("http://", "https://"))
+
+
+def _poster_key(anime: AnimeSummary) -> str | None:
+    return anime.thumb_url or anime.poster_url
 
 
 class SearchPage(QWidget):
@@ -74,9 +87,16 @@ class SearchPage(QWidget):
         self._thumb_cache: dict[str, bytes] = {}
         self._feed_poster_labels: dict[str, list[tuple[str, QLabel]]] = {}
         self._icons: dict[str, QPixmap] = {}
-        self._carousel_labels: dict[str, list[QLabel]] = {}
-        self._carousel_cards: dict[str, list[tuple[str, str]]] = {}
+        self._carousel_widgets: dict[str, list[TitleCard]] = {}
         self._carousel_entries: dict[str, list[AnimeSummary]] = {}
+        self._poster_lookups: set[str] = set()
+        self._detail_lookups: set[str] = set()
+        self._card_details: dict[str, AnimeDetail] = {}
+        self._healed_posters: dict[str, str] = {}
+        self._heal_timer = QTimer(self)
+        self._heal_timer.setSingleShot(True)
+        self._heal_timer.setInterval(200)
+        self._heal_timer.timeout.connect(self._flush_recent_posters)
         self._feed_seq = {
             "ongoing": 0,
             "popular": 0,
@@ -87,6 +107,7 @@ class SearchPage(QWidget):
         self._feed_sections: dict[str, QWidget] = {}
         self._feed_rows: dict[str, QVBoxLayout] = {}
         self._settings = QSettings("Mikai", "Mikai Wrapper")
+        self._enabled_feeds = feeds.enabled(self._settings)
         self._recent_items = self._read_recent_titles()
 
         root = QVBoxLayout(self)
@@ -147,6 +168,8 @@ class SearchPage(QWidget):
         discovery_layout.addWidget(self._popular_carousel)
         discovery_layout.addWidget(self._updates_section)
         discovery_layout.addWidget(self._schedule_section)
+        for key in feeds.ALL_FEEDS:
+            self._feed_section(key).setVisible(key in self._enabled_feeds)
         discovery_layout.addStretch()
         self._discovery_scroll = QScrollArea()
         self._discovery_scroll.setObjectName("discoveryScroll")
@@ -169,6 +192,8 @@ class SearchPage(QWidget):
         self._results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._results.itemClicked.connect(self._open)
         self._results.itemActivated.connect(self._open)
+        self._results.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._results.customContextMenuRequested.connect(self._results_context_menu)
         root.addWidget(self._results, stretch=1)
         self._results.hide()
 
@@ -193,6 +218,10 @@ class SearchPage(QWidget):
         QTimer.singleShot(0, self._load_ongoing)
         if self._recent_items:
             self._show_carousel("recent", SearchResult(items=self._recent_items))
+
+    def _feed_section(self, key: str) -> QWidget:
+        section = self._carousel_sections.get(key) or self._feed_sections[key]
+        return section
 
     def _build_carousel(self, heading: str, key: str) -> QWidget:
         section = QWidget()
@@ -256,7 +285,6 @@ class SearchPage(QWidget):
         section._carousel_state = state
         section._carousel_retry = retry
         scroll.hide()
-        self._carousel_labels[key] = []
         self._carousel_sections[key] = section
         return section
 
@@ -265,7 +293,6 @@ class SearchPage(QWidget):
         layout = QVBoxLayout(section)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-
         header = QHBoxLayout()
         title = QLabel(heading)
         title.setObjectName("sectionHeading")
@@ -312,7 +339,11 @@ class SearchPage(QWidget):
                 AnimeSummary(
                     ref=str(record["ref"]),
                     titles=Titles(ua=str(record.get("title") or "")),
-                    poster=PosterSet(big=ImageVariant(webp=poster)) if poster else PosterSet(),
+                    poster=(
+                        PosterSet(big=ImageVariant(webp=poster))
+                        if _is_remote_url(poster)
+                        else PosterSet()
+                    ),
                 )
             )
         return items[:12]
@@ -324,24 +355,13 @@ class SearchPage(QWidget):
         item = AnimeSummary(
             ref=ref,
             titles=Titles(ua=title),
-            poster=PosterSet(big=ImageVariant(webp=poster)) if poster else PosterSet(),
+            poster=(
+                PosterSet(big=ImageVariant(webp=poster)) if _is_remote_url(poster) else PosterSet()
+            ),
         )
         self._recent_items.insert(0, item)
         self._recent_items = self._recent_items[:12]
-        self._settings.setValue(
-            "home/recentTitles",
-            json.dumps(
-                [
-                    {
-                        "ref": recent.ref,
-                        "title": recent.titles.display_name,
-                        "poster": recent.poster_url or "",
-                    }
-                    for recent in self._recent_items
-                ],
-                ensure_ascii=False,
-            ),
-        )
+        self._persist_recent_titles()
         self._recent_carousel.show()
         self._show_carousel("recent", SearchResult(items=self._recent_items))
 
@@ -356,67 +376,21 @@ class SearchPage(QWidget):
             section._carousel_scroll.hide()
             return
         section._carousel_state.setText(f"{len(result.items[:18])} тайтлів")
-        self._carousel_cards = {
-            url: [record for record in records if record[0] != key]
-            for url, records in self._carousel_cards.items()
-        }
-        for anime in result.items[:18]:
-            image_key = anime.thumb_url or anime.poster_url
-            if image_key:
-                self._carousel_cards.setdefault(image_key, []).append(
-                    (key, anime.titles.display_name)
-                )
         while cards.count():
             item = cards.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        labels: list[QLabel] = []
+        widgets: list[TitleCard] = []
         for anime in result.items[:18]:
-            card = QPushButton()
-            card.setObjectName("animeCard")
-            card.setFixedSize(HOME_CARD_WIDTH, HOME_CARD_HEIGHT)
-            card.setToolTip(anime.titles.display_name)
-            card.clicked.connect(
-                lambda _checked=False, ref=anime.ref, poster=anime.poster_url: (
-                    self.open_requested.emit(ref, poster)
-                )
-            )
-            column = QVBoxLayout(card)
-            column.setContentsMargins(8, 8, 8, 8)
-            column.setSpacing(6)
-            poster = QLabel("Постер недоступний")
-            poster.setObjectName("carouselPoster")
-            poster.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            poster.setFixedSize(HOME_POSTER_WIDTH, HOME_POSTER_HEIGHT)
-            poster.setWordWrap(True)
-            poster.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            column.addWidget(poster, alignment=Qt.AlignmentFlag.AlignHCenter)
-            kind = QLabel((anime.format or "Аніме").upper())
-            kind.setObjectName("carouselKind")
-            kind.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            kind.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            column.addWidget(kind)
-            name = QLabel(anime.titles.display_name)
-            name.setObjectName("carouselTitle")
-            name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            name.setWordWrap(True)
-            name.setFixedHeight(34)
-            name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            column.addWidget(name)
+            card = TitleCard(anime)
+            card.openRequested.connect(self.open_requested)
+            card.menuRequested.connect(self._anime_card_menu)
             cards.addWidget(card)
-            labels.append(poster)
-            image_key = anime.thumb_url or anime.poster_url
-            if image_key and image_key in self._thumb_cache:
+            widgets.append(card)
+            if card.image_key and card.image_key in self._thumb_cache:
                 pixmap = QPixmap()
-                if pixmap.loadFromData(self._thumb_cache[image_key]) and not pixmap.isNull():
-                    poster.setText("")
-                    poster.setPixmap(
-                        pixmap.scaled(
-                            poster.size(),
-                            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                    )
+                if pixmap.loadFromData(self._thumb_cache[card.image_key]) and not pixmap.isNull():
+                    card.apply_pixmap(pixmap)
         track = section._carousel_scroll.widget()
         cards.activate()
         margins = cards.contentsMargins()
@@ -429,19 +403,118 @@ class SearchPage(QWidget):
         track.setFixedSize(track_width, HOME_CARD_HEIGHT + 4)
         section._carousel_scroll.widget().show()
         section._carousel_scroll.show()
-        self._carousel_labels[key] = labels
-        missing = [
-            item
-            for item in result.items[:18]
-            if (item.thumb_url or item.poster_url)
-            and (item.thumb_url or item.poster_url) not in self._thumb_cache
-        ]
-        if missing:
-            self._runner.run(
-                lambda: self._fetch_carousel_posters(missing),
-                self._apply_carousel_thumbs,
-                lambda message: log.debug("carousel posters unavailable: %s", message),
+        self._carousel_widgets[key] = widgets
+        self._request_card_details(widgets)
+        self._load_carousel_thumbs(key, result.items[:18])
+
+    def _persist_recent_titles(self) -> None:
+        self._settings.setValue(
+            "home/recentTitles",
+            json.dumps(
+                [
+                    {
+                        "ref": recent.ref,
+                        "title": recent.titles.display_name,
+                        "poster": recent.poster_url if _is_remote_url(recent.poster_url) else "",
+                    }
+                    for recent in self._recent_items
+                ],
+                ensure_ascii=False,
+            ),
+        )
+
+    def _load_carousel_thumbs(self, key: str, entries: list[AnimeSummary]) -> None:
+        for anime in entries:
+            if _poster_key(anime) in self._thumb_cache:
+                continue
+            # one task per card: the pool paints a whole feed at once instead of
+            # waiting for the slowest poster in it
+            self._runner.run_bulk(
+                lambda item=anime: self._fetch_carousel_posters([item]),
+                lambda fetched, item=anime: self._apply_carousel_entry(key, item, fetched),
+                lambda message: log.debug("carousel poster unavailable: %s", message),
             )
+
+    def _apply_carousel_entry(
+        self, key: str, anime: AnimeSummary, fetched: dict[str, bytes]
+    ) -> None:
+        self._apply_carousel_thumbs(fetched)
+        if _poster_key(anime) not in self._thumb_cache:
+            self._resolve_carousel_posters(key, [anime])
+
+    def _resolve_carousel_posters(self, key: str, entries: list[AnimeSummary]) -> None:
+        """Recent cards persist a bare URL with no other artwork source, so a rotted or
+        unusable one leaves the card permanently empty. Re-look it up by ref, once per
+        session; a ref that fails then is left as-is rather than retried forever."""
+        if key != "recent":
+            return
+        targets = [
+            item.ref for item in entries if item.ref and item.ref not in self._poster_lookups
+        ]
+        if not targets:
+            return
+        self._poster_lookups.update(targets)
+        for ref in targets:
+            self._request_card_detail(ref)
+
+    def _request_card_details(self, widgets: list[TitleCard]) -> None:
+        """A list response carries only the planned episode count, so every card needs
+        one detail request for its aired fraction. Each goes out as its own task, so the
+        thread pool works through a whole feed at the client's advertised rate."""
+        for card in widgets:
+            self._request_card_detail(card.ref)
+
+    def _request_card_detail(self, ref: str) -> None:
+        if not ref:
+            return
+        if ref in self._detail_lookups:
+            cached = self._card_details.get(ref)
+            if cached is not None:
+                self._apply_card_detail(ref, cached)
+            return
+        self._detail_lookups.add(ref)
+        self._runner.run_bulk(
+            lambda: self._repository.get_anime(ref),
+            lambda detail, target=ref: self._apply_card_detail(target, detail),
+            lambda message, target=ref: log.debug(
+                "detail lookup failed for %s: %s", target, message
+            ),
+        )
+
+    def _apply_card_detail(self, ref: str, detail: AnimeDetail) -> None:
+        if not shiboken6.isValid(self):
+            return
+        self._card_details[ref] = detail
+        self._queue_recent_poster_heal(ref, detail)
+        for widgets in self._carousel_widgets.values():
+            for card in widgets:
+                if card.ref == ref:
+                    card.apply_detail(detail)
+
+    def _queue_recent_poster_heal(self, ref: str, detail: AnimeDetail) -> None:
+        """A burst of detail results would otherwise re-render the recent feed once per
+        title; one timer collapses them into a single repaint."""
+        if not _is_remote_url(detail.cover_url):
+            return
+        if not any(item.ref == ref for item in self._carousel_entries.get("recent", [])):
+            return
+        self._healed_posters[ref] = detail.cover_url
+        self._heal_timer.start()
+
+    def _flush_recent_posters(self) -> None:
+        healed, self._healed_posters = self._healed_posters, {}
+        if not healed:
+            return
+        refreshed = [
+            replace(item, poster=PosterSet(big=ImageVariant(webp=healed[item.ref])))
+            if item.ref in healed
+            else item
+            for item in self._carousel_entries.get("recent", [])
+        ]
+        self._carousel_entries["recent"] = refreshed
+        self._recent_items = refreshed[:12]
+        self._persist_recent_titles()
+        self._show_carousel("recent", SearchResult(items=refreshed))
 
     def _fetch_carousel_posters(self, entries: list[AnimeSummary]) -> dict[str, bytes]:
         fetched: dict[str, bytes] = {}
@@ -475,19 +548,32 @@ class SearchPage(QWidget):
             pixmap = QPixmap()
             if not pixmap.loadFromData(data) or pixmap.isNull():
                 continue
-            for key, title in self._carousel_cards.get(url, []):
-                for label in self._carousel_labels.get(key, []):
-                    # A poster URL can be shared by several cards and feeds.
-                    card = label.parentWidget()
-                    if card and card.toolTip() == title:
-                        label.setText("")
-                        label.setPixmap(
-                            pixmap.scaled(
-                                label.size(),
-                                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                Qt.TransformationMode.SmoothTransformation,
-                            )
-                        )
+            # A poster URL can be shared by several cards and feeds.
+            for cards in self._carousel_widgets.values():
+                for card in cards:
+                    if card.image_key == url:
+                        card.apply_pixmap(pixmap)
+
+    def refresh_feed_settings(self) -> None:
+        """Apply a settings-dialog change: a feed switched off stops loading and hides,
+        one switched on loads. Results still in flight for a hidden feed are dropped."""
+        previous = self._enabled_feeds
+        self._enabled_feeds = feeds.enabled(self._settings)
+        if previous == self._enabled_feeds:
+            return
+        for key in feeds.ALL_FEEDS:
+            self._feed_seq[key] += 1
+            self._feed_section(key).setVisible(key in self._enabled_feeds)
+        for key in set(feeds.ALL_FEEDS) - previous:
+            self._load_feed(key)
+
+    def _load_feed(self, key: str) -> None:
+        if key in ("ongoing", "popular"):
+            self._request_recommendation(key)
+        elif key == "updates":
+            self._load_updates()
+        elif key == "schedule":
+            self._load_schedule()
 
     def _load_ongoing(self) -> None:
         self._query.clear()
@@ -504,15 +590,15 @@ class SearchPage(QWidget):
         self._status.setText(
             "Натисніть картку, щоб відкрити тайтл · пошук за назвою доступний вище"
         )
-        self._request_recommendation("ongoing")
-        self._request_recommendation("popular")
-        self._load_updates()
-        self._load_schedule()
+        for key in feeds.ALL_FEEDS:
+            self._load_feed(key)
 
     def _request_recommendation(self, key: str) -> None:
         section = self._carousel_sections[key]
         self._feed_seq[key] += 1
         seq = self._feed_seq[key]
+        if key not in self._enabled_feeds:
+            return
         section._carousel_state.setText("Завантаження добірки…")
         section._carousel_retry.hide()
         if not self._carousel_entries.get(key):
@@ -545,6 +631,8 @@ class SearchPage(QWidget):
         self._runner.run(request, on_result, on_error)
 
     def _load_updates(self) -> None:
+        if "updates" not in self._enabled_feeds:
+            return
         section = self._feed_sections["updates"]
         self._feed_seq["updates"] += 1
         seq = self._feed_seq["updates"]
@@ -598,6 +686,8 @@ class SearchPage(QWidget):
         self._runner.run(lambda: getter(page=1, limit=12), on_result, on_error)
 
     def _load_schedule(self) -> None:
+        if "schedule" not in self._enabled_feeds:
+            return
         section = self._feed_sections["schedule"]
         self._feed_seq["schedule"] += 1
         seq = self._feed_seq["schedule"]
@@ -698,6 +788,12 @@ class SearchPage(QWidget):
             title.clicked.connect(
                 lambda _checked=False, ref=anime.ref, poster=anime.poster_url: (
                     self.open_requested.emit(ref, poster)
+                )
+            )
+            row.setContextMenuPolicy(Qt.CustomContextMenu)
+            row.customContextMenuRequested.connect(
+                lambda pos, ref=anime.ref, host=row: self._anime_card_menu(
+                    ref, host.mapToGlobal(pos)
                 )
             )
             meta = QLabel(details)
@@ -954,6 +1050,63 @@ class SearchPage(QWidget):
         if ref:
             self.open_requested.emit(ref, data.get("poster"))
 
+    def _results_context_menu(self, pos) -> None:
+        item = self._results.itemAt(pos)
+        if item is None:
+            return
+        data = item.data(Qt.ItemDataRole.UserRole) or {}
+        ref = data.get("ref")
+        if not ref:
+            return
+        menu = QMenu(self)
+        open_action = menu.addAction("Відкрити")
+        open_action.setToolTip("Відкрити сторінку тайтла")
+        open_action.triggered.connect(lambda _=False, current=item: self._open(current))
+        copy_link = menu.addAction("Копіювати посилання")
+        copy_link.setToolTip("Скопіювати адресу сторінки на mikai.me")
+        copy_link.triggered.connect(lambda _=False, target=ref: self._copy_anime_link(target))
+        copy_ref = menu.addAction("Копіювати ID")
+        copy_ref.setToolTip("Скопіювати ідентифікатор тайтла")
+        copy_ref.triggered.connect(lambda _=False, target=ref: self._copy_ref(target))
+        menu.exec(self._results.mapToGlobal(pos))
+
+    def _anime_card_menu(self, ref: str, global_pos) -> None:
+        menu = QMenu(self)
+        open_action = menu.addAction("Відкрити")
+        open_action.setToolTip("Відкрити сторінку тайтла")
+        open_action.triggered.connect(lambda _=False, target=ref: self._open_by_ref(target))
+        copy_link = menu.addAction("Копіювати посилання")
+        copy_link.setToolTip("Скопіювати адресу сторінки на mikai.me")
+        copy_link.triggered.connect(lambda _=False, target=ref: self._copy_anime_link(target))
+        copy_ref = menu.addAction("Копіювати ID")
+        copy_ref.setToolTip("Скопіювати ідентифікатор тайтла")
+        copy_ref.triggered.connect(lambda _=False, target=ref: self._copy_ref(target))
+        browser_action = menu.addAction("Відкрити в браузері")
+        browser_action.setToolTip("Відкрити сторінку на mikai.me")
+        browser_action.triggered.connect(
+            lambda _=False, target=ref: QDesktopServices.openUrl(QUrl(anime_page_url(target)))
+        )
+        menu.exec(global_pos)
+
+    def _open_by_ref(self, ref: str) -> None:
+        entries = list(self._carousel_entries.get("ongoing", []))
+        entries.extend(self._carousel_entries.get("popular", []))
+        entries.extend(self._recent_items)
+        entries.extend(self._entries)
+        for entry in entries:
+            if entry.ref == ref:
+                self.open_requested.emit(ref, entry.poster_url)
+                return
+        self.open_requested.emit(ref, None)
+
+    @staticmethod
+    def _copy_anime_link(ref: str) -> None:
+        QGuiApplication.clipboard().setText(anime_page_url(ref))
+
+    @staticmethod
+    def _copy_ref(ref: str) -> None:
+        QGuiApplication.clipboard().setText(ref)
+
 
 class MainWindow(QWidget):
     def __init__(self, repository: AnimeRepository) -> None:
@@ -982,6 +1135,8 @@ class MainWindow(QWidget):
     def open_settings(self) -> None:
         dlg = SettingsDialog(self._repository, self._runner, self)
         dlg.exec()
+        if dlg.result() == QDialog.DialogCode.Accepted:
+            self._search.refresh_feed_settings()
 
     def open_title(self, ref: str, poster: object, *, preserve_history: bool = False) -> None:
         if not preserve_history:

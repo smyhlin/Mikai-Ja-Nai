@@ -118,6 +118,10 @@ class PlayerController(QObject):
         """Return the adapter boundary, never the raw python-mpv player."""
         return self._adapter
 
+    @property
+    def current_url(self) -> str:
+        return self._current_url
+
     def attach_adapter(self, adapter: MPVAdapter | Any) -> None:
         if self._closed:
             adapter.close()
@@ -154,6 +158,21 @@ class PlayerController(QObject):
         self._set_state(status=PlaybackStatus.LOADING, error=None, position=0.0)
         self._load_watchdog.start()
         adapter.load(self._current_url)
+
+    def replace_stream(self, url: str, qualities: dict[int, str]) -> None:
+        """Point the player at a freshly extracted stream after a failed load."""
+        if self._closed or not url:
+            return
+        self._qualities = dict(qualities)
+        self._initial_url = url
+        self._current_url = url
+        self._resume_point = None
+        self._has_loaded = False
+        self._set_state(status=PlaybackStatus.LOADING, error=None, position=0.0)
+        if self._adapter is None:
+            return
+        self._load_watchdog.start()
+        self._adapter.load(url)
 
     def play(self) -> None:
         if self._adapter is None or self._closed:

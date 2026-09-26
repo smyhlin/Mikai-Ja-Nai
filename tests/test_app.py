@@ -14,6 +14,15 @@ def _no_stream_network(monkeypatch):
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
 
 
+@pytest.fixture(autouse=True)
+def _no_home_card_details(monkeypatch):
+    """These tests open title pages, not home cards, but every window fixture builds the
+    home page too — and its one-detail-per-card fan-out is ~54 requests per window, which
+    outruns the API key's 300/min and parks every client on 429s. The card path is
+    covered hermetically in test_units."""
+    monkeypatch.setattr("mikai_ui.main.SearchPage._request_card_details", lambda self, cards: None)
+
+
 from mikai_ui.title_page import TitlePage
 
 REF = "7428"

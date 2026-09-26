@@ -1,4 +1,5 @@
 import base64
+import json
 import subprocess
 import sys
 import time
@@ -9,6 +10,7 @@ from typing import Any
 import pytest
 import requests
 from conftest import (
+    FakeMpvAdapter,
     episode_button,
     pagination_controls,
     pump_until,
@@ -28,6 +30,7 @@ from mikai_backend import (
     AnimeUpdate,
     AiringEntry,
     Episode,
+    EpisodeStats,
     ImageVariant,
     MikaiClient,
     PlayerResult,
@@ -170,7 +173,7 @@ def fake_window(app):
     win.show()
     app.processEvents()
     yield win
-    win._runner._pool.waitForDone(10000)
+    win._runner.wait_for_done(10000)
     win.close()
     win.deleteLater()
     app.processEvents()
@@ -181,6 +184,97 @@ def open_fake_title(win, app):
     title = win._title
     assert pump_until(app, lambda: title._selector.count() == 4), "title load stuck"
     return title
+
+
+class _MemorySettings:
+    def __init__(self) -> None:
+        self.values: dict[str, object] = {}
+
+    def value(self, key: str, default: object = None, *_args) -> object:
+        return self.values.get(key, default)
+
+    def setValue(self, key: str, value: object) -> None:
+        self.values[key] = value
+
+
+class _HealingRepository(FakeRepository):
+    """Serves a fresh, fetchable poster for any ref, like the live API would."""
+
+    HEALED = "https://img.example/healed.webp"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.anime_lookups: list[str] = []
+
+    def get_anime(self, ref: str) -> AnimeDetail:
+        self.anime_lookups.append(ref)
+        return replace(DETAIL, ref=ref, poster=PosterSet(big=ImageVariant(webp=self.HEALED)))
+
+    def fetch_bytes(self, url: str) -> bytes:
+        if url == self.HEALED:
+            return PNG_1PX
+        return super().fetch_bytes(url)
+
+
+def test_ui_tests_never_write_the_user_settings_store(app, isolated_settings):
+    window = MainWindow(FakeRepository())
+    try:
+        store = Path(window._search._settings.fileName())
+        assert store == isolated_settings, store
+        assert str(store).startswith(str(isolated_settings.parent)), store
+        window._search.record_recent_title("7428", "Чорний смолоскип", "https://img.example/p.webp")
+        app.processEvents()
+        assert isolated_settings.exists(), "settings were not written to the isolated store"
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_unusable_poster_url_is_not_persisted(fake_window):
+    page = fake_window._search
+    page._settings = _MemorySettings()
+    page.record_recent_title("7428", "Чорний смолоскип", "img:poster")
+    assert json.loads(page._settings.values["home/recentTitles"])[0]["poster"] == ""
+
+
+def test_recent_poster_is_relooked_up_when_the_stored_url_is_unusable(fake_window, app):
+    """A persisted poster URL can rot; the card must recover from the API, not stay blank."""
+    page = fake_window._search
+    page._settings = _MemorySettings()
+    repository = _HealingRepository()
+    page._repository = repository
+    page._thumb_cache.clear()
+    page._poster_lookups.clear()
+    page.record_recent_title("recent-only", "Недавній тайтл", "img:not-a-url")
+    app.processEvents()
+
+    # The heal re-renders the carousel, so look the card up on every poll
+    def painted() -> bool:
+        pixmap = page._carousel_widgets["recent"][0].poster.pixmap()
+        return pixmap is not None and not pixmap.isNull()
+
+    assert pump_until(app, painted), (repository.anime_lookups, len(page._thumb_cache))
+    assert "recent-only" in repository.anime_lookups, repository.anime_lookups
+    assert json.loads(page._settings.values["home/recentTitles"])[0]["poster"] == repository.HEALED
+
+
+def test_recent_poster_lookup_runs_once_per_ref(fake_window, app):
+    page = fake_window._search
+    page._settings = _MemorySettings()
+    repository = _HealingRepository()
+    page._repository = repository
+    page._thumb_cache.clear()
+    page._poster_lookups.clear()
+    page.record_recent_title("recent-only", "Недавній тайтл", "img:not-a-url")
+    assert pump_until(app, lambda: "recent-only" in repository.anime_lookups), (
+        repository.anime_lookups
+    )
+
+    for _ in range(3):
+        page._show_carousel("recent", SearchResult(items=page._recent_items))
+        app.processEvents()
+    assert repository.anime_lookups.count("recent-only") == 1, repository.anime_lookups
 
 
 def test_cover_click_opens_zoomable_viewer(fake_window, app):
@@ -631,11 +725,14 @@ def test_episode_context_menu_actions(fake_window, app, monkeypatch):
     assert "Відкрити в браузері" in texts
     assert "Відкрити у зовнішньому плеєрі" in texts
     submenu_action = next(a for a in menu.actions() if a.menu() is not None)
-    assert submenu_action.text() == "Копіювати якість"
+    assert submenu_action.text() == "Відкрити якість"
     assert [a.text() for a in submenu_action.menu().actions()] == [
-        "1080p",
-        "720p",
-        "480p",
+        "Дивитися 1080p",
+        "Копіювати 1080p",
+        "Дивитися 720p",
+        "Копіювати 720p",
+        "Дивитися 480p",
+        "Копіювати 480p",
     ]
 
     # Copy action writes the embed URL
@@ -644,7 +741,8 @@ def test_episode_context_menu_actions(fake_window, app, monkeypatch):
     assert QGuiApplication.clipboard().text() == widget.property("embed")
 
     # Per-quality action writes that quality's stream URL
-    submenu_action.menu().actions()[1].trigger()
+    copy_720 = next(a for a in submenu_action.menu().actions() if a.text() == "Копіювати 720p")
+    copy_720.trigger()
     app.processEvents()
     assert QGuiApplication.clipboard().text() == "https://s.example/720.m3u8"
     assert "720p" in title._status.text()
@@ -709,7 +807,255 @@ def test_episode_context_menu_wiring_and_placeholder(fake_window, app, monkeypat
     menu.deleteLater()
 
 
+def test_episode_menu_opens_stream_and_refreshes_quality(fake_window, app, monkeypatch):
+    from mikai_backend import anime_page_url
+
+    monkeypatch.setattr(
+        "mikai_ui.title_page.streams.get_quality_streams",
+        lambda url: {
+            1080: "https://s.example/1080.m3u8",
+            720: "https://s.example/720.m3u8",
+        },
+    )
+    monkeypatch.setattr(
+        "mikai_ui.title_page.prepare_runtime",
+        lambda: (_ for _ in ()).throw(OSError("offline test")),
+    )
+    title = open_fake_title(fake_window, app)
+    chip_widget = tab_chips(title)[0]
+    assert pump_until(app, lambda: len(quality_buttons(chip_widget)) == 2)
+    assert pump_until(app, lambda: not title._extracting)
+    chip = chip_widget._chip
+
+    menu = title._build_episode_menu(chip)
+    try:
+        submenu = next(a for a in menu.actions() if a.menu() is not None)
+        watch = next(a for a in submenu.menu().actions() if a.text() == "Дивитися 1080p")
+        watch.trigger()
+        app.processEvents()
+        assert QGuiApplication.clipboard().text() == "https://s.example/1080.m3u8"
+        assert len(title._player_dialogs) == 1
+        dialog = title._player_dialogs[-1]
+        assert dialog.controller.state.quality == 1080
+
+        refresh = next(a for a in menu.actions() if a.text() == "Оновити якість")
+        calls: list[str] = []
+        monkeypatch.setattr(
+            "mikai_ui.title_page.streams.get_quality_streams",
+            lambda url: calls.append(url) or {720: f"{url}/720.m3u8"},
+        )
+        refresh.trigger()
+        app.processEvents()
+        assert calls and calls[-1] == chip["embed"], calls
+    finally:
+        title.shutdown()
+        app.processEvents()
+        menu.deleteLater()
+
+
+def test_episode_menu_refresh_shown_after_extraction_starts(fake_window, app, monkeypatch):
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+    title = open_fake_title(fake_window, app)
+    widget = tab_chips(title)[0]
+    assert pump_until(app, lambda: widget._chip.get("requested") is True)
+
+    menu = title._build_episode_menu(widget._chip)
+    try:
+        assert [a for a in menu.actions() if a.text() == "Оновити якість"]
+    finally:
+        title.shutdown()
+        app.processEvents()
+        menu.deleteLater()
+
+
+def test_quality_chip_context_menu_copies_without_playing(fake_window, app, monkeypatch):
+    from PySide6.QtWidgets import QMenu as RealMenu
+
+    captured: list = []
+
+    class FakeMenu(RealMenu):
+        def exec(self, *args, **kwargs):
+            captured.append(self)
+
+    monkeypatch.setattr("mikai_ui.title_page.QMenu", FakeMenu)
+    monkeypatch.setattr(
+        "mikai_ui.title_page.streams.get_quality_streams",
+        lambda url: {720: "https://s.example/720.m3u8"},
+    )
+    title = open_fake_title(fake_window, app)
+    chip_widget = tab_chips(title)[0]
+    assert pump_until(app, lambda: len(quality_buttons(chip_widget)) == 1)
+    chip = chip_widget._chip
+    dialogs_before = len(title._player_dialogs)
+
+    button = quality_buttons(chip_widget)[0]
+    assert button.contextMenuPolicy() == Qt.CustomContextMenu
+    title._quality_chip_context_menu(
+        chip, 720, "https://s.example/720.m3u8", button.mapToGlobal(button.rect().center())
+    )
+    app.processEvents()
+    assert captured, "quality-chip menu did not open"
+    actions = {a.text(): a for a in captured[0].actions()}
+    assert set(actions) == {"Копіювати 720p", "Оновити якість"}
+    actions["Копіювати 720p"].trigger()
+    app.processEvents()
+    assert QGuiApplication.clipboard().text() == "https://s.example/720.m3u8"
+    assert len(title._player_dialogs) == dialogs_before, "copy must not spawn a player"
+
+    title.shutdown()
+    app.processEvents()
+    for menu in captured:
+        menu.deleteLater()
+
+
+def test_search_row_context_menu_copies_link_and_ref(fake_window, app):
+    from mikai_backend import anime_page_url
+
+    page = fake_window._search
+    page._on_results(SearchResult(total=1, items=[BLACK]), 1)
+    assert page._results.count() == 1
+    item = page._results.item(0)
+    assert item.data(Qt.ItemDataRole.UserRole)["ref"] == BLACK.ref
+    assert page._results.contextMenuPolicy() == Qt.CustomContextMenu
+
+    captured: list = []
+    from PySide6.QtWidgets import QMenu as RealMenu
+
+    class FakeMenu(RealMenu):
+        def exec(self, *args, **kwargs):
+            captured.append(self)
+
+    real_menu = page._results
+    import mikai_ui.main as main_module
+
+    original = main_module.QMenu
+    try:
+        main_module.QMenu = FakeMenu
+        page._results_context_menu(real_menu.visualItemRect(item).center())
+        assert captured, "menu did not open"
+        menu = captured[0]
+        actions = {a.text(): a for a in menu.actions()}
+        assert set(actions) == {"Відкрити", "Копіювати посилання", "Копіювати ID"}
+
+        actions["Копіювати посилання"].trigger()
+        assert QGuiApplication.clipboard().text() == anime_page_url(BLACK.ref)
+        actions["Копіювати ID"].trigger()
+        assert QGuiApplication.clipboard().text() == BLACK.ref
+    finally:
+        main_module.QMenu = original
+        for menu in captured:
+            menu.deleteLater()
+
+
+def test_carousel_card_context_menu_opens_browser(fake_window, app, monkeypatch):
+    import mikai_ui.main as main_module
+
+    opened: list = []
+    monkeypatch.setattr(
+        "PySide6.QtGui.QDesktopServices.openUrl", lambda url: opened.append(url) or True
+    )
+    page = fake_window._search
+    page._show_carousel("ongoing", SearchResult(total=1, items=[BLACK]))
+    cards = page._carousel_sections["ongoing"].findChildren(QPushButton, "animeCard")
+    assert cards, "carousel card missing"
+    assert cards[0].contextMenuPolicy() == Qt.CustomContextMenu
+
+    captured: list = []
+
+    class FakeMenu(main_module.QMenu):
+        def exec(self, *args, **kwargs):
+            captured.append(self)
+
+    monkeypatch.setattr("mikai_ui.main.QMenu", FakeMenu)
+    cards[0].customContextMenuRequested.emit(cards[0].rect().center())
+    app.processEvents()
+    assert captured, "card menu did not open"
+    menu = captured[0]
+    texts = [a.text() for a in menu.actions()]
+    assert texts == ["Відкрити", "Копіювати посилання", "Копіювати ID", "Відкрити в браузері"]
+    browser = next(a for a in menu.actions() if a.text() == "Відкрити в браузері")
+    browser.trigger()
+    from mikai_backend import anime_page_url
+
+    assert opened[0].toString() == anime_page_url(BLACK.ref)
+    menu.deleteLater()
+
+
+def test_card_shows_status_and_planned_episodes_until_the_detail_arrives():
+    from mikai_ui.title_card import TitleCard
+
+    card = TitleCard(replace(BLACK, status="ongoing", episodes=12))
+    assert card.status.text() == "Онгоінґ"
+    assert card.episodes.text() == "12 серій"
+
+    card.apply_detail(replace(DETAIL, status="ongoing", episodes=EpisodeStats(total=12, aired=11)))
+    assert card.episodes.text() == "11 / 12 серій"
+
+
+def test_visible_carousel_card_learns_its_aired_episode_count(fake_window, app):
+    class OngoingRepository(FakeRepository):
+        def get_anime(self, ref: str) -> AnimeDetail:
+            return replace(
+                DETAIL, ref=ref, status="ongoing", episodes=EpisodeStats(total=12, aired=11)
+            )
+
+    page = fake_window._search
+    page._repository = OngoingRepository()
+    page._show_carousel("ongoing", SearchResult(total=1, items=[replace(BLACK, episodes=12)]))
+    assert page._carousel_widgets["ongoing"][0].episodes.text() == "12 серій"
+
+    def episodes_text() -> list[str]:
+        return [card.episodes.text() for card in page._carousel_widgets["ongoing"]]
+
+    assert pump_until(app, lambda: "11 / 12 серій" in episodes_text()), episodes_text()
+    assert "Онгоінґ" in [card.status.text() for card in page._carousel_widgets["ongoing"]]
+
+
+def test_title_cover_context_menu_copies_and_saves(fake_window, app, monkeypatch, tmp_path):
+    title = open_fake_title(fake_window, app)
+    assert title._cover_url == ""
+    url = "https://images.mikai.me/poster/big/cover.webp"
+
+    pixmap = QPixmap()
+    assert pixmap.loadFromData(PNG_1PX) and not pixmap.isNull()
+    title._cover_pixmap = pixmap
+    title._cover_url = url
+    title._copy_cover_url()
+    assert QGuiApplication.clipboard().text() == url
+
+    saved: list = []
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (str(tmp_path / "cover.png"), ""),
+    )
+    real_save = QPixmap.save
+    monkeypatch.setattr(
+        QPixmap, "save", lambda self, path, *args, **kwargs: saved.append(path) or True
+    )
+    title._save_cover()
+    assert saved == [str(tmp_path / "cover.png")]
+    assert "збережено" in title._status.text().lower()
+
+    def broken_save(self, path, *args, **kwargs):
+        return False
+
+    monkeypatch.setattr(QPixmap, "save", broken_save)
+    title._save_cover()
+    assert "не вдалося" in title._status.text().lower()
+
+    title.shutdown()
+    app.processEvents()
+
+
+def test_anime_page_url_builds_public_link():
+    from mikai_backend import anime_page_url
+
+    assert anime_page_url("7428") == "https://mikai.me/anime/7428"
+    assert anime_page_url("mal:21") == "https://mikai.me/anime/mal:21"
+
+
 def test_mpv_runtime_finds_library(tmp_path):
+
     from mikai_backend import mpv_runtime
 
     (tmp_path / "bin").mkdir()
@@ -790,7 +1136,7 @@ def test_ongoing_catalog_can_open_the_next_page(app):
         assert window._search._ongoing_carousel._carousel_scroll.horizontalScrollBar().maximum() > 0
         assert repository.requested_pages == [1]
     finally:
-        window._runner._pool.waitForDone(10000)
+        window._runner.wait_for_done(10000)
         window.close()
         window.deleteLater()
         app.processEvents()
@@ -878,10 +1224,67 @@ def test_home_feed_renders_recent_updates_and_schedule(app):
         assert [thumb for thumb, _ in page._feed_poster_labels["schedule"]] == [JACK.thumb_url]
         assert BLACK.ref in page._settings.values["home/recentTitles"]
     finally:
-        page._runner._pool.waitForDone(10000)
+        page._runner.wait_for_done(10000)
         page.close()
         page.deleteLater()
         app.processEvents()
+
+
+def test_a_feed_switched_off_in_settings_is_never_requested(app, isolated_settings):
+    from PySide6.QtCore import QSettings
+
+    from mikai_ui import feeds
+    from mikai_ui.main import SearchPage
+
+    QSettings(str(isolated_settings), QSettings.Format.IniFormat).setValue(
+        feeds.SETTINGS_KEY, "ongoing,schedule"
+    )
+    calls: list[str] = []
+
+    class PickyRepository(FakeRepository):
+        def browse_popular(self, page: int = 1, limit: int = 18) -> SearchResult:
+            calls.append("popular")
+            return super().browse_popular(page=page, limit=limit)
+
+        def get_updates(self, page: int = 1, limit: int = 12) -> UpdatesResult:
+            calls.append("updates")
+            return super().get_updates(page=page, limit=limit)
+
+    repository = PickyRepository()
+    page = SearchPage(Runner(), repository)
+    page.show()
+    try:
+        assert pump_until(app, lambda: bool(page._carousel_widgets.get("ongoing")))
+        assert "popular" not in calls, calls
+        assert "updates" not in calls, calls
+        assert page._feed_section("popular").isHidden()
+        assert page._feed_section("updates").isHidden()
+        assert page._feed_section("ongoing").isVisible()
+        assert page._feed_section("schedule").isVisible()
+    finally:
+        page._runner.wait_for_done(10000)
+        page.close()
+        page.deleteLater()
+        app.processEvents()
+
+
+def test_settings_dialog_saves_feed_choices_and_the_page_applies_them(fake_window, app):
+    from mikai_ui import feeds
+    from mikai_ui.settings_dialog import SettingsDialog
+
+    page = fake_window._search
+    dialog = SettingsDialog(fake_window._repository, fake_window._runner)
+    dialog._feed_boxes["popular"].setChecked(False)
+    dialog._feed_boxes["schedule"].setChecked(False)
+    dialog._save()
+
+    assert feeds.enabled(dialog._settings) == {"ongoing", "updates"}
+    calls: list[str] = []
+    page._repository.browse_popular = lambda *a, **k: calls.append("popular") or SearchResult()
+    page.refresh_feed_settings()
+    app.processEvents()
+    assert page._feed_section("popular").isHidden()
+    assert "popular" not in calls
 
 
 def test_carousel_tries_larger_poster_when_thumbnail_is_unavailable(fake_window):
@@ -905,14 +1308,14 @@ def test_shared_carousel_poster_updates_cards_in_both_feeds(fake_window, app):
     page._show_carousel("ongoing", result)
     page._show_carousel("popular", result)
     for key in ("ongoing", "popular"):
-        label = page._carousel_labels[key][0]
-        label.setPixmap(QPixmap())
-        label.setText("Постер недоступний")
+        page._carousel_widgets[key][0].poster.setPixmap(QPixmap())
+        page._carousel_widgets[key][0].poster.setText("Постер недоступний")
     page._apply_carousel_thumbs({"img:black": PNG_1PX})
     assert all(
-        label.text() == "" and label.pixmap() is not None and not label.pixmap().isNull()
+        page._carousel_widgets[key][0].poster.text() == ""
+        and page._carousel_widgets[key][0].poster.pixmap() is not None
+        and not page._carousel_widgets[key][0].poster.pixmap().isNull()
         for key in ("ongoing", "popular")
-        for label in page._carousel_labels[key]
     )
 
 
@@ -969,7 +1372,7 @@ def test_related_title_returns_to_previous_title(app):
         window.go_search()
         assert window._stack.currentWidget() is window._search
     finally:
-        window._runner._pool.waitForDone(10000)
+        window._runner.wait_for_done(10000)
         window.close()
         window.deleteLater()
         app.processEvents()
@@ -1099,6 +1502,115 @@ def test_clicking_episode_copies_its_url(fake_window, app, monkeypatch):
     app.processEvents()
     copied = [line for line in QGuiApplication.clipboard().text().splitlines() if line]
     assert len(copied) == 24
+
+
+class _FailingThenOkAdapter(FakeMpvAdapter):
+    """Fails the first load so the dialog's re-extraction fallback is exercised."""
+
+    def __init__(self, *_args, **_kwargs) -> None:
+        super().__init__()
+
+    def load(self, url: str) -> None:
+        super().load(url)
+        if len(self.loads) == 1:
+            self.errorOccurred.emit("HTTP 403 forbidden")
+
+
+def test_quality_extraction_is_cached_per_episode_url(fake_window, app, monkeypatch):
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        return {720: f"{url}/720.m3u8"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    title = open_fake_title(fake_window, app)
+    prev_btn, _, next_btn = pagination_controls(title)
+    page_one_url = tab_chips(title)[0].property("embed")
+    assert pump_until(app, lambda: len(calls) == 12)
+    assert calls.count(page_one_url) == 1
+    assert len(quality_buttons(tab_chips(title)[0])) == 1
+
+    # Leaving and returning to an already-extracted page must not refetch it
+    QTest.mouseClick(next_btn, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(calls) == 24)
+    QTest.mouseClick(prev_btn, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(quality_buttons(tab_chips(title)[0])) == 1)
+    app.processEvents()
+    assert calls.count(page_one_url) == 1, calls
+    assert len(calls) == 24, calls[24:]
+    assert [b.text() for b in quality_buttons(tab_chips(title)[0])] == ["720p"]
+    title.shutdown()
+    app.processEvents()
+
+
+def test_no_source_episode_is_not_reextracted_on_every_paint(fake_window, app, monkeypatch):
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        raise streams.NoSourceError(f"moonanime has no video source for {url} (no_source)")
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    title = open_fake_title(fake_window, app)
+    chips = tab_chips(title)
+    watched = chips[0].property("embed")
+    assert pump_until(
+        app,
+        lambda: (
+            calls.count(watched) == 1
+            and any("відео відсутнє" in lbl.text() for lbl in chips[0].findChildren(QLabel))
+        ),
+    )
+
+    # Switching away and back repaints from the negative cache, not the network
+    title._tabs.setCurrentIndex(1)
+    app.processEvents()
+    title._tabs.setCurrentIndex(0)
+    app.processEvents()
+    assert pump_until(
+        app,
+        lambda: any("відео відсутнє" in lbl.text() for lbl in chips[0].findChildren(QLabel)),
+    )
+    assert calls.count(watched) == 1, calls
+    title.shutdown()
+    app.processEvents()
+
+
+def test_failed_playback_reextracts_before_reporting_the_error(fake_window, app, monkeypatch):
+    generations = {"n": 0}
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        generations["n"] += 1
+        return {720: f"https://s.example/{generations['n']}/720.m3u8"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    monkeypatch.setattr("mikai_ui.title_page.prepare_runtime", lambda: Path("."))
+    monkeypatch.setattr("mikai_ui.player_dialog.MPVAdapter", _FailingThenOkAdapter)
+    title = open_fake_title(fake_window, app)
+    chips = tab_chips(title)
+    assert pump_until(app, lambda: len(quality_buttons(chips[0])) == 1)
+    quality_buttons(chips[0])[0].click()
+    app.processEvents()
+    dialog = title._player_dialogs[-1]
+    assert pump_until(app, lambda: dialog.controller.adapter is not None)
+    adapter = dialog.controller.adapter
+
+    # The first load fails; the dialog re-extracts and retries before giving up
+    watched = chips[0].property("embed")
+    stale_url = chips[0]._chip["qualities"][720]
+    assert pump_until(app, lambda: len(adapter.loads) == 2), adapter.loads
+    assert adapter.loads[0] == stale_url
+    assert adapter.loads[1] != stale_url, "player retried the expired URL"
+    assert calls.count(watched) == 2, calls
+    assert dialog.status_text == "Loading video…", dialog.status_text
+    assert title._quality_cache[watched] == {720: adapter.loads[1]}
+    title.shutdown()
+    app.processEvents()
 
 
 def test_strict_player_tab_isolation_and_no_unexistent_quality_chips(fake_window, app, monkeypatch):

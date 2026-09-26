@@ -111,6 +111,28 @@ def pump_until(app: QApplication, cond, timeout: float = 25.0) -> bool:
     return False
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    """MainWindow and TitlePage both build QSettings("Mikai", "Mikai Wrapper"); keep every
+    test off the user's real store. Qt creates a QSettings internally before user code
+    runs, so setDefaultFormat cannot switch it after the fact — patch the symbols."""
+    from PySide6.QtCore import QSettings
+
+    import mikai_ui.main as main_module
+    import mikai_ui.settings_dialog as settings_module
+    import mikai_ui.title_page as title_page_module
+
+    store = tmp_path / "settings.ini"
+
+    def isolated_qsettings(*args, **kwargs):
+        return QSettings(str(store), QSettings.Format.IniFormat)
+
+    monkeypatch.setattr(main_module, "QSettings", isolated_qsettings)
+    monkeypatch.setattr(title_page_module, "QSettings", isolated_qsettings)
+    monkeypatch.setattr(settings_module, "QSettings", isolated_qsettings)
+    yield store
+
+
 @pytest.fixture(scope="session")
 def app():
     yield QApplication.instance() or QApplication([])
@@ -122,7 +144,7 @@ def window(app):
     win.show()
     app.processEvents()
     yield win
-    win._runner._pool.waitForDone(10000)
+    win._runner.wait_for_done(10000)
     win.close()
     win.deleteLater()
     app.processEvents()

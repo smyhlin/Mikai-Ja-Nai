@@ -115,6 +115,9 @@ def build_stylesheet() -> str:
         border-radius: {RADIUS_SMALL}px; font-size: 12px; }}
     QLabel#carouselKind {{ background: transparent; color: {ACCENT}; font-size: 12px; }}
     QLabel#carouselTitle {{ background: transparent; color: {TEXT}; font-weight: 600; }}
+    QLabel#carouselStatus {{ background: transparent; color: {MUTED}; }}
+    QLabel#carouselStatusLive {{ background: transparent; color: {ACCENT}; }}
+    QLabel#carouselEpisodes {{ background: transparent; color: {TEXT}; }}
     QPushButton#playerPrimary {{ background: {ACCENT}; border: none; border-radius: 22px;
         min-width: {PRIMARY_CONTROL_SIZE}px; max-width: {PRIMARY_CONTROL_SIZE}px;
         min-height: {PRIMARY_CONTROL_SIZE}px; max-height: {PRIMARY_CONTROL_SIZE}px; }}

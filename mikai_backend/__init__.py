@@ -2,6 +2,7 @@ from mikai_backend.client import MikaiClient
 from mikai_backend.errors import MikaiApiError
 from mikai_backend.models import (
     AnimeDetail,
+    anime_page_url,
     AnimeRelation,
     AnimeSummary,
     AnimeUpdate,
@@ -27,6 +28,7 @@ from mikai_backend.releases import playable_episode_count, sort_releases
 
 __all__ = [
     "AnimeDetail",
+    "anime_page_url",
     "AnimeRelation",
     "AnimeRepository",
     "AnimeSummary",

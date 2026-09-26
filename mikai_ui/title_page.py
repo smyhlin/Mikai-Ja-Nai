@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import shiboken6
-from PySide6.QtCore import QProcess, QSize, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QProcess, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -24,8 +25,10 @@ from PySide6.QtWidgets import (
 
 from mikai_backend import AnimeDetail, AnimeRepository, AnimeSummary, PlayerResult, Release, streams
 
+from mikai_ui import quality_cache
 from mikai_ui.cover_viewer import CoverLabel, CoverViewer
 from mikai_backend.releases import playable_episode_count, sort_releases
+from mikai_ui.labels import STATUS_LABELS
 from mikai_ui.mpv_backend import prepare_runtime
 from mikai_ui.player_dialog import PlayerDialog
 from mikai_ui.rate_limit_label import RateLimitLabel
@@ -39,6 +42,7 @@ from mikai_ui.theme.metrics import (
     CAROUSEL_SCROLL_STEP,
     EPISODE_CARD_MIN_HEIGHT,
     EPISODE_CARD_MIN_WIDTH,
+    QUALITY_CACHE_SAVE_DELAY_MS,
     TITLE_COVER_HEIGHT,
     TITLE_COVER_WIDTH,
     TITLE_DESCRIPTION_PREVIEW_CHARS,
@@ -72,13 +76,6 @@ RELATION_LABELS = {
     "adaptation": "Адаптація",
     "other": "Інше",
     "similar": "Схоже",
-}
-STATUS_LABELS = {
-    "finished": "Закінчене",
-    "ongoing": "Триває",
-    "announce": "Анонсовано",
-    "cancelled": "Скасовано",
-    "break": "Перерва",
 }
 SOURCE_LABELS = {
     "manga": "Манґа",
@@ -223,8 +220,15 @@ class TitlePage(QWidget):
         self._player_dialogs: list[PlayerDialog] = []
         self._cover_pixmap = QPixmap()
         self._cover_viewer: CoverViewer | None = None
-        self._quality_queue: list[dict] = []
-        self._quality_in_progress = False
+        self._cover_url = ""
+        self._settings = QSettings("Mikai", "Mikai Wrapper")
+        self._quality_cache, self._quality_fetched_at = quality_cache.load(self._settings)
+        self._extracting: set[str] = set()
+        self._cache_save_timer = QTimer(self)
+        self._cache_save_timer.setSingleShot(True)
+        self._cache_save_timer.setInterval(QUALITY_CACHE_SAVE_DELAY_MS)
+        self._cache_save_timer.timeout.connect(self._save_quality_cache)
+        self._no_source_urls: set[str] = set()
         self._full_description = ""
         self._description_expanded = False
         self._build_ui()
@@ -271,6 +275,10 @@ class TitlePage(QWidget):
         self._cover.setObjectName("titleCover")
         self._cover.setFixedSize(TITLE_COVER_WIDTH, TITLE_COVER_HEIGHT)
         self._cover.activated.connect(self._open_cover_viewer)
+        self._cover.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._cover.customContextMenuRequested.connect(
+            lambda pos: self._cover_context_menu(self._cover.mapToGlobal(pos))
+        )
         page_layout.addWidget(self._cover, alignment=Qt.AlignmentFlag.AlignTop)
 
         text_col = QVBoxLayout()
@@ -873,7 +881,6 @@ class TitlePage(QWidget):
             state = self._tab_states[idx]
             for chip in state.get("visible_chips", []):
                 self._request_chip_quality(chip)
-        self._drain_quality_queue()
 
     def _render_tab_page(self, state: dict) -> None:
         state["seq"] += 1
@@ -960,7 +967,20 @@ class TitlePage(QWidget):
         loading.setObjectName("muted")
         holder_layout.addWidget(loading)
         row.addWidget(chip["holder"])
+        chip["buttons_row"] = row
         return chip
+
+    def _quality_chip_context_menu(self, chip: dict, height: int, url: str, global_pos) -> None:
+        menu = QMenu(self)
+        copy_action = menu.addAction(f"Копіювати {height}p")
+        copy_action.setToolTip("Скопіювати URL потоку без відкриття плеєра")
+        copy_action.triggered.connect(lambda _=False, h=height, u=url: self._copy_quality_url(h, u))
+        refresh_action = menu.addAction("Оновити якість")
+        refresh_action.setToolTip("Перерахувати якості відео")
+        refresh_action.triggered.connect(
+            lambda _=False, c=chip: self._request_chip_quality(c, force=True)
+        )
+        menu.exec(global_pos)
 
     def _tab_changed(self) -> None:
         self._url.clear()
@@ -977,12 +997,26 @@ class TitlePage(QWidget):
             self._flash_status("URL скопійовано")
         self._request_chip_quality(chip)
 
-    def _request_chip_quality(self, chip: dict) -> None:
+    def _request_chip_quality(self, chip: dict, force: bool = False) -> None:
         if self._closed:
             return
-        if chip["requested"]:
+        if chip["requested"] and not force:
             return
         chip["requested"] = True
+        state = chip["state"]
+        chip["seq"] = (state["extract_seq"], state["seq"])
+        if not force:
+            if chip["embed"] in self._no_source_urls:
+                self._on_chip_quality_error(chip, "no_source")
+                return
+            cached = self._quality_cache.get(chip["embed"])
+            if cached is not None:
+                self._on_chip_qualities(chip, cached)
+                return
+        self._show_chip_pending(chip)
+        self._extract_chip_quality(chip)
+
+    def _show_chip_pending(self, chip: dict) -> None:
         holder_layout = chip["holder"].layout()
         while holder_layout.count():
             item = holder_layout.takeAt(0)
@@ -991,49 +1025,36 @@ class TitlePage(QWidget):
         loading = QLabel("Якість…")
         loading.setObjectName("muted")
         holder_layout.addWidget(loading)
-        state = chip["state"]
-        chip["seq"] = (state["extract_seq"], state["seq"])
-        self._quality_queue.append(chip)
-        self._drain_quality_queue()
 
-    def _drain_quality_queue(self) -> None:
-        if self._closed or self._quality_in_progress:
-            return
-        self._quality_queue = [
-            chip
-            for chip in self._quality_queue
-            if chip.get("seq")
-            == (
-                chip.get("state", {}).get("extract_seq"),
-                chip.get("state", {}).get("seq"),
-            )
-        ]
-        active_index = next(
-            (
-                index
-                for index, chip in enumerate(self._quality_queue)
-                if chip.get("state") in self._tab_states
-                and self._tab_states.index(chip["state"]) == self._tabs.currentIndex()
-            ),
-            None,
-        )
-        if active_index is not None:
-            chip = self._quality_queue.pop(active_index)
-            self._quality_in_progress = True
-            url = chip["embed"]
+    def _extract_chip_quality(self, chip: dict) -> None:
+        url = chip["embed"]
+        self._extracting.add(url)
 
-            def on_ok(qualities: dict[int, str], current=chip) -> None:
-                self._on_chip_qualities(current, qualities)
-                self._quality_in_progress = False
-                self._drain_quality_queue()
+        def on_ok(qualities: dict[int, str], current=chip, target_url=url) -> None:
+            self._extracting.discard(target_url)
+            # Cache before painting: a result that lands after a page switch is
+            # dropped by the seq guard below, but the extraction itself is still
+            # valid for that embed URL.
+            self._remember_qualities(target_url, qualities)
+            self._on_chip_qualities(current, qualities)
 
-            def on_err(message: str, current=chip, target_url=url) -> None:
-                log.warning("quality extraction failed for %s: %s", target_url, message)
-                self._on_chip_quality_error(current, message)
-                self._quality_in_progress = False
-                self._drain_quality_queue()
+        def on_err(message: str, current=chip, target_url=url) -> None:
+            self._extracting.discard(target_url)
+            log.warning("quality extraction failed for %s: %s", target_url, message)
+            if "no_source" in message.lower():
+                self._no_source_urls.add(target_url)
+            self._on_chip_quality_error(current, message)
 
-            self._runner.run(lambda target=url: streams.get_quality_streams(target), on_ok, on_err)
+        # Every visible episode extracts at once; the pool, not a queue, sets the pace.
+        self._runner.run_bulk(lambda target=url: streams.get_quality_streams(target), on_ok, on_err)
+
+    def _remember_qualities(self, url: str, qualities: dict[int, str]) -> None:
+        self._quality_cache[url] = dict(qualities)
+        self._quality_fetched_at[url] = time.time()
+        self._cache_save_timer.start()
+
+    def _save_quality_cache(self) -> None:
+        quality_cache.save(self._settings, self._quality_cache, self._quality_fetched_at)
 
     def _on_chip_quality_error(self, chip: dict, message: str) -> None:
         if self._closed:
@@ -1089,6 +1110,12 @@ class TitlePage(QWidget):
                 continue
             button = QPushButton(f"{height}p")
             button.setObjectName("qualityChip")
+            button.setContextMenuPolicy(Qt.CustomContextMenu)
+            button.customContextMenuRequested.connect(
+                lambda pos, h=height, u=stream_url, c=chip, host=button: (
+                    self._quality_chip_context_menu(c, h, u, host.mapToGlobal(pos))
+                )
+            )
             button.clicked.connect(
                 lambda _checked=False, h=height, u=stream_url, c=chip: self._quality_clicked(
                     c, h, u
@@ -1101,10 +1128,88 @@ class TitlePage(QWidget):
             layout.addWidget(unavailable)
         if chip.pop("external_requested", False):
             self._open_external_stream(chip, qualities)
+        # the holder's width decides the grid's columns, so the section refits itself
+        QTimer.singleShot(0, self._fit_episode_section)
 
     def _quality_clicked(self, chip: dict, height: int, url: str) -> None:
         QGuiApplication.clipboard().setText(url)
         self._flash_status(f"Скопійовано {height}p")
+        self._open_stream(chip, height, url)
+
+    def _recover_stream(self, dialog: PlayerDialog, chip: dict, height: int) -> None:
+        """Signed stream URLs expire, so re-extract once before reporting failure."""
+        if self._closed or not shiboken6.isValid(dialog):
+            return
+        embed = chip["embed"]
+        self._quality_cache.pop(embed, None)
+        self._quality_fetched_at.pop(embed, None)
+        self._no_source_urls.discard(embed)
+        self._flash_status("Потік застарів — оновлюю посилання…")
+
+        def on_ok(qualities: dict[int, str], target: PlayerDialog = dialog) -> None:
+            if not qualities:
+                return
+            self._remember_qualities(embed, qualities)
+            for state in self._tab_states:
+                for other in state.get("visible_chips", []):
+                    if other.get("embed") == embed:
+                        self._on_chip_qualities(other, qualities)
+            if shiboken6.isValid(target):
+                target.apply_refreshed_streams(qualities, height)
+
+        def on_err(message: str) -> None:
+            log.warning("stream re-extraction failed for %s: %s", embed, message)
+
+        self._runner.run(lambda: streams.get_quality_streams(embed), on_ok, on_err)
+
+    def _episode_context_menu(self, chip: dict, global_pos) -> None:
+        menu = self._build_episode_menu(chip)
+        menu.exec(global_pos)
+
+    def _build_episode_menu(self, chip: dict) -> QMenu:
+        menu = QMenu(self)
+        copy_action = menu.addAction("Копіювати в буфер обміну")
+        copy_action.setToolTip("Скопіювати URL серії")
+        copy_action.triggered.connect(lambda _=False, c=chip: self._copy_episode(c))
+
+        play_menu = menu.addMenu("Відкрити якість")
+        qualities = chip.get("qualities") or {}
+        if qualities:
+            for height in sorted(qualities, reverse=True):
+                url = qualities[height]
+                play_action = play_menu.addAction(f"Дивитися {height}p")
+                play_action.triggered.connect(
+                    lambda _=False, h=height, u=url, c=chip: self._quality_clicked(c, h, u)
+                )
+                copy_quality = play_menu.addAction(f"Копіювати {height}p")
+                copy_quality.triggered.connect(
+                    lambda _=False, h=height, u=url: self._copy_quality_url(h, u)
+                )
+        elif chip.get("no_source"):
+            unavailable = play_menu.addAction("Відео відсутнє у цього плеєра")
+            unavailable.setEnabled(False)
+        else:
+            pending = play_menu.addAction("Ще не завантажено")
+            pending.setEnabled(False)
+            self._request_chip_quality(chip)
+
+        menu.addSeparator()
+        if chip.get("requested"):
+            refresh_action = menu.addAction("Оновити якість")
+            refresh_action.setToolTip("Перерахувати якості відео")
+            refresh_action.triggered.connect(
+                lambda _=False, c=chip: self._request_chip_quality(c, force=True)
+            )
+        external_action = menu.addAction("Відкрити у зовнішньому плеєрі")
+        external_action.setToolTip("Відкрити найкращу якість у mpv або VLC")
+        external_action.setEnabled(not chip.get("no_source"))
+        external_action.triggered.connect(lambda _=False, c=chip: self._open_external_player(c))
+        open_action = menu.addAction("Відкрити в браузері")
+        open_action.setToolTip("Відкрити сторінку серії")
+        open_action.triggered.connect(lambda _=False, c=chip: self._open_embed_in_browser(c))
+        return menu
+
+    def _open_stream(self, chip: dict, height: int, url: str) -> None:
         caption = f"{chip.get('text', '')} · {height}p"
         dialog = PlayerDialog(
             caption,
@@ -1115,42 +1220,11 @@ class TitlePage(QWidget):
         )
         self._player_dialogs.append(dialog)
         dialog.runtimeRequested.connect(lambda target=dialog: self._prepare_player(target))
+        dialog.playbackFailed.connect(
+            lambda target=dialog, c=chip, h=height: self._recover_stream(target, c, h)
+        )
         dialog.show()
         self._prepare_player(dialog)
-
-    def _episode_context_menu(self, chip: dict, global_pos) -> None:
-        menu = self._build_episode_menu(chip)
-        menu.exec(global_pos)
-
-    def _build_episode_menu(self, chip: dict) -> QMenu:
-        menu = QMenu(self)
-        copy_action = menu.addAction("Копіювати в буфер обміну")
-        copy_action.triggered.connect(lambda _=False, c=chip: self._copy_episode(c))
-
-        quality_menu = menu.addMenu("Копіювати якість")
-        qualities = chip.get("qualities") or {}
-        if qualities:
-            for height in sorted(qualities, reverse=True):
-                url = qualities[height]
-                action = quality_menu.addAction(f"{height}p")
-                action.triggered.connect(
-                    lambda _=False, h=height, u=url: self._copy_quality_url(h, u)
-                )
-        elif chip.get("no_source"):
-            unavailable = quality_menu.addAction("Відео відсутнє у цього плеєра")
-            unavailable.setEnabled(False)
-        else:
-            pending = quality_menu.addAction("Ще не завантажено")
-            pending.setEnabled(False)
-            self._request_chip_quality(chip)
-
-        menu.addSeparator()
-        external_action = menu.addAction("Відкрити у зовнішньому плеєрі")
-        external_action.setEnabled(not chip.get("no_source"))
-        external_action.triggered.connect(lambda _=False, c=chip: self._open_external_player(c))
-        open_action = menu.addAction("Відкрити в браузері")
-        open_action.triggered.connect(lambda _=False, c=chip: self._open_embed_in_browser(c))
-        return menu
 
     def _open_external_player(self, chip: dict) -> None:
         qualities = chip.get("qualities") or {}
@@ -1221,6 +1295,9 @@ class TitlePage(QWidget):
 
     def shutdown(self) -> None:
         self._closed = True
+        self._cache_save_timer.stop()
+        if self._quality_cache:
+            self._save_quality_cache()
         self._extract_seq += 1
         for dialog in self._player_dialogs:
             if shiboken6.isValid(dialog):
@@ -1260,12 +1337,13 @@ class TitlePage(QWidget):
         )
 
     def _load_cover(self, url: str, allow_hint: bool) -> None:
-        def on_ok(data: bytes) -> None:
+        def on_ok(data: bytes, loaded_url: str = url) -> None:
             if self._closed or not shiboken6.isValid(self):
                 return
             pixmap = QPixmap()
             if pixmap.loadFromData(data) and not pixmap.isNull():
                 self._cover_pixmap = pixmap
+                self._cover_url = loaded_url
                 self._cover.set_zoomable(True)
                 self._cover.setToolTip("Натисніть, щоб відкрити обкладинку")
                 self._cover.setText("")
@@ -1287,6 +1365,40 @@ class TitlePage(QWidget):
                 self._cover.setText("Без обкладинки")
 
         self._runner.run(lambda: self._repository.fetch_bytes(url), on_ok, on_err)
+
+    def _cover_context_menu(self, global_pos) -> None:
+        menu = QMenu(self)
+        copy_url = menu.addAction("Копіювати URL обкладинки")
+        copy_url.setToolTip("Скопіювати адресу зображення")
+        copy_url.setEnabled(bool(self._cover_url))
+        copy_url.triggered.connect(lambda _=False: self._copy_cover_url())
+        save_action = menu.addAction("Зберегти обкладинку…")
+        save_action.setToolTip("Зберегти зображення у файл")
+        save_action.setEnabled(not self._cover_pixmap.isNull())
+        save_action.triggered.connect(lambda _=False: self._save_cover())
+        menu.exec(global_pos)
+
+    def _copy_cover_url(self) -> None:
+        if not self._cover_url:
+            return
+        QGuiApplication.clipboard().setText(self._cover_url)
+        self._flash_status("URL обкладинки скопійовано")
+
+    def _save_cover(self) -> None:
+        if self._cover_pixmap.isNull():
+            return
+        from PySide6.QtWidgets import QFileDialog
+
+        suffix = "webp" if self._cover_url.endswith(".webp") else "png"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Зберегти обкладинку", f"cover.{suffix}", "Зображення (*.png *.jpg *.webp)"
+        )
+        if not path:
+            return
+        if self._cover_pixmap.save(path):
+            self._flash_status(f"Обкладинку збережено: {path}")
+        else:
+            self._flash_status("Не вдалося зберегти обкладинку")
 
     def _open_cover_viewer(self) -> None:
         if self._cover_pixmap.isNull():

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from mikai_ui.fullscreen_manager import FullscreenManager
 from mikai_ui.mpv_backend import MPVAdapter
-from mikai_ui.player_controller import PlaybackState, PlayerController
+from mikai_ui.player_controller import PlaybackState, PlaybackStatus, PlayerController
 from mikai_ui.player_controls import PlayerControlsWidget, format_time
 from mikai_ui.player_overlay import PlayerOverlayWidget
 from mikai_ui.theme.metrics import (
@@ -40,6 +40,7 @@ class PlayerDialog(QDialog):
     """Own widget composition and connect user intent to PlayerController."""
 
     runtimeRequested = Signal()
+    playbackFailed = Signal()
 
     def __init__(
         self,
@@ -56,6 +57,7 @@ class PlayerDialog(QDialog):
         self._runtime_dir: Path | None = None
         self._closed = False
         self._showing = False
+        self._refresh_attempted = False
 
         self.setObjectName("playerWindow")
         self.setWindowTitle(f"Mikai Player — {caption}")
@@ -233,6 +235,20 @@ class PlayerDialog(QDialog):
     def show_error(self, message: str) -> None:
         self._controller.fail(message)
 
+    def apply_refreshed_streams(
+        self,
+        qualities: dict[int, str],
+        height: int | None = None,
+    ) -> None:
+        """Reload from a re-extracted quality map after a failed stream load."""
+        if self._closed or not qualities:
+            return
+        target = height if height in qualities else max(qualities)
+        self._qualities = dict(qualities)
+        self._controls.set_qualities(self._qualities, target)
+        self._overlay.show_toast("Stream link expired — reloading")
+        self._controller.replace_stream(self._qualities[target], self._qualities)
+
     def _retry_playback(self) -> None:
         if self._controller.adapter is None:
             self.runtimeRequested.emit()
@@ -253,6 +269,9 @@ class PlayerDialog(QDialog):
             return
         self._overlay.set_playback_state(state)
         self._layout_panels()
+        if state.status is PlaybackStatus.ERROR and not self._refresh_attempted:
+            self._refresh_attempted = True
+            self.playbackFailed.emit()
 
     def _on_fullscreen_changed(self, fullscreen: bool) -> None:
         self._header.setVisible(not fullscreen)
