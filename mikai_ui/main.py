@@ -45,13 +45,17 @@ from mikai_ui.title_card import TitleCard
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import SettingsDialog, make_gear_icon
 from mikai_ui.theme import TEXT, build_stylesheet
-from mikai_ui.theme.metrics import SEARCH_POSTER_HEIGHT, SEARCH_POSTER_WIDTH
 from mikai_ui.theme.metrics import (
     HOME_CARD_HEIGHT,
     HOME_CARD_WIDTH,
     HOME_CAROUSEL_SCROLL_STEP,
     HOME_FEED_POSTER_HEIGHT,
     HOME_FEED_POSTER_WIDTH,
+    PAGER_CHIP_WINDOW,
+    SEARCH_POSTER_HEIGHT,
+    SEARCH_POSTER_WIDTH,
+    SEARCH_RESULTS_PER_PAGE,
+    SPACING_SMALL,
 )
 from mikai_ui.title_page import TitlePage
 from mikai_ui.workers import Runner
@@ -83,7 +87,8 @@ class SearchPage(QWidget):
         self._current_query = ""
         self._page = 1
         self._pages = 1
-        self._page_size = 24
+        self._page_size = SEARCH_RESULTS_PER_PAGE
+        self._total = 0
         self._thumb_cache: dict[str, bytes] = {}
         self._feed_poster_labels: dict[str, list[tuple[str, QLabel]]] = {}
         self._icons: dict[str, QPixmap] = {}
@@ -199,19 +204,23 @@ class SearchPage(QWidget):
 
         self._pager = QWidget()
         pager_row = QHBoxLayout(self._pager)
-        pager_row.setContentsMargins(0, 0, 0, 0)
-        self._previous = QPushButton("← Попередня")
-        self._previous.clicked.connect(lambda: self._change_page(-1))
-        self._page_label = QLabel("")
-        self._page_label.setObjectName("muted")
-        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._next = QPushButton("Наступна →")
-        self._next.clicked.connect(lambda: self._change_page(1))
+        pager_row.setContentsMargins(12, 4, 12, 4)
+        pager_row.setSpacing(SPACING_SMALL)
+        self._pager_prev = QPushButton("←")
+        self._pager_prev.setObjectName("pagerControl")
+        self._pager_prev.clicked.connect(lambda: self._change_page(-1))
+        pager_row.addWidget(self._pager_prev)
         pager_row.addStretch()
-        pager_row.addWidget(self._previous)
-        pager_row.addWidget(self._page_label)
-        pager_row.addWidget(self._next)
+        self._pager_chips = QWidget()
+        self._chip_layout = QHBoxLayout(self._pager_chips)
+        self._chip_layout.setContentsMargins(0, 0, 0, 0)
+        self._chip_layout.setSpacing(SPACING_SMALL)
+        pager_row.addWidget(self._pager_chips)
         pager_row.addStretch()
+        self._pager_next = QPushButton("→")
+        self._pager_next.setObjectName("pagerControl")
+        self._pager_next.clicked.connect(lambda: self._change_page(1))
+        pager_row.addWidget(self._pager_next)
         self._pager.hide()
         root.addWidget(self._pager)
 
@@ -580,7 +589,7 @@ class SearchPage(QWidget):
         self._browse_mode = True
         self._show_discovery()
         self._current_query = ""
-        self._page_size = 24
+        self._page_size = SEARCH_RESULTS_PER_PAGE
         self._page = 1
         self._pages = 1
         self._entries = []
@@ -818,8 +827,8 @@ class SearchPage(QWidget):
 
     def _fetch_page(self, page: int) -> None:
         self._status.setText("Завантаження добірки…" if self._browse_mode else "Пошук…")
-        self._previous.setEnabled(False)
-        self._next.setEnabled(False)
+        self._pager_prev.setEnabled(False)
+        self._pager_next.setEnabled(False)
         if not self._browse_mode:
             self._run_results_request(
                 lambda: self._repository.search(
@@ -857,7 +866,6 @@ class SearchPage(QWidget):
             return
         self._browse_mode = False
         self._current_query = query
-        self._page_size = 20
         self._page = 1
         self._pages = 1
         self._entries = []
@@ -889,10 +897,11 @@ class SearchPage(QWidget):
         )
         self._entries = result.items
         total = result.total
+        self._total = total if total is not None else len(self._entries)
         if not self._entries:
             self._status.setText("Нічого не знайдено")
         else:
-            self._status.setText(f"Знайдено: {total if total is not None else len(self._entries)}")
+            self._status.setText(f"Знайдено: {self._total}")
         self._rebuild_format_bar()
         self._populate_rows()
         self._update_pager()
@@ -1046,14 +1055,32 @@ class SearchPage(QWidget):
 
     def _update_pager(self) -> None:
         self._pager.setVisible(self._pages > 1)
-        self._page_label.setText(f"{self._page} / {self._pages}")
-        self._previous.setEnabled(self._page > 1)
-        self._next.setEnabled(self._page < self._pages)
+        self._pager_prev.setEnabled(self._page > 1)
+        self._pager_next.setEnabled(self._page < self._pages)
+        while self._chip_layout.count():
+            item = self._chip_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        # The active page sits near the middle of a window of chips, so the whole
+        # result set reads as ranges instead of one page at a time.
+        window = min(PAGER_CHIP_WINDOW, self._pages)
+        first = min(max(0, self._page - 1 - window // 2), max(0, self._pages - window))
+        for chip in range(first, first + window):
+            page = chip + 1
+            label = (
+                f"{(page - 1) * self._page_size + 1} – {min(page * self._page_size, self._total)}"
+            )
+            button = QPushButton(label)
+            button.setObjectName("pagerChip" if page != self._page else "pagerChipActive")
+            button.clicked.connect(lambda _checked=False, target=page: self._go_to_page(target))
+            self._chip_layout.addWidget(button)
+
+    def _go_to_page(self, page: int) -> None:
+        if 1 <= page <= self._pages and page != self._page:
+            self._fetch_page(page)
 
     def _change_page(self, delta: int) -> None:
-        page = self._page + delta
-        if 1 <= page <= self._pages:
-            self._fetch_page(page)
+        self._go_to_page(self._page + delta)
 
     def _open(self, item: QListWidgetItem) -> None:
         data = item.data(Qt.ItemDataRole.UserRole) or {}

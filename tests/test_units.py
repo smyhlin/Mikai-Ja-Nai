@@ -47,6 +47,7 @@ from mikai_backend import (
 )
 from mikai_backend.releases import sort_releases
 from mikai_ui.main import MainWindow
+from mikai_ui.theme.metrics import PAGER_CHIP_WINDOW
 from mikai_ui.workers import Runner
 
 PNG_1PX = base64.b64decode(
@@ -1133,6 +1134,84 @@ def test_ongoing_catalog_can_open_the_next_page(app):
         assert window._search._popular_carousel._carousel_cards.count() == 18
         assert window._search._ongoing_carousel._carousel_scroll.horizontalScrollBar().maximum() > 0
         assert repository.requested_pages == [1]
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def pager_chips(page) -> list:
+    layout = page._chip_layout
+    return [layout.itemAt(index).widget() for index in range(layout.count())]
+
+
+def test_search_pager_labels_each_range_and_marks_the_active_one(app):
+    class RangeRepository(FakeRepository):
+        def search(self, query: str, page: int = 1, limit: int = 20) -> SearchResult:
+            return SearchResult(
+                total=132,
+                page=page,
+                pages=3,
+                items=[replace(BLACK, ref=f"{BLACK.ref}-{page}-{index}") for index in range(limit)],
+            )
+
+    window = MainWindow(RangeRepository())
+    window.show()
+    app.processEvents()
+    page = window._search
+    page._query.setText("Бліч")
+    page._search()
+    assert pump_until(app, lambda: page._results.count() > 0)
+    try:
+        chips = pager_chips(page)
+        assert [chip.text() for chip in chips] == ["1 – 55", "56 – 110", "111 – 132"], [
+            chip.text() for chip in chips
+        ]
+        assert chips[0].objectName() == "pagerChipActive"
+
+        chips[2].click()
+        assert pump_until(app, lambda: page._page == 3)
+        chips = pager_chips(page)
+        assert chips[2].objectName() == "pagerChipActive"
+        assert not page._pager_next.isEnabled()
+        page._pager_prev.click()
+        assert pump_until(app, lambda: page._page == 2)
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_search_pager_scrolls_a_window_of_chips(app):
+    class HugeRepository(FakeRepository):
+        def search(self, query: str, page: int = 1, limit: int = 20) -> SearchResult:
+            return SearchResult(
+                total=4000,
+                page=page,
+                pages=73,
+                items=[replace(BLACK, ref=f"{BLACK.ref}-{page}-{index}") for index in range(limit)],
+            )
+
+    window = MainWindow(HugeRepository())
+    window.show()
+    app.processEvents()
+    page = window._search
+    page._query.setText("Бліч")
+    page._search()
+    assert pump_until(app, lambda: page._results.count() > 0)
+    try:
+        assert len(page._pager_chips.findChildren(QPushButton)) == PAGER_CHIP_WINDOW
+
+        page._go_to_page(40)
+        app.processEvents()
+        assert pump_until(app, lambda: page._page == 40)
+        chips = pager_chips(page)
+        labels = [chip.text() for chip in chips]
+        # the active page sits in the middle of the window
+        assert labels[0] == "1981 – 2035", labels
+        assert chips[3].objectName() == "pagerChipActive"
     finally:
         window._runner.wait_for_done(10000)
         window.close()

@@ -93,7 +93,6 @@ def build_stylesheet() -> str:
     QPushButton#animeCard:hover {{ background: {SURFACE_HOVER}; border-color: {ACCENT}; }}
     QPushButton#animeCard:focus {{ border-color: {ACCENT}; }}
     QPushButton#carouselControl {{ padding: 0; min-width: {SECONDARY_CONTROL_SIZE}px;
-        max-width: {SECONDARY_CONTROL_SIZE}px; min-height: {SECONDARY_CONTROL_SIZE}px;
         max-height: {SECONDARY_CONTROL_SIZE}px; }}
     QWidget#homeFeedRow {{ background: {SURFACE}; border: 1px solid {BORDER};
         border-radius: {RADIUS_SMALL}px; }}
@@ -122,6 +121,16 @@ def build_stylesheet() -> str:
     QPushButton#playerSecondary {{ padding: 0; min-width: {SECONDARY_CONTROL_SIZE}px;
         max-width: {SECONDARY_CONTROL_SIZE}px; min-height: {SECONDARY_CONTROL_SIZE}px;
         max-height: {SECONDARY_CONTROL_SIZE}px; }}
+    QPushButton#pagerControl {{ background: {SURFACE_HOVER}; color: {TEXT};
+        border: 1px solid {BORDER}; border-radius: {RADIUS}px; padding: 0;
+        min-width: {SECONDARY_CONTROL_SIZE}px; min-height: {SECONDARY_CONTROL_SIZE}px; }}
+    QPushButton#pagerControl:hover {{ border-color: {ACCENT}; }}
+    QPushButton#pagerControl:disabled {{ color: {MUTED}; }}
+    QPushButton#pagerChip {{ background: {SURFACE_HOVER}; color: {MUTED};
+        border: 1px solid {BORDER}; border-radius: {RADIUS}px; padding: 7px {SPACING_LARGE}px; }}
+    QPushButton#pagerChip:hover {{ color: {TEXT}; }}
+    QPushButton#pagerChipActive {{ background: {ACCENT}; color: {BACKGROUND};
+        border-color: {ACCENT}; font-weight: 600; }}
     QPushButton#playerSecondary:pressed {{ background: {SURFACE_ACTIVE}; }}
     QWidget#playerControls {{ background: {CHROME_BACKGROUND}; color: {TEXT};
         border: 1px solid {CHROME_BORDER}; border-radius: {RADIUS}px; }}
