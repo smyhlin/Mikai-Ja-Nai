@@ -42,7 +42,6 @@ from mikai_ui.theme.metrics import (
     CAROUSEL_SCROLL_STEP,
     EPISODE_CARD_MIN_HEIGHT,
     EPISODE_CARD_MIN_WIDTH,
-    PAGER_BLOCK_PAGES,
     PAGER_CHIP_WINDOW,
     QUALITY_CACHE_SAVE_DELAY_MS,
     TITLE_COVER_HEIGHT,
@@ -922,30 +921,27 @@ class TitlePage(QWidget):
                 self._request_chip_quality(chip)
 
     def _render_episode_chips(self, state: dict, total_pages: int) -> None:
-        """Range chips instead of a page counter. A long release is fifteen pages of twelve and nobody
-        counts through fifteen clicks, so each chip covers PAGER_BLOCK_PAGES pages and
-        the one holding the current page is filled."""
+        """One chip per page, labelled with the episodes that page actually holds, so
+        a grid of twelve never sits under a chip claiming sixty. A window of
+        PAGER_CHIP_WINDOW follows the current page; the arrows move one page and the
+        chips are a jump."""
         layout: QHBoxLayout = state["chips_layout"]
         while layout.count():
             item = layout.takeAt(0)
             if item.widget() is not None:
                 item.widget().deleteLater()
         entries = len(state["entries"])
-        block = PAGER_BLOCK_PAGES
-        total_chips = max(1, (total_pages + block - 1) // block)
+        page_size = state["page_size"]
         page = state["page"]
-        window = min(PAGER_CHIP_WINDOW, total_chips)
-        first = min(max(0, page // block - window // 2), max(0, total_chips - window))
-        for chip in range(first, first + window):
-            start = chip * block
-            first_entry = start * state["page_size"] + 1
-            last_entry = min((start + block) * state["page_size"], entries)
+        window = min(PAGER_CHIP_WINDOW, total_pages)
+        first = min(max(0, page - window // 2), max(0, total_pages - window))
+        for index in range(first, first + window):
+            first_entry = index * page_size + 1
+            last_entry = min((index + 1) * page_size, entries)
             button = QPushButton(f"{first_entry} – {last_entry}")
-            button.setObjectName(
-                "pagerChipActive" if start <= page < start + block else "pagerChip"
-            )
+            button.setObjectName("pagerChipActive" if index == page else "pagerChip")
             button.clicked.connect(
-                lambda _checked=False, target=start, s=state: self._change_page(
+                lambda _checked=False, target=index, s=state: self._change_page(
                     s, target - s["page"]
                 )
             )

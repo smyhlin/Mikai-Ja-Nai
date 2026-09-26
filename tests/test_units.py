@@ -1753,16 +1753,34 @@ def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
         title = window._title
         assert pump_until(app, lambda: title._selector.count() == 1)
         prev_btn, chips, next_btn = pagination_controls(title)
+        # 123 episodes at twelve a page is eleven pages; a chip must name what the
+        # page holds, never a range the grid will not show
         labels = [chip.text() for chip in chips]
-        assert labels == ["1 – 60", "61 – 120", "121 – 123"], labels
+        assert labels == [
+            "1 – 12",
+            "13 – 24",
+            "25 – 36",
+            "37 – 48",
+            "49 – 60",
+            "61 – 72",
+            "73 – 84",
+        ], labels
         assert chips[0].objectName() == "pagerChipActive"
 
         chips[1].click()
         app.processEvents()
-        assert pump_until(app, lambda: title._tab_states[0]["page"] == 5)
+        assert pump_until(app, lambda: title._tab_states[0]["page"] == 1)
         chips = pagination_controls(title)[1]
         assert chips[1].objectName() == "pagerChipActive"
-        assert episode_button(tab_chips(title)[0]).text() == "Серія 61"
+        assert episode_button(tab_chips(title)[0]).text() == "Серія 13"
+
+        # the window follows the page, so the last one is reachable by one jump
+        title._change_page(title._tab_states[0], 9)
+        app.processEvents()
+        assert pump_until(app, lambda: title._tab_states[0]["page"] == 10)
+        chips = pagination_controls(title)[1]
+        assert chips[-1].text() == "121 – 123", [chip.text() for chip in chips]
+        assert chips[-1].objectName() == "pagerChipActive"
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -1790,7 +1808,7 @@ def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monke
     assert prev_btn is not None and next_btn is not None and chips
     assert prev_btn.isEnabled() is False
     assert next_btn.isEnabled() is True
-    assert [chip.text() for chip in chips] == ["1 – 24"], [chip.text() for chip in chips]
+    assert [chip.text() for chip in chips] == ["1 – 12", "13 – 24"]
     # Extraction must process at most 12 episodes on this page, not all 24
     assert pump_until(app, lambda: len(extracted_urls) == 12)
 
