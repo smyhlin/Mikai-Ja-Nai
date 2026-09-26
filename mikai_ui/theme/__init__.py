@@ -160,6 +160,10 @@ def build_stylesheet() -> str:
     QWidget#playerHeader {{ background: {SURFACE}; color: {TEXT}; border-bottom: 1px solid {BORDER}; }}
     QWidget#videoStage, QWidget#videoSurface {{ background: {VIDEO_BACKGROUND}; border: none; }}
     QWidget#playerOverlay {{ background: transparent; border: none; }}
+    QDialog#coverViewer {{ background: {VIDEO_BACKGROUND}; }}
+    QWidget#coverViewerBar {{ background: {CHROME_BACKGROUND}; color: {TEXT};
+        border-top: 1px solid {CHROME_BORDER}; }}
+    QWidget#coverViewerView {{ background: {VIDEO_BACKGROUND}; border: none; }}
     """
 
 

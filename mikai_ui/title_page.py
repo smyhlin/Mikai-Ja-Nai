@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from mikai_backend import AnimeDetail, AnimeRepository, AnimeSummary, PlayerResult, Release, streams
+
+from mikai_ui.cover_viewer import CoverLabel, CoverViewer
 from mikai_backend.releases import playable_episode_count, sort_releases
 from mikai_ui.mpv_backend import prepare_runtime
 from mikai_ui.player_dialog import PlayerDialog
@@ -219,6 +221,8 @@ class TitlePage(QWidget):
         self._tab_embeds: list[list[str]] = []
         self._tab_states: list[dict] = []
         self._player_dialogs: list[PlayerDialog] = []
+        self._cover_pixmap = QPixmap()
+        self._cover_viewer: CoverViewer | None = None
         self._quality_queue: list[dict] = []
         self._quality_in_progress = False
         self._full_description = ""
@@ -263,10 +267,10 @@ class TitlePage(QWidget):
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(24)
 
-        self._cover = QLabel("Завантаження…")
+        self._cover = CoverLabel("Завантаження…")
         self._cover.setObjectName("titleCover")
         self._cover.setFixedSize(TITLE_COVER_WIDTH, TITLE_COVER_HEIGHT)
-        self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._cover.activated.connect(self._open_cover_viewer)
         page_layout.addWidget(self._cover, alignment=Qt.AlignmentFlag.AlignTop)
 
         text_col = QVBoxLayout()
@@ -1222,6 +1226,9 @@ class TitlePage(QWidget):
             if shiboken6.isValid(dialog):
                 dialog.close()
         self._player_dialogs.clear()
+        if self._cover_viewer is not None and shiboken6.isValid(self._cover_viewer):
+            self._cover_viewer.close()
+        self._cover_viewer = None
 
     def _set_status(self, text: str) -> None:
         self._base_status = text
@@ -1258,6 +1265,9 @@ class TitlePage(QWidget):
                 return
             pixmap = QPixmap()
             if pixmap.loadFromData(data) and not pixmap.isNull():
+                self._cover_pixmap = pixmap
+                self._cover.set_zoomable(True)
+                self._cover.setToolTip("Натисніть, щоб відкрити обкладинку")
                 self._cover.setText("")
                 self._cover.setPixmap(
                     pixmap.scaled(
@@ -1273,13 +1283,27 @@ class TitlePage(QWidget):
             if allow_hint and self._poster_hint and self._poster_hint != url:
                 self._load_cover(self._poster_hint, allow_hint=False)
             else:
+                self._cover.set_zoomable(False)
                 self._cover.setText("Без обкладинки")
 
         self._runner.run(lambda: self._repository.fetch_bytes(url), on_ok, on_err)
+
+    def _open_cover_viewer(self) -> None:
+        if self._cover_pixmap.isNull():
+            return
+        if self._cover_viewer is not None and shiboken6.isValid(self._cover_viewer):
+            self._cover_viewer.close()
+        viewer = CoverViewer(self._cover_pixmap, self._heading.text(), self)
+        viewer.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        # The viewer deletes itself on close, so drop the reference with it.
+        viewer.destroyed.connect(lambda *_args: setattr(self, "_cover_viewer", None))
+        self._cover_viewer = viewer
+        viewer.show()
 
     def _on_error(self, message: str) -> None:
         if self._closed or not shiboken6.isValid(self):
             return
         self._rate_label.refresh()
         self._set_status(message)
+        self._cover.set_zoomable(False)
         self._cover.setText("Без обкладинки")

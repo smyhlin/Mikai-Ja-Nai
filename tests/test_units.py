@@ -183,6 +183,49 @@ def open_fake_title(win, app):
     return title
 
 
+def test_cover_click_opens_zoomable_viewer(fake_window, app):
+    from PySide6.QtCore import QPoint, QSize
+
+    from mikai_ui.cover_viewer import CoverLabel, CoverViewer
+    from mikai_ui.theme.metrics import COVER_ZOOM_MAX, COVER_ZOOM_MIN
+
+    title = open_fake_title(fake_window, app)
+    try:
+        assert isinstance(title._cover, CoverLabel)
+        assert not title._cover._zoomable, "no cover means nothing to open"
+
+        title._cover_pixmap = QPixmap(400, 600)
+        title._cover.set_zoomable(True)
+        QTest.mouseClick(title._cover, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+        app.processEvents()
+
+        viewer = title._cover_viewer
+        assert isinstance(viewer, CoverViewer) and viewer.isVisible()
+        assert viewer._view._image.size() == QSize(400, 600)
+
+        fitted = viewer._view._label.size()
+        viewer._view.zoom_in()
+        app.processEvents()
+        assert viewer._view._label.width() > fitted.width()
+
+        viewer._view.reset_zoom()
+        app.processEvents()
+        assert viewer._view._label.size() == fitted
+
+        for _ in range(60):
+            viewer._view.zoom_in()
+        for _ in range(120):
+            viewer._view.zoom_out()
+        assert COVER_ZOOM_MIN <= viewer._view._zoom <= COVER_ZOOM_MAX
+
+        viewer.close()
+        app.processEvents()
+        # The viewer deletes itself, so the page must not keep a dangling handle.
+        assert title._cover_viewer is None
+    finally:
+        title.shutdown()
+
+
 def test_fake_satisfies_repository_protocol():
     assert isinstance(FakeRepository(), AnimeRepository)
 
