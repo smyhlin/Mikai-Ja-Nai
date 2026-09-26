@@ -1142,7 +1142,7 @@ def test_ongoing_catalog_can_open_the_next_page(app):
 
 
 def pager_chips(page) -> list:
-    layout = page._chip_layout
+    layout = page._pager._chip_layout
     return [layout.itemAt(index).widget() for index in range(layout.count())]
 
 
@@ -1176,9 +1176,54 @@ def test_search_pager_labels_each_range_and_marks_the_active_one(app):
         assert pump_until(app, lambda: page._page == 3)
         chips = pager_chips(page)
         assert chips[2].objectName() == "pagerChipActive"
-        assert not page._pager_next.isEnabled()
-        page._pager_prev.click()
+        assert not page._pager.next_btn.isEnabled()
+        page._pager.prev_btn.click()
         assert pump_until(app, lambda: page._page == 2)
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_search_pager_jumps_to_first_last_and_a_typed_page(app):
+    class RangeRepository(FakeRepository):
+        def search(self, query: str, page: int = 1, limit: int = 20) -> SearchResult:
+            return SearchResult(
+                total=132,
+                page=page,
+                # the live API counts pages at its own page size, not the 55 asked for
+                pages=15,
+                items=[replace(BLACK, ref=f"{BLACK.ref}-{page}-{index}") for index in range(limit)],
+            )
+
+    window = MainWindow(RangeRepository())
+    window.show()
+    app.processEvents()
+    page = window._search
+    try:
+        page._query.setText("Бліч")
+        page._search()
+        assert pump_until(app, lambda: page._results.count() > 0)
+        pager = page._pager
+        # three pages at 55 a page, whatever the server counted
+        assert pager.jump.maximum() == 3
+        assert not pager.first_btn.isEnabled()
+
+        pager.last_btn.click()
+        app.processEvents()
+        assert pump_until(app, lambda: page._page == 3)
+        assert not pager.last_btn.isEnabled()
+        assert pager.first_btn.isEnabled()
+
+        pager.first_btn.click()
+        app.processEvents()
+        assert pump_until(app, lambda: page._page == 1)
+
+        pager.jump.setValue(2)
+        app.processEvents()
+        assert pump_until(app, lambda: page._page == 2)
+        assert pager.jump.value() == 2
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -1204,7 +1249,7 @@ def test_search_pager_scrolls_a_window_of_chips(app):
     page._search()
     assert pump_until(app, lambda: page._results.count() > 0)
     try:
-        assert len(page._pager_chips.findChildren(QPushButton)) == PAGER_CHIP_WINDOW
+        assert len(pager_chips(page)) == PAGER_CHIP_WINDOW
 
         page._go_to_page(40)
         app.processEvents()
@@ -1737,6 +1782,76 @@ def test_strict_player_tab_isolation_and_no_unexistent_quality_chips(fake_window
         assert "moonanime.art" in embed, embed
         assert "ashdi" not in embed and "tortuga" not in embed
     assert len(quality_buttons(moon_chips[0])) == 0
+
+
+def test_release_pager_jumps_to_the_first_and_last_page(app, monkeypatch):
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+
+    class LongReleaseRepository(FakeRepository):
+        def get_player(self, ref: str) -> PlayerResult:
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+
+    window = MainWindow(LongReleaseRepository())
+    window.show()
+    try:
+        window.open_title("7428", None)
+        title = window._title
+        assert pump_until(app, lambda: title._selector.count() == 1)
+        state = title._tab_states[0]
+        pager = state["pager"]
+        # eleven pages: the first arrow is dead on page one, the last is live
+        assert not pager.first_btn.isEnabled()
+        assert not pager.prev_btn.isEnabled()
+        assert pager.last_btn.isEnabled()
+
+        pager.last_btn.click()
+        app.processEvents()
+        assert state["page"] == 10
+        assert episode_button(tab_chips(title)[0]).text() == "Серія 121"
+        assert not pager.last_btn.isEnabled()
+        assert not pager.next_btn.isEnabled()
+        assert pager.first_btn.isEnabled()
+
+        pager.first_btn.click()
+        app.processEvents()
+        assert state["page"] == 0
+        assert episode_button(tab_chips(title)[0]).text() == "Серія 1"
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_release_pager_jump_box_takes_a_typed_page(app, monkeypatch):
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+
+    class LongReleaseRepository(FakeRepository):
+        def get_player(self, ref: str) -> PlayerResult:
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+
+    window = MainWindow(LongReleaseRepository())
+    window.show()
+    try:
+        window.open_title("7428", None)
+        title = window._title
+        assert pump_until(app, lambda: title._selector.count() == 1)
+        state = title._tab_states[0]
+        pager = state["pager"]
+        assert pager.jump.maximum() == 11
+        assert pager.jump.value() == 1
+
+        pager.jump.setValue(6)
+        app.processEvents()
+        assert state["page"] == 5
+        assert episode_button(tab_chips(title)[0]).text() == "Серія 61"
+        # the box follows the page, so a jump never leaves it stale
+        assert pager.jump.value() == 6
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
 
 
 def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):

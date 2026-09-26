@@ -20,14 +20,12 @@ def tab_chips(title, index: int | None = None) -> list:
 
 
 def pagination_controls(title, index: int | None = None):
-    """Prev/next arrows plus the range chips of a release's episode pager. The chips
-    come from the layout, not findChildren: replaced chips are deleted on the next
-    event-loop pass, so a search would see two generations at once."""
+    """Prev/next arrows plus the range chips from a release's episode pager."""
     tab_index = title._tabs.currentIndex() if index is None else index
-    state = title._tab_states[tab_index]
-    layout = state["chips_layout"]
+    pager = title._tab_states[tab_index]["pager"]
+    layout = pager._chip_layout
     chips = [layout.itemAt(i).widget() for i in range(layout.count())]
-    return state["prev_btn"], chips, state["next_btn"]
+    return pager.prev_btn, chips, pager.next_btn
 
 
 def episode_button(chip) -> QPushButton:

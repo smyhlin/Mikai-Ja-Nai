@@ -30,6 +30,7 @@ from mikai_ui.cover_viewer import CoverLabel, CoverViewer
 from mikai_backend.releases import playable_episode_count, sort_releases
 from mikai_ui.labels import STATUS_LABELS
 from mikai_ui.mpv_backend import prepare_runtime
+from mikai_ui.page_pager import RangePager
 from mikai_ui.player_dialog import PlayerDialog
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import make_gear_icon
@@ -42,12 +43,9 @@ from mikai_ui.theme.metrics import (
     CAROUSEL_SCROLL_STEP,
     EPISODE_CARD_MIN_HEIGHT,
     EPISODE_CARD_MIN_WIDTH,
-    PAGER_CHIP_WINDOW,
     QUALITY_CACHE_SAVE_DELAY_MS,
     TITLE_COVER_HEIGHT,
     TITLE_COVER_WIDTH,
-    SECONDARY_CONTROL_SIZE,
-    SPACING_SMALL,
     TITLE_DESCRIPTION_PREVIEW_CHARS,
 )
 from mikai_ui.workers import Runner
@@ -805,26 +803,8 @@ class TitlePage(QWidget):
             scroll.setWidget(container)
             tab_layout.addWidget(scroll, stretch=1)
 
-            pagination_bar = QWidget()
-            pag_layout = QHBoxLayout(pagination_bar)
-            pag_layout.setContentsMargins(8, 4, 8, 4)
-            pag_layout.setSpacing(SPACING_SMALL)
-            prev_btn = QPushButton("←")
-            prev_btn.setFixedSize(SECONDARY_CONTROL_SIZE, SECONDARY_CONTROL_SIZE)
-            prev_btn.setObjectName("pagerControl")
-            chips_host = QWidget()
-            chips_layout = QHBoxLayout(chips_host)
-            chips_layout.setContentsMargins(0, 0, 0, 0)
-            chips_layout.setSpacing(SPACING_SMALL)
-            next_btn = QPushButton("→")
-            next_btn.setFixedSize(SECONDARY_CONTROL_SIZE, SECONDARY_CONTROL_SIZE)
-            next_btn.setObjectName("pagerControl")
-            pag_layout.addWidget(prev_btn)
-            pag_layout.addStretch()
-            pag_layout.addWidget(chips_host)
-            pag_layout.addStretch()
-            pag_layout.addWidget(next_btn)
-            tab_layout.addWidget(pagination_bar)
+            pager = RangePager(EPISODES_PER_PAGE)
+            tab_layout.addWidget(pager)
 
             state = {
                 "provider": provider,
@@ -832,17 +812,12 @@ class TitlePage(QWidget):
                 "page": 0,
                 "page_size": EPISODES_PER_PAGE,
                 "grid": container,
-                "chips_layout": chips_layout,
-                "prev_btn": prev_btn,
-                "next_btn": next_btn,
-                "pagination_bar": pagination_bar,
+                "pager": pager,
                 "seq": 0,
                 "extract_seq": self._extract_seq,
             }
+            pager.pageRequested.connect(lambda page, s=state: self._go_to_episode_page(s, page))
             self._tab_states.append(state)
-
-            prev_btn.clicked.connect(lambda _=False, s=state: self._change_page(s, -1))
-            next_btn.clicked.connect(lambda _=False, s=state: self._change_page(s, 1))
 
             self._tabs.addTab(tab_page, PROVIDER_LABELS.get(provider, provider.capitalize()))
             self._render_tab_page(state)
@@ -865,9 +840,9 @@ class TitlePage(QWidget):
             grid.set_layout_width(available_width)
         grid_heights = [state["grid"].sizeHint().height() for state in self._tab_states]
         pagination_heights = [
-            state["pagination_bar"].sizeHint().height()
+            state["pager"].sizeHint().height()
             for state in self._tab_states
-            if not state["pagination_bar"].isHidden()
+            if not state["pager"].isHidden()
         ]
         grid_height = max(grid_heights, default=0)
         pagination_height = max(pagination_heights, default=0)
@@ -909,10 +884,9 @@ class TitlePage(QWidget):
         grid.set_cards([chip["widget"] for chip in chips])
 
         state["visible_chips"] = chips
-        self._render_episode_chips(state, total_pages)
-        state["prev_btn"].setEnabled(page > 0)
-        state["next_btn"].setEnabled(page < total_pages - 1)
-        state["pagination_bar"].setVisible(total_pages > 1)
+        pager = state["pager"]
+        pager.setVisible(total_pages > 1)
+        pager.set_state(page + 1, total_pages, len(state["entries"]))
         QTimer.singleShot(0, self._fit_episode_section)
 
         # Only extract if this tab is currently the active tab
@@ -920,41 +894,16 @@ class TitlePage(QWidget):
             for chip in chips:
                 self._request_chip_quality(chip)
 
-    def _render_episode_chips(self, state: dict, total_pages: int) -> None:
-        """One chip per page, labelled with the episodes that page actually holds, so
-        a grid of twelve never sits under a chip claiming sixty. A window of
-        PAGER_CHIP_WINDOW follows the current page; the arrows move one page and the
-        chips are a jump."""
-        layout: QHBoxLayout = state["chips_layout"]
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-        entries = len(state["entries"])
-        page_size = state["page_size"]
-        page = state["page"]
-        window = min(PAGER_CHIP_WINDOW, total_pages)
-        first = min(max(0, page - window // 2), max(0, total_pages - window))
-        for index in range(first, first + window):
-            first_entry = index * page_size + 1
-            last_entry = min((index + 1) * page_size, entries)
-            button = QPushButton(f"{first_entry} – {last_entry}")
-            button.setObjectName("pagerChipActive" if index == page else "pagerChip")
-            button.clicked.connect(
-                lambda _checked=False, target=index, s=state: self._change_page(
-                    s, target - s["page"]
-                )
-            )
-            layout.addWidget(button)
+    def _go_to_episode_page(self, state: dict, page: int) -> None:
+        """Episodes are 0-based in the state and 1-based in the pager."""
+        total_pages = max(1, (len(state["entries"]) + state["page_size"] - 1) // state["page_size"])
+        index = page - 1
+        if 0 <= index < total_pages and index != state["page"]:
+            state["page"] = index
+            self._render_tab_page(state)
 
     def _change_page(self, state: dict, delta: int) -> None:
-        new_page = state["page"] + delta
-        total_pages = max(1, (len(state["entries"]) + state["page_size"] - 1) // state["page_size"])
-        if 0 <= new_page < total_pages:
-            state["page"] = new_page
-            self._url.clear()
-            self._url.hide()
-            self._render_tab_page(state)
+        self._go_to_episode_page(state, state["page"] + 1 + delta)
 
     def _build_chip(self, text: str, embed_url: str, state: dict) -> dict:
         widget = QWidget()
