@@ -33,7 +33,7 @@ from mikai_ui.mpv_backend import prepare_runtime
 from mikai_ui.player_dialog import PlayerDialog
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import make_gear_icon
-from mikai_ui.theme import ACCENT, BORDER, FG, MUTED
+from mikai_ui.theme import ACCENT, BORDER, MUTED, TEXT
 from mikai_ui.theme.metrics import (
     CAROUSEL_CARD_HEIGHT,
     CAROUSEL_CARD_WIDTH,
@@ -247,7 +247,7 @@ class TitlePage(QWidget):
 
         self._settings_btn = QPushButton()
         self._settings_btn.setObjectName("settingsChip")
-        self._settings_btn.setIcon(make_gear_icon(18, FG))
+        self._settings_btn.setIcon(make_gear_icon(18, TEXT))
         self._settings_btn.setIconSize(QSize(18, 18))
         self._settings_btn.setToolTip("Налаштування токена API")
         self._settings_btn.clicked.connect(self.settings_requested)

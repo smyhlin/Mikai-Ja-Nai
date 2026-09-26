@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 )
 
 from mikai_backend import (
-    AiringEntry,
     AnimeDetail,
     AnimeRepository,
     AnimeSummary,
@@ -41,10 +40,11 @@ from mikai_backend import (
     UpdatesResult,
 )
 from mikai_ui import feeds
+from mikai_ui.labels import STATUS_LABELS
 from mikai_ui.title_card import TitleCard
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import SettingsDialog, make_gear_icon
-from mikai_ui.theme import FG, build_stylesheet
+from mikai_ui.theme import TEXT, build_stylesheet
 from mikai_ui.theme.metrics import SEARCH_POSTER_HEIGHT, SEARCH_POSTER_WIDTH
 from mikai_ui.theme.metrics import (
     HOME_CARD_HEIGHT,
@@ -125,7 +125,7 @@ class SearchPage(QWidget):
 
         self._settings_btn = QPushButton()
         self._settings_btn.setObjectName("settingsChip")
-        self._settings_btn.setIcon(make_gear_icon(18, FG))
+        self._settings_btn.setIcon(make_gear_icon(18, TEXT))
         self._settings_btn.setIconSize(QSize(18, 18))
         self._settings_btn.setToolTip("Налаштування токена API")
         self._settings_btn.clicked.connect(self.settings_requested)
@@ -868,13 +868,13 @@ class SearchPage(QWidget):
         self._fetch_page(1)
 
     def _show_discovery(self) -> None:
-        self._discovery.show()
+        self._discovery_scroll.show()
         self._results.hide()
         self._format_bar.hide()
         self._results_heading.show()
 
     def _show_search_results(self) -> None:
-        self._discovery.hide()
+        self._discovery_scroll.hide()
         self._results.show()
         self._results_heading.show()
 
@@ -944,12 +944,7 @@ class SearchPage(QWidget):
         for entry in self._entries:
             if wanted != "all" and (entry.format or "unknown") != wanted:
                 continue
-            year = entry.year
-            meta = " · ".join(
-                part for part in (str(year) if year else "", (entry.format or "").upper()) if part
-            )
-            name = entry.titles.display_name
-            label = f"{name}  ·  {meta}" if meta else name
+            label = self._result_label(entry)
             thumb = entry.thumb_url
             item = QListWidgetItem(label)
             item.setToolTip(label)
@@ -961,6 +956,22 @@ class SearchPage(QWidget):
             if icon is not None:
                 item.setIcon(icon)
             self._results.addItem(item)
+
+    @staticmethod
+    def _result_label(entry: AnimeSummary) -> str:
+        """List responses already carry the airing status and the planned episode
+        count, so a search row reads like a home card without a detail call."""
+        parts = [entry.titles.display_name]
+        if entry.year:
+            parts.append(str(entry.year))
+        if entry.format:
+            parts.append(entry.format.upper())
+        status = STATUS_LABELS.get(entry.status, "")
+        if status:
+            parts.append(status)
+        if entry.episodes:
+            parts.append(f"{entry.episodes} серій")
+        return " · ".join(parts)
 
     def _icon_for(self, thumb: str | None) -> QPixmap | None:
         if not thumb or thumb not in self._thumb_cache:

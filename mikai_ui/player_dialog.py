@@ -33,7 +33,6 @@ from mikai_ui.theme.metrics import (
 )
 
 log = logging.getLogger(__name__)
-_fmt_time = format_time
 
 
 class PlayerDialog(QDialog):

@@ -17,12 +17,12 @@ from PySide6.QtWidgets import (
 
 from mikai_backend import AnimeRepository
 from mikai_ui import feeds
-from mikai_ui.theme import ACCENT, FG
+from mikai_ui.theme import ACCENT, TEXT
 from mikai_ui.theme.widgets import make_icon
 from mikai_ui.workers import Runner
 
 
-def make_gear_icon(size: int = 18, color: str = FG) -> QIcon:
+def make_gear_icon(size: int = 18, color: str = TEXT) -> QIcon:
     return make_icon("gear", color=color, size=size)
 
 

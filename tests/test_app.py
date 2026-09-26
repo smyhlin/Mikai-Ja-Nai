@@ -166,7 +166,8 @@ def test_format_tabs_filter_results_by_format(window, app):
     app.processEvents()
     rows = [page._results.item(r).text() for r in range(page._results.count())]
     assert rows, "no OVA rows"
-    assert all(row.endswith("OVA") for row in rows), rows
+    # the row carries its format among the meta parts, not as the last token
+    assert all("OVA" in row for row in rows), rows
     all_index = next(i for i, label in enumerate(labels) if label.startswith("Усі"))
     bar.setCurrentIndex(all_index)
     app.processEvents()

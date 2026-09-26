@@ -285,8 +285,3 @@ class MPVAdapter(QObject):
             except Exception:
                 log.debug("DLL directory handle close failed", exc_info=True)
         self._dll_directory_handles.clear()
-
-
-# Older integrations may still import the original class name. The alias has
-# the same restricted interface and does not expose the underlying mpv object.
-MPVBackend = MPVAdapter

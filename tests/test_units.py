@@ -555,7 +555,8 @@ def test_quality_buttons_copy_stream_for_height(monkeypatch, fake_window, app):
 
 
 def test_player_dialog_controls(app):
-    from mikai_ui.player_dialog import PlayerDialog, _fmt_time
+    from mikai_ui.player_controls import format_time
+    from mikai_ui.player_dialog import PlayerDialog
 
     dlg = PlayerDialog(
         "Серія 5 · 720p",
@@ -584,8 +585,8 @@ def test_player_dialog_controls(app):
     assert dlg._vol_slider.value() == 100
     assert not dlg._pause_btn.isEnabled()
     assert not dlg._vol_slider.isEnabled()
-    assert _fmt_time(3661) == "1:01:01"
-    assert _fmt_time(125) == "2:05"
+    assert format_time(3661) == "1:01:01"
+    assert format_time(125) == "2:05"
 
     # The overlay owns the reusable control bar and Qt fullscreen restores cleanly.
     dlg.show()
@@ -808,8 +809,6 @@ def test_episode_context_menu_wiring_and_placeholder(fake_window, app, monkeypat
 
 
 def test_episode_menu_opens_stream_and_refreshes_quality(fake_window, app, monkeypatch):
-    from mikai_backend import anime_page_url
-
     monkeypatch.setattr(
         "mikai_ui.title_page.streams.get_quality_streams",
         lambda url: {
@@ -1028,7 +1027,6 @@ def test_title_cover_context_menu_copies_and_saves(fake_window, app, monkeypatch
         "PySide6.QtWidgets.QFileDialog.getSaveFileName",
         lambda *args, **kwargs: (str(tmp_path / "cover.png"), ""),
     )
-    real_save = QPixmap.save
     monkeypatch.setattr(
         QPixmap, "save", lambda self, path, *args, **kwargs: saved.append(path) or True
     )
