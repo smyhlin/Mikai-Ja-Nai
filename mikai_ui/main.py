@@ -889,15 +889,12 @@ class SearchPage(QWidget):
     def _on_results(self, result: SearchResult, requested_page: int = 1) -> None:
         self._rate_label.refresh()
         self._page = result.page or requested_page
-        self._pages = max(
-            1,
-            result.pages
-            if result.pages is not None
-            else ((result.total or len(result.items)) + self._page_size - 1) // self._page_size,
-        )
         self._entries = result.items
         total = result.total
         self._total = total if total is not None else len(self._entries)
+        # the server counts pages at its own page size, so the count is ours to
+        # make: asked for 55, it answers pages:15 for a 132-title result set
+        self._pages = max(1, (self._total + self._page_size - 1) // self._page_size)
         if not self._entries:
             self._status.setText("Нічого не знайдено")
         else:

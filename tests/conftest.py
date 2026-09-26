@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QScrollArea
+from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
 
 
 def tab_chips(title, index: int | None = None) -> list:
@@ -20,13 +20,14 @@ def tab_chips(title, index: int | None = None) -> list:
 
 
 def pagination_controls(title, index: int | None = None):
-    tab = title._tabs.currentWidget() if index is None else title._tabs.widget(index)
-    buttons = tab.findChildren(QPushButton)
-    prev_btn = next((b for b in buttons if b.text() == "←"), None)
-    next_btn = next((b for b in buttons if b.text() == "→"), None)
-    labels = tab.findChildren(QLabel)
-    page_lbl = next((l for l in labels if "/" in l.text()), None)
-    return prev_btn, page_lbl, next_btn
+    """Prev/next arrows plus the range chips of a release's episode pager. The chips
+    come from the layout, not findChildren: replaced chips are deleted on the next
+    event-loop pass, so a search would see two generations at once."""
+    tab_index = title._tabs.currentIndex() if index is None else index
+    state = title._tab_states[tab_index]
+    layout = state["chips_layout"]
+    chips = [layout.itemAt(i).widget() for i in range(layout.count())]
+    return state["prev_btn"], chips, state["next_btn"]
 
 
 def episode_button(chip) -> QPushButton:

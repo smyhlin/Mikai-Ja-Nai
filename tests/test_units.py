@@ -1152,7 +1152,9 @@ def test_search_pager_labels_each_range_and_marks_the_active_one(app):
             return SearchResult(
                 total=132,
                 page=page,
-                pages=3,
+                # the live API counts pages at its own page size, not the 55 asked for,
+                # so a 132-title answer arrives claiming 15 pages
+                pages=15,
                 items=[replace(BLACK, ref=f"{BLACK.ref}-{page}-{index}") for index in range(limit)],
             )
 
@@ -1737,6 +1739,37 @@ def test_strict_player_tab_isolation_and_no_unexistent_quality_chips(fake_window
     assert len(quality_buttons(moon_chips[0])) == 0
 
 
+def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+
+    class LongReleaseRepository(FakeRepository):
+        def get_player(self, ref: str) -> PlayerResult:
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+
+    window = MainWindow(LongReleaseRepository())
+    window.show()
+    try:
+        window.open_title("7428", None)
+        title = window._title
+        assert pump_until(app, lambda: title._selector.count() == 1)
+        prev_btn, chips, next_btn = pagination_controls(title)
+        labels = [chip.text() for chip in chips]
+        assert labels == ["1 – 60", "61 – 120", "121 – 123"], labels
+        assert chips[0].objectName() == "pagerChipActive"
+
+        chips[1].click()
+        app.processEvents()
+        assert pump_until(app, lambda: title._tab_states[0]["page"] == 5)
+        chips = pagination_controls(title)[1]
+        assert chips[1].objectName() == "pagerChipActive"
+        assert episode_button(tab_chips(title)[0]).text() == "Серія 61"
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
 def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monkeypatch):
     extracted_urls = []
 
@@ -1753,11 +1786,11 @@ def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monke
     assert episode_button(chips_p1[0]).text() == "Серія 1"
     assert episode_button(chips_p1[-1]).text() == "Серія 12"
 
-    prev_btn, page_lbl, next_btn = pagination_controls(title)
-    assert prev_btn is not None and next_btn is not None and page_lbl is not None
+    prev_btn, chips, next_btn = pagination_controls(title)
+    assert prev_btn is not None and next_btn is not None and chips
     assert prev_btn.isEnabled() is False
     assert next_btn.isEnabled() is True
-    assert page_lbl.text() == "1 / 2"
+    assert [chip.text() for chip in chips] == ["1 – 24"], [chip.text() for chip in chips]
     # Extraction must process at most 12 episodes on this page, not all 24
     assert pump_until(app, lambda: len(extracted_urls) == 12)
 
@@ -1771,7 +1804,7 @@ def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monke
     assert episode_button(chips_p2[-1]).text() == "Серія 24"
     assert prev_btn.isEnabled() is True
     assert next_btn.isEnabled() is False
-    assert page_lbl.text() == "2 / 2"
+    assert chips[0].objectName() == "pagerChipActive"
     # Now exactly 24 extractions have run (12 for page 1 + 12 for page 2)
     assert pump_until(app, lambda: len(extracted_urls) == 24)
 
@@ -1782,7 +1815,7 @@ def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monke
     chips_back = tab_chips(title)
     assert len(chips_back) == 12
     assert episode_button(chips_back[0]).text() == "Серія 1"
-    assert page_lbl.text() == "1 / 2"
+    assert chips[0].objectName() == "pagerChipActive"
     assert prev_btn.isEnabled() is False
     assert next_btn.isEnabled() is True
 

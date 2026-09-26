@@ -29,6 +29,13 @@ Layering is strict and enforced by tests:
   - `errors.py` — only `MikaiApiError(code, message, status)`.
   - `streams.py` — HLS extraction per site (`ashdi.vip/vod/`, `moonanime.art/iframe/`, `tortuga.tw/vod/`): `detect_site`, `fetch_text` (20s timeout, 2 retries on 429/5xx honoring `Retry-After`), `ashdi_master`, `moon_master`, `tortuga_decode`, `tortuga_master`, `extract_master`, `parse_variants`, `get_quality_url`, `list_segments`, `get_quality_streams`; `NoSourceError` marks a provider that has no video for an episode.
   - `mpv_runtime.py` — Qt-free libmpv discovery/download/extraction (latest x64 dev `.7z` from shinchiro/mpv-winbuild-cmake via the GitHub Releases API, py7zr with a fallback to a system or auto-downloaded `7zr.exe` because the dev archive uses BCJ2, DLL-dir registration + `ctypes` preload, cache in `%LOCALAPPDATA%/MPVBackend/runtime`).
+  - Range-chip pagers, both drawn the same way (`pagerControl` / `pagerChip` /
+    `pagerChipActive` in the QSS): the search pager takes `SEARCH_RESULTS_PER_PAGE`
+    entries per page and labels each chip with the entry range, while a release's
+    episode pager keeps `EPISODES_PER_PAGE` per page and each chip spans
+    `PAGER_BLOCK_PAGES` pages. The arrows always mean previous/next page; a chip is a
+    jump. Page counts are computed client-side — the server answers `pages` for its
+    own page size, so asking for 55 entries yields `pages:15` for a 132-title search.
   - `mikai_ui/` — PySide6 frontend: `main.py` (`main()`, `SearchPage`, `MainWindow`), `title_page.py` (`EpisodeGrid`, `TitlePage`), `title_card.py` (`TitleCard`), `labels.py` (shared `STATUS_LABELS`), `feeds.py` (which home-page blocks load), `quality_cache.py` (cross-session stream-URL store), `cover_viewer.py` (`CoverLabel`, `CoverView`, `CoverViewer`), `settings_dialog.py`, `rate_limit_label.py`, `mpv_backend.py` (`MPVAdapter`), `player_controller.py` (`PlaybackStatus`, frozen `PlaybackState`, `PlayerController`), `player_controls.py`, `player_overlay.py`, `fullscreen_manager.py`, `player_dialog.py`, `theme/` (`colors.py`, `metrics.py`, `widgets.py`, `build_stylesheet()` in `__init__.py`), `workers.py` (`Runner`/`Task`).
 - `tests/` — `conftest.py` (fixtures + `FakeMpvAdapter`), `test_units.py` (hermetic), `test_player_architecture.py` (hermetic), `test_app.py` (live API).
 - `skills/design-ui/` — `SKILL.md` + `references/{refined-ui,typography,surfaces,animations,performance}.md`.

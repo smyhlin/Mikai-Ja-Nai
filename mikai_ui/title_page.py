@@ -42,9 +42,13 @@ from mikai_ui.theme.metrics import (
     CAROUSEL_SCROLL_STEP,
     EPISODE_CARD_MIN_HEIGHT,
     EPISODE_CARD_MIN_WIDTH,
+    PAGER_BLOCK_PAGES,
+    PAGER_CHIP_WINDOW,
     QUALITY_CACHE_SAVE_DELAY_MS,
     TITLE_COVER_HEIGHT,
     TITLE_COVER_WIDTH,
+    SECONDARY_CONTROL_SIZE,
+    SPACING_SMALL,
     TITLE_DESCRIPTION_PREVIEW_CHARS,
 )
 from mikai_ui.workers import Runner
@@ -805,18 +809,22 @@ class TitlePage(QWidget):
             pagination_bar = QWidget()
             pag_layout = QHBoxLayout(pagination_bar)
             pag_layout.setContentsMargins(8, 4, 8, 4)
-            pag_layout.setSpacing(12)
+            pag_layout.setSpacing(SPACING_SMALL)
             prev_btn = QPushButton("←")
-            prev_btn.setFixedWidth(50)
-            page_label = QLabel("")
-            page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            prev_btn.setFixedSize(SECONDARY_CONTROL_SIZE, SECONDARY_CONTROL_SIZE)
+            prev_btn.setObjectName("pagerControl")
+            chips_host = QWidget()
+            chips_layout = QHBoxLayout(chips_host)
+            chips_layout.setContentsMargins(0, 0, 0, 0)
+            chips_layout.setSpacing(SPACING_SMALL)
             next_btn = QPushButton("→")
-            next_btn.setFixedWidth(50)
-            pag_layout.addStretch()
+            next_btn.setFixedSize(SECONDARY_CONTROL_SIZE, SECONDARY_CONTROL_SIZE)
+            next_btn.setObjectName("pagerControl")
             pag_layout.addWidget(prev_btn)
-            pag_layout.addWidget(page_label)
-            pag_layout.addWidget(next_btn)
             pag_layout.addStretch()
+            pag_layout.addWidget(chips_host)
+            pag_layout.addStretch()
+            pag_layout.addWidget(next_btn)
             tab_layout.addWidget(pagination_bar)
 
             state = {
@@ -825,7 +833,7 @@ class TitlePage(QWidget):
                 "page": 0,
                 "page_size": EPISODES_PER_PAGE,
                 "grid": container,
-                "page_label": page_label,
+                "chips_layout": chips_layout,
                 "prev_btn": prev_btn,
                 "next_btn": next_btn,
                 "pagination_bar": pagination_bar,
@@ -902,7 +910,7 @@ class TitlePage(QWidget):
         grid.set_cards([chip["widget"] for chip in chips])
 
         state["visible_chips"] = chips
-        state["page_label"].setText(f"{page + 1} / {total_pages}")
+        self._render_episode_chips(state, total_pages)
         state["prev_btn"].setEnabled(page > 0)
         state["next_btn"].setEnabled(page < total_pages - 1)
         state["pagination_bar"].setVisible(total_pages > 1)
@@ -912,6 +920,36 @@ class TitlePage(QWidget):
         if self._tab_states and self._tab_states.index(state) == self._tabs.currentIndex():
             for chip in chips:
                 self._request_chip_quality(chip)
+
+    def _render_episode_chips(self, state: dict, total_pages: int) -> None:
+        """Range chips instead of a page counter. A long release is fifteen pages of twelve and nobody
+        counts through fifteen clicks, so each chip covers PAGER_BLOCK_PAGES pages and
+        the one holding the current page is filled."""
+        layout: QHBoxLayout = state["chips_layout"]
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        entries = len(state["entries"])
+        block = PAGER_BLOCK_PAGES
+        total_chips = max(1, (total_pages + block - 1) // block)
+        page = state["page"]
+        window = min(PAGER_CHIP_WINDOW, total_chips)
+        first = min(max(0, page // block - window // 2), max(0, total_chips - window))
+        for chip in range(first, first + window):
+            start = chip * block
+            first_entry = start * state["page_size"] + 1
+            last_entry = min((start + block) * state["page_size"], entries)
+            button = QPushButton(f"{first_entry} – {last_entry}")
+            button.setObjectName(
+                "pagerChipActive" if start <= page < start + block else "pagerChip"
+            )
+            button.clicked.connect(
+                lambda _checked=False, target=start, s=state: self._change_page(
+                    s, target - s["page"]
+                )
+            )
+            layout.addWidget(button)
 
     def _change_page(self, state: dict, delta: int) -> None:
         new_page = state["page"] + delta
