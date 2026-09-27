@@ -8,7 +8,6 @@ import shiboken6
 from PySide6.QtCore import QProcess, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -130,7 +129,7 @@ SEASON_LABELS = {
 def _season_label(start_date: str) -> str | None:
     try:
         year, month, _ = (int(part) for part in start_date.split("-"))
-    except (AttributeError, ValueError):
+    except AttributeError, ValueError:
         return None
     season = SEASON_LABELS.get(month)
     return f"{season} {year}" if season else str(year)
@@ -1224,7 +1223,7 @@ class TitlePage(QWidget):
         """Every dub/sub track carrying this episode, across releases and players."""
         variants: list[dict] = []
         seen: set[str] = set()
-        for release in self._releases:
+        for index, release in enumerate(self._releases):
             for episode in release.episodes:
                 if str(episode.label or episode.number or "?") != str(number):
                     continue
@@ -1241,8 +1240,18 @@ class TitlePage(QWidget):
                         source.provider.lower().strip() if source.provider else "other"
                     )
                     track = PROVIDER_LABELS.get(provider, provider.capitalize())
+                    # the fields travel separately so the picker can group by kind and
+                    # badge the quality, rather than re-parsing one joined string
                     variants.append(
-                        {"label": f"{self._release_track_label(release)} · {track}", "embed": embed}
+                        {
+                            "kind": release.kind,
+                            "kind_label": KIND_LABELS.get(release.kind, release.kind or "?"),
+                            "display": self._release_track_label(release),
+                            "track": track,
+                            "label": f"{self._release_track_label(release)} · {track}",
+                            "embed": embed,
+                            "quality": self._release_quality.get(index, 0),
+                        }
                     )
         return variants
 
@@ -1290,6 +1299,9 @@ class TitlePage(QWidget):
         dialog.variantRequested.connect(
             lambda embed, label, target=dialog: self._switch_player_variant(target, embed, label)
         )
+        dialog.trackProbeRequested.connect(
+            lambda embed, target=dialog: self._probe_track_quality(target, embed)
+        )
         dialog.episodeRequested.connect(
             lambda item, spot, target=dialog: self._play_episode_from(target, item, spot)
         )
@@ -1317,6 +1329,38 @@ class TitlePage(QWidget):
             dialog.apply_episode(loaded["label"], loaded["embed"], index, qualities, variants)
 
         self._ensure_qualities(entry, on_qualities)
+
+    def _probe_track_quality(self, dialog: PlayerDialog, embed: str) -> None:
+        """Answer the player's request for one track's best quality.
+
+        Shares the per-embed cache and in-flight dedupe, so a track already probed
+        (for the episode, or the release list) costs nothing.
+        """
+        if self._closed or not shiboken6.isValid(dialog):
+            return
+        cached = self._quality_cache.get(embed)
+        if cached is not None:
+            dialog.set_track_quality(embed, max_quality(cached))
+            return
+        waiters = self._fetch_waiters.setdefault(embed, [])
+        if any(existing == "track" for _, existing in waiters):
+            return
+        self._fetch_waiters[embed] = [
+            ({"button": None, "label": "", "embed": embed, "state": None}, "track")
+        ]
+
+        def on_ok(qualities, target: PlayerDialog = dialog, key: str = embed) -> None:
+            self._fetch_waiters.pop(key, None)
+            if shiboken6.isValid(target) and qualities:
+                target.set_track_quality(key, max_quality(qualities))
+
+        def on_err(message: str, key: str = embed) -> None:
+            self._fetch_waiters.pop(key, None)
+            log.debug("track quality probe failed for %s: %s", key, message)
+
+        self._runner.run_bulk(
+            lambda target=embed: streams.get_quality_streams(target), on_ok, on_err
+        )
 
     def _switch_player_variant(self, dialog: PlayerDialog, embed: str, label: str) -> None:
         if self._closed or not shiboken6.isValid(dialog):

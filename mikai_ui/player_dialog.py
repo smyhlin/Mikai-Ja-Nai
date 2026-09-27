@@ -56,6 +56,7 @@ class PlayerDialog(QDialog):
     playbackFailed = Signal()
     variantRequested = Signal(str, str)
     episodeRequested = Signal(object, int)
+    trackProbeRequested = Signal(str)
 
     def __init__(
         self,
@@ -138,6 +139,7 @@ class PlayerDialog(QDialog):
         self._controls.set_qualities(self._qualities, initial_height)
         self._controls.set_variants(self._variants, current_embed)
         self._controls.variantRequested.connect(self._on_variant_requested)
+        self._controls.variantMenuOpened.connect(self._probe_unknown_tracks)
         self._controls.prevEpisodeRequested.connect(lambda: self.step_episode(-1))
         self._controls.nextEpisodeRequested.connect(lambda: self.step_episode(1))
         stage_layout.addWidget(self._controls, 0)
@@ -473,6 +475,27 @@ class PlayerDialog(QDialog):
                 self.set_sidebar_expanded(True)
         elif self._sidebar_expanded:
             self._sidebar_close_timer.start()
+
+    def _probe_unknown_tracks(self) -> None:
+        """Ask for the qualities the menu could not show yet.
+
+        Lazy on purpose: a track that is never looked at never costs a request,
+        and one already cached costs nothing.
+        """
+        if self._closed:
+            return
+        for embed in self._controls.pending_track_probes():
+            if embed != self._current_embed:
+                self.trackProbeRequested.emit(embed)
+
+    def set_track_quality(self, embed: str, quality: int) -> None:
+        """Badge one track with the quality a probe found for it."""
+        if self._closed or quality <= 0:
+            return
+        for variant in self._variants:
+            if variant.get("embed") == embed:
+                variant["quality"] = quality
+        self._controls.set_variants(self._variants, self._current_embed)
 
     def _on_variant_requested(self, embed: str, label: str) -> None:
         if embed and embed != self._current_embed:

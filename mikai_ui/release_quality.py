@@ -67,11 +67,11 @@ class ReleaseQualityDelegate(QStyledItemDelegate):
     def _height_at(self, index) -> int:
         try:
             value = index.data(QUALITY_ROLE)
-        except (AttributeError, RuntimeError):
+        except AttributeError, RuntimeError:
             return 0
         try:
             return int(value or 0)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return 0
 
     def _text(self, height: int) -> str:

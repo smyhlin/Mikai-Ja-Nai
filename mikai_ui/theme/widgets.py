@@ -30,6 +30,11 @@ _ICONS = {
     "forward": (
         '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>'
     ),
+    "subtitles": (
+        '<rect x="3" y="5" width="18" height="14" rx="2"/>'
+        '<path d="M7 15.5 10.5 12 7 8.5"/>'
+        '<path d="M13 15.5 16.5 12 13 8.5"/>'
+    ),
     "mic": (
         '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>'
         '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/>'

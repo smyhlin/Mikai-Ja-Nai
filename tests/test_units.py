@@ -2044,33 +2044,155 @@ def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatc
     app.processEvents()
 
 
-def test_variant_button_hides_without_alternatives_and_picks_the_track(app):
+def test_track_menu_groups_by_kind_and_picks_a_track(app):
+    """Dubs and subs are listed under their own heading, each row badged with the
+    quality that track serves, and picking one reports it."""
     from mikai_ui.player_controls import PlayerControlsWidget
 
     controls = PlayerControlsWidget()
-    controls.set_variants([{"label": "Озвучення — Loud · Ashdi", "embed": "a"}], "a")
-    assert not controls.variant_button.isVisibleTo(controls)
+    controls.set_variants(
+        [
+            {
+                "kind": "voice",
+                "display": "Loud",
+                "track": "Ashdi",
+                "label": "Озвучення — Loud · Ashdi",
+                "embed": "a",
+                "quality": 1080,
+            }
+        ],
+        "a",
+    )
+    assert not controls.variant_button.isVisibleTo(controls), "one track needs no picker"
 
     controls.set_variants(
         [
-            {"label": "Озвучення — Loud · Ashdi", "embed": "a"},
-            {"label": "Субтитри — SubTeam · Ashdi", "embed": "s"},
+            {
+                "kind": "voice",
+                "display": "Loud",
+                "track": "Ashdi",
+                "label": "Озвучення — Loud · Ashdi",
+                "embed": "a",
+                "quality": 1080,
+            },
+            {
+                "kind": "voice",
+                "display": "Mid",
+                "track": "MoonAnime",
+                "label": "Озвучення — Mid · MoonAnime",
+                "embed": "b",
+                "quality": 0,
+            },
+            {
+                "kind": "sub",
+                "display": "SubTeam",
+                "track": "Ashdi",
+                "label": "Субтитри — SubTeam · Ashdi",
+                "embed": "s",
+                "quality": 480,
+            },
         ],
         "a",
     )
     assert controls.variant_button.isVisibleTo(controls)
+
     menu = controls._variant_menu()
-    actions = menu.actions()
-    assert [a.text() for a in actions] == [
-        "Озвучення — Loud · Ashdi",
-        "Субтитри — SubTeam · Ashdi",
+    rows = [a for a in menu.actions() if not a.isSeparator() and a.text()]
+    # two heading sections, then the three tracks, in voice-then-sub order
+    assert [a.text() for a in rows] == [
+        "Loud · Ashdi · 1080p",
+        "Mid · MoonAnime",  # no quality yet: bare, never a fake one
+        "SubTeam · Ashdi · 480p",
     ]
-    assert [a.isChecked() for a in actions] == [True, False]
+    assert menu.actions()[0].text() == "Озвучення"
+    assert [a.isChecked() for a in rows] == [True, False, False]
+    assert all(not a.icon().isNull() for a in rows), "every track carries its kind icon"
 
     picked = []
     controls.variantRequested.connect(lambda embed, label: picked.append((embed, label)))
-    actions[1].trigger()
-    assert picked == [("s", "Субтитри — SubTeam · Ashdi")]
+    rows[2].trigger()
+    assert picked == [("s", "Субтитри — SubTeam · Ashdi")], picked
+    controls.deleteLater()
+    menu.deleteLater()
+
+
+def test_opening_the_track_menu_probes_only_unknown_qualities(app):
+    """Lazy: a track nobody looks at never costs a request."""
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.set_variants(
+        [
+            {"kind": "voice", "label": "Озвучення — Loud · Ashdi", "embed": "a", "quality": 1080},
+            {
+                "kind": "sub",
+                "display": "Sub",
+                "track": "Ashdi",
+                "label": "Субтитри — Sub · Ashdi",
+                "embed": "s",
+                "quality": 0,
+            },
+        ],
+        "a",
+    )
+    assert controls.pending_track_probes() == ["s"], "the probed one must not re-fetch"
+
+    controls.set_variants(
+        [
+            {
+                "kind": "voice",
+                "display": "Loud",
+                "track": "Ashdi",
+                "label": "Озвучення — Loud · Ashdi",
+                "embed": "a",
+                "quality": 0,
+            }
+        ],
+        "a",
+    )
+    assert controls.pending_track_probes() == ["a"]
+    controls.deleteLater()
+
+
+def test_a_late_track_probe_badges_the_open_row(app):
+    """The result must land in the open menu, not rebuild it under the pointer."""
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.set_variants(
+        [
+            {
+                "kind": "sub",
+                "display": "Sub",
+                "track": "Ashdi",
+                "label": "Субтитри — Sub · Ashdi",
+                "embed": "s",
+                "quality": 0,
+            }
+        ],
+        "a",
+    )
+    menu = controls._variant_menu()
+    controls._open_menu = menu
+    row_action = next(a for a in menu.actions() if not a.isSeparator())
+    controls._menu_actions = [(row_action, controls._variants[0])]
+    row = controls._menu_actions[0][0]
+    assert row.text() == "Sub · Ashdi"
+
+    controls.set_variants(
+        [
+            {
+                "kind": "sub",
+                "display": "Sub",
+                "track": "Ashdi",
+                "label": "Субтитри — Sub · Ashdi",
+                "embed": "s",
+                "quality": 720,
+            }
+        ],
+        "a",
+    )
+    assert row.text() == "Sub · Ashdi · 720p", "the open row must update"
     controls.deleteLater()
     menu.deleteLater()
 

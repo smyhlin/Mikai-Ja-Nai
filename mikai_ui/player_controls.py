@@ -40,6 +40,23 @@ from mikai_ui.quality_picker import QualityPicker
 from mikai_ui.theme.widgets import make_icon
 
 
+def _track_row_text(variant: dict) -> str:
+    """`<release> · <provider>` plus the quality badge when it is known.
+
+    The kind is deliberately dropped: the row already sits under a heading that
+    says "Озвучення" or "Субтитри", so repeating it in every row is noise. The
+    full label still travels to the caller for the toast and for recovery.
+    """
+    display = variant.get("display")
+    track = variant.get("track")
+    if display and track:
+        base = f"{display} · {track}"
+    else:
+        base = variant.get("label", "")
+    quality = int(variant.get("quality") or 0)
+    return f"{base} · {quality}p" if quality > 0 else base
+
+
 def format_time(seconds: float) -> str:
     value = max(0, int(seconds or 0))
     hours, remainder = divmod(value, 3600)
@@ -163,6 +180,7 @@ class PlayerControlsWidget(QWidget):
     qualityChanged = Signal(int)
     fullscreenRequested = Signal()
     variantRequested = Signal(str, str)
+    variantMenuOpened = Signal()
 
     SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
 
@@ -270,6 +288,8 @@ class PlayerControlsWidget(QWidget):
         controls.addWidget(self.fullscreen_button)
         root.addLayout(controls)
         self._variants: list[dict] = []
+        self._open_menu: QMenu | None = None
+        self._menu_actions: list[tuple[QAction, dict]] = []
 
     @staticmethod
     def _skip_button(tooltip: str, icon_name: str) -> QPushButton:
@@ -315,23 +335,84 @@ class PlayerControlsWidget(QWidget):
         for variant in self._variants:
             variant["current"] = variant.get("embed") == current_embed
         self.variant_button.setVisible(len(self._variants) > 1)
+        self._refresh_open_menu()
 
     def _show_variant_menu(self) -> None:
-        self._variant_menu().exec(
-            self.variant_button.mapToGlobal(self.variant_button.rect().bottomLeft())
-        )
+        menu = self._variant_menu()
+        self._open_menu = menu
+        menu.aboutToHide.connect(self._forget_menu)
+        self.variantMenuOpened.emit()
+        menu.exec(self.variant_button.mapToGlobal(self.variant_button.rect().bottomLeft()))
+
+    def _refresh_open_menu(self) -> None:
+        """Repaint the visible rows after a late probe.
+
+        The menu holds the packet dicts it was built from, and set_variants
+        replaces those, so the rows are re-keyed onto the fresh packets by
+        embed rather than reading the stale ones.
+        """
+        if self._open_menu is None:
+            return
+        by_embed = {v.get("embed"): v for v in self._variants}
+        rebuilt = []
+        for action, variant in self._menu_actions:
+            fresh = by_embed.get(variant.get("embed"))
+            if fresh is None:
+                continue
+            action.setText(_track_row_text(fresh))
+            action.setChecked(bool(fresh.get("current")))
+            rebuilt.append((action, fresh))
+        self._menu_actions = rebuilt
+
+    def _forget_menu(self) -> None:
+        self._open_menu = None
+        self._menu_actions = []
+
+    def pending_track_probes(self) -> list[str]:
+        """Embeds whose quality is still unknown, for a caller to fetch lazily."""
+        return [
+            v["embed"] for v in self._variants if int(v.get("quality") or 0) <= 0 and v.get("embed")
+        ]
 
     def _variant_menu(self) -> QMenu:
+        """Tracks grouped by kind, badged with the quality each one serves.
+
+        The rows stay native QMenu actions: a QWidgetAction would throw away the
+        menu's own hover, keyboard navigation and dismissal, which is most of
+        what makes a menu feel native. Grouping, a per-kind icon and a trailing
+        quality badge carry the clarity instead.
+        """
         menu = QMenu(self)
-        for variant in self._variants:
-            action = menu.addAction(variant.get("label", ""))
-            action.setCheckable(True)
-            action.setChecked(bool(variant.get("current")))
-            action.triggered.connect(
-                lambda _checked=False, v=variant: self.variantRequested.emit(
-                    v.get("embed", ""), v.get("label", "")
+        menu.setObjectName("trackMenu")
+        grouped: list[tuple[str | None, str, list[dict]]] = []
+        for kind, icon_name, heading in (
+            ("voice", "mic", "Озвучення"),
+            ("sub", "subtitles", "Субтитри"),
+        ):
+            rows = [v for v in self._variants if v.get("kind") == kind]
+            if rows:
+                grouped.append((kind, icon_name, rows))
+        # a packet with no recognised kind still has to appear: an empty menu
+        # would read as "no other tracks" and silently hide a playable one
+        rest = [v for v in self._variants if v.get("kind") not in ("voice", "sub")]
+        if rest:
+            grouped.append((None, "mic", rest))
+        for kind, icon_name, rows in grouped:
+            if kind is not None:
+                menu.addSection("Озвучення" if kind == "voice" else "Субтитри")
+            for variant in rows:
+                action = menu.addAction(
+                    make_icon(icon_name, size=ICON_SIZE, disabled_color=ICON_DISABLED),
+                    _track_row_text(variant),
                 )
-            )
+                action.setCheckable(True)
+                action.setChecked(bool(variant.get("current")))
+                action.triggered.connect(
+                    lambda _checked=False, v=variant: self.variantRequested.emit(
+                        v.get("embed", ""), v.get("label", "")
+                    )
+                )
+                self._menu_actions.append((action, variant))
         return menu
 
     def set_qualities(self, qualities: dict[int, str], selected: int | None) -> None:

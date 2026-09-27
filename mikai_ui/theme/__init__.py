@@ -185,6 +185,11 @@ def build_stylesheet() -> str:
     QMenu::item:selected {{ background: {SURFACE_ACTIVE}; color: {TEXT}; }}
     QMenu::item:disabled {{ color: {MUTED}; }}
     QMenu::separator {{ height: 1px; background: {BORDER}; margin: {SPACING_XS}px; }}
+    QMenu::section {{
+        color: {MUTED}; font-size: 12px; font-weight: 600;
+        padding: {SPACING_SMALL}px {SPACING_MEDIUM}px {SPACING_XS}px {SPACING_MEDIUM}px;
+        border: none; }}
+    QMenu#trackMenu::item {{ padding: 0 {SPACING_LARGE}px; }}
     QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px; }}
     QPushButton#pagerControl {{ background: transparent; color: {TEXT};
         border: 1px solid transparent; border-radius: {RADIUS}px; padding: 0;
