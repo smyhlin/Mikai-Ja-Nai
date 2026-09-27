@@ -330,6 +330,9 @@ def test_stream_info_text_uses_size_and_fps():
     # mpv reports nothing useful until the stream is open; the chip stays empty
     assert StreamInfo().text() == ""
     assert StreamInfo(1280, 720, 0.0).text() == "1280x720"
+    # container-fps is often 0 on HLS, so mpv's measured estimate stands in
+    assert StreamInfo(1280, 720, 0.0, 23.976).text() == "1280x720 | 23.98fps"
+    assert StreamInfo(1280, 720, 24.0, 30.0).text() == "1280x720 | 24fps"
 
 
 def test_stream_chip_shows_on_mouse_movement_only(app):
@@ -362,7 +365,7 @@ def test_stream_chip_shows_on_mouse_movement_only(app):
     app.processEvents()
 
 
-def test_stream_chip_sits_in_the_top_right_corner(app):
+def test_stream_chip_sits_in_the_top_left_corner(app):
     from mikai_ui.player_controller import PlaybackState, PlaybackStatus, StreamInfo
     from mikai_ui.player_dialog import PlayerDialog
 
@@ -380,9 +383,36 @@ def test_stream_chip_sits_in_the_top_right_corner(app):
     chip = dialog._overlay.stream_chip
     stage = dialog._stage
     assert chip.isVisible()
-    assert chip.geometry().right() < stage.width()
-    assert chip.geometry().left() > stage.width() // 2, "the chip belongs top-right"
+    assert chip.geometry().left() < stage.width() // 4, "the chip belongs top-left"
     assert chip.geometry().top() < stage.height() // 4
+    dialog.close()
+    app.processEvents()
+
+
+def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
+    """The quality combo is a request; the chip is what mpv actually decoded."""
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog(
+        "Серія 1",
+        "https://s.example/1080/index.m3u8",
+        qualities={1080: "u1080", 720: "u720", 480: "u480"},
+        initial_height=1080,
+    )
+    dialog.show()
+    app.processEvents()
+    assert dialog._quality_combo.currentText() == "1080p"
+
+    adapter = FakeMpvAdapter()
+    dialog.controller.attach_adapter(adapter)
+    dialog.controller.load()
+    # the provider served something else entirely
+    adapter.emit_stream(width=720, height=480, fps=0.0, estimated_fps=23.976)
+    dialog._overlay.show_controls()
+    app.processEvents()
+
+    assert dialog._overlay.stream_chip.text() == "720x480 | 23.98fps"
+    assert dialog._quality_combo.currentText() == "1080p"
     dialog.close()
     app.processEvents()
 

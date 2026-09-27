@@ -337,7 +337,7 @@ class PlayerDialog(QDialog):
             chip = self._overlay.stream_chip
             chip_hint = chip.sizeHint()
             chip.setGeometry(
-                area.right() - chip_hint.width() - SPACING_LARGE + 1,
+                area.x() + SPACING_LARGE,
                 area.y() + SPACING_LARGE,
                 chip_hint.width(),
                 chip_hint.height(),

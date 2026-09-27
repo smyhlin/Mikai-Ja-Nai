@@ -31,14 +31,21 @@ class StreamInfo:
     width: int = 0
     height: int = 0
     fps: float = 0.0
+    estimated_fps: float = 0.0
+
+    @property
+    def effective_fps(self) -> float:
+        """The declared frame rate, or mpv's measured estimate when undeclared."""
+        return self.fps if self.fps > 0 else self.estimated_fps
 
     def text(self) -> str:
         """Format as `<width>x<height> | <fps>fps`, dropping what is unknown."""
         parts: list[str] = []
         if self.width > 0 and self.height > 0:
             parts.append(f"{self.width}x{self.height}")
-        if self.fps > 0:
-            parts.append(f"{self.fps:.2f}".rstrip("0").rstrip(".") + "fps")
+        fps = self.effective_fps
+        if fps > 0:
+            parts.append(f"{fps:.2f}".rstrip("0").rstrip(".") + "fps")
         return " | ".join(parts)
 
 
@@ -435,6 +442,7 @@ class PlayerController(QObject):
                 width=int(payload.get("width") or 0),
                 height=int(payload.get("height") or 0),
                 fps=float(payload.get("fps") or 0.0),
+                estimated_fps=float(payload.get("estimated_fps") or 0.0),
             )
         )
 

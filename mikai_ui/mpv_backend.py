@@ -156,6 +156,7 @@ class MPVAdapter(QObject):
         ("width", "width"),
         ("height", "height"),
         ("container-fps", "fps"),
+        ("estimated-vf-fps", "estimated_fps"),
     )
 
     def _watch_stream(self, player: Any, prop: str, key: str) -> None:
