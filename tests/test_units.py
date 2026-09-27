@@ -2021,7 +2021,8 @@ def test_subtitle_tracks_appear_in_the_mic_menu(fake_window, app, monkeypatch):
         assert pump_until(app, lambda: title._selector.count() == 1)
         variants = title._episode_variants("1")
         assert len(variants) == 1, [v["label"] for v in variants]
-        assert variants[0]["label"].startswith("Субтитри"), variants[0]["label"]
+        assert variants[0]["kind"] == "sub", variants[0]
+        assert not variants[0]["display"].startswith("Субтитри"), variants[0]
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -2038,8 +2039,8 @@ def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatc
     assert len(embeds) == len(set(embeds)), "the same track must not appear twice"
     # four releases, each carried by three providers
     assert len(variants) == 12, [v["label"] for v in variants]
-    assert any(v["label"].endswith("· Ashdi") for v in variants)
-    assert any(v["label"].startswith("Субтитри") for v in variants)
+    assert any(v["track"] == "Ashdi" for v in variants)
+    assert any(v["kind"] == "sub" for v in variants)
     title.shutdown()
     app.processEvents()
 
@@ -2114,6 +2115,66 @@ def test_track_menu_groups_by_kind_and_picks_a_track(app):
     assert picked == [("s", "Субтитри — SubTeam · Ashdi")], picked
     controls.deleteLater()
     menu.deleteLater()
+
+
+def test_track_rows_do_not_repeat_the_kind_the_heading_already_says(fake_window, app, monkeypatch):
+    """Regression: the row text carried "Озвучення -" while sitting directly under
+    an "Озвучення" heading, so every row said it twice."""
+    from mikai_backend import Episode, Release, Source, Team
+
+    def rel(kind, team, provider, host):
+        return Release(
+            kind=kind,
+            teams=[Team(name=team)],
+            episodes=[
+                Episode(
+                    number=1,
+                    label="1",
+                    sources=[Source(provider=provider, embed_url=f"https://{host}/1")],
+                )
+            ],
+        )
+
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    variants = [
+        {
+            "kind": "voice",
+            "kind_label": "Озвучення",
+            "display": "QTV+Kaizoku",
+            "track": "Ashdi",
+            "label": "Озвучення — QTV+Kaizoku · Ashdi",
+            "embed": "a",
+            "quality": 480,
+        },
+        {
+            "kind": "sub",
+            "kind_label": "Субтитри",
+            "display": "AniSky",
+            "track": "MoonAnime",
+            "label": "Субтитри — AniSky · MoonAnime",
+            "embed": "b",
+            "quality": 1080,
+        },
+    ]
+    controls = PlayerControlsWidget()
+    controls.set_variants(variants, "a")
+    texts = [a.text() for a in controls._variant_menu().actions() if not a.isSeparator()]
+    assert texts == [
+        "QTV+Kaizoku · Ashdi · 480p",
+        "AniSky · MoonAnime · 1080p",
+    ], texts
+    controls.deleteLater()
+
+    # and the title page must hand over a label without the kind baked in
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+    title = open_fake_title(fake_window, app)
+    for variant in title._episode_variants("1"):
+        assert not variant["display"].startswith("Озвучення"), variant["display"]
+        assert not variant["display"].startswith("Субтитри"), variant["display"]
+        assert "серій" not in variant["display"], variant["display"]
+    title.shutdown()
+    app.processEvents()
 
 
 def test_opening_the_track_menu_probes_only_unknown_qualities(app):

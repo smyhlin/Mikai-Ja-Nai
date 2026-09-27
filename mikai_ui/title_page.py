@@ -783,13 +783,19 @@ class TitlePage(QWidget):
         return label
 
     def _release_track_label(self, release: Release) -> str:
-        """Track-picker label: release identity only, never the episode count.
+        """Track-picker label: the team only, no kind and no episode count.
 
-        The count belongs to the whole release, but a track menu is scoped to the
-        episode on screen, so "12 серій" there reads as the length of what is
-        about to play and is simply wrong.
+        Both are the caller's business. The kind heads the section in the player
+        track menu, so repeating "Озвучення" on every row said it twice; the
+        count belongs to the whole release, while a track menu is scoped to the
+        episode on screen, so "12 серій" there read as the length of what is about
+        to play. A release with no team falls back to its kind so the row is
+        never blank.
         """
-        return self._release_label(release, with_count=False)
+        teams = ", ".join(team.name for team in release.teams if team.name)
+        if teams:
+            return f"{teams} (колаб)" if release.is_collab else teams
+        return KIND_LABELS.get(release.kind, release.kind or "?")
 
     def _fill_episodes(self, index: int) -> None:
         self._tabs.clear()
