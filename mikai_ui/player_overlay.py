@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -125,7 +126,15 @@ class PlayerOverlayWidget(QWidget):
         self.toast.setMouseTracking(True)
         self.toast.installEventFilter(self)
         self._controls_height = max(PLAYER_BAR_MIN_HEIGHT, self.controls.sizeHint().height())
-        self._animation = QPropertyAnimation(self.controls, b"maximumHeight", self)
+        # The controls share a layout with the native mpv surface. Animating their
+        # height resizes the video window on every frame, which stutters badly on
+        # Windows. Opacity is cheap and GPU-composited, so the bar fades instead.
+        # windowOpacity is a no-op on a child widget, so the fade rides a
+        # graphics effect instead.
+        self._opacity = QGraphicsOpacityEffect(self.controls)
+        self._opacity.setOpacity(1.0)
+        self.controls.setGraphicsEffect(self._opacity)
+        self._animation = QPropertyAnimation(self._opacity, b"opacity", self)
         self._animation.setDuration(ANIMATION_DURATION_MS)
         self._animation.finished.connect(self._finish_hide_once)
         self.controls.installEventFilter(self)
@@ -221,16 +230,17 @@ class PlayerOverlayWidget(QWidget):
             self._chip_timer.start()
         was_hidden = not self.controls.isVisible()
         if was_hidden:
-            self.controls.setMaximumHeight(0)
+            self.controls.setMaximumHeight(self._controls_height)
             self.controls.show()
         self.controls.setEnabled(True)
         self._animation.stop()
-        self._animation.setStartValue(0 if was_hidden else self.controls.height())
-        self._animation.setEndValue(self._controls_height)
         if self._fullscreen:
+            self._animation.setStartValue(0.0 if was_hidden else self._opacity.opacity())
+            self._animation.setEndValue(1.0)
             self._animation.start()
         else:
             self.controls.setMaximumHeight(self._controls_height)
+            self._opacity.setOpacity(1.0)
         self._schedule_hide()
         self.unsetCursor()
 
@@ -238,13 +248,13 @@ class PlayerOverlayWidget(QWidget):
         if not self._fullscreen:
             return
         self._animation.stop()
-        self._animation.setStartValue(self.controls.height())
-        self._animation.setEndValue(0)
+        self._animation.setStartValue(self._opacity.opacity())
+        self._animation.setEndValue(0.0)
         self._animation.start()
         self.setCursor(Qt.CursorShape.BlankCursor)
 
     def _finish_hide_once(self) -> None:
-        if self.controls.maximumHeight() <= 0 and self._fullscreen:
+        if self._opacity.opacity() <= 0.0 and self._fullscreen:
             self.controls.hide()
             self.controls.setEnabled(False)
 

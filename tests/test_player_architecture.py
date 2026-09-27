@@ -459,6 +459,36 @@ def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
     app.processEvents()
 
 
+def test_hiding_the_controls_does_not_resize_the_video_surface(app):
+    """The controls share a layout with the native mpv surface, so animating
+    their height resized the video window on every animation frame and stuttered."""
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    dialog._overlay.set_fullscreen(True)
+    dialog._overlay.show_controls()
+    app.processEvents()
+
+    resizes: list[int] = []
+    original = dialog._video.resizeEvent
+
+    def counting(event):
+        resizes.append(1)
+        original(event)
+
+    dialog._video.resizeEvent = counting
+    dialog._overlay.hide_controls()
+    QTest.qWait(400)
+    app.processEvents()
+
+    assert not dialog._controls.isVisible()
+    assert len(resizes) <= 1, f"video resized {len(resizes)} times while hiding"
+    dialog.close()
+    app.processEvents()
+
+
 def test_player_shortcuts_fullscreen_and_state_update(app):
     adapter = FakeMpvAdapter()
     dialog = PlayerDialog("Episode 1", "stream")

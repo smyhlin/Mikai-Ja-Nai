@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from PySide6.QtCore import QByteArray, QSize, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -74,6 +76,7 @@ def _render(name: str, color: str, size: int) -> QPixmap:
     return pixmap
 
 
+@lru_cache(maxsize=64)
 def make_icon(
     name: str,
     color: str = TEXT,
@@ -84,6 +87,10 @@ def make_icon(
 
     A disabled colour is required for icon-only buttons: Qt dims a disabled
     button's text, but an unpainted icon keeps its normal colour and reads as live.
+
+    Cached because the transport re-picks its play and mute glyphs on every
+    playback state change, and rasterising the same SVG four times a second is
+    pure waste. QIcon is value-shared, so one instance serves every widget.
     """
     icon = QIcon(_render(name, color, size))
     if disabled_color is not None:
