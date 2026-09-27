@@ -66,6 +66,7 @@ class SettingsDialog(QDialog):
             f'<a style="color: {ACCENT}; text-decoration: none;" href="https://mikai.me/user/developers">Отримати ключ у кабінеті розробника на mikai.me ↗</a>'
         )
         link.setOpenExternalLinks(True)
+        link.setWordWrap(True)
         root.addWidget(link)
 
         self._token_input = QLineEdit()
