@@ -14,15 +14,27 @@ from typing import Any, ClassVar
 
 from PySide6.QtCore import QObject, Signal
 
-from mikai_backend import mpv_runtime
+from mikai_backend import mpv_runtime, streams
 
 log = logging.getLogger(__name__)
 
+# mpv splits http-header-fields on commas, so this must stay comma-free
+PLAYER_LANGUAGE = "uk-UA"
+
 
 def embedded_mpv_options(wid: str) -> dict[str, Any]:
-    """Configure mpv for an aspect-correct, keyboard-neutral Qt embed."""
+    """Configure mpv for an aspect-correct, keyboard-neutral Qt embed.
+
+    The request headers are not cosmetic. MoonAnime's CDN answers 400 to a
+    playlist that arrives without an Accept-Language header, so mpv, which
+    sends none, is left stuck on a stream that extraction reads perfectly well.
+    Measured against s.moonanime.art: no Accept-Language is a 400, and the
+    header's value is never inspected, only its presence.
+    """
     return {
         "wid": wid,
+        "user-agent": streams.UA,
+        "http-header-fields": f"Accept-Language: {PLAYER_LANGUAGE}",
         "input_default_bindings": False,
         "input_vo_keyboard": False,
         "input_cursor": False,

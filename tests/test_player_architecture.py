@@ -365,6 +365,20 @@ def test_stylesheet_uses_only_properties_qt_understands(app):
     assert not used - supported, sorted(used - supported)
 
 
+def test_embedded_mpv_sends_the_headers_moonanime_requires():
+    """MoonAnime's CDN answers 400 to a playlist that arrives without an
+    Accept-Language header, so mpv, which sends none, is stuck on a stream that
+    extraction reads fine. Measured: no Accept-Language = 400, present = 200."""
+    from mikai_backend.streams import UA
+    from mikai_ui.mpv_backend import PLAYER_LANGUAGE, embedded_mpv_options
+
+    options = embedded_mpv_options("12345")
+    assert options["user-agent"] == UA
+    # mpv splits this list on commas, so the value must stay comma-free
+    assert options["http-header-fields"] == f"Accept-Language: {PLAYER_LANGUAGE}"
+    assert "," not in PLAYER_LANGUAGE
+
+
 def test_switch_variant_resumes_at_the_same_position(app):
     """A track change must not rewind the episode: the position carries over."""
     adapter = FakeMpvAdapter()
