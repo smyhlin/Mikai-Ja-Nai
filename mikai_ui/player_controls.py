@@ -39,7 +39,13 @@ def format_time(seconds: float) -> str:
 
 
 class TimelineSlider(QSlider):
-    """A normalized timeline that previews during drag and commits on release."""
+    """A normalized timeline that previews during drag and commits on release.
+
+    Clicking anywhere on the track jumps there and commits on release, not just
+    dragging the handle. Qt's QSlider only emits sliderPressed/sliderMoved/
+    sliderReleased when its own handle is grabbed, so a click on the track body
+    was silently ignored and the video never moved.
+    """
 
     seekStarted = Signal()
     seekPreviewChanged = Signal(float)
@@ -50,15 +56,46 @@ class TimelineSlider(QSlider):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._duration = 0.0
+        self._scrubbing = False
         self.setObjectName("timeline")
         self.setRange(0, self.SCALE)
         self.setTracking(False)
         self.setFixedHeight(TIMELINE_ROW_HEIGHT)
         self.setAccessibleName("Позиція відтворення")
         self.setToolTip("Перемотування відео")
-        self.sliderPressed.connect(self._begin_seek)
-        self.sliderMoved.connect(self._preview_value)
-        self.sliderReleased.connect(self._finish_seek)
+
+    def _value_at(self, x: float) -> int:
+        """Map a click x-coordinate straight onto the timeline, so a click at 25%
+        of the track lands at 25% of the video rather than half a handle off."""
+        ratio = max(0.0, min(1.0, x / max(1, self.width())))
+        return round(ratio * self.SCALE)
+
+    def mousePressEvent(self, event) -> None:
+        if self._duration <= 0 or event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        self._scrubbing = True
+        self.setValue(self._value_at(event.position().x()))
+        self.seekStarted.emit()
+        self.seekPreviewChanged.emit(self.position_for_value(self.value()))
+        event.accept()
+
+    def mouseMoveEvent(self, event) -> None:
+        if not self._scrubbing:
+            super().mouseMoveEvent(event)
+            return
+        self.setValue(self._value_at(event.position().x()))
+        self.seekPreviewChanged.emit(self.position_for_value(self.value()))
+        event.accept()
+
+    def mouseReleaseEvent(self, event) -> None:
+        if not self._scrubbing or event.button() != Qt.MouseButton.LeftButton:
+            super().mouseReleaseEvent(event)
+            return
+        self._scrubbing = False
+        self.setValue(self._value_at(event.position().x()))
+        self.seekFinished.emit(self.position_for_value(self.value()))
+        event.accept()
 
     def set_playback_position(self, position: float, duration: float) -> None:
         self._duration = max(0.0, float(duration))
@@ -73,19 +110,6 @@ class TimelineSlider(QSlider):
             return 0.0
         ratio = max(0.0, min(1.0, value / self.SCALE))
         return ratio * self._duration
-
-    def _begin_seek(self) -> None:
-        if self._duration > 0:
-            self.seekStarted.emit()
-            self._preview_value(self.value())
-
-    def _preview_value(self, value: int) -> None:
-        if self._duration > 0:
-            self.seekPreviewChanged.emit(self.position_for_value(value))
-
-    def _finish_seek(self) -> None:
-        if self._duration > 0:
-            self.seekFinished.emit(self.position_for_value(self.value()))
 
 
 class PlayerControlsWidget(QWidget):

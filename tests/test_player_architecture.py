@@ -7,6 +7,7 @@ from PySide6.QtTest import QTest
 from mikai_ui.player_controller import PlaybackState, PlaybackStatus, PlayerController
 from mikai_ui.player_controls import PlayerControlsWidget
 from mikai_ui.player_dialog import PlayerDialog
+from mikai_ui.theme.metrics import TIMELINE_ROW_HEIGHT
 
 
 def ready_controller(adapter: FakeMpvAdapter, app) -> PlayerController:
@@ -204,6 +205,101 @@ def test_seek_targets_an_absolute_time_on_keyframes(app, monkeypatch):
     adapter = _adapter(app, monkeypatch, stub)
     adapter.seek(90.0)
     assert stub.seeks == [(90.0, "absolute", "keyframes")]
+
+
+def test_clicking_the_timeline_seeks_to_that_point(app):
+    """QSlider only emits its seek signals when its own handle is grabbed, so a
+    click on the track body used to do nothing at all."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_controls import TimelineSlider
+
+    timeline = TimelineSlider()
+    timeline.resize(400, TIMELINE_ROW_HEIGHT)
+    timeline.set_playback_position(0.0, 200.0)
+    timeline.show()
+    app.processEvents()
+
+    finished: list[float] = []
+    previews: list[float] = []
+    started: list[bool] = []
+    timeline.seekStarted.connect(lambda: started.append(True))
+    timeline.seekPreviewChanged.connect(previews.append)
+    timeline.seekFinished.connect(finished.append)
+
+    QTest.mouseClick(
+        timeline,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(int(timeline.width() * 0.75), timeline.height() // 2),
+    )
+    app.processEvents()
+
+    assert started, "a click on the track must begin a seek"
+    # 75% of the track is 75% of the video, not half a handle off
+    assert finished == [150.0], finished
+    assert previews[-1] == 150.0
+    timeline.deleteLater()
+
+
+def test_dragging_the_timeline_previews_each_step_and_commits_once(app):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_controls import TimelineSlider
+
+    timeline = TimelineSlider()
+    timeline.resize(400, TIMELINE_ROW_HEIGHT)
+    timeline.set_playback_position(0.0, 200.0)
+    timeline.show()
+    app.processEvents()
+
+    previews: list[float] = []
+    finished: list[float] = []
+    timeline.seekPreviewChanged.connect(previews.append)
+    timeline.seekFinished.connect(finished.append)
+
+    height = timeline.height() // 2
+    QTest.mousePress(
+        timeline, Qt.MouseButton.LeftButton, pos=QPoint(int(timeline.width() * 0.25), height)
+    )
+    QTest.mouseMove(timeline, QPoint(int(timeline.width() * 0.10), height))
+    QTest.mouseRelease(
+        timeline, Qt.MouseButton.LeftButton, pos=QPoint(int(timeline.width() * 0.10), height)
+    )
+    app.processEvents()
+
+    assert previews == [50.0, 20.0], previews
+    assert finished == [20.0], finished
+    timeline.deleteLater()
+
+
+def test_scrubbing_the_player_bar_reaches_the_engine_once(app):
+    """End to end: one click on the real control bar is one seek command."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/480/index.m3u8")
+    adapter = FakeMpvAdapter()
+    dialog.controller.attach_adapter(adapter)
+    dialog.controller.load()
+    adapter.durationChanged.emit(200.0)
+    adapter.mediaLoaded.emit()
+    app.processEvents()
+
+    timeline = dialog._timeline
+    QTest.mouseClick(
+        timeline,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(int(timeline.width() * 0.5), timeline.height() // 2),
+    )
+    app.processEvents()
+
+    assert adapter.seeks == [100.0], adapter.seeks
+    dialog.close()
+    app.processEvents()
 
 
 def test_player_shortcuts_fullscreen_and_state_update(app):
