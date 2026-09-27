@@ -484,6 +484,57 @@ def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
     app.processEvents()
 
 
+def test_controls_stay_up_while_a_menu_is_open(app):
+    """A menu runs its own event loop, so the auto-hide used to fire underneath it
+    and grey out the control the user was operating."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QApplication
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    controls = dialog._controls
+    controls.set_variants(
+        [
+            {"label": "Озвучення — Inari · Ashdi", "embed": "a"},
+            {"label": "Субтитри — Цукіхана · Ashdi", "embed": "s"},
+        ],
+        "a",
+    )
+    dialog._overlay.set_fullscreen(True)
+    dialog._overlay.show_controls()
+    app.processEvents()
+
+    menu = controls._variant_menu()
+    menu.popup(controls.mapToGlobal(QPoint(0, controls.height())))
+    app.processEvents()
+    assert QApplication.activePopupWidget() is not None, "the menu must be up"
+
+    dialog._overlay.hide_controls()
+    # wait past the fade duration: without the guard the bar would be gone by now
+    QTest.qWait(400)
+    app.processEvents()
+    assert controls.isVisible(), "the bar must not hide under an open menu"
+    assert controls.isEnabled(), "and it must not grey out"
+
+    # close() does not unregister the popup synchronously; drain it explicitly
+    menu.close()
+    while QApplication.activePopupWidget() is not None:
+        QApplication.activePopupWidget().close()
+        app.processEvents()
+    assert QApplication.activePopupWidget() is None
+
+    dialog._overlay.hide_controls()
+    # the bar fades out; one processEvents() does not finish the animation
+    QTest.qWait(400)
+    app.processEvents()
+    assert not controls.isVisible(), "once the menu is closed the bar hides again"
+    dialog.close()
+    app.processEvents()
+
+
 def test_hiding_the_controls_does_not_resize_the_video_surface(app):
     """The controls share a layout with the native mpv surface, so animating
     their height resized the video window on every animation frame and stuttered."""

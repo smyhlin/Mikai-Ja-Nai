@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -217,7 +218,10 @@ class PlayerOverlayWidget(QWidget):
             self.show_controls()
 
     def _schedule_hide(self) -> None:
-        if self._fullscreen:
+        # A menu or combo popup runs its own event loop; hiding the bar while the
+        # user is picking a track or height greys out the very control they are
+        # operating. The bar stays up until every popup is closed.
+        if self._fullscreen and QApplication.activePopupWidget() is None:
             self._hide_timer.start()
 
     def show_controls(self) -> None:
@@ -246,6 +250,10 @@ class PlayerOverlayWidget(QWidget):
 
     def hide_controls(self) -> None:
         if not self._fullscreen:
+            return
+        if QApplication.activePopupWidget() is not None:
+            # reschedule instead of hiding: the popup is still open
+            QTimer.singleShot(AUTO_HIDE_MS, self._schedule_hide)
             return
         self._animation.stop()
         self._animation.setStartValue(self._opacity.opacity())
