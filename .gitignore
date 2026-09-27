@@ -19,3 +19,10 @@ venv/
 
 # Local scratch / UI review screenshots
 *.png
+
+# Throwaway measurement and debug-run artifacts
+_scratch_*.py
+_ui_geometry.json
+debug_run.py
+debug_watch.py
+debug_app*.log
