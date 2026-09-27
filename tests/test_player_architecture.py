@@ -128,6 +128,84 @@ def test_controls_render_state_and_timeline_without_engine_access(app):
     controls.deleteLater()
 
 
+class _StubMpv:
+    """Minimal libmpv stand-in so the adapter's error policy can be exercised."""
+
+    def __init__(self, reject: str | None = None) -> None:
+        self.reject = reject
+        self.seeks: list[tuple] = []
+        self.played: list[str] = []
+
+    def property_observer(self, _name):
+        def decorate(fn):
+            return fn
+
+        return decorate
+
+    def event_callback(self, _name):
+        def decorate(fn):
+            return fn
+
+        return decorate
+
+    def seek(self, amount, reference="relative", precision="keyframes"):
+        if self.reject == "seek":
+            raise RuntimeError("seek not supported on this stream")
+        self.seeks.append((amount, reference, precision))
+
+    def play(self, url):
+        if self.reject == "play":
+            raise RuntimeError("stream unreachable")
+        self.played.append(url)
+
+
+def _adapter(app, monkeypatch, stub):
+    import sys
+    import types
+
+    from PySide6.QtWidgets import QWidget
+
+    from mikai_ui.mpv_backend import MPVAdapter
+
+    # A stand-in module keeps the test hermetic: the real one loads libmpv on import.
+    fake_mpv = types.ModuleType("mpv")
+    fake_mpv.MPV = lambda **_kwargs: stub
+    monkeypatch.setitem(sys.modules, "mpv", fake_mpv)
+    monkeypatch.setattr(MPVAdapter, "_resolve_runtime", staticmethod(lambda *a, **k: None))
+    return MPVAdapter(QWidget())
+
+
+def test_a_rejected_seek_keeps_playback_alive(app, monkeypatch):
+    """Rewinding an HLS stream must not escalate a rejected seek to a fatal error."""
+    stub = _StubMpv(reject="seek")
+    adapter = _adapter(app, monkeypatch, stub)
+    errors: list[str] = []
+    adapter.errorOccurred.connect(errors.append)
+    adapter.load("https://s.example/480/index.m3u8")
+    assert stub.played == ["https://s.example/480/index.m3u8"]
+    adapter.seek(120.0)
+    assert errors == [], errors
+    assert adapter._closed is False
+
+
+def test_a_rejected_load_is_still_fatal(app, monkeypatch):
+    """Only playback-critical commands escalate; a dead stream must still surface."""
+    stub = _StubMpv(reject="play")
+    adapter = _adapter(app, monkeypatch, stub)
+    errors: list[str] = []
+    adapter.errorOccurred.connect(errors.append)
+    adapter.load("https://s.example/480/index.m3u8")
+    assert errors, "a failed load must raise errorOccurred"
+
+
+def test_seek_targets_an_absolute_time_on_keyframes(app, monkeypatch):
+    """HLS segments start at keyframes, so exact (hr-seek) precision is the wrong ask."""
+    stub = _StubMpv()
+    adapter = _adapter(app, monkeypatch, stub)
+    adapter.seek(90.0)
+    assert stub.seeks == [(90.0, "absolute", "keyframes")]
+
+
 def test_player_shortcuts_fullscreen_and_state_update(app):
     adapter = FakeMpvAdapter()
     dialog = PlayerDialog("Episode 1", "stream")

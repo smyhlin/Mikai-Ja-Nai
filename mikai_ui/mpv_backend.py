@@ -213,14 +213,15 @@ class MPVAdapter(QObject):
         if buffering:
             self.stateChanged.emit("buffering")
 
-    def _command(self, label: str, operation: Any) -> bool:
+    def _command(self, label: str, operation: Any, *, fatal: bool = True) -> bool:
         if self._closed or self._player is None:
             return False
         try:
             operation(self._player)
         except Exception as exc:
             log.exception("mpv %s command failed", label)
-            self.errorOccurred.emit(str(exc))
+            if fatal:
+                self.errorOccurred.emit(str(exc))
             return False
         return True
 
@@ -243,22 +244,27 @@ class MPVAdapter(QObject):
         target = max(0.0, float(seconds))
         if self._duration > 0:
             target = min(target, self._duration)
+        # keyframes, not exact: mpv documents precise seeks as inefficient on
+        # network streams, and the timeline resolves to 10ms either way. A rejected
+        # seek must not escalate to a fatal playback error, or rewinding an HLS
+        # stream tears down the player with "video unavailable".
         self._command(
             "absolute seek",
-            lambda player: player.seek(target, reference="absolute", precision="exact"),
+            lambda player: player.seek(target, reference="absolute", precision="keyframes"),
+            fatal=False,
         )
 
     def set_volume(self, value: float) -> None:
         self._volume = max(0.0, min(100.0, float(value)))
-        self._command("volume", lambda player: setattr(player, "volume", self._volume))
+        self._command("volume", lambda player: setattr(player, "volume", self._volume), fatal=False)
 
     def set_muted(self, muted: bool) -> None:
         self._muted = bool(muted)
-        self._command("mute", lambda player: setattr(player, "mute", self._muted))
+        self._command("mute", lambda player: setattr(player, "mute", self._muted), fatal=False)
 
     def set_speed(self, speed: float) -> None:
         self._speed = max(0.25, min(4.0, float(speed)))
-        self._command("speed", lambda player: setattr(player, "speed", self._speed))
+        self._command("speed", lambda player: setattr(player, "speed", self._speed), fatal=False)
 
     def _close_player(self) -> None:
         if self._player is not None:
