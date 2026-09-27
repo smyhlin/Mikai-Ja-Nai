@@ -341,9 +341,17 @@ class PlayerDialog(QDialog):
     def step_episode(self, delta: int) -> None:
         self._go_to_episode(self._episode_index + delta)
 
-    def _go_to_episode(self, position: int) -> None:
+    def _go_to_episode(self, position: int, *, close_list: bool = False) -> None:
+        """Step or jump to an episode.
+
+        Picking from the list closes it, because that means "this one, now"; the
+        transport buttons leave it open, since stepping while browsing a long
+        list and having it snap shut under the pointer is a fight.
+        """
         if not 0 <= position < len(self._playlist):
             return
+        if close_list:
+            self.set_sidebar_expanded(False)
         self.episodeRequested.emit(dict(self._playlist[position]), position)
 
     def apply_episode(
@@ -390,7 +398,9 @@ class PlayerDialog(QDialog):
             )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setToolTip(entry.get("label", ""))
-            button.clicked.connect(lambda _checked=False, spot=position: self._go_to_episode(spot))
+            button.clicked.connect(
+                lambda _checked=False, spot=position: self._go_to_episode(spot, close_list=True)
+            )
             self._sidebar_items.insertWidget(position, button)
 
     def toggle_sidebar(self) -> None:

@@ -611,6 +611,45 @@ def test_the_episode_rail_hides_with_the_chrome(app):
     app.processEvents()
 
 
+def test_choosing_an_episode_closes_the_list_but_stepping_does_not(app):
+    """Picking from the list means "this one, now". Stepping with the transport
+    buttons is browsing, and a list that snaps shut under the pointer is a fight."""
+    from PySide6.QtWidgets import QPushButton
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    playlist = [{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 5)]
+    dialog = PlayerDialog("Серія 2", "https://s/720.m3u8", playlist=playlist, episode_index=1)
+    dialog.resize(900, 520)
+    dialog.show()
+    app.processEvents()
+    dialog.set_sidebar_expanded(True)
+    app.processEvents()
+    assert dialog._sidebar_scroll.isVisible()
+
+    asked = []
+    dialog.episodeRequested.connect(lambda item, spot: asked.append((item["label"], spot)))
+
+    rows = [
+        b
+        for b in dialog._sidebar_list.findChildren(QPushButton)
+        if b.objectName().startswith("playerEpisodeItem")
+    ]
+    rows[3].click()
+    app.processEvents()
+    assert asked == [("Серія 4", 3)], asked
+    assert not dialog._sidebar_scroll.isVisible(), "choosing an episode closes the list"
+
+    # the transport buttons keep it open
+    dialog.set_sidebar_expanded(True)
+    app.processEvents()
+    dialog.step_episode(1)
+    app.processEvents()
+    assert dialog._sidebar_scroll.isVisible(), "stepping must not close the list"
+    dialog.close()
+    app.processEvents()
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 
