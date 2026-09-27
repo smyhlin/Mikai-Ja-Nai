@@ -37,6 +37,7 @@ from mikai_ui.theme.metrics import (
     PLAYER_MIN_WIDTH,
     PLAYER_SIDEBAR_STRIP,
     PLAYER_SIDEBAR_WIDTH,
+    SIDEBAR_CLOSE_DELAY_MS,
     SPACING_LARGE,
     SPACING_MEDIUM,
     SPACING_XS,
@@ -325,6 +326,10 @@ class PlayerDialog(QDialog):
         self._sidebar_expanded = False
         self._sidebar_pinned = False
         self._sidebar_hovered = False
+        self._sidebar_close_timer = QTimer(self)
+        self._sidebar_close_timer.setSingleShot(True)
+        self._sidebar_close_timer.setInterval(SIDEBAR_CLOSE_DELAY_MS)
+        self._sidebar_close_timer.timeout.connect(self._close_sidebar_after_grace)
         for child in (sidebar, *sidebar.findChildren(QWidget)):
             child.setMouseTracking(True)
             child.installEventFilter(self)
@@ -411,7 +416,12 @@ class PlayerDialog(QDialog):
     def toggle_sidebar(self) -> None:
         """Hover opens the list; the click pins it open or closed."""
         self._sidebar_pinned = not self._sidebar_pinned
+        self._sidebar_close_timer.stop()
         self.set_sidebar_expanded(self._sidebar_pinned or self._sidebar_hovered)
+
+    def _close_sidebar_after_grace(self) -> None:
+        if not self._sidebar_pinned and not self._sidebar_hovered:
+            self.set_sidebar_expanded(False)
 
     def set_sidebar_expanded(self, expanded: bool) -> None:
         """Open or close the list.
@@ -447,13 +457,22 @@ class PlayerDialog(QDialog):
             self._sidebar.hide()
 
     def _sidebar_hover_changed(self, inside: bool) -> None:
+        """Open on hover, but close on a delay.
+
+        Collapsing the instant the pointer leaves makes the list unreachable:
+        the rows sit to the right of the rail, so a pointer heading for one
+        crosses out and the list vanishes under it. The grace period lets it
+        settle first, and re-entering during it cancels the close outright.
+        """
         self._sidebar_hovered = inside
         if self._sidebar_pinned:
             return
-        if inside and not self._sidebar_expanded:
-            self.set_sidebar_expanded(True)
-        elif not inside and self._sidebar_expanded:
-            self.set_sidebar_expanded(False)
+        if inside:
+            self._sidebar_close_timer.stop()
+            if not self._sidebar_expanded:
+                self.set_sidebar_expanded(True)
+        elif self._sidebar_expanded:
+            self._sidebar_close_timer.start()
 
     def _on_variant_requested(self, embed: str, label: str) -> None:
         if embed and embed != self._current_embed:

@@ -674,9 +674,17 @@ def test_the_episode_rail_opens_on_hover_and_the_click_pins_it(app):
     assert dialog._sidebar_expanded, "hover must open the list"
     assert dialog._sidebar_scroll.isVisible()
 
+    # leaving starts the grace timer; the close lands after it
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.theme.metrics import SIDEBAR_CLOSE_DELAY_MS
+
     app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
     app.processEvents()
-    assert not dialog._sidebar_expanded, "leaving must close it again"
+    assert dialog._sidebar_expanded, "leaving must not snap the list shut"
+    QTest.qWait(SIDEBAR_CLOSE_DELAY_MS + 400)
+    app.processEvents()
+    assert not dialog._sidebar_expanded
 
     dialog.toggle_sidebar()
     app.processEvents()
@@ -684,6 +692,55 @@ def test_the_episode_rail_opens_on_hover_and_the_click_pins_it(app):
     app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
     app.processEvents()
     assert dialog._sidebar_expanded, "a pinned list survives the pointer leaving"
+    dialog.close()
+    app.processEvents()
+
+
+def test_the_rail_stays_open_for_a_moment_after_the_pointer_leaves(app):
+    """Collapsing the instant the pointer leaves makes the rows unreachable: the
+    list sits to the right of the rail, so a pointer heading for a row crosses
+    out of the panel and the list vanishes under it."""
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_dialog import PlayerDialog
+    from mikai_ui.theme.metrics import SIDEBAR_CLOSE_DELAY_MS
+
+    dialog = PlayerDialog(
+        "Серія 2",
+        "https://s/720.m3u8",
+        playlist=[{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 5)],
+        episode_index=1,
+    )
+    dialog.resize(900, 520)
+    dialog.show()
+    app.processEvents()
+    rail = dialog._sidebar_toggle
+
+    app.sendEvent(rail, QEnterEvent(QPointF(10, 200), QPointF(10, 200), QPointF(10, 200)))
+    app.processEvents()
+    assert dialog._sidebar_expanded
+
+    app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
+    app.processEvents()
+    assert dialog._sidebar_expanded, "the list must not snap shut on leave"
+
+    QTest.qWait(SIDEBAR_CLOSE_DELAY_MS + 400)
+    app.processEvents()
+    assert not dialog._sidebar_expanded, "it does close once the grace period ends"
+
+    # re-entering during the grace period cancels the close outright
+    app.sendEvent(rail, QEnterEvent(QPointF(10, 200), QPointF(10, 200), QPointF(10, 200)))
+    app.processEvents()
+    app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
+    app.processEvents()
+    QTest.qWait(SIDEBAR_CLOSE_DELAY_MS // 2)
+    app.sendEvent(rail, QEnterEvent(QPointF(10, 200), QPointF(10, 200), QPointF(10, 200)))
+    app.processEvents()
+    QTest.qWait(SIDEBAR_CLOSE_DELAY_MS + 400)
+    app.processEvents()
+    assert dialog._sidebar_expanded
     dialog.close()
     app.processEvents()
 
