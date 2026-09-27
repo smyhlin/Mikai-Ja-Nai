@@ -40,6 +40,7 @@ class PlayerDialog(QDialog):
 
     runtimeRequested = Signal()
     playbackFailed = Signal()
+    variantRequested = Signal(str, str)
 
     def __init__(
         self,
@@ -47,12 +48,16 @@ class PlayerDialog(QDialog):
         url: str,
         qualities: dict[int, str] | None = None,
         initial_height: int | None = None,
+        variants: list[dict] | None = None,
+        current_embed: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._caption = caption
         self._url = url
         self._qualities = dict(qualities or {})
+        self._variants = list(variants or [])
+        self._current_embed = current_embed
         self._runtime_dir: Path | None = None
         self._closed = False
         self._showing = False
@@ -103,6 +108,8 @@ class PlayerDialog(QDialog):
 
         self._controls = PlayerControlsWidget(self._stage)
         self._controls.set_qualities(self._qualities, initial_height)
+        self._controls.set_variants(self._variants, current_embed)
+        self._controls.variantRequested.connect(self._on_variant_requested)
         stage_layout.addWidget(self._controls, 0)
 
         # The overlay is an event filter and state presenter only. It must never be
@@ -237,6 +244,23 @@ class PlayerDialog(QDialog):
 
     def show_error(self, message: str) -> None:
         self._controller.fail(message)
+
+    def _on_variant_requested(self, embed: str, label: str) -> None:
+        if embed and embed != self._current_embed:
+            self.variantRequested.emit(embed, label)
+
+    def apply_variant(self, qualities: dict[int, str], label: str, embed: str = "") -> None:
+        """Swap the dub/sub track; the controller resumes at the same position."""
+        if self._closed or not qualities:
+            return
+        if embed:
+            self._current_embed = embed
+            self._controls.set_variants(self._variants, embed)
+        target = max(qualities)
+        self._qualities = dict(qualities)
+        self._controls.set_qualities(self._qualities, target)
+        self._overlay.show_toast(f"Дорожка: {label}")
+        self._controller.switch_variant(self._qualities[target], self._qualities, target)
 
     def apply_refreshed_streams(
         self,

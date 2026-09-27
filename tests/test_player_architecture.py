@@ -336,6 +336,7 @@ def test_stylesheet_uses_only_properties_qt_understands(app):
         "border",
         "border-bottom",
         "border-color",
+        "border-left",
         "border-radius",
         "border-top",
         "border-top-left-radius",
@@ -362,6 +363,30 @@ def test_stylesheet_uses_only_properties_qt_understands(app):
     }
     used = set(re.findall(r"[{;]\s*([a-z-]+)\s*:", build_stylesheet()))
     assert not used - supported, sorted(used - supported)
+
+
+def test_switch_variant_resumes_at_the_same_position(app):
+    """A track change must not rewind the episode: the position carries over."""
+    adapter = FakeMpvAdapter()
+    controller = PlayerController("stream-720", {720: "stream-720"}, 720)
+    controller.attach_adapter(adapter)
+    controller.load()
+    adapter.durationChanged.emit(1200.0)
+    adapter.positionChanged.emit(100.0)
+    adapter.mediaLoaded.emit()
+    app.processEvents()
+    assert controller.state.position == 100.0
+
+    controller.switch_variant("dub-1080", {1080: "dub-1080", 480: "dub-480"})
+    assert adapter.loads[-1] == "dub-1080"
+    app.processEvents()
+    adapter.mediaLoaded.emit()
+    app.processEvents()
+
+    assert controller.state.position == 100.0, controller.state.position
+    assert controller.state.quality == 1080
+    assert adapter.seeks[-1] == 100.0, adapter.seeks
+    controller.close()
 
 
 def test_stream_info_text_uses_size_and_fps():

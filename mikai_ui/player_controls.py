@@ -6,6 +6,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
+    QMenu,
     QToolTip,
     QHBoxLayout,
     QLabel,
@@ -158,6 +159,7 @@ class PlayerControlsWidget(QWidget):
     speedChanged = Signal(float)
     qualityChanged = Signal(int)
     fullscreenRequested = Signal()
+    variantRequested = Signal(str, str)
 
     SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
 
@@ -244,10 +246,17 @@ class PlayerControlsWidget(QWidget):
         self.quality_combo.hide()
         controls.addWidget(self.quality_combo)
 
+        self.variant_button = self._button("Дорожка: озвучення чи субтитри", secondary=True)
+        self.variant_button.setIcon(make_icon("mic", size=ICON_SIZE, disabled_color=ICON_DISABLED))
+        self.variant_button.clicked.connect(self._show_variant_menu)
+        self.variant_button.hide()
+        controls.addWidget(self.variant_button)
+
         self.fullscreen_button = self._button("На весь екран (F)", secondary=True)
         self.fullscreen_button.clicked.connect(self.fullscreenRequested)
         controls.addWidget(self.fullscreen_button)
         root.addLayout(controls)
+        self._variants: list[dict] = []
 
     @staticmethod
     def _skip_button(tooltip: str, icon_name: str) -> QPushButton:
@@ -282,6 +291,31 @@ class PlayerControlsWidget(QWidget):
         button.setAccessibleName(tooltip)
         button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         return button
+
+    def set_variants(self, variants: list[dict], current_embed: str) -> None:
+        """Offer the other dub/sub tracks for this episode, if any exist."""
+        self._variants = [dict(variant) for variant in variants]
+        for variant in self._variants:
+            variant["current"] = variant.get("embed") == current_embed
+        self.variant_button.setVisible(len(self._variants) > 1)
+
+    def _show_variant_menu(self) -> None:
+        self._variant_menu().exec(
+            self.variant_button.mapToGlobal(self.variant_button.rect().bottomLeft())
+        )
+
+    def _variant_menu(self) -> QMenu:
+        menu = QMenu(self)
+        for variant in self._variants:
+            action = menu.addAction(variant.get("label", ""))
+            action.setCheckable(True)
+            action.setChecked(bool(variant.get("current")))
+            action.triggered.connect(
+                lambda _checked=False, v=variant: self.variantRequested.emit(
+                    v.get("embed", ""), v.get("label", "")
+                )
+            )
+        return menu
 
     def set_qualities(self, qualities: dict[int, str], selected: int | None) -> None:
         self.quality_combo.blockSignals(True)

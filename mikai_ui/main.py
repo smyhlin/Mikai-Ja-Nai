@@ -8,7 +8,7 @@ from datetime import datetime
 
 import shiboken6
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -40,6 +40,7 @@ from mikai_backend import (
     UpdatesResult,
 )
 from mikai_ui import feeds
+from mikai_ui.clipboard import copy_text
 from mikai_ui.labels import STATUS_LABELS
 from mikai_ui.page_pager import RangePager
 from mikai_ui.title_card import TitleCard
@@ -1095,11 +1096,12 @@ class SearchPage(QWidget):
 
     @staticmethod
     def _copy_anime_link(ref: str) -> None:
-        QGuiApplication.clipboard().setText(anime_page_url(ref))
+        """Menu copies have no status line; failures surface through the log."""
+        copy_text(anime_page_url(ref))
 
     @staticmethod
     def _copy_ref(ref: str) -> None:
-        QGuiApplication.clipboard().setText(ref)
+        copy_text(ref)
 
 
 class MainWindow(QWidget):

@@ -53,20 +53,21 @@ def build_stylesheet() -> str:
     QLabel#heading {{ font-size: 22px; font-weight: 600; }}
     QLabel#sectionHeading {{ font-size: 16px; font-weight: 600; padding-top: {SPACING_SMALL}px; }}
     QLabel#muted, QLabel#status {{ color: {MUTED}; }}
-    QLabel#descriptionPanel {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER};
+    QLabel#descriptionPanel {{ background: {SURFACE}; color: {TEXT}; border: none;
         border-radius: {RADIUS_SMALL}px; padding: {SPACING_MEDIUM}px; }}
     QScrollArea#titleOverview, QScrollArea#episodeScroll {{ background: transparent; border: none; }}
-    QLabel#titleCover {{ background: {SURFACE}; color: {MUTED}; border: 1px solid {BORDER};
+    QLabel#titleCover {{ background: {SURFACE_HOVER}; color: {MUTED}; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QLabel#titleFacts {{ color: {MUTED}; font-size: 13px; }}
     QLabel#titleDescription {{ background: transparent; color: {TEXT}; font-size: 14px; }}
-    QWidget#titleDetails {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER};
+    QWidget#titleDetails {{ background: {SURFACE}; color: {TEXT}; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QWidget#titleDetails QLabel {{ background: transparent; }}
-    QWidget#episodeCard {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER};
-        border-radius: {RADIUS_SMALL}px; }}
-    QWidget#episodeCard QLabel {{ background: transparent; }}
-    QWidget#qualityHolder {{ background: transparent; border: none; }}
+    QPushButton#episodeButton {{ background: {SURFACE}; border: 1px solid transparent;
+        border-radius: {RADIUS_SMALL}px; font-weight: 600; }}
+    QPushButton#episodeButton:hover {{ background: {SURFACE_HOVER}; }}
+    QPushButton#episodeButton:pressed {{ background: {SURFACE_ACTIVE}; }}
+    QPushButton#episodeButton:disabled {{ color: {MUTED}; background: {BACKGROUND}; }}
     QLineEdit, QComboBox {{
         background: {SURFACE}; border: 1px solid {BORDER};
         border-radius: {RADIUS_SMALL}px; padding: {SPACING_SMALL}px {SPACING_MEDIUM}px;
@@ -77,45 +78,40 @@ def build_stylesheet() -> str:
     QComboBox QAbstractItemView {{ background: {SURFACE}; border: 1px solid {BORDER};
         selection-background-color: {SURFACE_HOVER}; }}
     QPushButton {{
-        background: {SURFACE}; border: 1px solid {BORDER}; border-radius: {RADIUS_SMALL}px;
+        background: {SURFACE}; border: 1px solid transparent; border-radius: {RADIUS_SMALL}px;
         padding: {SPACING_SMALL}px {SPACING_MEDIUM}px; min-height: 22px;
     }}
-    QPushButton:hover {{ background: {SURFACE_HOVER}; border-color: {SURFACE_ACTIVE}; }}
+    QPushButton:hover {{ background: {SURFACE_HOVER}; }}
     QPushButton:pressed {{ background: {SURFACE_ACTIVE}; }}
     QPushButton:focus {{ border-color: {ACCENT}; }}
-    QPushButton:disabled {{ color: {MUTED}; background: {SURFACE}; border-color: {BORDER}; }}
+    QPushButton:disabled {{ color: {MUTED}; background: {SURFACE}; }}
     QPushButton#primary {{ background: {ACCENT}; color: {BACKGROUND}; border: none;
         font-weight: 600; }}
     QPushButton#primary:hover {{ background: {ACCENT_HOVER}; }}
     QPushButton#textAction {{ background: transparent; color: {ACCENT}; border: none;
         padding: 0 {SPACING_SMALL}px 0 0; min-height: 24px; }}
     QPushButton#textAction:hover {{ color: {ACCENT_HOVER}; background: transparent; }}
-    QPushButton#episodeCopy {{ background: {SURFACE_HOVER}; color: {TEXT};
-        border-color: {BORDER}; font-weight: 600; }}
-    QPushButton#episodeCopy:hover {{ border-color: {ACCENT}; }}
-    QPushButton#qualityChip {{ padding: {SPACING_XS}px {SPACING_SMALL}px; min-height: 24px; }}
-    QPushButton#qualityRetry {{ color: {ACCENT}; min-height: 24px; }}
     QPushButton#settingsChip {{ padding: 0; min-width: {SETTINGS_CONTROL_SIZE}px;
         max-width: {SETTINGS_CONTROL_SIZE}px; min-height: {SETTINGS_CONTROL_SIZE}px;
         max-height: {SETTINGS_CONTROL_SIZE}px; }}
-    QPushButton#animeCard {{ background: {SURFACE}; border: 1px solid {BORDER};
+    QPushButton#animeCard {{ background: {SURFACE}; border: 1px solid transparent;
         border-radius: {RADIUS_SMALL}px; padding: 0; }}
-    QPushButton#animeCard:hover {{ background: {SURFACE_HOVER}; border-color: {ACCENT}; }}
+    QPushButton#animeCard:hover {{ background: {SURFACE_HOVER}; }}
     QPushButton#animeCard:focus {{ border-color: {ACCENT}; }}
     QPushButton#carouselControl {{ padding: 0; min-width: {SECONDARY_CONTROL_SIZE}px;
         max-height: {SECONDARY_CONTROL_SIZE}px; }}
-    QWidget#homeFeedRow {{ background: {SURFACE}; border: 1px solid {BORDER};
+    QWidget#homeFeedRow {{ background: {SURFACE}; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QWidget#homeFeedRow:hover {{ background: {SURFACE_HOVER}; }}
     QPushButton#homeFeedTitle {{ text-align: left; background: transparent; border: none;
         padding: {SPACING_XS}px; font-weight: 600; }}
     QLabel#homeFeedMeta {{ background: transparent; color: {MUTED}; font-size: 12px; }}
-    QLabel#homeFeedPoster {{ background: {SURFACE_HOVER}; border: 1px solid {BORDER};
+    QLabel#homeFeedPoster {{ background: {BACKGROUND}; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QScrollArea#animeCarousel {{ background: transparent; border: none; }}
     QScrollArea#discoveryScroll {{ background: transparent; border: none; }}
     QWidget#animeCarouselTrack {{ background: transparent; }}
-    QLabel#carouselPoster {{ background: {SURFACE_HOVER}; color: {MUTED};
+    QLabel#carouselPoster {{ background: {BACKGROUND}; color: {MUTED};
         border-radius: {RADIUS_SMALL}px; font-size: 12px; }}
     QLabel#carouselKind {{ background: transparent; color: {ACCENT}; font-size: 12px; }}
     QLabel#carouselTitle {{ background: transparent; color: {TEXT}; font-weight: 600; }}
@@ -163,16 +159,16 @@ def build_stylesheet() -> str:
     QComboBox#playerField QAbstractItemView::item {{ height: {PLAYER_FIELD_ROW_HEIGHT}px;
         padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
     QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px; }}
-    QPushButton#pagerControl {{ background: {SURFACE_HOVER}; color: {TEXT};
-        border: 1px solid {BORDER}; border-radius: {RADIUS}px; padding: 0;
+    QPushButton#pagerControl {{ background: transparent; color: {TEXT};
+        border: 1px solid transparent; border-radius: {RADIUS}px; padding: 0;
         min-width: {SECONDARY_CONTROL_SIZE}px; min-height: {SECONDARY_CONTROL_SIZE}px; }}
-    QPushButton#pagerControl:hover {{ border-color: {ACCENT}; }}
-    QPushButton#pagerControl:disabled {{ color: {MUTED}; }}
-    QPushButton#pagerChip {{ background: {SURFACE_HOVER}; color: {MUTED};
-        border: 1px solid {BORDER}; border-radius: {RADIUS}px; padding: 7px {SPACING_LARGE}px; }}
-    QPushButton#pagerChip:hover {{ color: {TEXT}; }}
-    QPushButton#pagerChipActive {{ background: {ACCENT}; color: {BACKGROUND};
-        border-color: {ACCENT}; font-weight: 600; }}
+    QPushButton#pagerControl:hover {{ background: {SURFACE}; }}
+    QPushButton#pagerControl:disabled {{ color: {MUTED}; background: transparent; }}
+    QPushButton#pagerChip {{ background: transparent; color: {MUTED};
+        border: 1px solid transparent; border-radius: {RADIUS}px; padding: 7px {SPACING_LARGE}px; }}
+    QPushButton#pagerChip:hover {{ color: {TEXT}; background: {SURFACE}; }}
+    QPushButton#pagerChipActive {{ background: {SURFACE_ACTIVE}; color: {TEXT};
+        font-weight: 600; }}
     QPushButton#playerSecondary:pressed {{ background: {GHOST_PRESSED}; }}
     QWidget#playerControls {{ background: {CHROME_FILL}; color: {TEXT};
         border: none; border-top: 1px solid {CHROME_HAIRLINE}; }}
@@ -210,18 +206,20 @@ def build_stylesheet() -> str:
     QProgressBar#playerSpinner {{ background: {SURFACE_ACTIVE}; border: none;
         border-radius: 2px; }}
     QProgressBar#playerSpinner::chunk {{ background: {TEXT}; border-radius: 2px; }}
-    QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: {RADIUS_SMALL}px;
-        background: {SURFACE}; top: -1px; }}
-    QTabBar::tab {{ background: {BACKGROUND}; color: {MUTED}; border: 1px solid {BORDER};
-        border-bottom: none; border-top-left-radius: {RADIUS_SMALL}px;
-        border-top-right-radius: {RADIUS_SMALL}px; padding: 7px {SPACING_LARGE}px; margin-right: 2px; }}
-    QTabBar::tab:selected {{ background: {SURFACE}; color: {TEXT}; }}
+    QTabWidget::pane {{ border: none; border-top: 1px solid {BORDER};
+        background: {SURFACE}; }}
+    QTabBar::tab {{ background: transparent; color: {MUTED}; border: none;
+        border-bottom: 2px solid transparent; padding: 7px {SPACING_LARGE}px; margin-right: 2px; }}
+    QTabBar::tab:selected {{ color: {TEXT}; border-bottom: 2px solid {ACCENT}; }}
     QTabBar::tab:hover {{ color: {TEXT}; }}
-    QListWidget {{ background: {SURFACE}; border: 1px solid {BORDER};
+    QListWidget {{ background: {BACKGROUND}; border: none;
         border-radius: {RADIUS_SMALL}px; padding: 6px; outline: none; }}
-    QListWidget::item {{ min-height: {SEARCH_ROW_MIN_HEIGHT}px; padding: {SPACING_SMALL}px {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
+    QListWidget::item {{ min-height: {SEARCH_ROW_MIN_HEIGHT}px;
+        padding: {SPACING_SMALL}px {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px;
+        border-left: 2px solid transparent; }}
     QListWidget::item:hover {{ background: {SURFACE_HOVER}; }}
-    QListWidget::item:selected {{ background: {ACCENT}; color: {BACKGROUND}; }}
+    QListWidget::item:selected {{ background: {SURFACE_ACTIVE}; color: {TEXT};
+        border-left: 2px solid {ACCENT}; }}
     QScrollArea {{ border: none; }}
     QScrollBar:vertical {{ background: {BACKGROUND}; width: 10px; margin: 0; }}
     QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 5px; min-height: 30px; }}

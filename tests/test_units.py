@@ -11,10 +11,8 @@ import pytest
 import requests
 from conftest import (
     FakeMpvAdapter,
-    episode_button,
     pagination_controls,
     pump_until,
-    quality_buttons,
     tab_chips,
 )
 from PySide6.QtCore import Qt
@@ -512,49 +510,6 @@ def test_cover_url_prefers_ua_poster():
     assert AnimeDetail().cover_url is None
 
 
-def test_quality_buttons_copy_stream_for_height(monkeypatch, fake_window, app):
-    monkeypatch.setattr(
-        "mikai_ui.title_page.streams.get_quality_streams",
-        lambda url: {
-            1080: "https://s.example/1080.m3u8",
-            720: "https://s.example/720.m3u8",
-            480: "https://s.example/480.m3u8",
-        },
-    )
-    monkeypatch.setattr(
-        "mikai_ui.title_page.prepare_runtime",
-        lambda: (_ for _ in ()).throw(OSError("offline test")),
-    )
-    title = open_fake_title(fake_window, app)
-    chip = tab_chips(title)[0]
-    assert pump_until(app, lambda: len(quality_buttons(chip)) == 3)
-    assert [button.text() for button in quality_buttons(chip)] == [
-        "1080p",
-        "720p",
-        "480p",
-    ]
-    quality_buttons(chip)[1].click()
-    app.processEvents()
-    assert QGuiApplication.clipboard().text() == "https://s.example/720.m3u8"
-    assert "720p" in title._status.text()
-    # Clicking a quality chip opens the player dialog; runtime deploy failed offline
-    assert len(title._player_dialogs) == 1
-    dialog = title._player_dialogs[0]
-    assert pump_until(app, lambda: dialog.status_text == "Відео недоступне")
-    assert dialog._overlay.details_text() == "offline test"
-    # Dialog carries the full quality list for in-player switching
-    assert dialog._quality_combo.count() == 3
-    assert [dialog._quality_combo.itemText(i) for i in range(3)] == [
-        "1080p",
-        "720p",
-        "480p",
-    ]
-    assert dialog._quality_combo.currentText() == "720p"
-    assert not dialog._quality_combo.isEnabled()  # no backend when runtime fails
-    title.shutdown()
-    app.processEvents()
-
-
 def test_player_dialog_controls(app):
     from mikai_ui.player_controls import format_time
     from mikai_ui.player_dialog import PlayerDialog
@@ -664,6 +619,71 @@ def test_player_toast_sits_above_the_bar_and_clear_of_the_status_card(app):
     app.processEvents()
 
 
+class _StubClipboard:
+    """Board that rejects the first `failures` writes, like COM refusing OLE."""
+
+    def __init__(self, failures: int = 0) -> None:
+        self.failures = failures
+        self.writes = 0
+        self.payload = "stale content"
+
+    def setText(self, text: str) -> None:
+        self.writes += 1
+        if self.writes > self.failures:
+            self.payload = text
+
+    def text(self) -> str:
+        return self.payload
+
+
+class _ClipboardHost:
+    """Stands in for QGuiApplication inside mikai_ui.clipboard."""
+
+    def __init__(self, board: _StubClipboard) -> None:
+        self._board = board
+
+    def clipboard(self) -> _StubClipboard:
+        return self._board
+
+
+def _point_clipboard_at(monkeypatch, board: _StubClipboard) -> None:
+    monkeypatch.setattr("mikai_ui.clipboard.QGuiApplication", _ClipboardHost(board))
+
+
+def test_copy_text_retries_a_refused_write(monkeypatch):
+    from mikai_ui.clipboard import copy_text
+
+    board = _StubClipboard(failures=1)
+    _point_clipboard_at(monkeypatch, board)
+    assert copy_text("https://s.example/720.m3u8") is True
+    assert board.writes == 2, "one refusal must cost exactly one retry"
+
+
+def test_copy_text_reports_a_dead_clipboard(monkeypatch):
+    from mikai_ui.clipboard import copy_text
+
+    board = _StubClipboard(failures=10)
+    _point_clipboard_at(monkeypatch, board)
+    assert copy_text("https://s.example/720.m3u8") is False
+    assert board.payload == "stale content", "the old content must survive"
+
+
+def test_a_refused_copy_flashes_failure_not_success(fake_window, app, monkeypatch):
+    """The status line claimed "copied" while the clipboard kept its old text."""
+    board = _StubClipboard(failures=10)
+    _point_clipboard_at(monkeypatch, board)
+
+    title = open_fake_title(fake_window, app)
+    entry = tab_chips(title)[0]._entry
+    title._copy_episode(entry)
+    app.processEvents()
+
+    assert "Не вдалося скопіювати" in title._status.text(), title._status.text()
+    assert "Скопійовано" not in title._status.text()
+    title.shutdown()
+    app.processEvents()
+
+
 def test_player_disabled_transport_glyph_is_dimmed(app):
     from PySide6.QtCore import QSize
     from PySide6.QtGui import QIcon
@@ -768,44 +788,22 @@ def test_player_seek_skips_absolutely_within_bounds(app):
 def test_episode_context_menu_actions(fake_window, app, monkeypatch):
     monkeypatch.setattr(
         "mikai_ui.title_page.streams.get_quality_streams",
-        lambda url: {
-            1080: "https://s.example/1080.m3u8",
-            720: "https://s.example/720.m3u8",
-            480: "https://s.example/480.m3u8",
-        },
+        lambda url: {1080: "https://s.example/1080.m3u8", 720: "https://s.example/720.m3u8"},
     )
     title = open_fake_title(fake_window, app)
-    widget = tab_chips(title)[0]
-    assert pump_until(app, lambda: len(quality_buttons(widget)) == 3)
-    chip = widget._chip
-
-    menu = title._build_episode_menu(chip)
+    button = tab_chips(title)[0]
+    menu = title._build_episode_menu(button._entry)
     texts = [action.text() for action in menu.actions()]
     assert texts[0] == "Копіювати в буфер обміну"
-    assert "Відкрити в браузері" in texts
     assert "Відкрити у зовнішньому плеєрі" in texts
-    submenu_action = next(a for a in menu.actions() if a.menu() is not None)
-    assert submenu_action.text() == "Відкрити якість"
-    assert [a.text() for a in submenu_action.menu().actions()] == [
-        "Дивитися 1080p",
-        "Копіювати 1080p",
-        "Дивитися 720p",
-        "Копіювати 720p",
-        "Дивитися 480p",
-        "Копіювати 480p",
-    ]
+    assert "Відкрити в браузері" in texts
+    assert not any(action.menu() for action in menu.actions()), (
+        "the quality picker lives in the player, not here"
+    )
 
-    # Copy action writes the embed URL
     menu.actions()[0].trigger()
     app.processEvents()
-    assert QGuiApplication.clipboard().text() == widget.property("embed")
-
-    # Per-quality action writes that quality's stream URL
-    copy_720 = next(a for a in submenu_action.menu().actions() if a.text() == "Копіювати 720p")
-    copy_720.trigger()
-    app.processEvents()
-    assert QGuiApplication.clipboard().text() == "https://s.example/720.m3u8"
-    assert "720p" in title._status.text()
+    assert QGuiApplication.clipboard().text() == button.property("embed")
 
     launched = []
     monkeypatch.setattr(title, "_find_external_player", lambda: ("C:/apps/mpv.exe", "mpv"))
@@ -814,23 +812,33 @@ def test_episode_context_menu_actions(fake_window, app, monkeypatch):
         "_start_external_process",
         lambda program, arguments: launched.append((program, arguments)) or True,
     )
-    external_action = next(
+    external = next(
         action for action in menu.actions() if action.text() == "Відкрити у зовнішньому плеєрі"
     )
-    external_action.trigger()
+    external.trigger()
+    app.processEvents()
+    assert pump_until(app, lambda: launched), "the external launch waits for one fetch"
     assert launched == [("C:/apps/mpv.exe", ["https://s.example/1080.m3u8"])]
     assert "mpv · 1080p" in title._status.text()
+
+    opened = []
+    monkeypatch.setattr(
+        "mikai_ui.title_page.QDesktopServices.openUrl", lambda url: opened.append(url)
+    )
+    browser = next(action for action in menu.actions() if action.text() == "Відкрити в браузері")
+    browser.trigger()
+    app.processEvents()
+    assert opened and opened[0].toString().startswith("http")
 
     title.shutdown()
     app.processEvents()
     menu.deleteLater()
 
 
-def test_episode_context_menu_wiring_and_placeholder(fake_window, app, monkeypatch):
+def test_episode_context_menu_wiring(fake_window, app, monkeypatch):
     from PySide6.QtGui import QContextMenuEvent
     from PySide6.QtWidgets import QMenu as RealMenu
 
-    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
     captured = []
 
     class FakeMenu(RealMenu):
@@ -838,132 +846,23 @@ def test_episode_context_menu_wiring_and_placeholder(fake_window, app, monkeypat
             captured.append(self)
 
     monkeypatch.setattr("mikai_ui.title_page.QMenu", FakeMenu)
-
     title = open_fake_title(fake_window, app)
-    widget = tab_chips(title)[0]
-    assert pump_until(app, lambda: widget._chip.get("requested") is True)
-
-    # A real right-click context menu event drives the chip's handler
+    button = tab_chips(title)[0]
     event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse,
-        widget.rect().center(),
-        widget.mapToGlobal(widget.rect().center()),
+        button.rect().center(),
+        button.mapToGlobal(button.rect().center()),
     )
-    app.sendEvent(widget, event)
+    app.sendEvent(button, event)
     app.processEvents()
     assert captured, "context menu handler did not run on RMB"
     menu = captured[0]
-    texts = [action.text() for action in menu.actions()]
-    assert texts[0] == "Копіювати в буфер обміну"
-    assert "Відкрити в браузері" in texts
-    submenu_action = next(a for a in menu.actions() if a.menu() is not None)
-    items = submenu_action.menu().actions()
-    assert len(items) == 1
-    assert items[0].text() == "Ще не завантажено"
-    assert not items[0].isEnabled()
+    assert [action.text() for action in menu.actions()][0] == "Копіювати в буфер обміну"
+    assert not any(action.menu() for action in menu.actions())
 
     title.shutdown()
     app.processEvents()
     menu.deleteLater()
-
-
-def test_episode_menu_opens_stream_and_refreshes_quality(fake_window, app, monkeypatch):
-    monkeypatch.setattr(
-        "mikai_ui.title_page.streams.get_quality_streams",
-        lambda url: {
-            1080: "https://s.example/1080.m3u8",
-            720: "https://s.example/720.m3u8",
-        },
-    )
-    monkeypatch.setattr(
-        "mikai_ui.title_page.prepare_runtime",
-        lambda: (_ for _ in ()).throw(OSError("offline test")),
-    )
-    title = open_fake_title(fake_window, app)
-    chip_widget = tab_chips(title)[0]
-    assert pump_until(app, lambda: len(quality_buttons(chip_widget)) == 2)
-    assert pump_until(app, lambda: not title._extracting)
-    chip = chip_widget._chip
-
-    menu = title._build_episode_menu(chip)
-    try:
-        submenu = next(a for a in menu.actions() if a.menu() is not None)
-        watch = next(a for a in submenu.menu().actions() if a.text() == "Дивитися 1080p")
-        watch.trigger()
-        app.processEvents()
-        assert QGuiApplication.clipboard().text() == "https://s.example/1080.m3u8"
-        assert len(title._player_dialogs) == 1
-        dialog = title._player_dialogs[-1]
-        assert dialog.controller.state.quality == 1080
-
-        refresh = next(a for a in menu.actions() if a.text() == "Оновити якість")
-        calls: list[str] = []
-        monkeypatch.setattr(
-            "mikai_ui.title_page.streams.get_quality_streams",
-            lambda url: calls.append(url) or {720: f"{url}/720.m3u8"},
-        )
-        refresh.trigger()
-        app.processEvents()
-        assert calls and calls[-1] == chip["embed"], calls
-    finally:
-        title.shutdown()
-        app.processEvents()
-        menu.deleteLater()
-
-
-def test_episode_menu_refresh_shown_after_extraction_starts(fake_window, app, monkeypatch):
-    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
-    title = open_fake_title(fake_window, app)
-    widget = tab_chips(title)[0]
-    assert pump_until(app, lambda: widget._chip.get("requested") is True)
-
-    menu = title._build_episode_menu(widget._chip)
-    try:
-        assert [a for a in menu.actions() if a.text() == "Оновити якість"]
-    finally:
-        title.shutdown()
-        app.processEvents()
-        menu.deleteLater()
-
-
-def test_quality_chip_context_menu_copies_without_playing(fake_window, app, monkeypatch):
-    from PySide6.QtWidgets import QMenu as RealMenu
-
-    captured: list = []
-
-    class FakeMenu(RealMenu):
-        def exec(self, *args, **kwargs):
-            captured.append(self)
-
-    monkeypatch.setattr("mikai_ui.title_page.QMenu", FakeMenu)
-    monkeypatch.setattr(
-        "mikai_ui.title_page.streams.get_quality_streams",
-        lambda url: {720: "https://s.example/720.m3u8"},
-    )
-    title = open_fake_title(fake_window, app)
-    chip_widget = tab_chips(title)[0]
-    assert pump_until(app, lambda: len(quality_buttons(chip_widget)) == 1)
-    chip = chip_widget._chip
-    dialogs_before = len(title._player_dialogs)
-
-    button = quality_buttons(chip_widget)[0]
-    assert button.contextMenuPolicy() == Qt.CustomContextMenu
-    title._quality_chip_context_menu(
-        chip, 720, "https://s.example/720.m3u8", button.mapToGlobal(button.rect().center())
-    )
-    app.processEvents()
-    assert captured, "quality-chip menu did not open"
-    actions = {a.text(): a for a in captured[0].actions()}
-    assert set(actions) == {"Копіювати 720p", "Оновити якість"}
-    actions["Копіювати 720p"].trigger()
-    app.processEvents()
-    assert QGuiApplication.clipboard().text() == "https://s.example/720.m3u8"
-    assert len(title._player_dialogs) == dialogs_before, "copy must not spawn a player"
-
-    title.shutdown()
-    app.processEvents()
-    for menu in captured:
-        menu.deleteLater()
 
 
 def test_search_row_context_menu_copies_link_and_ref(fake_window, app):
@@ -1584,11 +1483,11 @@ def test_title_overview_and_episode_grid_resize(fake_window, app):
     app.processEvents()
     grid = title._tab_states[0]["grid"]
     wide_columns = grid._columns
-    assert 1 <= narrow_columns <= 2
+    assert 4 <= narrow_columns <= 12, narrow_columns
     assert wide_columns > narrow_columns
     first_row_card = grid.layout().itemAt(0).widget()
     second_row_card = grid.layout().itemAt(wide_columns).widget()
-    last_card = grid.layout().itemAt(11).widget()
+    last_card = grid.layout().itemAt(len(grid._cards) - 1).widget()
     assert second_row_card.y() - first_row_card.y() <= first_row_card.height() + 16
     assert grid.height() - last_card.geometry().bottom() < 24
     assert title._tabs.height() < 360
@@ -1663,27 +1562,35 @@ def test_title_sorts_releases_and_preselects_loudest_dub(fake_window, app):
     )
     tabs = {title._tabs.tabText(i) for i in range(title._tabs.count())}
     assert tabs == {"Ashdi", "MoonAnime", "Tortuga"}, tabs
-    assert len(tab_chips(title)) == 12
+    assert len(tab_chips(title)) == 24
     assert labels[0] == "Озвучення — Loud · 24 серій"
 
 
-def test_clicking_episode_copies_its_url(fake_window, app, monkeypatch):
-    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+def test_clicking_episode_fetches_and_plays_it(fake_window, app, monkeypatch):
+    """An episode click is the one moment qualities are fetched for that episode."""
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        return {720: f"{url}/720.m3u8"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    monkeypatch.setattr(
+        "mikai_ui.title_page.prepare_runtime",
+        lambda: (_ for _ in ()).throw(OSError("offline test")),
+    )
     title = open_fake_title(fake_window, app)
-    chips = tab_chips(title)
-    assert len(chips) == 12
-    expected = chips[0].property("embed")
-    assert expected.startswith("http"), expected
-    QTest.mouseClick(episode_button(chips[0]), Qt.MouseButton.LeftButton)
+    buttons = tab_chips(title)
+    assert len(buttons) == 24
+    expected = buttons[0].property("embed")
+    QTest.mouseClick(buttons[0], Qt.MouseButton.LeftButton)
     app.processEvents()
-    assert title._url.text() == expected
-    assert QGuiApplication.clipboard().text() == expected
-    assert "скопійовано" in title._status.text().lower()
-    assert pump_until(app, lambda: title._status.text() == "", timeout=5.0)
-    title._copy_all.click()
+    assert pump_until(app, lambda: len(calls) == 1), calls
+    assert calls[0] == expected
+    assert pump_until(app, lambda: len(title._player_dialogs) == 1)
+    assert title._player_dialogs[-1].controller.state.quality == 720
+    title.shutdown()
     app.processEvents()
-    copied = [line for line in QGuiApplication.clipboard().text().splitlines() if line]
-    assert len(copied) == 24
 
 
 class _FailingThenOkAdapter(FakeMpvAdapter):
@@ -1698,7 +1605,7 @@ class _FailingThenOkAdapter(FakeMpvAdapter):
             self.errorOccurred.emit("HTTP 403 forbidden")
 
 
-def test_quality_extraction_is_cached_per_episode_url(fake_window, app, monkeypatch):
+def test_episode_qualities_are_fetched_once_and_cached(fake_window, app, monkeypatch):
     calls: list[str] = []
 
     def mock_streams(url):
@@ -1706,29 +1613,32 @@ def test_quality_extraction_is_cached_per_episode_url(fake_window, app, monkeypa
         return {720: f"{url}/720.m3u8"}
 
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
-    title = open_fake_title(fake_window, app)
-    prev_btn, _, next_btn = pagination_controls(title)
-    page_one_url = tab_chips(title)[0].property("embed")
-    assert pump_until(app, lambda: len(calls) == 12)
-    assert calls.count(page_one_url) == 1
-    assert len(quality_buttons(tab_chips(title)[0])) == 1
 
-    # Leaving and returning to an already-extracted page must not refetch it
-    QTest.mouseClick(next_btn, Qt.MouseButton.LeftButton)
+    class _PlainAdapter(FakeMpvAdapter):
+        def __init__(self, *_args, **_kwargs) -> None:
+            super().__init__()
+
+    # a working adapter, or the one-shot recovery fetch skews the call count
+    monkeypatch.setattr("mikai_ui.title_page.prepare_runtime", lambda: Path("."))
+    monkeypatch.setattr("mikai_ui.player_dialog.MPVAdapter", _PlainAdapter)
+    title = open_fake_title(fake_window, app)
+    button = tab_chips(title)[0]
+    watched = button.property("embed")
+
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     app.processEvents()
-    assert pump_until(app, lambda: len(calls) == 24)
-    QTest.mouseClick(prev_btn, Qt.MouseButton.LeftButton)
+    assert pump_until(app, lambda: len(calls) == 1), calls
+    # a second click reads the cache, not the network
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     app.processEvents()
-    assert pump_until(app, lambda: len(quality_buttons(tab_chips(title)[0])) == 1)
-    app.processEvents()
-    assert calls.count(page_one_url) == 1, calls
-    assert len(calls) == 24, calls[24:]
-    assert [b.text() for b in quality_buttons(tab_chips(title)[0])] == ["720p"]
+    assert pump_until(app, lambda: len(title._player_dialogs) == 2)
+    assert calls.count(watched) == 1, calls
+
     title.shutdown()
     app.processEvents()
 
 
-def test_no_source_episode_is_not_reextracted_on_every_paint(fake_window, app, monkeypatch):
+def test_no_source_click_is_cached_negatively(fake_window, app, monkeypatch):
     calls: list[str] = []
 
     def mock_streams(url):
@@ -1737,26 +1647,24 @@ def test_no_source_episode_is_not_reextracted_on_every_paint(fake_window, app, m
 
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
     title = open_fake_title(fake_window, app)
-    chips = tab_chips(title)
-    watched = chips[0].property("embed")
-    assert pump_until(
-        app,
-        lambda: (
-            calls.count(watched) == 1
-            and any("відео відсутнє" in lbl.text() for lbl in chips[0].findChildren(QLabel))
-        ),
-    )
+    button = tab_chips(title)[0]
+    watched = button.property("embed")
 
-    # Switching away and back repaints from the negative cache, not the network
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(calls) == 1), calls
+    assert pump_until(app, lambda: "немає відео" in title._status.text())
+    assert not button.isEnabled(), "a dead episode must look dead"
+
+    # a second click reads the negative cache; repainting must not refetch either
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     title._tabs.setCurrentIndex(1)
     app.processEvents()
     title._tabs.setCurrentIndex(0)
     app.processEvents()
-    assert pump_until(
-        app,
-        lambda: any("відео відсутнє" in lbl.text() for lbl in chips[0].findChildren(QLabel)),
-    )
     assert calls.count(watched) == 1, calls
+    assert not title._tab_states[0]["visible"][0]["button"].isEnabled()
+
     title.shutdown()
     app.processEvents()
 
@@ -1774,19 +1682,18 @@ def test_failed_playback_reextracts_before_reporting_the_error(fake_window, app,
     monkeypatch.setattr("mikai_ui.title_page.prepare_runtime", lambda: Path("."))
     monkeypatch.setattr("mikai_ui.player_dialog.MPVAdapter", _FailingThenOkAdapter)
     title = open_fake_title(fake_window, app)
-    chips = tab_chips(title)
-    assert pump_until(app, lambda: len(quality_buttons(chips[0])) == 1)
-    quality_buttons(chips[0])[0].click()
+    button = tab_chips(title)[0]
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     app.processEvents()
+    assert pump_until(app, lambda: len(title._player_dialogs) == 1)
     dialog = title._player_dialogs[-1]
     assert pump_until(app, lambda: dialog.controller.adapter is not None)
     adapter = dialog.controller.adapter
+    watched = button.property("embed")
 
     # The first load fails; the dialog re-extracts and retries before giving up
-    watched = chips[0].property("embed")
-    stale_url = chips[0]._chip["qualities"][720]
+    stale_url = adapter.loads[0]
     assert pump_until(app, lambda: len(adapter.loads) == 2), adapter.loads
-    assert adapter.loads[0] == stale_url
     assert adapter.loads[1] != stale_url, "player retried the expired URL"
     assert calls.count(watched) == 2, calls
     assert dialog.status_text == "Відео завантажується…", dialog.status_text
@@ -1795,51 +1702,38 @@ def test_failed_playback_reextracts_before_reporting_the_error(fake_window, app,
     app.processEvents()
 
 
-def test_strict_player_tab_isolation_and_no_unexistent_quality_chips(fake_window, app, monkeypatch):
-    monkeypatch.setattr(
-        "mikai_ui.title_page.streams.get_quality_streams",
-        lambda url: (
-            {1080: "https://ashdi.m3u8", 720: "https://ashdi.m3u8"} if "ashdi.vip" in url else {}
-        ),
-    )
+def test_strict_player_tab_isolation(fake_window, app, monkeypatch):
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
     title = open_fake_title(fake_window, app)
-    tab_names = [title._tabs.tabText(i) for i in range(title._tabs.count())]
-    assert tab_names == ["Ashdi", "MoonAnime", "Tortuga"]
+    tab_names = {title._tabs.tabText(i) for i in range(title._tabs.count())}
+    assert tab_names == {"Ashdi", "MoonAnime", "Tortuga"}
 
-    # 1. Ashdi tab: only ashdi URLs
-    ashdi_chips = tab_chips(title, 0)
-    assert len(ashdi_chips) == 12
-    for chip in ashdi_chips:
-        embed = chip.property("embed")
+    ashdi = tab_chips(title, 0)
+    assert len(ashdi) == 24
+    for button in ashdi:
+        embed = button.property("embed")
         assert "ashdi.vip" in embed, embed
         assert "moon" not in embed and "tortuga" not in embed
 
-    # Ashdi quality chips: only 1080p and 720p exist, NO 480p placeholder
-    assert pump_until(app, lambda: len(quality_buttons(ashdi_chips[0])) == 2)
-    assert [b.text() for b in quality_buttons(ashdi_chips[0])] == ["1080p", "720p"]
-
-    # 2. Tortuga tab: switch to Tortuga tab (index 2)
     title._tabs.setCurrentIndex(2)
     app.processEvents()
-    tortuga_chips = tab_chips(title, 2)
-    assert len(tortuga_chips) == 12
-    for chip in tortuga_chips:
-        embed = chip.property("embed")
-        assert "tortuga.tw" in embed, embed
-        assert "ashdi" not in embed and "moon" not in embed
-    # Non-existent qualities on Tortuga -> 0 quality chips
-    assert len(quality_buttons(tortuga_chips[0])) == 0
+    tortuga = tab_chips(title, 2)
+    assert len(tortuga) >= 12
+    for button in tortuga:
+        assert "tortuga.tw" in button.property("embed")
 
-    # 3. MoonAnime tab: switch to Moon tab (index 1)
     title._tabs.setCurrentIndex(1)
     app.processEvents()
-    moon_chips = tab_chips(title, 1)
-    assert len(moon_chips) == 12
-    for chip in moon_chips:
-        embed = chip.property("embed")
-        assert "moonanime.art" in embed, embed
-        assert "ashdi" not in embed and "tortuga" not in embed
-    assert len(quality_buttons(moon_chips[0])) == 0
+    moon = tab_chips(title, 1)
+    assert len(moon) >= 12
+    for button in moon:
+        assert "moonanime.art" in button.property("embed")
+
+    # a 24-episode season is one page: the pager stays out of the way
+    for state in title._tab_states:
+        assert state["pager"].isHidden()
+    title.shutdown()
+    app.processEvents()
 
 
 def test_release_pager_jumps_to_the_first_and_last_page(app, monkeypatch):
@@ -1847,7 +1741,7 @@ def test_release_pager_jumps_to_the_first_and_last_page(app, monkeypatch):
 
     class LongReleaseRepository(FakeRepository):
         def get_player(self, ref: str) -> PlayerResult:
-            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 301)))])
 
     window = MainWindow(LongReleaseRepository())
     window.show()
@@ -1857,15 +1751,15 @@ def test_release_pager_jumps_to_the_first_and_last_page(app, monkeypatch):
         assert pump_until(app, lambda: title._selector.count() == 1)
         state = title._tab_states[0]
         pager = state["pager"]
-        # eleven pages: the first arrow is dead on page one, the last is live
+        assert pager.jump.maximum() == 3
         assert not pager.first_btn.isEnabled()
         assert not pager.prev_btn.isEnabled()
         assert pager.last_btn.isEnabled()
 
         pager.last_btn.click()
         app.processEvents()
-        assert state["page"] == 10
-        assert episode_button(tab_chips(title)[0]).text() == "Серія 121"
+        assert state["page"] == 2
+        assert tab_chips(title)[0].text() == "281"
         assert not pager.last_btn.isEnabled()
         assert not pager.next_btn.isEnabled()
         assert pager.first_btn.isEnabled()
@@ -1873,7 +1767,7 @@ def test_release_pager_jumps_to_the_first_and_last_page(app, monkeypatch):
         pager.first_btn.click()
         app.processEvents()
         assert state["page"] == 0
-        assert episode_button(tab_chips(title)[0]).text() == "Серія 1"
+        assert tab_chips(title)[0].text() == "1"
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -1886,7 +1780,7 @@ def test_release_pager_jump_box_takes_a_typed_page(app, monkeypatch):
 
     class LongReleaseRepository(FakeRepository):
         def get_player(self, ref: str) -> PlayerResult:
-            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 301)))])
 
     window = MainWindow(LongReleaseRepository())
     window.show()
@@ -1896,15 +1790,14 @@ def test_release_pager_jump_box_takes_a_typed_page(app, monkeypatch):
         assert pump_until(app, lambda: title._selector.count() == 1)
         state = title._tab_states[0]
         pager = state["pager"]
-        assert pager.jump.maximum() == 11
+        assert pager.jump.maximum() == 3
         assert pager.jump.value() == 1
 
-        pager.jump.setValue(6)
+        pager.jump.setValue(2)
         app.processEvents()
-        assert state["page"] == 5
-        assert episode_button(tab_chips(title)[0]).text() == "Серія 61"
-        # the box follows the page, so a jump never leaves it stale
-        assert pager.jump.value() == 6
+        assert state["page"] == 1
+        assert tab_chips(title)[0].text() == "141"
+        assert pager.jump.value() == 2
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -1917,7 +1810,7 @@ def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
 
     class LongReleaseRepository(FakeRepository):
         def get_player(self, ref: str) -> PlayerResult:
-            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 124)))])
+            return PlayerResult(releases=[_release("voice", "Loud", list(range(1, 301)))])
 
     window = MainWindow(LongReleaseRepository())
     window.show()
@@ -1925,35 +1818,17 @@ def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
         window.open_title("7428", None)
         title = window._title
         assert pump_until(app, lambda: title._selector.count() == 1)
+        state = title._tab_states[0]
         prev_btn, chips, next_btn = pagination_controls(title)
-        # 123 episodes at twelve a page is eleven pages; a chip must name what the
-        # page holds, never a range the grid will not show
-        labels = [chip.text() for chip in chips]
-        assert labels == [
-            "1 – 12",
-            "13 – 24",
-            "25 – 36",
-            "37 – 48",
-            "49 – 60",
-            "61 – 72",
-            "73 – 84",
-        ], labels
+        assert [chip.text() for chip in chips] == ["1 – 140", "141 – 280", "281 – 300"]
         assert chips[0].objectName() == "pagerChipActive"
 
         chips[1].click()
         app.processEvents()
-        assert pump_until(app, lambda: title._tab_states[0]["page"] == 1)
-        chips = pagination_controls(title)[1]
-        assert chips[1].objectName() == "pagerChipActive"
-        assert episode_button(tab_chips(title)[0]).text() == "Серія 13"
-
-        # the window follows the page, so the last one is reachable by one jump
-        title._change_page(title._tab_states[0], 9)
-        app.processEvents()
-        assert pump_until(app, lambda: title._tab_states[0]["page"] == 10)
-        chips = pagination_controls(title)[1]
-        assert chips[-1].text() == "121 – 123", [chip.text() for chip in chips]
-        assert chips[-1].objectName() == "pagerChipActive"
+        assert state["page"] == 1
+        assert tab_chips(title)[0].text() == "141"
+        _, live_chips, _ = pagination_controls(title)
+        assert live_chips[1].objectName() == "pagerChipActive"
     finally:
         window._runner.wait_for_done(10000)
         window.close()
@@ -1961,85 +1836,124 @@ def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
         app.processEvents()
 
 
-def test_pagination_limits_extraction_to_twelve_episodes(fake_window, app, monkeypatch):
-    extracted_urls = []
+def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatch):
+    """The mic menu offers every dub/sub track carrying the episode, deduped."""
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+    title = open_fake_title(fake_window, app)
+    variants = title._episode_variants("1")
+    embeds = [v["embed"] for v in variants]
+    assert len(embeds) == len(set(embeds)), "the same track must not appear twice"
+    # four releases, each carried by three providers
+    assert len(variants) == 12, [v["label"] for v in variants]
+    assert any(v["label"].endswith("· Ashdi") for v in variants)
+    assert any(v["label"].startswith("Субтитри") for v in variants)
+    title.shutdown()
+    app.processEvents()
+
+
+def test_variant_button_hides_without_alternatives_and_picks_the_track(app):
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.set_variants([{"label": "Озвучення — Loud · Ashdi", "embed": "a"}], "a")
+    assert not controls.variant_button.isVisibleTo(controls)
+
+    controls.set_variants(
+        [
+            {"label": "Озвучення — Loud · Ashdi", "embed": "a"},
+            {"label": "Субтитри — SubTeam · Ashdi", "embed": "s"},
+        ],
+        "a",
+    )
+    assert controls.variant_button.isVisibleTo(controls)
+    menu = controls._variant_menu()
+    actions = menu.actions()
+    assert [a.text() for a in actions] == [
+        "Озвучення — Loud · Ashdi",
+        "Субтитри — SubTeam · Ashdi",
+    ]
+    assert [a.isChecked() for a in actions] == [True, False]
+
+    picked = []
+    controls.variantRequested.connect(lambda embed, label: picked.append((embed, label)))
+    actions[1].trigger()
+    assert picked == [("s", "Субтитри — SubTeam · Ashdi")]
+    controls.deleteLater()
+    menu.deleteLater()
+
+
+def test_variant_switch_swaps_stream_and_keeps_position(fake_window, app, monkeypatch):
+    """Pick another track in the player: one fetch, new URL, same position."""
+    calls: list[str] = []
 
     def mock_streams(url):
-        extracted_urls.append(url)
+        calls.append(url)
         return {720: f"{url}/720.m3u8"}
 
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+
+    class _PlainAdapter(FakeMpvAdapter):
+        def __init__(self, *_args, **_kwargs) -> None:
+            super().__init__()
+
+    monkeypatch.setattr("mikai_ui.title_page.prepare_runtime", lambda: Path("."))
+    monkeypatch.setattr("mikai_ui.player_dialog.MPVAdapter", _PlainAdapter)
     title = open_fake_title(fake_window, app)
-
-    # Page 1: exactly 12 episodes displayed
-    chips_p1 = tab_chips(title)
-    assert len(chips_p1) == 12
-    assert episode_button(chips_p1[0]).text() == "Серія 1"
-    assert episode_button(chips_p1[-1]).text() == "Серія 12"
-
-    prev_btn, chips, next_btn = pagination_controls(title)
-    assert prev_btn is not None and next_btn is not None and chips
-    assert prev_btn.isEnabled() is False
-    assert next_btn.isEnabled() is True
-    assert [chip.text() for chip in chips] == ["1 – 12", "13 – 24"]
-    # Extraction must process at most 12 episodes on this page, not all 24
-    assert pump_until(app, lambda: len(extracted_urls) == 12)
-
-    # Click Next (->)
-    QTest.mouseClick(next_btn, Qt.MouseButton.LeftButton)
+    button = tab_chips(title)[0]
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(title._player_dialogs) == 1)
+    dialog = title._player_dialogs[-1]
+    assert pump_until(app, lambda: dialog.controller.adapter is not None)
+    adapter = dialog.controller.adapter
+    adapter.durationChanged.emit(1200.0)
+    adapter.positionChanged.emit(140.0)
+    adapter.mediaLoaded.emit()
     app.processEvents()
 
-    chips_p2 = tab_chips(title)
-    assert len(chips_p2) == 12
-    assert episode_button(chips_p2[0]).text() == "Серія 13"
-    assert episode_button(chips_p2[-1]).text() == "Серія 24"
-    assert prev_btn.isEnabled() is True
-    assert next_btn.isEnabled() is False
-    assert chips[0].objectName() == "pagerChipActive"
-    # Now exactly 24 extractions have run (12 for page 1 + 12 for page 2)
-    assert pump_until(app, lambda: len(extracted_urls) == 24)
+    variants = title._episode_variants(button._entry["number"])
+    other = next(v for v in variants if v["embed"] != button._entry["embed"])
+    fetched_before = len(calls)
+    dialog._on_variant_requested(other["embed"], other["label"])
+    app.processEvents()
+    assert pump_until(app, lambda: len(adapter.loads) == 2), adapter.loads
 
-    # Click Prev (<-)
-    QTest.mouseClick(prev_btn, Qt.MouseButton.LeftButton)
+    assert calls[fetched_before:] == [other["embed"]], calls
+    assert adapter.loads[-1] == f"{other['embed']}/720.m3u8"
+    assert dialog._page_entry["embed"] == other["embed"]
+    adapter.mediaLoaded.emit()
+    app.processEvents()
+    assert adapter.seeks[-1] == 140.0, adapter.seeks
+    title.shutdown()
     app.processEvents()
 
-    chips_back = tab_chips(title)
-    assert len(chips_back) == 12
-    assert episode_button(chips_back[0]).text() == "Серія 1"
-    assert chips[0].objectName() == "pagerChipActive"
-    assert prev_btn.isEnabled() is False
-    assert next_btn.isEnabled() is True
 
+def test_no_quality_extraction_happens_until_an_episode_is_played(fake_window, app, monkeypatch):
+    """The old design fetched qualities for every visible episode on render."""
+    calls: list[str] = []
 
-def test_no_source_shows_badge_and_feedback(fake_window, app, monkeypatch):
     def mock_streams(url):
-        raise streams.NoSourceError(f"moonanime has no video source for {url} (no_source)")
+        calls.append(url)
+        return {720: f"{url}/720.m3u8"}
 
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
-    title = open_fake_title(fake_window, app)
-    chips = tab_chips(title)
-    chip = chips[0]
-
-    # Quality buttons should be 0
-    assert len(quality_buttons(chip)) == 0
-
-    # There should be a "відео відсутнє" badge inside the chip's holder
-    from PySide6.QtWidgets import QLabel
-
-    assert pump_until(
-        app,
-        lambda: any("відео відсутнє" in lbl.text() for lbl in chip.findChildren(QLabel)),
-        timeout=5.0,
+    monkeypatch.setattr(
+        "mikai_ui.title_page.prepare_runtime",
+        lambda: (_ for _ in ()).throw(OSError("offline test")),
     )
-    badge = next(lbl for lbl in chip.findChildren(QLabel) if "відео відсутнє" in lbl.text())
-    assert "no_source" in badge.toolTip()
-
-    # Clicking the episode button copies embed URL and informs user that video is missing
-    btn = episode_button(chip)
-    QTest.mouseClick(btn, Qt.MouseButton.LeftButton)
+    title = open_fake_title(fake_window, app)
+    QTest.qWait(150)
     app.processEvents()
-    assert "відео відсутнє" in title._status.text()
-    assert QGuiApplication.clipboard().text() == chip.property("embed")
+    assert calls == [], "rendering must not cost a single quality fetch"
+
+    buttons = tab_chips(title)
+    assert len(buttons) == 24
+    QTest.mouseClick(buttons[7], Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(calls) == 1), calls
+    assert calls[0] == buttons[7].property("embed")
+    title.shutdown()
+    app.processEvents()
 
 
 def test_settings_chip_in_search_and_title_pages(fake_window, app):

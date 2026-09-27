@@ -321,8 +321,24 @@ class PlayerController(QObject):
         self._set_state(speed=value)
 
     def set_quality(self, height: int) -> None:
-        adapter = self._adapter
         url = self._qualities.get(int(height))
+        if not url:
+            return
+        self._swap_stream(url, int(height), announce=True)
+
+    def switch_variant(
+        self, url: str, qualities: dict[int, str], height: int | None = None
+    ) -> None:
+        """Change the dub/sub track, resuming at the same playback position."""
+        if self._closed or not qualities or not url or url == self._current_url:
+            return
+        target = height if height in qualities else max(qualities)
+        self._qualities = dict(qualities)
+        self._initial_url = qualities[target]
+        self._swap_stream(qualities[target], target, announce=False)
+
+    def _swap_stream(self, url: str, height: int, *, announce: bool) -> None:
+        adapter = self._adapter
         if adapter is None or self._closed or not url or url == self._current_url:
             return
         previous = self._state
@@ -337,7 +353,8 @@ class PlayerController(QObject):
         self._current_url = url
         self._has_loaded = False
         self._set_state(status=PlaybackStatus.LOADING, quality=int(height), error=None)
-        self.qualitySwitching.emit(int(height))
+        if announce:
+            self.qualitySwitching.emit(int(height))
         self._load_watchdog.start()
         adapter.load(url)
 

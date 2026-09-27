@@ -1,6 +1,6 @@
 import pytest
 import requests
-from conftest import episode_button, pump_until, tab_chips
+from conftest import pump_until, tab_chips
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
@@ -102,15 +102,14 @@ def test_twelve_episode_release_lists_all_urls_from_moon_and_ashdi(window, app):
     assert {"Ashdi", "MoonAnime"} <= tab_labels, tab_labels
     all_numbers: set[str] = set()
     for tab in range(title._tabs.count()):
-        numbers = {
-            episode_button(chip).text().removeprefix("Серія ") for chip in tab_chips(title, tab)
-        }
+        numbers = {chip.text() for chip in tab_chips(title, tab)}
         assert "12" in numbers, (title._tabs.tabText(tab), sorted(numbers))
         all_numbers |= numbers
     assert {str(i) for i in range(1, 13)} <= all_numbers, sorted(all_numbers)
 
 
-def test_clicking_episode_copies_its_url(window, app):
+def test_episode_menu_copies_its_url(window, app):
+    """Clicking plays; the copy lives in the episode's context menu now."""
     title = open_title_for(window, app, "Чорний смолоскип")
     assert pump_until(app, lambda: title._selector.count() == 7)
     title._selector.setCurrentIndex(release_index(title, "Субтитри", "Рідний Голос"))
@@ -120,12 +119,14 @@ def test_clicking_episode_copies_its_url(window, app):
     assert chips
     expected = chips[0].property("embed")
     assert expected.startswith("http"), expected
-    QTest.mouseClick(episode_button(chips[0]), Qt.MouseButton.LeftButton)
+    menu = title._build_episode_menu(chips[0]._entry)
+    menu.actions()[0].trigger()
     app.processEvents()
     assert title._url.text() == expected
     assert QGuiApplication.clipboard().text() == expected
     assert "скопійовано" in title._status.text().lower()
     assert pump_until(app, lambda: title._status.text() == "", timeout=5)
+    menu.deleteLater()
 
 
 def test_copy_all_copies_active_player_tab(window, app):

@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 
 def tab_chips(title, index: int | None = None) -> list:
@@ -26,25 +26,6 @@ def pagination_controls(title, index: int | None = None):
     layout = pager._chip_layout
     chips = [layout.itemAt(i).widget() for i in range(layout.count())]
     return pager.prev_btn, chips, pager.next_btn
-
-
-def episode_button(chip) -> QPushButton:
-    for button in chip.findChildren(QPushButton):
-        if button.text().startswith("Серія"):
-            return button
-    raise AssertionError("episode button missing")
-
-
-def quality_buttons(chip) -> list[QPushButton]:
-    return [
-        button
-        for button in chip.findChildren(QPushButton)
-        if button.text().endswith("p") and not button.text().startswith("Серія")
-    ]
-
-
-from mikai_backend import MikaiClient
-from mikai_ui.main import MainWindow
 
 
 class FakeMpvAdapter(QObject):
@@ -68,8 +49,8 @@ class FakeMpvAdapter(QObject):
         self.mutes: list[bool] = []
         self.speeds: list[float] = []
         self.pauses: list[bool] = []
-        self.stream: dict[str, Any] = {}
         self.closed = False
+        self.stream: dict = {}
 
     def load(self, url: str) -> None:
         self.loads.append(url)
@@ -83,6 +64,10 @@ class FakeMpvAdapter(QObject):
     def toggle_pause(self) -> None:
         self.set_paused(not self.pauses[-1] if self.pauses else True)
 
+    def emit_stream(self, **fields) -> None:
+        self.stream.update(fields)
+        self.streamInfoChanged.emit(dict(self.stream))
+
     def seek(self, position: float) -> None:
         self.seeks.append(position)
 
@@ -95,13 +80,12 @@ class FakeMpvAdapter(QObject):
     def set_speed(self, speed: float) -> None:
         self.speeds.append(speed)
 
-    def emit_stream(self, **fields: Any) -> None:
-        self.stream.update(fields)
-        self.streamInfoChanged.emit(dict(self.stream))
-
     def close(self) -> None:
-
         self.closed = True
+
+
+from mikai_backend import MikaiClient
+from mikai_ui.main import MainWindow
 
 
 def pump_until(app: QApplication, cond, timeout: float = 25.0) -> bool:
