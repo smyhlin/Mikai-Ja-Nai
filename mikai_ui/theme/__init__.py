@@ -20,6 +20,7 @@ from mikai_ui.theme.colors import (
 from mikai_ui.theme.metrics import (
     PLAYER_FIELD_HEIGHT,
     PLAYER_FIELD_MIN_WIDTH,
+    PLAYER_FIELD_ROW_HEIGHT,
     PRIMARY_CONTROL_SIZE,
     RADIUS,
     RADIUS_LARGE,
@@ -136,8 +137,8 @@ def build_stylesheet() -> str:
         padding: 0 {SPACING_MEDIUM}px; }}
     QPushButton#playerGhost:hover {{ color: {TEXT}; }}
     QComboBox#playerField {{ background: transparent; border: none;
-        color: {MUTED}; font-size: 13px; padding: 0 {SPACING_XS}px;
-        min-height: {PLAYER_FIELD_HEIGHT - 8}px; max-height: {PLAYER_FIELD_HEIGHT}px;
+        color: {MUTED}; padding: 0 {SPACING_SMALL}px;
+        min-height: {PLAYER_FIELD_HEIGHT}px; max-height: {PLAYER_FIELD_HEIGHT}px;
         min-width: {PLAYER_FIELD_MIN_WIDTH}px; }}
     QComboBox#playerField:hover {{ color: {TEXT}; background: {GHOST_HOVER};
         border-radius: {RADIUS_SMALL}px; }}
@@ -147,6 +148,8 @@ def build_stylesheet() -> str:
         border: 1px solid {BORDER}; border-radius: {RADIUS_SMALL}px;
         padding: {SPACING_XS}px; outline: none;
         selection-background-color: {SURFACE_HOVER}; }}
+    QComboBox#playerField QAbstractItemView::item {{ height: {PLAYER_FIELD_ROW_HEIGHT}px;
+        padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
     QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px;
         font-variant-numeric: tabular-nums; }}
     QPushButton#pagerControl {{ background: {SURFACE_HOVER}; color: {TEXT};

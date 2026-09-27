@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSizePolicy,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
@@ -19,6 +20,7 @@ from mikai_ui.theme.colors import ICON_DISABLED
 from mikai_ui.theme.metrics import (
     ICON_SIZE,
     PLAYER_FIELD_MIN_WIDTH,
+    PLAYER_FIELD_ROW_HEIGHT,
     PRIMARY_CONTROL_SIZE,
     SECONDARY_CONTROL_SIZE,
     SPACING_MEDIUM,
@@ -112,6 +114,18 @@ class TimelineSlider(QSlider):
         return ratio * self._duration
 
 
+class FieldRowDelegate(QStyledItemDelegate):
+    """Give combo popup rows a readable height.
+
+    Qt applies stylesheet `::item` sizing to list and table views but not to a
+    QComboBox popup, so the row height has to come from the delegate.
+    """
+
+    def sizeHint(self, option, index):  # noqa: N802 - Qt naming
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), PLAYER_FIELD_ROW_HEIGHT))
+
+
 class PlayerControlsWidget(QWidget):
     """The player toolbar. It knows playback intent, never the mpv engine."""
 
@@ -189,6 +203,7 @@ class PlayerControlsWidget(QWidget):
 
         self.speed_combo = QComboBox()
         self.speed_combo.setObjectName("playerField")
+        self.speed_combo.setItemDelegate(FieldRowDelegate(self.speed_combo))
         self.speed_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
         self.speed_combo.setAccessibleName("Швидкість відтворення")
         self.speed_combo.setToolTip("Швидкість відтворення")
@@ -201,6 +216,7 @@ class PlayerControlsWidget(QWidget):
 
         self.quality_combo = QComboBox()
         self.quality_combo.setObjectName("playerField")
+        self.quality_combo.setItemDelegate(FieldRowDelegate(self.quality_combo))
         self.quality_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
         self.quality_combo.setAccessibleName("Якість відео")
         self.quality_combo.setToolTip("Якість відео")

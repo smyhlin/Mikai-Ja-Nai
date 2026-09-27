@@ -302,6 +302,26 @@ def test_scrubbing_the_player_bar_reaches_the_engine_once(app):
     app.processEvents()
 
 
+def test_quality_selector_chip_and_popup_rows_are_readable(app):
+    """The quality chip and its dropdown were cramped: a 26px chip and 21px rows."""
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.set_qualities({1080: "u", 720: "u", 480: "u"}, 720)
+    app.processEvents()
+
+    combo = controls.quality_combo
+    assert combo.height() >= 30, combo.height()
+
+    combo.showPopup()
+    app.processEvents()
+    view = combo.view()
+    row = view.visualRect(view.model().index(0, 0))
+    assert row.height() >= 30, row.height()
+    combo.hidePopup()
+    controls.deleteLater()
+
+
 def test_player_shortcuts_fullscreen_and_state_update(app):
     adapter = FakeMpvAdapter()
     dialog = PlayerDialog("Episode 1", "stream")
