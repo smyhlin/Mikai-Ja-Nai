@@ -173,6 +173,9 @@ def build_stylesheet() -> str:
     QLabel#playerToast {{ background: {CHROME_FILL}; color: {TEXT};
         border: 1px solid {BORDER}; border-radius: {RADIUS}px;
         padding: {SPACING_XS}px {SPACING_LARGE}px; font-size: 13px; }}
+    QLabel#playerStreamChip {{ background: {CHROME_FILL}; color: {TEXT};
+        border: 1px solid {BORDER}; border-radius: {RADIUS_SMALL}px;
+        padding: {SPACING_XS}px {SPACING_SMALL}px; font-size: 12px; }}
     QSlider#timeline {{ background: transparent; }}
     QSlider#timeline::groove:horizontal {{ height: {TIMELINE_GROOVE_HEIGHT}px;
         background: {SURFACE_ACTIVE}; border-radius: 2px; }}

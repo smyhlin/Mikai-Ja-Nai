@@ -322,6 +322,71 @@ def test_quality_selector_chip_and_popup_rows_are_readable(app):
     controls.deleteLater()
 
 
+def test_stream_info_text_uses_size_and_fps():
+    from mikai_ui.player_controller import StreamInfo
+
+    assert StreamInfo(1280, 720, 24.0).text() == "1280x720 | 24fps"
+    assert StreamInfo(1920, 1080, 23.976).text() == "1920x1080 | 23.98fps"
+    # mpv reports nothing useful until the stream is open; the chip stays empty
+    assert StreamInfo().text() == ""
+    assert StreamInfo(1280, 720, 0.0).text() == "1280x720"
+
+
+def test_stream_chip_shows_on_mouse_movement_only(app):
+    from mikai_ui.player_controller import PlaybackState, PlaybackStatus, StreamInfo
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/480/index.m3u8")
+    dialog.show()
+    app.processEvents()
+    chip = dialog._overlay.stream_chip
+    assert not chip.isVisible()
+
+    dialog._overlay.set_playback_state(
+        PlaybackState(
+            status=PlaybackStatus.PLAYING, available=True, stream=StreamInfo(1280, 720, 24.0)
+        )
+    )
+    app.processEvents()
+    assert chip.text() == "1280x720 | 24fps"
+    assert not chip.isVisible(), "the chip must stay hidden until the mouse moves"
+
+    dialog._overlay.show_controls()
+    app.processEvents()
+    assert chip.isVisible()
+
+    # it fades on its own, independent of the fullscreen auto-hide
+    assert dialog._overlay._chip_timer.isActive()
+    dialog._overlay._chip_timer.stop()
+    dialog.close()
+    app.processEvents()
+
+
+def test_stream_chip_sits_in_the_top_right_corner(app):
+    from mikai_ui.player_controller import PlaybackState, PlaybackStatus, StreamInfo
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/480/index.m3u8")
+    dialog.show()
+    app.processEvents()
+    dialog._overlay.set_playback_state(
+        PlaybackState(
+            status=PlaybackStatus.PLAYING, available=True, stream=StreamInfo(1280, 720, 24.0)
+        )
+    )
+    dialog._overlay.show_controls()
+    app.processEvents()
+
+    chip = dialog._overlay.stream_chip
+    stage = dialog._stage
+    assert chip.isVisible()
+    assert chip.geometry().right() < stage.width()
+    assert chip.geometry().left() > stage.width() // 2, "the chip belongs top-right"
+    assert chip.geometry().top() < stage.height() // 4
+    dialog.close()
+    app.processEvents()
+
+
 def test_player_shortcuts_fullscreen_and_state_update(app):
     adapter = FakeMpvAdapter()
     dialog = PlayerDialog("Episode 1", "stream")

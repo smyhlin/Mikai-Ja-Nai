@@ -58,6 +58,7 @@ class FakeMpvAdapter(QObject):
     volumeChanged = Signal(float)
     muteChanged = Signal(bool)
     speedChanged = Signal(float)
+    streamInfoChanged = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -67,6 +68,7 @@ class FakeMpvAdapter(QObject):
         self.mutes: list[bool] = []
         self.speeds: list[float] = []
         self.pauses: list[bool] = []
+        self.stream: dict[str, Any] = {}
         self.closed = False
 
     def load(self, url: str) -> None:
@@ -93,7 +95,12 @@ class FakeMpvAdapter(QObject):
     def set_speed(self, speed: float) -> None:
         self.speeds.append(speed)
 
+    def emit_stream(self, **fields: Any) -> None:
+        self.stream.update(fields)
+        self.streamInfoChanged.emit(dict(self.stream))
+
     def close(self) -> None:
+
         self.closed = True
 
 

@@ -114,11 +114,16 @@ class PlayerDialog(QDialog):
         # The status card and the toast are small opaque panels that do float over
         # the video, so each earns a small native handle. What must never happen is a
         # full-stage native window over the video: it paints opaque and hides it.
-        for panel in (self._overlay.status_card, self._overlay.toast):
+        for panel in (
+            self._overlay.status_card,
+            self._overlay.toast,
+            self._overlay.stream_chip,
+        ):
             panel.setParent(self._stage)
             panel.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
             panel.raise_()
         self._overlay.toastShown.connect(self._layout_panels)
+        self._overlay.panelsChanged.connect(self._layout_panels)
 
         # Compatibility aliases for code that used to inspect the dialog's UI.
         self._chrome = self._controls
@@ -328,6 +333,15 @@ class PlayerDialog(QDialog):
 
         if self._overlay.status_card.isVisible():
             place(self._overlay.status_card, area.y() + max(SPACING_LARGE, area.height() // 4))
+        if self._overlay.stream_chip.isVisible():
+            chip = self._overlay.stream_chip
+            chip_hint = chip.sizeHint()
+            chip.setGeometry(
+                area.right() - chip_hint.width() - SPACING_LARGE + 1,
+                area.y() + SPACING_LARGE,
+                chip_hint.width(),
+                chip_hint.height(),
+            )
         if self._overlay.toast.isVisible():
             # The toast used to be centred like the status card, so a quality switch
             # during an error hid the message behind it. It belongs on the control bar.
@@ -340,7 +354,11 @@ class PlayerDialog(QDialog):
                 self._overlay.toast,
                 bar_top - self._overlay.toast.sizeHint().height() - SPACING_MEDIUM,
             )
-        for panel in (self._overlay.status_card, self._overlay.toast):
+        for panel in (
+            self._overlay.status_card,
+            self._overlay.toast,
+            self._overlay.stream_chip,
+        ):
             if panel.isVisible():
                 panel.raise_()
 

@@ -25,6 +25,24 @@ class PlaybackStatus(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class StreamInfo:
+    """What mpv reports about the stream actually playing, not what we asked for."""
+
+    width: int = 0
+    height: int = 0
+    fps: float = 0.0
+
+    def text(self) -> str:
+        """Format as `<width>x<height> | <fps>fps`, dropping what is unknown."""
+        parts: list[str] = []
+        if self.width > 0 and self.height > 0:
+            parts.append(f"{self.width}x{self.height}")
+        if self.fps > 0:
+            parts.append(f"{self.fps:.2f}".rstrip("0").rstrip(".") + "fps")
+        return " | ".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
 class PlaybackState:
     """Immutable snapshot consumed by controls and overlays."""
 
@@ -38,6 +56,7 @@ class PlaybackState:
     quality: int | None = None
     available: bool = False
     error: str | None = None
+    stream: StreamInfo | None = None
 
     @property
     def playing(self) -> bool:
@@ -139,6 +158,7 @@ class PlayerController(QObject):
         adapter.volumeChanged.connect(self._on_volume)
         adapter.muteChanged.connect(self._on_muted)
         adapter.speedChanged.connect(self._on_speed)
+        adapter.streamInfoChanged.connect(self._on_stream_info)
         self._set_state(available=True, status=PlaybackStatus.LOADING, error=None)
 
     def _set_state(self, **changes: Any) -> None:
@@ -405,6 +425,18 @@ class PlayerController(QObject):
         else:
             status = PlaybackStatus.PAUSED if self._state.paused else PlaybackStatus.PLAYING
             self._set_state(status=status, paused=status is PlaybackStatus.PAUSED, error=None)
+
+    @Slot(object)
+    def _on_stream_info(self, payload: Any) -> None:
+        if self._closed or not isinstance(payload, dict):
+            return
+        self._set_state(
+            stream=StreamInfo(
+                width=int(payload.get("width") or 0),
+                height=int(payload.get("height") or 0),
+                fps=float(payload.get("fps") or 0.0),
+            )
+        )
 
     @Slot()
     def _on_media_ended(self) -> None:

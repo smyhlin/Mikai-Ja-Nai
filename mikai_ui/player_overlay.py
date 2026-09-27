@@ -37,6 +37,7 @@ class PlayerOverlayWidget(QWidget):
     videoDoubleClicked = Signal()
     mouseActivity = Signal()
     toastShown = Signal()
+    panelsChanged = Signal()
 
     def __init__(
         self,
@@ -110,6 +111,13 @@ class PlayerOverlayWidget(QWidget):
             child.setMouseTracking(True)
             child.installEventFilter(self)
 
+        self.stream_chip = QLabel("", self)
+        self.stream_chip.setObjectName("playerStreamChip")
+        self.stream_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.stream_chip.hide()
+        self.stream_chip.setMouseTracking(True)
+        self.stream_chip.installEventFilter(self)
+
         self.toast = QLabel("", self)
         self.toast.setObjectName("playerToast")
         self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -133,6 +141,12 @@ class PlayerOverlayWidget(QWidget):
         self._toast_timer.setSingleShot(True)
         self._toast_timer.setInterval(TOAST_DURATION_MS)
         self._toast_timer.timeout.connect(self.toast.hide)
+        # The chip answers mouse activity, not the fullscreen auto-hide, so it
+        # arms in windowed mode too.
+        self._chip_timer = QTimer(self)
+        self._chip_timer.setSingleShot(True)
+        self._chip_timer.setInterval(AUTO_HIDE_MS)
+        self._chip_timer.timeout.connect(self.stream_chip.hide)
 
     def set_mouse_sources(self, *widgets: QWidget) -> None:
         for widget in widgets:
@@ -142,6 +156,11 @@ class PlayerOverlayWidget(QWidget):
     def set_playback_state(self, state: PlaybackState) -> None:
         self.controls.set_playback_state(state)
         self._technical_details = state.error or ""
+        text = state.stream.text() if state.stream else ""
+        self.stream_chip.setText(text)
+        if not text:
+            self._chip_timer.stop()
+            self.stream_chip.hide()
         status = state.status
         if status is PlaybackStatus.LOADING:
             title, message = "Відео завантажується…", ""
@@ -195,6 +214,11 @@ class PlayerOverlayWidget(QWidget):
     def show_controls(self) -> None:
         self.mouseActivity.emit()
         self._hide_timer.stop()
+        if self.stream_chip.text() and not self.stream_chip.isVisible():
+            self.stream_chip.show()
+            self.panelsChanged.emit()
+        if self.stream_chip.text():
+            self._chip_timer.start()
         was_hidden = not self.controls.isVisible()
         if was_hidden:
             self.controls.setMaximumHeight(0)
@@ -230,6 +254,7 @@ class PlayerOverlayWidget(QWidget):
             watched is self.status_card
             or self.status_card.isAncestorOf(watched)
             or watched is self.toast
+            or watched is self.stream_chip
         )
         if kind == QEvent.Type.MouseMove:
             self.show_controls()

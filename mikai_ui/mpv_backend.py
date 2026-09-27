@@ -10,7 +10,7 @@ import ctypes.util
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from PySide6.QtCore import QObject, Signal
 
@@ -55,6 +55,7 @@ class MPVAdapter(QObject):
     volumeChanged = Signal(float)
     muteChanged = Signal(bool)
     speedChanged = Signal(float)
+    streamInfoChanged = Signal(object)
 
     def __init__(
         self,
@@ -75,6 +76,7 @@ class MPVAdapter(QObject):
         self._volume = 100.0
         self._muted = False
         self._speed = 1.0
+        self._stream: dict[str, Any] = {}
 
         try:
             runtime_dir = self._resolve_runtime(mpv_path, auto_download)
@@ -146,6 +148,21 @@ class MPVAdapter(QObject):
         @player.property_observer("paused-for-cache")
         def on_cache_pause(_name: str, value: Any) -> None:
             self._set_buffering(bool(value))
+
+        for prop, key in self._STREAM_PROPERTIES:
+            self._watch_stream(player, prop, key)
+
+    _STREAM_PROPERTIES: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("width", "width"),
+        ("height", "height"),
+        ("container-fps", "fps"),
+    )
+
+    def _watch_stream(self, player: Any, prop: str, key: str) -> None:
+        @player.property_observer(prop)
+        def on_stream_value(_name: str, value: Any, *, _key: str = key) -> None:
+            self._stream[_key] = value
+            self.streamInfoChanged.emit(dict(self._stream))
 
     def _register_events(self) -> None:
         player = self._player
@@ -227,6 +244,9 @@ class MPVAdapter(QObject):
 
     def load(self, url: str | Path) -> None:
         self._set_buffering(False)
+        if self._stream:
+            self._stream.clear()
+            self.streamInfoChanged.emit({})
         self.stateChanged.emit("loading")
         self._command("load", lambda player: player.play(str(url)))
 
