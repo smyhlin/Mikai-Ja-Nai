@@ -650,6 +650,44 @@ def test_choosing_an_episode_closes_the_list_but_stepping_does_not(app):
     app.processEvents()
 
 
+def test_the_episode_rail_opens_on_hover_and_the_click_pins_it(app):
+    """Pointing at the rail should be enough; a click is for keeping it open."""
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog(
+        "Серія 2",
+        "https://s/720.m3u8",
+        playlist=[{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 5)],
+        episode_index=1,
+    )
+    dialog.resize(900, 520)
+    dialog.show()
+    app.processEvents()
+    assert not dialog._sidebar_expanded
+
+    rail = dialog._sidebar_toggle
+    app.sendEvent(rail, QEnterEvent(QPointF(10, 200), QPointF(10, 200), QPointF(10, 200)))
+    app.processEvents()
+    assert dialog._sidebar_expanded, "hover must open the list"
+    assert dialog._sidebar_scroll.isVisible()
+
+    app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
+    app.processEvents()
+    assert not dialog._sidebar_expanded, "leaving must close it again"
+
+    dialog.toggle_sidebar()
+    app.processEvents()
+    assert dialog._sidebar_pinned and dialog._sidebar_expanded
+    app.sendEvent(dialog._sidebar, QEvent(QEvent.Type.Leave))
+    app.processEvents()
+    assert dialog._sidebar_expanded, "a pinned list survives the pointer leaving"
+    dialog.close()
+    app.processEvents()
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 

@@ -323,6 +323,11 @@ class PlayerDialog(QDialog):
         self._sidebar_scroll.setFixedWidth(PLAYER_SIDEBAR_WIDTH)
         column.addWidget(self._sidebar_scroll, 1)
         self._sidebar_expanded = False
+        self._sidebar_pinned = False
+        self._sidebar_hovered = False
+        for child in (sidebar, *sidebar.findChildren(QWidget)):
+            child.setMouseTracking(True)
+            child.installEventFilter(self)
         return sidebar
 
     def set_playlist(self, playlist: list[dict] | None, index: int = 0) -> None:
@@ -404,10 +409,17 @@ class PlayerDialog(QDialog):
             self._sidebar_items.insertWidget(position, button)
 
     def toggle_sidebar(self) -> None:
-        self.set_sidebar_expanded(not self._sidebar_expanded)
+        """Hover opens the list; the click pins it open or closed."""
+        self._sidebar_pinned = not self._sidebar_pinned
+        self.set_sidebar_expanded(self._sidebar_pinned or self._sidebar_hovered)
 
     def set_sidebar_expanded(self, expanded: bool) -> None:
-        """The strip is always there; the list slides in beside it."""
+        """Open or close the list.
+
+        Hover is the fast path: pointing at the rail is enough, and no click is
+        demanded. A click pins the list open so it survives the pointer leaving,
+        and collapses it back to hover-only.
+        """
         self._sidebar_expanded = bool(expanded)
         self._sidebar_scroll.setVisible(self._sidebar_expanded)
         # collapsed: the rail fills the height; expanded: a header above the list
@@ -433,6 +445,15 @@ class PlayerDialog(QDialog):
         overlay = getattr(self, "_overlay", None)
         if overlay is not None and not overlay.controls.isVisible():
             self._sidebar.hide()
+
+    def _sidebar_hover_changed(self, inside: bool) -> None:
+        self._sidebar_hovered = inside
+        if self._sidebar_pinned:
+            return
+        if inside and not self._sidebar_expanded:
+            self.set_sidebar_expanded(True)
+        elif not inside and self._sidebar_expanded:
+            self.set_sidebar_expanded(False)
 
     def _on_variant_requested(self, embed: str, label: str) -> None:
         if embed and embed != self._current_embed:
@@ -529,7 +550,22 @@ class PlayerDialog(QDialog):
             self._title.setText(
                 metrics.elidedText(self._caption, Qt.TextElideMode.ElideRight, self._title.width())
             )
+        sidebar = getattr(self, "_sidebar", None)
+        if sidebar is not None and self._within(sidebar, watched):
+            if event.type() == QEvent.Type.Enter:
+                self._sidebar_hover_changed(True)
+            elif event.type() == QEvent.Type.Leave:
+                self._sidebar_hover_changed(False)
+            return False
         return super().eventFilter(watched, event)
+
+    @staticmethod
+    def _within(panel: QWidget, watched: QObject) -> bool:
+        """Ancestry test that survives a panel deleted mid-flight."""
+        try:
+            return watched is panel or panel.isAncestorOf(watched)
+        except RuntimeError, AttributeError:
+            return False
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
