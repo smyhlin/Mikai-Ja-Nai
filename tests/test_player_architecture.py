@@ -210,7 +210,7 @@ def test_seek_targets_an_absolute_time_on_keyframes(app, monkeypatch):
 def test_clicking_the_timeline_seeks_to_that_point(app):
     """QSlider only emits its seek signals when its own handle is grabbed, so a
     click on the track body used to do nothing at all."""
-    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtCore import QPoint
     from PySide6.QtTest import QTest
 
     from mikai_ui.player_controls import TimelineSlider
@@ -243,7 +243,7 @@ def test_clicking_the_timeline_seeks_to_that_point(app):
 
 
 def test_dragging_the_timeline_previews_each_step_and_commits_once(app):
-    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtCore import QPoint
     from PySide6.QtTest import QTest
 
     from mikai_ui.player_controls import TimelineSlider
@@ -276,7 +276,7 @@ def test_dragging_the_timeline_previews_each_step_and_commits_once(app):
 
 def test_scrubbing_the_player_bar_reaches_the_engine_once(app):
     """End to end: one click on the real control bar is one seek command."""
-    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtCore import QPoint
     from PySide6.QtTest import QTest
 
     from mikai_ui.player_dialog import PlayerDialog
@@ -487,6 +487,51 @@ def test_hiding_the_controls_does_not_resize_the_video_surface(app):
     assert len(resizes) <= 1, f"video resized {len(resizes)} times while hiding"
     dialog.close()
     app.processEvents()
+
+
+def test_skip_buttons_carry_a_glyph_and_the_seconds(app):
+    """The skip controls were bare "−10" text; a glyph reads as skip at a glance."""
+    from PySide6.QtCore import QSize
+
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    for button in (controls.rewind_button, controls.forward_button):
+        assert not button.icon().isNull(), "the skip glyph must be painted"
+        assert button.text() == "10"
+        assert button.toolTip()
+    assert not controls.rewind_button.icon().pixmap(QSize(18, 18)).toImage().isNull()
+    controls.deleteLater()
+
+
+def test_timeline_spans_the_bar_and_hovers_show_the_target_time(app):
+    """The scrub target used to stop short of the right edge because the time
+    readout sat in the same row."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QToolTip
+
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.resize(1000, 120)
+    controls.set_playback_state(
+        PlaybackState(status=PlaybackStatus.PLAYING, available=True, duration=1440.0)
+    )
+    controls.show()
+    app.processEvents()
+
+    margins = controls.layout().contentsMargins()
+    content = controls.width() - margins.left() - margins.right()
+    assert controls.timeline.width() >= content - 2, controls.timeline.width()
+
+    QTest.mouseMove(controls.timeline, pos=QPoint(controls.timeline.width() // 2, 10))
+    app.processEvents()
+    QTest.qWait(60)
+    app.processEvents()
+    # 50% of a 24-minute video
+    assert QToolTip.text() == "12:00", QToolTip.text()
+    controls.deleteLater()
 
 
 def test_player_shortcuts_fullscreen_and_state_update(app):

@@ -21,6 +21,8 @@ from mikai_ui.theme.metrics import (
     PLAYER_FIELD_HEIGHT,
     PLAYER_FIELD_MIN_WIDTH,
     PLAYER_FIELD_ROW_HEIGHT,
+    PLAYER_DIVIDER_HEIGHT,
+    PLAYER_SKIP_WIDTH,
     PRIMARY_CONTROL_SIZE,
     RADIUS,
     RADIUS_LARGE,
@@ -120,19 +122,29 @@ def build_stylesheet() -> str:
     QLabel#carouselStatus {{ background: transparent; color: {MUTED}; }}
     QLabel#carouselStatusLive {{ background: transparent; color: {ACCENT}; }}
     QLabel#carouselEpisodes {{ background: transparent; color: {TEXT}; }}
-    QPushButton#playerPrimary {{ background: {ACCENT}; border: none; padding: 0;
+    QPushButton#playerPrimary {{ background: transparent; border: none; padding: 0;
         border-radius: {PRIMARY_CONTROL_SIZE // 2}px;
         min-width: {PRIMARY_CONTROL_SIZE}px; max-width: {PRIMARY_CONTROL_SIZE}px;
         min-height: {PRIMARY_CONTROL_SIZE}px; max-height: {PRIMARY_CONTROL_SIZE}px; }}
-    QPushButton#playerPrimary:hover {{ background: {ACCENT_HOVER}; }}
-    QPushButton#playerPrimary:pressed {{ background: {ACCENT}; }}
-    QPushButton#playerPrimary:disabled {{ background: {SURFACE_HOVER}; }}
+    QPushButton#playerPrimary:hover {{ background: {GHOST_HOVER}; }}
+    QPushButton#playerPrimary:pressed {{ background: {GHOST_PRESSED}; }}
+    QPushButton#playerPrimary:disabled {{ background: transparent; }}
     QPushButton#playerSecondary {{ background: transparent; border: none;
         border-radius: {RADIUS_SMALL}px; padding: 0;
         min-width: {SECONDARY_CONTROL_SIZE}px; max-width: {SECONDARY_CONTROL_SIZE}px;
         min-height: {SECONDARY_CONTROL_SIZE}px; max-height: {SECONDARY_CONTROL_SIZE}px; }}
     QPushButton#playerSecondary:hover {{ background: {GHOST_HOVER}; }}
     QPushButton#playerSecondary:disabled {{ background: transparent; }}
+    QPushButton#playerSkip {{ background: transparent; border: none;
+        border-radius: {RADIUS_SMALL}px; padding: 0 {SPACING_XS}px;
+        min-width: {PLAYER_SKIP_WIDTH}px; max-width: {PLAYER_SKIP_WIDTH}px;
+        min-height: {SECONDARY_CONTROL_SIZE}px; max-height: {SECONDARY_CONTROL_SIZE}px;
+        font-size: 13px; }}
+    QPushButton#playerSkip:hover {{ background: {GHOST_HOVER}; }}
+    QPushButton#playerSkip:pressed {{ background: {GHOST_PRESSED}; }}
+    QPushButton#playerSkip:disabled {{ background: transparent; }}
+    QWidget#playerDivider {{ background: {CHROME_HAIRLINE}; max-width: 1px;
+        max-height: {PLAYER_DIVIDER_HEIGHT}px; }}
     QPushButton#playerGhost {{ background: transparent; color: {MUTED}; border: none;
         padding: 0 {SPACING_MEDIUM}px; }}
     QPushButton#playerGhost:hover {{ color: {TEXT}; }}
@@ -178,12 +190,15 @@ def build_stylesheet() -> str:
     QSlider#timeline {{ background: transparent; }}
     QSlider#timeline::groove:horizontal {{ height: {TIMELINE_GROOVE_HEIGHT}px;
         background: {SURFACE_ACTIVE}; border-radius: 2px; }}
-    QSlider#timeline::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
+    QSlider#timeline::sub-page:horizontal {{ background: {TEXT}; border-radius: 2px; }}
     QSlider#timeline::handle:horizontal {{ background: {TEXT};
         width: {TIMELINE_HANDLE_SIZE}px; height: {TIMELINE_HANDLE_SIZE}px;
         margin: {TIMELINE_GROOVE_HEIGHT // 2 - TIMELINE_HANDLE_SIZE // 2}px 0;
         border-radius: {TIMELINE_HANDLE_SIZE // 2}px; }}
-    QSlider#timeline::handle:horizontal:hover {{ background: {ACCENT_HOVER}; }}
+    QSlider#timeline::handle:horizontal:hover {{
+        width: {TIMELINE_HANDLE_SIZE + 4}px; height: {TIMELINE_HANDLE_SIZE + 4}px;
+        margin: {TIMELINE_GROOVE_HEIGHT // 2 - (TIMELINE_HANDLE_SIZE + 4) // 2}px 0;
+        border-radius: {(TIMELINE_HANDLE_SIZE + 4) // 2}px; }}
     QSlider#volume {{ background: transparent; }}
     QSlider#volume::groove:horizontal {{ height: {VOLUME_GROOVE_HEIGHT}px;
         background: {SURFACE_ACTIVE}; border-radius: 2px; }}
@@ -194,7 +209,7 @@ def build_stylesheet() -> str:
         border-radius: {VOLUME_HANDLE_SIZE // 2}px; }}
     QProgressBar#playerSpinner {{ background: {SURFACE_ACTIVE}; border: none;
         border-radius: 2px; }}
-    QProgressBar#playerSpinner::chunk {{ background: {ACCENT}; border-radius: 2px; }}
+    QProgressBar#playerSpinner::chunk {{ background: {TEXT}; border-radius: 2px; }}
     QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: {RADIUS_SMALL}px;
         background: {SURFACE}; top: -1px; }}
     QTabBar::tab {{ background: {BACKGROUND}; color: {MUTED}; border: 1px solid {BORDER};

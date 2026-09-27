@@ -16,6 +16,12 @@ _ICONS = {
         '<rect x="14" y="4" width="4" height="16" rx="1"/>'
         '<rect x="6" y="4" width="4" height="16" rx="1"/>'
     ),
+    "rewind": (
+        '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>'
+    ),
+    "forward": (
+        '<polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/>'
+    ),
     "volume": (
         '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>'
         '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'

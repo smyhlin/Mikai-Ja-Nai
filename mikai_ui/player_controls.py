@@ -6,6 +6,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
+    QToolTip,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -20,6 +21,9 @@ from mikai_ui.player_controller import PlaybackState, PlaybackStatus
 from mikai_ui.theme.colors import ICON_DISABLED
 from mikai_ui.theme.metrics import (
     ICON_SIZE,
+    PLAYER_DIVIDER_HEIGHT,
+    PLAYER_PRIMARY_ICON_SIZE,
+    PLAYER_SKIP_WIDTH,
     PLAYER_FIELD_MIN_WIDTH,
     PLAYER_FIELD_ROW_HEIGHT,
     PRIMARY_CONTROL_SIZE,
@@ -60,6 +64,7 @@ class TimelineSlider(QSlider):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._duration = 0.0
         self._scrubbing = False
+        self.setMouseTracking(True)
         self.setObjectName("timeline")
         self.setRange(0, self.SCALE)
         self.setTracking(False)
@@ -83,8 +88,20 @@ class TimelineSlider(QSlider):
         self.seekPreviewChanged.emit(self.position_for_value(self.value()))
         event.accept()
 
+    def _show_hover(self, event) -> None:
+        """Tell the user where a click will land before they commit to it."""
+        if self._duration <= 0:
+            return
+        seconds = self.position_for_value(self._value_at(event.position().x()))
+        QToolTip.showText(event.globalPosition().toPoint(), format_time(seconds), self)
+
+    def leaveEvent(self, event) -> None:
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
     def mouseMoveEvent(self, event) -> None:
         if not self._scrubbing:
+            self._show_hover(event)
             super().mouseMoveEvent(event)
             return
         self.setValue(self._value_at(event.position().x()))
@@ -156,40 +173,39 @@ class PlayerControlsWidget(QWidget):
         root.setContentsMargins(SPACING_MEDIUM, SPACING_SMALL, SPACING_MEDIUM, SPACING_SMALL)
         root.setSpacing(SPACING_SMALL)
 
-        timeline_row = QHBoxLayout()
-        timeline_row.setSpacing(SPACING_MEDIUM)
         self.timeline = TimelineSlider(self)
         self.time_label = QLabel("0:00 / --:--")
         self.time_label.setObjectName("playerTime")
         time_font = self.time_label.font()
         time_font.setFeature(QFont.Tag("tnum"), 1)
         self.time_label.setFont(time_font)
-        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.time_label.setMinimumWidth(TIME_LABEL_MIN_WIDTH)
         self.timeline.seekStarted.connect(self.seekStarted)
         self.timeline.seekPreviewChanged.connect(self._show_preview)
         self.timeline.seekPreviewChanged.connect(self.seekPreviewChanged)
         self.timeline.seekFinished.connect(self._finish_preview)
         self.timeline.seekFinished.connect(self.seekFinished)
-        timeline_row.addWidget(self.timeline, 1)
-        timeline_row.addWidget(self.time_label)
-        root.addLayout(timeline_row)
+        root.addWidget(self.timeline)
 
         controls = QHBoxLayout()
         controls.setSpacing(SPACING_SMALL)
-        self.rewind_button = self._button("Назад на 10 секунд (←)", secondary=True)
-        self.rewind_button.setText("−10")
+        self.rewind_button = self._skip_button("Назад на 10 секунд (←)", "rewind")
         self.rewind_button.clicked.connect(self.rewindRequested)
         self.play_button = self._button("Пауза (Пробіл)", secondary=False)
-        self.play_button.setIcon(make_icon("pause", size=ICON_SIZE, disabled_color=ICON_DISABLED))
+        self.play_button.setIcon(
+            make_icon("pause", size=PLAYER_PRIMARY_ICON_SIZE, disabled_color=ICON_DISABLED)
+        )
         self.play_button.clicked.connect(self.playPauseRequested)
-        self.forward_button = self._button("Вперед на 10 секунд (→)", secondary=True)
-        self.forward_button.setText("+10")
+        self.forward_button = self._skip_button("Вперед на 10 секунд (→)", "forward")
         self.forward_button.clicked.connect(self.forwardRequested)
         controls.addWidget(self.rewind_button)
         controls.addWidget(self.play_button)
         controls.addWidget(self.forward_button)
+        controls.addSpacing(SPACING_SMALL)
+        controls.addWidget(self.time_label)
         controls.addStretch(1)
+        controls.addWidget(self._divider())
 
         self.mute_button = self._button("Вимкнути звук (M)", secondary=True)
         self.mute_button.setIcon(make_icon("volume", size=ICON_SIZE, disabled_color=ICON_DISABLED))
@@ -234,10 +250,32 @@ class PlayerControlsWidget(QWidget):
         root.addLayout(controls)
 
     @staticmethod
+    def _skip_button(tooltip: str, icon_name: str) -> QPushButton:
+        button = QPushButton()
+        button.setObjectName("playerSkip")
+        button.setIcon(make_icon(icon_name, size=ICON_SIZE, disabled_color=ICON_DISABLED))
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        button.setText("10")
+        button.setFixedSize(PLAYER_SKIP_WIDTH, SECONDARY_CONTROL_SIZE)
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        return button
+
+    @staticmethod
+    def _divider() -> QWidget:
+        line = QWidget()
+        line.setObjectName("playerDivider")
+        line.setFixedSize(1, PLAYER_DIVIDER_HEIGHT)
+        line.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        return line
+
+    @staticmethod
     def _button(tooltip: str, *, secondary: bool) -> QPushButton:
         button = QPushButton()
         button.setObjectName("playerSecondary" if secondary else "playerPrimary")
-        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        icon_size = ICON_SIZE if secondary else PLAYER_PRIMARY_ICON_SIZE
+        button.setIconSize(QSize(icon_size, icon_size))
         size = SECONDARY_CONTROL_SIZE if secondary else PRIMARY_CONTROL_SIZE
         button.setFixedSize(size, size)
         button.setToolTip(tooltip)
@@ -307,7 +345,7 @@ class PlayerControlsWidget(QWidget):
         self.play_button.setIcon(
             make_icon(
                 "play" if paused else "pause",
-                size=ICON_SIZE,
+                size=PLAYER_PRIMARY_ICON_SIZE,
                 disabled_color=ICON_DISABLED,
             )
         )
