@@ -520,14 +520,14 @@ def test_player_dialog_controls(app):
         qualities={1080: "u1080", 720: "u720", 480: "u480"},
         initial_height=720,
     )
-    assert dlg._quality_combo.count() == 3
-    assert [dlg._quality_combo.itemText(i) for i in range(3)] == [
+    assert dlg._quality_picker.count() == 3
+    assert [dlg._quality_picker.itemText(i) for i in range(3)] == [
         "1080p",
         "720p",
         "480p",
     ]
-    assert dlg._quality_combo.currentText() == "720p"
-    assert not dlg._quality_combo.isEnabled()
+    assert dlg._quality_picker.currentText() == "720p"
+    assert not dlg._quality_picker.isEnabled()
     assert [dlg._speed_combo.itemText(i) for i in range(dlg._speed_combo.count())] == [
         "0.5×",
         "0.75×",

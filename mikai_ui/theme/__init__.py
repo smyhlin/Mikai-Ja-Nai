@@ -144,6 +144,21 @@ def build_stylesheet() -> str:
     QPushButton#playerGhost {{ background: transparent; color: {MUTED}; border: none;
         padding: 0 {SPACING_MEDIUM}px; }}
     QPushButton#playerGhost:hover {{ color: {TEXT}; }}
+    QPushButton#qualityPicker {{ background: transparent; border: 1px solid transparent;
+        border-radius: {RADIUS_SMALL}px; padding: 0 {SPACING_SMALL}px; text-align: left;
+        min-height: {PLAYER_FIELD_HEIGHT}px; max-height: {PLAYER_FIELD_HEIGHT}px; }}
+    QPushButton#qualityPicker:hover {{ background: {GHOST_HOVER}; border-color: {ACCENT}; }}
+    QPushButton#qualityPicker:focus {{ border-color: {ACCENT}; }}
+    QPushButton#qualityPicker:disabled {{ background: transparent; color: {MUTED};
+        border-color: transparent; }}
+    QWidget#qualityPanel {{ background: {SURFACE}; border: 1px solid {BORDER};
+        border-radius: {RADIUS_SMALL}px; }}
+    QPushButton#qualityRow {{ background: transparent; border: none;
+        color: {TEXT}; text-align: left; padding: 0 {SPACING_SMALL}px;
+        border-radius: {RADIUS_SMALL}px; }}
+    QPushButton#qualityRow:hover {{ background: {SURFACE_HOVER}; color: {TEXT}; }}
+    QPushButton#qualityRowCurrent {{ background: {SURFACE_ACTIVE}; color: {TEXT};
+        font-weight: 600; }}
     QComboBox#playerField {{ background: transparent;
         border: 1px solid transparent;
         color: {MUTED}; padding: 0 {SPACING_SMALL}px;

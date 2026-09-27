@@ -36,6 +36,7 @@ from mikai_ui.theme.metrics import (
     TIMELINE_SCALE,
     VOLUME_SLIDER_WIDTH,
 )
+from mikai_ui.quality_picker import QualityPicker
 from mikai_ui.theme.widgets import make_icon
 
 
@@ -236,15 +237,10 @@ class PlayerControlsWidget(QWidget):
         self.speed_combo.currentIndexChanged.connect(self._speed_selected)
         controls.addWidget(self.speed_combo)
 
-        self.quality_combo = QComboBox()
-        self.quality_combo.setObjectName("playerField")
-        self.quality_combo.setItemDelegate(FieldRowDelegate(self.quality_combo))
-        self.quality_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
-        self.quality_combo.setAccessibleName("Якість відео")
-        self.quality_combo.setToolTip("Якість відео")
-        self.quality_combo.currentIndexChanged.connect(self._quality_selected)
-        self.quality_combo.hide()
-        controls.addWidget(self.quality_combo)
+        self.quality_picker = QualityPicker(self)
+        self.quality_picker.qualitySelected.connect(self.qualityChanged)
+        self.quality_picker.hide()
+        controls.addWidget(self.quality_picker)
 
         self.variant_button = self._button("Дорожка: озвучення чи субтитри", secondary=True)
         self.variant_button.setObjectName("variantPicker")
@@ -319,15 +315,7 @@ class PlayerControlsWidget(QWidget):
         return menu
 
     def set_qualities(self, qualities: dict[int, str], selected: int | None) -> None:
-        self.quality_combo.blockSignals(True)
-        self.quality_combo.clear()
-        for height in sorted(qualities, reverse=True):
-            self.quality_combo.addItem(f"{height}p", height)
-        selected_index = self.quality_combo.findData(selected)
-        if selected_index >= 0:
-            self.quality_combo.setCurrentIndex(selected_index)
-        self.quality_combo.blockSignals(False)
-        self.quality_combo.setVisible(self.quality_combo.count() > 1)
+        self.quality_picker.set_qualities(qualities, selected)
 
     def set_fullscreen(self, fullscreen: bool) -> None:
         name = "windowed" if fullscreen else "fullscreen"
@@ -371,9 +359,9 @@ class PlayerControlsWidget(QWidget):
         self.volume_slider.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
         self.mute_button.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
         self.speed_combo.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
-        self.quality_combo.setEnabled(
+        self.quality_picker.setEnabled(
             not unavailable
-            and self.quality_combo.count() > 1
+            and self.quality_picker.count() > 1
             and state.status is not PlaybackStatus.ERROR
         )
         paused = state.paused or state.finished
@@ -402,12 +390,10 @@ class PlayerControlsWidget(QWidget):
         if speed_index >= 0:
             self.speed_combo.setCurrentIndex(speed_index)
         self.speed_combo.blockSignals(False)
-        if state.quality is not None:
-            quality_index = self.quality_combo.findData(state.quality)
-            if quality_index >= 0:
-                self.quality_combo.blockSignals(True)
-                self.quality_combo.setCurrentIndex(quality_index)
-                self.quality_combo.blockSignals(False)
+        if state.quality is not None and state.quality != self.quality_picker.selected_height():
+            # the stream may have fallen back to another height on its own; reflect
+            # it without treating the user's own choice as an external change
+            self.quality_picker.adopt_external(state.quality)
 
     def _show_preview(self, position: float) -> None:
         self._preview_position = position
@@ -425,8 +411,3 @@ class PlayerControlsWidget(QWidget):
         speed = self.speed_combo.itemData(index)
         if speed is not None:
             self.speedChanged.emit(float(speed))
-
-    def _quality_selected(self, index: int) -> None:
-        height = self.quality_combo.itemData(index)
-        if isinstance(height, int):
-            self.qualityChanged.emit(height)

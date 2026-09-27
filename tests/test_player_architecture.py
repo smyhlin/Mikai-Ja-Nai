@@ -302,23 +302,69 @@ def test_scrubbing_the_player_bar_reaches_the_engine_once(app):
     app.processEvents()
 
 
-def test_quality_selector_chip_and_popup_rows_are_readable(app):
-    """The quality chip and its dropdown were cramped: a 26px chip and 21px rows."""
+def test_picking_a_row_switches_quality_and_adopting_one_does_not(app):
+    """A row click is a user action and must reach the engine; a height the stream
+    chose for itself must not bounce back as a user action."""
+    from PySide6.QtWidgets import QPushButton
+
     from mikai_ui.player_controls import PlayerControlsWidget
 
     controls = PlayerControlsWidget()
-    controls.set_qualities({1080: "u", 720: "u", 480: "u"}, 720)
+    controls.resize(900, 120)
+    controls.set_qualities({1080: "u", 720: "u", 480: "u"}, 1080)
+    controls.show()
+    app.processEvents()
+    picker = controls.quality_picker
+
+    picked = []
+    controls.qualityChanged.connect(picked.append)
+
+    picker._present()
+    app.processEvents()
+    rows = [
+        w
+        for w in picker._panel.findChildren(QPushButton)
+        if w.objectName().startswith("qualityRow")
+    ]
+    rows[2].click()
+    app.processEvents()
+    assert picked == [480], picked
+    assert picker.text().startswith("480p")
+    assert picker._panel is None, "the panel closes on pick"
+
+    picker.adopt_external(720)
+    assert picked == [480], "an external height must not re-emit"
+    assert picker.text().startswith("720p")
+    controls.deleteLater()
+
+
+def test_quality_selector_panel_is_readable_and_never_scrolls(app):
+    """A QComboBox popup is a scroll view that can hide entries; the picker sizes
+    to its rows instead, so every quality is visible at once."""
+    from PySide6.QtWidgets import QPushButton, QScrollArea
+
+    from mikai_ui.player_controls import PlayerControlsWidget
+
+    controls = PlayerControlsWidget()
+    controls.resize(900, 120)
+    controls.set_qualities({2160: "u", 1080: "u", 720: "u", 480: "u", 360: "u"}, 1080)
+    controls.show()
     app.processEvents()
 
-    combo = controls.quality_combo
-    assert combo.height() >= 30, combo.height()
+    picker = controls.quality_picker
+    assert picker.height() >= 30, picker.height()
+    assert "Full HD" in picker.text(), picker.text()
 
-    combo.showPopup()
+    picker._present()
     app.processEvents()
-    view = combo.view()
-    row = view.visualRect(view.model().index(0, 0))
-    assert row.height() >= 30, row.height()
-    combo.hidePopup()
+    panel = picker._panel
+    rows = [w for w in panel.findChildren(QPushButton) if w.objectName().startswith("qualityRow")]
+    assert len(rows) == 5, [r.text() for r in rows]
+    assert all(row.height() >= 30 for row in rows)
+    assert panel.findChild(QScrollArea) is None, "the panel must not scroll"
+    assert [r.objectName() for r in rows].count("qualityRowCurrent") == 1
+    assert rows[1].objectName() == "qualityRowCurrent"
+    picker._dismiss()
     controls.deleteLater()
 
 
@@ -482,7 +528,7 @@ def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
     )
     dialog.show()
     app.processEvents()
-    assert dialog._quality_combo.currentText() == "1080p"
+    assert dialog._quality_picker.currentText() == "1080p"
 
     adapter = FakeMpvAdapter()
     dialog.controller.attach_adapter(adapter)
@@ -493,7 +539,7 @@ def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
     app.processEvents()
 
     assert dialog._overlay.stream_chip.text() == "720x480 | 23.98fps"
-    assert dialog._quality_combo.currentText() == "1080p"
+    assert dialog._quality_picker.currentText() == "1080p"
     dialog.close()
     app.processEvents()
 

@@ -142,7 +142,7 @@ class PlayerDialog(QDialog):
         self._mute_btn = self._controls.mute_button
         self._vol_slider = self._controls.volume_slider
         self._speed_combo = self._controls.speed_combo
-        self._quality_combo = self._controls.quality_combo
+        self._quality_picker = self._controls.quality_picker
 
         self._controller = PlayerController(
             url,
