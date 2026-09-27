@@ -144,12 +144,14 @@ def build_stylesheet() -> str:
     QPushButton#playerGhost {{ background: transparent; color: {MUTED}; border: none;
         padding: 0 {SPACING_MEDIUM}px; }}
     QPushButton#playerGhost:hover {{ color: {TEXT}; }}
-    QComboBox#playerField {{ background: transparent; border: none;
+    QComboBox#playerField {{ background: transparent;
+        border: 1px solid transparent;
         color: {MUTED}; padding: 0 {SPACING_SMALL}px;
         min-height: {PLAYER_FIELD_HEIGHT}px; max-height: {PLAYER_FIELD_HEIGHT}px;
         min-width: {PLAYER_FIELD_MIN_WIDTH}px; }}
     QComboBox#playerField:hover {{ color: {TEXT}; background: {GHOST_HOVER};
-        border-radius: {RADIUS_SMALL}px; }}
+        border-color: {ACCENT}; border-radius: {RADIUS_SMALL}px; }}
+    QComboBox#playerField:focus {{ border-color: {ACCENT}; }}
     QComboBox#playerField:disabled {{ color: {MUTED}; background: transparent; }}
     QComboBox#playerField::drop-down {{ border: none; width: {SPACING_LARGE}px; }}
     QComboBox#playerField QAbstractItemView {{ background: {SURFACE}; color: {TEXT};
@@ -158,6 +160,9 @@ def build_stylesheet() -> str:
         selection-background-color: {SURFACE_HOVER}; }}
     QComboBox#playerField QAbstractItemView::item {{ height: {PLAYER_FIELD_ROW_HEIGHT}px;
         padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
+    QComboBox#playerField QAbstractItemView::item:hover {{ background: {SURFACE_ACTIVE}; }}
+    QComboBox#playerField QAbstractItemView::item:selected {{ background: {SURFACE_ACTIVE};
+        color: {TEXT}; }}
     QMenu {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER};
         border-radius: {RADIUS_SMALL}px; padding: {SPACING_XS}px; }}
     QMenu::item {{ min-height: {PLAYER_FIELD_ROW_HEIGHT}px;
