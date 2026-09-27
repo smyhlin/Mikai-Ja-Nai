@@ -113,19 +113,33 @@ class PlayerOverlayWidget(QWidget):
             child.setMouseTracking(True)
             child.installEventFilter(self)
 
-        self.stream_chip = QLabel("", self)
-        self.stream_chip.setObjectName("playerStreamChip")
-        self.stream_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.stream_chip.hide()
-        self.stream_chip.setMouseTracking(True)
-        self.stream_chip.installEventFilter(self)
-
         self.toast = QLabel("", self)
         self.toast.setObjectName("playerToast")
         self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.toast.hide()
         self.toast.setMouseTracking(True)
         self.toast.installEventFilter(self)
+        # a two-line readout: what the video is, then what it costs to pull it
+        self.stream_chip = QWidget(self)
+        self.stream_chip.setObjectName("playerStreamChip")
+        self.stream_chip.hide()
+        self.stream_chip.setMouseTracking(True)
+        self.stream_chip.installEventFilter(self)
+        chip_layout = QVBoxLayout(self.stream_chip)
+        # the layout owns the padding: QSS padding on a widget with a layout is
+        # overridden by the layout margins, which left the two lines cramped
+        chip_layout.setContentsMargins(SPACING_SMALL, SPACING_SMALL, SPACING_SMALL, SPACING_SMALL)
+        chip_layout.setSpacing(2)
+        self.stream_line = QLabel("", self.stream_chip)
+        self.stream_line.setObjectName("playerStreamLine")
+        self.stream_rate = QLabel("", self.stream_chip)
+        self.stream_rate.setObjectName("playerStreamRate")
+        chip_layout.addWidget(self.stream_line)
+        chip_layout.addWidget(self.stream_rate)
+        for child in self.stream_chip.findChildren(QWidget):
+            child.setMouseTracking(True)
+            child.installEventFilter(self)
+
         self._controls_height = max(PLAYER_BAR_MIN_HEIGHT, self.controls.sizeHint().height())
         # The controls share a layout with the native mpv surface. Animating their
         # height resizes the video window on every frame, which stutters badly on
@@ -163,12 +177,16 @@ class PlayerOverlayWidget(QWidget):
             widget.setMouseTracking(True)
             widget.installEventFilter(self)
 
+    def _chip_has_text(self) -> bool:
+        return bool(self.stream_line.text() or self.stream_rate.text())
+
     def set_playback_state(self, state: PlaybackState) -> None:
         self.controls.set_playback_state(state)
         self._technical_details = state.error or ""
-        text = state.stream.text() if state.stream else ""
-        self.stream_chip.setText(text)
-        if not text:
+        stream = state.stream
+        self.stream_line.setText(stream.text() if stream else "")
+        self.stream_rate.setText(stream.rates() if stream else "")
+        if not self._chip_has_text():
             self._chip_timer.stop()
             self.stream_chip.hide()
         status = state.status
@@ -227,10 +245,10 @@ class PlayerOverlayWidget(QWidget):
     def show_controls(self) -> None:
         self.mouseActivity.emit()
         self._hide_timer.stop()
-        if self.stream_chip.text() and not self.stream_chip.isVisible():
+        if self._chip_has_text() and not self.stream_chip.isVisible():
             self.stream_chip.show()
             self.panelsChanged.emit()
-        if self.stream_chip.text():
+        if self._chip_has_text():
             self._chip_timer.start()
         was_hidden = not self.controls.isVisible()
         if was_hidden:
@@ -266,13 +284,24 @@ class PlayerOverlayWidget(QWidget):
             self.controls.hide()
             self.controls.setEnabled(False)
 
+    @staticmethod
+    def _within(panel: QWidget, watched: QWidget) -> bool:
+        """Ancestry test that survives a panel deleted mid-flight."""
+        try:
+            return watched is panel or panel.isAncestorOf(watched)
+        except RuntimeError:
+            return False
+
     def eventFilter(self, watched: QWidget, event: QEvent) -> bool:
+        # filters are installed while this widget is still being built, so an
+        # event can arrive before every panel exists
+        if not hasattr(self, "toast"):
+            return False
         kind = event.type()
         in_status = (
-            watched is self.status_card
-            or self.status_card.isAncestorOf(watched)
+            self._within(self.status_card, watched)
             or watched is self.toast
-            or watched is self.stream_chip
+            or self._within(self.stream_chip, watched)
         )
         if kind == QEvent.Type.MouseMove:
             self.show_controls()

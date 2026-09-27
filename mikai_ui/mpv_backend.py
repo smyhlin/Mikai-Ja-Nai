@@ -169,6 +169,10 @@ class MPVAdapter(QObject):
         ("height", "height"),
         ("container-fps", "fps"),
         ("estimated-vf-fps", "estimated_fps"),
+        ("video-bitrate", "video_bitrate"),
+        ("audio-bitrate", "audio_bitrate"),
+        # mpv's own read throughput: what the app is actually pulling, in bytes/s
+        ("cache-speed", "cache_speed"),
     )
 
     def _watch_stream(self, player: Any, prop: str, key: str) -> None:

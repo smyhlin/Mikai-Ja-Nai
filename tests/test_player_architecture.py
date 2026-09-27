@@ -449,6 +449,22 @@ def test_switch_variant_resumes_at_the_same_position(app):
     controller.close()
 
 
+def test_stream_rates_report_bitrate_and_throughput():
+    """The second chip line carries what the video costs to pull: the track's own
+    bitrate and the speed the app is actually downloading at."""
+    from mikai_ui.player_controller import StreamInfo, format_rate
+
+    assert format_rate(2_400_000) == "2.4 Mb/s"
+    assert format_rate(850_000) == "850 kb/s"
+    assert format_rate(0) == "0 kb/s"
+
+    both = StreamInfo(1280, 720, 24.0, video_bitrate=2_400_000, cache_speed=3_150_000)
+    assert both.rates() == "2.4 Mb/s · 3.1 Mb/s"
+    # partial data shows what is known, never a zero
+    assert StreamInfo(1280, 720, 24.0, video_bitrate=850_000).rates() == "850 kb/s"
+    assert StreamInfo(1280, 720, 24.0).rates() == ""
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 
@@ -478,7 +494,7 @@ def test_stream_chip_shows_on_mouse_movement_only(app):
         )
     )
     app.processEvents()
-    assert chip.text() == "1280x720 | 24fps"
+    assert dialog._overlay.stream_line.text() == "1280x720 | 24fps"
     assert not chip.isVisible(), "the chip must stay hidden until the mouse moves"
 
     dialog._overlay.show_controls()
@@ -534,11 +550,19 @@ def test_stream_chip_reports_the_decoded_stream_not_the_selected_quality(app):
     dialog.controller.attach_adapter(adapter)
     dialog.controller.load()
     # the provider served something else entirely
-    adapter.emit_stream(width=720, height=480, fps=0.0, estimated_fps=23.976)
+    adapter.emit_stream(
+        width=720,
+        height=480,
+        fps=0.0,
+        estimated_fps=23.976,
+        video_bitrate=2_400_000,
+        cache_speed=3_150_000,
+    )
     dialog._overlay.show_controls()
     app.processEvents()
 
-    assert dialog._overlay.stream_chip.text() == "720x480 | 23.98fps"
+    assert dialog._overlay.stream_line.text() == "720x480 | 23.98fps"
+    assert dialog._overlay.stream_rate.text() == "2.4 Mb/s · 3.1 Mb/s"
     assert dialog._quality_picker.currentText() == "1080p"
     dialog.close()
     app.processEvents()

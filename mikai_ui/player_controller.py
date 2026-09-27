@@ -24,6 +24,13 @@ class PlaybackStatus(str, Enum):
     STOPPED = "stopped"
 
 
+def format_rate(bits_per_second: int) -> str:
+    """Human bitrate: `2.4 Mb/s` above a million, `850 kb/s` below."""
+    if bits_per_second >= 1_000_000:
+        return f"{bits_per_second / 1_000_000:.1f} Mb/s"
+    return f"{bits_per_second / 1_000:.0f} kb/s"
+
+
 @dataclass(frozen=True, slots=True)
 class StreamInfo:
     """What mpv reports about the stream actually playing, not what we asked for."""
@@ -32,6 +39,9 @@ class StreamInfo:
     height: int = 0
     fps: float = 0.0
     estimated_fps: float = 0.0
+    video_bitrate: int = 0
+    audio_bitrate: int = 0
+    cache_speed: int = 0
 
     @property
     def effective_fps(self) -> float:
@@ -47,6 +57,14 @@ class StreamInfo:
         if fps > 0:
             parts.append(f"{fps:.2f}".rstrip("0").rstrip(".") + "fps")
         return " | ".join(parts)
+
+    def rates(self) -> str:
+        """Bitrate of the video track and the speed the app is pulling it at."""
+        parts: list[str] = []
+        for bits in (self.video_bitrate, self.cache_speed):
+            if bits > 0:
+                parts.append(format_rate(bits))
+        return " · ".join(parts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -460,6 +478,9 @@ class PlayerController(QObject):
                 height=int(payload.get("height") or 0),
                 fps=float(payload.get("fps") or 0.0),
                 estimated_fps=float(payload.get("estimated_fps") or 0.0),
+                video_bitrate=int(payload.get("video_bitrate") or 0),
+                audio_bitrate=int(payload.get("audio_bitrate") or 0),
+                cache_speed=int(payload.get("cache_speed") or 0),
             )
         )
 
