@@ -787,7 +787,9 @@ class TitlePage(QWidget):
             return
         grouped: dict[str, list[tuple[str, str]]] = {}
         for episode in self._releases[index].episodes:
-            number = episode.label or episode.number or "?"
+            # label may be absent, and number is int|float: normalise so the
+            # variant matcher can compare it as a string later
+            number = str(episode.label or episode.number or "?")
             for source in episode.sources:
                 if not source.embed_url:
                     continue
@@ -897,7 +899,12 @@ class TitlePage(QWidget):
         state["visible"] = entries
         pager = state["pager"]
         pager.setVisible(total_pages > 1)
-        pager.set_state(page + 1, total_pages, len(state["entries"]))
+        pager.set_state(
+            page + 1,
+            total_pages,
+            len(state["entries"]),
+            [str(number) for number, _embed in state["entries"]],
+        )
         QTimer.singleShot(0, self._fit_episode_section)
 
     def _go_to_episode_page(self, state: dict, page: int) -> None:
@@ -1150,7 +1157,7 @@ class TitlePage(QWidget):
         seen: set[str] = set()
         for release in self._releases:
             for episode in release.episodes:
-                if (episode.label or episode.number or "?") != number:
+                if str(episode.label or episode.number or "?") != str(number):
                     continue
                 for source in episode.sources:
                     embed = source.embed_url

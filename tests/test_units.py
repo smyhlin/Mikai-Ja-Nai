@@ -1880,6 +1880,90 @@ def test_opening_an_episode_hands_the_player_the_tab_playlist(fake_window, app, 
     app.processEvents()
 
 
+def test_a_release_numbered_from_110_labels_its_chips_with_real_numbers(
+    fake_window, app, monkeypatch
+):
+    """A later cour can start at 110, so a chip reading "1 - 140" above a grid
+    starting at 110 is a lie."""
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+
+    class OffsetRepository(FakeRepository):
+        def get_player(self, ref: str) -> PlayerResult:
+            loud = _release("voice", "Loud", list(range(110, 400)))
+            sub = Release(
+                kind="sub",
+                teams=[Team(id=2, slug="sundragon", name="SunDragon")],
+                episodes=[
+                    Episode(
+                        number=n,
+                        sources=[
+                            Source(provider="moon", embed_url=f"https://moonanime.art/iframe/{n}/")
+                        ],
+                    )
+                    for n in range(110, 250)
+                ],
+            )
+            return PlayerResult(releases=[loud, sub])
+
+    window = MainWindow(OffsetRepository())
+    window.show()
+    try:
+        window.open_title("7428", None)
+        title = window._title
+        assert pump_until(app, lambda: title._selector.count() == 2)
+        title._selector.setCurrentIndex(0)
+        app.processEvents()
+        state = title._tab_states[0]
+        _, chips, _ = pagination_controls(title)
+        labels = [c.text() for c in chips]
+        assert labels[0] == "110 – 249", labels
+        # the grid underneath really does start at 110
+        assert tab_chips(title)[0].text() == "110"
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_subtitle_tracks_appear_in_the_mic_menu(fake_window, app, monkeypatch):
+    """Episode.number is an int; the variant matcher compared it to a str and
+    silently dropped every subtitle track."""
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+
+    class SubOnlyRepository(FakeRepository):
+        def get_player(self, ref: str) -> PlayerResult:
+            sub = Release(
+                kind="sub",
+                teams=[Team(id=2, slug="sundragon", name="SunDragon")],
+                episodes=[
+                    Episode(
+                        number=n,
+                        sources=[
+                            Source(provider="moon", embed_url=f"https://moonanime.art/iframe/{n}/")
+                        ],
+                    )
+                    for n in range(1, 13)
+                ],
+            )
+            return PlayerResult(releases=[sub])
+
+    window = MainWindow(SubOnlyRepository())
+    window.show()
+    try:
+        window.open_title("7428", None)
+        title = window._title
+        assert pump_until(app, lambda: title._selector.count() == 1)
+        variants = title._episode_variants("1")
+        assert len(variants) == 1, [v["label"] for v in variants]
+        assert variants[0]["label"].startswith("Субтитри"), variants[0]["label"]
+    finally:
+        window._runner.wait_for_done(10000)
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
 def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatch):
     """The mic menu offers every dub/sub track carrying the episode, deduped."""
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})

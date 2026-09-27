@@ -29,6 +29,7 @@ class RangePager(QWidget):
         self._page = 1
         self._pages = 1
         self._entries = 0
+        self._numbers: list[str] | None = None
         self._syncing = False
 
         row = QHBoxLayout(self)
@@ -76,11 +77,25 @@ class RangePager(QWidget):
         button.setAccessibleName(tooltip)
         return button
 
-    def set_state(self, page: int, pages: int, entries: int) -> None:
-        """Point the pager at `page` of `pages`, a result set of `entries` rows."""
+    def set_state(
+        self,
+        page: int,
+        pages: int,
+        entries: int,
+        numbers: list[str] | None = None,
+    ) -> None:
+        """Point the pager at `page` of `pages`, a result set of `entries` rows.
+
+        `numbers` carries the labels the rows actually show, in order. A release
+        can number its episodes from anywhere (a later cour may start at 110), and
+        a chip reading "1 - 140" above a grid starting at 110 is a lie. Without
+        it the pager falls back to positional arithmetic, which is right for
+        search results and only for releases that number from 1.
+        """
         self._pages = max(1, pages)
         self._page = min(max(1, page), self._pages)
         self._entries = max(0, entries)
+        self._numbers = list(numbers) if numbers else None
         self._render_chips()
         self.first_btn.setEnabled(self._page > 1)
         self.prev_btn.setEnabled(self._page > 1)
@@ -101,12 +116,22 @@ class RangePager(QWidget):
         first = min(max(0, self._page - 1 - window // 2), max(0, self._pages - window))
         for index in range(first, first + window):
             target = index + 1
-            label = f"{(target - 1) * self._page_size + 1} – {min(target * self._page_size, self._entries)}"
+            label = self._chip_label(target)
             button = QPushButton(label)
             button.setObjectName("pagerChipActive" if target == self._page else "pagerChip")
             button.setToolTip(f"Сторінка {target}")
             button.clicked.connect(lambda _checked=False, page=target: self._emit(page))
             self._chip_layout.addWidget(button)
+
+    def _chip_label(self, target: int) -> str:
+        """The real labels this page holds, so the chip matches the grid."""
+        start = (target - 1) * self._page_size
+        end = min(target * self._page_size, self._entries)
+        if self._numbers and start < len(self._numbers):
+            first = str(self._numbers[start])
+            last = str(self._numbers[end - 1]) if end > start else first
+            return f"{first} – {last}" if end > start else first
+        return f"{start + 1} – {end}"
 
     def _on_jump(self, value: int) -> None:
         if not self._syncing:
