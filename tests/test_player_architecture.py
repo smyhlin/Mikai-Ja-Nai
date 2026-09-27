@@ -536,6 +536,81 @@ def test_episode_sidebar_collapses_to_a_strip_and_stays_clear_of_the_video(app):
     app.processEvents()
 
 
+def test_the_collapsed_rail_is_entirely_clickable(app):
+    """The toggle used to be a 28px square at the top, so a click anywhere else
+    on the rail did nothing."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog(
+        "Серія 2",
+        "https://s/720.m3u8",
+        playlist=[{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 5)],
+        episode_index=1,
+    )
+    dialog.resize(900, 520)
+    dialog.show()
+    app.processEvents()
+
+    rail = dialog._sidebar_toggle
+    assert rail.height() == dialog._sidebar.height(), (rail.height(), dialog._sidebar.height())
+
+    # a click near the bottom of the rail, well clear of the chevron
+    QTest.mouseClick(
+        rail, Qt.MouseButton.LeftButton, pos=QPoint(rail.width() // 2, rail.height() - 8)
+    )
+    app.processEvents()
+    assert dialog._sidebar_scroll.isVisible(), "the whole rail must be clickable"
+
+    # and it collapses back to a full-height rail
+    QTest.mouseClick(
+        rail, Qt.MouseButton.LeftButton, pos=QPoint(rail.width() // 2, rail.height() - 8)
+    )
+    app.processEvents()
+    assert not dialog._sidebar_scroll.isVisible()
+    assert rail.height() == dialog._sidebar.height()
+    dialog.close()
+    app.processEvents()
+
+
+def test_the_episode_rail_hides_with_the_chrome(app):
+    """Idle must clear every element, the rail included: a stripe of UI over a
+    playing video is worse than no sidebar."""
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog(
+        "Серія 2",
+        "https://s/720.m3u8",
+        playlist=[{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 5)],
+        episode_index=1,
+    )
+    dialog.resize(900, 520)
+    dialog.show()
+    app.processEvents()
+    dialog._overlay.set_fullscreen(True)
+    dialog._overlay.show_controls()
+    app.processEvents()
+    assert dialog._sidebar.isVisible() and dialog._controls.isVisible()
+
+    dialog._overlay.hide_controls()
+    QTest.qWait(500)
+    app.processEvents()
+    assert not dialog._sidebar.isVisible(), "the rail must not outlive the bar"
+    assert not dialog._controls.isVisible()
+    # the video takes the full width back
+    assert dialog._video.width() == dialog._stage.width()
+
+    dialog._overlay.show_controls()
+    app.processEvents()
+    assert dialog._sidebar.isVisible(), "the rail returns with the chrome"
+    dialog.close()
+    app.processEvents()
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 

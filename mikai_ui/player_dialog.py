@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +43,9 @@ from mikai_ui.theme.metrics import (
 )
 
 log = logging.getLogger(__name__)
+
+# Qt's QWIDGETSIZE_MAX is a C++ macro that PySide6 does not export
+UNLIMITED_HEIGHT = 16777215
 
 
 class PlayerDialog(QDialog):
@@ -141,6 +145,8 @@ class PlayerDialog(QDialog):
         # The overlay is an event filter and state presenter only. It must never be
         # given the stage rect: any widget spanning the video occludes the mpv surface.
         self._overlay = PlayerOverlayWidget(self._controls, self._stage)
+        self._overlay.chromeHidden.connect(self._sidebar.hide)
+        self._overlay.mouseActivity.connect(self._sidebar.show)
         self._overlay.set_mouse_sources(self._stage, self._video)
         self._overlay.hide()
 
@@ -291,9 +297,16 @@ class PlayerDialog(QDialog):
         self._sidebar_toggle.setAccessibleName("Список серій")
         # a focused button would swallow Space, and Space is play/pause
         self._sidebar_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._sidebar_toggle.setFixedSize(PLAYER_SIDEBAR_STRIP, PLAYER_SIDEBAR_STRIP)
+        # the whole collapsed rail is the button: a 28px square at the top left
+        # most of it dead, so a click below the chevron did nothing
+        self._sidebar_toggle.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        self._sidebar_toggle.setFixedWidth(PLAYER_SIDEBAR_STRIP)
+        self._sidebar_toggle.setMaximumHeight(UNLIMITED_HEIGHT)
+        self._sidebar_toggle.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._sidebar_toggle.clicked.connect(self.toggle_sidebar)
-        column.addWidget(self._sidebar_toggle, 0, Qt.AlignmentFlag.AlignTop)
+        column.addWidget(self._sidebar_toggle, 0)
 
         self._sidebar_list = QWidget(sidebar)
         self._sidebar_list.setObjectName("playerSidebarList")
@@ -387,6 +400,10 @@ class PlayerDialog(QDialog):
         """The strip is always there; the list slides in beside it."""
         self._sidebar_expanded = bool(expanded)
         self._sidebar_scroll.setVisible(self._sidebar_expanded)
+        # collapsed: the rail fills the height; expanded: a header above the list
+        self._sidebar_toggle.setMaximumHeight(
+            PLAYER_SIDEBAR_STRIP if self._sidebar_expanded else UNLIMITED_HEIGHT
+        )
         self._sidebar_toggle.setIcon(
             make_icon(
                 "chevron_left" if self._sidebar_expanded else "chevron_right",
@@ -402,6 +419,10 @@ class PlayerDialog(QDialog):
             if self._sidebar_expanded
             else PLAYER_SIDEBAR_STRIP
         )
+        # called during construction, before the overlay exists
+        overlay = getattr(self, "_overlay", None)
+        if overlay is not None and not overlay.controls.isVisible():
+            self._sidebar.hide()
 
     def _on_variant_requested(self, embed: str, label: str) -> None:
         if embed and embed != self._current_embed:

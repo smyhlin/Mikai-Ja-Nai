@@ -212,6 +212,7 @@ def build_stylesheet() -> str:
     QPushButton#playerSidebarToggle {{ background: transparent; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QPushButton#playerSidebarToggle:hover {{ background: {GHOST_HOVER}; }}
+    QPushButton#playerSidebarToggle:pressed {{ background: {SURFACE_ACTIVE}; }}
     QScrollArea#playerSidebarScroll {{ background: transparent; border: none; }}
     QWidget#playerSidebarList {{ background: transparent; }}
     QPushButton#playerEpisodeItem {{ background: transparent; border: none;

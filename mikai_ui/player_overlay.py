@@ -40,6 +40,7 @@ class PlayerOverlayWidget(QWidget):
     mouseActivity = Signal()
     toastShown = Signal()
     panelsChanged = Signal()
+    chromeHidden = Signal()
 
     def __init__(
         self,
@@ -283,6 +284,9 @@ class PlayerOverlayWidget(QWidget):
         if self._opacity.opacity() <= 0.0 and self._fullscreen:
             self.controls.hide()
             self.controls.setEnabled(False)
+            # the episode rail is chrome too; a stripe of UI hanging over a
+            # playing video is worse than no sidebar
+            self.chromeHidden.emit()
 
     @staticmethod
     def _within(panel: QWidget, watched: QWidget) -> bool:
