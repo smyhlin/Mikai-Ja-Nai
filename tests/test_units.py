@@ -1836,6 +1836,20 @@ def test_release_pager_offers_range_chips_that_jump_pages(app, monkeypatch):
         app.processEvents()
 
 
+def test_track_picker_labels_never_carry_the_episode_count(fake_window, app, monkeypatch):
+    """Regression: the track menu showed "· 12 серій" while episode 1 was playing,
+    so the count read as the length of what was about to play."""
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
+    title = open_fake_title(fake_window, app)
+    for variant in title._episode_variants("1"):
+        assert "серій" not in variant["label"], variant["label"]
+    # the release selector combo still shows the count
+    selector_labels = [title._selector.itemText(i) for i in range(title._selector.count())]
+    assert any("серій" in label for label in selector_labels), selector_labels
+    title.shutdown()
+    app.processEvents()
+
+
 def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatch):
     """The mic menu offers every dub/sub track carrying the episode, deduped."""
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})

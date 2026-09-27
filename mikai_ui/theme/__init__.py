@@ -158,6 +158,13 @@ def build_stylesheet() -> str:
         selection-background-color: {SURFACE_HOVER}; }}
     QComboBox#playerField QAbstractItemView::item {{ height: {PLAYER_FIELD_ROW_HEIGHT}px;
         padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
+    QMenu {{ background: {SURFACE}; color: {TEXT}; border: 1px solid {BORDER};
+        border-radius: {RADIUS_SMALL}px; padding: {SPACING_XS}px; }}
+    QMenu::item {{ min-height: {PLAYER_FIELD_ROW_HEIGHT}px;
+        padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
+    QMenu::item:selected {{ background: {SURFACE_ACTIVE}; color: {TEXT}; }}
+    QMenu::item:disabled {{ color: {MUTED}; }}
+    QMenu::separator {{ height: 1px; background: {BORDER}; margin: {SPACING_XS}px; }}
     QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px; }}
     QPushButton#pagerControl {{ background: transparent; color: {TEXT};
         border: 1px solid transparent; border-radius: {RADIUS}px; padding: 0;

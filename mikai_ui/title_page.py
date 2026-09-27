@@ -754,16 +754,26 @@ class TitlePage(QWidget):
             parts.append(text)
         return " · ".join(parts)
 
-    def _release_label(self, release: Release) -> str:
+    def _release_label(self, release: Release, *, with_count: bool = True) -> str:
         kind = KIND_LABELS.get(release.kind, release.kind or "?")
         teams = ", ".join(team.name for team in release.teams if team.name)
         label = f"{kind} — {teams}" if teams else kind
         if release.is_collab:
             label += " (колаб)"
-        count = playable_episode_count(release)
-        if count:
-            label += f" · {count} серій"
+        if with_count:
+            count = playable_episode_count(release)
+            if count:
+                label += f" · {count} серій"
         return label
+
+    def _release_track_label(self, release: Release) -> str:
+        """Track-picker label: release identity only, never the episode count.
+
+        The count belongs to the whole release, but a track menu is scoped to the
+        episode on screen, so "12 серій" there reads as the length of what is
+        about to play and is simply wrong.
+        """
+        return self._release_label(release, with_count=False)
 
     def _fill_episodes(self, index: int) -> None:
         self._tabs.clear()
@@ -1156,7 +1166,7 @@ class TitlePage(QWidget):
                     )
                     track = PROVIDER_LABELS.get(provider, provider.capitalize())
                     variants.append(
-                        {"label": f"{self._release_label(release)} · {track}", "embed": embed}
+                        {"label": f"{self._release_track_label(release)} · {track}", "embed": embed}
                     )
         return variants
 

@@ -247,6 +247,7 @@ class PlayerControlsWidget(QWidget):
         controls.addWidget(self.quality_combo)
 
         self.variant_button = self._button("Дорожка: озвучення чи субтитри", secondary=True)
+        self.variant_button.setObjectName("variantPicker")
         self.variant_button.setIcon(make_icon("mic", size=ICON_SIZE, disabled_color=ICON_DISABLED))
         self.variant_button.clicked.connect(self._show_variant_menu)
         self.variant_button.hide()
