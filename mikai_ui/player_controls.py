@@ -151,6 +151,8 @@ class PlayerControlsWidget(QWidget):
 
     playPauseRequested = Signal()
     rewindRequested = Signal()
+    nextEpisodeRequested = Signal()
+    prevEpisodeRequested = Signal()
     forwardRequested = Signal()
     seekStarted = Signal()
     seekPreviewChanged = Signal(float)
@@ -202,9 +204,23 @@ class PlayerControlsWidget(QWidget):
         self.play_button.clicked.connect(self.playPauseRequested)
         self.forward_button = self._skip_button("Вперед на 10 секунд (→)", "forward")
         self.forward_button.clicked.connect(self.forwardRequested)
+        self.prev_ep_button = self._button("Попередня серія (PgUp)", secondary=True)
+        self.prev_ep_button.setIcon(
+            make_icon("prev_episode", size=ICON_SIZE, disabled_color=ICON_DISABLED)
+        )
+        self.prev_ep_button.clicked.connect(self.prevEpisodeRequested)
+        self.prev_ep_button.hide()
+        controls.addWidget(self.prev_ep_button)
         controls.addWidget(self.rewind_button)
         controls.addWidget(self.play_button)
         controls.addWidget(self.forward_button)
+        self.next_ep_button = self._button("Наступна серія (PgDn)", secondary=True)
+        self.next_ep_button.setIcon(
+            make_icon("next_episode", size=ICON_SIZE, disabled_color=ICON_DISABLED)
+        )
+        self.next_ep_button.clicked.connect(self.nextEpisodeRequested)
+        self.next_ep_button.hide()
+        controls.addWidget(self.next_ep_button)
         controls.addSpacing(SPACING_SMALL)
         controls.addWidget(self.time_label)
         controls.addStretch(1)
@@ -288,6 +304,10 @@ class PlayerControlsWidget(QWidget):
         button.setAccessibleName(tooltip)
         button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         return button
+
+    def set_episode_navigation(self, has_prev: bool, has_next: bool) -> None:
+        self.prev_ep_button.setVisible(has_prev)
+        self.next_ep_button.setVisible(has_next)
 
     def set_variants(self, variants: list[dict], current_embed: str) -> None:
         """Offer the other dub/sub tracks for this episode, if any exist."""

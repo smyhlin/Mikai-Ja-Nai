@@ -16,6 +16,14 @@ _ICONS = {
         '<rect x="14" y="4" width="4" height="16" rx="1"/>'
         '<rect x="6" y="4" width="4" height="16" rx="1"/>'
     ),
+    "next_episode": (
+        '<polygon points="6 4 6 20 14 12 6 4"/><line x1="18" x2="18" y1="5" y2="19"/>'
+    ),
+    "prev_episode": (
+        '<polygon points="18 20 18 4 10 12 18 20"/><line x1="6" x2="6" y1="5" y2="19"/>'
+    ),
+    "chevron_right": ('<path d="m9 18 6-6-6-6"/>'),
+    "chevron_left": ('<path d="m15 18-6-6 6-6"/>'),
     "rewind": (
         '<polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/>'
     ),

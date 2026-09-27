@@ -1170,6 +1170,19 @@ class TitlePage(QWidget):
                     )
         return variants
 
+    def _tab_playlist(self, state: dict | None, number: str) -> tuple[list[dict], int]:
+        """The episodes of the release tab being watched, for the player sidebar."""
+        if not state:
+            return [], 0
+        entries = state.get("entries", [])
+        playlist: list[dict] = []
+        index = 0
+        for spot, (item_number, embed) in enumerate(entries):
+            playlist.append({"label": f"Серія {item_number}", "embed": embed})
+            if item_number == number:
+                index = spot
+        return playlist, index
+
     def _open_player(self, entry: dict, qualities: dict[int, str]) -> None:
         available = [
             (height, url)
@@ -1181,6 +1194,7 @@ class TitlePage(QWidget):
             return
         height, url = max(available, key=lambda item: item[0])
         caption = f"{entry['label']} · {height}p"
+        playlist, index = self._tab_playlist(entry.get("state"), entry["number"])
         dialog = PlayerDialog(
             caption,
             url,
@@ -1188,6 +1202,8 @@ class TitlePage(QWidget):
             initial_height=height,
             variants=self._episode_variants(entry["number"]),
             current_embed=entry["embed"],
+            playlist=playlist,
+            episode_index=index,
             parent=self,
         )
         # recovery must re-extract whatever track is CURRENT, not the opening one
@@ -1198,8 +1214,33 @@ class TitlePage(QWidget):
         dialog.variantRequested.connect(
             lambda embed, label, target=dialog: self._switch_player_variant(target, embed, label)
         )
+        dialog.episodeRequested.connect(
+            lambda item, spot, target=dialog: self._play_episode_from(target, item, spot)
+        )
         dialog.show()
         self._prepare_player(dialog)
+
+    def _play_episode_from(self, dialog: PlayerDialog, item: dict, index: int) -> None:
+        """Step inside the open player: one fetch, then swap in place."""
+        if self._closed or not shiboken6.isValid(dialog):
+            return
+        number = str(item.get("label", "")).removeprefix("Серія ")
+        variants = self._episode_variants(number)
+        entry = {
+            "button": None,
+            "label": item.get("label", ""),
+            "number": number,
+            "embed": item.get("embed", ""),
+            "state": None,
+        }
+
+        def on_qualities(loaded, qualities) -> None:
+            if not shiboken6.isValid(dialog):
+                return
+            dialog._page_entry = loaded
+            dialog.apply_episode(loaded["label"], loaded["embed"], index, qualities, variants)
+
+        self._ensure_qualities(entry, on_qualities)
 
     def _switch_player_variant(self, dialog: PlayerDialog, embed: str, label: str) -> None:
         if self._closed or not shiboken6.isValid(dialog):

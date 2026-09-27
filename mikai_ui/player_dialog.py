@@ -11,25 +11,34 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from mikai_ui.fullscreen_manager import FullscreenManager
+from mikai_ui.theme.colors import ICON_DISABLED
 from mikai_ui.mpv_backend import MPVAdapter
 from mikai_ui.player_controller import PlaybackState, PlaybackStatus, PlayerController
 from mikai_ui.player_controls import PlayerControlsWidget, format_time
+from mikai_ui.theme.widgets import make_icon
 from mikai_ui.player_overlay import PlayerOverlayWidget
 from mikai_ui.theme.metrics import (
+    ICON_SIZE,
     PLAYER_DEFAULT_HEIGHT,
     PLAYER_DEFAULT_WIDTH,
     PLAYER_MIN_HEIGHT,
     PLAYER_MIN_WIDTH,
+    PLAYER_SIDEBAR_STRIP,
+    PLAYER_SIDEBAR_WIDTH,
     SPACING_LARGE,
     SPACING_MEDIUM,
+    SPACING_XS,
 )
 
 log = logging.getLogger(__name__)
@@ -41,6 +50,7 @@ class PlayerDialog(QDialog):
     runtimeRequested = Signal()
     playbackFailed = Signal()
     variantRequested = Signal(str, str)
+    episodeRequested = Signal(object, int)
 
     def __init__(
         self,
@@ -50,6 +60,8 @@ class PlayerDialog(QDialog):
         initial_height: int | None = None,
         variants: list[dict] | None = None,
         current_embed: str = "",
+        playlist: list[dict] | None = None,
+        episode_index: int = 0,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -99,18 +111,32 @@ class PlayerDialog(QDialog):
         stage_layout.setContentsMargins(0, 0, 0, 0)
         stage_layout.setSpacing(0)
 
+        # the video and the episode sidebar share a row: the sidebar is a sibling
+        # of the native surface, never an overlay on it, so expanding it narrows
+        # the video instead of covering it
+        content_row = QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(0)
+
         self._video = QWidget(self._stage)
         self._video.setObjectName("videoSurface")
         self._video.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         self._video.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, False)
         self._video.setMouseTracking(True)
-        stage_layout.addWidget(self._video, 1)
+        content_row.addWidget(self._video, 1)
+
+        self._sidebar = self._build_sidebar()
+        content_row.addWidget(self._sidebar, 0)
+        stage_layout.addLayout(content_row, 1)
 
         self._controls = PlayerControlsWidget(self._stage)
         self._controls.set_qualities(self._qualities, initial_height)
         self._controls.set_variants(self._variants, current_embed)
         self._controls.variantRequested.connect(self._on_variant_requested)
+        self._controls.prevEpisodeRequested.connect(lambda: self.step_episode(-1))
+        self._controls.nextEpisodeRequested.connect(lambda: self.step_episode(1))
         stage_layout.addWidget(self._controls, 0)
+        self.set_playlist(playlist, episode_index)
 
         # The overlay is an event filter and state presenter only. It must never be
         # given the stage rect: any widget spanning the video occludes the mpv surface.
@@ -203,6 +229,9 @@ class PlayerDialog(QDialog):
             ("Up", lambda: self._change_volume(5)),
             ("Down", lambda: self._change_volume(-5)),
             ("Esc", self._exit_fullscreen),
+            ("PgUp", lambda: self.step_episode(-1)),
+            ("PgDown", lambda: self.step_episode(1)),
+            ("E", self.toggle_sidebar),
         )
         self._shortcuts: list[QShortcut] = []
         for key, callback in shortcuts:
@@ -244,6 +273,135 @@ class PlayerDialog(QDialog):
 
     def show_error(self, message: str) -> None:
         self._controller.fail(message)
+
+    def _build_sidebar(self) -> QWidget:
+        """A collapsible episode list beside the video, not over it."""
+        sidebar = QWidget(self._stage)
+        sidebar.setObjectName("playerSidebar")
+        column = QVBoxLayout(sidebar)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+
+        self._sidebar_toggle = QPushButton(sidebar)
+        self._sidebar_toggle.setObjectName("playerSidebarToggle")
+        self._sidebar_toggle.setIcon(
+            make_icon("chevron_right", size=ICON_SIZE, disabled_color=ICON_DISABLED)
+        )
+        self._sidebar_toggle.setToolTip("Список серій (E)")
+        self._sidebar_toggle.setAccessibleName("Список серій")
+        # a focused button would swallow Space, and Space is play/pause
+        self._sidebar_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sidebar_toggle.setFixedSize(PLAYER_SIDEBAR_STRIP, PLAYER_SIDEBAR_STRIP)
+        self._sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        column.addWidget(self._sidebar_toggle, 0, Qt.AlignmentFlag.AlignTop)
+
+        self._sidebar_list = QWidget(sidebar)
+        self._sidebar_list.setObjectName("playerSidebarList")
+        self._sidebar_items = QVBoxLayout(self._sidebar_list)
+        self._sidebar_items.setContentsMargins(SPACING_XS, SPACING_XS, SPACING_XS, SPACING_XS)
+        self._sidebar_items.setSpacing(2)
+        self._sidebar_items.addStretch(1)
+        self._sidebar_scroll = QScrollArea(sidebar)
+        self._sidebar_scroll.setObjectName("playerSidebarScroll")
+        self._sidebar_scroll.setWidgetResizable(True)
+        self._sidebar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._sidebar_scroll.setWidget(self._sidebar_list)
+        self._sidebar_scroll.setFixedWidth(PLAYER_SIDEBAR_WIDTH)
+        column.addWidget(self._sidebar_scroll, 1)
+        self._sidebar_expanded = False
+        return sidebar
+
+    def set_playlist(self, playlist: list[dict] | None, index: int = 0) -> None:
+        """The episodes around this one, for the sidebar and the step buttons."""
+        self._playlist = [dict(item) for item in (playlist or [])]
+        self._episode_index = index if 0 <= index < len(self._playlist) else 0
+        self._rebuild_sidebar_rows()
+        self.set_sidebar_expanded(self._sidebar_expanded)
+        self._sync_episode_state()
+
+    def _sync_episode_state(self) -> None:
+        self._controls.set_episode_navigation(
+            self._episode_index > 0, self._episode_index < len(self._playlist) - 1
+        )
+
+    def step_episode(self, delta: int) -> None:
+        self._go_to_episode(self._episode_index + delta)
+
+    def _go_to_episode(self, position: int) -> None:
+        if not 0 <= position < len(self._playlist):
+            return
+        self.episodeRequested.emit(dict(self._playlist[position]), position)
+
+    def apply_episode(
+        self,
+        label: str,
+        embed: str,
+        index: int,
+        qualities: dict[int, str],
+        variants: list[dict],
+    ) -> None:
+        """Step to another episode in place: same window, same position.
+
+        The stream swap reuses the variant machine, so playback continues where
+        it was instead of restarting, and a new dialog is never stacked.
+        """
+        if self._closed or not qualities:
+            return
+        self._episode_index = index
+        self._variants = list(variants)
+        self._current_embed = embed
+        self._controls.set_variants(self._variants, embed)
+        target = max(qualities)
+        self._qualities = dict(qualities)
+        self._controls.set_qualities(self._qualities, target)
+        self._caption = f"{label} · {target}p"
+        self.setWindowTitle(f"Плеєр — {self._caption}")
+        self._rebuild_sidebar_rows()
+        self._sync_episode_state()
+        self._overlay.show_toast(f"Серія: {label}")
+        self._controller.switch_variant(self._qualities[target], self._qualities, target)
+
+    def _rebuild_sidebar_rows(self) -> None:
+        while self._sidebar_items.count() > 1:
+            item = self._sidebar_items.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for position, entry in enumerate(self._playlist):
+            button = QPushButton(entry.get("label", ""), self._sidebar_list)
+            button.setObjectName(
+                "playerEpisodeItemCurrent"
+                if position == self._episode_index
+                else "playerEpisodeItem"
+            )
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setToolTip(entry.get("label", ""))
+            button.clicked.connect(lambda _checked=False, spot=position: self._go_to_episode(spot))
+            self._sidebar_items.insertWidget(position, button)
+
+    def toggle_sidebar(self) -> None:
+        self.set_sidebar_expanded(not self._sidebar_expanded)
+
+    def set_sidebar_expanded(self, expanded: bool) -> None:
+        """The strip is always there; the list slides in beside it."""
+        self._sidebar_expanded = bool(expanded)
+        self._sidebar_scroll.setVisible(self._sidebar_expanded)
+        self._sidebar_toggle.setIcon(
+            make_icon(
+                "chevron_left" if self._sidebar_expanded else "chevron_right",
+                size=ICON_SIZE,
+                disabled_color=ICON_DISABLED,
+            )
+        )
+        hint = "Сховати список серій" if self._sidebar_expanded else "Список серій"
+        self._sidebar_toggle.setToolTip(hint)
+        self._sidebar_toggle.setAccessibleName(hint)
+        self._sidebar.setFixedWidth(
+            (PLAYER_SIDEBAR_STRIP + PLAYER_SIDEBAR_WIDTH)
+            if self._sidebar_expanded
+            else PLAYER_SIDEBAR_STRIP
+        )
 
     def _on_variant_requested(self, embed: str, label: str) -> None:
         if embed and embed != self._current_embed:

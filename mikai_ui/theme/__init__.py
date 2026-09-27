@@ -207,6 +207,19 @@ def build_stylesheet() -> str:
     QLabel#playerToast {{ background: {CHROME_FILL}; color: {TEXT};
         border: 1px solid {BORDER}; border-radius: {RADIUS}px;
         padding: {SPACING_XS}px {SPACING_LARGE}px; font-size: 13px; }}
+    QWidget#playerSidebar {{ background: {SURFACE}; border: none;
+        border-left: 1px solid {BORDER}; }}
+    QPushButton#playerSidebarToggle {{ background: transparent; border: none;
+        border-radius: {RADIUS_SMALL}px; }}
+    QPushButton#playerSidebarToggle:hover {{ background: {GHOST_HOVER}; }}
+    QScrollArea#playerSidebarScroll {{ background: transparent; border: none; }}
+    QWidget#playerSidebarList {{ background: transparent; }}
+    QPushButton#playerEpisodeItem {{ background: transparent; border: none;
+        color: {TEXT}; text-align: left; padding: 0 {SPACING_SMALL}px;
+        border-radius: {RADIUS_SMALL}px; min-height: 28px; }}
+    QPushButton#playerEpisodeItem:hover {{ background: {SURFACE_HOVER}; }}
+    QPushButton#playerEpisodeItemCurrent {{ background: {SURFACE_ACTIVE};
+        color: {TEXT}; font-weight: 600; }}
     QWidget#playerStreamChip {{ background: {SURFACE_ACTIVE};
         border: 1px solid {BORDER}; border-radius: {RADIUS}px; }}
     QLabel#playerStreamLine {{ background: transparent; color: {TEXT}; font-size: 13px;

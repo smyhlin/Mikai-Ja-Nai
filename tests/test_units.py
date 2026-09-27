@@ -1850,6 +1850,36 @@ def test_track_picker_labels_never_carry_the_episode_count(fake_window, app, mon
     app.processEvents()
 
 
+def test_opening_an_episode_hands_the_player_the_tab_playlist(fake_window, app, monkeypatch):
+    """The player's step buttons and sidebar come from the release tab being watched."""
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        return {720: f"{url}/720.m3u8"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    monkeypatch.setattr(
+        "mikai_ui.title_page.prepare_runtime",
+        lambda: (_ for _ in ()).throw(OSError("offline test")),
+    )
+    title = open_fake_title(fake_window, app)
+    buttons = tab_chips(title)
+    # the sixth episode, so the player lands mid-list and both step buttons show
+    QTest.mouseClick(buttons[5], Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert pump_until(app, lambda: len(title._player_dialogs) == 1)
+    dialog = title._player_dialogs[-1]
+
+    assert [item["label"] for item in dialog._playlist][:3] == ["Серія 1", "Серія 2", "Серія 3"]
+    assert len(dialog._playlist) == 24
+    assert dialog._episode_index == 5
+    assert dialog._controls.prev_ep_button.isVisible()
+    assert dialog._controls.next_ep_button.isVisible()
+    title.shutdown()
+    app.processEvents()
+
+
 def test_episode_variants_cover_every_release_track(fake_window, app, monkeypatch):
     """The mic menu offers every dub/sub track carrying the episode, deduped."""
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})

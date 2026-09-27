@@ -465,6 +465,77 @@ def test_stream_rates_report_bitrate_and_throughput():
     assert StreamInfo(1280, 720, 24.0).rates() == ""
 
 
+def test_episode_stepping_moves_through_the_playlist_and_stops_at_the_ends(app):
+    from mikai_ui.player_dialog import PlayerDialog
+
+    playlist = [{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 4)]
+    dialog = PlayerDialog("Серія 1", "https://s/720.m3u8", playlist=playlist, episode_index=0)
+    dialog.show()
+    app.processEvents()
+
+    controls = dialog._controls
+    # no previous episode at the head of the list
+    assert not controls.prev_ep_button.isVisible()
+    assert controls.next_ep_button.isVisible()
+
+    asked = []
+    dialog.episodeRequested.connect(lambda item, spot: asked.append((item["label"], spot)))
+    dialog.step_episode(1)
+    app.processEvents()
+    assert asked == [("Серія 2", 1)], asked
+
+    # walking past the end asks for nothing rather than wrapping around
+    dialog._episode_index = 2
+    dialog.step_episode(1)
+    app.processEvents()
+    assert asked == [("Серія 2", 1)], asked
+    dialog.close()
+    app.processEvents()
+
+
+def test_episode_sidebar_collapses_to_a_strip_and_stays_clear_of_the_video(app):
+    from PySide6.QtWidgets import QPushButton
+
+    from mikai_ui.player_dialog import PlayerDialog
+    from mikai_ui.theme.metrics import PLAYER_SIDEBAR_STRIP, PLAYER_SIDEBAR_WIDTH
+
+    playlist = [{"label": f"Серія {n}", "embed": f"https://s/{n}"} for n in range(1, 4)]
+    dialog = PlayerDialog("Серія 2", "https://s/720.m3u8", playlist=playlist, episode_index=1)
+    dialog.resize(1000, 560)
+    dialog.show()
+    app.processEvents()
+
+    sidebar = dialog._sidebar
+    assert sidebar.width() == PLAYER_SIDEBAR_STRIP
+    assert not dialog._sidebar_scroll.isVisible()
+
+    dialog.toggle_sidebar()
+    app.processEvents()
+    assert dialog._sidebar_scroll.isVisible()
+    assert sidebar.width() == PLAYER_SIDEBAR_STRIP + PLAYER_SIDEBAR_WIDTH
+
+    rows = [
+        b
+        for b in dialog._sidebar_list.findChildren(QPushButton)
+        if b.objectName().startswith("playerEpisodeItem")
+    ]
+    assert [r.text() for r in rows] == ["Серія 1", "Серія 2", "Серія 3"]
+    assert rows[1].objectName() == "playerEpisodeItemCurrent"
+
+    # the sidebar is a sibling of the video, so expanding narrows the video
+    # rather than covering the picture
+    assert dialog._video.width() + PLAYER_SIDEBAR_STRIP <= dialog._stage.width()
+    assert not dialog._video.geometry().intersects(sidebar.geometry())
+
+    asked = []
+    dialog.episodeRequested.connect(lambda item, spot: asked.append((item["label"], spot)))
+    rows[0].click()
+    app.processEvents()
+    assert asked == [("Серія 1", 0)], asked
+    dialog.close()
+    app.processEvents()
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 
