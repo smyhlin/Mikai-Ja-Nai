@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -160,6 +161,9 @@ class PlayerControlsWidget(QWidget):
         self.timeline = TimelineSlider(self)
         self.time_label = QLabel("0:00 / --:--")
         self.time_label.setObjectName("playerTime")
+        time_font = self.time_label.font()
+        time_font.setFeature(QFont.Tag("tnum"), 1)
+        self.time_label.setFont(time_font)
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.time_label.setMinimumWidth(TIME_LABEL_MIN_WIDTH)
         self.timeline.seekStarted.connect(self.seekStarted)

@@ -150,8 +150,7 @@ def build_stylesheet() -> str:
         selection-background-color: {SURFACE_HOVER}; }}
     QComboBox#playerField QAbstractItemView::item {{ height: {PLAYER_FIELD_ROW_HEIGHT}px;
         padding: 0 {SPACING_MEDIUM}px; border-radius: {RADIUS_SMALL}px; }}
-    QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px;
-        font-variant-numeric: tabular-nums; }}
+    QLabel#playerTime {{ background: transparent; color: {TEXT}; font-size: 13px; }}
     QPushButton#pagerControl {{ background: {SURFACE_HOVER}; color: {TEXT};
         border: 1px solid {BORDER}; border-radius: {RADIUS}px; padding: 0;
         min-width: {SECONDARY_CONTROL_SIZE}px; min-height: {SECONDARY_CONTROL_SIZE}px; }}

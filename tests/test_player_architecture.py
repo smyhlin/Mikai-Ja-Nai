@@ -322,6 +322,48 @@ def test_quality_selector_chip_and_popup_rows_are_readable(app):
     controls.deleteLater()
 
 
+def test_stylesheet_uses_only_properties_qt_understands(app):
+    """Qt drops an entire stylesheet on one unknown property, so a typo like
+    font-variant-numeric takes the whole design system down without a traceback.
+    Qt reports it through C++ stderr, which pytest cannot intercept, so the sheet
+    is checked against the documented property set instead."""
+    import re
+
+    from mikai_ui.theme import build_stylesheet
+
+    supported = {
+        "background",
+        "border",
+        "border-bottom",
+        "border-color",
+        "border-radius",
+        "border-top",
+        "border-top-left-radius",
+        "border-top-right-radius",
+        "color",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "height",
+        "margin",
+        "margin-right",
+        "max-height",
+        "max-width",
+        "min-height",
+        "min-width",
+        "outline",
+        "padding",
+        "padding-top",
+        "selection-background-color",
+        "selection-color",
+        "text-align",
+        "top",
+        "width",
+    }
+    used = set(re.findall(r"[{;]\s*([a-z-]+)\s*:", build_stylesheet()))
+    assert not used - supported, sorted(used - supported)
+
+
 def test_stream_info_text_uses_size_and_fps():
     from mikai_ui.player_controller import StreamInfo
 
