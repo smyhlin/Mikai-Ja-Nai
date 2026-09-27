@@ -276,8 +276,35 @@ def test_recent_poster_lookup_runs_once_per_ref(fake_window, app):
     assert repository.anime_lookups.count("recent-only") == 1, repository.anime_lookups
 
 
-def test_cover_click_opens_zoomable_viewer(fake_window, app):
-    from PySide6.QtCore import QPoint, QSize
+def test_the_blurred_backdrop_keeps_the_picture_instead_of_erasing_it(app):
+    """Regression: the dim was applied with QPixmap.fill, which rewrites alpha too,
+    so the overlay sat on flat black and the whole blur was thrown away."""
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QColor
+
+    from PySide6.QtGui import QPainter
+
+    from mikai_ui.cover_viewer import blurred_backdrop
+
+    source = QPixmap(80, 120)
+    source.fill(QColor("#8a2be2"))
+    painter = QPainter(source)
+    painter.fillRect(0, 0, 80, 60, QColor("#20c997"))
+    painter.end()
+
+    image = blurred_backdrop(source, QSize(400, 300)).toImage()
+    # a blurred picture is never a flat field: if the two halves had been
+    # erased, every sample would be identical
+    samples = {
+        image.pixel(x, y) for y in range(0, image.height(), 20) for x in range(0, image.width(), 20)
+    }
+    assert len(samples) > 1, "the backdrop is a flat fill, the blur was erased"
+    assert all(QColor(c).alpha() > 0 for c in samples)
+
+
+def test_the_cover_opens_a_chromeless_overlay_that_a_backdrop_click_dismisses(fake_window, app):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtWidgets import QPushButton
 
     from mikai_ui.cover_viewer import CoverLabel, CoverViewer
     from mikai_ui.theme.metrics import COVER_ZOOM_MAX, COVER_ZOOM_MIN
@@ -288,33 +315,146 @@ def test_cover_click_opens_zoomable_viewer(fake_window, app):
         assert not title._cover._zoomable, "no cover means nothing to open"
 
         title._cover_pixmap = QPixmap(400, 600)
+        title._cover_pixmap.fill(Qt.GlobalColor.darkGray)
         title._cover.set_zoomable(True)
         QTest.mouseClick(title._cover, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
         app.processEvents()
 
         viewer = title._cover_viewer
         assert isinstance(viewer, CoverViewer) and viewer.isVisible()
-        assert viewer._view._image.size() == QSize(400, 600)
+        assert viewer.windowFlags() & Qt.WindowType.FramelessWindowHint
+        # no bar, no buttons: the picture is the only thing on screen
+        assert viewer.findChildren(QPushButton) == []
+        # it covers the app it sits on, not a floating taskbar-sized window
+        assert viewer.geometry().size() == fake_window.size()
+        assert not viewer._view._backdrop.isNull(), "a blurred copy backs the image"
 
-        fitted = viewer._view._label.size()
-        viewer._view.zoom_in()
+        view = viewer._view
+        fitted = view._image_rect().size()
+        view.zoom_in()
         app.processEvents()
-        assert viewer._view._label.width() > fitted.width()
+        assert view._image_rect().width() > fitted.width()
 
-        viewer._view.reset_zoom()
+        view.reset_zoom()
         app.processEvents()
-        assert viewer._view._label.size() == fitted
+        assert view._image_rect().size() == fitted
 
         for _ in range(60):
-            viewer._view.zoom_in()
+            view.zoom_in()
         for _ in range(120):
-            viewer._view.zoom_out()
-        assert COVER_ZOOM_MIN <= viewer._view._zoom <= COVER_ZOOM_MAX
+            view.zoom_out()
+        assert COVER_ZOOM_MIN <= view.zoom <= COVER_ZOOM_MAX
+
+        # a click on the image is a drag, not a dismissal
+        QTest.mouseClick(view, Qt.MouseButton.LeftButton, pos=view._image_rect().center())
+        app.processEvents()
+        assert viewer.isVisible(), "clicking the picture must not close the overlay"
+
+        # a click on the empty background dismisses it
+        view.reset_zoom()
+        app.processEvents()
+        QTest.mouseClick(view, Qt.MouseButton.LeftButton, pos=QPoint(4, 4))
+        app.processEvents()
+        # The viewer is WA_DeleteOnClose, so its wrapper is dead by now: the page
+        # must have dropped the handle rather than keeping a dangling one.
+        assert title._cover_viewer is None
+    finally:
+        title.shutdown()
+
+
+def test_the_cover_overlay_zooms_under_the_wheel_and_pans_when_zoomed(fake_window, app):
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent, QWheelEvent
+
+    from mikai_ui.cover_viewer import CoverViewer
+
+    title = open_fake_title(fake_window, app)
+    try:
+        title._cover_pixmap = QPixmap(400, 600)
+        title._cover_pixmap.fill(Qt.GlobalColor.darkGray)
+        title._cover.set_zoomable(True)
+        title._cover.activated.emit()
+        app.processEvents()
+        viewer = title._cover_viewer
+        assert isinstance(viewer, CoverViewer)
+        view = viewer._view
+
+        centre = view.rect().center()
+        anchor_point = view._image_rect()
+        # the fraction of the image sitting under the cursor right now
+        fraction = (centre.x() - anchor_point.left()) / max(1, anchor_point.width())
+        event = QWheelEvent(
+            centre,
+            centre,
+            QPoint(0, 120),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        view.wheelEvent(event)
+        app.processEvents()
+        assert view.zoom > 1.0, "the wheel must zoom in"
+        after = view._image_rect()
+        landed = (centre.x() - after.left()) / max(1, after.width())
+        assert abs(landed - fraction) < 0.02, (fraction, landed)
+
+        # Panning is only allowed where the image actually overflows the surface,
+        # so drag along whichever axis has slack rather than assuming one.
+        # zoom until the image genuinely overflows: below that there is
+        # nothing to pan, which is the correct behaviour
+        while (
+            view._image_rect().width() <= view.width()
+            and view._image_rect().height() <= view.height()
+        ):
+            view.zoom_in()
+        app.processEvents()
+        origin = view.rect().center()
+        rect = view._image_rect()
+        slack_x = rect.width() > view.width()
+        step = QPoint(40, 0) if slack_x else QPoint(0, 40)
+
+        def drag(offset: QPoint) -> None:
+            view.mouseMoveEvent(
+                QMouseEvent(
+                    QEvent.Type.MouseMove,
+                    QPointF(origin) + QPoint(offset),
+                    Qt.MouseButton.NoButton,
+                    Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.NoModifier,
+                )
+            )
+
+        view.mousePressEvent(
+            QMouseEvent(
+                QEvent.Type.MouseButtonPress,
+                QPointF(origin),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+        drag(step)
+        app.processEvents()
+        moved = view._pan.x() if slack_x else view._pan.y()
+        assert moved > 0.0, "a drag must pan where the image overflows"
+        view.mouseReleaseEvent(
+            QMouseEvent(
+                QEvent.Type.MouseButtonRelease,
+                QPointF(origin) + QPoint(step),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+
+        # and a pan is clamped: the image cannot be dragged clean off the surface
+        drag(QPoint(99999, 99999))
+        assert view._image_rect().intersects(view.rect()), "the image must stay reachable"
 
         viewer.close()
         app.processEvents()
-        # The viewer deletes itself, so the page must not keep a dangling handle.
-        assert title._cover_viewer is None
     finally:
         title.shutdown()
 

@@ -1,36 +1,35 @@
-"""Full-size cover viewer with zoom, opened by activating a title's cover."""
+"""Full-screen cover viewer: a sharp image floating over a blurred copy of itself.
+
+Deliberately chrome-free — no title bar, no buttons, no scrollbars. Telegram
+shows a picture the same way, and every piece of furniture here competes with
+the one thing the overlay exists to show. A click on the empty background
+dismisses it, the wheel zooms under the cursor, and dragging pans once zoomed
+past the fit scale.
+"""
 
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QKeySequence, QPixmap, QShortcut, QWheelEvent
-from PySide6.QtWidgets import (
-    QDialog,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
+from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+    QWheelEvent,
 )
+from PySide6.QtWidgets import QDialog, QLabel, QWidget
 
 from mikai_ui.theme.metrics import (
-    COVER_VIEWER_BAR_HEIGHT,
-    COVER_VIEWER_DEFAULT_HEIGHT,
-    COVER_VIEWER_DEFAULT_WIDTH,
-    COVER_VIEWER_MIN_HEIGHT,
-    COVER_VIEWER_MIN_WIDTH,
+    COVER_BACKDROP_DIM,
+    COVER_BACKDROP_DOWNSCALE,
     COVER_ZOOM_MAX,
     COVER_ZOOM_MIN,
     COVER_ZOOM_STEP,
-    ICON_SIZE,
-    SPACING_MEDIUM,
-    SPACING_SMALL,
 )
-from mikai_ui.theme.widgets import make_icon
 
 log = logging.getLogger(__name__)
 
@@ -57,31 +56,101 @@ class CoverLabel(QLabel):
         super().mousePressEvent(event)
 
 
-class CoverView(QScrollArea):
-    """Scrollable image surface with fit-relative zoom anchored at the cursor."""
+def blurred_backdrop(pixmap: QPixmap, size: QSize) -> QPixmap:
+    """A frosted copy of the image, filled to the surface and heavily softened.
 
-    zoomChanged = Signal()
+    A downscale-then-upscale pass is the whole trick: Qt's smooth scaler is a
+    box filter, so two passes at different factors read as a real blur and cost
+    two C++ calls instead of a per-pixel Python loop.
+    """
+    if pixmap.isNull() or size.isEmpty():
+        return QPixmap()
+    image = pixmap.toImage()
+    if image.isNull():
+        return QPixmap()
+    if not image.hasAlphaChannel():
+        image = image.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    for factor in (COVER_BACKDROP_DOWNSCALE, 2):
+        small = image.scaled(
+            QSize(
+                max(1, size.width() // factor),
+                max(1, size.height() // factor),
+            ),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        image = small.scaled(
+            size,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    # Deliberately not QPixmap.fill(): that rewrites every channel, alpha
+    # included, so it erases the blur instead of dimming it and the overlay
+    # ends up on a flat black field.
+    return QPixmap.fromImage(image)
+
+
+class CoverView(QWidget):
+    """The image surface: blurred backdrop behind, sharp image in front."""
+
+    zoomChanged = Signal(float)
+    backgroundClicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWidgetResizable(False)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setObjectName("coverViewerView")
-
-        self._label = QLabel(self)
-        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setWidget(self._label)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
 
         self._image = QPixmap()
+        self._backdrop = QPixmap()
         self._zoom = 1.0
         self._fit = 1.0
+        self._pan = QPointF(0.0, 0.0)
+        self._drag_origin: QPointF | None = None
+        self._pan_origin = QPointF(0.0, 0.0)
 
+    # -- content -------------------------------------------------------
     def set_image(self, pixmap: QPixmap) -> None:
         self._image = pixmap
         self._zoom = 1.0
+        self._pan = QPointF(0.0, 0.0)
         self._recompute_fit()
+
+    @property
+    def scale(self) -> float:
+        return self._fit * self._zoom
+
+    @property
+    def zoom(self) -> float:
+        return self._zoom
+
+    def _target_size(self) -> QSize:
+        return QSize(
+            max(1, round(self._image.width() * self.scale)),
+            max(1, round(self._image.height() * self.scale)),
+        )
+
+    def _image_rect(self) -> QRect:
+        size = self._target_size()
+        centre = QPointF(self.width() / 2.0, self.height() / 2.0) + self._pan
+        return QRect(
+            QPoint(round(centre.x() - size.width() / 2), round(centre.y() - size.height() / 2)),
+            size,
+        )
+
+    # -- zoom ----------------------------------------------------------
+    def set_zoom(self, zoom: float) -> None:
+        target = min(COVER_ZOOM_MAX, max(COVER_ZOOM_MIN, zoom))
+        if abs(target - self._zoom) < 1e-6:
+            return
+        self._zoom = target
+        if self._is_fitted():
+            self._pan = QPointF(0.0, 0.0)
+        self._clamp_pan()
+        self.update()
+        self.zoomChanged.emit(self.scale)
 
     def zoom_in(self) -> None:
         self.set_zoom(self._zoom * COVER_ZOOM_STEP)
@@ -94,154 +163,145 @@ class CoverView(QScrollArea):
 
     def toggle_actual_size(self) -> None:
         """Flip between fitting the surface and showing the image at 1:1 pixels."""
-        if abs(self._zoom - 1.0) < 1e-6:
-            self.set_zoom(1.0 / self._fit if self._fit > 0 else 1.0)
-        else:
-            self.set_zoom(1.0)
+        self.set_zoom(1.0 / self._fit if self._fit > 0 and self._zoom >= 1.0 else 1.0)
 
-    def set_zoom(self, zoom: float) -> None:
-        target = min(COVER_ZOOM_MAX, max(COVER_ZOOM_MIN, zoom))
-        if abs(target - self._zoom) < 1e-6:
-            return
-        self._zoom = target
-        self._apply()
-        self.zoomChanged.emit()
-
-    @property
-    def effective_scale(self) -> float:
-        return self._fit * self._zoom
+    def _is_fitted(self) -> bool:
+        return abs(self._zoom - 1.0) < 1e-6
 
     def _compute_fit(self) -> float | None:
-        if self._image.isNull():
-            return None
-        viewport = self.viewport().size()
-        if viewport.width() <= 0 or viewport.height() <= 0:
+        if self._image.isNull() or self.width() <= 0 or self.height() <= 0:
             return None
         # Never upscale past native resolution just to fill the surface.
         return min(
             1.0,
-            min(
-                viewport.width() / self._image.width(),
-                viewport.height() / self._image.height(),
-            ),
+            min(self.width() / self._image.width(), self.height() / self._image.height()),
         )
 
     def _recompute_fit(self) -> None:
-        self._refit()
-
-    def _refit(self) -> None:
         fit = self._compute_fit()
         if fit is None or abs(fit - self._fit) < 1e-9:
             return
-        # Only reflow while fitted. Once the user has zoomed, the scale is theirs:
-        # recomputing the fit as scrollbars come and go would fight that choice and
-        # never settle, so resizing leaves the zoom alone and "Вписати" re-fits.
-        if abs(self._zoom - 1.0) < 1e-6:
+        # Only reflow while fitted. Once zoomed the scale is the user's, and
+        # re-fitting under them would fight that choice and never settle.
+        if self._is_fitted():
             self._fit = fit
-            self._apply()
-            self.zoomChanged.emit()
+        self._clamp_pan()
+        self._rebuild_backdrop()
+        self.update()
 
-    def _apply(self) -> None:
+    def _rebuild_backdrop(self) -> None:
+        self._backdrop = blurred_backdrop(self._image, self.size())
+
+    def _clamp_pan(self) -> None:
+        """Keep the image from drifting entirely off the surface."""
+        if self._is_fitted():
+            self._pan = QPointF(0.0, 0.0)
+            return
+        rect = self._image_rect()
+        slack_x = max(0.0, (rect.width() - self.width()) / 2.0)
+        slack_y = max(0.0, (rect.height() - self.height()) / 2.0)
+        self._pan.setX(min(slack_x, max(-slack_x, self._pan.x())))
+        self._pan.setY(min(slack_y, max(-slack_y, self._pan.y())))
+
+    # -- painting ------------------------------------------------------
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0))
+        if not self._backdrop.isNull() and self._backdrop.size() != self.size():
+            self._backdrop = blurred_backdrop(self._image, self.size())
+        if not self._backdrop.isNull():
+            painter.drawPixmap(0, 0, self._backdrop)
+            painter.fillRect(self.rect(), QColor(0, 0, 0, COVER_BACKDROP_DIM))
         if self._image.isNull():
             return
-        scaled = self._image.scaled(
-            self._image.size() * self.effective_scale,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self._label.setPixmap(scaled)
-        self._label.resize(scaled.size())
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawPixmap(self._image_rect(), self._image, QRect(self._image.rect()))
+        painter.end()
 
-    def _zoom_at(self, factor: float, anchor) -> None:
-        old_width = max(1, self._label.width())
-        old_height = max(1, self._label.height())
-        hbar = self.horizontalScrollBar()
-        vbar = self.verticalScrollBar()
-        fraction_x = (hbar.value() + anchor.x()) / old_width
-        fraction_y = (vbar.value() + anchor.y()) / old_height
-
-        self.set_zoom(self._zoom * factor)
-
-        hbar.setValue(int(fraction_x * self._label.width() - anchor.x()))
-        vbar.setValue(int(fraction_y * self._label.height() - anchor.y()))
-
+    # -- input ---------------------------------------------------------
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802 - Qt naming
-        if not self._image.isNull():
-            delta = event.angleDelta().y()
-            if delta:
-                factor = COVER_ZOOM_STEP if delta > 0 else 1 / COVER_ZOOM_STEP
-                self._zoom_at(factor, event.position().toPoint())
-                event.accept()
-                return
-        super().wheelEvent(event)
+        if self._image.isNull():
+            super().wheelEvent(event)
+            return
+        delta = event.angleDelta().y()
+        if not delta:
+            super().wheelEvent(event)
+            return
+        self._zoom_at_cursor(COVER_ZOOM_STEP if delta > 0 else 1 / COVER_ZOOM_STEP, event)
+        event.accept()
+
+    def _zoom_at_cursor(self, factor: float, event: QWheelEvent) -> None:
+        """Zoom while keeping the pixel under the pointer where it is."""
+        anchor = event.position()
+        before = self._image_rect()
+        if before.isEmpty():
+            return
+        fx = (anchor.x() - before.left()) / max(1, before.width())
+        fy = (anchor.y() - before.top()) / max(1, before.height())
+        self.set_zoom(self._zoom * factor)
+        after = self._image_rect()
+        if after.isEmpty():
+            return
+        self._pan.setX(self._pan.x() + anchor.x() - (after.left() + fx * after.width()))
+        self._pan.setY(self._pan.y() + anchor.y() - (after.top() + fy * after.height()))
+        self._clamp_pan()
+        self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        if event.button() != Qt.MouseButton.LeftButton or self._image.isNull():
+            super().mousePressEvent(event)
+            return
+        if not self._image_rect().contains(event.position().toPoint()):
+            self.backgroundClicked.emit()
+            event.accept()
+            return
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        self._drag_origin = event.position()
+        self._pan_origin = QPointF(self._pan)
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        if self._drag_origin is None or self._is_fitted():
+            return
+        self._pan = QPointF(
+            self._pan_origin.x() + event.position().x() - self._drag_origin.x(),
+            self._pan_origin.y() + event.position().y() - self._drag_origin.y(),
+        )
+        self._clamp_pan()
+        self.update()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self._drag_origin = None
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - Qt naming
         self.toggle_actual_size()
-        super().mouseDoubleClickEvent(event)
+        event.accept()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().resizeEvent(event)
         self._recompute_fit()
 
     def sizeHint(self) -> QSize:
-        return self._label.size()
+        return self._target_size()
 
 
 class CoverViewer(QDialog):
-    """Modeless full-size cover window with zoom controls and a close action."""
+    """Frameless full-screen cover overlay, dismissed by a click on the backdrop."""
 
     def __init__(self, pixmap: QPixmap, caption: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("coverViewer")
         self.setWindowTitle("Обкладинка" if not caption else f"Обкладинка — {caption}")
-        self.setMinimumSize(COVER_VIEWER_MIN_WIDTH, COVER_VIEWER_MIN_HEIGHT)
-        self.resize(COVER_VIEWER_DEFAULT_WIDTH, COVER_VIEWER_DEFAULT_HEIGHT)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowType.Dialog, True)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
+        self._shortcuts: list[QShortcut] = []
         self._view = CoverView(self)
         self._view.set_image(pixmap)
-        root.addWidget(self._view, 1)
-
-        bar = QWidget(self)
-        bar.setObjectName("coverViewerBar")
-        bar.setFixedHeight(COVER_VIEWER_BAR_HEIGHT)
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(SPACING_MEDIUM, SPACING_SMALL, SPACING_MEDIUM, SPACING_SMALL)
-        bar_layout.setSpacing(SPACING_SMALL)
-
-        self._caption = QLabel(caption, bar)
-        self._caption.setObjectName("muted")
-        bar_layout.addWidget(self._caption, 1)
-
-        self._zoom_label = QLabel("", bar)
-        self._zoom_label.setObjectName("muted")
-        self._zoom_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        bar_layout.addWidget(self._zoom_label)
-
-        self._zoom_out_button = self._bar_button(bar, "zoom-out", "Зменшити")
-        self._zoom_out_button.clicked.connect(self._view.zoom_out)
-        bar_layout.addWidget(self._zoom_out_button)
-
-        self._fit_button = QPushButton("Вписати", bar)
-        self._fit_button.setToolTip("Показати зображення повністю")
-        self._fit_button.clicked.connect(self._view.reset_zoom)
-        bar_layout.addWidget(self._fit_button)
-
-        self._zoom_in_button = self._bar_button(bar, "zoom-in", "Збільшити")
-        self._zoom_in_button.clicked.connect(self._view.zoom_in)
-        bar_layout.addWidget(self._zoom_in_button)
-
-        close_button = self._bar_button(bar, "close", "Закрити (Esc)")
-        close_button.clicked.connect(self.close)
-        bar_layout.addWidget(close_button)
-
-        root.addWidget(bar)
-
-        self._view.zoomChanged.connect(self._update_zoom_label)
-        self._update_zoom_label()
+        self._view.backgroundClicked.connect(self.close)
+        # no layout: one canvas, pinned to the dialog, and nothing to arrange
+        self._view.setGeometry(self.rect())
 
         for sequence, handler in (
             ("Ctrl++", self._view.zoom_in),
@@ -250,15 +310,21 @@ class CoverViewer(QDialog):
             ("Ctrl+0", self._view.reset_zoom),
             ("Esc", self.close),
         ):
-            QShortcut(QKeySequence(sequence), self, handler)
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(handler)
+            self._shortcuts.append(shortcut)
 
-    @staticmethod
-    def _bar_button(parent: QWidget, icon: str, tooltip: str) -> QPushButton:
-        button = QPushButton(parent)
-        button.setIcon(make_icon(icon, size=ICON_SIZE))
-        button.setToolTip(tooltip)
-        button.setAccessibleName(tooltip)
-        return button
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        # Cover the app rather than floating in a taskbar-sized window: an
+        # overlay that does not fill the window it sits on looks like a dialog.
+        parent = self.parentWidget()
+        if parent is not None:
+            self.setGeometry(parent.rect())
+        self._view.setGeometry(self.rect())
+        self._view.setFocus(Qt.FocusReason.OtherFocusReason)
 
-    def _update_zoom_label(self) -> None:
-        self._zoom_label.setText(f"{round(self._view.effective_scale * 100)}%")
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self._view.setGeometry(self.rect())

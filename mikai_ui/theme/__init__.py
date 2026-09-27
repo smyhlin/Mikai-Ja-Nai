@@ -282,9 +282,7 @@ def build_stylesheet() -> str:
     QWidget#videoStage, QWidget#videoSurface {{ background: {VIDEO_BACKGROUND}; border: none; }}
     QWidget#playerOverlay {{ background: transparent; border: none; }}
     QDialog#coverViewer {{ background: {VIDEO_BACKGROUND}; }}
-    QWidget#coverViewerBar {{ background: {CHROME_FILL}; color: {TEXT};
-        border-top: 1px solid {CHROME_HAIRLINE}; }}
-    QWidget#coverViewerView {{ background: {VIDEO_BACKGROUND}; border: none; }}
+    QWidget#coverViewerView {{ background: transparent; border: none; }}
     """
 
 
