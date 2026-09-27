@@ -209,13 +209,6 @@ class PlayerController(QObject):
         else:
             self.pause()
 
-    def stop(self) -> None:
-        if self._adapter is None or self._closed:
-            return
-        self._resume_point = None
-        self._adapter.stop()
-        self._set_state(status=PlaybackStatus.STOPPED, position=0.0, paused=True)
-
     def begin_seek(self) -> None:
         if not self._can_seek():
             return

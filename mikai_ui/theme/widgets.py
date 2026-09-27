@@ -14,11 +14,6 @@ _ICONS = {
         '<rect x="14" y="4" width="4" height="16" rx="1"/>'
         '<rect x="6" y="4" width="4" height="16" rx="1"/>'
     ),
-    "stop": '<rect width="18" height="18" x="3" y="3" rx="2"/>',
-    "back": ('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'),
-    "forward": (
-        '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>'
-    ),
     "volume": (
         '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>'
         '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>'
@@ -49,7 +44,6 @@ _ICONS = {
         ' 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>'
         '<circle cx="12" cy="12" r="3"/>'
     ),
-    "replay": '<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/>',
     "zoom-in": (
         '<circle cx="11" cy="11" r="8"/>'
         '<line x1="21" x2="16.65" y1="21" y2="16.65"/>'
@@ -65,8 +59,7 @@ _ICONS = {
 }
 
 
-def make_icon(name: str, color: str = TEXT, size: int = 18) -> QIcon:
-    """Render a small scalable-feeling SVG glyph into a HiDPI-aware Qt icon."""
+def _render(name: str, color: str, size: int) -> QPixmap:
     markup = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
         f'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2" '
@@ -78,4 +71,21 @@ def make_icon(name: str, color: str = TEXT, size: int = 18) -> QIcon:
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.end()
-    return QIcon(pixmap)
+    return pixmap
+
+
+def make_icon(
+    name: str,
+    color: str = TEXT,
+    size: int = 18,
+    disabled_color: str | None = None,
+) -> QIcon:
+    """Render a small scalable-feeling SVG glyph into a HiDPI-aware Qt icon.
+
+    A disabled colour is required for icon-only buttons: Qt dims a disabled
+    button's text, but an unpainted icon keeps its normal colour and reads as live.
+    """
+    icon = QIcon(_render(name, color, size))
+    if disabled_color is not None:
+        icon.addPixmap(_render(name, disabled_color, size), QIcon.Mode.Disabled)
+    return icon

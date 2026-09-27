@@ -81,9 +81,6 @@ class FakeMpvAdapter(QObject):
     def toggle_pause(self) -> None:
         self.set_paused(not self.pauses[-1] if self.pauses else True)
 
-    def stop(self) -> None:
-        self.stateChanged.emit("stopped")
-
     def seek(self, position: float) -> None:
         self.seeks.append(position)
 

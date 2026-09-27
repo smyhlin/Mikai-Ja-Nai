@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -59,7 +59,7 @@ class PlayerDialog(QDialog):
         self._refresh_attempted = False
 
         self.setObjectName("playerWindow")
-        self.setWindowTitle(f"Mikai Player — {caption}")
+        self.setWindowTitle(f"Плеєр — {caption}")
         self.setMinimumSize(PLAYER_MIN_WIDTH, PLAYER_MIN_HEIGHT)
         self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
         self.setContentsMargins(0, 0, 0, 0)
@@ -76,8 +76,9 @@ class PlayerDialog(QDialog):
             SPACING_LARGE, SPACING_MEDIUM, SPACING_LARGE, SPACING_MEDIUM
         )
         self._title = QLabel(caption, self._header)
-        self._title.setObjectName("heading")
-        self._title.setWordWrap(True)
+        self._title.setObjectName("playerTitle")
+        self._title.setWordWrap(False)
+        self._title.installEventFilter(self)
         header_layout.addWidget(self._title, 1)
         root.addWidget(self._header)
 
@@ -126,7 +127,6 @@ class PlayerDialog(QDialog):
         self._pause_btn = self._controls.play_button
         self._back_btn = self._controls.rewind_button
         self._fwd_btn = self._controls.forward_button
-        self._stop_btn = self._controls.stop_button
         self._mute_btn = self._controls.mute_button
         self._vol_slider = self._controls.volume_slider
         self._speed_combo = self._controls.speed_combo
@@ -170,7 +170,6 @@ class PlayerDialog(QDialog):
         controls = self._controls
         controller = self._controller
         controls.playPauseRequested.connect(controller.toggle_play_pause)
-        controls.stopRequested.connect(controller.stop)
         controls.rewindRequested.connect(lambda: controller.rewind(10))
         controls.forwardRequested.connect(lambda: controller.forward(10))
         controls.seekStarted.connect(controller.begin_seek)
@@ -245,7 +244,7 @@ class PlayerDialog(QDialog):
         target = height if height in qualities else max(qualities)
         self._qualities = dict(qualities)
         self._controls.set_qualities(self._qualities, target)
-        self._overlay.show_toast("Stream link expired — reloading")
+        self._overlay.show_toast("Посилання на потік прострочене — оновлюю")
         self._controller.replace_stream(self._qualities[target], self._qualities)
 
     def _retry_playback(self) -> None:
@@ -258,9 +257,9 @@ class PlayerDialog(QDialog):
         details = self._overlay.details_text().strip()
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Playback details")
-        box.setText("The player could not open this stream.")
-        box.setDetailedText(details or "No technical details were reported.")
+        box.setWindowTitle("Деталі відтворення")
+        box.setText("Плеєр не зміг відкрити цей потік.")
+        box.setDetailedText(details or "Технічних деталей немає.")
         box.exec()
 
     def _on_state_changed(self, state: PlaybackState) -> None:
@@ -303,6 +302,17 @@ class PlayerDialog(QDialog):
             self._sync_stage_geometry()
             QTimer.singleShot(0, self._sync_stage_geometry)
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        # Eliding here rather than in resizeEvent: the layout has not yet given the
+        # label its new width when the dialog resizes, and a wrapped header would
+        # steal height from the video.
+        if watched is self._title and event.type() == QEvent.Type.Resize:
+            metrics = self._title.fontMetrics()
+            self._title.setText(
+                metrics.elidedText(self._caption, Qt.TextElideMode.ElideRight, self._title.width())
+            )
+        return super().eventFilter(watched, event)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._sync_stage_geometry()
@@ -310,21 +320,26 @@ class PlayerDialog(QDialog):
     def _layout_panels(self) -> None:
         area = self._stage.rect()
 
-        def center(widget: QWidget) -> None:
+        def place(widget: QWidget, top: int) -> None:
             hint = widget.sizeHint()
             width = min(area.width() - 2 * SPACING_LARGE, max(hint.width(), 1))
             height = max(hint.height(), 1)
-            widget.setGeometry(
-                area.x() + (area.width() - width) // 2,
-                area.y() + max(SPACING_LARGE, area.height() // 4),
-                width,
-                height,
-            )
+            widget.setGeometry(area.x() + (area.width() - width) // 2, top, width, height)
 
         if self._overlay.status_card.isVisible():
-            center(self._overlay.status_card)
+            place(self._overlay.status_card, area.y() + max(SPACING_LARGE, area.height() // 4))
         if self._overlay.toast.isVisible():
-            center(self._overlay.toast)
+            # The toast used to be centred like the status card, so a quality switch
+            # during an error hid the message behind it. It belongs on the control bar.
+            bar_top = (
+                area.y()
+                + area.height()
+                - (self._controls.height() if self._controls.isVisible() else 0)
+            )
+            place(
+                self._overlay.toast,
+                bar_top - self._overlay.toast.sizeHint().height() - SPACING_MEDIUM,
+            )
         for panel in (self._overlay.status_card, self._overlay.toast):
             if panel.isVisible():
                 panel.raise_()

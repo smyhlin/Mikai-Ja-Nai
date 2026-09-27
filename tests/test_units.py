@@ -540,7 +540,7 @@ def test_quality_buttons_copy_stream_for_height(monkeypatch, fake_window, app):
     # Clicking a quality chip opens the player dialog; runtime deploy failed offline
     assert len(title._player_dialogs) == 1
     dialog = title._player_dialogs[0]
-    assert pump_until(app, lambda: dialog.status_text == "Playback unavailable")
+    assert pump_until(app, lambda: dialog.status_text == "Відео недоступне")
     assert dialog._overlay.details_text() == "offline test"
     # Dialog carries the full quality list for in-player switching
     assert dialog._quality_combo.count() == 3
@@ -624,6 +624,64 @@ def test_player_dialog_controls(app):
     assert not dlg._header.isVisible()
     dlg.close()
     app.processEvents()
+
+
+def test_player_header_keeps_a_long_episode_name_on_one_line(app):
+    from mikai_ui.player_dialog import PlayerDialog
+    from mikai_ui.theme.metrics import PLAYER_MIN_HEIGHT, PLAYER_MIN_WIDTH
+
+    caption = "Дуже довга назва серії " * 12
+    dlg = PlayerDialog(caption, "https://s.example/720.m3u8")
+    dlg.resize(PLAYER_MIN_WIDTH, PLAYER_MIN_HEIGHT)
+    dlg.show()
+    dlg._fullscreen.toggle()  # the header is windowed-only chrome
+    app.processEvents()
+    # A wrapped header grows the band and steals height from the video
+    assert dlg._title.text() != caption
+    assert dlg._title.text().endswith("\u2026")
+    line_height = dlg._title.fontMetrics().height()
+    assert dlg._title.height() <= line_height + 2
+    dlg._fullscreen.toggle()
+    dlg.close()
+    app.processEvents()
+
+
+def test_player_toast_sits_above_the_bar_and_clear_of_the_status_card(app):
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dlg = PlayerDialog("Серія 5", "https://s.example/720.m3u8")
+    dlg.show()
+    dlg.show_error("потік недоступний")
+    dlg._overlay.show_toast("Якість: 1080p")
+    app.processEvents()
+    toast = dlg._overlay.toast
+    card = dlg._overlay.status_card
+    assert toast.isVisible() and card.isVisible()
+    # Both used to be centred on the stage, so a quality switch hid the error
+    assert not toast.geometry().intersects(card.geometry())
+    assert toast.geometry().bottom() <= dlg._controls.geometry().top()
+    dlg.close()
+    app.processEvents()
+
+
+def test_player_disabled_transport_glyph_is_dimmed(app):
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QIcon
+
+    from mikai_ui.player_controls import PlayerControlsWidget
+    from mikai_ui.theme.metrics import ICON_SIZE
+
+    controls = PlayerControlsWidget()
+    button = controls.play_button
+    size = QSize(ICON_SIZE, ICON_SIZE)
+    live = button.icon().pixmap(size, QIcon.Mode.Normal, QIcon.State.Off)
+    # Qt fades a disabled button's text but never its icon, so the glyph has to
+    # carry a dimmed pixmap of its own or the control looks usable while inert.
+    dimmed = button.icon().pixmap(size, QIcon.Mode.Disabled, QIcon.State.Off)
+    assert not live.isNull()
+    assert not dimmed.isNull()
+    assert dimmed.toImage() != live.toImage()
+    controls.deleteLater()
 
 
 def test_fullscreen_manager_restores_window(app):
@@ -1731,7 +1789,7 @@ def test_failed_playback_reextracts_before_reporting_the_error(fake_window, app,
     assert adapter.loads[0] == stale_url
     assert adapter.loads[1] != stale_url, "player retried the expired URL"
     assert calls.count(watched) == 2, calls
-    assert dialog.status_text == "Loading video…", dialog.status_text
+    assert dialog.status_text == "Відео завантажується…", dialog.status_text
     assert title._quality_cache[watched] == {720: adapter.loads[1]}
     title.shutdown()
     app.processEvents()

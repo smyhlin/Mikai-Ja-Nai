@@ -239,11 +239,6 @@ class MPVAdapter(QObject):
     def toggle_pause(self) -> None:
         self.set_paused(not self._paused)
 
-    def stop(self) -> None:
-        if self._command("stop", lambda player: player.stop()):
-            self._position = 0.0
-            self.positionChanged.emit(0.0)
-
     def seek(self, seconds: float) -> None:
         target = max(0.0, float(seconds))
         if self._duration > 0:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -16,13 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from mikai_ui.player_controller import PlaybackState, PlaybackStatus
+from mikai_ui.theme.colors import ICON_DISABLED
 from mikai_ui.theme.metrics import (
     ICON_SIZE,
+    PLAYER_FIELD_MIN_WIDTH,
     PRIMARY_CONTROL_SIZE,
     SECONDARY_CONTROL_SIZE,
     SPACING_MEDIUM,
     SPACING_SMALL,
     TIME_LABEL_MIN_WIDTH,
+    TIMELINE_ROW_HEIGHT,
     TIMELINE_SCALE,
     VOLUME_SLIDER_WIDTH,
 )
@@ -48,10 +50,12 @@ class TimelineSlider(QSlider):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._duration = 0.0
+        self.setObjectName("timeline")
         self.setRange(0, self.SCALE)
         self.setTracking(False)
-        self.setAccessibleName("Playback position")
-        self.setToolTip("Seek through the video")
+        self.setFixedHeight(TIMELINE_ROW_HEIGHT)
+        self.setAccessibleName("Позиція відтворення")
+        self.setToolTip("Перемотування відео")
         self.sliderPressed.connect(self._begin_seek)
         self.sliderMoved.connect(self._preview_value)
         self.sliderReleased.connect(self._finish_seek)
@@ -88,7 +92,6 @@ class PlayerControlsWidget(QWidget):
     """The player toolbar. It knows playback intent, never the mpv engine."""
 
     playPauseRequested = Signal()
-    stopRequested = Signal()
     rewindRequested = Signal()
     forwardRequested = Signal()
     seekStarted = Signal()
@@ -118,7 +121,7 @@ class PlayerControlsWidget(QWidget):
         timeline_row.setSpacing(SPACING_MEDIUM)
         self.timeline = TimelineSlider(self)
         self.time_label = QLabel("0:00 / --:--")
-        self.time_label.setObjectName("muted")
+        self.time_label.setObjectName("playerTime")
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.time_label.setMinimumWidth(TIME_LABEL_MIN_WIDTH)
         self.timeline.seekStarted.connect(self.seekStarted)
@@ -132,47 +135,39 @@ class PlayerControlsWidget(QWidget):
 
         controls = QHBoxLayout()
         controls.setSpacing(SPACING_SMALL)
-        self.rewind_button = self._button(
-            "back", "Rewind 10 seconds (Left)", "Rewind 10 seconds", secondary=True
-        )
-        self.rewind_button.clicked.connect(self.rewindRequested)
+        self.rewind_button = self._button("Назад на 10 секунд (←)", secondary=True)
         self.rewind_button.setText("−10")
-        self.rewind_button.setIcon(QIcon())
-        self.play_button = self._button(
-            "pause", "Pause or play (Space)", "Pause or play", secondary=False
-        )
+        self.rewind_button.clicked.connect(self.rewindRequested)
+        self.play_button = self._button("Пауза (Пробіл)", secondary=False)
+        self.play_button.setIcon(make_icon("pause", size=ICON_SIZE, disabled_color=ICON_DISABLED))
         self.play_button.clicked.connect(self.playPauseRequested)
-        self.forward_button = self._button(
-            "forward", "Forward 10 seconds (Right)", "Forward 10 seconds", secondary=True
-        )
+        self.forward_button = self._button("Вперед на 10 секунд (→)", secondary=True)
         self.forward_button.setText("+10")
-        self.forward_button.setIcon(QIcon())
         self.forward_button.clicked.connect(self.forwardRequested)
-        self.stop_button = self._button("stop", "Stop playback", "Stop", secondary=True)
-        self.stop_button.clicked.connect(self.stopRequested)
         controls.addWidget(self.rewind_button)
         controls.addWidget(self.play_button)
         controls.addWidget(self.forward_button)
-        controls.addWidget(self.stop_button)
         controls.addStretch(1)
 
-        self.mute_button = self._button(
-            "volume", "Mute or unmute (M)", "Mute or unmute", secondary=True
-        )
+        self.mute_button = self._button("Вимкнути звук (M)", secondary=True)
+        self.mute_button.setIcon(make_icon("volume", size=ICON_SIZE, disabled_color=ICON_DISABLED))
         self.mute_button.clicked.connect(self.muteRequested)
         controls.addWidget(self.mute_button)
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setObjectName("volume")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
         self.volume_slider.setFixedWidth(VOLUME_SLIDER_WIDTH)
-        self.volume_slider.setAccessibleName("Volume")
-        self.volume_slider.setToolTip("Volume (Up / Down)")
+        self.volume_slider.setAccessibleName("Гучність")
+        self.volume_slider.setToolTip("Гучність (↑ / ↓)")
         self.volume_slider.valueChanged.connect(self.volumeChanged)
         controls.addWidget(self.volume_slider)
 
         self.speed_combo = QComboBox()
-        self.speed_combo.setAccessibleName("Playback speed")
-        self.speed_combo.setToolTip("Playback speed")
+        self.speed_combo.setObjectName("playerField")
+        self.speed_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
+        self.speed_combo.setAccessibleName("Швидкість відтворення")
+        self.speed_combo.setToolTip("Швидкість відтворення")
         for speed in self.SPEEDS:
             label = f"{speed:g}×"
             self.speed_combo.addItem(label, speed)
@@ -181,35 +176,28 @@ class PlayerControlsWidget(QWidget):
         controls.addWidget(self.speed_combo)
 
         self.quality_combo = QComboBox()
-        self.quality_combo.setAccessibleName("Video quality")
-        self.quality_combo.setToolTip("Video quality")
+        self.quality_combo.setObjectName("playerField")
+        self.quality_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
+        self.quality_combo.setAccessibleName("Якість відео")
+        self.quality_combo.setToolTip("Якість відео")
         self.quality_combo.currentIndexChanged.connect(self._quality_selected)
         self.quality_combo.hide()
         controls.addWidget(self.quality_combo)
 
-        self.fullscreen_button = self._button(
-            "fullscreen", "Toggle fullscreen (F)", "Toggle fullscreen", secondary=True
-        )
+        self.fullscreen_button = self._button("На весь екран (F)", secondary=True)
         self.fullscreen_button.clicked.connect(self.fullscreenRequested)
         controls.addWidget(self.fullscreen_button)
         root.addLayout(controls)
 
     @staticmethod
-    def _button(
-        icon_name: str,
-        tooltip: str,
-        accessible_name: str,
-        *,
-        secondary: bool,
-    ) -> QPushButton:
+    def _button(tooltip: str, *, secondary: bool) -> QPushButton:
         button = QPushButton()
         button.setObjectName("playerSecondary" if secondary else "playerPrimary")
-        button.setIcon(make_icon(icon_name, size=ICON_SIZE))
         button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         size = SECONDARY_CONTROL_SIZE if secondary else PRIMARY_CONTROL_SIZE
         button.setFixedSize(size, size)
         button.setToolTip(tooltip)
-        button.setAccessibleName(accessible_name)
+        button.setAccessibleName(tooltip)
         button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         return button
 
@@ -226,8 +214,10 @@ class PlayerControlsWidget(QWidget):
 
     def set_fullscreen(self, fullscreen: bool) -> None:
         name = "windowed" if fullscreen else "fullscreen"
-        hint = "Exit fullscreen (Esc)" if fullscreen else "Toggle fullscreen (F)"
-        self.fullscreen_button.setIcon(make_icon(name, size=ICON_SIZE))
+        hint = "Зігнути вікно (Esc)" if fullscreen else "На весь екран (F)"
+        self.fullscreen_button.setIcon(
+            make_icon(name, size=ICON_SIZE, disabled_color=ICON_DISABLED)
+        )
         self.fullscreen_button.setToolTip(hint)
         self.fullscreen_button.setAccessibleName(hint)
 
@@ -246,7 +236,7 @@ class PlayerControlsWidget(QWidget):
             PlaybackStatus.STOPPED,
         )
         transport_enabled = not unavailable and not blocked
-        for button in (self.rewind_button, self.forward_button, self.stop_button):
+        for button in (self.rewind_button, self.forward_button):
             button.setEnabled(transport_enabled)
         self.play_button.setEnabled(
             not unavailable and state.status not in (PlaybackStatus.LOADING, PlaybackStatus.ERROR)
@@ -269,14 +259,23 @@ class PlayerControlsWidget(QWidget):
             and self.quality_combo.count() > 1
             and state.status is not PlaybackStatus.ERROR
         )
+        paused = state.paused or state.finished
         self.play_button.setIcon(
-            make_icon("play" if state.paused or state.finished else "pause", size=ICON_SIZE)
+            make_icon(
+                "play" if paused else "pause",
+                size=ICON_SIZE,
+                disabled_color=ICON_DISABLED,
+            )
         )
-        self.play_button.setToolTip(
-            "Play (Space)" if state.paused or state.finished else "Pause (Space)"
-        )
+        play_hint = "Пуск (Пробіл)" if paused else "Пауза (Пробіл)"
+        self.play_button.setToolTip(play_hint)
+        self.play_button.setAccessibleName(play_hint)
         self.mute_button.setIcon(
-            make_icon("volume_muted" if state.muted else "volume", size=ICON_SIZE)
+            make_icon(
+                "volume_muted" if state.muted else "volume",
+                size=ICON_SIZE,
+                disabled_color=ICON_DISABLED,
+            )
         )
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(state.volume)

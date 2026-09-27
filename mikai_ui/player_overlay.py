@@ -70,7 +70,7 @@ class PlayerOverlayWidget(QWidget):
         status_layout = QVBoxLayout(self.status_card)
         status_layout.setContentsMargins(SPACING_LARGE, SPACING_LARGE, SPACING_LARGE, SPACING_LARGE)
         status_layout.setSpacing(SPACING_SMALL)
-        self.status_title = QLabel("Loading video…", self.status_card)
+        self.status_title = QLabel("Відео завантажується…", self.status_card)
         self.status_title.setObjectName("playerStatusTitle")
         self.status_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_layout.addWidget(self.status_title)
@@ -80,6 +80,7 @@ class PlayerOverlayWidget(QWidget):
         self.status_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_layout.addWidget(self.status_message)
         self.spinner = QProgressBar(self.status_card)
+        self.spinner.setObjectName("playerSpinner")
         self.spinner.setRange(0, 0)
         self.spinner.setTextVisible(False)
         self.spinner.setFixedSize(SPINNER_WIDTH, SPINNER_HEIGHT)
@@ -90,11 +91,13 @@ class PlayerOverlayWidget(QWidget):
         status_layout.addLayout(spinner_row)
         status_actions = QHBoxLayout()
         status_actions.addStretch(1)
-        self.retry_button = QPushButton("Retry", self.status_card)
+        self.retry_button = QPushButton("Повторити", self.status_card)
         self.retry_button.setObjectName("primary")
-        self.retry_button.setAccessibleName("Retry playback")
+        self.retry_button.setAccessibleName("Повторити відтворення")
         self.retry_button.clicked.connect(self.retryRequested)
-        self.details_button = QPushButton("Details", self.status_card)
+        self.details_button = QPushButton("Деталі", self.status_card)
+        self.details_button.setObjectName("playerGhost")
+        self.details_button.setAccessibleName("Показати технічні деталі")
         self.details_button.clicked.connect(self.detailsRequested)
         status_actions.addWidget(self.retry_button)
         status_actions.addWidget(self.details_button)
@@ -141,17 +144,17 @@ class PlayerOverlayWidget(QWidget):
         self._technical_details = state.error or ""
         status = state.status
         if status is PlaybackStatus.LOADING:
-            title, message = "Loading video…", ""
+            title, message = "Відео завантажується…", ""
             visible, spinner = True, True
         elif status is PlaybackStatus.BUFFERING:
-            title, message = "Buffering…", "Playback will resume automatically."
+            title, message = "Буферизація…", "Відтворення продовжиться автоматично."
             visible, spinner = True, True
         elif status is PlaybackStatus.ERROR:
-            title = "Playback unavailable"
-            message = "Possible causes: network problem, invalid stream, or missing codec."
+            title = "Відео недоступне"
+            message = "Можливі причини: проблема з мережею, недійсний потік або відсутній кодек."
             visible, spinner = True, False
         elif status is PlaybackStatus.FINISHED:
-            title, message = "Playback finished", "Choose Play to replay this video."
+            title, message = "Відтворення завершено", "Натисніть «Пуск», щоб переглянути ще раз."
             visible, spinner = True, False
         else:
             visible, spinner = False, False
@@ -160,12 +163,12 @@ class PlayerOverlayWidget(QWidget):
         self.status_message.setText(message)
         self.spinner.setVisible(spinner)
         self.retry_button.setVisible(status in (PlaybackStatus.ERROR, PlaybackStatus.FINISHED))
-        self.retry_button.setText("Play again" if status is PlaybackStatus.FINISHED else "Retry")
+        self.retry_button.setText("Ще раз" if status is PlaybackStatus.FINISHED else "Повторити")
         self.details_button.setVisible(status is PlaybackStatus.ERROR)
         self.status_card.setVisible(visible)
 
     def show_quality_notice(self, height: int) -> None:
-        self.show_toast(f"Switching quality: {height}p")
+        self.show_toast(f"Якість: {height}p")
 
     def show_seek_feedback(self, text: str) -> None:
         self.show_toast(text)

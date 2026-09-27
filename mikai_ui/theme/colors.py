@@ -11,5 +11,17 @@ TEXT = "#e7e7ea"
 MUTED = "#a0a0ab"
 BORDER = "#30303a"
 VIDEO_BACKGROUND = "#000000"
-CHROME_BACKGROUND = "rgba(11, 11, 15, 0.88)"
-CHROME_BORDER = "rgba(56, 56, 68, 0.94)"
+
+# Player chrome sits on black video, so a translucent fill collapses to the
+# video color. The bar is an opaque raised band instead, cut off by a hairline.
+CHROME_FILL = "#121218"
+CHROME_HAIRLINE = "rgba(231, 231, 234, 0.09)"
+
+# Icon buttons are borderless and only show a fill under the pointer, so the row
+# reads as glyphs over video rather than a row of grey boxes.
+GHOST_HOVER = "rgba(231, 231, 234, 0.08)"
+GHOST_PRESSED = "rgba(231, 231, 234, 0.14)"
+
+# Qt greys out a disabled button's text but not its icon, which leaves a
+# transport control looking live while it is inert.
+ICON_DISABLED = "rgba(160, 160, 171, 0.45)"
