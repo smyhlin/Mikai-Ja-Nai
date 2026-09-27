@@ -26,6 +26,12 @@ from PySide6.QtWidgets import (
 from mikai_backend import AnimeDetail, AnimeRepository, AnimeSummary, PlayerResult, Release, streams
 
 from mikai_ui import quality_cache
+from mikai_ui.release_quality import (
+    QUALITY_ROLE,
+    ReleaseQualityDelegate,
+    ReleaseSelector,
+    max_quality,
+)
 from mikai_ui.clipboard import copy_text
 from mikai_ui.cover_viewer import CoverLabel, CoverViewer
 from mikai_backend.releases import playable_episode_count, sort_releases
@@ -124,7 +130,7 @@ SEASON_LABELS = {
 def _season_label(start_date: str) -> str | None:
     try:
         year, month, _ = (int(part) for part in start_date.split("-"))
-    except AttributeError, ValueError:
+    except (AttributeError, ValueError):
         return None
     season = SEASON_LABELS.get(month)
     return f"{season} {year}" if season else str(year)
@@ -233,6 +239,9 @@ class TitlePage(QWidget):
         self._cache_save_timer.timeout.connect(self._save_quality_cache)
         self._no_source_urls: set[str] = set()
         self._fetch_waiters: dict[str, list] = {}
+        self._release_quality: dict[int, int] = {}
+        self._release_probed: set[int] = set()
+        self._release_probe_seq = 0
         self._full_description = ""
         self._description_expanded = False
         self._build_ui()
@@ -368,9 +377,13 @@ class TitlePage(QWidget):
         episodes_heading = QLabel("Серії")
         episodes_heading.setObjectName("sectionHeading")
         selector_row.addWidget(episodes_heading)
-        self._selector = QComboBox()
+        self._selector = ReleaseSelector()
         self._selector.setEnabled(False)
+        self._selector.setItemDelegate(ReleaseQualityDelegate(self._selector))
         self._selector.currentIndexChanged.connect(self._fill_episodes)
+        # probing on first open: the chips are only visible in the popup, so a
+        # title nobody browses never spends a request
+        self._selector.popupShown.connect(self._probe_release_qualities)
         selector_row.addWidget(self._selector, stretch=1)
         self._copy_all = QPushButton("Копіювати всі")
         self._copy_all.setEnabled(False)
@@ -430,10 +443,14 @@ class TitlePage(QWidget):
             self._cover.setText("Без обкладинки")
 
         self._releases = sort_releases(player.releases)
+        self._release_probe_seq += 1
+        self._release_quality.clear()
+        self._release_probed.clear()
         self._selector.blockSignals(True)
         self._selector.clear()
         for index, release in enumerate(self._releases):
             self._selector.addItem(self._release_label(release), index)
+            self._selector.setItemData(index, 0, QUALITY_ROLE)
         if self._releases:
             self._selector.setCurrentIndex(0)
         self._selector.blockSignals(False)
@@ -1151,6 +1168,58 @@ class TitlePage(QWidget):
         open_action.triggered.connect(lambda _=False, e=entry: self._open_embed_in_browser(e))
         return menu
 
+    def _probe_release_qualities(self) -> None:
+        """Fetch one episode per release to learn its best quality.
+
+        One request per release, not per episode, and only when the list is
+        actually opened: the chip is invisible until the popup is up, so a title
+        whose releases are never browsed never pays for this.
+        """
+        if self._closed:
+            return
+        for index, release in enumerate(self._releases):
+            if index in self._release_probed:
+                continue
+            embed = self._first_embed(release)
+            if embed is None:
+                self._release_probed.add(index)
+                continue
+            self._release_probed.add(index)
+            seq = self._release_probe_seq
+            self._runner.run_bulk(
+                lambda target=embed: streams.get_quality_streams(target),
+                lambda qualities, spot=index, stamp=seq: self._apply_release_quality(
+                    spot, qualities, stamp
+                ),
+                lambda message, spot=index, stamp=seq: self._apply_release_quality(
+                    spot, None, stamp, message
+                ),
+            )
+
+    @staticmethod
+    def _first_embed(release: Release) -> str | None:
+        for episode in release.episodes:
+            for source in episode.sources:
+                if source.embed_url:
+                    return source.embed_url
+        return None
+
+    def _apply_release_quality(
+        self, index: int, qualities, seq: int, message: str | None = None
+    ) -> None:
+        """Record a probe result, ignoring one that landed after the releases changed."""
+        if self._closed or seq != self._release_probe_seq or index >= self._selector.count():
+            return
+        if qualities is None:
+            log.debug("release quality probe failed for %s: %s", index, message)
+            return
+        height = max_quality(qualities)
+        if height <= 0:
+            return
+        self._release_quality[index] = height
+        self._selector.setItemData(index, height, QUALITY_ROLE)
+        self._selector.view().viewport().update()
+
     def _episode_variants(self, number: str) -> list[dict]:
         """Every dub/sub track carrying this episode, across releases and players."""
         variants: list[dict] = []
@@ -1327,6 +1396,7 @@ class TitlePage(QWidget):
         if self._quality_cache:
             self._save_quality_cache()
         self._fetch_waiters.clear()
+        self._release_probe_seq += 1
         for dialog in self._player_dialogs:
             if shiboken6.isValid(dialog):
                 dialog.close()

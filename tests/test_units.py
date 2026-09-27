@@ -1880,6 +1880,71 @@ def test_opening_an_episode_hands_the_player_the_tab_playlist(fake_window, app, 
     app.processEvents()
 
 
+def test_release_chips_probe_one_episode_each_and_only_when_the_list_opens(
+    fake_window, app, monkeypatch
+):
+    """One request per release, not per episode, and only once the list is
+    actually opened: the chip is invisible until the popup is up."""
+    from mikai_ui.release_quality import QUALITY_ROLE
+
+    calls: list[str] = []
+
+    def mock_streams(url):
+        calls.append(url)
+        return {480: "a", 720: "b", 1080: "c"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    title = open_fake_title(fake_window, app)
+    assert title._selector.count() == 4
+    assert calls == [], "rendering must not probe any release"
+
+    title._selector.showPopup()
+    app.processEvents()
+    assert pump_until(app, lambda: len(calls) == 4), calls
+    for index in range(title._selector.count()):
+        assert title._selector.itemData(index, QUALITY_ROLE) == 1080, index
+
+    title._selector.hidePopup()
+    app.processEvents()
+    title._selector.showPopup()
+    app.processEvents()
+    assert pump_until(app, lambda: True, timeout=1)
+    app.processEvents()
+    assert len(calls) == 4, "reopening must not re-probe"
+    title.shutdown()
+    app.processEvents()
+
+
+def test_a_failed_release_probe_leaves_the_other_chips_intact(fake_window, app, monkeypatch):
+    from mikai_ui.release_quality import QUALITY_ROLE
+
+    def mock_streams(url):
+        if "SubTeam" in url:
+            raise RuntimeError("provider is down")
+        return {720: "a", 1080: "b"}
+
+    monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", mock_streams)
+    title = open_fake_title(fake_window, app)
+    title._selector.showPopup()
+    app.processEvents()
+    assert pump_until(app, lambda: title._selector.itemData(0, QUALITY_ROLE) == 1080), [
+        title._selector.itemData(i, QUALITY_ROLE) for i in range(4)
+    ]
+    # the release that failed simply carries no chip
+    assert title._selector.itemData(3, QUALITY_ROLE) in (None, 0)
+    title.shutdown()
+    app.processEvents()
+
+
+def test_max_quality_ignores_unusable_streams():
+    from mikai_ui.release_quality import max_quality
+
+    assert max_quality({480: "u", 720: "u", 1080: "u"}) == 1080
+    assert max_quality({}) == 0
+    assert max_quality({720: ""}) == 0, "an empty stream URL is not a quality"
+    assert max_quality({1080: None}) == 0
+
+
 def test_a_release_numbered_from_110_labels_its_chips_with_real_numbers(
     fake_window, app, monkeypatch
 ):
