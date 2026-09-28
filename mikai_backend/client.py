@@ -53,7 +53,12 @@ def _load_api_key() -> str | None:
 class MikaiClient:
     def __init__(self, api_key: str | None = None) -> None:
         self.api_key = api_key or os.environ.get("MIKAI_API_KEY") or _load_api_key()
-        self._session = requests.Session()
+        # requests.Session is not thread-safe: it keeps one connection pool and
+        # one cookie jar behind no lock. Sharing one across the artwork pool --
+        # a dozen poster fetches at once -- took the interpreter down with a
+        # Windows access violation inside urllib3, so every thread gets its own.
+        self._local = threading.local()
+        self._sessions: list[requests.Session] = []
         self._rate_lock = threading.Condition()
         self._rate_limit: int | None = None
         self._rate_remaining: int | None = None
@@ -62,8 +67,17 @@ class MikaiClient:
         self._rate_in_flight = 0
         self._rate_waiters = 0
         self._rate_generation = 0
-        if self.api_key:
-            self._session.headers["X-API-Key"] = self.api_key
+
+    def _http(self) -> requests.Session:
+        """This thread's session, created on first use."""
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            if self.api_key:
+                session.headers["X-API-Key"] = self.api_key
+            self._local.session = session
+            self._sessions.append(session)
+        return session
 
     def search(self, query: str, page: int = 1, limit: int = 20) -> SearchResult:
         params: dict[str, Any] = {"page": page, "limit": limit}
@@ -135,7 +149,7 @@ class MikaiClient:
         return _parse_player(self._get(f"/anime/{ref}/player")["result"])
 
     def fetch_bytes(self, url: str) -> bytes:
-        response = self._session.get(url, timeout=20)
+        response = self._http().get(url, timeout=20)
         response.raise_for_status()
         return response.content
 
@@ -145,10 +159,11 @@ class MikaiClient:
     def set_api_key(self, api_key: str | None) -> None:
         cleaned = api_key.strip() if api_key and api_key.strip() else None
         self.api_key = cleaned
-        if self.api_key:
-            self._session.headers["X-API-Key"] = self.api_key
-        else:
-            self._session.headers.pop("X-API-Key", None)
+        for session in self._sessions:
+            if self.api_key:
+                session.headers["X-API-Key"] = self.api_key
+            else:
+                session.headers.pop("X-API-Key", None)
         env_path = Path(__file__).resolve().parent.parent / ".env"
         if self.api_key:
             env_path.write_text(f"X-API-Key: {self.api_key}\n", encoding="utf-8")
@@ -233,7 +248,7 @@ class MikaiClient:
         while True:
             generation = self._acquire_api_slot()
             try:
-                response = self._session.get(url, **kwargs)
+                response = self._http().get(url, **kwargs)
             except requests.RequestException:
                 self._finish_api_call(None, generation)
                 raise

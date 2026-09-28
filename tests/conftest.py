@@ -143,7 +143,10 @@ def reap_unclosed_players():
         return
     from mikai_ui.shell_player import ShellPlayerDialog
 
-    stale = [w for w in app.topLevelWidgets() if isinstance(w, ShellPlayerDialog)]
+    # allWidgets, not topLevelWidgets: a dialog opened from a title page is
+    # parented to it, and a parented widget is not a top-level one, so the live
+    # tests' players were never being seen here
+    stale = [w for w in app.allWidgets() if isinstance(w, ShellPlayerDialog)]
     for widget in stale:
         widget.close()
         widget.deleteLater()

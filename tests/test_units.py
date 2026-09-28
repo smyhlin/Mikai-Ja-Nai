@@ -1500,7 +1500,7 @@ def test_anonymous_key_check_does_not_use_saved_key(monkeypatch):
 
     monkeypatch.setattr(requests, "get", fake_get)
     monkeypatch.setattr(
-        client._session, "get", lambda *_args, **_kwargs: pytest.fail("saved session used")
+        client._http(), "get", lambda *_args, **_kwargs: pytest.fail("saved session used")
     )
     assert client.validate_api_key(None)["authenticated"] is False
     assert seen_headers == [{}]
@@ -1530,7 +1530,7 @@ def test_rate_limit_retry_waits_for_server_reset(monkeypatch):
         attempts.append(time.monotonic())
         return Response(429, 0, 1) if len(attempts) == 1 else Response(200, 299, 60)
 
-    monkeypatch.setattr(client._session, "get", fake_get)
+    monkeypatch.setattr(client._http(), "get", fake_get)
     assert client._get("/anime")["ok"] is True
     assert len(attempts) == 2
     assert attempts[1] - attempts[0] >= 0.9
