@@ -4,7 +4,7 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtWidgets import QApplication, QScrollArea
 
 
@@ -124,6 +124,33 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(title_page_module, "QSettings", isolated_qsettings)
     monkeypatch.setattr(settings_module, "QSettings", isolated_qsettings)
     yield store
+
+
+@pytest.fixture(autouse=True)
+def reap_unclosed_players():
+    """Close players a test opened and never closed.
+
+    A ShellPlayerDialog owns native panels and two Qt.Popup top-levels. Left
+    alive they outlive the session QApplication, and the interpreter tears them
+    down in an arbitrary order: it dies AFTER pytest has printed its success
+    line, leaving only Qt's "<cannot get C stack on this system>". The live
+    tests open one per MainWindow, so this has to be global rather than scoped
+    to the shell player's own module.
+    """
+    yield
+    app = QApplication.instance()
+    if app is None:
+        return
+    from mikai_ui.shell_player import ShellPlayerDialog
+
+    stale = [w for w in app.topLevelWidgets() if isinstance(w, ShellPlayerDialog)]
+    for widget in stale:
+        widget.close()
+        widget.deleteLater()
+    if stale:
+        # deleteLater only queues; without this the dialog and its native
+        # panels are still alive when the session QApplication goes
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 @pytest.fixture(scope="session")

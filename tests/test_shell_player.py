@@ -5,7 +5,7 @@ boundaries between the shell and mpv, and the three panels mikai cannot lose.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -14,30 +14,6 @@ from conftest import FakeMpvAdapter
 from mikai_ui.media_shell import STATE_FULLSCREEN_ACTIVE
 from mikai_ui.player_controller import PlaybackStatus
 from mikai_ui.shell_player import SHELL_RATE_MAX, ShellPlayerDialog
-
-
-@pytest.fixture(autouse=True)
-def _reap_players():
-    """Close whatever a test left open.
-
-    A dialog owns native panels and two Qt.Popup top-levels. Left alive, they
-    outlive the session-scoped QApplication and the interpreter tears them down
-    in an arbitrary order, which crashes about one run in four — after pytest has
-    already reported success, so the suite looks green while the process dies.
-    """
-    yield
-    app = QApplication.instance()
-    if app is None:
-        return
-    stale = [w for w in app.topLevelWidgets() if isinstance(w, ShellPlayerDialog)]
-    for widget in stale:
-        widget.close()
-        widget.deleteLater()
-    if stale:
-        # deleteLater only queues; without this the dialog and its native panels
-        # are still alive when the session QApplication goes, and the teardown
-        # order is then undefined
-        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 STREAM = "https://s.example/1080.m3u8"
@@ -250,17 +226,34 @@ def test_the_series_list_marks_the_current_episode_and_asks_for_the_pick(app, pl
     assert not player._series.isVisible()
 
 
-def test_the_episode_drawer_is_hidden_while_the_picture_is_fullscreen(app, player) -> None:
+def test_the_episode_drawer_survives_the_fullscreen_player(app, player) -> None:
+    """The drawer once hid whenever the picture was full screen.
+
+    That was a rule for a player that could also be a window. Full screen is
+    now the only mode, so the rule would have hidden the series list, the
+    tracks and the quality picker for the whole of every playback.
+    """
     player.toggle_series()
     assert player._series.isVisible()
 
     _key(app, player._shell, Qt.Key.Key_F)
+    app.processEvents()
     assert player._shell.state() == STATE_FULLSCREEN_ACTIVE
+    assert player._series.isVisible(), "the drawer follows its own toggle, not the window"
+
+    player.toggle_series()
     assert not player._series.isVisible()
 
+
+def test_the_player_will_not_leave_fullscreen(app, player) -> None:
+    """A movable window is the float's job; the player is a full-screen surface."""
+    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE
+    assert player.isFullScreen()
+
     _key(app, player._shell, Qt.Key.Key_F)
-    assert not player._shell.state().startswith("FULLSCREEN")
-    assert player._series.isVisible()
+    app.processEvents()
+    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, "F tried to drop out of full screen"
+    assert player.isFullScreen()
 
 
 # --- the dub/sub popover ---

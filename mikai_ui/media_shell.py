@@ -1259,7 +1259,9 @@ class PlayerShell(QWidget):
         self._hud_hidden = False
         self._rounded = True  # toggle_window_mode
         self._aspect = ASPECT_FALLBACK
-        self._show_hud = True
+        # off in mikai: the dock already shows time, quality and rate, and the
+        # state panel repeated them in the corner of every playback
+        self._show_hud = False
 
         # ── media ─────────────────────────────────────────────────────
         self._path = ""
@@ -1487,6 +1489,7 @@ class PlayerShell(QWidget):
         )
         self._btn_hud.clicked.connect(self.toggle_hud)
         self._btn_hud.set_tint(C_ACCENT)
+        self._btn_hud.hide()  # same reason the panel itself is off
         h.addWidget(self._btn_hud)
 
         self._btn_dl = IconButton(Icon.download, "download_media_file", 28, 16, self._footer_r)
@@ -1889,7 +1892,7 @@ class PlayerShell(QWidget):
         m.addAction("Копіювати посилання", lambda: self._toast.flash("URL copied"))
         m.addAction("Відкрити у папці", lambda: self._toast.flash(self._path or "—"))
         m.addAction("Скинути масштаб  (R)", self.reset_transform)
-        m.addAction("Показати HUD  (D)", lambda: not self._show_hud and self.toggle_hud())
+
         m.addSeparator()
         m.addAction("Вихід  (Esc)", self._exit)
         m.exec(self._btn_more.mapToGlobal(QPoint(0, self._btn_more.height())))

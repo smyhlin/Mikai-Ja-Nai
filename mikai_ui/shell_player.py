@@ -529,6 +529,7 @@ class ShellPlayerDialog(QDialog):
         shell.mediaDropped.connect(self._on_media_dropped)
         shell.closeRequested.connect(self.close)
         shell.stateChanged.connect(self._on_shell_state)
+        shell.fullscreenChanged.connect(self._on_shell_fullscreen)
         shell.installEventFilter(self)
 
     @staticmethod
@@ -587,28 +588,41 @@ class ShellPlayerDialog(QDialog):
     def _on_shell_state(self, state: str) -> None:
         if self._closed:
             return
+        # the state drives CHROME only. It used to drive the window as well, so
+        # zooming — which is not a full-screen state — dropped the player into
+        # a movable window in the middle of playback.
         fullscreen = state in FULLSCREEN_STATES
         if fullscreen != self._fullscreen:
             self._fullscreen = fullscreen
-            self._sync_window_fullscreen(fullscreen)
         if fullscreen:
             self._quality_popup.close()
             self._track_popup.close()
-        # the drawer is chrome: the shell hides its own when the picture goes
-        # fullscreen, and the episode list used to hide with it
-        self._series.setVisible(self._series_expanded and not fullscreen)
-        self._strip.setVisible(not fullscreen)
+        # The strip and the drawer follow their own state, not the window's.
+        # They used to hide whenever the picture was full screen, which was a
+        # rule for a player that could also be a window: now that full screen
+        # is the only mode, that rule hid the three features permanently.
+        self._series.setVisible(self._series_expanded)
+        self._strip.setVisible(True)
         self._layout_panels()
 
-    def _sync_window_fullscreen(self, fullscreen: bool) -> None:
+    def _on_shell_fullscreen(self, fullscreen: bool) -> None:
+        """The player has no windowed mode; the float is the movable window.
+
+        Anything that would drop the player out of full screen — F, F11, Esc,
+        the dock's fullscreen control — lands here and is undone.
+        """
+        if self._closed:
+            return
+        if not fullscreen:
+            self._shell._enter_fullscreen()
+        self._sync_window_fullscreen()
+
+    def _sync_window_fullscreen(self) -> None:
         """The shell is a child widget, so its own showFullScreen() is a no-op:
-        the window itself has to follow the state machine."""
+        the window itself is what has to go full screen."""
         if self.pip_active:
             return
-        if fullscreen:
-            self.showFullScreen()
-        else:
-            self.showNormal()
+        self.showFullScreen()
 
     def _on_quality_switching(self, height: int) -> None:
         self._flash_status(f"Перемикання на {height}p…")
@@ -634,7 +648,7 @@ class ShellPlayerDialog(QDialog):
         self._series.set_entries(
             [str(item.get("label", "")) for item in self._playlist], self._episode_index
         )
-        self._series.setVisible(self._series_expanded and not self._fullscreen)
+        self._series.setVisible(self._series_expanded)
         self._layout_panels()
 
     def step_episode(self, delta: int) -> None:
@@ -850,7 +864,7 @@ class ShellPlayerDialog(QDialog):
             self._quality_popup.close()
             self._track_popup.close()
         self._update_series_toggle()
-        self._series.setVisible(self._series_expanded and not self._fullscreen)
+        self._series.setVisible(self._series_expanded)
         self._layout_panels()
 
     def _update_series_toggle(self) -> None:
@@ -932,6 +946,8 @@ class ShellPlayerDialog(QDialog):
         self._shell.show()
         self._shell.setFocus(Qt.FocusReason.OtherFocusReason)
         self._layout_panels()
+        # opened full screen and stays that way
+        self._shell._enter_fullscreen()
 
     def _layout_panels(self) -> None:
         area = self._shell.geometry()

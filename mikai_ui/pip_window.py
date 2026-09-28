@@ -2,23 +2,45 @@
 
 Deliberately not a strip of chrome: a header, a caption or a taskbar button
 would make it a second window pretending to be a float. It is a video plus a
-thin play/pause bar, and the window is moved by holding the picture.
+thin play/pause bar.
+
+The window does not move by holding the picture. A click in a surface that is
+almost entirely video means "I am watching this", not "I am dragging it", and
+a mis-aimed grab that flings the float across the screen is worse than a float
+that stays where it was put.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import QKeyEvent, QPainterPath, QRegion
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from mikai_ui.theme.metrics import ICON_SIZE, PLAYER_FIELD_HEIGHT, SPACING_SMALL
 from mikai_ui.theme.widgets import make_icon
 
-# a press only becomes a drag past this many pixels, so a stray click on the
-# picture does not nudge the window
-DRAG_THRESHOLD_PX = 6
 SEEK_STEP_SECONDS = 10
 CORNER_RADIUS_PX = 16
+# theme.metrics.ANIMATION_DURATION_MS is gone, and no shared token would fit
+# anyway: this is the only animation the float owns, and the retire delay is a
+# rule about the hover over an unfocused window, not a decoration other
+# surfaces should inherit
+BAR_FADE_MS = 160
+BAR_REVEAL_HOLD_MS = 1600
 
 
 class PipWindow(QWidget):
@@ -47,6 +69,9 @@ class PipWindow(QWidget):
         self._video_holder = QWidget(self)
         self._video_holder.setObjectName("pipVideo")
         self._video_holder.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # without tracking, a move over the picture stops at the surface and the
+        # float never hears about the pointer hovering it
+        self._video_holder.setMouseTracking(True)
         root.addWidget(self._video_holder, 1)
 
         self._bar = QWidget(self)
@@ -82,9 +107,31 @@ class PipWindow(QWidget):
         root.addWidget(self._bar, 0)
 
         self._video: QWidget | None = None
-        self._press_pos: QPoint | None = None
-        self._window_pos: QPoint | None = None
-        self._dragging = False
+
+        # the bar is chrome drawn over a picture, so it belongs to the pointer
+        # and to the focus rather than sitting on top of another app forever
+        self._bar_opacity = 1.0
+        self._bar_effect = QGraphicsOpacityEffect(self._bar)
+        self._bar_effect.setOpacity(1.0)
+        self._bar.setGraphicsEffect(self._bar_effect)
+        self._bar_fade = QVariantAnimation(self)
+        self._bar_fade.setDuration(BAR_FADE_MS)
+        self._bar_fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._bar_fade.valueChanged.connect(self._set_bar_opacity)
+        self._bar_hide_timer = QTimer(self)
+        self._bar_hide_timer.setSingleShot(True)
+        self._bar_hide_timer.timeout.connect(self._retire_bar)
+        # the bar's own children swallow moves that never reach the float, so
+        # each one has to be watched separately for the reveal
+        for watched in (
+            self,
+            self._video_holder,
+            self._bar,
+            self._status,
+            self._play_button,
+            self._close_button,
+        ):
+            watched.installEventFilter(self)
 
     # -- content --------------------------------------------------------
     def set_video(self, widget: QWidget) -> None:
@@ -93,6 +140,7 @@ class PipWindow(QWidget):
         self._video_holder.installEventFilter(self)
         widget.installEventFilter(self)
         widget.setParent(self._video_holder)
+        widget.setMouseTracking(True)
         widget.setGeometry(self._video_holder.rect())
         widget.show()
 
@@ -110,44 +158,60 @@ class PipWindow(QWidget):
     def set_time_text(self, text: str) -> None:
         self._status.setText(text)
 
-    # -- moving the float ----------------------------------------------
-    def _begin_drag(self, pos: QPoint) -> None:
-        self._press_pos = pos
-        self._window_pos = self.pos()
-        self._dragging = False
+    # -- the controls come and go with the focus -----------------------
+    def _set_bar_opacity(self, value: float) -> None:
+        self._bar_opacity = float(value)
+        self._bar_effect.setOpacity(self._bar_opacity)
+        self._bar.setVisible(self._bar_opacity > 0.01)
 
-    def _continue_drag(self, pos: QPoint) -> None:
-        if self._press_pos is None:
-            return
-        delta = pos - self._press_pos
-        if not self._dragging and (delta.manhattanLength() > DRAG_THRESHOLD_PX):
-            self._dragging = True
-        if self._dragging and self._window_pos is not None:
-            self.move(self._window_pos + delta)
+    def _reveal_bar(self) -> None:
+        # opacity and visibility are one state, so a float that is already lit
+        # costs nothing here however often the pointer moves across it
+        if self._bar_opacity < 0.99:
+            self._bar_fade.stop()
+            self._bar_fade.setStartValue(self._bar_opacity)
+            self._bar_fade.setEndValue(1.0)
+            self._bar_fade.start()
+        # a hover can reach a float the user never activated, so the bar has to
+        # retire again on its own rather than wait for a focus event that will
+        # never arrive
+        self._bar_hide_timer.start(BAR_REVEAL_HOLD_MS)
 
-    def _end_drag(self) -> None:
-        self._press_pos = None
-        self._window_pos = None
-        self._dragging = False
+    def _hide_bar(self) -> None:
+        self._bar_hide_timer.stop()
+        if self._bar_opacity > 0.01:
+            self._bar_fade.stop()
+            self._bar_fade.setStartValue(self._bar_opacity)
+            self._bar_fade.setEndValue(0.0)
+            self._bar_fade.start()
+
+    def _retire_bar(self) -> None:
+        if not self.isActiveWindow():
+            self._hide_bar()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt naming
-        """Press-and-hold on the picture moves the window; a plain click does not.
+        """Keep the bar in step with the pointer and with the activation.
 
-        There is deliberately no play/pause on a picture click: in a float that
-        is mostly picture, a click means "I am grabbing this", not "toggle".
+        Those are the only two signals that reach a float sitting behind another
+        app. A click on the picture deliberately does nothing: in a float that is
+        mostly video, a click is not a command.
         """
-        if watched is self._video_holder or watched is self._video:
-            kind = event.type()
-            if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-                self._begin_drag(event.position().toPoint())
-                self.setFocus(Qt.FocusReason.MouseFocusReason)
-                return True
-            if kind == QEvent.Type.MouseMove and self._press_pos is not None:
-                self._continue_drag(event.position().toPoint())
-                return True
-            if kind == QEvent.Type.MouseButtonRelease:
-                self._end_drag()
-                return True
+        kind = event.type()
+        mine = watched is self or self.isAncestorOf(watched)
+        if mine and kind in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress):
+            self._reveal_bar()
+        if watched is self:
+            # Win32 delivers activation to the top level, and a changeEvent
+            # override never sees it, so the float watches its own events
+            if kind == QEvent.Type.WindowActivate:
+                self._reveal_bar()
+            elif kind == QEvent.Type.WindowDeactivate:
+                self._hide_bar()
+        if watched is self._video_holder and kind == QEvent.Type.Resize:
+            # the bar shares the layout, so a hidden bar hands its height to the
+            # picture -- and the surface is a plain child, it does not follow
+            if self._video is not None:
+                self._video.setGeometry(self._video_holder.rect())
         return super().eventFilter(watched, event)
 
     def _apply_corner_mask(self) -> None:
