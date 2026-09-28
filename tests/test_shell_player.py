@@ -5,7 +5,7 @@ boundaries between the shell and mpv, and the three panels mikai cannot lose.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -14,6 +14,31 @@ from conftest import FakeMpvAdapter
 from mikai_ui.media_shell import STATE_FULLSCREEN_ACTIVE
 from mikai_ui.player_controller import PlaybackStatus
 from mikai_ui.shell_player import SHELL_RATE_MAX, ShellPlayerDialog
+
+
+@pytest.fixture(autouse=True)
+def _reap_players():
+    """Close whatever a test left open.
+
+    A dialog owns native panels and two Qt.Popup top-levels. Left alive, they
+    outlive the session-scoped QApplication and the interpreter tears them down
+    in an arbitrary order, which crashes about one run in four — after pytest has
+    already reported success, so the suite looks green while the process dies.
+    """
+    yield
+    app = QApplication.instance()
+    if app is None:
+        return
+    stale = [w for w in app.topLevelWidgets() if isinstance(w, ShellPlayerDialog)]
+    for widget in stale:
+        widget.close()
+        widget.deleteLater()
+    if stale:
+        # deleteLater only queues; without this the dialog and its native panels
+        # are still alive when the session QApplication goes, and the teardown
+        # order is then undefined
+        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
 
 STREAM = "https://s.example/1080.m3u8"
 QUALITIES = {1080: "u1080", 720: "u720", 480: "u480"}
