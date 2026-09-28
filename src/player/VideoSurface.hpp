@@ -74,6 +74,8 @@ private:
     void pumpEvents();
     void handleState();
 
+    // Held so the render context can be freed with it current at teardown.
+    QOpenGLContext* context_ = nullptr;
     std::unique_ptr<MpvHandle> mpv_;
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;

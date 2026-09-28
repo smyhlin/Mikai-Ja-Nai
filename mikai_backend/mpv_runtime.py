@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.util
 import json
 import os
 import platform
@@ -227,3 +228,12 @@ def configure_runtime(runtime_dir: Path) -> tuple[list[Any], ctypes.CDLL]:
 
     # Preload the library so python-mpv can find it reliably on Windows.
     return handles, ctypes.CDLL(str(library_path))
+
+
+def prepare_runtime() -> Path | None:
+    """Find or prepare libmpv without imposing Windows on Qt fullscreen."""
+    if sys.platform == "win32":
+        return ensure_runtime()
+    if ctypes.util.find_library("mpv"):
+        return None
+    raise FileNotFoundError("libmpv is not installed. Install the system mpv development library.")

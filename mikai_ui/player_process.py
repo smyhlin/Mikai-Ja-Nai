@@ -19,17 +19,10 @@ thread. A second ``threading.Thread`` reading the same pipe would race Qt's
 reader for the bytes and drop events, so the reader is deliberately Qt's and not
 ours.
 
-Launch-time state the protocol cannot carry yet, kept here and reported rather
-than dropped:
+The one event that carries no payload, and why:
 
-* ``variants`` / ``current_embed`` — the dub/sub list. The launch config carries
-  only caption/url/qualities/height and no command delivers a variant list, so
-  the child's track picker starts empty and ``trackProbe`` never fires on its
-  own. Kept intact on ``_variants`` / ``_current_embed``; the moment
-  ``main.cpp`` grows a way to carry them they are already here to send.
-* ``copyUrl`` — a bare notification with no payload, because the host is the one
-  that handed the player a stream URL. The URL launched with is what gets
-  copied.
+* ``copyUrl`` is a bare notification, because the host is the one that handed the
+  player a stream URL. The URL launched with is what gets copied.
 """
 
 from __future__ import annotations
@@ -196,6 +189,13 @@ class PlayerProcess(QObject):
                     "url": self._url,
                     "qualities": qualities_to_json(self._qualities),
                     "height": self._current_height,
+                    # The track chip and its popover read these while the child
+                    # is still constructing. Without them the child starts with
+                    # an empty variant list and the dub/sub picker never appears.
+                    "variants": self._variants,
+                    "currentEmbed": self._current_embed,
+                    "playlist": self._playlist,
+                    "episodeIndex": int(self._episode_index),
                 },
                 ensure_ascii=False,
             ),
@@ -214,6 +214,13 @@ class PlayerProcess(QObject):
             if existing:
                 path = path + os.pathsep + existing
             environment.insert("PATH", path)
+        # QOpenGLWidget has no OpenGL at all under Qt's offscreen platform, so a
+        # child that inherits it cannot create a context and dies. Nothing forces
+        # it: the offscreen platform exists to let the hermetic suite run without
+        # a display, and that suite is not what should decide how the player
+        # renders. Let the child pick the native platform.
+        if environment.value("QT_QPA_PLATFORM") == "offscreen":
+            environment.remove("QT_QPA_PLATFORM")
         process.setProcessEnvironment(environment)
         process.setWorkingDirectory(str(exe.parent))
         process.finished.connect(self._on_finished)
@@ -379,7 +386,12 @@ class PlayerProcess(QObject):
             log.exception("failed to write command %s", command.get("cmd"))
             return False
         if written != len(payload):
-            log.warning("short write for command %s: %d of %d bytes", command.get("cmd"), written, len(payload))
+            log.warning(
+                "short write for command %s: %d of %d bytes",
+                command.get("cmd"),
+                written,
+                len(payload),
+            )
         return True
 
     def apply_episode(
@@ -402,15 +414,15 @@ class PlayerProcess(QObject):
         self._caption = label
         self._qualities = usable
         self._current_height = max(usable)
+        self._send({"cmd": "setVariants", "variants": self._variants, "currentEmbed": embed})
         self._send(
             {
                 "cmd": "applyEpisode",
-                "url": usable[self._current_height],
-                "caption": label,
-                "index": self._episode_index,
+                "label": label,
                 "embed": embed,
+                "index": self._episode_index,
                 "qualities": qualities_to_json(usable),
-                "height": self._current_height,
+                "variants": self._variants,
             }
         )
         self._send_playlist()
@@ -475,18 +487,22 @@ class PlayerProcess(QObject):
         self._send(
             {
                 "cmd": "setPlaylist",
-                "labels": [str(item.get("label", "")) for item in self._playlist],
+                "playlist": [
+                    {"label": str(item.get("label", "")), "number": str(item.get("number", ""))}
+                    for item in self._playlist
+                ],
                 "index": int(self._episode_index),
             }
         )
 
-    def quality_changed(self, height: int) -> None:
-        """Ask the child which height it settled on.
+    def query_quality(self) -> None:
+        """Ask the child which height it actually settled on.
 
-        The child only reports ``quality`` in answer to this, so it is how the
-        Python side bootstraps ``current_height`` after a track swap.
+        The answer arrives as a ``quality`` event. This is how ``current_height``
+        gets corrected after a track swap: the height the child chose is not one
+        the Python side can work out for itself.
         """
-        self._send({"cmd": "qualityChanged", "height": int(height)})
+        self._send({"cmd": "queryQuality"})
 
     # ── state ──────────────────────────────────────────────────────────
 
@@ -502,7 +518,7 @@ class PlayerProcess(QObject):
 
     @property
     def variants(self) -> list[dict]:
-        """The dub/sub list, retained because the wire cannot carry it yet."""
+        """The dub/sub list currently published to the child."""
         return [dict(variant) for variant in self._variants]
 
     @property

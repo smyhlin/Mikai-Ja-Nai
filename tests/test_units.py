@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 import requests
 from conftest import (
-    FakeMpvAdapter,
     pagination_controls,
     pump_until,
     tab_chips,
@@ -1555,18 +1554,6 @@ def test_title_sorts_releases_and_preselects_loudest_dub(fake_window, app):
     assert tabs == {"Ashdi", "MoonAnime", "Tortuga"}, tabs
     assert len(tab_chips(title)) == 24
     assert labels[0] == "Озвучення — Loud · 24 серій"
-
-
-class _FailingThenOkAdapter(FakeMpvAdapter):
-    """Fails the first load so the dialog's re-extraction fallback is exercised."""
-
-    def __init__(self, *_args, **_kwargs) -> None:
-        super().__init__()
-
-    def load(self, url: str) -> None:
-        super().load(url)
-        if len(self.loads) == 1:
-            self.errorOccurred.emit("HTTP 403 forbidden")
 
 
 def test_no_source_click_is_cached_negatively(fake_window, app, monkeypatch):

@@ -14,37 +14,44 @@
 
 #include <QByteArray>
 #include <QJsonObject>
-#include <QString>
-#include <QThread>
+#include <QObject>
+#include <QTimer>
 
-#include <atomic>
 #include <mutex>
 
 namespace mplayer {
 namespace shell {
 
-/// Reads newline-delimited JSON from stdin on its own thread and re-emits each
-/// object. The read is blocking, which is why this is a QThread rather than a
-/// QSocketNotifier: a notifier on a Windows pipe is unreliable, and the thread
-/// has a life that ends with the process anyway.
-class IpcReader : public QThread {
+/// Polls stdin for complete JSON lines and re-emits each one.
+///
+/// Deliberately not a reader thread. A thread parked in fgets cannot be stopped
+/// without either TerminateThread (which leaves the CRT's stdin lock held and
+/// the process faults on the way out) or CancelSynchronousIo on a handle Qt
+/// stops handing out once QThread::handle() leaves the public API. PeekNamedPipe
+/// answers "is there data" without blocking, so this needs no thread at all, and
+/// shutdown becomes "stop the timer".
+class IpcReader : public QObject {
     Q_OBJECT
 
 public:
     explicit IpcReader(QObject* parent = nullptr);
     ~IpcReader() override;
 
+    /// Begins polling. Cheap: it only calls PeekNamedPipe.
+    void start();
+    void requestStop();
+
 Q_SIGNALS:
-    /// Emitted for each parsed command, on an arbitrary thread.
     void command(const QJsonObject& command);
-    /// stdin reached EOF: the host is gone, so the player should exit.
+    /// stdin reached EOF or broke: the host is gone, so the player should exit.
     void hostClosed();
 
-protected:
-    void run() override;
-
 private:
-    std::atomic<bool> stop_{false};
+    void poll();
+
+    QTimer timer_;
+    QByteArray buffer_;
+    bool stopped_ = false;
 };
 
 class IpcWriter {

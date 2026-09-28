@@ -1,11 +1,13 @@
+import logging
 import os
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtWidgets import QApplication, QScrollArea
+
+log = logging.getLogger(__name__)
 
 
 def tab_chips(title, index: int | None = None) -> list:
@@ -26,68 +28,6 @@ def pagination_controls(title, index: int | None = None):
     layout = pager._chip_layout
     chips = [layout.itemAt(i).widget() for i in range(layout.count())]
     return pager.prev_btn, chips, pager.next_btn
-
-
-class FakeMpvAdapter(QObject):
-    positionChanged = Signal(float)
-    durationChanged = Signal(float)
-    stateChanged = Signal(str)
-    bufferingChanged = Signal(bool)
-    mediaEnded = Signal()
-    errorOccurred = Signal(str)
-    mediaLoaded = Signal()
-    volumeChanged = Signal(float)
-    muteChanged = Signal(bool)
-    speedChanged = Signal(float)
-    streamInfoChanged = Signal(object)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.loads: list[str] = []
-        self.seeks: list[float] = []
-        self.volumes: list[int] = []
-        self.mutes: list[bool] = []
-        self.speeds: list[float] = []
-        self.pauses: list[bool] = []
-        self.closed = False
-        self.pauses: list[bool] = []
-        self.canvases: list[tuple[float, float, float]] = []
-        self.closed = False
-        self.stream: dict = {}
-
-    def load(self, url: str) -> None:
-        self.loads.append(url)
-
-    def play(self) -> None:
-        self.pauses.append(False)
-
-    def set_paused(self, paused: bool) -> None:
-        self.pauses.append(paused)
-
-    def toggle_pause(self) -> None:
-        self.set_paused(not self.pauses[-1] if self.pauses else True)
-
-    def emit_stream(self, **fields) -> None:
-        self.stream.update(fields)
-        self.streamInfoChanged.emit(dict(self.stream))
-
-    def seek(self, position: float) -> None:
-        self.seeks.append(position)
-
-    def set_volume(self, volume: int) -> None:
-        self.volumes.append(volume)
-
-    def set_muted(self, muted: bool) -> None:
-        self.mutes.append(muted)
-
-    def set_speed(self, speed: float) -> None:
-        self.speeds.append(speed)
-
-    def set_canvas(self, zoom: float, pan_x: float, pan_y: float) -> None:
-        self.canvases.append((zoom, pan_x, pan_y))
-
-    def close(self) -> None:
-        self.closed = True
 
 
 from mikai_backend import MikaiClient
@@ -126,34 +66,45 @@ def isolated_settings(tmp_path, monkeypatch):
     yield store
 
 
+_live_players: list = []
+
+
+def live_players() -> list:
+    """Every PlayerProcess built since the session started, oldest first."""
+    return list(_live_players)
+
+
+@pytest.fixture(autouse=True)
+def _track_players(monkeypatch):
+    """Record every PlayerProcess a test builds, so teardown can kill it."""
+    from mikai_ui import player_process
+
+    original = player_process.PlayerProcess.__init__
+
+    def tracked(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        _live_players.append(self)
+
+    monkeypatch.setattr(player_process.PlayerProcess, "__init__", tracked)
+
+
 @pytest.fixture(autouse=True)
 def reap_unclosed_players():
     """Close players a test opened and never closed.
 
-    A ShellPlayerDialog owns native panels and two Qt.Popup top-levels. Left
-    alive they outlive the session QApplication, and the interpreter tears them
-    down in an arbitrary order: it dies AFTER pytest has printed its success
-    line, leaving only Qt's "<cannot get C stack on this system>". The live
-    tests open one per MainWindow, so this has to be global rather than scoped
-    to the shell player's own module.
+    The live tests open a player per MainWindow, and a leaked player is a child
+    process still showing a window after pytest has printed its result.
     """
     yield
-    app = QApplication.instance()
-    if app is None:
-        return
-    from mikai_ui.shell_player import ShellPlayerDialog
-
-    # allWidgets, not topLevelWidgets: a dialog opened from a title page is
-    # parented to it, and a parented widget is not a top-level one, so the live
-    # tests' players were never being seen here
-    stale = [w for w in app.allWidgets() if isinstance(w, ShellPlayerDialog)]
-    for widget in stale:
-        widget.close()
-        widget.deleteLater()
-    if stale:
-        # deleteLater only queues; without this the dialog and its native
-        # panels are still alive when the session QApplication goes
-        app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    # A player is a child process now, so the thing to reap is the process, not
+    # a widget: a leaked one outlives pytest and keeps a window on screen after
+    # the run has printed its result.
+    for player in list(_live_players):
+        try:
+            player.close()
+        except Exception:  # noqa: BLE001 - teardown must not mask the test result
+            log.warning("could not close a leaked player", exc_info=True)
+    _live_players.clear()
 
 
 @pytest.fixture(scope="session")

@@ -94,7 +94,7 @@ set_target_properties(shell_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 # The player executable. It is a process, not a DLL: PySide6 and this Qt
 # are separate builds whose Qt6Core.dll collides by name, so loading both
 # into one process fails with WinError 127.
-add_executable(mikai-player WIN32 src/player/main.cpp)
+add_executable(mikai-player src/player/main.cpp)
 target_link_libraries(mikai-player PRIVATE mikai_player)
 
 add_executable(dialog_probe src/probes/DialogProbe.cpp)

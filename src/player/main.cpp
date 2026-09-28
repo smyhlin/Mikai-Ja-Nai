@@ -16,6 +16,8 @@
 
 #include <cstdio>
 
+#include <windows.h>
+
 #include "IpcChannel.hpp"
 #include "PlayerDialog.hpp"
 
@@ -130,6 +132,11 @@ int main(int argc, char** argv) {
         } else if (name == "setVariants") {
             dialog->setVariants(mapsFromJson(command.value("variants")),
                                 command.value("currentEmbed").toString());
+        } else if (name == "queryQuality") {
+            // A real report, not an echo: the host needs the height the child
+            // actually settled on after a track swap, which it cannot know.
+            IpcWriter::send(QJsonObject{{"ev", "quality"},
+                                        {"height", dialog->currentHeight()}});
         } else if (name == "showError") {
             dialog->showError(command.value("message").toString());
         } else if (name == "close") {
@@ -145,5 +152,10 @@ int main(int argc, char** argv) {
     });
 
     reader.start();
-    return app.exec();
+    const int result = app.exec();
+    // The reader is parked in fgets with the host still attached. TerminateThread
+    // leaves the CRT's stdin lock held and the process then faults on the way out,
+    // so cancel the blocking read first and only escalate if it survives.
+    reader.requestStop();
+    return result;
 }

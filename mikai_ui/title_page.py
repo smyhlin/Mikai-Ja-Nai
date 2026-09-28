@@ -35,9 +35,9 @@ from mikai_ui.clipboard import copy_text
 from mikai_ui.cover_viewer import CoverLabel, CoverViewer
 from mikai_backend.releases import playable_episode_count, sort_releases
 from mikai_ui.labels import STATUS_LABELS
-from mikai_ui.mpv_backend import prepare_runtime
+from mikai_backend.mpv_runtime import prepare_runtime
 from mikai_ui.page_pager import RangePager
-from mikai_ui.shell_player import ShellPlayerDialog
+from mikai_ui.player_process import PlayerProcess
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import make_gear_icon
 from mikai_ui.theme import ACCENT, BORDER, MUTED, TEXT
@@ -226,7 +226,7 @@ class TitlePage(QWidget):
         self._base_status = ""
         self._tab_embeds: list[list[str]] = []
         self._tab_states: list[dict] = []
-        self._player_dialogs: list[ShellPlayerDialog] = []
+        self._player_dialogs: list[PlayerProcess] = []
         self._cover_pixmap = QPixmap()
         self._cover_viewer: CoverViewer | None = None
         self._cover_url = ""
@@ -1123,7 +1123,7 @@ class TitlePage(QWidget):
             self._flash_status(f"Не вдалося скопіювати {height}p")
         self._open_stream(chip, height, url)
 
-    def _recover_stream(self, dialog: ShellPlayerDialog) -> None:
+    def _recover_stream(self, dialog: PlayerProcess) -> None:
         """Signed stream URLs expire, so re-extract once before reporting failure.
 
         The re-extraction targets whatever track the dialog is on RIGHT NOW: a
@@ -1136,13 +1136,13 @@ class TitlePage(QWidget):
         if entry is None:
             return
         embed = entry["embed"]
-        height = dialog.controller.state.quality
+        height = dialog.current_height
         self._quality_cache.pop(embed, None)
         self._quality_fetched_at.pop(embed, None)
         self._no_source_urls.discard(embed)
         self._flash_status("Потік застарів — оновлюю посилання…")
 
-        def on_ok(qualities: dict[int, str], target: ShellPlayerDialog = dialog) -> None:
+        def on_ok(qualities: dict[int, str], target: PlayerProcess = dialog) -> None:
             if not qualities:
                 return
             self._remember_qualities(embed, qualities)
@@ -1286,7 +1286,7 @@ class TitlePage(QWidget):
         height, url = max(available, key=lambda item: item[0])
         caption = f"{entry['label']} · {height}p"
         playlist, index = self._tab_playlist(entry.get("state"), entry["number"])
-        dialog = ShellPlayerDialog(
+        dialog = PlayerProcess(
             caption,
             url,
             qualities=dict(qualities),
@@ -1311,10 +1311,9 @@ class TitlePage(QWidget):
         dialog.episodeRequested.connect(
             lambda item, spot, target=dialog: self._play_episode_from(target, item, spot)
         )
-        dialog.show()
         self._prepare_player(dialog)
 
-    def _play_episode_from(self, dialog: ShellPlayerDialog, item: dict, index: int) -> None:
+    def _play_episode_from(self, dialog: PlayerProcess, item: dict, index: int) -> None:
         """Step inside the open player: one fetch, then swap in place."""
         if self._closed or not shiboken6.isValid(dialog):
             return
@@ -1336,7 +1335,7 @@ class TitlePage(QWidget):
 
         self._ensure_qualities(entry, on_qualities)
 
-    def _probe_track_quality(self, dialog: ShellPlayerDialog, embed: str) -> None:
+    def _probe_track_quality(self, dialog: PlayerProcess, embed: str) -> None:
         """Answer the player's request for one track's best quality.
 
         Shares the per-embed cache and in-flight dedupe, so a track already probed
@@ -1355,7 +1354,7 @@ class TitlePage(QWidget):
             ({"button": None, "label": "", "embed": embed, "state": None}, "track")
         ]
 
-        def on_ok(qualities, target: ShellPlayerDialog = dialog, key: str = embed) -> None:
+        def on_ok(qualities, target: PlayerProcess = dialog, key: str = embed) -> None:
             self._fetch_waiters.pop(key, None)
             if shiboken6.isValid(target) and qualities:
                 target.set_track_quality(key, max_quality(qualities))
@@ -1368,7 +1367,7 @@ class TitlePage(QWidget):
             lambda target=embed: streams.get_quality_streams(target), on_ok, on_err
         )
 
-    def _switch_player_variant(self, dialog: ShellPlayerDialog, embed: str, label: str) -> None:
+    def _switch_player_variant(self, dialog: PlayerProcess, embed: str, label: str) -> None:
         if self._closed or not shiboken6.isValid(dialog):
             return
         entry = {"button": None, "label": label, "embed": embed, "state": None}
@@ -1429,14 +1428,24 @@ class TitlePage(QWidget):
         QDesktopServices.openUrl(QUrl(chip["embed"]))
         self._flash_status("Відкрито в браузері")
 
-    def _prepare_player(self, dialog: ShellPlayerDialog) -> None:
-        def on_ok(runtime_dir: Path, target: ShellPlayerDialog = dialog) -> None:
-            if shiboken6.isValid(target):
-                target.start_player(runtime_dir)
+    def _prepare_player(self, dialog: PlayerProcess) -> None:
+        """Provision libmpv, then spawn the player.
 
-        def on_err(message: str, target: ShellPlayerDialog = dialog) -> None:
+        The child links libmpv while it loads, so the runtime must be on disk
+        before it starts. The native-window player prepared it after spawning,
+        which cannot work across a process boundary.
+        """
+
+        def on_ok(_runtime: Path | None, target: PlayerProcess = dialog) -> None:
             if shiboken6.isValid(target):
-                target.show_error(message)
+                target.show()
+
+        def on_err(message: str, target: PlayerProcess = dialog) -> None:
+            # The child owns the error surface now, so still start it and let it
+            # report whatever it actually hits.
+            log.warning("could not prepare the mpv runtime: %s", message)
+            if shiboken6.isValid(target):
+                target.show()
 
         self._runner.run(prepare_runtime, on_ok, on_err)
 

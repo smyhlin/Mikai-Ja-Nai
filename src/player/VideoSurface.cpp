@@ -14,12 +14,34 @@ namespace mplayer {
 
 void VideoSurface::ensureEngine() {
     if (mpv_) return;
-    // vo=libmpv routes decoded frames into OUR render context. Without it mpv
-    // opens a video output of its own, the render context never receives a
-    // frame (update() stays at generation 0) and render() still returns success
-    // while painting nothing.
-    mpv_ = std::make_unique<MpvHandle>(
-        std::vector<std::pair<std::string, std::string>>{{"vo", "libmpv"}});
+    // These are the options the Python player passed through python-mpv, which
+    // spelled them with underscores; mpv itself takes dashes.
+    const std::vector<std::pair<std::string, std::string>> options{
+        // Routes decoded frames into OUR render context. Without it mpv opens a
+        // video output of its own, the render context never receives a frame
+        // (update() stays at generation 0) and render() still returns success
+        // while painting nothing.
+        {"vo", "libmpv"},
+        // Not cosmetic: MoonAnime's CDN answers 400 to a playlist that arrives
+        // without an Accept-Language header, so mpv would sit on a stream that
+        // extraction read perfectly well. The value is never inspected, only its
+        // presence, and mpv splits http-header-fields on commas so it must stay
+        // comma-free.
+        {"user-agent",
+         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+         "Chrome/142.0.0.0 Safari/537.36"},
+        {"http-header-fields", "Accept-Language: uk-UA"},
+        {"hwdec", "auto-safe"},
+        {"keepaspect", "yes"},
+        {"volume", "100"},
+        // The keyboard belongs to the shell: mpv's own bindings would consume
+        // Space and the arrow keys before Qt ever sees them.
+        {"input-default-bindings", "no"},
+        {"input-vo-keyboard", "no"},
+        {"input-cursor", "no"},
+        {"osc", "no"},
+    };
+    mpv_ = std::make_unique<MpvHandle>(options);
 }
 
 VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
@@ -32,10 +54,22 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
 }
 
 VideoSurface::~VideoSurface() {
-    // The render context must die while the GL context is still current,
-    // otherwise mpv's cached entry points outlive the context they belong to.
-    if (render_ && contextReady_ && QOpenGLContext::currentContext() != nullptr) {
+    // The render context holds a pointer to the mpv core, so it has to go first,
+    // unconditionally. Members are destroyed in reverse declaration order, which
+    // would do that anyway - but resetting mpv_ in the body destroys the core
+    // here, and the render context's own destructor then runs against a freed
+    // handle. Gating the render reset on the GL context being current used to
+    // skip it precisely at process exit, where the context is already gone.
+    if (render_) {
+        // Freeing the render context releases GL objects, so a current context is
+        // not optional. At teardown there usually is none: the widget is being
+        // deleted, not painted, and the crash is an access violation inside the
+        // driver rather than anything mpv can report.
+        const bool borrowed = QOpenGLContext::currentContext() == nullptr
+                              && context_ != nullptr;
+        if (borrowed) QOpenGLWidget::makeCurrent();
         render_.reset();
+        if (borrowed) QOpenGLWidget::doneCurrent();
     }
     mpv_.reset();
 }
@@ -145,6 +179,7 @@ bool VideoSurface::hasVideo() const { return hasVideo_; }
 
 void VideoSurface::initializeGL() {
     QOpenGLWidget::initializeGL();
+    context_ = QOpenGLContext::currentContext();
     try {
         auto gl = std::make_shared<GlApi>(loadGlApi());
         ensureEngine();
