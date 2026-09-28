@@ -5,6 +5,7 @@
 #include <QOpenGLFunctions>
 #include <QPointer>
 #include <QTimer>
+#include <cmath>
 
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
@@ -50,6 +51,7 @@ void VideoSurface::close() {
     }
     playing_ = false;
     hasVideo_ = false;
+    position_ = 0.0;
     duration_ = 0.0;
     videoWidth_ = videoHeight_ = 0;
     handleState();
@@ -97,14 +99,8 @@ void VideoSurface::setSpeed(double speed) {
 }
 
 bool VideoSurface::isPlaying() const { return playing_; }
-double VideoSurface::position() const {
-    if (!mpv_ || duration_ <= 0) return 0.0;
-    try {
-        return mpv_->getNumber("time-pos");
-    } catch (const MpvError&) {
-        return 0.0;
-    }
-}
+double VideoSurface::position() const { return position_; }
+
 double VideoSurface::duration() const { return duration_; }
 int VideoSurface::videoWidth() const { return videoWidth_; }
 int VideoSurface::videoHeight() const { return videoHeight_; }
@@ -127,6 +123,9 @@ void VideoSurface::initializeGL() {
                                       Qt::QueuedConnection);
         });
         contextReady_ = true;
+        statePump_.setInterval(50);
+        connect(&statePump_, &QTimer::timeout, this, &VideoSurface::pumpEvents);
+        statePump_.start();
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         contextReady_ = false;
@@ -151,14 +150,10 @@ void VideoSurface::paintGL() {
     const uint64_t generation = render_->update();
     const bool haveFrame = framePending_ || generation != lastGeneration_;
     lastGeneration_ = generation;
-    // fbo 0 is the framebuffer Qt is already painting, which is the whole
-    // point: mpv draws into the same surface as the chrome.
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
-    // make mpv bind the window's default framebuffer instead and paint nothing.
-    // defaultFramebufferObject() is the handle mpv must draw into.
-    // The FBO is sized in device pixels, so the target rect must be too.
-    // Passing logical width()/height() makes mpv fill only the bottom-left
-    // quarter on a HiDPI display.
+    // make mpv bind the window's default framebuffer and paint nothing. The FBO
+    // is also sized in device pixels, so passing logical width()/height() fills
+    // only the bottom-left quarter on a HiDPI display.
     const qreal ratio = devicePixelRatioF();
     const int targetWidth = std::max(1, static_cast<int>(width() * ratio));
     const int targetHeight = std::max(1, static_cast<int>(height() * ratio));
@@ -177,18 +172,22 @@ void VideoSurface::pumpEvents() {
     } catch (const MpvError&) {
         return;
     }
-    bool changed = false;
     try {
         const double dur = mpv_->getNumber("duration");
         if (dur > 0 && dur != duration_) {
             duration_ = dur;
             emit durationChanged(dur);
         }
+        const double pos = mpv_->getNumber("time-pos");
+        // 10 ms is finer than any display, so this cannot look stepped.
+        if (std::abs(pos - position_) > 0.01) {
+            position_ = pos;
+            emit positionChanged(pos);
+        }
         const bool paused = mpv_->getFlag("pause");
         if (paused != playing_) {
             playing_ = !paused;
             emit playingChanged(playing_);
-            changed = true;
         }
     } catch (const MpvError&) {
         // Properties are unavailable before a file loads; that is not an error.

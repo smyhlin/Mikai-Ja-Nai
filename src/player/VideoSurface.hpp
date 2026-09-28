@@ -17,6 +17,7 @@
 #include <QOpenGLWidget>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <memory>
 
@@ -72,10 +73,16 @@ private:
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;
 
+    // mpv keeps running whether or not we repaint, so the state pump cannot
+    // live in paintGL: a paused video produces no frames, and the clock,
+    // the duration and the pause state would all freeze with the last one.
+    QTimer statePump_;
+
     bool contextReady_ = false;
     uint64_t lastGeneration_ = 0;
     bool framePending_ = false;   // set by mpv's update callback
     bool playing_ = false;
+    double position_ = 0.0;
     bool hasVideo_ = false;
     double duration_ = 0.0;
     int videoWidth_ = 0;

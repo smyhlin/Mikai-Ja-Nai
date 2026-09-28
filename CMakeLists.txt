@@ -21,12 +21,20 @@ set(PLAYER_SOURCES
   src/player/MpvHandle.cpp
   src/player/MpvRenderContext.cpp
   src/player/VideoSurface.cpp
+  src/player/ShellTheme.cpp
+  src/player/ShellWidgets.cpp
+  src/player/ShellSliders.cpp
+  src/player/PlayerShell.cpp
 )
 
 set(PLAYER_HEADERS
   src/player/MpvHandle.hpp
   src/player/MpvRenderContext.hpp
   src/player/VideoSurface.hpp
+  src/player/ShellTheme.hpp
+  src/player/ShellWidgets.hpp
+  src/player/ShellSliders.hpp
+  src/player/PlayerShell.hpp
 )
 
 # STATIC so mikai can link it into a shared module without re-exporting it.
@@ -71,3 +79,8 @@ set_target_properties(headless_pixel_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
 add_executable(widget_pixel_probe src/probes/WidgetPixelProbe.cpp)
 target_link_libraries(widget_pixel_probe PRIVATE mikai_player Qt6::Widgets)
+
+
+add_executable(shell_probe src/probes/ShellProbe.cpp)
+target_link_libraries(shell_probe PRIVATE mikai_player Qt6::Widgets)
+set_target_properties(shell_probe PROPERTIES WIN32_EXECUTABLE FALSE)
