@@ -1237,7 +1237,13 @@ class PlayerShell(QWidget):
     closeRequested = Signal()  # exit_viewer
     stateChanged = Signal(str)  # ViewerStateId
 
-    def __init__(self, parent=None, frameless: bool = True, demo_clock: bool = True):
+    def __init__(
+        self,
+        parent=None,
+        frameless: bool = True,
+        demo_clock: bool = True,
+        start_fullscreen: bool = False,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Media Lightbox · manifest 2.0.0")
         self.setMinimumSize(MIN_WINDOW)
@@ -1303,11 +1309,13 @@ class PlayerShell(QWidget):
         self._press = QPointF()
         self._press_offset = QPointF()
         self._moved = False
-        self._dragging_window = False
         self._drag_geom = QRect()
         self._drag_origin = QPoint()
         self._resizing: tuple[bool, bool, bool, bool] = (False, False, False, False)
         self._grabbed = False
+
+        if start_fullscreen:
+            self._enter_fullscreen()
 
         self._apply_state()
         self._layout()
@@ -1350,6 +1358,9 @@ class PlayerShell(QWidget):
 
     def _build_badge(self) -> None:
         self._badge = StateBadge(self)
+        # the pill is dead chrome in the app: the state panel that used to sit
+        # next to it is gone, and it is never shown again
+        self._badge.hide()
 
     def _build_chevrons(self) -> None:
         """z50 · flank navigation"""
@@ -1504,6 +1515,8 @@ class PlayerShell(QWidget):
 
     def _build_overlays(self) -> None:
         self._hud = StateHUD(self)
+        # the manifest readout duplicates the dock's numbers and is never shown
+        self._hud.hide()
         self._toast = Toast(self)
 
         # big centre play glyph for the paused state
@@ -1534,14 +1547,14 @@ class PlayerShell(QWidget):
 
         # chrome visibility matrix
         self._wc.setVisible(not hidden)
-        self._badge.setVisible(not hidden)
         self._btn_prev.setVisible(not hidden and not fs and not zoom)
         self._btn_next.setVisible(not hidden and not fs and not zoom)
         self._pill.setVisible(not hidden and not fs)
         self._dock.setVisible(not hidden)
         self._footer_l.setVisible(not hidden and not fs)
         self._footer_r.setVisible(not hidden and not fs)
-        self._hud.setVisible(not hidden and self._show_hud)
+        # the state badge and the manifest HUD are never shown: they duplicate
+        # the dock, so _build_badge/_build_overlays leave them hidden for good
         if hidden:
             self._flyout.close()
             self._keys.close()
@@ -1584,7 +1597,8 @@ class PlayerShell(QWidget):
     def _enter_fullscreen(self) -> None:
         self._fullscreen = True
         self._hud_hidden = False
-        self.showFullScreen()
+        # a child widget cannot own the screen: the hosting dialog is already
+        # full screen and only the video fit changes here
         self._btn_fs.set_icon(Icon.contract)
         self._apply_state()
         self._hide_timer.start(AUTOHIDE_MS)
@@ -1593,34 +1607,39 @@ class PlayerShell(QWidget):
     def _exit_fullscreen(self) -> None:
         self._fullscreen = False
         self._hud_hidden = False
-        self._hide_timer.stop()
-        self.showNormal()
-        self.resize(1280, 760)
+        # the host dialog owns the window geometry; leaving full screen only
+        # restores the centred preview, and the preview hides its chrome on
+        # idle too — so the countdown is rearmed, not stopped
+        self._hide_timer.start(AUTOHIDE_MS)
         self._btn_fs.set_icon(Icon.expand)
         self._apply_state()
         self.fullscreenChanged.emit(False)
 
     def _enter_auto_hidden(self) -> None:
-        if self._fullscreen and not self.underMouse():
-            self._hud_hidden = True
-            self._apply_state()
+        self._hud_hidden = True
+        self._apply_state()
 
     def _wake(self) -> None:
         if self._hud_hidden:
             self._hud_hidden = False
             self._apply_state()
-        if self._fullscreen:
-            self._hide_timer.start(AUTOHIDE_MS)
+        self._hide_timer.start(AUTOHIDE_MS)
 
     # ═════════════════════════════════════════════════════════════════
     #  LAYOUT
     # ═════════════════════════════════════════════════════════════════
 
     def _fitted(self) -> tuple[int, int]:
-        pad = 0 if self._fullscreen else FRAME_MARGIN
-        chrome_h = 0 if self._fullscreen else 150
-        vw = max(160, self.width() - 2 * (pad + 24))
-        vh = max(100, self.height() - chrome_h)
+        if self._fullscreen:
+            # full screen is edge to edge: the video letterboxes to the window
+            # and anything left over is genuine aspect-ratio space, not a 24 px
+            # design inset left from the preview fit
+            vw, vh = self.width(), self.height()
+        else:
+            pad = FRAME_MARGIN
+            chrome_h = 150
+            vw = max(160, self.width() - 2 * (pad + 24))
+            vh = max(100, self.height() - chrome_h)
         if vw / vh > self._aspect:
             return int(vh * self._aspect), int(vh)
         return int(vw), int(vw / self._aspect)
@@ -2026,26 +2045,14 @@ class PlayerShell(QWidget):
             self._grab()
             return
 
-        if self._frameless and self._scale <= 1.001 and self._over_backdrop(e.position()):
-            self._dragging_window = True
-            self._drag_geom = self.geometry()
-            self._drag_origin = e.globalPosition().toPoint()
-            self._grab()
-            return
-
         self._press = QPointF(e.position())
         self._press_offset = QPointF(self._offset)
         self._moved = False
         self._panning = False
         self._grab()
 
-    def _over_backdrop(self, pos: QPointF) -> bool:
-        g = self._surface.geometry()
-        return not g.contains(pos.toPoint())
-
     def mouseMoveEvent(self, e) -> None:
-        if self._fullscreen:
-            self._wake()
+        self._wake()
 
         # ── frameless resize ────────────────────────────────────────
         if any(self._resizing):
@@ -2065,12 +2072,6 @@ class PlayerShell(QWidget):
                 )
                 g.setTop(ny)
             self.setGeometry(g)
-            return
-
-        # ── window move ─────────────────────────────────────────────
-        if self._dragging_window:
-            d = e.globalPosition().toPoint() - self._drag_origin
-            self.move(self._drag_geom.topLeft() + d)
             return
 
         # ── edge cursor feedback (never clobbers the state cursor) ──
@@ -2121,10 +2122,6 @@ class PlayerShell(QWidget):
         self._release()
         if any(self._resizing):
             self._resizing = (False, False, False, False)
-            self._set_state_cursor()
-            return
-        if self._dragging_window:
-            self._dragging_window = False
             self._set_state_cursor()
             return
         was_panning = self._panning
@@ -2234,6 +2231,7 @@ class PlayerShell(QWidget):
         super().showEvent(e)
         self._apply_state()
         self._layout()
+        self._hide_timer.start(AUTOHIDE_MS)
         self._refresh_timer.start()
         if self._demo and self._playing:
             self._demo_timer.start()
@@ -2242,7 +2240,6 @@ class PlayerShell(QWidget):
         self._release()
         self._panning = False
         self._resizing = (False, False, False, False)
-        self._dragging_window = False
         self._demo_timer.stop()
         self._refresh_timer.stop()
         self._hide_timer.stop()

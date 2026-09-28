@@ -329,13 +329,10 @@ def test_the_float_seeks_with_the_arrow_keys(app):
     pip.close()
 
 
-def test_the_float_stays_put_and_a_click_does_not_toggle_play(app):
-    """A float that is mostly picture is watched, not grabbed.
-
-    It used to be moved by holding the picture, and the drag was the only way
-    to reposition it. Only the float is a movable window now, and a mis-aimed
-    grab that flings it across the screen is worse than one that stays put.
-    """
+def test_the_float_toggles_on_a_click_and_moves_on_a_drag(app):
+    """Telegram-style float: the picture is the big play/pause button, and a
+    held drag moves the window (both in screen coordinates, so the drag is
+    smooth no matter which child receives the event)."""
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtWidgets import QWidget
 
@@ -363,20 +360,20 @@ def test_the_float_stays_put_and_a_click_does_not_toggle_play(app):
     app.processEvents()
     toggled = []
     pip.togglePlayRequested.connect(lambda: toggled.append(True))
+    overlay = pip._overlay
+
+    QTest.mouseClick(overlay, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    app.processEvents()
+    assert toggled == [True], "a click on the picture is play/pause"
 
     before = pip.pos()
-    QTest.mouseClick(video, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
-    app.processEvents()
-    assert toggled == [], "a click on the picture must not toggle playback"
-
-    # a long held drag across the surface, the thing that used to move it
-    QTest.mousePress(video, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
     for step in range(1, 12):
-        QTest.mouseMove(video, QPoint(100 + step * 40, 100 + step * 10))
+        QTest.mouseMove(overlay, QPoint(100 + step * 40, 100 + step * 10))
         app.processEvents()
-    QTest.mouseRelease(video, Qt.MouseButton.LeftButton, pos=QPoint(540, 210))
+    QTest.mouseRelease(overlay, Qt.MouseButton.LeftButton, pos=QPoint(540, 210))
     app.processEvents()
-    assert pip.pos() == before, "the float must not move when the picture is dragged"
-    assert toggled == [], "a drag is not a playback command either"
+    assert pip.pos() != before, "a held drag moves the float"
+    assert toggled == [True], "a drag is not a play/pause command"
     pip.close()
     app.processEvents()

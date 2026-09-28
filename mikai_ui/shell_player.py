@@ -32,7 +32,6 @@ from mikai_ui.media_shell import (
     STATE_FULLSCREEN_ACTIVE,
     STATE_FULLSCREEN_AUTO_HIDDEN,
     PlayerShell,
-    fmt_time,
 )
 from mikai_ui.mpv_backend import MPVAdapter
 from mikai_ui.pip_window import PipWindow
@@ -588,39 +587,39 @@ class ShellPlayerDialog(QDialog):
     def _on_shell_state(self, state: str) -> None:
         if self._closed:
             return
-        # the state drives CHROME only. It used to drive the window as well, so
-        # zooming — which is not a full-screen state — dropped the player into
-        # a movable window in the middle of playback.
         fullscreen = state in FULLSCREEN_STATES
         if fullscreen != self._fullscreen:
             self._fullscreen = fullscreen
         if fullscreen:
             self._quality_popup.close()
             self._track_popup.close()
-        # The strip and the drawer follow their own state, not the window's.
-        # They used to hide whenever the picture was full screen, which was a
-        # rule for a player that could also be a window: now that full screen
-        # is the only mode, that rule hid the three features permanently.
-        self._series.setVisible(self._series_expanded)
-        self._strip.setVisible(True)
+        # The shell hides ALL its chrome after an idle moment (the auto-hide
+        # now runs in the preview too), and these dialogs-owned panels ride
+        # along: a strip floating over a blank screen is a stray panel.
+        hidden = state == STATE_FULLSCREEN_AUTO_HIDDEN
+        if hidden:
+            self._series.setVisible(False)
+            self._strip.setVisible(False)
+            self._status.hide()
+        else:
+            self._strip.setVisible(True)
+            self._series.setVisible(self._series_expanded)
+            self._sync_status_visibility()
         self._layout_panels()
 
     def _on_shell_fullscreen(self, fullscreen: bool) -> None:
-        """The player has no windowed mode; the float is the movable window.
+        """The video-fit toggle. The lightbox window is full screen either way.
 
-        Anything that would drop the player out of full screen — F, F11, Esc,
-        the dock's fullscreen control — lands here and is undone.
+        F, F11, Esc and the dock's fullscreen control switch the VIDEO between
+        the centred preview and a full screen, and this handler only has to
+        agree: the window never leaves full screen, so there is nothing to undo.
         """
         if self._closed:
             return
-        if not fullscreen:
-            self._shell._enter_fullscreen()
-        self._sync_window_fullscreen()
 
     def _sync_window_fullscreen(self) -> None:
-        """The shell is a child widget, so its own showFullScreen() is a no-op:
-        the window itself is what has to go full screen."""
-        if self.pip_active:
+        """The lightbox: the window is what fills the screen."""
+        if self.pip_active or self.isFullScreen():
             return
         self.showFullScreen()
 
@@ -881,6 +880,20 @@ class ShellPlayerDialog(QDialog):
 
     # ── status ─────────────────────────────────────────────────────────
 
+    def _sync_status_visibility(self) -> None:
+        """Bring the status back after the auto-hide lifted.
+
+        A flashing toast that was still on screen when the chrome hid has to
+        reappear with the chrome; one that already retired stays retired.
+        """
+        if self._closed or not shiboken6.isValid(self._status):
+            return
+        if self._error_active:
+            self._status.show()
+        elif self._status_timer.isActive():
+            self._status.show()
+            self._status_timer.start(STATUS_MS)
+
     def _flash_status(self, message: str) -> None:
         if self._closed or not shiboken6.isValid(self._status):
             return
@@ -946,8 +959,10 @@ class ShellPlayerDialog(QDialog):
         self._shell.show()
         self._shell.setFocus(Qt.FocusReason.OtherFocusReason)
         self._layout_panels()
-        # opened full screen and stays that way
-        self._shell._enter_fullscreen()
+        # the lightbox fills the screen; the video itself starts as the centred
+        # preview and goes full screen when the user asks (F, the dock button)
+        if not self.isFullScreen():
+            self.showFullScreen()
 
     def _layout_panels(self) -> None:
         area = self._shell.geometry()
@@ -1000,6 +1015,10 @@ class ShellPlayerDialog(QDialog):
         window.seekRequested.connect(
             lambda delta: self._controller.seek(self._controller.state.position + delta)
         )
+        window.seekAbsoluteRequested.connect(self._controller.seek)
+        window.volumeChanged.connect(lambda value: self._controller.set_volume(round(value * 100)))
+        window.muteChanged.connect(self._controller.toggle_mute)
+        window.restoreRequested.connect(self._leave_pip)
         window.closeRequested.connect(self._leave_pip)
         window.set_video(self._shell.video_surface())
         window.resize(PIP_DEFAULT_WIDTH, PIP_DEFAULT_HEIGHT)
@@ -1047,8 +1066,9 @@ class ShellPlayerDialog(QDialog):
             return
         pip = self._pip
         pip.set_playing(state.status in PLAYING_STATES)
-        duration = fmt_time(state.duration) if state.duration > 0 else "--:--"
-        pip.set_time_text(f"{fmt_time(state.position)} / {duration}")
+        pip.set_time(state.position, state.duration)
+        pip.set_volume(state.volume / 100)
+        pip.set_muted(state.muted)
 
     # ── shell extras ───────────────────────────────────────────────────
 

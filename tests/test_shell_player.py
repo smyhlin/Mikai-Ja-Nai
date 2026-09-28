@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QPushButton
 
 from conftest import FakeMpvAdapter
 
-from mikai_ui.media_shell import STATE_FULLSCREEN_ACTIVE
+from mikai_ui.media_shell import STATE_DEFAULT_FIT, STATE_FULLSCREEN_ACTIVE
 from mikai_ui.player_controller import PlaybackStatus
 from mikai_ui.shell_player import SHELL_RATE_MAX, ShellPlayerDialog
 
@@ -245,15 +245,20 @@ def test_the_episode_drawer_survives_the_fullscreen_player(app, player) -> None:
     assert not player._series.isVisible()
 
 
-def test_the_player_will_not_leave_fullscreen(app, player) -> None:
-    """A movable window is the float's job; the player is a full-screen surface."""
-    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE
-    assert player.isFullScreen()
+def test_the_lightbox_opens_with_the_preview_and_F_toggles_the_video(app, player) -> None:
+    """The window fills the screen, the video does not: it starts as the
+    centred preview and F is the toggle that makes it fill the screen instead."""
+    assert player.isFullScreen(), "the lightbox window covers the screen"
+    assert player._shell.state() == STATE_DEFAULT_FIT, "the video opens as the preview"
 
     _key(app, player._shell, Qt.Key.Key_F)
     app.processEvents()
-    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, "F tried to drop out of full screen"
-    assert player.isFullScreen()
+    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, "F expands the video"
+    assert player.isFullScreen(), "the window stays full screen either way"
+
+    _key(app, player._shell, Qt.Key.Key_F)
+    app.processEvents()
+    assert player._shell.state() == STATE_DEFAULT_FIT, "F returns the video to the preview"
 
 
 # --- the dub/sub popover ---
