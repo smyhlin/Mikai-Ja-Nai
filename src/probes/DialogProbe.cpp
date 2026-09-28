@@ -41,10 +41,12 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
     static StubHost host;
-    const QList<QualityEntry> qualities = {{720, QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25")}};
-    auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"),
-                                    QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"),
-                                    qualities, 720, &host);
+    // A real URL can be handed in to check the mpv HTTP options against a live
+    // CDN; the lavfi pattern is the default because it needs no network.
+    const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
+                                 : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
+    const QList<QualityEntry> qualities = {{720, url}};
+    auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
     // Two tracks, so the track chip has to appear; the drawer needs a playlist.
     dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
                                      {"embed", QStringLiteral("e1")},
@@ -88,6 +90,7 @@ int main(int argc, char** argv) {
                          shell->width(), shell->height(), surface->width(),
                          surface->height(), surface->x(), surface->y());
             const QImage gl = surface->grabFramebuffer();
+            gl.save(QStringLiteral("dialog_gl.png"));
             long lit = 0, total = 0;
             for (int y = 0; y < gl.height(); y += 2) {
                 for (int x = 0; x < gl.width(); x += 2) {

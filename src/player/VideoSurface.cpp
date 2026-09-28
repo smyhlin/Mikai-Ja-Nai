@@ -184,7 +184,10 @@ void VideoSurface::initializeGL() {
         auto gl = std::make_shared<GlApi>(loadGlApi());
         ensureEngine();
         render_ = std::make_unique<MpvRenderContext>(*mpv_, *gl);
-        render_->setFlipY(false);
+        // mpv draws with the origin at the bottom-left; Qt composites the
+        // QOpenGLWidget's framebuffer from the top-left. Without this the picture
+        // is upside down - which a non-black pixel check happily passes.
+        render_->setFlipY(true);
         render_->setUpdateCallback([this] {
             // Fires on an mpv thread. Hop to the GUI thread rather than
             // touching the widget from here.

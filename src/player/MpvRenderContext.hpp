@@ -102,6 +102,9 @@ public:
     void setFlipY(bool flip);
 
 private:
+    /// 1 to flip, 0 not. Always passed per-render; never read back from mpv.
+    int flipY_ = 1;
+
     static void* sGetProc(void* ctx, const char* name);
     static void sUpdate(void* ctx);
 

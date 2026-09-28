@@ -1587,6 +1587,40 @@ def test_no_source_click_is_cached_negatively(fake_window, app, monkeypatch):
     app.processEvents()
 
 
+def test_opening_an_episode_builds_a_player_process(fake_window, app, monkeypatch):
+    """The title page hands the episode to a player process.
+
+    Only the wiring: that an episode click reaches PlayerProcess with the
+    fetched qualities. The process boundary itself is owned by
+    tests/test_player_process.py, and the spawn is stubbed here so the suite
+    does not need the C++ player built.
+    """
+    from conftest import live_players
+    from mikai_ui import player_process
+
+    stream = "av://lavfi:testsrc2=size=1280x720:rate=25"
+    monkeypatch.setattr(
+        "mikai_ui.title_page.streams.get_quality_streams", lambda _url: {720: stream}
+    )
+    # the real one can reach the network when the runtime is not provisioned
+    monkeypatch.setattr("mikai_ui.title_page.prepare_runtime", lambda: None)
+    spawned: list[object] = []
+    monkeypatch.setattr(player_process.PlayerProcess, "start", lambda self: spawned.append(self))
+
+    title = open_fake_title(fake_window, app)
+    QTest.mouseClick(tab_chips(title)[0], Qt.MouseButton.LeftButton)
+    app.processEvents()
+
+    assert pump_until(app, lambda: len(live_players()) == 1), "no player was built"
+    player = live_players()[0]
+    assert player.current_height == 720
+    # show() is what spawns, and it ran, but the spawn itself was stubbed
+    assert pump_until(app, lambda: len(spawned) == 1), "the player was never shown"
+
+    title.shutdown()
+    app.processEvents()
+
+
 def test_strict_player_tab_isolation(fake_window, app, monkeypatch):
     monkeypatch.setattr("mikai_ui.title_page.streams.get_quality_streams", lambda url: {})
     title = open_fake_title(fake_window, app)

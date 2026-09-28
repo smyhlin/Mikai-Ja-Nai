@@ -137,11 +137,10 @@ void MpvRenderContext::setUpdateCallback(std::function<void()> fn) {
 }
 
 void MpvRenderContext::setFlipY(bool flip) {
-    if (ctx_ == nullptr) return;
-    // This build takes a whole mpv_render_param, not the old (type, data) pair.
-    const char* value = flip ? "yes" : "no";
-    mpv_render_context_set_parameter(ctx_, mpv_render_param{MPV_RENDER_PARAM_FLIP_Y,
-                                                           const_cast<char*>(value)});
+    // MPV_RENDER_PARAM_FLIP_Y is an int, not the "yes"/"no" string it reads like.
+    // Passing a char* here left mpv reading a pointer as a flag, and the flip
+    // silently never applied.
+    flipY_ = flip ? 1 : 0;
 }
 
 uint64_t MpvRenderContext::update() {
@@ -162,13 +161,12 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat)
     target.h = height;
     target.internal_format = internalFormat;
 
-    int flipY = 0;
-    mpv_render_context_get_info(ctx_, mpv_render_param{MPV_RENDER_PARAM_FLIP_Y, &flipY});
-
     mpv_opengl_fbo* fbos[2] = {&target, nullptr};
+    // The requested value, not get_info(): reading it back returns whatever mpv
+    // currently holds and discards what the caller asked for.
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, fbos[0]},
-        {MPV_RENDER_PARAM_FLIP_Y, &flipY},
+        {MPV_RENDER_PARAM_FLIP_Y, &flipY_},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
     return mpv_render_context_render(ctx_, params);

@@ -1,60 +1,65 @@
-"""Live end-to-end test of the player process boundary.
+"""The player process boundary.
 
 The player is a separate executable driven over JSON on stdin/stdout, because
-PySide6 and the C++ Qt are separate builds whose Qt6Core.dll collides by DLL
-name. Nothing else in the suite crosses that boundary: the hermetic tests stop
-at the title page and the live tests never open a player.
+PySide6 and the C++ Qt are separate builds whose Qt6Core.dll / Qt6Gui.dll /
+Qt6Widgets.dll collide by DLL name: a player DLL fails to import with
+WinError 127. Nothing else in the suite crosses that boundary, and a player that
+starts but cannot talk looks exactly like a black window, so it is worth pinning.
 
-What this pins is the part most likely to rot silently - spawn, config parse,
-command round trip and clean exit - by asserting the child exits normally after
-the host closes it. A player that starts but cannot talk is exactly the failure
-the boundary introduces, and it looks like "the window is just black".
+This drives PlayerProcess directly rather than through the title page. The click
+chain is heavy - network, several thread pools - and hanging the boundary's
+correctness off it made this test fail about one run in six at the spawn wait,
+for reasons that had nothing to do with the boundary. The wiring is asserted
+separately and hermetically in test_units.py.
 """
 
 from __future__ import annotations
 
 import pytest
-from conftest import live_players, pump_until, tab_chips
-from PySide6.QtCore import QProcess, Qt
-from PySide6.QtTest import QTest
+from conftest import pump_until
+from PySide6.QtCore import QProcess
 
-from test_app import open_title_for, release_index
+from mikai_ui.player_process import PlayerProcess, find_player_exe
+
+TEST_STREAM = "av://lavfi:testsrc2=size=1280x720:rate=25"
 
 
-def test_opening_an_episode_spawns_a_player_that_exits_cleanly(window, app):
-    title = open_title_for(window, app, "Чорний смолоскип")
-    title._selector.setCurrentIndex(release_index(title, "Озвучення", "Рідний Голос"))
-    app.processEvents()
+@pytest.fixture
+def player(app):
+    """A real player child, torn down even when the assertions fail."""
+    if find_player_exe() is None:
+        pytest.skip("mikai-player.exe is not built; see CMakeLists.txt")
+    process = PlayerProcess("boundary", TEST_STREAM, {720: TEST_STREAM}, 720)
+    yield process
+    process.close()
 
-    buttons = tab_chips(title)
-    assert buttons, "expected episode buttons in the dub release"
 
-    QTest.mouseClick(buttons[0], Qt.MouseButton.LeftButton)
+def test_the_child_answers_a_command_and_exits_cleanly(player, app):
+    player.start()
+    assert pump_until(app, lambda: player.process is not None, timeout=30.0), "never started"
 
-    # Real extraction runs here, then the spawn itself waits on the libmpv
-    # runtime check, so neither step is instant.
-    assert pump_until(app, lambda: len(live_players()) > 0, timeout=60.0), (
-        "no player process was spawned"
-    )
-    player = live_players()[-1]
-    assert pump_until(app, lambda: player.process is not None, timeout=60.0), (
-        "the player never started"
-    )
-    process = player.process
-    assert process.state() == QProcess.ProcessState.Running, "player exited immediately"
+    child = player.process
+    assert child.state() == QProcess.ProcessState.Running, "child exited at once"
 
     exits: list[tuple[int, QProcess.ExitStatus]] = []
-    process.finished.connect(lambda code, status: exits.append((code, status)))
+    child.finished.connect(lambda code, status: exits.append((code, status)))
+
+    # The round trip. current_height is set from the launch config too, so zero it
+    # first: only the child's own answer can bring it back, and the value it
+    # reports is one the Python side already sent it.
+    player._current_height = 0
+    player.query_quality()
+    assert pump_until(app, lambda: player.current_height == 720, timeout=30.0), (
+        f"child never answered; height={player.current_height} state={child.state()}"
+    )
 
     player.close()
-    assert pump_until(app, lambda: bool(exits), timeout=30.0), "player did not exit"
+    assert pump_until(app, lambda: bool(exits), timeout=30.0), "child did not exit"
 
     code, status = exits[0]
-    # A clean exit is the round trip: the command reached the child, the child
-    # tore itself down and its stdin reader stopped. A crash here would mean the
-    # reader thread or the GL teardown faulted, which is what the first port did.
-    assert status == QProcess.ExitStatus.NormalExit, f"player crashed (code {code})"
-    assert code == 0, f"player exited with {code}"
-
-    title.shutdown()
-    app.processEvents()
+    # A clean exit is the rest of the round trip: the close command arrived, the
+    # child tore itself down, and nothing faulted on the way out. The first
+    # attempt at this port crashed here with 0xC0000005, because the stdin reader
+    # was a thread parked in fgets and stopping it held the CRT's stdin lock.
+    assert status == QProcess.ExitStatus.NormalExit, f"child crashed (code {code})"
+    assert code == 0, f"child exited with {code}"
