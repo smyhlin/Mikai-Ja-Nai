@@ -27,3 +27,4 @@ _*.png
 _ui_geometry.json
 _grab_*.png
 _*.log
+build-cmake/
