@@ -338,6 +338,24 @@ class PlayerController(QObject):
             self._adapter.set_speed(value)
         self._set_state(speed=value)
 
+    def apply_canvas(self, zoom: float, pan_x: float, pan_y: float) -> None:
+        """Hand the view machine's transform to mpv.
+
+        The values go out exactly as given: the machine owns the limits, and
+        clamping them again here would desynchronise the picture from the
+        gesture that produced it. A transform that cannot be written is a lost
+        frame of panning, not a playback failure, so it is logged and dropped.
+        """
+        if self._adapter is None or self._closed:
+            return
+        try:
+            self._adapter.set_canvas(float(zoom), float(pan_x), float(pan_y))
+        except Exception:
+            log.exception("failed to apply canvas transform")
+
+    def reset_canvas(self) -> None:
+        self.apply_canvas(1.0, 0.0, 0.0)
+
     def set_quality(self, height: int) -> None:
         url = self._qualities.get(int(height))
         if not url:

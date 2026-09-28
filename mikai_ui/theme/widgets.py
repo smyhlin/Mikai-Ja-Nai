@@ -50,6 +50,10 @@ _ICONS = {
         '<line x1="22" x2="16" y1="9" y2="15"/>'
         '<line x1="16" x2="22" y1="9" y2="15"/>'
     ),
+    "pip": (
+        '<path d="M21 9V6a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/>'
+        '<rect width="10" height="7" x="12" y="13" rx="2"/>'
+    ),
     "fullscreen": (
         '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>'
         '<line x1="21" x2="14" y1="3" y2="10"/>'

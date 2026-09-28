@@ -276,6 +276,29 @@ def test_recent_poster_lookup_runs_once_per_ref(fake_window, app):
     assert repository.anime_lookups.count("recent-only") == 1, repository.anime_lookups
 
 
+def test_the_cover_overlay_fills_the_screen_not_a_fixed_corner(app, fake_window):
+    """Regression: setGeometry was given parent-widget coordinates, which a
+    top-level window reads as screen coordinates, so the overlay pinned itself to
+    the screen origin at the app's size instead of covering the display."""
+
+    fake_window.show()
+    app.processEvents()
+    title = open_fake_title(fake_window, app)
+    try:
+        title._cover_pixmap = QPixmap(200, 300)
+        title._cover_pixmap.fill(Qt.GlobalColor.darkGray)
+        title._cover.activated.emit()
+        app.processEvents()
+        viewer = title._cover_viewer
+        assert viewer is not None
+        area = fake_window.screen().availableGeometry()
+        assert viewer.size().width() >= area.width(), (viewer.size(), area.size())
+        assert viewer.size().height() >= area.height(), (viewer.size(), area.size())
+    finally:
+        title.shutdown()
+        app.processEvents()
+
+
 def test_the_blurred_backdrop_keeps_the_picture_instead_of_erasing_it(app):
     """Regression: the dim was applied with QPixmap.fill, which rewrites alpha too,
     so the overlay sat on flat black and the whole blur was thrown away."""
@@ -325,8 +348,10 @@ def test_the_cover_opens_a_chromeless_overlay_that_a_backdrop_click_dismisses(fa
         assert viewer.windowFlags() & Qt.WindowType.FramelessWindowHint
         # no bar, no buttons: the picture is the only thing on screen
         assert viewer.findChildren(QPushButton) == []
-        # it covers the app it sits on, not a floating taskbar-sized window
-        assert viewer.geometry().size() == fake_window.size()
+        # it covers the whole screen, not a floating taskbar-sized window
+        area = fake_window.screen().availableGeometry()
+        assert viewer.width() >= area.width(), (viewer.size(), area.size())
+        assert viewer.height() >= area.height(), (viewer.size(), area.size())
         assert not viewer._view._backdrop.isNull(), "a blurred copy backs the image"
 
         view = viewer._view
@@ -668,15 +693,6 @@ def test_player_dialog_controls(app):
     ]
     assert dlg._quality_picker.currentText() == "720p"
     assert not dlg._quality_picker.isEnabled()
-    assert [dlg._speed_combo.itemText(i) for i in range(dlg._speed_combo.count())] == [
-        "0.5×",
-        "0.75×",
-        "1×",
-        "1.25×",
-        "1.5×",
-        "2×",
-    ]
-    assert dlg._speed_combo.currentText() == "1×"
     assert dlg._time_label.text() == "0:00 / --:--"
     assert dlg._vol_slider.value() == 100
     assert not dlg._pause_btn.isEnabled()
@@ -693,7 +709,9 @@ def test_player_dialog_controls(app):
     # The mpv surface is a native window: any widget spanning it is composited on
     # top and hides the video, so nothing may overlap the video surface.
     assert dlg._video.parent() is dlg._stage
-    assert dlg._chrome.parent() is dlg._stage
+    # the bar floats in a wrapper, but it must still live in the stage's layout
+    # rather than spanning the native video surface
+    assert dlg._stage.isAncestorOf(dlg._chrome)
     assert not dlg._overlay.isVisible()
     assert dlg._video.width() > 0 and dlg._video.height() > 0
     for child in dlg._stage.children():
@@ -1361,6 +1379,42 @@ def test_search_pager_scrolls_a_window_of_chips(app):
         window.close()
         window.deleteLater()
         app.processEvents()
+
+
+def test_home_posters_download_at_the_same_time_not_one_after_another(app, monkeypatch):
+    """Sixty poster downloads used to be one serial loop inside a single task,
+    so the page waited on every image in turn.
+
+    Artwork goes through run_image on its own wide pool; the per-title detail
+    fan-out goes through run_bulk, paced by the client's rate limiter, which
+    images never touch. The proof is how many were ever in flight at once.
+    """
+    import threading
+
+    from mikai_ui.main import MainWindow
+
+    repository = FakeRepository()
+    lock = threading.Lock()
+    live = {"now": 0, "peak": 0}
+
+    def slow_fetch(self, url: str) -> bytes:
+        with lock:
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+        time.sleep(0.05)
+        with lock:
+            live["now"] -= 1
+        return self.images[url]
+
+    monkeypatch.setattr(FakeRepository, "fetch_bytes", slow_fetch)
+    window = MainWindow(repository)
+    window.show()
+    app.processEvents()
+    window._runner.wait_for_done(20000)
+    app.processEvents()
+    assert live["peak"] > 1, f"posters never overlapped, peak concurrency {live['peak']}"
+    window.close()
+    app.processEvents()
 
 
 def test_home_feed_renders_recent_updates_and_schedule(app):
@@ -2118,7 +2172,6 @@ def test_a_release_numbered_from_110_labels_its_chips_with_real_numbers(
         assert pump_until(app, lambda: title._selector.count() == 2)
         title._selector.setCurrentIndex(0)
         app.processEvents()
-        state = title._tab_states[0]
         _, chips, _ = pagination_controls(title)
         labels = [c.text() for c in chips]
         assert labels[0] == "110 – 249", labels

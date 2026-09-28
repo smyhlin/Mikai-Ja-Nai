@@ -383,6 +383,8 @@ def test_stylesheet_uses_only_properties_qt_understands(app):
         "border-bottom",
         "border-color",
         "border-left",
+        "border-bottom-left-radius",
+        "border-bottom-right-radius",
         "border-radius",
         "border-top",
         "border-top-left-radius",
@@ -899,6 +901,240 @@ def test_controls_stay_up_while_a_menu_is_open(app):
     app.processEvents()
 
 
+def test_picture_in_picture_moves_the_same_video_into_a_borderless_float(app):
+    """One decoder, one position: the float reparents the existing video widget
+    rather than opening a second mpv instance, so playback never restarts."""
+    from PySide6.QtCore import Qt
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    video = dialog._video
+
+    assert not dialog.pip_active
+    dialog.toggle_pip()
+    app.processEvents()
+
+    assert dialog.pip_active
+    assert dialog._pip.isAncestorOf(video), "the video must live in the float"
+    assert video is dialog._video, "the same widget, so the same mpv surface"
+    # the float is deliberately frameless: a caption bar would make it a second
+    # window pretending to be a picture-in-picture. It carries its own play/pause
+    # control instead.
+    flags = dialog._pip.windowFlags()
+    assert flags & Qt.WindowType.Tool
+    assert flags & Qt.WindowType.WindowStaysOnTopHint
+    assert flags & Qt.WindowType.FramelessWindowHint
+    assert dialog._pip._play_button.isVisible()
+
+    dialog.toggle_pip()
+    app.processEvents()
+    assert not dialog.pip_active
+    assert video.parentWidget() is dialog._stage
+    dialog.close()
+    app.processEvents()
+
+
+def test_the_float_is_parentless_so_it_can_rise_above_other_apps(app):
+    """A float parented to the player is clipped to the player's z-order, so it
+    slides UNDER whatever the user switches to."""
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    dialog.toggle_pip()
+    app.processEvents()
+    assert dialog.pip_active
+    assert dialog._pip.parentWidget() is None, "the float must be an independent window"
+    assert dialog._pip.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    dialog.close()
+    app.processEvents()
+
+
+def test_the_float_has_its_own_play_pause_and_no_caption(app):
+    from mikai_ui.pip_window import PipWindow
+
+    pip = PipWindow()
+    assert pip.windowFlags() & Qt.WindowType.FramelessWindowHint
+    # the bar carries play/pause and a close; there is no header
+    toggled = []
+    pip.togglePlayRequested.connect(lambda: toggled.append(True))
+    pip._play_button.click()
+    assert toggled == [True]
+    pip.set_playing(False)
+    assert "Продовжити" in pip._play_button.toolTip()
+    pip.set_playing(True)
+    assert "Пауза" in pip._play_button.toolTip()
+    pip.close()
+
+
+def test_the_float_seeks_with_the_arrow_keys(app):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    from mikai_ui.pip_window import SEEK_STEP_SECONDS, PipWindow
+
+    pip = PipWindow()
+    seeks = []
+    pip.seekRequested.connect(seeks.append)
+    for key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+        pip.keyPressEvent(
+            QKeyEvent(
+                QEvent.Type.KeyPress,
+                key,
+                Qt.KeyboardModifier.NoModifier,
+                text="",
+            )
+        )
+    assert seeks == [-SEEK_STEP_SECONDS, SEEK_STEP_SECONDS], seeks
+    pip.close()
+
+
+def test_clicking_the_picture_does_not_toggle_play_but_dragging_moves_the_float(app):
+    """In a float that is mostly picture, a click means "grab", not "toggle".
+
+    The events are routed by Qt onto the real video surface, because a direct
+    call to the filter would pass even when the drag could never fire.
+    """
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QWidget
+
+    from mikai_ui.pip_window import PipWindow
+
+    class NativeVideo(QWidget):
+        """Stands in for the mpv surface: a native child window swallows its
+        mouse events instead of letting them propagate to the parent."""
+
+        def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt naming
+            event.accept()
+
+        def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt naming
+            event.accept()
+
+        def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt naming
+            event.accept()
+
+    pip = PipWindow()
+    pip.resize(480, 270)
+    video = NativeVideo()
+    pip.set_video(video)
+    pip.show()
+    app.processEvents()
+    toggled = []
+    pip.togglePlayRequested.connect(lambda: toggled.append(True))
+
+    pip.move(QPoint(200, 150))
+    before = pip.pos()
+    QTest.mouseClick(video, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    app.processEvents()
+    assert toggled == [], "a click on the picture must not toggle playback"
+    assert pip.pos() == before, "a click without movement must not move the float"
+
+    QTest.mousePress(video, Qt.MouseButton.LeftButton, pos=QPoint(100, 100))
+    QTest.mouseMove(video, QPoint(160, 130))
+    QTest.mouseRelease(video, Qt.MouseButton.LeftButton, pos=QPoint(160, 130))
+    app.processEvents()
+    assert pip.pos() != before, "a held drag on the picture must move the window"
+    pip.close()
+
+
+def test_the_main_player_is_hidden_while_the_float_is_up(app):
+    """The video lives in the float, so leaving the player on screen would show
+    nothing but an empty black stage."""
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    assert dialog.isVisible()
+
+    dialog.toggle_pip()
+    app.processEvents()
+    assert not dialog.isVisible(), "the main player must vanish during PiP"
+    assert dialog._pip.isVisible()
+
+    dialog.toggle_pip()
+    app.processEvents()
+    assert dialog.isVisible(), "and come back when the float closes"
+    dialog.close()
+    app.processEvents()
+
+
+def test_closing_the_float_returns_the_video_to_the_player(app):
+    """The float's own close button must not strand the video in a hidden window."""
+    import shiboken6
+    from PySide6.QtTest import QTest
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    video = dialog._video
+    dialog.toggle_pip()
+    app.processEvents()
+    assert dialog._pip.isAncestorOf(video)
+
+    dialog._pip.close()
+    QTest.qWait(50)
+    app.processEvents()
+    assert shiboken6.isValid(video)
+    assert video.parentWidget() is dialog._stage, "the video must come home"
+    assert not dialog.pip_active
+    dialog.close()
+    app.processEvents()
+
+
+def test_escape_leaves_the_float_before_touching_fullscreen(app):
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    dialog.toggle_pip()
+    app.processEvents()
+    assert dialog.pip_active
+
+    dialog._escape()
+    app.processEvents()
+    assert not dialog.pip_active, "Esc undoes one thing: the float, not fullscreen"
+    dialog.close()
+    app.processEvents()
+
+
+def test_double_clicking_the_float_returns_to_the_window(app):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    from mikai_ui.player_dialog import PlayerDialog
+
+    dialog = PlayerDialog("Серія 1", "https://s.example/720.m3u8")
+    dialog.show()
+    app.processEvents()
+    dialog.toggle_pip()
+    app.processEvents()
+    assert dialog.pip_active
+
+    dialog.eventFilter(
+        dialog._pip,
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            QPointF(10, 10),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    app.processEvents()
+    assert not dialog.pip_active
+    dialog.close()
+    app.processEvents()
+
+
 def test_hiding_the_controls_does_not_resize_the_video_surface(app):
     """The controls share a layout with the native mpv surface, so animating
     their height resized the video window on every animation frame and stuttered."""
@@ -911,11 +1147,11 @@ def test_hiding_the_controls_does_not_resize_the_video_surface(app):
     dialog._overlay.show_controls()
     app.processEvents()
 
-    resizes: list[int] = []
+    sizes: list[tuple[int, int]] = []
     original = dialog._video.resizeEvent
 
     def counting(event):
-        resizes.append(1)
+        sizes.append((dialog._video.width(), dialog._video.height()))
         original(event)
 
     dialog._video.resizeEvent = counting
@@ -924,7 +1160,10 @@ def test_hiding_the_controls_does_not_resize_the_video_surface(app):
     app.processEvents()
 
     assert not dialog._controls.isVisible()
-    assert len(resizes) <= 1, f"video resized {len(resizes)} times while hiding"
+    distinct = set(sizes)
+    assert len(distinct) <= 2, (
+        f"video walked through {len(distinct)} sizes while hiding: {distinct}"
+    )
     dialog.close()
     app.processEvents()
 
@@ -999,10 +1238,24 @@ def test_player_shortcuts_fullscreen_and_state_update(app):
     QTest.keyClick(dialog, Qt.Key.Key_F)
     app.processEvents()
     assert not dialog.isFullScreen()
-    QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    # double click magnifies the picture; fullscreen stays on F
+    QTest.mouseDClick(dialog._video, Qt.MouseButton.LeftButton)
+    app.processEvents()
+    assert abs(dialog._view.scale - 2.2) < 1e-6, dialog._view.scale
     assert not dialog.isFullScreen()
-    QTest.mouseDClick(dialog._overlay, Qt.MouseButton.LeftButton)
+    dialog._view.reset_canvas()
+    app.processEvents()
+
+    # Esc unwinds one step at a time: fullscreen first, then the player itself
+    QTest.keyClick(dialog, Qt.Key.Key_F)
     app.processEvents()
     assert dialog.isFullScreen()
+    QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    app.processEvents()
+    assert not dialog.isFullScreen()
+    assert dialog.isVisible(), "the first escape leaves fullscreen, it does not close"
+    QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    app.processEvents()
+    assert not dialog.isVisible()
     dialog.close()
     app.processEvents()

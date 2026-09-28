@@ -5,6 +5,9 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
+# artwork downloads are unthrottled and latency-bound, not rate-limit-bound
+IMAGE_POOL_THREADS = 12
+
 
 class TaskSignals(QObject):
     finished = Signal(object)
@@ -49,6 +52,13 @@ class Runner(QObject):
         # pool that would queue a title the user just opened behind the whole feed
         self._bulk_pool.setMaxThreadCount(4)
         self._bulk_tasks: set[Task] = set()
+        # Artwork does not go through the client's rate limiter at all, so it gets
+        # its own wide pool: sixty poster downloads, no API budget spent. Sharing
+        # the bulk pool capped them at four at a time, which is what made the home
+        # page look like it was still loading long after the feed itself was up.
+        self._image_pool = QThreadPool(self)
+        self._image_pool.setMaxThreadCount(IMAGE_POOL_THREADS)
+        self._image_tasks: set[Task] = set()
 
     def run(
         self,
@@ -66,8 +76,17 @@ class Runner(QObject):
     ) -> None:
         self._start(self._bulk_pool, self._bulk_tasks, fn, on_ok, on_err)
 
+    def run_image(
+        self,
+        fn: Callable[..., Any],
+        on_ok: Callable[[Any], None],
+        on_err: Callable[[str], None],
+    ) -> None:
+        self._start(self._image_pool, self._image_tasks, fn, on_ok, on_err)
+
     def wait_for_done(self, timeout_ms: int) -> bool:
         self._bulk_pool.waitForDone(timeout_ms)
+        self._image_pool.waitForDone(timeout_ms)
         return self._pool.waitForDone(timeout_ms)
 
     def _start(

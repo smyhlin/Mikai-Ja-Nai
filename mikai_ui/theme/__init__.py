@@ -6,7 +6,9 @@ from mikai_ui.theme.colors import (
     BACKGROUND,
     BORDER,
     CHROME_FILL,
+    CHROME_FLYOUT_FILL,
     CHROME_HAIRLINE,
+    CHROME_PILL_FILL,
     DANGER,
     GHOST_HOVER,
     GHOST_PRESSED,
@@ -18,11 +20,16 @@ from mikai_ui.theme.colors import (
     VIDEO_BACKGROUND,
 )
 from mikai_ui.theme.metrics import (
+    PLAYER_CHEVRON_SIZE,
+    PLAYER_CHROME_BUTTON_SIZE,
     PLAYER_FIELD_HEIGHT,
     PLAYER_FIELD_MIN_WIDTH,
     PLAYER_FIELD_ROW_HEIGHT,
     PLAYER_DIVIDER_HEIGHT,
+    PLAYER_FOOTER_FONT_SIZE,
+    PLAYER_PILL_RADIUS,
     PLAYER_SKIP_WIDTH,
+    PILL_RADIUS,
     PRIMARY_CONTROL_SIZE,
     RADIUS,
     RADIUS_LARGE,
@@ -34,6 +41,7 @@ from mikai_ui.theme.metrics import (
     SPACING_MEDIUM,
     SPACING_SMALL,
     SPACING_XS,
+    SPEED_FLYOUT_WIDTH,
     TIMELINE_GROOVE_HEIGHT,
     TIMELINE_HANDLE_SIZE,
     VOLUME_GROOVE_HEIGHT,
@@ -202,18 +210,18 @@ def build_stylesheet() -> str:
     QPushButton#pagerChipActive {{ background: {SURFACE_ACTIVE}; color: {TEXT};
         font-weight: 600; }}
     QPushButton#playerSecondary:pressed {{ background: {GHOST_PRESSED}; }}
-    QWidget#playerControls {{ background: {CHROME_FILL}; color: {TEXT};
-        border: none; border-top: 1px solid {CHROME_HAIRLINE}; }}
+    QWidget#playerControls {{ color: {TEXT};
+        border: 1px solid {BORDER}; border-radius: {PILL_RADIUS}px;
+        background: {CHROME_FILL}; }}
     QWidget#playerStatusCard {{ background: {CHROME_FILL}; color: {TEXT};
-        border: 1px solid {BORDER}; border-radius: {RADIUS_LARGE}px; }}
+        border: none; border-radius: {RADIUS_LARGE}px; }}
     QLabel#playerStatusTitle {{ font-size: 17px; font-weight: 600; }}
     QWidget#playerControls QLabel, QWidget#playerStatusCard QLabel,
     QWidget#playerHeader QLabel {{ background: transparent; }}
     QLabel#playerToast {{ background: {CHROME_FILL}; color: {TEXT};
-        border: 1px solid {BORDER}; border-radius: {RADIUS}px;
+        border: none; border-radius: {RADIUS}px;
         padding: {SPACING_XS}px {SPACING_LARGE}px; font-size: 13px; }}
-    QWidget#playerSidebar {{ background: {SURFACE}; border: none;
-        border-left: 1px solid {BORDER}; }}
+    QWidget#playerSidebar {{ background: {SURFACE}; border: none; }}
     QPushButton#playerSidebarToggle {{ background: transparent; border: none;
         border-radius: {RADIUS_SMALL}px; }}
     QPushButton#playerSidebarToggle:hover {{ background: {GHOST_HOVER}; }}
@@ -224,10 +232,14 @@ def build_stylesheet() -> str:
         color: {TEXT}; text-align: left; padding: 0 {SPACING_SMALL}px;
         border-radius: {RADIUS_SMALL}px; min-height: 28px; }}
     QPushButton#playerEpisodeItem:hover {{ background: {SURFACE_HOVER}; }}
+    /* a distinct selector does not inherit the base rule's box, so restate it:
+       without the padding and min-height the current row sits inset and taller */
     QPushButton#playerEpisodeItemCurrent {{ background: {SURFACE_ACTIVE};
-        color: {TEXT}; font-weight: 600; }}
+        color: {TEXT}; font-weight: 600; text-align: left;
+        padding: 0 {SPACING_SMALL}px; border: none;
+        border-radius: {RADIUS_SMALL}px; min-height: 28px; }}
     QWidget#playerStreamChip {{ background: {SURFACE_ACTIVE};
-        border: 1px solid {BORDER}; border-radius: {RADIUS}px; }}
+        border: none; border-radius: {RADIUS}px; }}
     QLabel#playerStreamLine {{ background: transparent; color: {TEXT}; font-size: 13px;
         padding: {SPACING_XS}px {SPACING_SMALL}px; }}
     QLabel#playerStreamRate {{ background: transparent; color: {MUTED}; font-size: 12px;
@@ -276,11 +288,92 @@ def build_stylesheet() -> str:
     QToolTip {{ background: {SURFACE_HOVER}; color: {TEXT}; border: 1px solid {BORDER};
         padding: {SPACING_XS}px {SPACING_SMALL}px; }}
     QDialog#playerWindow {{ background: {VIDEO_BACKGROUND}; color: {TEXT}; }}
+    QWidget#playerPip {{ background: {CHROME_FILL}; border: none;
+
+        border-radius: {PILL_RADIUS}px; }}
+    QWidget#pipVideo {{ background: {VIDEO_BACKGROUND}; border: none; }}
+    QWidget#pipBar {{ background: {CHROME_FILL}; border: none;
+
+        border-bottom-left-radius: {PILL_RADIUS}px;
+
+        border-bottom-right-radius: {PILL_RADIUS}px; }}
+    QLabel#pipStatus {{ background: transparent; color: {MUTED}; font-size: 12px; }}
+    QPushButton#pipPlay, QPushButton#pipClose {{ background: transparent;
+        border: 1px solid transparent; border-radius: {RADIUS_SMALL}px; padding: 0;
+        /* QSS height is the content box, so subtract the 1px border to land on
+           the 32px the widget asks for */
+        min-height: {PLAYER_FIELD_HEIGHT - 2}px; max-height: {PLAYER_FIELD_HEIGHT - 2}px; }}
+    QPushButton#pipPlay:hover, QPushButton#pipClose:hover {{ background: {SURFACE_HOVER};
+        border-color: {ACCENT}; }}
     QWidget#playerHeader {{ background: {CHROME_FILL}; color: {TEXT};
         border-bottom: 1px solid {CHROME_HAIRLINE}; }}
     QLabel#playerTitle {{ font-size: 15px; font-weight: 600; }}
     QWidget#videoStage, QWidget#videoSurface {{ background: {VIDEO_BACKGROUND}; border: none; }}
     QWidget#playerOverlay {{ background: transparent; border: none; }}
+    QWidget#playerDismiss {{ background: transparent; border: none; }}
+    QPushButton#playerDismissButton {{ background: transparent; border: none; padding: 0;
+        border-radius: {PLAYER_CHROME_BUTTON_SIZE // 2}px;
+        min-width: {PLAYER_CHROME_BUTTON_SIZE}px; max-width: {PLAYER_CHROME_BUTTON_SIZE}px;
+        min-height: {PLAYER_CHROME_BUTTON_SIZE}px; max-height: {PLAYER_CHROME_BUTTON_SIZE}px; }}
+    QPushButton#playerDismissButton:hover {{ background: {GHOST_HOVER}; }}
+    QPushButton#playerDismissButton:pressed {{ background: {GHOST_PRESSED}; }}
+    QWidget#playerChevrons {{ background: transparent; border: none; }}
+    QPushButton#playerChevron {{ background: {CHROME_PILL_FILL}; border: none; padding: 0;
+        border-radius: {PLAYER_CHEVRON_SIZE // 2}px;
+        min-width: {PLAYER_CHEVRON_SIZE}px; max-width: {PLAYER_CHEVRON_SIZE}px;
+        min-height: {PLAYER_CHEVRON_SIZE}px; max-height: {PLAYER_CHEVRON_SIZE}px; }}
+    QPushButton#playerChevron:hover {{ background: {CHROME_FLYOUT_FILL}; }}
+    QPushButton#playerChevron:disabled {{ background: transparent; }}
+    QWidget#playerSourcePill {{ background: {CHROME_PILL_FILL}; border: none;
+        border-radius: {PLAYER_PILL_RADIUS}px; }}
+    QPushButton#playerSourceLink {{ background: transparent; border: none; color: {TEXT};
+        padding: {SPACING_XS}px {SPACING_SMALL}px; font-weight: 600; }}
+    QPushButton#playerSourceLink:hover {{ color: {ACCENT}; background: {GHOST_HOVER}; }}
+    QPushButton#playerSourceLink:disabled {{ color: {MUTED}; background: transparent; }}
+    QLabel#playerSourceDetail {{ background: transparent; color: {MUTED};
+        font-size: {PLAYER_FOOTER_FONT_SIZE}px; }}
+    QWidget#playerFooter {{ background: transparent; border: none; }}
+    QLabel#playerFooterName {{ background: transparent; color: {TEXT};
+        font-size: {PLAYER_FOOTER_FONT_SIZE}px; font-weight: 600; }}
+    QLabel#playerFooterOrigin {{ background: transparent; color: {MUTED};
+        font-size: {PLAYER_FOOTER_FONT_SIZE}px; }}
+    QPushButton#playerFooterButton {{ background: transparent; border: none; padding: 0;
+        border-radius: {RADIUS_SMALL}px;
+        min-width: {PLAYER_CHROME_BUTTON_SIZE}px; max-width: {PLAYER_CHROME_BUTTON_SIZE}px;
+        min-height: {PLAYER_CHROME_BUTTON_SIZE}px; max-height: {PLAYER_CHROME_BUTTON_SIZE}px; }}
+    QPushButton#playerFooterButton:hover {{ background: {GHOST_HOVER}; }}
+    QPushButton#playerFooterButton:pressed {{ background: {GHOST_PRESSED}; }}
+    QWidget#playerSpeedFlyout {{ background: {CHROME_FLYOUT_FILL};
+        border: 1px solid {BORDER}; border-radius: {RADIUS}px;
+        padding: {SPACING_MEDIUM}px;
+        min-width: {SPEED_FLYOUT_WIDTH}px; }}
+    QLabel#playerSpeedValue {{ background: transparent; color: {ACCENT}; font-weight: 600; }}
+    QSlider#playerSpeedSlider {{ background: transparent; }}
+    QSlider#playerSpeedSlider::groove:horizontal {{ height: {TIMELINE_GROOVE_HEIGHT}px;
+        background: {SURFACE_ACTIVE}; border-radius: 2px; }}
+    QSlider#playerSpeedSlider::sub-page:horizontal {{ background: {ACCENT};
+        border-radius: 2px; }}
+    QSlider#playerSpeedSlider::handle:horizontal {{ background: {TEXT};
+        width: {TIMELINE_HANDLE_SIZE}px; height: {TIMELINE_HANDLE_SIZE}px;
+        margin: {TIMELINE_GROOVE_HEIGHT // 2 - TIMELINE_HANDLE_SIZE // 2}px 0;
+        border-radius: {TIMELINE_HANDLE_SIZE // 2}px; }}
+    QSlider#playerSpeedSlider::handle:horizontal:hover {{ background: {ACCENT_HOVER}; }}
+    QPushButton#playerSpeedPreset {{ background: transparent; border: none; color: {MUTED};
+        text-align: left; padding: {SPACING_XS}px {SPACING_SMALL}px;
+        font-size: {PLAYER_FOOTER_FONT_SIZE}px;
+        min-height: {PLAYER_FIELD_ROW_HEIGHT - 2 * SPACING_XS}px;
+        max-height: {PLAYER_FIELD_ROW_HEIGHT - 2 * SPACING_XS}px;
+        border-radius: {RADIUS_SMALL}px; }}
+    QPushButton#playerSpeedPreset:hover {{ background: {GHOST_HOVER}; color: {TEXT}; }}
+    QPushButton#playerSpeedPreset:disabled {{ color: {MUTED}; background: transparent; }}
+    QPushButton#playerSpeedPresetActive {{ background: {CHROME_HAIRLINE};
+        border: none; color: {ACCENT};
+        text-align: left; padding: {SPACING_XS}px {SPACING_SMALL}px;
+        font-size: {PLAYER_FOOTER_FONT_SIZE}px;
+        min-height: {PLAYER_FIELD_ROW_HEIGHT - 2 * SPACING_XS}px;
+        max-height: {PLAYER_FIELD_ROW_HEIGHT - 2 * SPACING_XS}px;
+        border-radius: {RADIUS_SMALL}px; }}
+    QPushButton#playerSpeedPresetActive:hover {{ background: {GHOST_HOVER}; }}
     QDialog#coverViewer {{ background: {VIDEO_BACKGROUND}; }}
     QWidget#coverViewerView {{ background: transparent; border: none; }}
     """

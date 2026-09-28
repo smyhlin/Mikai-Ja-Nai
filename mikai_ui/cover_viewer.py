@@ -21,7 +21,7 @@ from PySide6.QtGui import (
     QShortcut,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QDialog, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QWidget
 
 from mikai_ui.theme.metrics import (
     COVER_BACKDROP_DIM,
@@ -317,11 +317,14 @@ class CoverViewer(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().showEvent(event)
-        # Cover the app rather than floating in a taskbar-sized window: an
-        # overlay that does not fill the window it sits on looks like a dialog.
+        # Cover the whole SCREEN. parent.rect() is in the parent widget's own
+        # coordinate space, but a top-level window reads setGeometry as screen
+        # coordinates, so it used to pin the overlay to the screen origin at the
+        # app's size: a fixed box in the corner instead of a full-screen viewer.
         parent = self.parentWidget()
-        if parent is not None:
-            self.setGeometry(parent.rect())
+        screen = (parent.screen() if parent is not None else None) or (QApplication.primaryScreen())
+        if screen is not None:
+            self.setGeometry(screen.availableGeometry())
         self._view.setGeometry(self.rect())
         self._view.setFocus(Qt.FocusReason.OtherFocusReason)
 

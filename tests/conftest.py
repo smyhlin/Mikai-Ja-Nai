@@ -50,6 +50,9 @@ class FakeMpvAdapter(QObject):
         self.speeds: list[float] = []
         self.pauses: list[bool] = []
         self.closed = False
+        self.pauses: list[bool] = []
+        self.canvases: list[tuple[float, float, float]] = []
+        self.closed = False
         self.stream: dict = {}
 
     def load(self, url: str) -> None:
@@ -79,6 +82,9 @@ class FakeMpvAdapter(QObject):
 
     def set_speed(self, speed: float) -> None:
         self.speeds.append(speed)
+
+    def set_canvas(self, zoom: float, pan_x: float, pan_y: float) -> None:
+        self.canvases.append((zoom, pan_x, pan_y))
 
     def close(self) -> None:
         self.closed = True

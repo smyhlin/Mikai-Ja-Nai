@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 
@@ -90,6 +91,7 @@ class SearchPage(QWidget):
         self._page_size = SEARCH_RESULTS_PER_PAGE
         self._total = 0
         self._thumb_cache: dict[str, bytes] = {}
+        self._thumbs_in_flight: set[str] = set()
         self._feed_poster_labels: dict[str, list[tuple[str, QLabel]]] = {}
         self._icons: dict[str, QPixmap] = {}
         self._carousel_widgets: dict[str, list[TitleCard]] = {}
@@ -421,7 +423,7 @@ class SearchPage(QWidget):
                 continue
             # one task per card: the pool paints a whole feed at once instead of
             # waiting for the slowest poster in it
-            self._runner.run_bulk(
+            self._runner.run_image(
                 lambda item=anime: self._fetch_carousel_posters([item]),
                 lambda fetched, item=anime: self._apply_carousel_entry(key, item, fetched),
                 lambda message: log.debug("carousel poster unavailable: %s", message),
@@ -889,11 +891,7 @@ class SearchPage(QWidget):
             if thumb and thumb not in self._thumb_cache
         )
         if needed:
-            self._runner.run(
-                lambda: self._fetch_thumbs(needed),
-                self._apply_thumbs,
-                self._thumbs_failed,
-            )
+            self._request_thumbs(needed)
 
     def _rebuild_format_bar(self) -> None:
         counts: dict[str, int] = {}
@@ -970,17 +968,39 @@ class SearchPage(QWidget):
             self._icons[thumb] = pixmap
         return self._icons[thumb]
 
-    def _fetch_thumbs(self, urls: list[str]) -> dict[str, bytes]:
-        fetched: dict[str, bytes] = {}
-        for url in urls:
-            try:
-                fetched[url] = self._repository.fetch_bytes(url)
-            except Exception as exc:  # noqa: BLE001 - thumbnails are optional to search results.
-                log.warning("thumbnail fetch failed for %s: %s", url, exc)
-        return fetched
+    def _request_thumb(self, url: str, on_ready: Callable[[], None]) -> None:
+        """One task per image.
 
-    def _apply_thumbs(self, fetched: dict[str, bytes]) -> None:
-        self._thumb_cache.update(fetched)
+        A single task looping over the URLs made sixty downloads wait on each
+        other inside one worker, which is what the home page felt like.
+        """
+        if not url or url in self._thumb_cache:
+            on_ready()
+            return
+        if url in self._thumbs_in_flight:
+            return
+        self._thumbs_in_flight.add(url)
+
+        def done(data: bytes, key: str) -> None:
+            self._thumbs_in_flight.discard(key)
+            self._thumb_cache[key] = data
+            on_ready()
+
+        def failed(message: str, key: str) -> None:
+            self._thumbs_in_flight.discard(key)
+            self._thumbs_failed(message)
+
+        self._runner.run_image(
+            lambda: self._repository.fetch_bytes(url),
+            lambda data, key=url: done(data, key),
+            lambda message, key=url: failed(message, key),
+        )
+
+    def _request_thumbs(self, urls: list[str]) -> None:
+        for url in urls:
+            self._request_thumb(url, self._apply_thumbs)
+
+    def _apply_thumbs(self) -> None:
         for row in range(self._results.count()):
             item = self._results.item(row)
             data = item.data(Qt.ItemDataRole.UserRole) or {}
@@ -1009,15 +1029,10 @@ class SearchPage(QWidget):
                 if thumb and thumb not in self._thumb_cache
             }
         )
-        if needed:
-            self._runner.run(
-                lambda: self._fetch_thumbs(needed),
-                self._apply_feed_posters,
-                self._thumbs_failed,
-            )
+        for url in needed:
+            self._request_thumb(url, self._apply_feed_posters)
 
-    def _apply_feed_posters(self, fetched: dict[str, bytes]) -> None:
-        self._thumb_cache.update(fetched)
+    def _apply_feed_posters(self) -> None:
         for posters in self._feed_poster_labels.values():
             for thumb, label in posters:
                 if shiboken6.isValid(label):

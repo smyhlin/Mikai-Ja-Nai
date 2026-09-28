@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
-    QComboBox,
     QMenu,
     QToolTip,
     QHBoxLayout,
@@ -13,7 +12,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSizePolicy,
-    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
@@ -25,8 +23,6 @@ from mikai_ui.theme.metrics import (
     PLAYER_DIVIDER_HEIGHT,
     PLAYER_PRIMARY_ICON_SIZE,
     PLAYER_SKIP_WIDTH,
-    PLAYER_FIELD_MIN_WIDTH,
-    PLAYER_FIELD_ROW_HEIGHT,
     PRIMARY_CONTROL_SIZE,
     SECONDARY_CONTROL_SIZE,
     SPACING_MEDIUM,
@@ -36,6 +32,7 @@ from mikai_ui.theme.metrics import (
     TIMELINE_SCALE,
     VOLUME_SLIDER_WIDTH,
 )
+from mikai_ui.player_chrome import SpeedFlyout
 from mikai_ui.quality_picker import QualityPicker
 from mikai_ui.theme.widgets import make_icon
 
@@ -151,18 +148,6 @@ class TimelineSlider(QSlider):
         return ratio * self._duration
 
 
-class FieldRowDelegate(QStyledItemDelegate):
-    """Give combo popup rows a readable height.
-
-    Qt applies stylesheet `::item` sizing to list and table views but not to a
-    QComboBox popup, so the row height has to come from the delegate.
-    """
-
-    def sizeHint(self, option, index):  # noqa: N802 - Qt naming
-        hint = super().sizeHint(option, index)
-        return QSize(hint.width(), max(hint.height(), PLAYER_FIELD_ROW_HEIGHT))
-
-
 class PlayerControlsWidget(QWidget):
     """The player toolbar. It knows playback intent, never the mpv engine."""
 
@@ -179,10 +164,9 @@ class PlayerControlsWidget(QWidget):
     speedChanged = Signal(float)
     qualityChanged = Signal(int)
     fullscreenRequested = Signal()
+    pipRequested = Signal()
     variantRequested = Signal(str, str)
     variantMenuOpened = Signal()
-
-    SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -258,18 +242,14 @@ class PlayerControlsWidget(QWidget):
         self.volume_slider.valueChanged.connect(self.volumeChanged)
         controls.addWidget(self.volume_slider)
 
-        self.speed_combo = QComboBox()
-        self.speed_combo.setObjectName("playerField")
-        self.speed_combo.setItemDelegate(FieldRowDelegate(self.speed_combo))
-        self.speed_combo.setMinimumWidth(PLAYER_FIELD_MIN_WIDTH)
-        self.speed_combo.setAccessibleName("Швидкість відтворення")
-        self.speed_combo.setToolTip("Швидкість відтворення")
-        for speed in self.SPEEDS:
-            label = f"{speed:g}×"
-            self.speed_combo.addItem(label, speed)
-        self.speed_combo.setCurrentIndex(self.SPEEDS.index(1.0))
-        self.speed_combo.currentIndexChanged.connect(self._speed_selected)
-        controls.addWidget(self.speed_combo)
+        self.speed_button = self._button("Швидкість відтворення", secondary=True)
+        self.speed_button.setObjectName("playerGhost")
+        self.speed_button.setIcon(make_icon("gear", size=ICON_SIZE, disabled_color=ICON_DISABLED))
+        controls.addWidget(self.speed_button)
+
+        self.speed_flyout = SpeedFlyout()
+        self.speed_flyout.speedChanged.connect(self.speedChanged)
+        self.speed_button.clicked.connect(lambda: self.speed_flyout.popup_for(self.speed_button))
 
         self.quality_picker = QualityPicker(self)
         self.quality_picker.qualitySelected.connect(self.qualityChanged)
@@ -282,6 +262,11 @@ class PlayerControlsWidget(QWidget):
         self.variant_button.clicked.connect(self._show_variant_menu)
         self.variant_button.hide()
         controls.addWidget(self.variant_button)
+
+        self.pip_button = self._button("Картинка в картинці (P)", secondary=True)
+        self.pip_button.setIcon(make_icon("pip", size=ICON_SIZE, disabled_color=ICON_DISABLED))
+        self.pip_button.clicked.connect(self.pipRequested)
+        controls.addWidget(self.pip_button)
 
         self.fullscreen_button = self._button("На весь екран (F)", secondary=True)
         self.fullscreen_button.clicked.connect(self.fullscreenRequested)
@@ -459,7 +444,7 @@ class PlayerControlsWidget(QWidget):
         )
         self.volume_slider.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
         self.mute_button.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
-        self.speed_combo.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
+        self.speed_button.setEnabled(not unavailable and state.status is not PlaybackStatus.ERROR)
         self.quality_picker.setEnabled(
             not unavailable
             and self.quality_picker.count() > 1
@@ -486,11 +471,7 @@ class PlayerControlsWidget(QWidget):
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(state.volume)
         self.volume_slider.blockSignals(False)
-        self.speed_combo.blockSignals(True)
-        speed_index = self.speed_combo.findData(state.speed)
-        if speed_index >= 0:
-            self.speed_combo.setCurrentIndex(speed_index)
-        self.speed_combo.blockSignals(False)
+        self.speed_flyout.set_speed(state.speed)
         if state.quality is not None and state.quality != self.quality_picker.selected_height():
             # the stream may have fallen back to another height on its own; reflect
             # it without treating the user's own choice as an external change
@@ -507,8 +488,3 @@ class PlayerControlsWidget(QWidget):
     def _update_time(self, position: float) -> None:
         total = format_time(self._duration) if self._duration > 0 else "--:--"
         self.time_label.setText(f"{format_time(position)} / {total}")
-
-    def _speed_selected(self, index: int) -> None:
-        speed = self.speed_combo.itemData(index)
-        if speed is not None:
-            self.speedChanged.emit(float(speed))

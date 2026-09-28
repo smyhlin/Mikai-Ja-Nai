@@ -303,6 +303,22 @@ class MPVAdapter(QObject):
         self._speed = max(0.25, min(4.0, float(speed)))
         self._command("speed", lambda player: setattr(player, "speed", self._speed), fatal=False)
 
+    def set_canvas(self, zoom: float, pan_x: float, pan_y: float) -> None:
+        """Push the view machine's zoom/pan into mpv's own video transform.
+
+        The machine already clamps, so the values go out as given. `_command`
+        makes this a no-op while mpv is absent and keeps a rejected write from
+        escalating into a playback error, which is what a gesture in flight
+        during teardown would otherwise cause.
+        """
+
+        def apply(player: Any) -> None:
+            player.video_zoom = zoom
+            player.video_pan_x = pan_x
+            player.video_pan_y = pan_y
+
+        self._command("canvas", apply, fatal=False)
+
     def _close_player(self) -> None:
         if self._player is not None:
             player, self._player = self._player, None

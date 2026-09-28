@@ -6,10 +6,12 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+import shiboken6
+from PySide6.QtCore import QEvent, QLineF, QObject, QPoint, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
+    QApplication,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -26,13 +28,23 @@ from mikai_ui.fullscreen_manager import FullscreenManager
 from mikai_ui.theme.colors import ICON_DISABLED
 from mikai_ui.mpv_backend import MPVAdapter
 from mikai_ui.player_controller import PlaybackState, PlaybackStatus, PlayerController
+from mikai_ui.pip_window import PipWindow
+from mikai_ui.player_chrome import (
+    FlankChevrons,
+    PlayerFooter,
+    SourcePill,
+    PlayerDismissButton,
+)
 from mikai_ui.player_controls import PlayerControlsWidget, format_time
+from mikai_ui.player_view import PAN_THRESHOLD_PX, ZOOM_STEP, Cursor as ViewCursor, ViewMachine
 from mikai_ui.theme.widgets import make_icon
 from mikai_ui.player_overlay import PlayerOverlayWidget
 from mikai_ui.theme.metrics import (
     ICON_SIZE,
     PLAYER_DEFAULT_HEIGHT,
     PLAYER_DEFAULT_WIDTH,
+    PIP_DEFAULT_HEIGHT,
+    PIP_DEFAULT_WIDTH,
     PLAYER_MIN_HEIGHT,
     PLAYER_MIN_WIDTH,
     PLAYER_SIDEBAR_STRIP,
@@ -80,9 +92,21 @@ class PlayerDialog(QDialog):
         self._closed = False
         self._showing = False
         self._refresh_attempted = False
+        self._view = ViewMachine()
+        self._pan_press: QPoint | None = None
+        self._pan_cursor = QPoint()
+        self._toolbar_floating = False
 
         self.setObjectName("playerWindow")
         self.setWindowTitle(f"Плеєр — {caption}")
+        # No title bar: the chrome bar and the video are the whole window, the
+        # same way the cover overlay drops every frame. The header, which only
+        # shows outside fullscreen, becomes the drag handle so a windowed
+        # player can still be moved.
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self._drag_offset: QPoint | None = None
+        self._pip: QWidget | None = None
+        self._pip_was_fullscreen = False
         self.setMinimumSize(PLAYER_MIN_WIDTH, PLAYER_MIN_HEIGHT)
         self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
         self.setContentsMargins(0, 0, 0, 0)
@@ -101,8 +125,11 @@ class PlayerDialog(QDialog):
         self._title = QLabel(caption, self._header)
         self._title.setObjectName("playerTitle")
         self._title.setWordWrap(False)
+        self._title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._title.installEventFilter(self)
         header_layout.addWidget(self._title, 1)
+        self._header.installEventFilter(self)
         root.addWidget(self._header)
 
         self._stage = QWidget(self)
@@ -133,16 +160,42 @@ class PlayerDialog(QDialog):
 
         self._sidebar = self._build_sidebar()
         content_row.addWidget(self._sidebar, 0)
+
+        self._window_controls = PlayerDismissButton(self._stage)
+        self._window_controls.closeRequested.connect(self.close)
+        self._chevrons = FlankChevrons(self._stage)
+        self._chevrons.previousRequested.connect(lambda: self.step_episode(-1))
+        self._chevrons.nextRequested.connect(lambda: self.step_episode(1))
+        self._source_pill = SourcePill(self._stage)
+        self._source_pill.linkClicked.connect(self._open_stream_in_browser)
         stage_layout.addLayout(content_row, 1)
+
+        self._footer = PlayerFooter(self._stage)
+        self._footer.openRequested.connect(self._open_stream_in_browser)
+        self._footer.moreRequested.connect(self._copy_stream_url)
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(SPACING_LARGE, 0, SPACING_LARGE, 0)
+        footer_row.addWidget(self._footer)
+        stage_layout.addLayout(footer_row, 0)
 
         self._controls = PlayerControlsWidget(self._stage)
         self._controls.set_qualities(self._qualities, initial_height)
         self._controls.set_variants(self._variants, current_embed)
+        self._controls.pipRequested.connect(self.toggle_pip)
         self._controls.variantRequested.connect(self._on_variant_requested)
         self._controls.variantMenuOpened.connect(self._probe_unknown_tracks)
         self._controls.prevEpisodeRequested.connect(lambda: self.step_episode(-1))
         self._controls.nextEpisodeRequested.connect(lambda: self.step_episode(1))
-        stage_layout.addWidget(self._controls, 0)
+        # Telegram floats the controls as a rounded pill clear of the edges; a
+        # full-width band pinned to the frame reads as chrome bolted to the
+        # video. The wrapper carries the margins because a widget's own
+        # contentsMargins only move its children, never its own slot in the
+        # parent layout, so the bar would stay edge-to-edge.
+        controls_row = QHBoxLayout()
+        controls_row.setContentsMargins(SPACING_LARGE, 0, SPACING_LARGE, SPACING_MEDIUM)
+        controls_row.addWidget(self._controls)
+        stage_layout.addLayout(controls_row, 0)
+        self._controls_row = controls_row
         self.set_playlist(playlist, episode_index)
 
         # The overlay is an event filter and state presenter only. It must never be
@@ -160,6 +213,9 @@ class PlayerDialog(QDialog):
             self._overlay.status_card,
             self._overlay.toast,
             self._overlay.stream_chip,
+            self._chevrons,
+            self._source_pill,
+            self._window_controls,
         ):
             panel.setParent(self._stage)
             panel.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
@@ -176,7 +232,6 @@ class PlayerDialog(QDialog):
         self._fwd_btn = self._controls.forward_button
         self._mute_btn = self._controls.mute_button
         self._vol_slider = self._controls.volume_slider
-        self._speed_combo = self._controls.speed_combo
         self._quality_picker = self._controls.quality_picker
 
         self._controller = PlayerController(
@@ -193,12 +248,16 @@ class PlayerDialog(QDialog):
         self._fullscreen.fullscreenChanged.connect(self._on_fullscreen_changed)
         self._connect_controls()
         self._overlay.videoClicked.connect(self._controller.toggle_play_pause)
-        self._overlay.videoDoubleClicked.connect(self._fullscreen.toggle)
         self._overlay.retryRequested.connect(self._retry_playback)
         self._overlay.detailsRequested.connect(self._show_error_details)
 
         self._install_shortcuts()
+        self._install_canvas_input()
+        self._view.subscribe(self._apply_view)
+        self._overlay.mouseActivity.connect(self._view.wake)
+        self._overlay.chromeHidden.connect(self._view.hide_chrome)
         self._on_state_changed(self._controller.state)
+        self._sync_source_pill()
         self._sync_stage_geometry()
 
     @property
@@ -237,10 +296,11 @@ class PlayerDialog(QDialog):
             ("M", self._controller.toggle_mute),
             ("Up", lambda: self._change_volume(5)),
             ("Down", lambda: self._change_volume(-5)),
-            ("Esc", self._exit_fullscreen),
+            ("Esc", self._escape),
             ("PgUp", lambda: self.step_episode(-1)),
             ("PgDown", lambda: self.step_episode(1)),
             ("E", self.toggle_sidebar),
+            ("P", self.toggle_pip),
         )
         self._shortcuts: list[QShortcut] = []
         for key, callback in shortcuts:
@@ -252,6 +312,20 @@ class PlayerDialog(QDialog):
     def _handle_shortcut(self, command: Callable[[], None]) -> None:
         self._overlay.show_controls()
         command()
+
+    def _escape(self) -> None:
+        """Undo one thing at a time: the float, then fullscreen, then the player.
+
+        The last step is the cover viewer's dismiss idiom. With the window
+        frame gone and the minimise button removed, Esc is the keyboard way out.
+        """
+        if self.pip_active:
+            self._leave_pip()
+            return
+        if self._fullscreen.is_fullscreen:
+            self._fullscreen.exit()
+            return
+        self.close()
 
     def _toggle_play_pause(self) -> None:
         focus = self.focusWidget()
@@ -346,9 +420,10 @@ class PlayerDialog(QDialog):
         self._sync_episode_state()
 
     def _sync_episode_state(self) -> None:
-        self._controls.set_episode_navigation(
-            self._episode_index > 0, self._episode_index < len(self._playlist) - 1
-        )
+        has_previous = self._episode_index > 0
+        has_next = self._episode_index < len(self._playlist) - 1
+        self._controls.set_episode_navigation(has_previous, has_next)
+        self._chevrons.set_available(has_previous, has_next)
 
     def step_episode(self, delta: int) -> None:
         self._go_to_episode(self._episode_index + delta)
@@ -393,6 +468,7 @@ class PlayerDialog(QDialog):
         self._rebuild_sidebar_rows()
         self._sync_episode_state()
         self._overlay.show_toast(f"Серія: {label}")
+        self._sync_source_pill()
         self._controller.switch_variant(self._qualities[target], self._qualities, target)
 
     def _rebuild_sidebar_rows(self) -> None:
@@ -512,6 +588,7 @@ class PlayerDialog(QDialog):
         self._qualities = dict(qualities)
         self._controls.set_qualities(self._qualities, target)
         self._overlay.show_toast(f"Дорожка: {label}")
+        self._sync_source_pill()
         self._controller.switch_variant(self._qualities[target], self._qualities, target)
 
     def apply_refreshed_streams(
@@ -526,6 +603,7 @@ class PlayerDialog(QDialog):
         self._qualities = dict(qualities)
         self._controls.set_qualities(self._qualities, target)
         self._overlay.show_toast("Посилання на потік прострочене — оновлюю")
+        self._sync_source_pill()
         self._controller.replace_stream(self._qualities[target], self._qualities)
 
     def _retry_playback(self) -> None:
@@ -547,20 +625,126 @@ class PlayerDialog(QDialog):
         if self._closed:
             return
         self._overlay.set_playback_state(state)
+        self._sync_pip_bar(state)
         self._layout_panels()
         if state.status is PlaybackStatus.ERROR and not self._refresh_attempted:
             self._refresh_attempted = True
             self.playbackFailed.emit()
 
     def _on_fullscreen_changed(self, fullscreen: bool) -> None:
+        # the view owns the state matrix; the overlay and the bar still own their
+        # own fullscreen reaction (the idle fade, and the header that is windowed-only)
         self._header.setVisible(not fullscreen)
         self._controls.set_fullscreen(fullscreen)
         self._overlay.set_fullscreen(fullscreen)
+        if fullscreen:
+            self._view.enter_fullscreen()
+        else:
+            self._view.exit_fullscreen()
         self._sync_stage_geometry()
         QTimer.singleShot(0, self._sync_stage_geometry)
 
     def _show_controls(self) -> None:
         self._overlay.show_controls()
+
+    def _sync_pip_bar(self, state: PlaybackState) -> None:
+        """Keep the float's own play glyph and clock in step with the engine."""
+        if not self.pip_active:
+            return
+        pip = self._pip
+        pip.set_playing(not state.paused and state.status is not PlaybackStatus.ERROR)
+        duration = format_time(state.duration) if state.duration > 0 else "--:--"
+        pip.set_time_text(f"{format_time(state.position)} / {duration}")
+
+    @property
+    def pip_active(self) -> bool:
+        return self._pip is not None and shiboken6.isValid(self._pip)
+
+    def toggle_pip(self) -> None:
+        """Float the video in a borderless always-on-top window.
+
+        The SAME video widget is reparented rather than a second mpv instance:
+        one decoder and one position means the float can be opened and closed
+        mid-playback without re-seeking, buffering or drifting.
+        """
+        if self._closed or self._video is None:
+            return
+        if self.pip_active:
+            self._leave_pip()
+        else:
+            self._enter_pip()
+
+    def _enter_pip(self) -> None:
+        # The main player must disappear completely, not linger as a black
+        # frame: the video now belongs to the float, so what is left behind is
+        # an empty stage. Remember fullscreen so returning restores it.
+        self._pip_was_fullscreen = self._fullscreen.is_fullscreen
+        if self._pip_was_fullscreen:
+            self._fullscreen.exit()
+        # Parentless on purpose. A child window is clipped to its parent's
+        # z-order, so a float parented to the player slides UNDER whatever app
+        # the user switches to; an independent top-level window is what actually
+        # stays above other applications.
+        window = PipWindow()
+        window.togglePlayRequested.connect(self._controller.toggle_play_pause)
+        window.seekRequested.connect(
+            lambda delta: self._controller.seek(self._controller.state.position + delta)
+        )
+        window.closeRequested.connect(self._leave_pip)
+        window.set_video(self._video)
+        window.resize(PIP_DEFAULT_WIDTH, PIP_DEFAULT_HEIGHT)
+        # keep it near the corner the main window already occupies
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            window.move(
+                area.right() - PIP_DEFAULT_WIDTH - 24, area.bottom() - PIP_DEFAULT_HEIGHT - 24
+            )
+        self._pip = window
+        # Close, not destroyed: close() on a Qt window only hides it, so the
+        # destroyed signal never fires and the video would stay parented to an
+        # invisible float, leaving the main player with a black hole.
+        window.installEventFilter(self)
+        window.show()
+        self._sync_pip_bar(self._controller.state)
+        self.hide()
+        self._controls.pip_button.setToolTip("Повернути в вікно (P)")
+        self._overlay.show_toast("Картинка в картинці")
+
+    def _leave_pip(self, *, closing: bool = False) -> None:
+        """Take the video back and bring the player window home.
+
+        `closing` means the float is already inside its own Close event, so it
+        must not be closed again from here.
+        """
+        window, self._pip = self._pip, None
+        if window is not None and shiboken6.isValid(window):
+            video = window.release_video()
+            if video is not None and shiboken6.isValid(video):
+                video.setParent(self._stage)
+                video.show()
+            if not closing:
+                window.close()
+            window.deleteLater()
+        self.show()
+        if self._pip_was_fullscreen:
+            self._fullscreen.enter()
+        self._pip_was_fullscreen = False
+        QTimer.singleShot(0, self._sync_stage_geometry)
+        self._controls.pip_button.setToolTip("Картинка в картинці (P)")
+        self._overlay.show_toast("Повернуто у вікно")
+
+    def _drag_window(self, event) -> None:
+        """Move a windowed, frameless player by its header."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._drag_offset is None:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        self.move(event.globalPosition().toPoint() - self._drag_offset)
+        event.accept()
+
+    def _end_drag(self, event) -> None:
+        self._drag_offset = None
 
     def show(self) -> None:
         # Open in fullscreen for the focused player experience, while the
@@ -576,17 +760,44 @@ class PlayerDialog(QDialog):
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() == QEvent.Type.WindowStateChange:
-            fullscreen = self.isFullScreen()
-            self._header.setVisible(not fullscreen)
-            self._controls.set_fullscreen(fullscreen)
-            self._overlay.set_fullscreen(fullscreen)
-            self._sync_stage_geometry()
-            QTimer.singleShot(0, self._sync_stage_geometry)
+            self._on_fullscreen_changed(self.isFullScreen())
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         # Eliding here rather than in resizeEvent: the layout has not yet given the
         # label its new width when the dialog resizes, and a wrapped header would
         # steal height from the video.
+        if self._closed:
+            return False
+        if watched is getattr(self, "_video", None) or watched is getattr(self, "_stage", None):
+            if self._canvas_event(event):
+                return True
+
+        pip = getattr(self, "_pip", None)
+        if (
+            pip is not None
+            and shiboken6.isValid(pip)
+            and (watched is pip or (isinstance(watched, QWidget) and pip.isAncestorOf(watched)))
+        ):
+            if event.type() == QEvent.Type.MouseButtonDblClick:
+                self._leave_pip()
+                return True
+            if event.type() == QEvent.Type.Close:
+                # Defer: tearing down and re-showing the player from inside the
+                # float's own Close event re-enters close() on the same window,
+                # which is an access violation. Let the event finish first.
+                QTimer.singleShot(0, lambda: self._leave_pip(closing=True))
+                return True
+
+        header = getattr(self, "_header", None)
+        if header is not None and (
+            watched is header or (isinstance(watched, QWidget) and header.isAncestorOf(watched))
+        ):
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self._drag_window(event)
+                return True
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                self._end_drag(event)
+                return True
         if watched is self._title and event.type() == QEvent.Type.Resize:
             metrics = self._title.fontMetrics()
             self._title.setText(
@@ -633,6 +844,29 @@ class PlayerDialog(QDialog):
                 chip_hint.width(),
                 chip_hint.height(),
             )
+        if self._window_controls.isVisible():
+            hint = self._window_controls.sizeHint()
+            self._window_controls.setGeometry(
+                area.x() + area.width() - hint.width() - SPACING_MEDIUM,
+                area.y() + SPACING_MEDIUM,
+                hint.width(),
+                hint.height(),
+            )
+        if self._chevrons.isVisible():
+            self._chevrons.setGeometry(area.x(), area.y(), area.width(), area.height())
+        if self._source_pill.isVisible():
+            # the pill hangs off the picture, not off the stage: the stage bottom
+            # is the dock, so a stage-anchored pill lands on top of it
+            pill = self._source_pill
+            pill_hint = pill.sizeHint()
+            frame = self._video.geometry()
+            pill.setGeometry(
+                frame.x() + (frame.width() - pill_hint.width()) // 2,
+                frame.y() + frame.height() - pill_hint.height() - SPACING_MEDIUM,
+                pill_hint.width(),
+                pill_hint.height(),
+            )
+        self._position_floating_toolbar()
         if self._overlay.toast.isVisible():
             # The toast used to be centred like the status card, so a quality switch
             # during an error hid the message behind it. It belongs on the control bar.
@@ -649,6 +883,7 @@ class PlayerDialog(QDialog):
             self._overlay.status_card,
             self._overlay.toast,
             self._overlay.stream_chip,
+            self._source_pill,
         ):
             if panel.isVisible():
                 panel.raise_()
@@ -658,7 +893,186 @@ class PlayerDialog(QDialog):
             return
         self._layout_panels()
 
+    def _install_canvas_input(self) -> None:
+        """Wheel, double click, pinch and drag all land on the picture itself.
+
+        The filters go on last so they run before the overlay's, which is what
+        turns a click into play/pause. Returning False on a plain press leaves
+        that path intact; only a real drag swallows the event.
+        """
+        self._stage.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, True)
+        for widget in (self._stage, self._video):
+            widget.installEventFilter(self)
+
+    def _canvas_event(self, event: QEvent) -> bool:
+        kind = event.type()
+        if kind == QEvent.Type.Wheel:
+            delta = event.angleDelta().y()
+            if not delta:
+                return False
+            self._view.zoom_by(ZOOM_STEP if delta > 0 else -ZOOM_STEP)
+            self._view.wake()
+            event.accept()
+            return True
+        if kind == QEvent.Type.Gesture:
+            return self._pinch_event(event)
+        if kind == QEvent.Type.MouseButtonDblClick:
+            self._view.toggle_magnify()
+            self._view.wake()
+            event.accept()
+            return True
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._pan_press = event.position().toPoint()
+            self._pan_cursor = self._pan_press
+            return False
+        if kind == QEvent.Type.MouseMove and self._pan_press is not None:
+            return self._pan_move(event)
+        if kind == QEvent.Type.MouseButtonRelease and self._pan_press is not None:
+            self._pan_press = None
+            self._view.set_panning(False)
+            self._pan_cursor = QPoint()
+            self._apply_cursor(self._view.chrome.cursor)
+            return False
+        return False
+
+    def _pan_move(self, event) -> bool:
+        here = event.position().toPoint()
+        if not self._view.panning:
+            if QLineF(self._pan_press, here).length() < PAN_THRESHOLD_PX:
+                return False
+            self._view.set_panning(True)
+            # the press already armed a play/pause click; a drag is not a click
+            self._overlay.cancel_pending_click()
+            self._apply_cursor(self._view.chrome.cursor)
+        rect = self._video.rect()
+        self._view.pan_by(
+            (here.x() - self._pan_cursor.x()) / max(1, rect.width()),
+            (here.y() - self._pan_cursor.y()) / max(1, rect.height()),
+        )
+        self._pan_cursor = here
+        event.accept()
+        return True
+
+    def _pinch_event(self, event: QEvent) -> bool:
+        gesture = event.gesture(Qt.GestureType.PinchGesture)
+        if gesture is None:
+            return False
+        if gesture.state() in (Qt.GestureState.Began, Qt.GestureState.Changed):
+            factor = gesture.scaleFactor()
+            if factor > 0:
+                self._view.set_scale(self._view.scale * factor)
+        event.accept()
+        return True
+
+    def _apply_view(self, view: ViewMachine) -> None:
+        if self._closed:
+            return
+        chrome = view.chrome
+        self._controller.apply_canvas(view.scale, view.pan[0], view.pan[1])
+        self._window_controls.setVisible(chrome.window_controls)
+        self._chevrons.setVisible(chrome.gallery_navigation)
+        windowed = not view.fullscreen
+        self._source_pill.setVisible(chrome.source_badge and windowed)
+        self._footer.setVisible(chrome.metadata_footer and windowed)
+        self._set_toolbar_floating(chrome.floating_toolbar)
+        if not chrome.playback_toolbar:
+            # a popover anchored to a bar that is no longer there is a stray
+            # panel left floating over the picture
+            self._controls.speed_flyout.dismiss()
+        self._apply_cursor(chrome.cursor)
+        self._layout_panels()
+
+    def _apply_cursor(self, cursor: ViewCursor) -> None:
+        """Set on the video, not just the stage.
+
+        The surface is a native child window with its own cursor, so a shape set
+        on the parent never reaches the one the pointer is actually over.
+        """
+        if cursor in (ViewCursor.GRAB, ViewCursor.ZOOM):
+            shape = (
+                Qt.CursorShape.ClosedHandCursor
+                if self._view.panning
+                else Qt.CursorShape.OpenHandCursor
+            )
+        elif cursor is ViewCursor.NONE:
+            shape = Qt.CursorShape.BlankCursor
+        else:
+            shape = Qt.CursorShape.ArrowCursor
+        for widget in (self._video, self._stage):
+            widget.setCursor(shape)
+
+    def _set_toolbar_floating(self, floating: bool) -> None:
+        """Lift the dock off its band and over the picture while magnified.
+
+        It becomes a native panel, like the toast and the chip: a plain widget
+        spanning the mpv surface would be composited on top and hide the video.
+        """
+        if floating == self._toolbar_floating:
+            return
+        self._toolbar_floating = floating
+        if floating:
+            self._controls_row.removeWidget(self._controls)
+            self._controls.setParent(self._stage)
+            self._controls.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+            self._controls.raise_()
+        else:
+            # Qt never gives a created native handle back, so the flag stays set.
+            # That is harmless: a bar that sits in its own row never spans the
+            # video, which is the only thing the handle must never do.
+            self._controls.setParent(None)
+            self._controls_row.insertWidget(0, self._controls)
+
+    def _position_floating_toolbar(self) -> None:
+        if not self._toolbar_floating:
+            return
+        area = self._stage.rect()
+        hint = self._controls.sizeHint()
+        width = min(area.width() - 2 * SPACING_LARGE, max(hint.width(), 1))
+        self._controls.setGeometry(
+            area.x() + (area.width() - width) // 2,
+            area.y() + area.height() - max(hint.height(), 1) - SPACING_MEDIUM,
+            width,
+            max(hint.height(), 1),
+        )
+
+    def _open_stream_in_browser(self) -> None:
+        if self._url:
+            QDesktopServices.openUrl(QUrl(self._url))
+
+    def _copy_stream_url(self) -> None:
+        if not self._url:
+            return
+        QGuiApplication.clipboard().setText(self._url)
+        self._overlay.show_toast("Посилання на потік скопійовано")
+
+    def _track_source(self) -> str:
+        """The release and team the current picture came from, if known."""
+        for variant in self._variants:
+            if variant.get("embed") != self._current_embed:
+                continue
+            parts = [variant.get("display"), variant.get("track")]
+            return " · ".join(part for part in parts if part)
+        return ""
+
+    def _sync_source_pill(self) -> None:
+        """Name what is playing, and where the picture came from.
+
+        There is no original file behind a stream, so the pill carries the
+        height instead of a filename, and the footer carries the episode with
+        its release. They are kept distinct: printing one string twice reads as
+        a rendering fault.
+        """
+        source = self._track_source()
+        height = self._controls.quality_picker.selected_height() or max(self._qualities, default=0)
+        self._source_pill.set_source(source, f"{height}p" if height else "")
+        self._footer.set_metadata(self._caption, source or self._current_embed)
+
     def closeEvent(self, event) -> None:
         self._closed = True
+        self._controls.speed_flyout.close()
+        # a tool window outlives its parent by default and then holds the active
+        # popup slot, breaking every later menu and tooltip
+        if self.pip_active:
+            self._leave_pip()
         self._controller.close()
         super().closeEvent(event)

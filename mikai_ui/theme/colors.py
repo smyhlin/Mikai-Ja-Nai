@@ -22,6 +22,11 @@ CHROME_HAIRLINE = "rgba(231, 231, 234, 0.09)"
 GHOST_HOVER = "rgba(231, 231, 234, 0.08)"
 GHOST_PRESSED = "rgba(231, 231, 234, 0.14)"
 
+# The pill and the speed popover float over live video, so a translucent dark
+# fill keeps the picture readable underneath while still reading as chrome.
+CHROME_PILL_FILL = "rgba(11, 11, 15, 0.72)"
+CHROME_FLYOUT_FILL = "rgba(11, 11, 15, 0.88)"
+
 # Qt greys out a disabled button's text but not its icon, which leaves a
 # transport control looking live while it is inert.
 ICON_DISABLED = "rgba(160, 160, 171, 0.45)"

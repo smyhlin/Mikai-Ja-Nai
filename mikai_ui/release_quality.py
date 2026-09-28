@@ -13,7 +13,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import QComboBox, QStyledItemDelegate
 
 from mikai_ui.theme.colors import ACCENT, SURFACE_ACTIVE, TEXT
-from mikai_ui.theme.metrics import RADIUS_SMALL, SPACING_MEDIUM
+from mikai_ui.theme.metrics import RADIUS_SMALL, SPACING_MEDIUM, SPACING_XS
 
 # Item data role carrying the highest height a release offers, 0 when unknown.
 QUALITY_ROLE = int(Qt.ItemDataRole.UserRole) + 1
@@ -53,7 +53,12 @@ class ReleaseQualityDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):  # noqa: N802 - Qt naming
         hint = super().sizeHint(option, index)
-        return QSize(hint.width() + self._badge_width(option, index), hint.height())
+        # reserve the chip's HEIGHT as well as its width: sizing to the row height
+        # alone lets a 20px badge overhang its row and collide with the next one
+        return QSize(
+            hint.width() + self._badge_width(option, index),
+            max(hint.height(), BADGE_HEIGHT + 2 * SPACING_XS),
+        )
 
     def paint(self, painter: QPainter, option, index) -> None:  # noqa: N802
         super().paint(painter, option, index)

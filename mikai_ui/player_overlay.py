@@ -265,7 +265,10 @@ class PlayerOverlayWidget(QWidget):
             self.controls.setMaximumHeight(self._controls_height)
             self._opacity.setOpacity(1.0)
         self._schedule_hide()
-        self.unsetCursor()
+
+    def cancel_pending_click(self) -> None:
+        """A press that turned into a drag must not fire as a click."""
+        self._click_timer.stop()
 
     def hide_controls(self) -> None:
         if not self._fullscreen:
@@ -278,7 +281,6 @@ class PlayerOverlayWidget(QWidget):
         self._animation.setStartValue(self._opacity.opacity())
         self._animation.setEndValue(0.0)
         self._animation.start()
-        self.setCursor(Qt.CursorShape.BlankCursor)
 
     def _finish_hide_once(self) -> None:
         if self._opacity.opacity() <= 0.0 and self._fullscreen:
