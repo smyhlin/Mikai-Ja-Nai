@@ -11,7 +11,11 @@ from PySide6.QtWidgets import QApplication, QPushButton
 
 from conftest import FakeMpvAdapter
 
-from mikai_ui.media_shell import STATE_DEFAULT_FIT, STATE_FULLSCREEN_ACTIVE
+from mikai_ui.media_shell import (
+    STATE_DEFAULT_FIT,
+    STATE_FULLSCREEN_ACTIVE,
+    STATE_FULLSCREEN_AUTO_HIDDEN,
+)
 from mikai_ui.player_controller import PlaybackStatus
 from mikai_ui.shell_player import SHELL_RATE_MAX, ShellPlayerDialog
 
@@ -243,6 +247,53 @@ def test_the_episode_drawer_survives_the_fullscreen_player(app, player) -> None:
 
     player.toggle_series()
     assert not player._series.isVisible()
+
+
+def test_the_lightbox_fits_the_screen_it_opens_on(app) -> None:
+    """The lightbox is not a fixed-size window: it pins itself to the actual
+    screen, because a frameless Windows window does not always honour
+    showFullScreen() and would otherwise sit at its constructed default size."""
+    from PySide6.QtGui import QGuiApplication
+
+    dialog = _build()
+    a = FakeMpvAdapter()
+    dialog.controller.attach_adapter(a)
+    dialog.controller.load()
+    a.mediaLoaded.emit()
+    dialog.show()
+    app.processEvents()
+    screen = QGuiApplication.primaryScreen()
+    assert screen is not None
+    assert dialog.geometry() == screen.geometry(), (dialog.geometry(), screen.geometry())
+    dialog.close()
+    app.processEvents()
+
+
+def test_a_mouse_move_in_fullscreen_restores_the_hidden_controls(app, player) -> None:
+    """The chrome hides on idle even in the preview; any pointer move brings
+    it straight back, whether the move lands on the shell or on the dialog."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    player._shell._enter_fullscreen()
+    app.processEvents()
+    player._shell._enter_auto_hidden()
+    app.processEvents()
+    assert player._shell.state() == STATE_FULLSCREEN_AUTO_HIDDEN
+    assert not player._shell._dock.isVisible()
+
+    event = QMouseEvent(
+        QMouseEvent.Type.MouseMove,
+        QPoint(5, 5),
+        QPoint(5, 5),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(player, event)
+    app.processEvents()
+    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, player._shell.state()
+    assert player._shell._dock.isVisible()
 
 
 def test_the_lightbox_opens_with_the_preview_and_F_toggles_the_video(app, player) -> None:

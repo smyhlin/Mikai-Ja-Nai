@@ -398,7 +398,11 @@ class ShellPlayerDialog(QDialog):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(PLAYER_MIN_WIDTH, PLAYER_MIN_HEIGHT)
-        self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.resize(screen.availableGeometry().size())
+        else:
+            self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
         self.setContentsMargins(0, 0, 0, 0)
 
         self._shell = PlayerShell(self, frameless=True, demo_clock=False)
@@ -410,6 +414,9 @@ class ShellPlayerDialog(QDialog):
         # every key belongs to the shell, the one widget that acts on them: the
         # panels are all NoFocus, so this is what routes Space to play/pause
         self.setFocusProxy(self._shell)
+        # without tracking the dialog never hears a bare move — its children
+        # cover it — and the top-level wake below would be dead code
+        self.setMouseTracking(True)
 
         self._build_strip()
         self._build_status()
@@ -951,6 +958,28 @@ class ShellPlayerDialog(QDialog):
             return
         QApplication.sendEvent(self._shell, event)
 
+    def moveEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().moveEvent(event)
+        # a full screen lightbox follows the monitor the OS moves it to
+        if not self._closed and self.isFullScreen():
+            screen = self.screen()
+            if screen is not None and self.geometry() != screen.geometry():
+                self._fit_to_current_screen()
+
+    def _fit_to_current_screen(self) -> None:
+        """The lightbox adapts to the screen it is on, per monitor.
+
+        Windows frameless windows do not always honour showFullScreen() the
+        first time, and without this explicit pin the player would sit at its
+        constructed default size for the whole session. setGeometry to the
+        actual screen makes the fit deterministic and follows a monitor change.
+        """
+        if self._closed:
+            return
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.setGeometry(screen.geometry())
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
         # PlayerShell hides panels while building itself, which sets the
@@ -961,6 +990,7 @@ class ShellPlayerDialog(QDialog):
         self._layout_panels()
         # the lightbox fills the screen; the video itself starts as the centred
         # preview and goes full screen when the user asks (F, the dock button)
+        self._fit_to_current_screen()
         if not self.isFullScreen():
             self.showFullScreen()
 
@@ -1087,6 +1117,15 @@ class ShellPlayerDialog(QDialog):
         self._flash_status("Посилання на потік скопійовано")
 
     # ── events ─────────────────────────────────────────────────────────
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        # Belt-and-braces wake. Everything routes through the shell's own
+        # handler normally, but a move can land here instead (spots a native
+        # child surface does not cover), and controls that refuse to come back
+        # read as broken.
+        if not self._closed and shiboken6.isValid(self._shell):
+            self._shell._wake()
+        super().mouseMoveEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if self._closed:
