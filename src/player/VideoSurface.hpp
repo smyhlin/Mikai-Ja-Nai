@@ -66,6 +66,11 @@ protected:
     void resizeGL(int width, int height) override;
 
 private:
+    /// Creates the engine with vo=libmpv. Both open() and initializeGL() need it
+    /// and whichever runs first wins, so the options cannot be set in only one.
+    void ensureEngine();
+    /// Issues the deferred load once the render context exists.
+    bool startPendingUrl();
     void pumpEvents();
     void handleState();
 
@@ -79,6 +84,7 @@ private:
     QTimer statePump_;
 
     bool contextReady_ = false;
+    bool pendingOpen_ = false;
     uint64_t lastGeneration_ = 0;
     bool framePending_ = false;   // set by mpv's update callback
     bool playing_ = false;

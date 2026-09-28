@@ -89,6 +89,13 @@ public:
     void zoomBy(double factor, const QPointF& anchor = QPointF());
     void toggleHud();
 
+    /// The dialog is the shell's host and drives both of these directly:
+    /// fullscreen is a composition decision, and wake() is what re-arms the
+    /// auto-hide when the pointer is over the feature strip, the status
+    /// panel or the series drawer - without it the drawer vanishes under the
+    /// pointer, because no move ever crosses the shell itself.
+    void enterFullscreen();
+    void wake();
 signals:
     // ── shell → host ────────────────────────────────────────────────
     void playPauseRequested();
@@ -134,10 +141,8 @@ private:
     void setStateCursor();
     void layoutChrome();
 
-    void enterFullscreen();
     void exitFullscreen();
     void enterAutoHidden();
-    void wake();
     void onPlayClicked();
     void onScrub(double fraction);
     void onVolume(double volume);

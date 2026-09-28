@@ -12,6 +12,16 @@
 
 namespace mplayer {
 
+void VideoSurface::ensureEngine() {
+    if (mpv_) return;
+    // vo=libmpv routes decoded frames into OUR render context. Without it mpv
+    // opens a video output of its own, the render context never receives a
+    // frame (update() stays at generation 0) and render() still returns success
+    // while painting nothing.
+    mpv_ = std::make_unique<MpvHandle>(
+        std::vector<std::pair<std::string, std::string>>{{"vo", "libmpv"}});
+}
+
 VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     setMinimumSize(160, 90);
     setFocusPolicy(Qt::StrongFocus);
@@ -32,12 +42,37 @@ VideoSurface::~VideoSurface() {
 
 bool VideoSurface::open(const QString& url) {
     url_ = url;
-    if (!mpv_) mpv_ = std::make_unique<MpvHandle>();
+    ensureEngine();
+    // The load waits for the GL context. With vo=libmpv the video output
+    // attaches to the render context, and mpv will not start a VO that has
+    // nowhere to draw: loading first leaves the core with no video and a black
+    // surface. Callers legitimately open before the widget is ever shown.
+    if (!contextReady_) {
+        pendingOpen_ = true;
+        return true;
+    }
+    return startPendingUrl();
+}
+
+bool VideoSurface::startPendingUrl() {
+    pendingOpen_ = false;
+    if (url_.isEmpty()) {
+        return false;
+    }
     try {
-        mpv_->loadFile(url.toStdString());
+        mpv_->loadFile(url_.toStdString());
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         return false;
+    }
+    // mpv also comes up paused when a render context is its only consumer: it
+    // has no window of its own to drive playback. Without this the core decodes
+    // one frame, hands it over and stops, which reads as a black surface and a
+    // frozen clock rather than as an obvious failure.
+    try {
+        mpv_->setPaused(false);
+    } catch (const MpvError&) {
+        // The host may intend to open paused and unpause itself.
     }
     return true;
 }
@@ -112,8 +147,7 @@ void VideoSurface::initializeGL() {
     QOpenGLWidget::initializeGL();
     try {
         auto gl = std::make_shared<GlApi>(loadGlApi());
-        if (!mpv_) mpv_ = std::make_unique<MpvHandle>(
-            std::vector<std::pair<std::string, std::string>>{{"vo", "libmpv"}});
+        ensureEngine();
         render_ = std::make_unique<MpvRenderContext>(*mpv_, *gl);
         render_->setFlipY(false);
         render_->setUpdateCallback([this] {
@@ -126,6 +160,7 @@ void VideoSurface::initializeGL() {
         statePump_.setInterval(50);
         connect(&statePump_, &QTimer::timeout, this, &VideoSurface::pumpEvents);
         statePump_.start();
+        if (pendingOpen_) startPendingUrl();
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         contextReady_ = false;
@@ -184,9 +219,12 @@ void VideoSurface::pumpEvents() {
             position_ = pos;
             emit positionChanged(pos);
         }
-        const bool paused = mpv_->getFlag("pause");
-        if (paused != playing_) {
-            playing_ = !paused;
+        // Compare like with like: the property is "pause", the cached state is
+        // "playing". Guarding on `paused != playing_` means a playing video
+        // (false vs false) never updates, so isPlaying() stays false forever.
+        const bool playing = !mpv_->getFlag("pause");
+        if (playing != playing_) {
+            playing_ = playing;
             emit playingChanged(playing_);
         }
     } catch (const MpvError&) {

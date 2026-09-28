@@ -25,6 +25,9 @@ set(PLAYER_SOURCES
   src/player/ShellWidgets.cpp
   src/player/ShellSliders.cpp
   src/player/PlayerShell.cpp
+  src/player/PlayerPopups.cpp
+  src/player/PlayerDialog.cpp
+  src/player/IpcChannel.cpp
 )
 
 set(PLAYER_HEADERS
@@ -35,6 +38,9 @@ set(PLAYER_HEADERS
   src/player/ShellWidgets.hpp
   src/player/ShellSliders.hpp
   src/player/PlayerShell.hpp
+  src/player/PlayerPopups.hpp
+  src/player/PlayerDialog.hpp
+  src/player/IpcChannel.hpp
 )
 
 # STATIC so mikai can link it into a shared module without re-exporting it.
@@ -84,3 +90,13 @@ target_link_libraries(widget_pixel_probe PRIVATE mikai_player Qt6::Widgets)
 add_executable(shell_probe src/probes/ShellProbe.cpp)
 target_link_libraries(shell_probe PRIVATE mikai_player Qt6::Widgets)
 set_target_properties(shell_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+# The player executable. It is a process, not a DLL: PySide6 and this Qt
+# are separate builds whose Qt6Core.dll collides by name, so loading both
+# into one process fails with WinError 127.
+add_executable(mikai-player WIN32 src/player/main.cpp)
+target_link_libraries(mikai-player PRIVATE mikai_player)
+
+add_executable(dialog_probe src/probes/DialogProbe.cpp)
+target_link_libraries(dialog_probe PRIVATE mikai_player Qt6::Widgets)
+set_target_properties(dialog_probe PROPERTIES WIN32_EXECUTABLE FALSE)

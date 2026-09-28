@@ -371,7 +371,6 @@ void PlayerShell::exitFullscreen() {
 }
 
 void PlayerShell::enterAutoHidden() {
-    std::fprintf(stderr, "[enterAutoHidden]\n");
     // Never yank the chrome away mid-gesture: an open popup or a live drag
     // means the user is interacting even though no move crossed the shell.
     if (QApplication::activePopupWidget() != nullptr) {
@@ -691,7 +690,6 @@ void PlayerShell::exitViewer() {
 
 void PlayerShell::keyPressEvent(QKeyEvent* event) {
     wake();
-    std::fprintf(stderr, "[wake from keyPressEvent]\n");
     switch (event->key()) {
         case Qt::Key_Space:
             onPlayClicked();
@@ -779,7 +777,6 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
 
 void PlayerShell::wheelEvent(QWheelEvent* event) {
     wake();
-    std::fprintf(stderr, "[wake from wheelEvent]\n");
     const int delta = event->angleDelta().y();
     if (delta == 0) return;
     zoomBy(1 + kZoomStep * (delta > 0 ? 1 : -1), event->position());
@@ -808,7 +805,6 @@ bool PlayerShell::hitEdges(const QPointF& pos) {
 
 void PlayerShell::mousePressEvent(QMouseEvent* event) {
     wake();
-    std::fprintf(stderr, "[wake from mousePressEvent]\n");
     if (event->button() != Qt::LeftButton) return;
 
     if (hitEdges(event->position())) {
@@ -829,7 +825,6 @@ void PlayerShell::mousePressEvent(QMouseEvent* event) {
 
 void PlayerShell::mouseMoveEvent(QMouseEvent* event) {
     wake();
-    std::fprintf(stderr, "[wake from mouseMoveEvent]\n");
 
     if (resizingLeft_ || resizingTop_ || resizingRight_ || resizingBottom_) {
         QRect g = dragGeometry_;
@@ -1035,7 +1030,6 @@ void PlayerShell::resizeEvent(QResizeEvent* event) {
 }
 
 void PlayerShell::showEvent(QShowEvent* event) {
-    std::fprintf(stderr, "[showEvent]\n");
     QWidget::showEvent(event);
     applyState();
     layoutChrome();
