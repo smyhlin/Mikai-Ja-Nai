@@ -1631,10 +1631,10 @@ class PlayerShell(QWidget):
 
     def _fitted(self) -> tuple[int, int]:
         if self._fullscreen:
-            # full screen is edge to edge: the video letterboxes to the window
-            # and anything left over is genuine aspect-ratio space, not a 24 px
-            # design inset left from the preview fit
-            vw, vh = self.width(), self.height()
+            # full screen is the whole physical monitor: the surface takes the
+            # window edge to edge with no letterboxing, no design margin, no
+            # aspect bars. The picture fills the screen, full stop.
+            return self.width(), self.height()
         else:
             pad = FRAME_MARGIN
             chrome_h = 150
