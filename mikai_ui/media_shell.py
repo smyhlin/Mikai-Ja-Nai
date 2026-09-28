@@ -41,6 +41,7 @@ import sys
 import time
 from pathlib import Path
 
+import shiboken6
 from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
@@ -57,6 +58,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QCursor,
     QFont,
     QFontDatabase,
     QFontMetrics,
@@ -69,7 +71,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -151,6 +152,14 @@ STATE_ZOOM_IN_PAN = "ZOOM_IN_PAN"
 STATE_FULLSCREEN_ACTIVE = "FULLSCREEN_ACTIVE"
 STATE_FULLSCREEN_AUTO_HIDDEN = "FULLSCREEN_AUTO_HIDDEN"
 
+# How long the engine attach is allowed to shuffle native z-order before the
+# shell stops re-raising the chrome over it. The video surface turns native the
+# moment mpv takes its winId(), and a native window born that late composites
+# on top of every native sibling built before it — the dock, the footers, the
+# pill, everything. The passes below win that race back.
+ATTACH_RERAISE_MS = 0
+ATTACH_RERAISE_LATE_MS = 300
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  FONTS & SMALL HELPERS
@@ -193,8 +202,19 @@ def rr(
     border: QColor | None = None,
     border_w: float = 1.0,
 ) -> None:
-    """paint a rounded rect"""
-    p.setPen(Qt.PenStyle.NoPen if border is None else QPen(border, border_w))
+    """paint a rounded rect
+
+    `border` may be a QColor to stroke with, or a PenStyle to set the pen
+    outright. Callers pass Qt.PenStyle.NoPen to mean "no outline" while still
+    wanting a fill, which used to reach QPen(PenStyle, float) and raise a
+    TypeError on every repaint of that widget.
+    """
+    if isinstance(border, Qt.PenStyle):
+        p.setPen(border)
+    elif border is None:
+        p.setPen(Qt.PenStyle.NoPen)
+    else:
+        p.setPen(QPen(border, border_w))
     p.setBrush(QBrush(fill))
     p.drawRoundedRect(rect, radius, radius)
 
@@ -504,6 +524,7 @@ class Panel(QWidget):
             self._fill,
             self._border,
         )
+        p.end()
 
 
 class IconButton(QPushButton):
@@ -968,6 +989,7 @@ class StateBadge(QWidget):
             Qt.AlignmentFlag.AlignVCenter,
             self._state,
         )
+        p.end()
 
 
 class StateHUD(Panel):
@@ -1050,7 +1072,10 @@ class CenterGlyph(QWidget):
         if kind is None:
             self.hide()
         else:
+            # a native child re-shown after the surface went native would land
+            # back in its old, buried stacking slot; raise on every show
             self.show()
+            self.raise_()
             self.update()
 
     def paintEvent(self, _):
@@ -1108,15 +1133,19 @@ class PillButton(QWidget):
 
 
 class Toast(Panel):
-    """Transient centred notification."""
+    """Transient centred notification.
+
+    Deliberately WITHOUT a QGraphicsOpacityEffect: the toast is promoted to a
+    native window (it must composite over the mpv surface), and Qt renders
+    widget effects into the parent's backing store — a native child never gets
+    that pass, so the fade either vanishes or takes the whole toast with it.
+    A deterministic show/raise + timed hide is what actually shows up.
+    """
 
     def __init__(self, parent=None):
         super().__init__(QColor(0, 0, 0, 205), 8, W_15, parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
-        self._effect = QGraphicsOpacityEffect(self)
-        self._effect.setOpacity(0.0)
-        self.setGraphicsEffect(self._effect)
         self._label = QLabel(self)
         self._label.setFont(ui(10))
         self._label.setStyleSheet("color: rgba(255,255,255,235);")
@@ -1128,38 +1157,16 @@ class Toast(Panel):
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self._begin_out)
-
-        self._fade = QVariantAnimation(self)
-        self._fade.setDuration(190)
-        self._fade.valueChanged.connect(self._set_opacity)
-        self._fade.finished.connect(self._on_done)
-
-        self._op = 0.0
-        self._set_opacity(0.0)
-
-    def _set_opacity(self, v: float):
-        self._op = float(v)
-        self._effect.setOpacity(self._op)
-        self.setVisible(self._op > 0.01)
-
-    def _on_done(self):
-        if self._op <= 0.01:
-            self.hide()
-
-    def _begin_out(self):
-        self._fade.stop()
-        self._fade.setStartValue(self._op)
-        self._fade.setEndValue(0.0)
-        self._fade.start()
+        self._timer.timeout.connect(self.hide)
 
     def flash(self, text: str, ms: int = 1900):
         self._label.setText(text)
         self.adjustSize()
-        self._fade.stop()
-        self._fade.setStartValue(self._op)
-        self._fade.setEndValue(1.0)
-        self._fade.start()
+        parent = self.parentWidget()
+        if parent is not None:
+            self.move((parent.width() - self.width()) // 2, int(parent.height() * 0.80))
+        self.show()
+        self.raise_()
         self._timer.start(ms)
 
 
@@ -1275,6 +1282,9 @@ class PlayerShell(QWidget):
         # off in mikai: the dock already shows time, quality and rate, and the
         # state panel repeated them in the corner of every playback
         self._show_hud = False
+        # widgets the shell watches for user input so the auto-hide never fires
+        # while the pointer works INSIDE the chrome (dock, flyout, scrub bar…)
+        self._wake_watchers: list[QWidget] = []
 
         # ── media ─────────────────────────────────────────────────────
         self._path = ""
@@ -1313,6 +1323,17 @@ class PlayerShell(QWidget):
         self._refresh_timer.setInterval(200)
         self._refresh_timer.timeout.connect(self._refresh_hud)
 
+        # The wake poll. mpv's wid embed puts a FOREIGN native window over the
+        # surface, and mouse moves over the picture go to mpv's own wndproc —
+        # Qt never sees them, so every move-based wake path is dead exactly
+        # when the chrome is hidden and the user waves the mouse over the video
+        # to bring it back. Polling the cursor position works no matter which
+        # window owns the pixels under it.
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.setInterval(120)
+        self._cursor_timer.timeout.connect(self._poll_cursor)
+        self._last_cursor = QPoint(-1, -1)
+
         self._press = QPointF()
         self._press_offset = QPointF()
         self._moved = False
@@ -1342,6 +1363,17 @@ class PlayerShell(QWidget):
         )
         self._surface.setMouseTracking(True)
         self._surface.installEventFilter(self)
+        # Native AT BIRTH, before any chrome is promoted. The surface going
+        # native only when mpv calls winId() is what buried the chrome: a
+        # native window born that late lands on top of every native sibling
+        # already living in the window, and Qt's raise_() cannot reliably
+        # reorder it afterwards. Born first, it sits at the BOTTOM of the
+        # native stack for its whole life; every chrome HWND created after it
+        # is above it, and mpv's later winId() creates nothing new. mpv still
+        # nests its own foreign child window inside this HWND for input, which
+        # is why the cursor poll below — not mouse events — drives the wake.
+        self._surface.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
+        self._surface.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
 
     def _build_window_controls(self) -> None:
         """z100 · top-right"""
@@ -1384,19 +1416,51 @@ class PlayerShell(QWidget):
             self._footer_r,
             self._toast,
             self._center,
+            self._hud,
         )
 
     def _promote_chrome(self) -> None:
         for widget in self._chrome_widgets():
             widget.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
             widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self._install_wake_watchers()
         self._raise_chrome()
 
+    def _install_wake_watchers(self) -> None:
+        """Watch the whole chrome subtree for user input.
+
+        Mouse moves over a plain child of the dock never reached the shell: a
+        button without mouse tracking silently eats hover moves, the idle timer
+        expired anyway, and the chrome hid itself out from under the pointer.
+        Tracking + an event filter on every widget in the chrome subtrees means
+        ANY input over ANY control counts as activity and re-arms the timer.
+        """
+        self._wake_watchers = []
+        seen: set[int] = set()
+        stack: list[QWidget] = list(self._chrome_widgets())
+        while stack:
+            widget = stack.pop()
+            if id(widget) in seen:
+                continue
+            seen.add(id(widget))
+            widget.setMouseTracking(True)
+            widget.removeEventFilter(self)
+            widget.installEventFilter(self)
+            self._wake_watchers.append(widget)
+            stack.extend(widget.findChildren(QWidget))
+
     def _raise_chrome(self) -> None:
-        """Keep the chrome above the surface after any restacking."""
+        """Keep the chrome above the surface after any restacking.
+
+        The surface is pushed DOWN as well as the chrome raised UP: after a
+        hide/show cycle Qt can re-insert a re-shown native child below the
+        surface's HWND, and raising alone races against that. Raising hidden
+        widgets is harmless and keeps Qt's internal order in sync so the next
+        show lands where it belongs."""
+        if shiboken6.isValid(self._surface):
+            self._surface.lower()
         for widget in self._chrome_widgets():
-            if widget.isVisible():
-                widget.raise_()
+            widget.raise_()
 
     def _build_badge(self) -> None:
         self._badge = StateBadge(self)
@@ -1585,16 +1649,19 @@ class PlayerShell(QWidget):
         st = self.state()
         self._last_state = st
 
-        fs, hidden, zoom = self._fullscreen, self._hud_hidden, self._scale > 1.005
+        hidden, zoom = self._hud_hidden, self._scale > 1.005
 
-        # chrome visibility matrix
+        # chrome visibility matrix.  Fullscreen does NOT suppress the chrome —
+        # the shell lives fullscreen in mikai, and gating the pill, the footers
+        # and the chevrons on "not fullscreen" meant half the UI could never
+        # appear at all.  The idle auto-hide is what hides them now.
         self._wc.setVisible(not hidden)
-        self._btn_prev.setVisible(not hidden and not fs and not zoom)
-        self._btn_next.setVisible(not hidden and not fs and not zoom)
-        self._pill.setVisible(not hidden and not fs)
+        self._btn_prev.setVisible(not hidden and not zoom)
+        self._btn_next.setVisible(not hidden and not zoom)
+        self._pill.setVisible(not hidden)
         self._dock.setVisible(not hidden)
-        self._footer_l.setVisible(not hidden and not fs)
-        self._footer_r.setVisible(not hidden and not fs)
+        self._footer_l.setVisible(not hidden)
+        self._footer_r.setVisible(not hidden)
         # the state badge and the manifest HUD are never shown: they duplicate
         # the dock, so _build_badge/_build_overlays leave them hidden for good
         if hidden:
@@ -1604,7 +1671,7 @@ class PlayerShell(QWidget):
         self._set_state_cursor()
 
         # window-mode chrome (toggle_window_mode → rounded vs. hard-edged frame)
-        radius = 12 if (self._rounded and not fs) else 0
+        radius = 12 if (self._rounded and not self._fullscreen) else 0
         ring = "border: 1px solid rgba(255,255,255,28);" if radius else ""
         self._surface.setStyleSheet(
             f"QWidget#videoSurface {{ background:#000; border-radius:{radius}px; {ring} }}"
@@ -1659,6 +1726,16 @@ class PlayerShell(QWidget):
         self.fullscreenChanged.emit(False)
 
     def _enter_auto_hidden(self) -> None:
+        # never yank the chrome away from an active gesture: an open popup
+        # (flyout, key hints, context menu) or a dragging pointer (scrub bar,
+        # volume, canvas pan, frameless resize) means the user is mid-interaction
+        # even though no move crossed the shell.  Re-arm and try again later.
+        if QApplication.activePopupWidget() is not None:
+            self._hide_timer.start(AUTOHIDE_MS)
+            return
+        if self._scrub.is_dragging() or self._vol._drag or self._panning or any(self._resizing):
+            self._hide_timer.start(AUTOHIDE_MS)
+            return
         self._hud_hidden = True
         self._apply_state()
 
@@ -1667,6 +1744,23 @@ class PlayerShell(QWidget):
             self._hud_hidden = False
             self._apply_state()
         self._hide_timer.start(AUTOHIDE_MS)
+
+    def _poll_cursor(self) -> None:
+        """Wake the chrome from cursor movement alone.
+
+        This is the wake path that actually survives mpv: moves over the
+        picture are consumed by mpv's foreign window and never reach the
+        surface filter, the chrome watchers or the dialog. A moved cursor
+        inside the shell bounds is user presence, whatever widget — or foreign
+        window — sits under it."""
+        pos = QCursor.pos()
+        if pos == self._last_cursor:
+            return
+        self._last_cursor = pos
+        if not self.isVisible():
+            return
+        if self.rect().contains(self.mapFromGlobal(pos)):
+            self._wake()
 
     # ═════════════════════════════════════════════════════════════════
     #  LAYOUT
@@ -1678,11 +1772,10 @@ class PlayerShell(QWidget):
             # window edge to edge with no letterboxing, no design margin, no
             # aspect bars. The picture fills the screen, full stop.
             return self.width(), self.height()
-        else:
-            pad = FRAME_MARGIN
-            chrome_h = 150
-            vw = max(160, self.width() - 2 * (pad + 24))
-            vh = max(100, self.height() - chrome_h)
+        pad = FRAME_MARGIN
+        chrome_h = 150
+        vw = max(160, self.width() - 2 * (pad + 24))
+        vh = max(100, self.height() - chrome_h)
         if vw / vh > self._aspect:
             return int(vh * self._aspect), int(vh)
         return int(vw), int(vw / self._aspect)
@@ -1732,6 +1825,10 @@ class PlayerShell(QWidget):
         if self._toast.isVisible():
             self._toast.move((w - self._toast.width()) // 2, int(h * 0.80))
 
+        # every relayout is a chance the surface has gone native and buried the
+        # chrome again (mpv attach, PiP reparent); restack before returning
+        self._raise_chrome()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._layout()
@@ -1757,6 +1854,9 @@ class PlayerShell(QWidget):
         self._hud.adjustSize()
         if self._show_hud and not self._hud_hidden:
             self._hud.move(self.width() - self._hud.width() - 14, int(self.height() * 0.30))
+        # the 5 Hz safety net: whatever buried the chrome since the last pass
+        # (late native surface, engine-side restack) is undone here
+        self._raise_chrome()
 
     def _cursor_name(self) -> str:
         st = self.state()
@@ -1873,7 +1973,15 @@ class PlayerShell(QWidget):
         self._flyout.set_quality(self._quality)
 
     def video_surface(self) -> QWidget:
-        """The widget mpv should render into (use .winId())."""
+        """The widget mpv should render into (use .winId()).
+
+        Taking winId() makes the surface native at THIS moment, and a native
+        window born this late composites over every native sibling built before
+        it — the whole chrome and the host dialog's panels.  Schedule re-raise
+        passes so the chrome wins the restack the engine just started.
+        """
+        QTimer.singleShot(ATTACH_RERAISE_MS, self._raise_chrome)
+        QTimer.singleShot(ATTACH_RERAISE_LATE_MS, self._raise_chrome)
         return self._surface
 
     # ═════════════════════════════════════════════════════════════════
@@ -1963,6 +2071,7 @@ class PlayerShell(QWidget):
     def _exit(self) -> None:
         self._demo_timer.stop()
         self._refresh_timer.stop()
+        self._cursor_timer.stop()
         self.closeRequested.emit()
         self.close()
 
@@ -2010,16 +2119,22 @@ class PlayerShell(QWidget):
                 self._exit()
         elif k == Qt.Key.Key_Right:
             e.accept()
+            # one seek, not two: routing through _on_scrub() emitted
+            # seekRequested a second time from the key handler
             if self._duration:
-                self.seekRequested.emit(min(self._duration, self._position + 5))
-                self._on_scrub(self._scrub.value() + 5 / max(1, self._duration))
+                t = min(self._duration, self._position + 5)
+                self._position = t
+                self.seekRequested.emit(t)
+                self._update_time_labels()
             else:
                 self.nextRequested.emit()
         elif k == Qt.Key.Key_Left:
             e.accept()
             if self._duration:
-                self.seekRequested.emit(max(0.0, self._position - 5))
-                self._on_scrub(max(0.0, self._scrub.value() - 5 / max(1, self._duration)))
+                t = max(0.0, self._position - 5)
+                self._position = t
+                self.seekRequested.emit(t)
+                self._update_time_labels()
             else:
                 self.prevRequested.emit()
         elif k == Qt.Key.Key_Up:
@@ -2180,7 +2295,7 @@ class PlayerShell(QWidget):
                 self._on_play_clicked()
 
     def eventFilter(self, obj, ev) -> bool:
-        """Forward canvas-surface input to the shell."""
+        """Forward canvas-surface input to the shell; wake on chrome activity."""
         if obj is self._surface:
             t = ev.type()
             if t in (
@@ -2209,6 +2324,20 @@ class PlayerShell(QWidget):
                 elif t == QEvent.Type.Wheel:
                     self.wheelEvent(_ReposedEvent(ev, local))
                 return True
+        # chrome subtree: any input over any control is user activity.  The
+        # filter sees the event before the target widget handles it, so even a
+        # ScrubBar that consumes its hover moves still wakes the shell.
+        if self._wake_watchers and obj in self._wake_watchers:
+            t = ev.type()
+            if t in (
+                QEvent.Type.Enter,
+                QEvent.Type.HoverEnter,
+                QEvent.Type.HoverMove,
+                QEvent.Type.MouseMove,
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.Wheel,
+            ):
+                self._wake()
         return super().eventFilter(obj, ev)
 
     # ── drag & drop ─────────────────────────────────────────────────
@@ -2281,6 +2410,7 @@ class PlayerShell(QWidget):
         self._layout()
         self._hide_timer.start(AUTOHIDE_MS)
         self._refresh_timer.start()
+        self._cursor_timer.start()
         if self._demo and self._playing:
             self._demo_timer.start()
 
@@ -2290,6 +2420,7 @@ class PlayerShell(QWidget):
         self._resizing = (False, False, False, False)
         self._demo_timer.stop()
         self._refresh_timer.stop()
+        self._cursor_timer.stop()
         self._hide_timer.stop()
         self._flyout.close()
         self._keys.close()

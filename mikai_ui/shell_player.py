@@ -74,6 +74,12 @@ SETTINGS_TOOLTIP = "toggle_settings_popover"
 FULLSCREEN_STATES = frozenset({STATE_FULLSCREEN_ACTIVE, STATE_FULLSCREEN_AUTO_HIDDEN})
 PLAYING_STATES = frozenset({PlaybackStatus.PLAYING, PlaybackStatus.BUFFERING})
 
+# The video surface turns native the moment mpv latches onto it, and a native
+# window born that late composites over every native sibling built before it —
+# the dialog's panels included. These passes restack the chrome after attach.
+ATTACH_RERAISE_MS = 0
+ATTACH_RERAISE_LATE_MS = 300
+
 PANEL_QSS = (
     'QFrame[chromePanel="true"] {'
     "  background-color: rgba(11, 11, 15, 0.92);"
@@ -392,6 +398,9 @@ class ShellPlayerDialog(QDialog):
         self._error_active = False
         self._pip: PipWindow | None = None
         self._pip_was_fullscreen = False
+        # panels watched for user input, so hovering them re-arms the shell's
+        # auto-hide instead of letting the chrome vanish under the pointer
+        self._panel_watchers: list[QWidget] = []
 
         self.setObjectName("playerWindow")
         self.setWindowTitle(f"Плеєр — {caption}")
@@ -436,6 +445,7 @@ class ShellPlayerDialog(QDialog):
         self._quality_popup.picked.connect(self._on_quality_picked)
         self._track_popup.picked.connect(self._on_track_picked)
         self._series.picked.connect(lambda spot: self._go_to_episode(spot, close_list=True))
+        self._watch_panels()
 
         self._controller = PlayerController(url, self._qualities, initial_height, self)
         self._controller.stateChanged.connect(self._on_state_changed)
@@ -658,6 +668,9 @@ class ShellPlayerDialog(QDialog):
         self._series.set_entries(
             [str(item.get("label", "")) for item in self._playlist], self._episode_index
         )
+        # the drawer's rows were torn down and rebuilt: re-arm the wake watchers
+        # over the fresh buttons or hovering the list stops counting as activity
+        self._watch_panels()
         self._series.setVisible(self._series_expanded)
         self._layout_panels()
 
@@ -946,6 +959,20 @@ class ShellPlayerDialog(QDialog):
         except Exception as exc:
             log.exception("player startup failed")
             self._controller.fail(str(exc))
+        # video_surface() has just handed the engine a native handle: the moment
+        # mpv's own window lands it composites over every native sibling built
+        # before it — the dock, the footers, this dialog's panels.  Two delayed
+        # passes restack the chrome above it and keep it there.
+        QTimer.singleShot(ATTACH_RERAISE_MS, self._re_raise_chrome)
+        QTimer.singleShot(ATTACH_RERAISE_LATE_MS, self._re_raise_chrome)
+
+    def _re_raise_chrome(self) -> None:
+        """Restack everything that floats over the mpv surface."""
+        if self._closed:
+            return
+        if shiboken6.isValid(self._shell):
+            self._shell._raise_chrome()
+        self._layout_panels()
 
     def show_error(self, message: str) -> None:
         self._controller.fail(message)
@@ -1102,6 +1129,9 @@ class ShellPlayerDialog(QDialog):
             self.showFullScreen()
         self._pip_was_fullscreen = False
         self._flash_status("Повернуто у вікно")
+        # the surface was just reparented back across native windows: without a
+        # restack it lands over the chrome it used to sit under
+        self._re_raise_chrome()
 
     def _sync_pip_bar(self, state: PlaybackState) -> None:
         if not self.pip_active:
@@ -1128,8 +1158,33 @@ class ShellPlayerDialog(QDialog):
         QGuiApplication.clipboard().setText(url)
         self._flash_status("Посилання на потік скопійовано")
 
-    # ── events ─────────────────────────────────────────────────────────
+    # ── panel wake watchers ────────────────────────────────────────────
 
+    def _watch_panels(self) -> None:
+        """Watch the strip, the toast and the episode drawer for user input.
+
+        Hovering an episode row produces no move the shell would see — rows
+        have no mouse tracking, and hover is consumed above them — so the
+        shell's idle timer kept firing and the drawer vanished under the
+        pointer. Every widget in the panel subtrees now reports activity back
+        to the shell's wake, and the watcher list is rebuilt whenever the
+        drawer's rows are rebuilt.
+        """
+        self._panel_watchers = []
+        for root in (
+            getattr(self, "_strip", None),
+            getattr(self, "_status", None),
+            getattr(self, "_series", None),
+        ):
+            if root is None:
+                continue
+            for widget in (root, *root.findChildren(QWidget)):
+                widget.setMouseTracking(True)
+                self.removeEventFilter(widget)  # idempotent re-install
+                widget.installEventFilter(self)
+                self._panel_watchers.append(widget)
+
+    # ── events ─────────────────────────────────────────────────────────
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt naming
         # Belt-and-braces wake. Everything routes through the shell's own
         # handler normally, but a move can land here instead (spots a native
@@ -1144,6 +1199,20 @@ class ShellPlayerDialog(QDialog):
             return False
         if watched is self._shell and event.type() == QEvent.Type.KeyPress:
             return self._on_shell_key(event)
+        # panel activity counts as user presence: re-arm the shell's idle timer
+        # without consuming the event
+        if self._panel_watchers and watched in self._panel_watchers:
+            t = event.type()
+            if t in (
+                QEvent.Type.Enter,
+                QEvent.Type.HoverEnter,
+                QEvent.Type.HoverMove,
+                QEvent.Type.MouseMove,
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.Wheel,
+            ):
+                if shiboken6.isValid(self._shell):
+                    self._shell._wake()
         pip = self._pip
         if (
             pip is not None
