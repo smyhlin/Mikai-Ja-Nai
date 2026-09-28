@@ -1247,14 +1247,21 @@ class PlayerShell(QWidget):
         super().__init__(parent)
         self.setWindowTitle("Media Lightbox · manifest 2.0.0")
         self.setMinimumSize(MIN_WINDOW)
-        self.resize(1280, 760)
+        if parent is not None:
+            self.resize(parent.size())
+        else:
+            self.resize(1280, 760)
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
 
-        if frameless:
+        # when hosted inside a dialog, the shell must be a normal child widget;
+        # otherwise Qt treats it as an independent top-level window stuck at
+        # 1280x760 floating in the middle of the screen
+        if frameless and parent is None:
             self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
             self._frameless = True
         else:
+            self.setWindowFlags(Qt.WindowType.Widget)
             self._frameless = False
 
         # ── canvas / fsm ──────────────────────────────────────────────
@@ -2119,6 +2126,8 @@ class PlayerShell(QWidget):
             self.releaseMouse()
 
     def mouseReleaseEvent(self, e) -> None:
+        if not self._grabbed:
+            return
         self._release()
         if any(self._resizing):
             self._resizing = (False, False, False, False)
@@ -2130,6 +2139,8 @@ class PlayerShell(QWidget):
             self._apply_state()
         else:
             self._set_state_cursor()
+            if not self._moved and e.button() == Qt.MouseButton.LeftButton:
+                self._on_play_clicked()
 
     def eventFilter(self, obj, ev) -> bool:
         """Forward canvas-surface input to the shell."""

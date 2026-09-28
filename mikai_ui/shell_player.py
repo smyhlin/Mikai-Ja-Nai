@@ -405,7 +405,7 @@ class ShellPlayerDialog(QDialog):
             self.resize(PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT)
         self.setContentsMargins(0, 0, 0, 0)
 
-        self._shell = PlayerShell(self, frameless=True, demo_clock=False)
+        self._shell = PlayerShell(self, frameless=False, demo_clock=False, start_fullscreen=True)
         self._shell.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -615,20 +615,24 @@ class ShellPlayerDialog(QDialog):
         self._layout_panels()
 
     def _on_shell_fullscreen(self, fullscreen: bool) -> None:
-        """The video-fit toggle. The lightbox window is full screen either way.
+        """The player is a full-screen surface occupying the entire physical monitor.
 
-        F, F11, Esc and the dock's fullscreen control switch the VIDEO between
-        the centred preview and a full screen, and this handler only has to
-        agree: the window never leaves full screen, so there is nothing to undo.
+        Anything attempting to drop the player back to preview or windowed mode
+        is prevented here; the video fills the monitor edge to edge.
         """
         if self._closed:
             return
+        if not fullscreen:
+            self._shell._enter_fullscreen()
+        self._sync_window_fullscreen()
 
     def _sync_window_fullscreen(self) -> None:
-        """The lightbox: the window is what fills the screen."""
-        if self.pip_active or self.isFullScreen():
+        """The window and video occupy the full physical screen."""
+        if self.pip_active:
             return
-        self.showFullScreen()
+        if not self.isFullScreen():
+            self.showFullScreen()
+        self._shell.setGeometry(self.rect())
 
     def _on_quality_switching(self, height: int) -> None:
         self._flash_status(f"Перемикання на {height}p…")
@@ -948,6 +952,7 @@ class ShellPlayerDialog(QDialog):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._shell.setGeometry(self.rect())
         self._layout_panels()
 
     def keyPressEvent(self, event) -> None:
@@ -982,17 +987,14 @@ class ShellPlayerDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        # PlayerShell hides panels while building itself, which sets the
-        # explicit-hide flag; a layout child in that state never appears on its
-        # own, so the whole player would render as an empty frame.
-        self._shell.show()
-        self._shell.setFocus(Qt.FocusReason.OtherFocusReason)
-        self._layout_panels()
-        # the lightbox fills the screen; the video itself starts as the centred
-        # preview and goes full screen when the user asks (F, the dock button)
         self._fit_to_current_screen()
         if not self.isFullScreen():
             self.showFullScreen()
+        self._shell.setGeometry(self.rect())
+        self._shell.show()
+        self._shell.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._shell._enter_fullscreen()
+        self._layout_panels()
 
     def _layout_panels(self) -> None:
         area = self._shell.geometry()

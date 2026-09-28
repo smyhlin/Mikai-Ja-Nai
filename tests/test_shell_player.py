@@ -12,7 +12,6 @@ from PySide6.QtWidgets import QApplication, QPushButton
 from conftest import FakeMpvAdapter
 
 from mikai_ui.media_shell import (
-    STATE_DEFAULT_FIT,
     STATE_FULLSCREEN_ACTIVE,
     STATE_FULLSCREEN_AUTO_HIDDEN,
 )
@@ -296,20 +295,11 @@ def test_a_mouse_move_in_fullscreen_restores_the_hidden_controls(app, player) ->
     assert player._shell._dock.isVisible()
 
 
-def test_the_lightbox_opens_with_the_preview_and_F_toggles_the_video(app, player) -> None:
-    """The window fills the screen, the video does not: it starts as the
-    centred preview and F is the toggle that makes it fill the screen instead."""
-    assert player.isFullScreen(), "the lightbox window covers the screen"
-    assert player._shell.state() == STATE_DEFAULT_FIT, "the video opens as the preview"
-
-    _key(app, player._shell, Qt.Key.Key_F)
-    app.processEvents()
-    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, "F expands the video"
-    assert player.isFullScreen(), "the window stays full screen either way"
-
-    _key(app, player._shell, Qt.Key.Key_F)
-    app.processEvents()
-    assert player._shell.state() == STATE_DEFAULT_FIT, "F returns the video to the preview"
+def test_the_player_opens_full_entire_screen_with_no_borders(app, player) -> None:
+    """The player opens full entire screen with zero borders on the physical monitor."""
+    assert player.isFullScreen(), "the window covers the screen"
+    assert player._shell.state() == STATE_FULLSCREEN_ACTIVE, "the video opens full screen"
+    assert player._shell._surface.geometry() == player.rect(), "the video fills the entire screen"
 
 
 # --- the dub/sub popover ---
