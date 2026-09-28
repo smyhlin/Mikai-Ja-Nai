@@ -1321,6 +1321,8 @@ class PlayerShell(QWidget):
         self._resizing: tuple[bool, bool, bool, bool] = (False, False, False, False)
         self._grabbed = False
 
+        self._promote_chrome()
+
         if start_fullscreen:
             self._enter_fullscreen()
 
@@ -1362,6 +1364,39 @@ class PlayerShell(QWidget):
         )
         self._btn_close.clicked.connect(self._exit)
         lay.addWidget(self._btn_close)
+
+    def _chrome_widgets(self) -> tuple[QWidget, ...]:
+        """Everything that draws over the picture, in stacking order.
+
+        The surface is NATIVE: mpv takes its winId, and a native child HWND
+        always composites above a non-native sibling no matter what raise()
+        says, so a full-screen video would bury the whole chrome. Every one of
+        these needs its own handle, and the guard is what stops Qt promoting
+        the shell and the dialog native with them.
+        """
+        return (
+            self._wc,
+            self._btn_prev,
+            self._btn_next,
+            self._pill,
+            self._dock,
+            self._footer_l,
+            self._footer_r,
+            self._toast,
+            self._center,
+        )
+
+    def _promote_chrome(self) -> None:
+        for widget in self._chrome_widgets():
+            widget.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
+            widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self._raise_chrome()
+
+    def _raise_chrome(self) -> None:
+        """Keep the chrome above the surface after any restacking."""
+        for widget in self._chrome_widgets():
+            if widget.isVisible():
+                widget.raise_()
 
     def _build_badge(self) -> None:
         self._badge = StateBadge(self)
@@ -1578,6 +1613,7 @@ class PlayerShell(QWidget):
         if st != prev:
             self.stateChanged.emit(st)
         self._layout()
+        self._raise_chrome()
         self._refresh_hud()
 
     def _set_state_cursor(self) -> None:
@@ -1699,6 +1735,7 @@ class PlayerShell(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._layout()
+        self._raise_chrome()
 
     def _refresh_hud(self) -> None:
         self._hud.update_data(
