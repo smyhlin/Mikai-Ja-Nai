@@ -215,6 +215,18 @@ void PlayerShell::buildDock() {
     connect(btnPip_, &QPushButton::clicked, this, &PlayerShell::pipRequested);
     lay->addWidget(btnPip_);
 
+    btnAudio_ = new IconButton(IconPainter::microphone,
+                               QStringLiteral("Озвучення — вибрати дубляж  (T)"), 28, 15, dock_);
+    connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
+    btnAudio_->hide();
+    lay->addWidget(btnAudio_);
+
+    btnSubs_ = new IconButton(IconPainter::captions,
+                              QStringLiteral("Субтитри — вибрати доріжку  (C)"), 28, 15, dock_);
+    connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
+    btnSubs_->hide();
+    lay->addWidget(btnSubs_);
+
     btnSettings_ = new IconButton(IconPainter::gear, QStringLiteral("toggle_settings_popover"), 28,
                                   15, dock_);
     connect(btnSettings_, &QPushButton::clicked, this, &PlayerShell::openSettings);
@@ -222,6 +234,7 @@ void PlayerShell::buildDock() {
 
     flyout_ = new SettingsFlyout(this);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
+    connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
 
     dock_->adjustSize();
 }
@@ -579,6 +592,22 @@ void PlayerShell::setQuality(const QString& quality) {
     flyout_->setQuality(quality_);
 }
 
+void PlayerShell::setAudioAvailable(bool available) {
+    if (btnAudio_ != nullptr) {
+        btnAudio_->setVisible(available);
+        dock_->adjustSize();
+        layoutChrome();
+    }
+}
+
+void PlayerShell::setSubtitlesAvailable(bool available) {
+    if (btnSubs_ != nullptr) {
+        btnSubs_->setVisible(available);
+        dock_->adjustSize();
+        layoutChrome();
+    }
+}
+
 void PlayerShell::setAspectRatio(double ratio) {
     if (ratio > 0.05 && ratio < 20.0) {
         aspect_ = ratio;
@@ -652,9 +681,14 @@ void PlayerShell::onRate(double rate) {
     toast_->flash(QStringLiteral("Speed %1x").arg(rate_, 0, 'g', 3));
 }
 
+void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options) {
+    qualityOptions_ = options;
+}
+
 void PlayerShell::openSettings() {
     flyout_->setRate(rate_);
     flyout_->setQuality(quality_);
+    flyout_->setQualityOptions(qualityOptions_);
     flyout_->popupNear(btnSettings_->mapToGlobal(QPoint(btnSettings_->width(), 0)));
 }
 

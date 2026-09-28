@@ -36,6 +36,7 @@
 #include <QWidget>
 
 #include "ShellTheme.hpp"
+#include "ShellWidgets.hpp"
 
 namespace mplayer {
 class VideoSurface;
@@ -78,6 +79,11 @@ public:
     void setMuted(bool muted);
     void setRate(double rate);
     void setQuality(const QString& quality);
+    /// The heights the settings popover offers, in the host's own naming.
+    void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
+    /// The dub and subtitle pickers only appear when there is a choice.
+    void setAudioAvailable(bool available);
+    void setSubtitlesAvailable(bool available);
     void setAspectRatio(double ratio);
 
     State state() const;
@@ -95,6 +101,9 @@ public:
     /// panel or the series drawer - without it the drawer vanishes under the
     /// pointer, because no move ever crosses the shell itself.
     void enterFullscreen();
+
+    /// Opens the speed/quality popover. The host owns the quality list inside it.
+    void openSettings();
     void wake();
 signals:
     // ── shell → host ────────────────────────────────────────────────
@@ -105,6 +114,9 @@ signals:
     void muteChanged(bool muted);
     void fullscreenChanged(bool fullscreen);
     void pipRequested();
+    void audioRequested();
+    void subtitlesRequested();
+    void qualityRequested(int height);
     void nextRequested();
     void prevRequested();
     void downloadRequested();
@@ -148,7 +160,6 @@ private:
     void onVolume(double volume);
     void toggleMute();
     void onRate(double rate);
-    void openSettings();
     void openKeys();
     void openMenu();
     void exitViewer();
@@ -182,8 +193,11 @@ private:
     QLabel* lblRemaining_ = nullptr;
     IconButton* btnFullscreen_ = nullptr;
     IconButton* btnPip_ = nullptr;
+    IconButton* btnAudio_ = nullptr;
+    IconButton* btnSubs_ = nullptr;
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
+    QVector<SettingsFlyout::QualityOption> qualityOptions_;
 
     QWidget* footerLeft_ = nullptr;
     QLabel* lblFile_ = nullptr;

@@ -74,19 +74,6 @@ private:
     int highlight_ = -1;
 };
 
-class QualityPopup : public MenuPopup {
-    Q_OBJECT
-public:
-    explicit QualityPopup(QWidget* parent = nullptr);
-};
-
-class TrackPopup : public MenuPopup {
-    Q_OBJECT
-public:
-    explicit TrackPopup(QWidget* parent = nullptr);
-};
-
-/// The episode list, opened from the strip and closed by the same button.
 class SeriesDrawer : public QFrame {
     Q_OBJECT
 public:

@@ -13,6 +13,8 @@
 
 #include "PlayerDialog.hpp"
 
+#include <QApplication>
+
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "ShellTheme.hpp"
@@ -698,6 +700,11 @@ PlayerDialog::PlayerDialog(const QString& caption,
     // Every key belongs to the shell, the one widget that acts on them: the
     // panels are all NoFocus, so this is what routes Space to play/pause.
     setFocusProxy(shell_);
+    // Win32 delivers activation to the top level and a changeEvent override
+    // never sees it, so watch our own events. Without this, returning from
+    // Alt+Tab leaves the window active but nothing focused, and the shell's
+    // keys (Space, the arrows) do nothing until the user clicks the picture.
+    installEventFilter(this);
     // Without tracking the dialog never hears a bare move - its children cover
     // it - and the top-level wake in eventFilter would be dead code.
     setMouseTracking(true);
@@ -706,11 +713,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
     buildStatus();
 
     seriesDrawer_ = new SeriesDrawer(this);
-    qualityPopup_ = new QualityPopup(this);
-    trackPopup_ = new TrackPopup(this);
+    audioPopup_ = new MenuPopup(QStringLiteral("ОЗВУЧЕННЯ"), this);
+    audioPopup_->setObjectName(QStringLiteral("playerAudioPopup"));
+    subtitlesPopup_ = new MenuPopup(QStringLiteral("СУБТИТРИ"), this);
+    subtitlesPopup_->setObjectName(QStringLiteral("playerSubtitlesPopup"));
 
-    connect(qualityPopup_, &MenuPopup::picked, this, &PlayerDialog::onQualityPicked);
-    connect(trackPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
+    connect(audioPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
+    connect(subtitlesPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
     connect(seriesDrawer_, &SeriesDrawer::picked, this,
             [this](int spot) { goToEpisode(spot, true); });
 
@@ -722,9 +731,8 @@ PlayerDialog::PlayerDialog(const QString& caption,
     // closed have to say so: an empty episode drawer and a retry chip would
     // otherwise appear over the picture on the first paint.
     seriesDrawer_->hide();
-    trackButton_->hide();
     retryButton_->hide();
-    syncQualityButton();
+    publishQualityOptions();
     layoutPanels();
 }
 
@@ -733,11 +741,11 @@ PlayerDialog::~PlayerDialog() {
     if (statusTimer_) {
         statusTimer_->stop();
     }
-    if (qualityPopup_) {
-        qualityPopup_->close();
+    if (audioPopup_) {
+        audioPopup_->close();
     }
-    if (trackPopup_) {
-        trackPopup_->close();
+    if (subtitlesPopup_) {
+        subtitlesPopup_->close();
     }
     delete pip_;
 }
@@ -765,17 +773,6 @@ void PlayerDialog::buildStrip() {
     updateSeriesToggle();
     row->addWidget(seriesButton_);
 
-    trackButton_ = makeChip(strip_, QStringLiteral("playerTrackButton"), QStringLiteral("Доріжки"));
-    trackButton_->setToolTip(QStringLiteral("Озвучення та субтитри (T)"));
-    trackButton_->setAccessibleName(QStringLiteral("Озвучення та субтитри"));
-    connect(trackButton_, &QPushButton::clicked, this, &PlayerDialog::openTrackMenu);
-    row->addWidget(trackButton_);
-
-    qualityButton_ = makeChip(strip_, QStringLiteral("playerQualityButton"), QStringLiteral("Якість"));
-    qualityButton_->setToolTip(QStringLiteral("Якість відео (Q)"));
-    qualityButton_->setAccessibleName(QStringLiteral("Якість відео"));
-    connect(qualityButton_, &QPushButton::clicked, this, &PlayerDialog::openQualityMenu);
-    row->addWidget(qualityButton_);
 }
 
 void PlayerDialog::buildStatus() {
@@ -837,6 +834,9 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::mediaDropped, this, &PlayerDialog::onMediaDropped);
     connect(shell_, &PlayerShell::closeRequested, this, &PlayerDialog::close);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
+    connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
+    connect(shell_, &PlayerShell::subtitlesRequested, this, &PlayerDialog::openSubtitlesMenu);
+    connect(shell_, &PlayerShell::qualityRequested, this, &PlayerDialog::onQualityPicked);
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
     shell_->installEventFilter(this);
@@ -961,7 +961,7 @@ bool PlayerDialog::openStream(const QString& url, const QString& quality, bool r
         shell_->setMuted(muted_);
         shell_->setRate(std::clamp(speed_, kShellRateMin, kShellRateMax));
     }
-    syncQualityButton();
+    publishQualityOptions();
     syncPipBar();
     return engineReady_;
 }
@@ -988,14 +988,16 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
     if (fullscreen != fullscreen_) {
         fullscreen_ = fullscreen;
     }
-    if (fullscreen) {
-        qualityPopup_->close();
-        trackPopup_->close();
-    }
     // The shell hides ALL its chrome after an idle moment, and these
     // dialog-owned panels ride along: a strip floating over a blank screen is a
     // stray panel.
     if (state == QStringLiteral("FULLSCREEN_AUTO_HIDDEN")) {
+        // Popovers close with the chrome, not with fullscreen. Closing them on
+        // "fullscreen" looked right and was wrong: the player is always
+        // fullscreen, so every idle/hide transition killed a popover that had
+        // just been opened, and the selector appeared not to work at all.
+        audioPopup_->close();
+        subtitlesPopup_->close();
         seriesDrawer_->setVisible(false);
         strip_->setVisible(false);
         statusPanel_->hide();
@@ -1034,7 +1036,7 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     // just left behind would offer to switch back into what is not playing.
     qualities_.clear();
     currentHeight_ = 0;
-    syncQualityButton();
+    publishQualityOptions();
     shell_->setMedia(path, QString(), QStringLiteral("Локальний файл"), QString());
     openStream(path, QString(), /*resume=*/false);
     flashStatus(QStringLiteral("Відтворюю локальний файл"));
@@ -1096,10 +1098,7 @@ int PlayerDialog::pickTargetHeight(int requested) const {
 
 void PlayerDialog::setQualities(const QList<QualityEntry>& qualities) {
     qualities_ = usableQualities(qualities);
-    syncQualityButton();
-    if (qualityPopup_->isVisible()) {
-        fillQualityMenu();
-    }
+    publishQualityOptions();
 }
 
 void PlayerDialog::applyEpisode(const QString& label,
@@ -1188,11 +1187,63 @@ QString PlayerDialog::trackRowText(const VariantInfo& variant) {
     return variant.quality > 0 ? QStringLiteral("%1 · %2p").arg(base).arg(variant.quality) : base;
 }
 
-QVector<MenuEntry> PlayerDialog::trackEntries() const {
+void PlayerDialog::publishQualityOptions() {
+    QVector<int> heights;
+    heights.reserve(qualities_.size());
+    for (const QualityEntry& entry : qualities_) {
+        heights.append(entry.height);
+    }
+    std::sort(heights.begin(), heights.end(), std::greater<int>());
+
+    QVector<SettingsFlyout::QualityOption> options;
+    options.reserve(heights.size());
+    for (int height : heights) {
+        SettingsFlyout::QualityOption option;
+        option.height = height;
+        // mikai's own value, not a provider's wording for the same height
+        option.label = QStringLiteral("%1p").arg(height);
+        option.current = height == currentHeight_;
+        options.append(option);
+    }
+    shell_->setQualityOptions(options);
+}
+
+void PlayerDialog::openAudioMenu() {
+    if (closed_) {
+        return;
+    }
+    audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
+    if (audioPopup_->rowCount() == 0) {
+        flashStatus(QStringLiteral("Немає інших озвучень"));
+        return;
+    }
+    probeUnknownTracks();
+    audioPopup_->popupNear(settingsAnchor());
+}
+
+void PlayerDialog::openSubtitlesMenu() {
+    if (closed_) {
+        return;
+    }
+    subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
+    if (subtitlesPopup_->rowCount() == 0) {
+        flashStatus(QStringLiteral("Немає доступних субтитрів"));
+        return;
+    }
+    probeUnknownTracks();
+    subtitlesPopup_->popupNear(settingsAnchor());
+}
+
+QVector<MenuEntry> PlayerDialog::trackEntries(const QString& kind) const {
     QVector<MenuEntry> entries;
     QString heading;
     for (const VariantInfo& variant : variants_) {
         if (variant.embed.isEmpty()) {
+            continue;
+        }
+        // Empty means every kind, which the PiP float wants; the dock's two
+        // buttons pass "voice" or "sub" so a viewer picks by what they care about.
+        if (!kind.isEmpty() && variant.kind != kind) {
             continue;
         }
         if (variant.kindLabel != heading) {
@@ -1237,15 +1288,28 @@ void PlayerDialog::setVariants(const QVector<QVariantMap>& variants, const QStri
     }
     currentEmbed_ = currentEmbed;
     setVariantsVisibility();
-    if (trackPopup_->isVisible()) {
-        trackPopup_->setEntries(trackEntries());
+    if (subtitlesPopup_->isVisible()) {
+        subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     }
 }
 
 void PlayerDialog::setVariantsVisibility() {
-    if (trackButton_ != nullptr) {
-        trackButton_->setVisible(variants_.size() > 1);
+    // A button appears only when there is a choice: more than one dub, or at
+    // least one subtitle track.
+    int dub = 0;
+    int subs = 0;
+    for (const VariantInfo& variant : variants_) {
+        if (variant.embed.isEmpty()) {
+            continue;
+        }
+        if (variant.kind == QStringLiteral("sub")) {
+            ++subs;
+        } else {
+            ++dub;
+        }
     }
+    shell_->setAudioAvailable(dub > 1);
+    shell_->setSubtitlesAvailable(subs > 0);
 }
 
 PlayerDialog::VariantInfo PlayerDialog::variantFromMap(const QVariantMap& map) {
@@ -1254,6 +1318,7 @@ PlayerDialog::VariantInfo PlayerDialog::variantFromMap(const QVariantMap& map) {
     info.label = map.value(QStringLiteral("label")).toString();
     info.display = map.value(QStringLiteral("display")).toString();
     info.track = map.value(QStringLiteral("track")).toString();
+    info.kind = map.value(QStringLiteral("kind")).toString();
     info.kindLabel = map.value(QStringLiteral("kind_label")).toString();
     info.quality = map.value(QStringLiteral("quality")).toInt();
     return info;
@@ -1268,8 +1333,8 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
             variant.quality = quality;
         }
     }
-    if (trackPopup_->isVisible()) {
-        trackPopup_->setEntries(trackEntries());
+    if (subtitlesPopup_->isVisible()) {
+        subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     }
 }
 
@@ -1289,41 +1354,7 @@ void PlayerDialog::onTrackPicked(const QVariant& payload) {
 //  the three panels
 // ═══════════════════════════════════════════════════════════════════════════
 
-void PlayerDialog::fillQualityMenu() {
-    QVector<int> heights;
-    heights.reserve(qualities_.size());
-    for (const QualityEntry& entry : qualities_) {
-        heights.append(entry.height);
-    }
-    std::sort(heights.begin(), heights.end(), std::greater<int>());
 
-    QVector<MenuEntry> entries;
-    entries.reserve(heights.size());
-    for (int height : heights) {
-        MenuEntry entry;
-        entry.text = QStringLiteral("%1p").arg(height);
-        entry.tooltip = QStringLiteral("Якість %1p").arg(height);
-        entry.current = height == currentHeight_;
-        entry.payload = height;
-        entries.append(entry);
-    }
-    qualityPopup_->setEntries(entries);
-}
-
-void PlayerDialog::openQualityMenu() {
-    if (closed_) {
-        return;
-    }
-    if (qualities_.isEmpty()) {
-        flashStatus(QStringLiteral("Якість недоступна"));
-        return;
-    }
-    fillQualityMenu();
-    if (qualityPopup_->rowCount() == 0) {
-        return;
-    }
-    qualityPopup_->popupNear(settingsAnchor());
-}
 
 void PlayerDialog::onQualityPicked(const QVariant& payload) {
     if (closed_ || payload.userType() != QMetaType::Int) {
@@ -1341,23 +1372,6 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
     }
 }
 
-void PlayerDialog::openTrackMenu() {
-    if (closed_) {
-        return;
-    }
-    const QVector<MenuEntry> entries = trackEntries();
-    if (entries.isEmpty()) {
-        flashStatus(QStringLiteral("Немає інших доріжок для цієї серії"));
-        return;
-    }
-    trackPopup_->setEntries(entries);
-    if (trackPopup_->rowCount() == 0) {
-        return;
-    }
-    probeUnknownTracks();
-    trackPopup_->popupNear(trackButton_->mapToGlobal(QPoint(0, trackButton_->height())),
-                           /*preferAbove=*/false);
-}
 
 QPoint PlayerDialog::settingsAnchor() const {
     for (QPushButton* button : shell_->findChildren<QPushButton*>()) {
@@ -1368,19 +1382,14 @@ QPoint PlayerDialog::settingsAnchor() const {
     return shell_->mapToGlobal(QPoint(shell_->width() / 2, shell_->height() - 46));
 }
 
-void PlayerDialog::syncQualityButton() {
-    qualityButton_->setText(currentHeight_ > 0 ? QStringLiteral("Якість %1p").arg(currentHeight_)
-                                                : QStringLiteral("Якість"));
-    qualityButton_->setVisible(!qualities_.isEmpty());
-}
 
 void PlayerDialog::toggleSeries() { setSeriesExpanded(!seriesExpanded_); }
 
 void PlayerDialog::setSeriesExpanded(bool expanded) {
     seriesExpanded_ = expanded;
     if (!seriesExpanded_) {
-        qualityPopup_->close();
-        trackPopup_->close();
+        audioPopup_->close();
+        subtitlesPopup_->close();
     }
     updateSeriesToggle();
     seriesDrawer_->setVisible(seriesExpanded_);
@@ -1580,10 +1589,10 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
     // refusal on Esc and own their keys; everything else falls through
     // untouched, so Space, F, M and the arrows still reach the shell.
     if (event->key() == Qt::Key_Escape) {
-        if (qualityPopup_->isVisible()) {
-            qualityPopup_->close();
-        } else if (trackPopup_->isVisible()) {
-            trackPopup_->close();
+        if (audioPopup_->isVisible()) {
+            audioPopup_->close();
+        } else if (subtitlesPopup_->isVisible()) {
+            subtitlesPopup_->close();
         } else if (seriesExpanded_) {
             setSeriesExpanded(false);
         } else {
@@ -1594,10 +1603,12 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
     }
     if (event->key() == Qt::Key_S && !playlist_.isEmpty()) {
         toggleSeries();
-    } else if (event->key() == Qt::Key_T && variants_.size() > 1) {
-        openTrackMenu();
-    } else if (event->key() == Qt::Key_Q && !qualities_.isEmpty()) {
-        openQualityMenu();
+    } else if (event->key() == Qt::Key_T) {
+        openAudioMenu();
+    } else if (event->key() == Qt::Key_C) {
+        openSubtitlesMenu();
+    } else if (event->key() == Qt::Key_Q) {
+        shell_->openSettings();
     } else {
         return false;
     }
@@ -1628,6 +1639,15 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
     if (closed_) {
         return false;
     }
+    if (watched == this && event->type() == QEvent::WindowActivate) {
+        // Activating the owner raises it, and a raised owner goes above its own
+        // popover. Restoring focus while one is open is what made the pickers
+        // vanish behind the picture.
+        if (shell_ != nullptr && QApplication::activePopupWidget() == nullptr) {
+            shell_->setFocus(Qt::OtherFocusReason);
+        }
+        return false;
+    }
     if (watched == shell_ && event->type() == QEvent::KeyPress) {
         return onShellKey(static_cast<QKeyEvent*>(event));
     }
@@ -1653,8 +1673,8 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
 void PlayerDialog::closeEvent(QCloseEvent* event) {
     closed_ = true;
     statusTimer_->stop();
-    qualityPopup_->close();
-    trackPopup_->close();
+    audioPopup_->close();
+    subtitlesPopup_->close();
     leavePip(/*closing=*/true);
     shell_->close();
     // VideoSurface owns the libmpv handle: a dialog closed by the host's

@@ -36,8 +36,7 @@ namespace shell {
 
 class PlayerShell;
 class MenuPopup;
-class QualityPopup;
-class TrackPopup;
+class MenuPopup;
 class SeriesDrawer;
 struct MenuEntry;
 
@@ -187,8 +186,10 @@ public:
 
     void toggleSeries();
     void setSeriesExpanded(bool expanded);
-    void openQualityMenu();
-    void openTrackMenu();
+    /// The dub and subtitle pickers are separate, so a viewer picks what they
+    /// want by kind instead of reading one mixed list.
+    void openAudioMenu();
+    void openSubtitlesMenu();
     void togglePip();
 
 signals:
@@ -210,6 +211,7 @@ private:
         QString label;
         QString display;
         QString track;
+        QString kind;       // "voice" or "sub", straight from the release
         QString kindLabel;
         int quality = 0;
     };
@@ -221,7 +223,7 @@ private:
 
     void layoutPanels();
     void updateSeriesToggle();
-    void syncQualityButton();
+    void publishQualityOptions();
     void syncStatusVisibility();
     void syncWindowFullscreen();
     void syncPipBar();
@@ -233,7 +235,8 @@ private:
     void fillQualityMenu();
     void probeUnknownTracks();
     void setVariantsVisibility();
-    QVector<MenuEntry> trackEntries() const;
+    /// Rows for one kind of track, or every kind when `kind` is empty.
+    QVector<MenuEntry> trackEntries(const QString& kind) const;
     static QString trackRowText(const VariantInfo& variant);
     static QList<QualityEntry> usableQualities(const QList<QualityEntry>& qualities);
     static VariantInfo variantFromMap(const QVariantMap& map);
@@ -268,14 +271,12 @@ private:
     VideoSurface* surface_ = nullptr;
     PlayerHost* host_ = nullptr;
 
-    QualityPopup* qualityPopup_ = nullptr;
-    TrackPopup* trackPopup_ = nullptr;
+    MenuPopup* audioPopup_ = nullptr;
+    MenuPopup* subtitlesPopup_ = nullptr;
     SeriesDrawer* seriesDrawer_ = nullptr;
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;
-    QPushButton* trackButton_ = nullptr;
-    QPushButton* qualityButton_ = nullptr;
     QLabel* statusLabel_ = nullptr;
     QPushButton* retryButton_ = nullptr;
     QTimer* statusTimer_ = nullptr;

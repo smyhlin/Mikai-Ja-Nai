@@ -23,6 +23,7 @@ class QLabel;
 class QMouseEvent;
 class QPainter;
 class QTimer;
+class QVBoxLayout;
 QT_END_NAMESPACE
 
 namespace mplayer {
@@ -88,15 +89,26 @@ private:
 class SettingsFlyout : public QFrame {
     Q_OBJECT
 public:
+    /// One selectable stream height. `label` is the caller's text, because the
+    /// values are mikai's, not any particular provider's naming.
+    struct QualityOption {
+        int height = 0;
+        QString label;
+        bool current = false;
+    };
+
     explicit SettingsFlyout(QWidget* parent = nullptr);
 
     void setRate(double rate);
     void setQuality(const QString& quality);
+    /// Rebuilds the quality list. Empty hides the section entirely.
+    void setQualityOptions(const QVector<QualityOption>& options);
     /// Places the popover above-right of a global anchor point and shows it.
     void popupNear(const QPoint& anchorGlobal);
 
 signals:
     void speedSelected(double speed);
+    void qualitySelected(int height);
 
 private:
     void pick(double speed);
@@ -109,6 +121,11 @@ private:
     QLabel* qualityLabel_ = nullptr;
     RangeSlider* slider_ = nullptr;
     QVector<QPair<double, QPushButton*>> rows_;
+
+    QWidget* qualitySection_ = nullptr;
+    QVBoxLayout* qualityBody_ = nullptr;
+    QVector<QualityOption> qualityOptions_;
+    QVector<QPushButton*> qualityRows_;
 };
 
 // ── overlays ───────────────────────────────────────────────────────────────

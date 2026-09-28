@@ -127,6 +127,10 @@ public:
     static void reset(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 14, const QColor& c = QColor());
     static void spark(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 14, const QColor& c = QColor());
     static void keyboard(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 15, const QColor& c = QColor());
+    /// Dub/audio track: a microphone capsule on a stand.
+    static void microphone(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
+    /// Subtitles: a caption frame with two letter C shapes.
+    static void captions(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
 };
 
 }  // namespace shell

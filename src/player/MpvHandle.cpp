@@ -66,7 +66,10 @@ void MpvHandle::loadFile(const std::string& url) {
 
 void MpvHandle::seek(double seconds) {
     std::string at = std::to_string(seconds);
-    const char* cmd[] = {"seek", at.c_str(), "absolute"};
+    // mpv_command takes a NULL-terminated array. Without the terminator mpv
+    // reads whatever follows the last pointer as a fourth argument and the
+    // process dies on the first seek.
+    const char* cmd[] = {"seek", at.c_str(), "absolute", nullptr};
     require(mpv_command(handle_, cmd), "seek");
 }
 

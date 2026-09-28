@@ -8,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Qt6Widgets pulls in OpenGL; QOpenGLWidget itself lives in Qt6OpenGLWidgets.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Test)
 
 # libmpv is provided by the runtime the app already downloads. Point
 # MPV_RUNTIME_DIR at it; the headers and the import library both live there.
@@ -100,3 +100,7 @@ target_link_libraries(mikai-player PRIVATE mikai_player)
 add_executable(dialog_probe src/probes/DialogProbe.cpp)
 target_link_libraries(dialog_probe PRIVATE mikai_player Qt6::Widgets)
 set_target_properties(dialog_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+add_executable(interaction_probe src/probes/InteractionProbe.cpp)
+target_link_libraries(interaction_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
+set_target_properties(interaction_probe PROPERTIES WIN32_EXECUTABLE FALSE)

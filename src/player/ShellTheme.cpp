@@ -285,6 +285,32 @@ void IconPainter::spark(QPainter& p, qreal x, qreal y, qreal s, const QColor& c)
     p.restore();
 }
 
+void IconPainter::microphone(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.8 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(9.2, 3.2, 5.6, 10.4), 2.8, 2.8);
+    // the cradle, stem and base: without them the capsule alone reads as a pill
+    p.drawArc(QRectF(5.6, 8.4, 12.8, 11), 180 * 16, 180 * 16);
+    p.drawLine(QPointF(12, 19.4), QPointF(12, 21.6));
+    p.drawLine(QPointF(8.6, 21.6), QPointF(15.4, 21.6));
+    p.restore();
+}
+
+void IconPainter::captions(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
+    const QColor color = resolve(c, w90());
+    stroke(p, x, y, s);
+    p.setPen(glyphPen(color, 1.7 * 24 / s));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(QRectF(2.6, 5.6, 18.8, 12.8), 2.4, 2.4);
+    // two C shapes, opening right, so it reads as closed captions rather than
+    // as a generic box
+    p.drawArc(QRectF(5.6, 8.6, 5.4, 6.8), 45 * 16, 270 * 16);
+    p.drawArc(QRectF(12.4, 8.6, 5.4, 6.8), 45 * 16, 270 * 16);
+    p.restore();
+}
+
 void IconPainter::keyboard(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
     const QColor color = resolve(c, w90());
     stroke(p, x, y, s);

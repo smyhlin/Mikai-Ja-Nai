@@ -186,6 +186,14 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     sep2->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(white(25))));
     lay->addWidget(sep2);
 
+    // Quality lives here rather than in a chip over the picture: the gear is
+    // where a viewer looks for stream settings, and the strip is for things
+    // that act on the current episode.
+    qualitySection_ = new QWidget(this);
+    auto* qlay = new QVBoxLayout(qualitySection_);
+    qlay->setContentsMargins(0, 0, 0, 0);
+    qlay->setSpacing(5);
+
     auto* qrow = new QHBoxLayout();
     auto* ql = new QLabel(QStringLiteral("ЯКІСТЬ"));
     ql->setFont(monoFont(8));
@@ -197,9 +205,30 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     qualityLabel_->setStyleSheet(
         QStringLiteral("color:%1; font-weight:700;").arg(green().name()));
     qrow->addWidget(qualityLabel_);
-    lay->addLayout(qrow);
+    qlay->addLayout(qrow);
+
+    qualityBody_ = new QVBoxLayout();
+    qualityBody_->setContentsMargins(0, 0, 0, 0);
+    qualityBody_->setSpacing(2);
+    qlay->addLayout(qualityBody_);
+    lay->addWidget(qualitySection_);
+    qualitySection_->setVisible(false);
 
     refresh();
+}
+
+// Qt reads the 4th component of rgba() as an integer 0..255, so the old
+// rgba(255,255,255,30) painted a near-solid slab and swallowed the row's own
+// text. The popovers already spell alpha as a fraction, which is why their rows
+// read correctly; both row styles go through here now.
+QString rowQss(bool current) {
+    return QStringLiteral(
+               "QPushButton { color: %1; background: %2; border: none; border-radius: 5px;"
+               " text-align: left; padding: 0 8px; }"
+               "QPushButton:hover { background: rgba(255, 255, 255, 0.10); }")
+        .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("rgba(255, 255, 255, 0.69)"),
+             current ? QStringLiteral("rgba(189, 172, 255, 0.20)")
+                     : QStringLiteral("rgba(255, 255, 255, 0)"));
 }
 
 void SettingsFlyout::setRate(double rate) {
@@ -212,6 +241,36 @@ void SettingsFlyout::setQuality(const QString& quality) {
     refresh();
 }
 
+void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
+    qualityOptions_ = options;
+    while (qualityBody_->count() > 0) {
+        QLayoutItem* item = qualityBody_->takeAt(0);
+        if (QWidget* widget = item->widget()) {
+            widget->setParent(nullptr);
+            widget->deleteLater();
+        }
+        delete item;
+    }
+    qualityRows_.clear();
+
+    for (int i = 0; i < qualityOptions_.size(); ++i) {
+        const int height = qualityOptions_[i].height;
+        auto* btn = new QPushButton(this);
+        btn->setFont(uiFont(10));
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFixedHeight(26);
+        btn->setFocusPolicy(Qt::NoFocus);
+        connect(btn, &QPushButton::clicked, this, [this, height] {
+            close();
+            emit qualitySelected(height);
+        });
+        qualityBody_->addWidget(btn);
+        qualityRows_.append(btn);
+    }
+    qualitySection_->setVisible(!qualityOptions_.isEmpty());
+    refresh();
+}
+
 void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
     refresh();
     setFixedSize(sizeHint());
@@ -220,6 +279,10 @@ void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
     move(qMax(4, x), qMax(4, y));
     show();
     raise();
+    // The topmost flag is set in the constructor: setWindowFlag on a visible
+    // widget hides it, so asking for the slot here would close the popover.
+    raise();
+    activateWindow();
 }
 
 void SettingsFlyout::pick(double speed) {
@@ -239,6 +302,12 @@ void SettingsFlyout::refresh() {
     badge_->setText(formatG(rate_) + QStringLiteral("x"));
     qualityLabel_->setText(quality_);
     slider_->setValueSilent((rate_ - 0.25) / 1.75);
+    for (int i = 0; i < qualityRows_.size() && i < qualityOptions_.size(); ++i) {
+        const QualityOption& option = qualityOptions_[i];
+        QPushButton* btn = qualityRows_[i];
+        btn->setText((option.current ? QStringLiteral("✓  ") : QString()) + option.label);
+        btn->setStyleSheet(rowQss(option.current));
+    }
     for (int i = 0; i < rows_.size(); ++i) {
         const double speed = rows_[i].first;
         QPushButton* btn = rows_[i].second;
@@ -246,12 +315,7 @@ void SettingsFlyout::refresh() {
         const QString label =
             QStringLiteral("%1x   %2").arg(formatG(speed), presetLabel(i));
         btn->setText((selected ? QStringLiteral("✓  ") : QString()) + label);
-        btn->setStyleSheet(
-            QStringLiteral("QPushButton { color: %1; background: %2; border: none;"
-                           " border-radius: 5px; text-align: left; padding: 0 8px; }"
-                           "QPushButton:hover { background: %3; }")
-                .arg(selected ? QStringLiteral("#ffffff") : rgba(white(175)),
-                     selected ? rgba(white(30)) : QStringLiteral("transparent"), rgba(white(22))));
+        btn->setStyleSheet(rowQss(selected));
     }
 }
 

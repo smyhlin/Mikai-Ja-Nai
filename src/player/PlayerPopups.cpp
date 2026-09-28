@@ -59,7 +59,7 @@ QString captionQss(int size) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 MenuPopup::MenuPopup(const QString& title, QWidget* parent)
-    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
+    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
     setObjectName(QStringLiteral("playerMenuPopup"));
     setProperty("chromePanel", true);
     setAttribute(Qt::WA_TranslucentBackground);
@@ -154,6 +154,10 @@ void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
     move(x, y);
     show();
     raise();
+    // The topmost flag is set in the constructor: calling setWindowFlag on a
+    // visible widget hides it, because Qt rebuilds the native window.
+    raise();
+    activateWindow();
     setFocus(Qt::OtherFocusReason);
 }
 
@@ -232,18 +236,7 @@ void MenuPopup::paintRows() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  SPECIALISED POPOVERS
-// ═══════════════════════════════════════════════════════════════════════════
 
-QualityPopup::QualityPopup(QWidget* parent) : MenuPopup(QStringLiteral("ЯКІСТЬ"), parent) {
-    setObjectName(QStringLiteral("playerQualityPopup"));
-}
-
-TrackPopup::TrackPopup(QWidget* parent)
-    : MenuPopup(QStringLiteral("ОЗВУЧЕННЯ ТА СУБТИТРИ"), parent) {
-    setObjectName(QStringLiteral("playerTrackPopup"));
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SERIES DRAWER
