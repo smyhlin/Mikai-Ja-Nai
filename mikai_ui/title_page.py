@@ -40,7 +40,7 @@ from mikai_ui.page_pager import RangePager
 from mikai_ui.player_process import PlayerProcess
 from mikai_ui.rate_limit_label import RateLimitLabel
 from mikai_ui.settings_dialog import make_gear_icon
-from mikai_ui.theme import ACCENT, BORDER, MUTED, TEXT
+from mikai_ui.theme import ACCENT, TEXT
 from mikai_ui.theme.metrics import (
     CAROUSEL_CARD_HEIGHT,
     CAROUSEL_CARD_WIDTH,
@@ -894,13 +894,6 @@ class TitlePage(QWidget):
         super().resizeEvent(event)
         QTimer.singleShot(0, self._fit_episode_section)
 
-    def _extract_active_tab(self) -> None:
-        idx = self._tabs.currentIndex()
-        if 0 <= idx < len(self._tab_states):
-            state = self._tab_states[idx]
-            for chip in state.get("visible_chips", []):
-                self._request_chip_quality(chip)
-
     def _render_tab_page(self, state: dict) -> None:
         grid = state["grid"]
 
@@ -1039,89 +1032,6 @@ class TitlePage(QWidget):
 
     def _save_quality_cache(self) -> None:
         quality_cache.save(self._settings, self._quality_cache, self._quality_fetched_at)
-
-    def _on_chip_quality_error(self, chip: dict, message: str) -> None:
-        if self._closed:
-            return
-        state = chip.get("state", {})
-        if chip.get("seq") != (state.get("extract_seq"), state.get("seq")):
-            return
-        layout = chip["holder"].layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-        if chip.pop("external_requested", False):
-            self._flash_status("Не вдалося підготувати відео для зовнішнього плеєра")
-        if "no_source" in message.lower():
-            chip["no_source"] = True
-            badge = QLabel("відео відсутнє")
-            badge.setObjectName("muted")
-            badge.setStyleSheet(
-                f"color: {MUTED}; font-size: 11px; padding: 2px 6px; "
-                f"border: 1px dashed {BORDER}; border-radius: 4px;"
-            )
-            badge.setToolTip(
-                "У цього плеєра немає відео для цієї серії (no_source). "
-                "Спробуйте іншу вкладку (Ashdi / Tortuga)."
-            )
-            layout.addWidget(badge)
-        else:
-            chip["requested"] = False
-            retry = QPushButton("Повторити")
-            retry.setObjectName("qualityRetry")
-            retry.setToolTip(f"Якість тимчасово недоступна: {message}")
-            retry.clicked.connect(
-                lambda _checked=False, current=chip: self._request_chip_quality(current)
-            )
-            layout.addWidget(retry)
-
-    def _on_chip_qualities(self, chip: dict, qualities: dict[int, str]) -> None:
-        if self._closed:
-            return
-        state = chip.get("state", {})
-        if chip.get("seq") != (state.get("extract_seq"), state.get("seq")):
-            return
-        chip["qualities"] = dict(qualities)
-        layout = chip["holder"].layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-        for height in sorted(qualities, reverse=True):
-            stream_url = qualities[height]
-            if not stream_url or not isinstance(stream_url, str):
-                continue
-            button = QPushButton(f"{height}p")
-            button.setObjectName("qualityChip")
-            button.setContextMenuPolicy(Qt.CustomContextMenu)
-            button.customContextMenuRequested.connect(
-                lambda pos, h=height, u=stream_url, c=chip, host=button: (
-                    self._quality_chip_context_menu(c, h, u, host.mapToGlobal(pos))
-                )
-            )
-            button.clicked.connect(
-                lambda _checked=False, h=height, u=stream_url, c=chip: self._quality_clicked(
-                    c, h, u
-                )
-            )
-            layout.addWidget(button)
-        if not layout.count():
-            unavailable = QLabel("Якість недоступна")
-            unavailable.setObjectName("muted")
-            layout.addWidget(unavailable)
-        if chip.pop("external_requested", False):
-            self._open_external_stream(chip, qualities)
-        # the holder's width decides the grid's columns, so the section refits itself
-        QTimer.singleShot(0, self._fit_episode_section)
-
-    def _quality_clicked(self, chip: dict, height: int, url: str) -> None:
-        # the player opens either way: the copy is a convenience, not a precondition
-        if copy_text(url):
-            self._flash_status(f"Скопійовано {height}p")
-        else:
-            self._flash_status(f"Не вдалося скопіювати {height}p")
-        self._open_stream(chip, height, url)
 
     def _recover_stream(self, dialog: PlayerProcess) -> None:
         """Signed stream URLs expire, so re-extract once before reporting failure.
