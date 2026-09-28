@@ -961,7 +961,17 @@ class ShellPlayerDialog(QDialog):
         if self._closed or not shiboken6.isValid(self._shell):
             super().keyPressEvent(event)
             return
-        QApplication.sendEvent(self._shell, event)
+        if self._on_shell_key(event):
+            event.accept()
+            return
+        if getattr(self, "_forwarding_key", False):
+            super().keyPressEvent(event)
+            return
+        self._forwarding_key = True
+        try:
+            QApplication.sendEvent(self._shell, event)
+        finally:
+            self._forwarding_key = False
 
     def moveEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().moveEvent(event)

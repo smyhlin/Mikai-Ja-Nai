@@ -168,6 +168,15 @@ def test_the_dialog_forwards_a_key_instead_of_swallowing_it(app, player) -> None
     assert player.controller.state.muted is True
 
 
+def test_unhandled_keys_do_not_cause_recursion_or_stack_overflow(app, player) -> None:
+    """Keys not handled by media_shell or panels must not bounce infinitely
+    between the dialog and the child shell."""
+    for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab, Qt.Key.Key_A):
+        _key(app, player, key)
+        _key(app, player._shell, key)
+    assert player.isVisible()
+
+
 # --- unit boundaries ---
 
 
