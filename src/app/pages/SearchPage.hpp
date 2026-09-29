@@ -18,6 +18,7 @@ class QListWidgetItem;
 class QPixmap;
 class QPushButton;
 class QScrollArea;
+class QScrollBar;
 class QTabBar;
 class QTimer;
 class QVBoxLayout;
@@ -60,6 +61,9 @@ Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     /// One carousel block: heading, status line, retry button and the track.
     struct CarouselSection {
@@ -81,6 +85,7 @@ private:
         QVBoxLayout* rows = nullptr;
     };
 
+    void smoothScrollCarousel(QScrollBar* bar, int delta);
     CarouselSection* buildCarousel(const QString& heading, const QString& key);
     FeedSection* buildFeedSection(const QString& heading, const QString& key);
     CarouselSection* carouselSection(const QString& key) const;

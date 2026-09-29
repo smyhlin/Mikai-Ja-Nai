@@ -5,6 +5,8 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
@@ -63,7 +65,9 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     title_->setWordWrap(true);
     title_->setFixedHeight(title_->fontMetrics().height() * 2);
     status_ = makeLabel(QStringLiteral("carouselStatus"), QString());
+    status_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     episodes_ = makeLabel(QStringLiteral("carouselEpisodes"), QString());
+    episodes_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
 
     text->addWidget(title_);
     text->addWidget(status_);
@@ -94,9 +98,27 @@ void TitleCard::applyPixmap(const QPixmap& pixmap) {
     if (pixmap.isNull()) {
         return;
     }
+    const QSize targetSize = poster_->size();
+    QPixmap scaled = pixmap.scaled(targetSize, Qt::KeepAspectRatioByExpanding,
+                                   Qt::SmoothTransformation);
+    const int cropX = qMax(0, (scaled.width() - targetSize.width()) / 2);
+    const int cropY = qMax(0, (scaled.height() - targetSize.height()) / 2);
+    QPixmap cropped = scaled.copy(cropX, cropY, targetSize.width(), targetSize.height());
+
+    // Clip to rounded corners matching the card's inner radius so artwork
+    // sits seamlessly inside the container without square corners overflowing.
+    QPixmap rounded(targetSize);
+    rounded.fill(Qt::transparent);
+    QPainter painter(&rounded);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPainterPath path;
+    path.addRoundedRect(QRectF(0, 0, targetSize.width(), targetSize.height()),
+                        theme::kRadiusSmall, theme::kRadiusSmall);
+    painter.setClipPath(path);
+    painter.drawPixmap(0, 0, cropped);
+
     poster_->setText(QString());
-    poster_->setPixmap(pixmap.scaled(poster_->size(), Qt::KeepAspectRatioByExpanding,
-                                     Qt::SmoothTransformation));
+    poster_->setPixmap(rounded);
 }
 
 void TitleCard::applyStatus(const QString& status) {

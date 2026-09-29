@@ -32,10 +32,11 @@ QPushButton#episodeButton:pressed { background: %9; }
 QPushButton#episodeButton:disabled { color: %4; background: %1; }
 QLineEdit, QComboBox {
     background: %5; border: 1px solid %10;
-    border-radius: %6px; padding: %3px %7px;
-    min-height: 22px; selection-background-color: %11; selection-color: %1;
+    border-radius: %6px; padding: 6px %7px;
+    min-height: 24px; font-size: 14px;
+    selection-background-color: %11; selection-color: %1;
 }
-QLineEdit:focus, QComboBox:focus { border-color: %11; }
+QLineEdit:focus, QComboBox:focus { border-color: %11; background: %8; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox QAbstractItemView { background: %5; border: 1px solid %10;
     selection-background-color: %8; }
@@ -47,20 +48,26 @@ QPushButton:hover { background: %8; }
 QPushButton:pressed { background: %9; }
 QPushButton:focus { border-color: %11; }
 QPushButton:disabled { color: %4; background: %5; }
-QPushButton#primary { background: %11; color: %1; border: none; font-weight: 600; }
+QPushButton#primary { background: %11; color: %1; border: none; font-weight: 600;
+    font-size: 14px; padding: 6px 16px; border-radius: %6px; }
 QPushButton#primary:hover { background: %12; }
 QPushButton#textAction { background: transparent; color: %11; border: none;
     padding: 0 %3px 0 0; min-height: 24px; }
 QPushButton#textAction:hover { color: %12; background: transparent; }
 QPushButton#settingsChip { padding: 0; min-width: %13px;
     max-width: %13px; min-height: %13px; max-height: %13px; }
-QPushButton#animeCard { background: %5; border: 1px solid transparent;
+QPushButton#animeCard { background: %5; border: 1px solid %10;
     border-radius: %6px; padding: 0; }
-QPushButton#animeCard:hover { background: %8; }
+QPushButton#animeCard:hover { background: %8; border-color: rgba(189, 172, 255, 0.40); }
 QPushButton#animeCard:focus { border-color: %11; }
-QPushButton#carouselControl { padding: 0; min-width: %14px; max-height: %14px; }
-QWidget#homeFeedRow { background: %5; border: none; border-radius: %6px; }
-QWidget#homeFeedRow:hover { background: %8; }
+QPushButton#carouselControl { background: %5; color: %2; border: 1px solid %10;
+    border-radius: 14px; padding: 0; min-width: 28px; max-width: 28px;
+    min-height: 28px; max-height: 28px; font-weight: 700; font-size: 14px; }
+QPushButton#carouselControl:hover { background: %8; border-color: rgba(189, 172, 255, 0.45); color: %11; }
+QPushButton#carouselControl:pressed { background: %9; }
+QPushButton#carouselControl:disabled { color: rgba(255, 255, 255, 0.20); background: transparent; border-color: transparent; }
+QWidget#homeFeedRow { background: %5; border: 1px solid %10; border-radius: %6px; }
+QWidget#homeFeedRow:hover { background: %8; border-color: rgba(189, 172, 255, 0.30); }
 QPushButton#homeFeedTitle { text-align: left; background: transparent; border: none;
     padding: %15px; font-weight: 600; }
 QLabel#homeFeedMeta { background: transparent; color: %4; font-size: 12px; }
@@ -70,10 +77,12 @@ QScrollArea#discoveryScroll { background: transparent; border: none; }
 QWidget#animeCarouselTrack { background: transparent; }
 QLabel#carouselPoster { background: %1; color: %4; border-radius: %6px; font-size: 12px; }
 QLabel#carouselKind { background: transparent; color: %11; font-size: 12px; }
-QLabel#carouselTitle { background: transparent; color: %2; font-weight: 600; }
-QLabel#carouselStatus { background: transparent; color: %4; }
-QLabel#carouselStatusLive { background: transparent; color: %11; }
-QLabel#carouselEpisodes { background: transparent; color: %2; }
+QLabel#carouselTitle { background: transparent; color: %2; font-weight: 600; font-size: 14px; }
+QLabel#carouselStatus { background: rgba(255, 255, 255, 0.06); color: %4;
+    font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 6px; }
+QLabel#carouselStatusLive { background: rgba(189, 172, 255, 0.16); color: %11;
+    font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 6px; }
+QLabel#carouselEpisodes { background: transparent; color: %4; font-size: 12px; }
 QMenu { background: %5; color: %2; border: 1px solid %10;
     border-radius: %6px; padding: %15px; }
 QMenu::item { min-height: %16px; padding: 0 %7px; border-radius: %6px; }

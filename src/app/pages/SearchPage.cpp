@@ -16,6 +16,7 @@
 #include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QJsonArray>
+#include <QEasingCurve>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -23,6 +24,7 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPixmap>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -31,6 +33,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <algorithm>
 
@@ -118,6 +121,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     searchButton->setObjectName(QStringLiteral("primary"));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton, &QPushButton::clicked, this, &SearchPage::search);
+    connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (text.trimmed().isEmpty() && !browseMode_) {
+            loadOngoing();
+        }
+    });
     searchRow->addWidget(query_);
     searchRow->addWidget(searchButton);
     root->addLayout(searchRow);
@@ -253,19 +261,63 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     QPushButton* previous = section->previous;
     QPushButton* next = section->next;
     connect(previous, &QPushButton::clicked, this,
-            [bar] { bar->setValue(bar->value() - theme::kHomeCarouselScrollStep); });
+            [this, bar] { smoothScrollCarousel(bar, -theme::kHomeCarouselScrollStep); });
     connect(next, &QPushButton::clicked, this,
-            [bar] { bar->setValue(bar->value() + theme::kHomeCarouselScrollStep); });
+            [this, bar] { smoothScrollCarousel(bar, theme::kHomeCarouselScrollStep); });
     // Both edges of the track disable the arrow that would go nowhere.
     connect(bar, &QScrollBar::rangeChanged, this,
             [bar, previous, next](int, int) { syncArrows(bar, previous, next); });
     connect(bar, &QScrollBar::valueChanged, this,
             [bar, previous, next](int) { syncArrows(bar, previous, next); });
     syncArrows(bar, previous, next);
+
+    // Mouse wheel over the carousel translates to smooth horizontal navigation
+    section->scroll->viewport()->installEventFilter(this);
     section->scroll->hide();
 
     carousels_.insert(key, section);
     return section;
+}
+
+void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
+    if (bar == nullptr) {
+        return;
+    }
+    const int start = bar->value();
+    const int target = qBound(bar->minimum(), start + delta, bar->maximum());
+    if (start == target) {
+        return;
+    }
+    auto* anim = new QPropertyAnimation(bar, "value", this);
+    anim->setDuration(240);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    anim->setStartValue(start);
+    anim->setEndValue(target);
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::Wheel) {
+        for (const auto* section : carousels_) {
+            if (section != nullptr && section->scroll != nullptr &&
+                watched == section->scroll->viewport()) {
+                auto* we = static_cast<QWheelEvent*>(event);
+                int delta = we->angleDelta().y();
+                if (delta == 0) {
+                    delta = we->angleDelta().x();
+                }
+                if (delta != 0) {
+                    QScrollBar* bar = section->scroll->horizontalScrollBar();
+                    if (bar != nullptr) {
+                        smoothScrollCarousel(bar, -delta * 2);
+                        return true;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
