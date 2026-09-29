@@ -58,6 +58,13 @@ public:
     // take effect once it does.
     void setAnime4KMode(anime4k::Mode mode);
     anime4k::Mode anime4KMode() const { return anime4kMode_; }
+    /// Swaps in an arbitrary chain by candidate id, which is what the compare
+    /// window needs: it can name a single .glsl that has no Mode at all. The
+    /// id is kept so the choice survives a re-resolve, never the resolved path
+    /// list, which goes stale the moment the shaders folder moves.
+    void setAnime4KChain(const QString& candidateId);
+    /// The candidate id currently applied, empty for Off.
+    QString anime4KChainId() const { return anime4kChainId_; }
     /// What mpv reports for glsl-shaders right now. It only echoes back the
     /// string it was given - mpv does not validate a path list, so this cannot
     /// tell a working chain from a preset naming a deleted file. Useful for
@@ -110,6 +117,7 @@ private:
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
+    QString anime4kChainId_;
 
     // mpv keeps running whether or not we repaint, so the state pump cannot
     // live in paintGL: a paused video produces no frames, and the clock,

@@ -36,6 +36,8 @@ class VideoSurface;
 namespace mplayer {
 namespace shell {
 
+class CompareWindow;
+
 class PlayerShell;
 class MenuPopup;
 class MenuPopup;
@@ -267,6 +269,11 @@ private:
     void onMediaDropped(const QString& path);
     /// Puts the frame currently on screen on the clipboard as an image.
     void copyCurrentFrame();
+    /// Opens (or raises) the shader comparison window.
+    void openCompareWindow();
+    /// Adopts a chain the comparison window chose and records it so a restart
+    /// restores the same one.
+    void applyAnime4KChain(const QString& candidateId);
     void onShellStateChanged(const QString& state);
     void onShellFullscreenChanged(bool fullscreen);
     void onEngineError(const QString& message);
@@ -317,10 +324,17 @@ private:
     double volume_ = 0.7;      // 0..1, what the shell shows
     double speed_ = 1.0;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
+    /// The applied chain as a candidate id. A chain with no Mode still has to
+    /// survive a restart, and an enum ordinal cannot name one.
+    QString anime4kChainId_ = QStringLiteral("off");
+    /// The comparison window, created on first use and kept: it borrows the
+    /// surface, and two of them would fight over the same core.
+    CompareWindow* compare_ = nullptr;
     bool muted_ = false;
     /// The size the viewer arranged in windowed mode, so leaving fullscreen
     /// puts the player back where they put it instead of at a default.
-    QRect windowedSize_;    bool fullscreen_ = false;
+    QRect windowedSize_;
+    bool fullscreen_ = false;
     bool seriesExpanded_ = false;
     bool errorActive_ = false;
     bool refreshAttempted_ = false;

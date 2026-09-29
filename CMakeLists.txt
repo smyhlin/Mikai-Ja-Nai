@@ -28,6 +28,7 @@ set(PLAYER_SOURCES
   src/player/PlayerShell.cpp
   src/player/PlayerPopups.cpp
   src/player/PlayerDialog.cpp
+  src/player/CompareWindow.cpp
 )
 
 set(PLAYER_HEADERS
@@ -41,6 +42,7 @@ set(PLAYER_HEADERS
   src/player/PlayerShell.hpp
   src/player/PlayerPopups.hpp
   src/player/PlayerDialog.hpp
+  src/player/CompareWindow.hpp
 )
 
 # STATIC so mikai can link it into a shared module without re-exporting it.
@@ -109,6 +111,12 @@ set_target_properties(crash_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 # reports what each provider tab received, then what the player did with a pill.
 # It exists because "the Ashdi episode list never appears" survived every round
 # of source reading, and the only honest way to settle it was to look.
+add_executable(compare_probe src/probes/CompareProbe.cpp)
+target_link_libraries(compare_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
+set_target_properties(compare_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+add_executable(resolver_probe src/probes/ResolverProbe.cpp)
+target_link_libraries(resolver_probe PRIVATE mikai_player Qt6::Core)
+set_target_properties(resolver_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(title_page_probe src/probes/TitlePageProbe.cpp)
 target_link_libraries(title_page_probe PRIVATE mikai_app mikai_backend Qt6::Widgets Qt6::Test)
 set_target_properties(title_page_probe PROPERTIES WIN32_EXECUTABLE FALSE)

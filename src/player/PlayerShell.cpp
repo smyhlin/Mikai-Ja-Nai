@@ -393,6 +393,7 @@ void PlayerShell::buildPictureMenu() {
         entries.append(entry);
     };
     add(QStringLiteral("Копіювати кадр"), QStringLiteral("frame"));
+    add(QStringLiteral("Порівняти якість"), QStringLiteral("compare"));
     add(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
     add(QStringLiteral("Скинути масштаб  (R)"), QStringLiteral("reset"));
     add(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
@@ -402,6 +403,8 @@ void PlayerShell::buildPictureMenu() {
         const QString action = payload.toString();
         if (action == QStringLiteral("frame")) {
             emit frameRequested();
+        } else if (action == QStringLiteral("compare")) {
+            emit compareRequested();
         } else if (action == QStringLiteral("copy")) {
             emit copyLinkRequested();
         } else if (action == QStringLiteral("reset")) {

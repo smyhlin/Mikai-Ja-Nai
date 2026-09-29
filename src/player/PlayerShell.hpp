@@ -145,6 +145,10 @@ signals:
     /// A right-click on the picture asked for the current frame. The shell owns
     /// no clipboard and no image, so the host reads the surface and copies it.
     void frameRequested();
+    /// The viewer asked for the shader comparison window. The host owns the
+    /// window: it is the only side that knows the live surface and where a
+    /// preference would be stored.
+    void compareRequested();
     void copyLinkRequested();
     void stateChanged(const QString& state);
 

@@ -11,6 +11,7 @@
 // to the surface, and the state the shell needs is pushed back from the
 // surface's own signals.
 
+#include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 
 #include <QSettings>
@@ -86,16 +87,6 @@ constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
 
-/// The stored value is the preset id, not the enum ordinal, so a preset added
-/// later cannot silently repoint an existing choice at a different filter.
-QString modeId(anime4k::Mode mode) {
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        if (info.mode == mode) {
-            return info.id;
-        }
-    }
-    return QStringLiteral("off");
-}
 
 anime4k::Mode modeFromId(const QString& id) {
     for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
@@ -882,8 +873,19 @@ PlayerDialog::PlayerDialog(const QString& caption,
     // Applied before any file is opened: the surface builds its mpv core on the
     // first open() and glsl-shaders is only honoured as a construction option,
     // so a mode restored later would land on a core that already ignored it.
-    anime4kMode_ = modeFromId(QSettings().value(kAnime4KSettingKey).toString());
+    const QString storedChain = QSettings().value(kAnime4KSettingKey).toString();
+    anime4kMode_ = modeFromId(storedChain);
+    // A chain with no Mode is stored under the same key, so the id is loaded
+    // even when the enum came back as Off: a single .glsl is a real setting
+    // and reading only the mode would drop it on every start.
+    anime4kChainId_ = storedChain.isEmpty() ? modeId(anime4kMode_) : storedChain;
     surface_->setAnime4KMode(anime4kMode_);
+    // A stored chain that is not one of the presets has no Mode, so the enum
+    // above came back Off and the shader would be dropped. The id is applied
+    // after it, which is also the order the setter expects: the chain wins.
+    if (!anime4kChainId_.isEmpty() && anime4kChainId_ != QLatin1String("off")) {
+        surface_->setAnime4KChain(anime4kChainId_);
+    }
     shell_->setAnime4KMode(anime4kMode_);
 
     auto* root = new QVBoxLayout(this);
@@ -1040,6 +1042,7 @@ void PlayerDialog::connectShell() {
         flashStatus(QStringLiteral("Посилання на потік скопійовано"));
     });
     connect(shell_, &PlayerShell::frameRequested, this, &PlayerDialog::copyCurrentFrame);
+    connect(shell_, &PlayerShell::compareRequested, this, &PlayerDialog::openCompareWindow);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
     connect(shell_, &PlayerShell::subtitlesRequested, this, &PlayerDialog::openSubtitlesMenu);
@@ -1260,6 +1263,58 @@ void PlayerDialog::onShellFullscreenChanged(bool fullscreen) {
     shell_->leaveFullscreen();
 }
 
+void PlayerDialog::openCompareWindow() {
+    if (closed_ || pip_ != nullptr) {
+        return;
+    }
+    // Both guards say what is wrong rather than opening a window that cannot
+    // show anything: a missing folder means every row in the list is dead, and
+    // no video means there is no frame to compare.
+    if (!surface_->hasVideo()) {
+        flashStatus(QStringLiteral("Немає відео для порівняння"));
+        return;
+    }
+    if (anime4k::findShadersDir().isEmpty()) {
+        flashStatus(QStringLiteral("Папка shaders не знайдена — порівняння недоступне"));
+        return;
+    }
+    if (anime4k::allCandidates().size() < 2) {
+        flashStatus(QStringLiteral("Замало варіантів для порівняння"));
+        return;
+    }
+    // One window, kept and reused: it borrows the surface, and a second one
+    // would fight the first for the same core while it swaps chains.
+    if (compare_ == nullptr) {
+        compare_ = new CompareWindow(surface_, anime4kChainId_, this);
+        connect(compare_, &CompareWindow::applyRequested, this,
+                &PlayerDialog::applyAnime4KChain);
+    }
+    compare_->show();
+    compare_->raise();
+    compare_->activateWindow();
+}
+
+void PlayerDialog::applyAnime4KChain(const QString& candidateId) {
+    if (closed_ || candidateId.isEmpty()) {
+        return;
+    }
+    const anime4k::Candidate candidate = anime4k::candidateForId(candidateId);
+    if (!anime4k::chainIsComplete(candidate)) {
+        flashStatus(QStringLiteral("Не вдалося застосувати: файл шейдера відсутній"));
+        return;
+    }
+    anime4kChainId_ = candidateId;
+    // The enum is left alone: a chain that has no Mode is still a choice, and
+    // writing Off over it would drop the setting the menu reports.
+    surface_->setAnime4KChain(candidateId);
+    // The float runs its own core and would keep the old chain, so a second
+    // decode is running the filter the viewer just rejected.
+    if (pip_ != nullptr) {
+        pip_->videoSurface()->setAnime4KChain(candidateId);
+    }
+    QSettings().setValue(kAnime4KSettingKey, candidateId);
+    flashStatus(QStringLiteral("Застосовано: %1").arg(candidate.label));
+}
 void PlayerDialog::copyCurrentFrame() {
     if (closed_ || surface_ == nullptr || !surface_->hasVideo()) {
         flashStatus(QStringLiteral("Немає кадру для копіювання"));

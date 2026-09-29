@@ -177,7 +177,29 @@ Layering is strict and enforced by tests:
   position whenever it is known - blanking it because the *duration* was not
   threw away the only number a viewer can read.
   `Anime4K` (preset table + shader-path resolution, `Mode::Off`..`HqCA`).
-- `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
+  `CompareWindow` — the shader comparison, reached from the picture's
+  right-click menu. It lists every candidate (the nine presets plus each of
+  the 49 `.glsl` files on its own), lets the viewer pick two and shows them in
+  one of three layouts: side by side, one image with a draggable divide, or
+  the amplified per-pixel difference.
+  Three things about it are load-bearing, each found the same way the
+  Anime4K pixel check was:
+  - **A side is a chain applied to the live core, not a re-implementation.**
+    `renderWithChain` writes the chain through `VideoSurface::setAnime4KChain`
+    and grabs what comes back. Drawing the same image twice would look like a
+    comparison and measure nothing.
+  - **The frame is frozen before it is compared.** Re-seeking to one
+    timestamp does not reproduce the same pixels, so the window takes one
+    frame and both sides render from it; two settled frames of a still picture
+    differ by 0.000/255, and that is the noise floor a difference is read
+    against. `compare_probe` asserts exactly that number.
+  - **A chain is named by id, never by ordinal.** A single `.glsl` has no
+    `Mode` at all, so `player/anime4k` stores the candidate id and the enum is
+    only the menu's shorthand. A preset added later cannot repoint a choice
+    the viewer already made.
+  The window is non-blocking on purpose, and the float is barred from
+  opening it: the float owns a second mpv core, and the window swaps the
+  chain on whichever surface it is given.- `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
   by a POST_BUILD rule on `mikai`. `Anime4K::findShadersDir` looks beside the
   exe and in the cwd; when it finds nothing the SHADERS section hides itself
   rather than offering rows that cannot work.

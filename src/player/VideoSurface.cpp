@@ -58,9 +58,38 @@ void VideoSurface::ensureEngine() {
     }
 }
 
+void VideoSurface::setAnime4KChain(const QString& candidateId) {
+    if (candidateId == anime4kChainId_) {
+        return;
+    }
+    anime4kChainId_ = candidateId;
+    // A named chain supersedes the enum, but the enum is not cleared: a later
+    // setAnime4KMode rewrites both, and leaving it stale would let the two
+    // disagree about what is on screen.
+    if (!mpv_) {
+        return;
+    }
+    try {
+        mpv_->setString("glsl-shaders",
+                        anime4k::shaderStringForCandidate(candidateId).toStdString());
+    } catch (const MpvError& err) {
+        emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+    }
+    // vo=libmpv rebuilds the filter chain on the next rendered frame, and a
+    // paused video produces none, so without this the change would appear to
+    // do nothing until playback resumed.
+    if (contextReady_ && render_) {
+        render_->update();
+    }
+    update();
+}
 void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
     if (mode == anime4kMode_) return;
     anime4kMode_ = mode;
+    // The id is the persistence key, so it is recorded here too: a mode chosen
+    // from the menu and a chain chosen in the compare window are the same
+    // setting, and whichever came last must be what a restart restores.
+    anime4kChainId_ = anime4k::modeId(mode);
     if (!mpv_) return;
     try {
         mpv_->setString("glsl-shaders", anime4k::shaderStringForMode(mode).toStdString());
