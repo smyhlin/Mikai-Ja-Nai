@@ -4,8 +4,10 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QGuiApplication>
 #include <QPainter>
 #include <QPointF>
+#include <QScreen>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -549,16 +551,17 @@ void Toast::flash(const QString& text, int ms) {
 
 QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
     return {
-        {QStringLiteral("Space"), QStringLiteral("toggle_playback")},
-        {QStringLiteral("F"), QStringLiteral("toggle_fullscreen_mode")},
-        {QStringLiteral("M"), QStringLiteral("toggle_mute")},
-        {QStringLiteral("Esc"), QStringLiteral("exit_viewer / reset_zoom")},
-        {QStringLiteral("←  →"), QStringLiteral("seek ∓5s / prev·next")},
-        {QStringLiteral("↑  ↓"), QStringLiteral("volume ±10 %")},
-        {QStringLiteral("+  −"), QStringLiteral("zoom_in / zoom_out")},
-        {QStringLiteral("R  0"), QStringLiteral("reset_canvas_transform")},
-        {QStringLiteral("D"), QStringLiteral("toggle_state_manifest_hud")},
-        {QStringLiteral("?"), QStringLiteral("this panel")},
+        {QStringLiteral("Пробіл"), QStringLiteral("Пауза / Відтворення")},
+        {QStringLiteral("F"), QStringLiteral("Повний екран")},
+        {QStringLiteral("M"), QStringLiteral("Вимкнути / увімкнути звук")},
+        {QStringLiteral("S"), QStringLiteral("Список серій")},
+        {QStringLiteral("T"), QStringLiteral("Вибір озвучення")},
+        {QStringLiteral("C"), QStringLiteral("Вибір субтитрів")},
+        {QStringLiteral("Q"), QStringLiteral("Якість та швидкість")},
+        {QStringLiteral("←  →"), QStringLiteral("Перемотування ∓5с")},
+        {QStringLiteral("↑  ↓"), QStringLiteral("Гучність ±10 %")},
+        {QStringLiteral("Alt + коліщатко"), QStringLiteral("Прокрутка каруселей")},
+        {QStringLiteral("Esc"), QStringLiteral("Закрити панель / вікно")},
     };
 }
 
@@ -569,11 +572,11 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWi
                        " border-radius: 10px; }"));
 
     auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(11, 10, 11, 10);
-    lay->setSpacing(3);
-    auto* cap = new QLabel(QStringLiteral("supported_input_modalities"));
+    lay->setContentsMargins(12, 10, 12, 10);
+    lay->setSpacing(4);
+    auto* cap = new QLabel(QStringLiteral("ГАРЯЧІ КЛАВІШІ"));
     cap->setFont(monoFont(8));
-    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent; letter-spacing: 0.5px;"));
     lay->addWidget(cap);
     lay->addSpacing(2);
 
@@ -584,23 +587,34 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWi
         auto* key = new QLabel(entry.first);
         key->setFont(monoFont(8));
         key->setAlignment(Qt::AlignCenter);
-        key->setFixedWidth(58);
+        key->setMinimumWidth(68);
         key->setStyleSheet(
-            QStringLiteral("color: %1; background: rgba(0,0,0,90); border: 1px solid %2;"
-                           " border-radius: 4px; padding: 2px 0;")
-                .arg(rgba(white(225)), rgba(white(30))));
+            QStringLiteral("color: %1; background: rgba(0,0,0,120); border: 1px solid %2;"
+                           " border-radius: 4px; padding: 2px 6px; font-weight: 600;")
+                .arg(rgba(white(235)), rgba(white(40))));
         auto* action = new QLabel(entry.second);
-        action->setFont(monoFont(8));
-        action->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(140))));
+        action->setFont(uiFont(9));
+        action->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(rgba(white(180))));
         row->addWidget(key);
-        row->addWidget(action);
+        row->addWidget(action, 1);
         lay->addLayout(row);
     }
 }
 
 void KeyHints::popupNear(const QPoint& anchorGlobal) {
     setFixedSize(sizeHint());
-    move(qMax(4, anchorGlobal.x()), qMax(4, anchorGlobal.y() + 18));
+    QScreen* screen = QGuiApplication::screenAt(anchorGlobal);
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+
+    int x = anchorGlobal.x() + 14 - width();
+    int y = anchorGlobal.y() + 8;
+    if (screen) {
+        const QRect bounds = screen->availableGeometry();
+        x = qBound(bounds.left() + 4, x, bounds.right() - width() - 4);
+        y = qBound(bounds.top() + 4, y, bounds.bottom() - height() - 4);
+    }
+    move(x, y);
     show();
     raise();
 }

@@ -12,4 +12,7 @@ namespace mikai::app::theme {
 /// build.
 QIcon gearIcon(int size = 0, const QString& color = {});
 
+/// The keyboard glyph for shortcuts list.
+QIcon keyboardIcon(int size = 0, const QString& color = {});
+
 }  // namespace mikai::app::theme

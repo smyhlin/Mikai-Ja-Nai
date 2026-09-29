@@ -64,6 +64,35 @@ QPixmap renderGear(int size, const QColor& color) {
     return pixmap;
 }
 
+QPixmap renderKeyboard(int size, const QColor& color) {
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const double scale = size / 24.0;
+    painter.scale(scale, scale);
+
+    QPen pen(color);
+    pen.setWidthF(1.6);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(QRectF(2.5, 6.5, 19.0, 11.0), 2.0, 2.0);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    for (const double cx : {6.5, 9.7, 12.9, 16.1}) {
+        painter.drawEllipse(QPointF(cx, 10.0), 0.85, 0.85);
+    }
+    painter.drawRoundedRect(QRectF(8.0, 13.8, 8.0, 1.4), 0.7, 0.7);
+
+    painter.end();
+    return pixmap;
+}
+
 }  // namespace
 
 QIcon gearIcon(int size, const QString& color) {
@@ -85,6 +114,24 @@ QIcon gearIcon(int size, const QString& color) {
         return it->second;
     }
     return QIcon(renderGear(pixels * 2, fill));
+}
+
+QIcon keyboardIcon(int size, const QString& color) {
+    const int pixels = size > 0 ? size : kIconSize;
+    const QColor fill(color.isEmpty() ? QString::fromLatin1(kText) : color);
+    static const std::map<QString, QIcon> kCache = [] {
+        std::map<QString, QIcon> cache;
+        for (const char* hex : {kText, kAccent, kMuted}) {
+            const QIcon icon(renderKeyboard(kIconSize * 2, QColor(QString::fromLatin1(hex))));
+            cache.emplace(QString::fromLatin1(hex), icon);
+        }
+        return cache;
+    }();
+    const auto it = kCache.find(fill.name());
+    if (it != kCache.end()) {
+        return it->second;
+    }
+    return QIcon(renderKeyboard(pixels * 2, fill));
 }
 
 }  // namespace mikai::app::theme

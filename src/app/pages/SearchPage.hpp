@@ -24,6 +24,10 @@ class QTimer;
 class QVBoxLayout;
 class QWidget;
 
+namespace mplayer::shell {
+class KeyHints;
+}
+
 namespace mikai::backend {
 class MikaiClient;
 }
@@ -168,6 +172,7 @@ private:
     QListWidget* results_ = nullptr;
     RangePager* pager_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
+    mplayer::shell::KeyHints* keyHints_ = nullptr;
 };
 
 }  // namespace mikai::app

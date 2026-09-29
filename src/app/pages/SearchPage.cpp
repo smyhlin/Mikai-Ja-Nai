@@ -9,6 +9,7 @@
 #include "widgets/RateLimitLabel.hpp"
 #include "widgets/TitleCard.hpp"
 #include "workers/Runner.hpp"
+#include "ShellWidgets.hpp"
 
 #include <backend/MikaiClient.hpp>
 
@@ -104,6 +105,20 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     topRow->addStretch();
     rateLabel_ = new RateLimitLabel(client_, this);
     topRow->addWidget(rateLabel_);
+
+    auto* keysButton = new QPushButton(this);
+    keysButton->setObjectName(QStringLiteral("settingsChip"));
+    keysButton->setIcon(theme::keyboardIcon());
+    keysButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    keysButton->setToolTip(tr("Гарячі клавіші (?)"));
+    connect(keysButton, &QPushButton::clicked, this, [this, keysButton] {
+        if (keyHints_ == nullptr) {
+            keyHints_ = new mplayer::shell::KeyHints(this);
+        }
+        keyHints_->popupNear(keysButton->mapToGlobal(QPoint(keysButton->width() / 2, keysButton->height())));
+    });
+    topRow->addWidget(keysButton);
+
     auto* settingsButton = new QPushButton(this);
     settingsButton->setObjectName(QStringLiteral("settingsChip"));
     settingsButton->setIcon(theme::gearIcon());
