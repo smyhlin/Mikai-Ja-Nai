@@ -239,10 +239,9 @@ void PlayerShell::buildFooter() {
     lblOrigin_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,85);"));
     v->addWidget(lblOrigin_);
 
-    footerRight_ = new QWidget(this);
-    footerRight_->setAttribute(Qt::WA_TranslucentBackground);
+    footerRight_ = new Panel(blackSoft(), 8.0, w15(), this);
     auto* h = new QHBoxLayout(footerRight_);
-    h->setContentsMargins(0, 0, 0, 0);
+    h->setContentsMargins(4, 4, 4, 4);
     h->setSpacing(4);
 
     btnReset_ = new IconButton(IconPainter::reset, QStringLiteral("reset_canvas_transform  (R / 0)"),

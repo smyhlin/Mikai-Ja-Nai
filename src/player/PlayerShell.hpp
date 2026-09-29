@@ -202,7 +202,7 @@ private:
     QWidget* footerLeft_ = nullptr;
     QLabel* lblFile_ = nullptr;
     QLabel* lblOrigin_ = nullptr;
-    QWidget* footerRight_ = nullptr;
+    Panel* footerRight_ = nullptr;
     IconButton* btnReset_ = nullptr;
     IconButton* btnKeys_ = nullptr;
     IconButton* btnMore_ = nullptr;

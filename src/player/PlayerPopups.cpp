@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -30,9 +31,8 @@ const char* const kBorder = "rgba(255, 255, 255, 0.16)";
 
 constexpr auto kPanelQss =
     "QFrame[chromePanel=\"true\"] {"
-    "  background-color: #14151b;"
-    "  border: 1px solid %1;"
-    "  border-radius: 10px; }";
+    "  background-color: transparent;"
+    "  border: none; }";
 
 QString rowQss(const char* foreground, const char* fill) {
     return QStringLiteral(
@@ -163,6 +163,14 @@ void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
     setFocus(Qt::OtherFocusReason);
 }
 
+void MenuPopup::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
+    p.setBrush(QColor(20, 21, 27));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+}
+
 void MenuPopup::keyPressEvent(QKeyEvent* event) {
     switch (event->key()) {
         case Qt::Key_Escape:
@@ -244,6 +252,14 @@ void MenuPopup::paintRows() {
 //  SERIES DRAWER
 // ═══════════════════════════════════════════════════════════════════════════
 
+void SeriesDrawer::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
+    p.setBrush(QColor(20, 21, 27));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+}
+
 SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerSeriesDrawer"));
     setProperty("chromePanel", true);
@@ -260,11 +276,13 @@ SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
 
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName(QStringLiteral("playerSeriesScroll"));
+    scroll->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* content = new QWidget();
     content->setObjectName(QStringLiteral("playerSeriesList"));
+    content->setStyleSheet(QStringLiteral("background: transparent;"));
     rowsLayout_ = new QVBoxLayout(content);
     rowsLayout_->setContentsMargins(0, 0, 0, 0);
     rowsLayout_->setSpacing(2);

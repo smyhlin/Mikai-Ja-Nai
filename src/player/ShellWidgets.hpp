@@ -107,6 +107,7 @@ public:
     void popupNear(const QPoint& anchorGlobal);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 signals:
@@ -232,6 +233,7 @@ public:
     static QVector<QPair<QString, QString>> shortcutTable();
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 };
 

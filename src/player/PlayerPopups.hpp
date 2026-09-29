@@ -59,6 +59,7 @@ signals:
     void picked(const QVariant& payload);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
@@ -85,6 +86,9 @@ public:
 
 signals:
     void picked(int index);
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
 
 private:
     QVBoxLayout* rowsLayout_ = nullptr;

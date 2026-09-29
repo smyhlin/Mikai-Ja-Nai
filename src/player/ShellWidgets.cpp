@@ -139,9 +139,7 @@ void IconButton::paintEvent(QPaintEvent*) {
 SettingsFlyout::SettingsFlyout(QWidget* parent)
     : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint), quality_(QStringLiteral("HD")) {
     setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet(
-        QStringLiteral("SettingsFlyout { background-color: #14151b; border: 1px solid rgba(255, 255, 255, 0.16);"
-                       " border-radius: 10px; }"));
+    setStyleSheet(QStringLiteral("SettingsFlyout { background: transparent; }"));
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(10, 10, 10, 10);
@@ -191,6 +189,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     // where a viewer looks for stream settings, and the strip is for things
     // that act on the current episode.
     qualitySection_ = new QWidget(this);
+    qualitySection_->setStyleSheet(QStringLiteral("background: transparent;"));
     auto* qlay = new QVBoxLayout(qualitySection_);
     qlay->setContentsMargins(0, 0, 0, 0);
     qlay->setSpacing(5);
@@ -273,6 +272,15 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     }
     qualitySection_->setVisible(!qualityOptions_.isEmpty());
     refresh();
+}
+
+void SettingsFlyout::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    // 100% solid, fully opaque dark card background with crisp border
+    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
+    p.setBrush(QColor(20, 21, 27));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
 }
 
 void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
@@ -567,9 +575,7 @@ QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
 
 KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
     setAttribute(Qt::WA_TranslucentBackground);
-    setStyleSheet(
-        QStringLiteral("KeyHints { background-color: #14151b; border: 1px solid rgba(255, 255, 255, 0.16);"
-                       " border-radius: 10px; }"));
+    setStyleSheet(QStringLiteral("KeyHints { background: transparent; }"));
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(12, 10, 12, 10);
@@ -599,6 +605,14 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWi
         row->addWidget(action, 1);
         lay->addLayout(row);
     }
+}
+
+void KeyHints::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
+    p.setBrush(QColor(20, 21, 27));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
 }
 
 void KeyHints::popupNear(const QPoint& anchorGlobal) {
