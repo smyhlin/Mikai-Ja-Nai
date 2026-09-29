@@ -463,6 +463,19 @@ void PlayerShell::layoutChrome() {
     if (showHud_ && !hudHidden_) {
         hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
     }
+
+    // Raise the chrome above the surface. The surface is a QOpenGLWidget that
+    // composites its own framebuffer, so it paints over any sibling created
+    // before it - which is why the episodes drawer (a dialog child, raised by
+    // layoutPanels) showed up while the bottom dock did not: nothing ever
+    // raised the shell's own widgets.
+    QVector<QWidget*> chrome{windowControls_, btnPrev_, btnNext_, dock_,
+                             footerLeft_, footerRight_, hud_, center_};
+    for (QWidget* widget : chrome) {
+        if (widget != nullptr && widget->isVisible()) {
+            widget->raise();
+        }
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
