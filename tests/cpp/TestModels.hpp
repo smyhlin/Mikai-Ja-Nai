@@ -25,10 +25,10 @@ class TestModels : public QObject {
   void displayNamePrefersUaThenEnglishThenOriginal_data();
   void displayNamePrefersUaThenEnglishThenOriginal();
   void displayNameFallsBackToQuestionMark();
-  void summaryThumbPrefersSmallWebpThenJpg_data();
-  void summaryThumbPrefersSmallWebpThenJpg();
-  void summaryPosterPrefersBigWebpThenJpg_data();
-  void summaryPosterPrefersBigWebpThenJpg();
+  void summaryThumbPrefersSmallJpg_data();
+  void summaryThumbPrefersSmallJpg();
+  void summaryPosterPrefersBigJpg_data();
+  void summaryPosterPrefersBigJpg();
   void emptySummaryCarriesNoArtwork();
   void summaryCarriesPlannedEpisodesAndFormat();
   void summaryWithoutPlannedCountLeavesItAbsent();
@@ -45,6 +45,7 @@ class TestModels : public QObject {
   void coverUrlPrefersUaPosterOverApiPoster();
   void coverUrlWalksUaPostersThenSizesInOrder_data();
   void coverUrlWalksUaPostersThenSizesInOrder();
+  void coverUrlPrefersJpgOverWebp();
   void coverUrlFallsBackToApiPoster();
   void emptyDetailHasNoCover();
 

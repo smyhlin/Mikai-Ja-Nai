@@ -148,15 +148,9 @@ void PlayerShell::buildPill() {
     lay->setContentsMargins(12, 4, 12, 4);
     lay->setSpacing(8);
 
-    btnOriginal_ = new PillButton(pill_);
-    btnOriginal_->setToolTip(QStringLiteral("open original file"));
-    connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
-    lay->addWidget(btnOriginal_);
-
-    auto* dot = new QLabel(QStringLiteral("·"), pill_);
-    dot->setStyleSheet(QStringLiteral("color: rgba(255,255,255,45);"));
-    lay->addWidget(dot);
-
+    // The pill is attribution only. "Original File" is an action, not a credit,
+    // and it belonged with the other actions in the right corner rather than
+    // parked in the middle of the picture.
     lblRequester_ = new QLabel(QStringLiteral("Requested by: %1").arg(requester_), pill_);
     lblRequester_->setFont(uiFont(9));
     lblRequester_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,115);"));
@@ -259,6 +253,14 @@ void PlayerShell::buildFooter() {
     auto* h = new QHBoxLayout(footerRight_);
     h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(4);
+
+    // "Original File" lives with the other actions now. It keeps its own
+    // label-and-glyph look, so it reads as a chip sitting inside the cluster.
+    btnOriginal_ = new PillButton(footerRight_);
+    btnOriginal_->setObjectName(QStringLiteral("originalFileButton"));
+    btnOriginal_->setToolTip(QStringLiteral("open original file"));
+    connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
+    h->addWidget(btnOriginal_);
 
     btnReset_ = new IconButton(IconPainter::reset, QStringLiteral("reset_canvas_transform  (R / 0)"),
                                28, 14, footerRight_);
@@ -381,6 +383,18 @@ void PlayerShell::exitFullscreen() {
     btnFullscreen_->setIcon(IconPainter::expand);
     applyState();
     emit fullscreenChanged(false);
+}
+
+bool PlayerShell::dismissOverlay() {
+    if (flyout_ != nullptr && flyout_->isVisible()) {
+        flyout_->close();
+        return true;
+    }
+    if (keys_ != nullptr && keys_->isVisible()) {
+        keys_->close();
+        return true;
+    }
+    return false;
 }
 
 void PlayerShell::enterAutoHidden() {

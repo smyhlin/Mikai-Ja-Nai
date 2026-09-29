@@ -125,7 +125,7 @@ private:
     void renderTabPage(int stateIndex);
     void goToEpisodePage(int stateIndex, int page);
     /// Creates the pill for `entry` and points `entry->button` at it.
-    QPushButton* buildEpisodeButton(EpisodeEntry* entry);
+    QPushButton* buildEpisodeButton(EpisodeEntry* entry, QWidget* grid);
     void reflowGrid(int stateIndex);
 
     void playEpisode(EpisodeEntry* entry);

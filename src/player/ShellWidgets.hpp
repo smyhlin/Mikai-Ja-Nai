@@ -106,6 +106,9 @@ public:
     /// Places the popover above-right of a global anchor point and shows it.
     void popupNear(const QPoint& anchorGlobal);
 
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
+
 signals:
     void speedSelected(double speed);
     void qualitySelected(int height);
@@ -227,6 +230,9 @@ public:
 
     /// The shortcut table, in display order.
     static QVector<QPair<QString, QString>> shortcutTable();
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override;
 };
 
 }  // namespace shell

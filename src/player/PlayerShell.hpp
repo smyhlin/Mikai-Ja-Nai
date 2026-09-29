@@ -104,6 +104,11 @@ public:
 
     /// Opens the speed/quality popover. The host owns the quality list inside it.
     void openSettings();
+    /// Closes whichever of the shell's own overlays is up (settings popover,
+    /// key hints) and reports whether one was. Esc has to be able to reach
+    /// these: both are Qt::Popup windows, so while one is open it holds the
+    /// keyboard and the host never sees the key at all.
+    bool dismissOverlay();
     void wake();
 signals:
     // ── shell → host ────────────────────────────────────────────────

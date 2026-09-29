@@ -339,7 +339,7 @@ QList<backend::AnimeSummary> SearchPage::readRecentTitles() {
         summary.titles.ua = record.value(QStringLiteral("title")).toString();
         const QString poster = record.value(QStringLiteral("poster")).toString();
         if (isRemoteUrl(poster)) {
-            summary.poster.big.webp = poster;
+            summary.poster.big.jpg = poster;
         }
         items.append(summary);
         if (items.size() >= theme::kHomeRecentMaxTitles) {
@@ -378,7 +378,7 @@ void SearchPage::recordRecentTitle(const QString& ref, const QString& title,
     summary.ref = ref;
     summary.titles.ua = title;
     if (isRemoteUrl(poster)) {
-        summary.poster.big.webp = poster;
+        summary.poster.big.jpg = poster;
     }
     recentItems_.prepend(summary);
     while (recentItems_.size() > theme::kHomeRecentMaxTitles) {
@@ -528,7 +528,7 @@ void SearchPage::flushRecentPosters() {
         const auto it = healed.constFind(item.ref);
         if (it != healed.constEnd()) {
             item.poster = backend::PosterSet();
-            item.poster.big.webp = it.value();
+            item.poster.big.jpg = it.value();
         }
     }
     carouselEntries_.insert(kRecentKey, refreshed);
@@ -1000,6 +1000,11 @@ void SearchPage::populateRows() {
         if (!thumb.isEmpty() && cached != icons_.constEnd()) {
             item->setIcon(QIcon(cached.value()));
         }
+        // Reading the cache is not enough: nothing ever put a search row's
+        // thumb in it, because this is the only place that can ask for it.
+        // requestThumb is a no-op once the url is cached or in flight, so one
+        // call per row is safe and a repaint costs nothing.
+        requestThumb(thumb);
     }
 }
 

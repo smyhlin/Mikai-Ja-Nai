@@ -1593,10 +1593,18 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
             audioPopup_->close();
         } else if (subtitlesPopup_->isVisible()) {
             subtitlesPopup_->close();
+        } else if (shell_->dismissOverlay()) {
+            // The settings popover and the key hints are Qt::Popup windows: they
+            // hold the keyboard while open, so this is the only place the key
+            // can reach them.
         } else if (seriesExpanded_) {
             setSeriesExpanded(false);
         } else {
-            return false;
+            // No overlay left, so close. Falling through to the shell here meant
+            // Esc only cleared the shell's fullscreen flag - invisible, because
+            // this dialog refits itself to the monitor - and the player looked
+            // unresponsive while the user pressed it again and again.
+            close();
         }
         event->accept();
         return true;

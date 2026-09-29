@@ -21,6 +21,14 @@ QString text(const QJsonValue& value) {
     return {};
 }
 
+// Every poster field ships a webp and a jpg sibling, and the jpg has to win:
+// Qt 6.8.3's imageformat plugins are gif/ico/jpeg/svg only, so QPixmap silently
+// returns a null image for a webp payload and every poster fails to paint.
+// Preferring webp here is what left the app with no artwork at all.
+QString imageUrl(const ImageVariant& variant) {
+    return variant.jpg.isEmpty() ? variant.webp : variant.jpg;
+}
+
 std::optional<int> optInt(const QJsonValue& value) {
     if (value.isDouble()) {
         return static_cast<int>(value.toDouble());
@@ -84,24 +92,26 @@ QString genreDisplay(const GenreTag& tag) { return tag.ua.isEmpty() ? tag.name :
 QString animePageUrl(const QString& ref) { return kMikaiPageUrl + ref; }
 
 QString thumbUrl(const AnimeSummary& anime) {
-    return anime.poster.small.webp.isEmpty() ? anime.poster.small.jpg : anime.poster.small.webp;
+    return imageUrl(anime.poster.small);
 }
 
 QString posterUrl(const AnimeSummary& anime) {
-    return anime.poster.big.webp.isEmpty() ? anime.poster.big.jpg : anime.poster.big.webp;
+    return imageUrl(anime.poster.big);
 }
 
 QString coverUrl(const AnimeDetail& detail) {
     for (const UaPoster& poster : detail.ua_posters) {
         for (const ImageVariant& size : {poster.images.big, poster.images.medium}) {
-            if (!size.webp.isEmpty() || !size.jpg.isEmpty()) {
-                return size.webp.isEmpty() ? size.jpg : size.webp;
+            const QString url = imageUrl(size);
+            if (!url.isEmpty()) {
+                return url;
             }
         }
     }
     for (const ImageVariant& size : {detail.poster.big, detail.poster.medium}) {
-        if (!size.webp.isEmpty() || !size.jpg.isEmpty()) {
-            return size.webp.isEmpty() ? size.jpg : size.webp;
+        const QString url = imageUrl(size);
+        if (!url.isEmpty()) {
+            return url;
         }
     }
     return {};

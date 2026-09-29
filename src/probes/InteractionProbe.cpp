@@ -7,6 +7,7 @@
 //   - quality and dub/sub selection sat in a top strip, above the picture
 
 #include <QApplication>
+#include <QTest>
 #include <windows.h>
 #include <QGuiApplication>
 #include <QDebug>
@@ -16,6 +17,7 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QWidget>
+#include <functional>
 
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
@@ -35,8 +37,13 @@ public:
     void requestTrackProbe(const QString&) override {}
     void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
-    void playerClosed() override {}
+    // The dialog carries WA_DeleteOnClose, so once Esc closes it the pointer is
+    // dangling and isVisible() would read freed memory. The host is told, and
+    // it outlives the dialog: that is the only safe way to observe the close.
+    void playerClosed() override { closed = true; }
     void playbackFailed() override {}
+
+    bool closed = false;
 };
 
 QPushButton* buttonWithText(QWidget* root, const QString& needle) {
@@ -233,9 +240,44 @@ int main(int argc, char** argv) {
     });
 
     QTimer::singleShot(11500, [&] {
-        std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n", failures);
-        app.exit(failures == 0 ? 0 : 1);
+        // "Original File" belongs in the right corner now, not bottom-centre.
+        QWidget* original = dialog->findChild<QWidget*>(QStringLiteral("originalFileButton"));
+        check(original != nullptr, "the original-file button exists");
+        if (original != nullptr) {
+            const QPoint at = original->mapTo(dialog, QPoint(0, 0));
+            check(at.x() > dialog->width() / 2, "the original-file button is in the right corner");
+        }
     });
+
+    // Esc has to unwind one layer at a time: the open picker first, the player
+    // only once nothing is left to dismiss.
+    QTimer::singleShot(12000, [&] {
+        if (subs != nullptr && subs->isVisible()) {
+            QTest::keyClick(subs, Qt::Key_Escape);
+        }
+        check(subs == nullptr || !subs->isVisible(), "Esc closed the subtitle picker");
+        check(dialog->isVisible(), "Esc left the player open with a picker up");
+    });
+
+    // Esc unwinds one layer per press - picker, then the shell's own popover,
+    // then the series drawer, then the player - so what matters is that the
+    // ladder terminates, not that one press out of a busy UI closes it.
+    int escPresses = 0;
+    std::function<void()> pressEsc = [&] {
+        QTimer::singleShot(250, &app, [&] {
+            ++escPresses;
+            QTest::keyClick(dialog, Qt::Key_Escape);
+            if (host.closed || escPresses > 8) {
+                check(host.closed, "Esc closed the player once nothing was open");
+                std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n",
+                             failures);
+                app.exit(failures == 0 ? 0 : 1);
+                return;
+            }
+            pressEsc();
+        });
+    };
+    QTimer::singleShot(12500, &app, pressEsc);
 
     return app.exec();
 }

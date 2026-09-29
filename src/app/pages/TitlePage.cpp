@@ -921,6 +921,13 @@ void TitlePage::fillEpisodes(int index) {
         tabLayout->addWidget(scroll, 1);
 
         const QString provider = state.provider;
+        // Every entry has to know which tab owns it: the grid is built from
+        // stateIndex, and the player's episode list is built from the same tab.
+        // Left at -1, the pill grid read out of bounds and the playlist came
+        // back empty, so the player offered no episode list at all.
+        for (EpisodeEntry* entry : state.entries) {
+            entry->stateIndex = stateIndex;
+        }
         tabStates_.append(state);
         const QString known = labels::provider(provider);
         tabs_->addTab(tabPage, known.isEmpty() ? capitalize(provider) : known);
@@ -932,8 +939,10 @@ void TitlePage::fillEpisodes(int index) {
     fitEpisodeSection();
 }
 
-QPushButton* TitlePage::buildEpisodeButton(EpisodeEntry* entry) {
-    auto* grid = tabStates_[entry->stateIndex].grid;
+QPushButton* TitlePage::buildEpisodeButton(EpisodeEntry* entry, QWidget* grid) {
+    // The grid comes from the tab being rendered, not from the entry: the entry
+    // only ever needs its index for the player's playlist, and reading a vector
+    // through an unvalidated index is how the pill grid ended up out of bounds.
     auto* button = new QPushButton(entry->number, grid);
     button->setObjectName(QStringLiteral("episodeButton"));
     button->setFixedSize(theme::kEpisodeButtonWidth, theme::kEpisodeButtonHeight);
@@ -969,7 +978,7 @@ void TitlePage::renderTabPage(int stateIndex) {
     const int start = state.page * state.pageSize;
     const int end = qMin(start + state.pageSize, state.entries.size());
     for (int index = start; index < end; ++index) {
-        buildEpisodeButton(state.entries.at(index));
+        buildEpisodeButton(state.entries.at(index), state.grid);
     }
 
     const int totalPages = qMax(1, (state.entries.size() + state.pageSize - 1) / state.pageSize);

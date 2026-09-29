@@ -172,17 +172,20 @@ void TestModels::displayNameFallsBackToQuestionMark() {
   QCOMPARE(displayName(titles), QStringLiteral("?"));
 }
 
-void TestModels::summaryThumbPrefersSmallWebpThenJpg_data() {
+void TestModels::summaryThumbPrefersSmallJpg_data() {
   QTest::addColumn<QString>("webp");
   QTest::addColumn<QString>("jpg");
   QTest::addColumn<QString>("expected");
-  QTest::newRow("webp") << QStringLiteral("small.webp") << QStringLiteral("small.jpg")
-                        << QStringLiteral("small.webp");
+  // Qt 6.8.3 decodes jpeg but has no webp plugin, so a webp URL is one that
+  // silently paints nothing. jpg wins; webp is only a fallback.
+  QTest::newRow("both") << QStringLiteral("small.webp") << QStringLiteral("small.jpg")
+                        << QStringLiteral("small.jpg");
   QTest::newRow("jpg only") << QString() << QStringLiteral("small.jpg") << QStringLiteral("small.jpg");
+  QTest::newRow("webp only") << QStringLiteral("small.webp") << QString() << QStringLiteral("small.webp");
   QTest::newRow("neither") << QString() << QString() << QString();
 }
 
-void TestModels::summaryThumbPrefersSmallWebpThenJpg() {
+void TestModels::summaryThumbPrefersSmallJpg() {
   QFETCH(QString, webp);
   QFETCH(QString, jpg);
   QFETCH(QString, expected);
@@ -195,17 +198,18 @@ void TestModels::summaryThumbPrefersSmallWebpThenJpg() {
   QCOMPARE(thumbUrl(parseSummary(payload)), expected);
 }
 
-void TestModels::summaryPosterPrefersBigWebpThenJpg_data() {
+void TestModels::summaryPosterPrefersBigJpg_data() {
   QTest::addColumn<QString>("webp");
   QTest::addColumn<QString>("jpg");
   QTest::addColumn<QString>("expected");
-  QTest::newRow("webp") << QStringLiteral("big.webp") << QStringLiteral("big.jpg")
-                        << QStringLiteral("big.webp");
+  QTest::newRow("both") << QStringLiteral("big.webp") << QStringLiteral("big.jpg")
+                        << QStringLiteral("big.jpg");
   QTest::newRow("jpg only") << QString() << QStringLiteral("big.jpg") << QStringLiteral("big.jpg");
+  QTest::newRow("webp only") << QStringLiteral("big.webp") << QString() << QStringLiteral("big.webp");
   QTest::newRow("neither") << QString() << QString() << QString();
 }
 
-void TestModels::summaryPosterPrefersBigWebpThenJpg() {
+void TestModels::summaryPosterPrefersBigJpg() {
   QFETCH(QString, webp);
   QFETCH(QString, jpg);
   QFETCH(QString, expected);
@@ -402,12 +406,12 @@ void TestModels::coverUrlWalksUaPostersThenSizesInOrder_data() {
     return object;
   };
 
-  QTest::newRow("ua big webp beats ua big jpg")
+  QTest::newRow("ua big jpg beats ua big webp")
       << detailWith(emptyPosters(), uaWith(posters(variant(QStringLiteral("w"), QStringLiteral("j")), {}, {})))
-      << QStringLiteral("w");
-  QTest::newRow("ua big jpg when no webp")
-      << detailWith(emptyPosters(), uaWith(posters(variant(QString(), QStringLiteral("j")), {}, {})))
       << QStringLiteral("j");
+  QTest::newRow("ua big webp when there is no jpg")
+      << detailWith(emptyPosters(), uaWith(posters(variant(QStringLiteral("w"), QString()), {}, {})))
+      << QStringLiteral("w");
   QTest::newRow("ua medium beats api big")
       << detailWith(posters(variant(QStringLiteral("api"), QString()), {}, {}),
                     uaWith(posters({}, variant(QStringLiteral("ua-med"), QString()), {})))
@@ -427,6 +431,17 @@ void TestModels::coverUrlWalksUaPostersThenSizesInOrder() {
   QFETCH(QJsonObject, payload);
   QFETCH(QString, expected);
   QCOMPARE(coverUrl(parseDetail(payload)), expected);
+}
+
+void TestModels::coverUrlPrefersJpgOverWebp() {
+  QJsonObject payload;
+  QJsonObject images;
+  images.insert(QStringLiteral("poster"),
+                posters(variant(QStringLiteral("big.webp"), QStringLiteral("big.jpg")),
+                        variant(QStringLiteral("med.webp"), QStringLiteral("med.jpg")),
+                        variant(QStringLiteral("small.webp"), QStringLiteral("small.jpg"))));
+  payload.insert(QStringLiteral("images"), images);
+  QCOMPARE(coverUrl(parseDetail(payload)), QStringLiteral("big.jpg"));
 }
 
 void TestModels::coverUrlFallsBackToApiPoster() {

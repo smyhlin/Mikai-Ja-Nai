@@ -285,6 +285,17 @@ void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
     activateWindow();
 }
 
+void SettingsFlyout::keyPressEvent(QKeyEvent* event) {
+    // A Qt::Popup owns the keyboard while it is open, so Esc lands here and
+    // never reaches the host that would otherwise close this.
+    if (event->key() == Qt::Key_Escape) {
+        close();
+        event->accept();
+        return;
+    }
+    QFrame::keyPressEvent(event);
+}
+
 void SettingsFlyout::pick(double speed) {
     rate_ = speed;
     refresh();
@@ -591,6 +602,17 @@ void KeyHints::popupNear(const QPoint& anchorGlobal) {
     move(qMax(4, anchorGlobal.x()), qMax(4, anchorGlobal.y() + 18));
     show();
     raise();
+}
+
+void KeyHints::keyPressEvent(QKeyEvent* event) {
+    // Same reason as SettingsFlyout: an open popup holds the keyboard, so the
+    // key has to be handled here or nowhere.
+    if (event->key() == Qt::Key_Escape) {
+        close();
+        event->accept();
+        return;
+    }
+    QFrame::keyPressEvent(event);
 }
 
 }  // namespace shell
