@@ -27,7 +27,6 @@ constexpr int kUnlimited = 16777215;
 
 const char* const kText = "#f0f0f5";
 const char* const kMuted = "#9a9aa6";
-const char* const kBorder = "rgba(255, 255, 255, 0.16)";
 
 constexpr auto kPanelQss =
     "QFrame[chromePanel=\"true\"] {"
@@ -66,7 +65,7 @@ MenuPopup::MenuPopup(const QString& title, QWidget* parent)
     setProperty("chromePanel", true);
     setAttribute(Qt::WA_TranslucentBackground);
     setFocusPolicy(Qt::StrongFocus);
-    setStyleSheet(QString::fromLatin1(kPanelQss).arg(QLatin1String(kBorder)));
+    setStyleSheet(QString::fromLatin1(kPanelQss));
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(kSpacingSmall, kSpacingSmall, kSpacingSmall, kSpacingXs);
@@ -263,7 +262,7 @@ void SeriesDrawer::paintEvent(QPaintEvent*) {
 SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerSeriesDrawer"));
     setProperty("chromePanel", true);
-    setStyleSheet(QString::fromLatin1(kPanelQss).arg(QLatin1String(kBorder)));
+    setStyleSheet(QString::fromLatin1(kPanelQss));
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(kSpacingXs, kSpacingXs, kSpacingXs, kSpacingXs);
