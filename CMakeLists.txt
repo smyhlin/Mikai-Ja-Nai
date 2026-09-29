@@ -156,6 +156,8 @@ add_executable(mikai_tests
   tests/cpp/TestModels.cpp
   tests/cpp/TestReleases.hpp
   tests/cpp/TestReleases.cpp
+  tests/cpp/TestAnime4K.hpp
+  tests/cpp/TestAnime4K.cpp
   tests/cpp/TestStreams.hpp
   tests/cpp/TestStreams.cpp
   tests/cpp/TestPagers.hpp

@@ -335,9 +335,18 @@ QString shaderStringForCandidate(const QString& id, const QString& shadersDir) {
     if (dir.isEmpty()) {
         return QString();
     }
+    // Every file has to exist before the chain is handed over. mpv echoes
+    // glsl-shaders back without validating it, so a chain naming a file that
+    // is not there reads back complete and fails silently at the next frame;
+    // refusing to build it here is the only place that can catch it.
     const QStringList files = filesForId(id, dir);
     if (files.isEmpty()) {
         return QString();
+    }
+    for (const QString& file : files) {
+        if (!QFileInfo::exists(QDir(dir).filePath(file))) {
+            return QString();
+        }
     }
     QStringList paths;
     paths.reserve(files.size());

@@ -4,6 +4,7 @@
 // executables and useless for one ctest entry, so the suites are driven by hand
 // here and the first failure decides the exit code.
 
+#include "TestAnime4K.hpp"
 #include "TestLayering.hpp"
 #include "TestLiveOracle.hpp"
 #include "TestModels.hpp"
@@ -38,9 +39,10 @@ bool wantsSuite(const QStringList& arguments, const char* name) {
 }
 
 bool suiteFilterActive(const QStringList& arguments) {
-  static const char* kSuites[] = {"TestModels",  "TestReleases", "TestStreams",
-                                  "TestPagers",  "TestQualityCache", "TestRateLimiter",
-                                  "TestLayering", "TestClipboard", "TestLiveOracle"};
+  static const char* kSuites[] = {"TestModels",   "TestReleases",     "TestAnime4K",
+                                  "TestStreams",  "TestPagers",       "TestQualityCache",
+                                  "TestRateLimiter", "TestLayering",  "TestClipboard",
+                                  "TestLiveOracle"};
   for (const char* suite : kSuites) {
     if (wantsSuite(arguments, suite)) {
       return true;
@@ -72,6 +74,7 @@ int main(int argc, char** argv) {
 
   TestModels models;
   TestReleases releases;
+  TestAnime4K anime4k;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -95,7 +98,7 @@ int main(int argc, char** argv) {
   {
     bool firstIsSuite = false;
     if (arguments.size() > 1) {
-      static const char* kSuites[] = {"TestModels",  "TestReleases", "TestStreams",
+      static const char* kSuites[] = {"TestModels",  "TestReleases",  "TestAnime4K",
                                       "TestPagers",  "TestQualityCache", "TestRateLimiter",
                                       "TestLayering", "TestClipboard", "TestLiveOracle"};
       for (const char* suite : kSuites) {
@@ -122,6 +125,7 @@ int main(int argc, char** argv) {
   } while (0)
   MIKAI_RUN_ONE("TestModels", models);
   MIKAI_RUN_ONE("TestReleases", releases);
+  MIKAI_RUN_ONE("TestAnime4K", anime4k);
   MIKAI_RUN_ONE("TestStreams", streams);
   MIKAI_RUN_ONE("TestPagers", pagers);
   MIKAI_RUN_ONE("TestQualityCache", qualityCache);
