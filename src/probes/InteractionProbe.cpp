@@ -12,21 +12,20 @@
 #include <QGraphicsOpacityEffect>
 #include <QPointer>
 #include <QTest>
-#include <windows.h>
 #include <QGuiApplication>
-#include <QDebug>
-#include <QDir>
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QPushButton>
 #include <QTimer>
 #include <QWidget>
+#include <algorithm>
 #include <cmath>
 #include <functional>
 
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
+#include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 
@@ -56,6 +55,21 @@ QPushButton* buttonWithText(QWidget* root, const QString& needle) {
         if (button->text().contains(needle)) return button;
     }
     return nullptr;
+}
+
+bool buttonsFitWithoutOverlap(QWidget* popup) {
+    QVector<QRect> occupied;
+    for (QPushButton* button :
+         popup->findChildren<QPushButton*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!button->isVisible()) continue;
+        const QRect bounds(button->mapTo(popup, QPoint()), button->size());
+        if (!popup->rect().contains(bounds)) return false;
+        for (const QRect& other : occupied) {
+            if (bounds.intersects(other)) return false;
+        }
+        occupied.append(bounds);
+    }
+    return !occupied.isEmpty();
 }
 
 /// The row the probe drives: Mode A (Fast) is the chain Anime4K documents for
@@ -247,6 +261,8 @@ int main(int argc, char** argv) {
                 QApplication::sendEvent(surface, &move);
             }
         }
+        bool fullscreenButtonFound = false;
+        bool resetButtonFound = false;
         for (const QPushButton* button : dialog->findChildren<QPushButton*>()) {
             if (button->toolTip().startsWith(QStringLiteral("Озвучення"))) {
                 check(button->isVisible(), "the dub button is on the dock");
@@ -254,9 +270,143 @@ int main(int argc, char** argv) {
             if (button->toolTip().startsWith(QStringLiteral("Субтитри"))) {
                 check(button->isVisible(), "the subtitle button is on the dock");
             }
+            fullscreenButtonFound |=
+                button->toolTip().startsWith(QStringLiteral("toggle_fullscreen_mode"));
+            resetButtonFound |=
+                button->toolTip().startsWith(QStringLiteral("reset_canvas_transform"));
         }
+        check(!fullscreenButtonFound, "the redundant fullscreen button is absent");
+        check(!resetButtonFound, "the separate reset button is absent");
+
+        auto* volume = shell->findChild<VolumeGroup*>();
+        auto* scrub = shell->findChild<ScrubBar*>();
+        QPushButton* play = nullptr;
+        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
+            if (button->toolTip().startsWith(QStringLiteral("toggle_playback"))) {
+                play = button;
+                break;
+            }
+        }
+        check(volume != nullptr && volume->width() >= 180,
+              "the volume slider is permanently expanded");
+        check(play != nullptr && play->width() >= 52 && play->height() >= 52,
+              "the dock uses a large primary play control");
+        check(play != nullptr && scrub != nullptr &&
+                  play->mapTo(shell, play->rect().center()).y() <
+                      scrub->mapTo(shell, scrub->rect().center()).y(),
+              "the playback controls sit above the timeline");
     });
 
+    // The play control has to follow the engine, and it used to be frozen on
+    // the glyph it was built with: the surface recorded a pause without ever
+    // announcing it, so the state pump had nothing to report and the button
+    // showed pause over a video that had stopped. Read at this point in the
+    // sequence because the PiP section below asserts the pause state it finds.
+    QTimer::singleShot(6500, &app, [&] {
+        auto* mainSurface = dialog->findChild<VideoSurface*>();
+        auto* play = dialog->findChild<IconButton*>(QStringLiteral("playerPlayToggle"));
+        check(play != nullptr, "the dock has a play control");
+        if (play == nullptr || mainSurface == nullptr || !mainSurface->hasVideo()) {
+            check(play != nullptr && mainSurface != nullptr,
+                  "a stream was loaded for the play-glyph check");
+            return;
+        }
+        // The glyph is read off the button, not off a grab: play and pause are
+        // painted by the same class at the same size.
+        if (mainSurface->isPlaying()) {
+            check(play->icon() == &IconPainter::pause,
+                  "the play control shows pause while the video runs");
+            play->click();
+            QTest::qWait(700);
+            check(!mainSurface->isPlaying(), "the control paused the engine");
+            check(play->icon() == &IconPainter::play,
+                  "the play control shows play while the video is paused");
+        } else {
+            check(play->icon() == &IconPainter::play,
+                  "the play control shows play while the video is paused");
+            play->click();
+            QTest::qWait(700);
+            check(mainSurface->isPlaying(), "the control resumed the engine");
+            check(play->icon() == &IconPainter::pause,
+                  "the play control shows pause while the video runs");
+        }
+        // Left exactly as found: the PiP ownership checks further down expect
+        // to enter from a paused player.
+        if (mainSurface->isPlaying()) {
+            play->click();
+            QTest::qWait(700);
+        }
+        check(!mainSurface->isPlaying(), "the player is left paused for the PiP section");
+    });
+    // An episode swap from a paused player is where the play control went
+    // stale: the hand-back told the shell it was paused while the core had
+    // already resumed, so the button showed "play" over a running video for
+    // as long as the viewer looked at it. applyEpisode is the public path
+    // that swaps in place and carries the pause across.
+    QTimer::singleShot(6300, &app, [&] {
+        auto* mainSurface = dialog->findChild<VideoSurface*>();
+        auto* play = dialog->findChild<IconButton*>(QStringLiteral("playerPlayToggle"));
+        if (mainSurface == nullptr || play == nullptr || !mainSurface->hasVideo()) {
+            check(false, "a stream was loaded for the episode-swap check");
+            return;
+        }
+        if (mainSurface->isPlaying()) {
+            mainSurface->setPaused(true);
+            QTest::qWait(500);
+        }
+        check(!mainSurface->isPlaying(), "the player is paused before the swap");
+        check(play->icon() == &IconPainter::play, "the control reads play while paused");
+        QVector<QVariantMap> swap;
+        for (int episode = 1; episode <= 5; ++episode) {
+            swap.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(episode)},
+                                     {"embed", QStringLiteral("e%1").arg(episode)}});
+        }
+        mainSurface->setPaused(false);
+        QTest::qWait(900);
+        check(mainSurface->position() > 2.0, "the player is past the start before the swap");
+        const double beforeSwap = mainSurface->position();
+        mainSurface->setPaused(true);
+        QTest::qWait(400);
+        dialog->applyEpisode(QStringLiteral("Серія 4"), QStringLiteral("e4"), 3, qualities, swap);
+        for (int i = 0; i < 80; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (!mainSurface->isPlaying() && play->icon() == &IconPainter::play) break;
+        }
+        check(!mainSurface->isPlaying(), "the swapped stream came back paused");
+        check(play->icon() == &IconPainter::play,
+              "an episode swap from a paused core leaves the control on play");
+        // Wait for the swap to land. hasVideo() is no use as a signal here: it
+        // stays true across a load, and VideoSurface keeps its cached position
+        // until the pump reads a new time-pos - so sampling straight after the
+        // call reads the position of the stream that was just replaced.
+        for (int i = 0; i < 60; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (mainSurface->position() < 2.0) break;
+        }
+        // A new episode starts at its beginning whatever the old one was doing,
+        // and it keeps the pause state - a viewer who paused to step forward
+        // wants to choose when the new one starts. Position is what the fix is
+        // about, so that is what is asserted here.
+        std::fprintf(stderr, "     position after swap: %.2fs (was %.2fs before)\n",
+                     mainSurface->position(), beforeSwap);
+        check(mainSurface->position() < 2.0,
+              "a swapped episode starts at 00:00, not at the old offset");
+        // Left paused, because the PiP ownership checks further down enter from
+        // a paused player and assert that they return to it. A freshly loaded
+        // core comes up playing, and the pause has to be re-asserted once the
+        // load has actually landed - asking a core that has not started yet is
+        // asking a core that will ignore the answer.
+        for (int i = 0; i < 40; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (mainSurface->duration() > 0.0) break;
+        }
+        mainSurface->setPaused(true);
+        QTest::qWait(600);
+        check(!mainSurface->isPlaying(), "the player is left paused for the PiP section");
+    });
     // The gear carries quality, using mikai's own values.
     QTimer::singleShot(7000, [&] {
         if (surface != nullptr) {
@@ -273,19 +423,32 @@ int main(int argc, char** argv) {
         auto* flyout = dialog->findChild<SettingsFlyout*>();
         check(flyout != nullptr && flyout->isVisible(), "the gear opened its popover");
         if (flyout == nullptr) return;
+        check(!flyout->isWindow() && flyout->parentWidget() == dialog,
+              "the gear popover uses the fullscreen overlay plane");
         int rows = 0;
         for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
             if (button->text().endsWith("p")) ++rows;
         }
         check(rows == 3, "the popover lists all three qualities");
-        // a Qt::Popup is its own window, so the dialog grab cannot show it
+        check(buttonsFitWithoutOverlap(flyout), "the settings rows fit without overlap");
+        auto* infoChip = shell->findChild<QWidget*>(QStringLiteral("playerInfoChip"));
+        auto* networkStats =
+            shell->findChild<QLabel*>(QStringLiteral("playerNetworkStats"));
+        check(infoChip != nullptr && infoChip->isVisible() && infoChip->y() <= 12,
+              "the MIKAI status chip is at the top-left");
+        check(networkStats != nullptr &&
+                  networkStats->text().contains(QStringLiteral("Mbps")) &&
+                  networkStats->text().contains(QStringLiteral("FPS")),
+              "the status chip shows network throughput and stream FPS");
         flyout->grab().toImage().save(QStringLiteral("flyout_probe.png"));
         auto* series = dialog->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
         check(series != nullptr && series->isVisible(),
               "the series toggle is still on the strip");
-        // a full-screen grab, because a widget grab cannot show z-order: a
-        // popover that Qt believes is visible but that renders under the video
-        // looks identical in every widget-level check
+        // Keep a full-screen artifact: this caught the old native popup
+        // rendering correctly in isolation while disappearing from the display.
+        QTest::qWait(100);
+        QApplication::processEvents();
+        dialog->grab().save(QStringLiteral("dialog_flyout.png"));
         if (auto* screen = QGuiApplication::primaryScreen()) {
             screen->grabWindow(0).save(QStringLiteral("screen_flyout.png"));
         }
@@ -318,20 +481,44 @@ int main(int argc, char** argv) {
         }
         check(true, "every preset resolves to files that exist");
 
-        if (shell != nullptr) shell->openSettings();
-        auto* flyout = dialog->findChild<SettingsFlyout*>();
-        if (flyout == nullptr) {
-            check(false, "the popover is reachable for the shader rows");
-            return;
+        QPushButton* enhancementsButton = nullptr;
+        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
+            if (button->toolTip() == QStringLiteral("open_enhancements")) {
+                enhancementsButton = button;
+                break;
+            }
         }
-        check(flyout->isVisible(), "the shader section is shown when the folder shipped");
+        check(enhancementsButton != nullptr && enhancementsButton->isVisible(),
+              "the enhancements button is on the dock");
+        if (enhancementsButton == nullptr) return;
+        enhancementsButton->click();
+
+        auto* enhancements =
+            dialog->findChild<MenuPopup*>(QStringLiteral("playerEnhancementsPopup"));
+        check(enhancements != nullptr && enhancements->isVisible(),
+              "the enhancements menu opened");
+        check(enhancements != nullptr && !enhancements->isWindow() &&
+                  enhancements->parentWidget() == dialog,
+              "the enhancements menu uses the fullscreen overlay plane");
+        QPushButton* anime4kEntry =
+            enhancements != nullptr ? buttonWithText(enhancements, QStringLiteral("Anime4K"))
+                                    : nullptr;
+        check(anime4kEntry != nullptr, "the enhancements menu offers Anime4K");
+        if (anime4kEntry == nullptr) return;
+        anime4kEntry->click();
+
+        auto* anime4kPopup =
+            dialog->findChild<MenuPopup*>(QStringLiteral("playerAnime4KPopup"));
+        check(anime4kPopup != nullptr && anime4kPopup->isVisible(),
+              "the Anime4K submenu opened");
 
         QString label;
         for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
             if (info.mode == kAnime4KProbeMode) label = info.label;
         }
-        QPushButton* row = buttonWithText(flyout, label);
-        check(row != nullptr, "the popover offers the Anime4K presets");
+        QPushButton* row =
+            anime4kPopup != nullptr ? buttonWithText(anime4kPopup, label) : nullptr;
+        check(row != nullptr, "the Anime4K submenu offers every preset");
         if (row == nullptr) return;
 
         // A framebuffer only exists once the window has been exposed, which
@@ -339,7 +526,7 @@ int main(int argc, char** argv) {
         // pixel comparison is reported as skipped rather than failed.
         if (!surface->waitForContext(4000)) {
             check(false, "a render context is available to compare frames");
-            flyout->close();
+            shell->dismissOverlay();
             return;
         }
 
@@ -361,6 +548,11 @@ int main(int argc, char** argv) {
         check(surface->anime4KMode() == kAnime4KProbeMode, "the press reached the surface");
         check(surface->effectiveShaderChain().contains(QStringLiteral("Anime4K_Upscale_CNN_x2_M")),
               "the running chain names the upscaler");
+        auto* enhancementStatus =
+            shell->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
+        check(enhancementStatus != nullptr && !enhancementStatus->isHidden() &&
+                  enhancementStatus->text().contains(QStringLiteral("→")),
+              "the top-left chip includes enhancement and source-to-output resolution");
         // vo=libmpv rebuilds the chain on the next rendered frame and the
         // shaders compile on load, so this is not instant.
         QTest::qWait(3000);
@@ -368,7 +560,7 @@ int main(int argc, char** argv) {
         const QImage chainFrame = settledFrame(surface);
         check(!chainFrame.isNull(), "a still frame with the chain on");
         if (plainFrame.isNull() || chainFrame.isNull() || noise < 0.0) {
-            flyout->close();
+            shell->dismissOverlay();
             return;
         }
         const double delta = pictureDifference(plainFrame, chainFrame);
@@ -388,15 +580,14 @@ int main(int argc, char** argv) {
         // belongs to a viewer, not a threshold.
         check(noise == 0.0, "the frozen frame is bit-stable between grabs");
         check(delta > 0.1, "enabling the preset changed the picture");
-        flyout->close();
+        shell->dismissOverlay();
     });
 
     // And the pickers still work, split by kind.
     QTimer::singleShot(9000, [&] {
         if (shell != nullptr) shell->openSettings();
-        // A real press and release, not click(): a Qt::Popup shown during a
-        // button's release can be closed by the tail of that same release, and
-        // only a real event sequence reproduces that.
+        // Use a real press and release so this follows the same button path a
+        // viewer uses.
         for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
             if (!button->toolTip().startsWith(QStringLiteral("Озвучення"))) continue;
             const QPointF at(12, 12);
@@ -410,39 +601,9 @@ int main(int argc, char** argv) {
         }
         check(audio != nullptr && audio->isVisible(), "the dub picker opened");
         if (audio != nullptr) {
-            std::fprintf(stderr,
-                         "     audio popup: visible=%d size=%dx%d at %s winId=%p type=%d\n",
-                         int(audio->isVisible()), audio->width(), audio->height(),
-                         qPrintable(QString("%1,%2").arg(audio->mapToGlobal(QPoint(0, 0)).x())
-                                        .arg(audio->mapToGlobal(QPoint(0, 0)).y())),
-                         (void*)audio->winId(), int(audio->windowType()));
-        }
-        if (auto* screen = QGuiApplication::primaryScreen()) {
-            const QImage shot = screen->grabWindow(0).toImage();
-            const QRect geo = audio->geometry();
-            const QPoint centre = geo.center();
-            const QColor onScreen = shot.pixelColor(centre);
-            const QColor ownGrab = audio->grab().toImage().pixelColor(audio->width() / 2,
-                                                                    audio->height() / 2);
-            {
-            // A desktop BitBlt skips layered windows, so the screen pixel cannot
-            // say anything about a translucent popover. Ask Win32 instead:
-            // GW_HWNDPREV is the window stacked above this one.
-            HWND popupHwnd = reinterpret_cast<HWND>(audio->winId());
-            HWND above = GetWindow(popupHwnd, GW_HWNDPREV);
-            HWND dialogHwnd = reinterpret_cast<HWND>(dialog->winId());
-            std::fprintf(stderr, "     z-order: window above popover = %p (dialog=%p, shellTop=%p)\n",
-                         (void*)above, (void*)dialogHwnd,
-                         (void*)reinterpret_cast<HWND>(dialog->winId()));
-            std::fprintf(stderr, "     -> %s\n",
-                         above == dialogHwnd ? "DIALOG IS ABOVE THE POPOVER (occluded)"
-                                             : "popover is on top");
-        }
-        std::fprintf(stderr, "     z-order: screen@%d,%d=%s  popover own=%s  %s\n", centre.x(),
-                         centre.y(), qPrintable(onScreen.name()),
-                         qPrintable(ownGrab.name()),
-                         onScreen == ownGrab ? "POPOVER IS ON TOP" : "POPOVER IS OCCLUDED");
-            shot.copy(0, 0, 1400, 1000).save(QStringLiteral("screen_corner.png"));
+            check(!audio->isWindow() && audio->parentWidget() == dialog,
+                  "the dub picker uses the fullscreen overlay plane");
+            check(buttonsFitWithoutOverlap(audio), "the dub rows fit without overlap");
         }
         if (strip != nullptr) {
             std::fprintf(stderr, "     strip: visible=%d size=%dx%d at %d,%d\n",
@@ -459,6 +620,46 @@ int main(int argc, char** argv) {
             }
         }
         check(subs != nullptr && subs->isVisible(), "the subtitle picker opened");
+        if (subs != nullptr) {
+            check(!subs->isWindow() && subs->parentWidget() == dialog,
+                  "the subtitle picker uses the fullscreen overlay plane");
+            check(buttonsFitWithoutOverlap(subs), "the subtitle rows fit without overlap");
+        }
+    });
+
+    QTimer::singleShot(11000, [&] {
+        if (shell == nullptr) return;
+        shell->dismissOverlay();
+
+        QPushButton* keysButton = nullptr;
+        QPushButton* moreButton = nullptr;
+        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
+            if (button->toolTip() == QStringLiteral("keyboard_shortcuts  (?)")) {
+                keysButton = button;
+            } else if (button->toolTip() == QStringLiteral("open_extended_menu")) {
+                moreButton = button;
+            }
+        }
+
+        check(keysButton != nullptr, "the keyboard hints button exists");
+        if (keysButton != nullptr) keysButton->click();
+        auto* hints = dialog->findChild<KeyHints*>(QStringLiteral("playerKeyHints"));
+        check(hints != nullptr && hints->isVisible(), "the keyboard hints opened");
+        if (hints != nullptr) {
+            check(!hints->isWindow() && hints->parentWidget() == dialog,
+                  "the keyboard hints use the fullscreen overlay plane");
+        }
+
+        check(moreButton != nullptr, "the extended menu button exists");
+        if (moreButton != nullptr) moreButton->click();
+        auto* more = dialog->findChild<MenuPopup*>(QStringLiteral("playerMorePopup"));
+        check(more != nullptr && more->isVisible(), "the extended menu opened");
+        if (more != nullptr) {
+            check(!more->isWindow() && more->parentWidget() == dialog,
+                  "the extended menu uses the fullscreen overlay plane");
+            check(buttonsFitWithoutOverlap(more), "the extended menu rows fit without overlap");
+        }
+        shell->dismissOverlay();
     });
 
     // The window controls are part of the chrome, and the chrome auto-hides
@@ -469,17 +670,7 @@ int main(int argc, char** argv) {
     // gone once they are not - and it is a "look twice" check, because the
     // second half only exists after the event loop has had time to run.
     QTimer::singleShot(11500, [&] {
-        // A Qt::Popup holds the shell awake - PlayerShell::enterAutoHidden
-        // re-arms the countdown and returns while any popup is open - so the
-        // idle half below is unobservable until every one of them is gone.
-        // Naming the two the earlier checks opened is not enough: the gear
-        // flyout is a Qt::Popup too, and it is the one that would silently
-        // disarm this assertion and make it red forever.
-        for (QWidget* popup : QApplication::topLevelWidgets()) {
-            if (popup->windowType() == Qt::Popup) {
-                popup->close();
-            }
-        }
+        if (shell != nullptr) shell->dismissOverlay();
         // Nudge the pointer the way a viewer arriving at the player would.
         if (surface != nullptr) {
             for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
@@ -502,7 +693,7 @@ int main(int argc, char** argv) {
 
         // Now let the loop turn with the pointer idle, which is the half that
         // was never asserted anywhere: the chrome leaving on its own.
-        QTest::qWait(3000);
+        QTest::qWait(2800);
         QApplication::processEvents();
         check(!original->isVisible(),
               "the window controls auto-hide once the pointer goes idle");
@@ -541,7 +732,44 @@ int main(int argc, char** argv) {
             check(restore != nullptr && restore->isVisible(), "PiP restore is visible");
             check(close != nullptr && close->isVisible(), "PiP close is visible");
             check(play != nullptr && play->isVisible(), "PiP play button is visible");
-            check(child("pipVolume") == nullptr, "PiP has no volume slider");
+            // One fixed pill, always the same size. It used to grow on hover,
+            // which resized the float's content under the pointer on every
+            // enter and leave - the lag. A constant width is the fix.
+            QWidget* volume = child("pipVolume");
+            check(volume != nullptr && volume->isVisible(),
+                  "the float shows a volume level");
+            check(mute != nullptr && volume != nullptr && mute->parentWidget() != nullptr
+                      && volume->parentWidget() == mute->parentWidget(),
+                  "the level and the mute button share one chip");
+            if (volume != nullptr && mute != nullptr) {
+                const int pillWidth = volume->parentWidget()->width();
+                // The pill must be as wide as its two children plus the gap,
+                // and no wider: a strip stretched to the window is what made
+                // the control look lost in the corner.
+                check(pillWidth >= mute->width() + volume->width(),
+                      "the chip is wide enough for the button and the level");
+                // Containment, in one coordinate space: the button must lie
+                // inside the pill's rect. Comparing two mapTo results across
+                // different parents is how the earlier version of this check
+                // reported a failure that was never there.
+                const QWidget* pill = volume->parentWidget();
+                const QRect pillRect = pill->geometry();
+                const QRect buttonRect =
+                    QRect(mute->mapTo(pill, QPoint(0, 0)), mute->size());
+                std::fprintf(stderr,
+                             "     pill=%d,%d %dx%d  button=%d,%d %dx%d\n",
+                             pillRect.x(), pillRect.y(), pillRect.width(), pillRect.height(),
+                             buttonRect.x(), buttonRect.y(), buttonRect.width(),
+                             buttonRect.height());
+                // buttonRect is already relative to the pill, so containment is a
+                // plain size comparison - not a position one.
+                check(buttonRect.left() >= 0 && buttonRect.top() >= 0 &&
+                          buttonRect.right() < pillRect.width() &&
+                          buttonRect.bottom() < pillRect.height(),
+                      "the mute button sits inside the pill, not beside it");
+                check(volume->toolTip().isEmpty(),
+                      "the level has no tooltip to chase the pointer");
+            }
             if (mute != nullptr && restore != nullptr) {
                 const QPoint m = mute->mapTo(pip, QPoint(0, 0));
                 const QPoint r = restore->mapTo(pip, QPoint(0, 0));
@@ -574,14 +802,6 @@ int main(int argc, char** argv) {
             QTest::qWait(3000);
             const qreal idle = effect != nullptr ? effect->opacity() : 0.0;
             check(idle < 0.1, "PiP controls auto-hide once the pointer leaves");
-
-            // Close the float through its own path, then confirm the dialog is
-            // back. Esc is the user's route, but a stage boundary should not
-            // depend on a synthetic keypress landing.
-            pip->close();
-            QApplication::processEvents();
-            std::fprintf(stderr, "     PiP closed=%d dialogVisible=%d\n",
-                         pip->isVisible() ? 1 : 0, dialog->isVisible() ? 1 : 0);
         });
     });
 
@@ -591,7 +811,7 @@ int main(int argc, char** argv) {
     // opened, the event loop is allowed to turn for 1.5s, and the same view is
     // asserted again. Any timer, resize pass, state handler or async callback
     // that empties a populated widget shows up here and nowhere else.
-    QTimer::singleShot(21000, [&] {
+    QTimer::singleShot(28000, [&] {
         // The PiP stage closed the float and the dialog reports itself visible
         // again at that point, but it is not reliably still visible 100ms later,
         // so no assertion is made about it here: the checks below are about the
@@ -660,11 +880,11 @@ int main(int argc, char** argv) {
     // PiP owns the picture while it is up. Three things were wrong and none of
     // them showed as a crash - they showed as the float's controls doing
     // nothing, so each is asserted on the state it changes.
-    QTimer::singleShot(16500, [&] {
+    QTimer::singleShot(21100, [&] {
         check(pipFloat != nullptr, "the PiP float is still up for the ownership checks");
     });
 
-    QTimer::singleShot(17500, [&] {
+    QTimer::singleShot(21200, [&] {
         if (pipFloat == nullptr) {
             return;
         }
@@ -734,7 +954,7 @@ int main(int argc, char** argv) {
     // Leaving PiP brings the main player back to where the viewer actually
     // watched, which is the float's position and not where the main core was
     // parked on entry.
-    QTimer::singleShot(19600, &app, [&] {
+    QTimer::singleShot(24000, &app, [&] {
         if (pipFloat == nullptr) {
             check(false, "the float was still up for the return check");
             return;
@@ -776,6 +996,76 @@ int main(int argc, char** argv) {
         });
     });
 
+    // The float's X and its expand button mean opposite things, and they were
+    // wired to the same slot: X put the full window back instead of closing.
+    // A second player, because the first one is closed by the Esc ladder below
+    // and the dialog is destroyed with it.
+    QTimer::singleShot(300, &app, [&] {
+        StubHost secondHost;
+        auto* second = new PlayerDialog(QStringLiteral("probe pip close"), url, qualities, 720,
+                                        &secondHost);
+        QVector<QVariantMap> entries;
+        for (int episode = 1; episode <= 3; ++episode) {
+            entries.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(episode)},
+                                       {"embed", QStringLiteral("e%1").arg(episode)}});
+        }
+        second->setPlaylist(entries, 0);
+        second->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
+                                      {"embed", QStringLiteral("e1")},
+                                      {"kind", QStringLiteral("voice")}}},
+                            QStringLiteral("e1"));
+        second->show();
+        auto* secondShell = second->findChild<PlayerShell*>();
+        check(secondShell != nullptr, "the second player has a shell");
+        if (secondShell == nullptr) {
+            return;
+        }
+        // The float is parentless so it can float above other apps, which means
+        // it is not in the dialog's child tree: top level widgets, exactly as
+        // the PiP section above finds it.
+        const auto openFloat = [] {
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                if (QString::fromLatin1(w->metaObject()->className())
+                        .contains(QStringLiteral("PipFloat"))) {
+                    return qobject_cast<PipFloat*>(w);
+                }
+            }
+            return static_cast<PipFloat*>(nullptr);
+        };
+        const auto dropFloat = [&openFloat] {
+            if (PipFloat* w = openFloat()) {
+                w->hide();
+                w->deleteLater();
+                QCoreApplication::processEvents();
+            }
+        };
+        dropFloat();
+        emit secondShell->pipRequested();
+        QTest::qWait(2500);
+        PipFloat* floatWindow = openFloat();
+        check(floatWindow != nullptr, "the second player opened a float");
+        auto* close = floatWindow != nullptr
+                          ? floatWindow->findChild<QPushButton*>(QStringLiteral("pipClose"))
+                          : nullptr;
+        check(close != nullptr, "the float has a close button");
+        check(!secondHost.closed, "the player is still open while the float is up");
+        if (close != nullptr) {
+            close->click();
+            QTest::qWait(2500);
+            check(secondHost.closed, "the float's X closed the player");
+            // No isVisible() here: the dialog is WA_DeleteOnClose, so the host
+            // being told is the only safe evidence. Reading the window after
+            // playerClosed() is the use-after-free this probe already guards
+            // the first dialog against.
+        } else {
+            // The host is told on close, and the dialog is destroyed with it, so
+            // a check that never runs would leave a second player on screen for
+            // the rest of the run and skew every check after it.
+            second->close();
+        }
+        dropFloat();
+    });
+
     // Esc unwinds one layer per press - picker, then the shell's own popover,
     // then the series drawer, then the player - so what matters is that the
     // ladder terminates, not that one press out of a busy UI closes it.
@@ -794,7 +1084,7 @@ int main(int argc, char** argv) {
             pressEsc();
         });
     };
-    QTimer::singleShot(23500, &app, pressEsc);
+    QTimer::singleShot(30000, &app, pressEsc);
 
 
     return app.exec();

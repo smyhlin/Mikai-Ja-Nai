@@ -78,6 +78,12 @@ Layering is strict and enforced by tests:
   succeeds with no shader compile errors). The choice persists under
   `player/anime4k` as the preset *id*, not the enum ordinal, so a preset added
   later cannot silently repoint an existing selection.
+  The bottom chrome is one opaque two-row dock: permanent volume + a large
+  centred play control + episode/track/enhancement/settings actions above the
+  full-width timeline. Anime4K lives under the sparkle button's
+  **Enhancements → Anime4K** submenu, not the speed/quality gear popover. A
+  top-left `MIKAI` chip shows `cache-speed`, `estimated-vf-fps`, and, while a
+  preset is active, source → output resolution.
   The upscalers are gated by `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`: Anime4K
   declines to upscale a video mpv is already displaying at or above source
   size. A 480p source in a 1080p window is what actually triggers it, which is

@@ -15,7 +15,6 @@
 #include <QVector>
 #include <QWidget>
 
-#include "Anime4K.hpp"
 #include "ShellTheme.hpp"
 
 QT_BEGIN_NAMESPACE
@@ -69,6 +68,11 @@ public:
     /// A null colour restores the default tint.
     void setTint(const QColor& color);
     void setIcon(IconFn icon);
+    /// The glyph currently installed. Both the play and the pause triangle are
+    /// painted by this class, so the function pointer is the only handle on
+    /// which one is up - a grab cannot tell them apart at dock scale.
+    IconFn icon() const { return icon_; }
+    void setFilled(bool filled);
 
 protected:
     void enterEvent(QEnterEvent* event) override;
@@ -82,6 +86,7 @@ private:
     QColor tint_;
     bool hover_ = false;
     bool hasTint_ = false;
+    bool filled_ = false;
 };
 
 // ── settings flyout ────────────────────────────────────────────────────────
@@ -104,10 +109,6 @@ public:
     void setQuality(const QString& quality);
     /// Rebuilds the quality list. Empty hides the section entirely.
     void setQualityOptions(const QVector<QualityOption>& options);
-    /// Marks the active Anime4K preset and shows the section. The section hides
-    /// itself when the shader folder did not ship, rather than offering rows
-    /// whose files are not there.
-    void setAnime4KMode(anime4k::Mode mode);
     /// Places the popover above-right of a global anchor point and shows it.
     void popupNear(const QPoint& anchorGlobal);
 
@@ -118,7 +119,6 @@ protected:
 signals:
     void speedSelected(double speed);
     void qualitySelected(int height);
-    void anime4KSelected(anime4k::Mode mode);
 
 private:
     void pick(double speed);
@@ -136,12 +136,6 @@ private:
     QVBoxLayout* qualityBody_ = nullptr;
     QVector<QualityOption> qualityOptions_;
     QVector<QPushButton*> qualityRows_;
-
-    QWidget* anime4kSection_ = nullptr;
-    QLabel* anime4kLabel_ = nullptr;
-    QVector<anime4k::ModeInfo> anime4kModes_;
-    QVector<QPushButton*> anime4kRows_;
-    anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 };
 
 // ── overlays ───────────────────────────────────────────────────────────────

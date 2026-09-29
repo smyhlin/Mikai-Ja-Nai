@@ -48,6 +48,7 @@ namespace shell {
 
 class CenterGlyph;
 class KeyHints;
+class MenuPopup;
 class Panel;
 class PillButton;
 class SettingsFlyout;
@@ -81,9 +82,15 @@ public:
     void setQuality(const QString& quality);
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
-    /// Reflects the persisted choice back into the popover, so the ✓ sits on
-    /// the row that is actually running.
     void setAnime4KMode(anime4k::Mode mode);
+    void setStreamStats(double bytesPerSecond, double framesPerSecond);
+    void setSourceSize(int width, int height);
+    void setEpisodeStepping(bool hasPrevious, bool hasNext);
+    /// Re-reads the engine's pause state and repaints the play control, for
+    /// the paths that change the core without a playingChanged arriving.
+    void updatePlayIcon();
+    /// Opens the picture context menu at a point in shell coordinates.
+    void openPictureMenu(const QPoint& position);
     /// The dub and subtitle pickers only appear when there is a choice.
     void setAudioAvailable(bool available);
     void setSubtitlesAvailable(bool available);
@@ -104,13 +111,16 @@ public:
     /// panel or the series drawer - without it the drawer vanishes under the
     /// pointer, because no move ever crosses the shell itself.
     void enterFullscreen();
+    /// Windowed mode. The header appears with it, because a frameless window
+    /// without one cannot be moved or closed with the pointer at all.
+    void leaveFullscreen();
+    void windowModeToggled();
+    void buildTitleBar();
 
     /// Opens the speed/quality popover. The host owns the quality list inside it.
     void openSettings();
-    /// Closes whichever of the shell's own overlays is up (settings popover,
-    /// key hints) and reports whether one was. Esc has to be able to reach
-    /// these: both are Qt::Popup windows, so while one is open it holds the
-    /// keyboard and the host never sees the key at all.
+    /// Closes every floating overlay in the player window and reports whether
+    /// one was visible.
     bool dismissOverlay();
     void wake();
 signals:
@@ -132,6 +142,10 @@ signals:
     void openOriginalRequested();
     void mediaDropped(const QString& path);
     void closeRequested();
+    /// A right-click on the picture asked for the current frame. The shell owns
+    /// no clipboard and no image, so the host reads the surface and copies it.
+    void frameRequested();
+    void copyLinkRequested();
     void stateChanged(const QString& state);
 
 protected:
@@ -169,10 +183,16 @@ private:
     void toggleMute();
     void onRate(double rate);
     void onAnime4KMode(anime4k::Mode mode);
+    void openEnhancements();
+    void openAnime4K();
+    void refreshEnhancementMenus();
+    void updateInfoChip();
     void openKeys();
     void openMenu();
+    void buildPictureMenu();
     void exitViewer();
     void updateTimeLabels();
+    bool hasVisibleOverlay() const;
 
     QSize fitted() const;
     QPointF clampOffset(double scale, const QPointF& offset) const;
@@ -182,7 +202,12 @@ private:
 
     VideoSurface* surface_ = nullptr;
 
+    MenuPopup* pictureMenu_ = nullptr;
     Panel* windowControls_ = nullptr;
+    Panel* titleBar_ = nullptr;
+    IconButton* titleMin_ = nullptr;
+    IconButton* titleMax_ = nullptr;
+    IconButton* titleClose_ = nullptr;
     PillButton* btnOriginal_ = nullptr;
     IconButton* btnMin_ = nullptr;
     IconButton* btnWin_ = nullptr;
@@ -197,23 +222,25 @@ private:
     QLabel* lblElapsed_ = nullptr;
     ScrubBar* scrub_ = nullptr;
     QLabel* lblRemaining_ = nullptr;
-    IconButton* btnFullscreen_ = nullptr;
     IconButton* btnPip_ = nullptr;
     IconButton* btnAudio_ = nullptr;
     IconButton* btnSubs_ = nullptr;
+    IconButton* btnEnhance_ = nullptr;
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
+    MenuPopup* enhancementsPopup_ = nullptr;
+    MenuPopup* anime4kPopup_ = nullptr;
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 
-    QWidget* footerLeft_ = nullptr;
-    QLabel* lblFile_ = nullptr;
-    QLabel* lblOrigin_ = nullptr;
+    Panel* footerLeft_ = nullptr;
+    QLabel* lblNetworkStats_ = nullptr;
+    QLabel* lblEnhancement_ = nullptr;
     Panel* footerRight_ = nullptr;
-    IconButton* btnReset_ = nullptr;
     IconButton* btnKeys_ = nullptr;
     IconButton* btnMore_ = nullptr;
     KeyHints* keys_ = nullptr;
+    MenuPopup* morePopup_ = nullptr;
 
     StateHUD* hud_ = nullptr;
     Toast* toast_ = nullptr;
@@ -227,6 +254,8 @@ private:
     QPointF offset_;
     bool panning_ = false;
     bool fullscreen_ = false;
+    /// Height the title bar takes off the top of the canvas, 0 in fullscreen.
+    int titleBarOffset_ = 0;
     bool hudHidden_ = false;
     bool rounded_ = true;
     double aspect_ = kAspectFallback;
@@ -245,6 +274,14 @@ private:
     QString quality_;
     QString origin_;
     bool hasMedia_ = false;
+    bool hasPreviousEpisode_ = false;
+    bool hasNextEpisode_ = false;
+    double networkBytesPerSecond_ = 0.0;
+    double streamFramesPerSecond_ = 0.0;
+    int sourceWidth_ = 0;
+    int sourceHeight_ = 0;
+    int outputWidth_ = 0;
+    int outputHeight_ = 0;
 
     // pointer gesture
     QPointF press_;

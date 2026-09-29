@@ -82,6 +82,9 @@ public:
     /// Display only: nothing is emitted, so answering with a seek could loop.
     void setTime(double position, double duration);
     void setMuted(bool muted);
+    /// 0…1, matching the shell. The float runs a second mpv core, so the
+    /// level has to be pushed to it rather than read off the main player.
+    void setVolume(double volume);
 
     /// Where the float's own core is. The host reads it to restore the main
     /// player on exit, so both windows resume from what the viewer watched.
@@ -91,6 +94,7 @@ public:
 
 signals:
     void muteChanged(bool muted);
+    void volumeChanged(double volume);
     void restoreRequested();
     void closeRequested();
 
@@ -103,7 +107,16 @@ protected:
 
 private:
     void buildChrome();
-    QPushButton* buildButton(const QString& name, const QString& hint, qreal size);
+    QPushButton* buildButton(const QString& name, const QString& hint, qreal size,
+                                   QWidget* parent = nullptr);
+    void updateVolumeChip();
+    /// A press on the timeline seeks there and starts scrubbing. The
+    /// overlay claims presses before the slider sees them, so this is the
+    /// only path to click-to-seek.
+    void timelinePress(QMouseEvent* event);
+    /// Seeks the float's own core to the timeline position under `x`, in
+    /// window coordinates, and moves the handle to match.
+    void timelineSeekTo(double x);
     void pointerPress(QMouseEvent* event);
     void pointerMove(QMouseEvent* event);
     void pointerRelease(QMouseEvent* event);
@@ -117,6 +130,8 @@ private:
     VideoSurface* surface_ = nullptr;
     QWidget* overlay_ = nullptr;
     QPushButton* muteButton_ = nullptr;
+    QWidget* volumeChip_ = nullptr;
+    QSlider* volumeSlider_ = nullptr;
     QPushButton* restoreButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;
     QPushButton* playButton_ = nullptr;
@@ -131,6 +146,9 @@ private:
     double overlayOpacity_ = 1.0;
     double pendingSeek_ = -1.0;
     bool muted_ = false;
+    double volume_ = 0.7;
+    bool draggingVolume_ = false;
+    bool draggingTimeline_ = false;
     bool scrubbing_ = false;
     /// True while the pointer is over the float. The auto-hide has to stand
     /// down: fading the controls out from under a pointer that is reaching for
@@ -247,6 +265,8 @@ private:
     void onQualityPicked(const QVariant& payload);
     void onTrackPicked(const QVariant& payload);
     void onMediaDropped(const QString& path);
+    /// Puts the frame currently on screen on the clipboard as an image.
+    void copyCurrentFrame();
     void onShellStateChanged(const QString& state);
     void onShellFullscreenChanged(bool fullscreen);
     void onEngineError(const QString& message);
@@ -298,7 +318,9 @@ private:
     double speed_ = 1.0;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     bool muted_ = false;
-    bool fullscreen_ = false;
+    /// The size the viewer arranged in windowed mode, so leaving fullscreen
+    /// puts the player back where they put it instead of at a default.
+    QRect windowedSize_;    bool fullscreen_ = false;
     bool seriesExpanded_ = false;
     bool errorActive_ = false;
     bool refreshAttempted_ = false;

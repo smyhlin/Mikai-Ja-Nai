@@ -15,6 +15,11 @@ RangeSlider::RangeSlider(const QColor& accent, int track, QWidget* parent, int m
     setMouseTracking(true);
     setCursor(Qt::CursorShape::PointingHandCursor);
     setMinimumHeight(22);
+    // The application stylesheet paints every QWidget with the app background,
+    // and this widget paints its own track over it. Both are self-painting, so
+    // the inherited slab is a grey rectangle behind the control, not a surface.
+    setAttribute(Qt::WA_StyledBackground, false);
+    setStyleSheet(QStringLiteral("background: transparent;"));
 }
 
 void RangeSlider::setValue(double v, bool notify) {
@@ -129,11 +134,9 @@ constexpr double kKnobR = 4;
 VolumeGroup::VolumeGroup(QWidget* parent) : QWidget(parent) {
     setCursor(Qt::CursorShape::PointingHandCursor);
     setMouseTracking(true);
-    setFixedSize(kSpeakerW + kTrack, 30);
-
-    anim_.setDuration(180);
-    anim_.setEasingCurve(QEasingCurve::OutCubic);
-    connect(&anim_, &QVariantAnimation::valueChanged, this, &VolumeGroup::onAnimated);
+    setFixedSize(kSpeakerW + kTrack, 32);
+    setAttribute(Qt::WA_StyledBackground, false);
+    setStyleSheet(QStringLiteral("background: transparent;"));
 }
 
 void VolumeGroup::setVolume(double v) {
@@ -144,29 +147,6 @@ void VolumeGroup::setVolume(double v) {
 void VolumeGroup::setMuted(bool m) {
     muted_ = m;
     update();
-}
-
-void VolumeGroup::onAnimated(const QVariant& value) {
-    t_ = value.toDouble();
-    update();
-}
-
-void VolumeGroup::animateTo(double target) {
-    anim_.stop();
-    anim_.setStartValue(t_);
-    anim_.setEndValue(target);
-    anim_.start();
-}
-
-void VolumeGroup::enterEvent(QEnterEvent* event) {
-    animateTo(1.0);
-    QWidget::enterEvent(event);
-}
-
-void VolumeGroup::leaveEvent(QEvent* event) {
-    animateTo(0.0);
-    drag_ = false;
-    QWidget::leaveEvent(event);
 }
 
 void VolumeGroup::mousePressEvent(QMouseEvent* event) {
@@ -207,18 +187,14 @@ void VolumeGroup::paintEvent(QPaintEvent*) {
         IconPainter::volume(p, 6, 7, 16);
     }
 
-    if (t_ > 0.01) {
-        p.setOpacity(t_);
-        const double w = kTrack;
-        paintRounded(p, QRectF(kTrackX, kTrackY, w, 4), 2, w25());
-        if (eff > 0) {
-            paintRounded(p, QRectF(kTrackX, kTrackY, w * eff, 4), 2, w95());
-        }
-        p.setPen(Qt::NoPen);
-        p.setBrush(w95());
-        p.drawEllipse(QPointF(kTrackX + w * eff, kTrackY + 2), kKnobR, kKnobR);
-        p.setOpacity(1.0);
+    const double w = kTrack;
+    paintRounded(p, QRectF(kTrackX, kTrackY, w, 4), 2, w25());
+    if (eff > 0) {
+        paintRounded(p, QRectF(kTrackX, kTrackY, w * eff, 4), 2, w95());
     }
+    p.setPen(Qt::NoPen);
+    p.setBrush(w95());
+    p.drawEllipse(QPointF(kTrackX + w * eff, kTrackY + 2), kKnobR, kKnobR);
 }
 
 }  // namespace shell

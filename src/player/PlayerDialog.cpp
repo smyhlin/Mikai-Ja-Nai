@@ -26,6 +26,7 @@
 #include <QEasingCurve>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
+#include <QClipboard>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -119,6 +120,11 @@ constexpr int kPipDragThresholdPx = 6;
 constexpr int kPipCenterButtonSize = 84;
 constexpr int kPipCenterIconSize = 34;
 constexpr int kPipFieldHeight = 28;
+// The level pill is always this size: the mute button, a gap, and a slider wide
+// enough to aim at. It was built to grow on hover, which resized the window
+// content under the pointer on every enter and leave.
+constexpr int kPipVolumeWidth = 96;
+constexpr int kPipChipWidth = kPipFieldHeight + 8 + kPipVolumeWidth + 10;
 constexpr int kPipTimelineHeight = 4;
 constexpr int kPipTimelineHandle = 12;
 
@@ -173,6 +179,16 @@ QString pipQss() {
                "QPushButton#pipMute:hover, QPushButton#pipRestore:hover, QPushButton#pipClose:hover {"
                "  background: rgba(0, 0, 0, 0.75);"
                "  border-color: rgba(255, 255, 255, 0.35); }"
+               "QWidget#pipVolumeChip { background: transparent; border: none; }"
+               "QSlider#pipVolume { background: transparent; }"
+               "QSlider#pipVolume::groove:horizontal {"
+               "  height: 4px; background: rgba(255, 255, 255, 0.22); border-radius: 2px; }"
+               "QSlider#pipVolume::sub-page:horizontal {"
+               "  background: rgba(255, 255, 255, 0.92); border-radius: 2px; }"
+               "QSlider#pipVolume::handle:horizontal {"
+               "  background: #ffffff; width: 12px; height: 12px;"
+               "  margin: -4px 0; border-radius: 6px; }"
+               "QSlider#pipVolume::groove:horizontal:disabled { background: rgba(255, 255, 255, 0.10); }"
                "QSlider#pipScrub { background: transparent; }"
                "QSlider#pipScrub::groove:horizontal {"
                "  height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; }"
@@ -297,14 +313,59 @@ void PipFloat::buildChrome() {
     // and click-to-pause.
     overlay_->setFocusProxy(this);
 
+    // A container, not a button: the mute button and the level it governs sit
+    // in one pill. It was built to grow on hover, and that read as lag: the
+    // pill resized under the pointer every time it was entered and left, and
+    // the whole strip jumped each time. A fixed pill is one shape, always.
+    volumeChip_ = new QWidget(overlay_);
+    volumeChip_->setObjectName(QStringLiteral("pipVolumeChip"));
+    volumeChip_->setFocusPolicy(Qt::NoFocus);
+    volumeChip_->setMouseTracking(true);
+    auto* chipLayout = new QHBoxLayout(volumeChip_);
+    chipLayout->setContentsMargins(4, 4, 4, 4);
+    chipLayout->setSpacing(6);
+
     muteButton_ = buildButton(QStringLiteral("pipMute"), QStringLiteral("Вимкнути звук"),
-                              kPipFieldHeight);
+                              kPipFieldHeight, volumeChip_);
     muteButton_->setIcon(glyphIcon(&IconPainter::volume, 16));
     connect(muteButton_, &QPushButton::clicked, this, [this] {
         setMuted(!muted_);
         revealControls();
         emit muteChanged(muted_);
     });
+    chipLayout->addWidget(muteButton_);
+
+    volumeSlider_ = new QSlider(Qt::Horizontal, volumeChip_);
+    volumeSlider_->setObjectName(QStringLiteral("pipVolume"));
+    volumeSlider_->setFocusPolicy(Qt::NoFocus);
+    volumeSlider_->setMouseTracking(true);
+    volumeSlider_->setRange(0, 100);
+    volumeSlider_->setFixedWidth(kPipVolumeWidth);
+    volumeSlider_->setValue(static_cast<int>(std::lround(volume_ * 100.0)));
+    connect(volumeSlider_, &QSlider::sliderPressed, this, [this] { draggingVolume_ = true; });
+    connect(volumeSlider_, &QSlider::sliderReleased, this, [this] {
+        draggingVolume_ = false;
+        setVolume(volumeSlider_->value() / 100.0);
+        emit volumeChanged(volume_);
+        revealControls();
+    });
+    connect(volumeSlider_, &QSlider::valueChanged, this, [this](int value) {
+        if (!draggingVolume_) {
+            return;
+        }
+        // Live while dragging: the level is the feedback, and mpv follows it
+        // as it moves rather than at the release.
+        volume_ = std::clamp(value / 100.0, 0.0, 1.0);
+        surface_->setVolume(volume_ * 100.0);
+        if (muted_ && volume_ > 0.0) {
+            setMuted(false);
+            emit muteChanged(false);
+        }
+        updateVolumeChip();
+    });
+    chipLayout->addWidget(volumeSlider_);
+
+    volumeChip_->setFixedSize(kPipChipWidth, kPipFieldHeight + 8);
 
     restoreButton_ =
         buildButton(QStringLiteral("pipRestore"), QStringLiteral("Повернути у вікно"),
@@ -352,19 +413,25 @@ void PipFloat::buildChrome() {
         // appeared to do nothing at all.
         surface_->seek(scrub_->value() / 1000.0);
     });
+    // Click-to-seek. The overlay claims every press before the slider sees it,
+    // so a click on the timeline fell through to the picture and only
+    // toggled playback. An event filter is the only way in: QSlider handles
+    // its own press in a protected override, so there is no signal for it.
+    scrub_->installEventFilter(this);
 
     installEventFilter(this);
     surface_->installEventFilter(this);
-    const QVector<QWidget*> watched = {elapsed_,    remaining_,   scrub_,
-                                       playButton_, muteButton_,  restoreButton_,
-                                       closeButton_};
+    const QVector<QWidget*> watched = {elapsed_,     remaining_,   scrub_,
+                                       playButton_,  muteButton_, restoreButton_,
+                                       closeButton_, volumeChip_, volumeSlider_};
     for (QWidget* widget : watched) {
         widget->installEventFilter(this);
     }
 }
 
-QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qreal size) {
-    auto* button = new QPushButton(overlay_);
+QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qreal size,
+                                   QWidget* parent) {
+    auto* button = new QPushButton(parent != nullptr ? parent : overlay_);
     button->setObjectName(name);
     button->setFixedSize(QSize(static_cast<int>(size), static_cast<int>(size)));
     button->setToolTip(hint);
@@ -430,10 +497,42 @@ bool PipFloat::isPlaying() const { return surface_ != nullptr && surface_->isPla
 
 void PipFloat::setMuted(bool muted) {
     muted_ = muted;
+    // The float owns a second mpv core. Recording the flag and swapping the
+    // glyph changed nothing audible, because nothing ever told that core: the
+    // button muted the icon, not the sound. The volume rides along, because
+    // a muted core at level 0 is a mute the slider cannot then undo.
+    surface_->setMuted(muted);
+    surface_->setVolume(volume_ * 100.0);
     const QString hint = muted ? QStringLiteral("Увімкнути звук") : QStringLiteral("Вимкнути звук");
     muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 16));
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
+    updateVolumeChip();
+}
+
+void PipFloat::setVolume(double volume) {
+    volume_ = std::clamp(volume, 0.0, 1.0);
+    surface_->setVolume(volume_ * 100.0);
+    if (volume_ > 0.0 && muted_) {
+        // Dragging the level up on a muted core is how a viewer un-mutes
+        // without hunting for the button, and it has to be audible.
+        setMuted(false);
+    }
+    updateVolumeChip();
+}
+
+void PipFloat::updateVolumeChip() {
+    if (volumeSlider_ == nullptr) {
+        return;
+    }
+    if (!draggingVolume_) {
+        volumeSlider_->setValue(static_cast<int>(std::lround(volume_ * 100.0)));
+    }
+    const int percent = static_cast<int>(std::lround(volume_ * 100.0));
+    // No tooltip: a popup that follows the pointer across a drag is the thing
+    // that made the control feel loose, and the level is already legible on
+    // the groove itself.
+    volumeSlider_->setAccessibleName(QStringLiteral("Громкість %1%").arg(percent));
 }
 
 // ── the controls come and go with the pointer ───────────────────────────
@@ -506,6 +605,16 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
             default:
                 break;
         }
+    } else if (watched == scrub_) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            if (auto* press = dynamic_cast<QMouseEvent*>(event)) {
+                timelinePress(press);
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            draggingTimeline_ = false;
+            scrubbing_ = false;
+        }
     } else if (watched == overlay_) {
         // claim a press; the children never let one past the overlay.
         if (auto* press = dynamic_cast<QMouseEvent*>(event)) {
@@ -555,6 +664,13 @@ void PipFloat::pointerPress(QMouseEvent* event) {
 }
 
 void PipFloat::pointerMove(QMouseEvent* event) {
+    // A drag that started on the timeline scrubs, no matter where the pointer
+    // has wandered to since: the overlay sees the move first, and without
+    // this the window would start sliding out from under a scrubbing hand.
+    if (draggingTimeline_) {
+        timelineSeekTo(event->position().x());
+        return;
+    }
     if (!pressed_ || !(event->buttons() & Qt::LeftButton)) {
         return;
     }
@@ -572,6 +688,34 @@ void PipFloat::pointerMove(QMouseEvent* event) {
                                static_cast<int>(std::lround(delta.y()))));
 }
 
+void PipFloat::timelineSeekTo(double x) {
+    const double duration = surface_->duration();
+    if (duration <= 0.0 || scrub_ == nullptr) {
+        return;
+    }
+    // The handle is 10px wide, so the usable groove is inset by half of it on
+    // both ends: a click at the very edge of the widget is the very start,
+    // not a half-handle past it.
+    const double span = std::max(1.0, static_cast<double>(scrub_->width()) - kPipTimelineHandle);
+    const double at = std::clamp((x - kPipTimelineHandle / 2.0) / span, 0.0, 1.0);
+    const double seconds = at * duration;
+    scrubbing_ = true;
+    scrub_->setValue(static_cast<int>(std::lround(seconds * 1000.0)));
+    // The float acts on its OWN core: seeking the hidden main player here
+    // moved a video nobody can see.
+    surface_->seek(seconds);
+}
+
+void PipFloat::timelinePress(QMouseEvent* event) {
+    if (event->button() != Qt::LeftButton) {
+        return;
+    }
+    revealControls();
+    draggingTimeline_ = true;
+    // The press is taken in the float's coordinates: the overlay is full-rect,
+    // so the slider and the window share an origin.
+    timelineSeekTo(event->position().x());
+}
 void PipFloat::pointerRelease(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) {
         return;
@@ -579,6 +723,12 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
     const bool dragged = dragging_;
     pressed_ = false;
     dragging_ = false;
+    if (draggingTimeline_) {
+        draggingTimeline_ = false;
+        scrubbing_ = false;
+        revealControls();
+        return;
+    }
     if (!dragged) {
         surface_->togglePause();
     }
@@ -597,9 +747,11 @@ void PipFloat::fitSurfaces() {
         return;
     }
 
-    // Top-left: mute button at (12, 12)
-    if (muteButton_ != nullptr) {
-        muteButton_->move(12, 12);
+    // Top-left: the volume pill. The chip is moved, not the button inside it -
+    // placing the button directly left the pill wherever its layout last put it,
+    // so the two drew on top of each other.
+    if (volumeChip_ != nullptr) {
+        volumeChip_->move(12, 12);
     }
 
     // Top-right: close button (right: w - 12 - width), restore button (left of close)
@@ -883,6 +1035,11 @@ void PlayerDialog::connectShell() {
     });
     connect(shell_, &PlayerShell::mediaDropped, this, &PlayerDialog::onMediaDropped);
     connect(shell_, &PlayerShell::closeRequested, this, &PlayerDialog::close);
+    connect(shell_, &PlayerShell::copyLinkRequested, this, [this] {
+        host_->requestCopyStreamUrl();
+        flashStatus(QStringLiteral("Посилання на потік скопійовано"));
+    });
+    connect(shell_, &PlayerShell::frameRequested, this, &PlayerDialog::copyCurrentFrame);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
     connect(shell_, &PlayerShell::subtitlesRequested, this, &PlayerDialog::openSubtitlesMenu);
@@ -897,7 +1054,14 @@ void PlayerDialog::connectEngine() {
     connect(surface_, &VideoSurface::durationChanged, this, &PlayerDialog::onEngineDuration);
     connect(surface_, &VideoSurface::positionChanged, this, &PlayerDialog::onEnginePosition);
     connect(surface_, &VideoSurface::playingChanged, this, &PlayerDialog::onEnginePlaying);
+    // The engine is the only authority on whether the video runs: after a PiP
+    // hand-back the shell's cached flag and the core can disagree, and a play
+    // control stuck on pause is unreadable.
+    connect(surface_, &VideoSurface::playingChanged, shell_, [shell = shell_](bool) {
+        shell->updatePlayIcon();
+    });
     connect(surface_, &VideoSurface::videoSizeChanged, this, &PlayerDialog::onEngineVideoSize);
+    connect(surface_, &VideoSurface::streamStatsChanged, shell_, &PlayerShell::setStreamStats);
 }
 
 QList<QualityEntry> PlayerDialog::usableQualities(const QList<QualityEntry>& qualities) {
@@ -982,6 +1146,7 @@ void PlayerDialog::onEngineVideoSize(int width, int height) {
         return;
     }
     aspect_ = static_cast<double>(width) / static_cast<double>(height);
+    shell_->setSourceSize(width, height);
     shell_->setAspectRatio(aspect_);
 }
 
@@ -1065,24 +1230,56 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
 }
 
 void PlayerDialog::onShellFullscreenChanged(bool fullscreen) {
-    // The player is a full-screen surface occupying the entire physical
-    // monitor. Anything attempting to drop it back to windowed mode is
-    // prevented here; the video fills the monitor edge to edge.
-    if (closed_) {
+    if (closed_ || pip_ != nullptr) {
         return;
     }
-    if (!fullscreen) {
-        shell_->enterFullscreen();
-    }
-    if (pip_ != nullptr) {
+    // Both directions are real now. Windowed mode used to be refused, so the
+    // toggle in the top-right did nothing but flash - and a viewer who wants
+    // the player on a second screen has no way to express that at all.
+    if (fullscreen) {
+        // Whatever the viewer arranged in windowed mode is what they get
+        // back: a fullscreen trip must not reset the size they chose.
+        if (!isFullScreen() && !windowedSize_.isValid()) {
+            windowedSize_ = QRect(QPoint(0, 0), size());
+        }
+        if (!isFullScreen()) {
+            showFullScreen();
+        }
+        shell_->setGeometry(rect());
         return;
     }
-    if (!isFullScreen()) {
-        showFullScreen();
+    if (isFullScreen()) {
+        showNormal();
+    }
+    if (windowedSize_.isValid()) {
+        setGeometry(windowedSize_);
+    } else {
+        resize(kPlayerDefaultWidth, kPlayerDefaultHeight);
     }
     shell_->setGeometry(rect());
+    shell_->leaveFullscreen();
 }
 
+void PlayerDialog::copyCurrentFrame() {
+    if (closed_ || surface_ == nullptr || !surface_->hasVideo()) {
+        flashStatus(QStringLiteral("Немає кадру для копіювання"));
+        return;
+    }
+    // grabFramebuffer reads the GL front buffer, so this is the frame on
+    // screen at full source resolution - not a scaled grab of the widget,
+    // which would hand over a thumbnail on a HiDPI display.
+    QImage frame = surface_->grabFramebuffer();
+    if (frame.isNull()) {
+        flashStatus(QStringLiteral("Не вдалося прочитати кадр"));
+        return;
+    }
+    if (!QGuiApplication::clipboard()) {
+        flashStatus(QStringLiteral("Буфер обміну недоступний"));
+        return;
+    }
+    QGuiApplication::clipboard()->setImage(frame);
+    flashStatus(QStringLiteral("Кадр скопійовано (%1×%2)").arg(frame.width()).arg(frame.height()));
+}
 void PlayerDialog::onMediaDropped(const QString& path) {
     if (closed_ || path.isEmpty()) {
         return;
@@ -1112,6 +1309,10 @@ void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) 
         labels.append(item.value(QStringLiteral("label")).toString());
     }
     seriesDrawer_->setEntries(labels, episodeIndex_);
+    // The flank arrows are the only step control on the picture, so they
+    // follow the playlist: on episode 1 of 11 the previous arrow leads nowhere
+    // and should not be offered at all.
+    shell_->setEpisodeStepping(episodeIndex_ > 0, episodeIndex_ + 1 < playlist_.size());
     // The drawer's rows were torn down and rebuilt: re-arm the wake watchers
     // over the fresh buttons or hovering the list stops counting as activity.
     watchPanels();
@@ -1181,7 +1382,12 @@ void PlayerDialog::applyEpisode(const QString& label,
     flashStatus(QStringLiteral("Серія: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
-            openStream(entry.url, QStringLiteral("%1p").arg(target));
+            // A new episode starts at its beginning, always. openStream
+            // carries the position and the pause across by design, which is
+            // right for a quality or a dub swap inside one episode and wrong
+            // here: stepping or picking the next one and landing at the same
+            // offset into it is not what either gesture means.
+            openStream(entry.url, QStringLiteral("%1p").arg(target), /*resume=*/false);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
@@ -1267,6 +1473,8 @@ void PlayerDialog::openAudioMenu() {
     if (closed_) {
         return;
     }
+    shell_->dismissOverlay();
+    shell_->wake();
     audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
     if (audioPopup_->rowCount() == 0) {
         flashStatus(QStringLiteral("Немає інших озвучень"));
@@ -1280,6 +1488,8 @@ void PlayerDialog::openSubtitlesMenu() {
     if (closed_) {
         return;
     }
+    shell_->dismissOverlay();
+    shell_->wake();
     subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     if (subtitlesPopup_->rowCount() == 0) {
         flashStatus(QStringLiteral("Немає доступних субтитрів"));
@@ -1442,9 +1652,8 @@ void PlayerDialog::toggleSeries() { setSeriesExpanded(!seriesExpanded_); }
 
 void PlayerDialog::setSeriesExpanded(bool expanded) {
     seriesExpanded_ = expanded;
-    if (!seriesExpanded_) {
-        audioPopup_->close();
-        subtitlesPopup_->close();
+    if (seriesExpanded_) {
+        shell_->dismissOverlay();
     }
     updateSeriesToggle();
     seriesDrawer_->setVisible(seriesExpanded_);
@@ -1549,12 +1758,13 @@ void PlayerDialog::layoutPanels() {
     }
     const QRect area = shell_->geometry();
     strip_->adjustSize();
-    strip_->move(area.x() + kSpacingMedium, area.y() + kStripMargin);
+    strip_->move(area.x() + kSpacingMedium,
+                 area.y() + kStripMargin + kInfoChipHeight + kSpacingSmall);
     const QSize hint = statusPanel_->sizeHint();
     statusPanel_->setGeometry(area.x() + (area.width() - hint.width()) / 2, area.y() + kStripMargin,
                               hint.width(), hint.height());
     if (seriesExpanded_) {
-        const int top = area.y() + kStripMargin + kStripHeight + kSpacingXS;
+        const int top = strip_->geometry().bottom() + kSpacingXS + 1;
         const int height =
             std::min(seriesDrawer_->contentHeight(), area.height() - top - kSpacingMedium);
         seriesDrawer_->setGeometry(area.x() + kSpacingMedium, top, kSeriesWidth, std::max(height, 60));
@@ -1648,18 +1858,16 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
             audioPopup_->close();
         } else if (subtitlesPopup_->isVisible()) {
             subtitlesPopup_->close();
-        } else if (shell_->dismissOverlay()) {
-            // The settings popover and the key hints are Qt::Popup windows: they
-            // hold the keyboard while open, so this is the only place the key
-            // can reach them.
-        } else if (seriesExpanded_) {
-            setSeriesExpanded(false);
-        } else {
-            // No overlay left, so close. Falling through to the shell here meant
-            // Esc only cleared the shell's fullscreen flag - invisible, because
-            // this dialog refits itself to the monitor - and the player looked
-            // unresponsive while the user pressed it again and again.
-            close();
+        } else if (!shell_->dismissOverlay()) {
+            if (seriesExpanded_) {
+                setSeriesExpanded(false);
+            } else {
+                // No overlay left, so close. Falling through to the shell here meant
+                // Esc only cleared the shell's fullscreen flag - invisible, because
+                // this dialog refits itself to the monitor - and the player looked
+                // unresponsive while the user pressed it again and again.
+                close();
+            }
         }
         event->accept();
         return true;
@@ -1703,10 +1911,14 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
         return false;
     }
     if (watched == this && event->type() == QEvent::WindowActivate) {
-        // Activating the owner raises it, and a raised owner goes above its own
-        // popover. Restoring focus while one is open is what made the pickers
-        // vanish behind the picture.
-        if (shell_ != nullptr && QApplication::activePopupWidget() == nullptr) {
+        bool overlayVisible = false;
+        for (QWidget* overlay : findChildren<QWidget*>()) {
+            if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
+                overlayVisible = true;
+                break;
+            }
+        }
+        if (shell_ != nullptr && !overlayVisible) {
             shell_->setFocus(Qt::OtherFocusReason);
         }
         return false;
@@ -1795,8 +2007,14 @@ void PlayerDialog::enterPip() {
             surface_->setMuted(muted_);
             shell_->setMuted(muted_);
         });
+        // Two buttons, two meanings: the expand icon returns to the full
+        // player, the X closes it for good. Wiring both to leavePip made the X
+        // put the full window back, which is the opposite of what it promises.
         connect(window, &PipFloat::restoreRequested, this, [this] { leavePip(); });
-        connect(window, &PipFloat::closeRequested, this, [this] { leavePip(); });
+        // close() alone is enough: the dialog's close event is what parks and
+        // pauses the float, and it reads pip_, not the local `window`, so a
+        // pooled float is still the one that gets put away.
+        connect(window, &PipFloat::closeRequested, this, &PlayerDialog::close);
     }
     // The float runs a second mpv core, so it needs the same shader chain
     // separately: entering PiP must not silently drop the upscaling.
@@ -1885,10 +2103,14 @@ void PlayerDialog::syncPipBar() {
     if (pip_ == nullptr) {
         return;
     }
-    // Mute only. Position and play state belong to the float's own core now:
-    // the main one is stopped while PiP is up, so pushing its frozen state in
-    // here is what pinned the counter to the moment PiP opened.
+
+    // Volume and mute carry across: the viewer expects them to, and the float
+    // is a second core that knows nothing about them. Position and play state
+    // are deliberately not pushed - the main core is stopped while PiP is up,
+    // and feeding its frozen state back is what pinned the counter to the
+    // moment PiP opened.
     pip_->setMuted(muted_);
+    pip_->setVolume(volume_);
 }
 
 }  // namespace shell

@@ -127,6 +127,10 @@ VideoSurface::~VideoSurface() {
 
 bool VideoSurface::open(const QString& url) {
     url_ = url;
+    networkBytesPerSecond_ = 0.0;
+    streamFramesPerSecond_ = 0.0;
+    statsClock_.restart();
+    emit streamStatsChanged(0.0, 0.0);
     ensureEngine();
     // The load waits for the GL context. With vo=libmpv the video output
     // attaches to the render context, and mpv will not start a VO that has
@@ -169,11 +173,19 @@ void VideoSurface::close() {
     } catch (const MpvError&) {
         // A stop on an already-dead core is not worth reporting.
     }
-    playing_ = false;
+    // Emitted before the reset so the chrome falls back to its play glyph
+    // while the surface still reports a loaded file.
+    if (playing_) {
+        playing_ = false;
+        emit playingChanged(false);
+    }
     hasVideo_ = false;
     position_ = 0.0;
     duration_ = 0.0;
     videoWidth_ = videoHeight_ = 0;
+    networkBytesPerSecond_ = 0.0;
+    streamFramesPerSecond_ = 0.0;
+    emit streamStatsChanged(0.0, 0.0);
     handleState();
 }
 
@@ -182,7 +194,7 @@ void VideoSurface::togglePause() {
     try {
         const bool paused = mpv_->getFlag("pause");
         mpv_->setPaused(!paused);
-        playing_ = paused;  // un-pausing
+        setPlaying(!paused);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
@@ -197,7 +209,7 @@ void VideoSurface::setPaused(bool paused) {
         // resumed a surface that stayed frozen. Asking mpv costs one property
         // write; guessing wrong costs a video that will not play.
         mpv_->setPaused(paused);
-        playing_ = !paused;
+        setPlaying(!paused);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
@@ -234,6 +246,19 @@ void VideoSurface::setSpeed(double speed) {
 }
 
 bool VideoSurface::isPlaying() const { return playing_; }
+
+void VideoSurface::setPlaying(bool playing) {
+    // Announced, not just recorded. The state pump cannot notice a change this
+    // class makes itself: it compares the core against this very flag, so
+    // writing it here and staying silent left the pump nothing to report and
+    // the play control frozen on its old glyph - the video paused behind a
+    // "play" button, or running behind a "pause" one.
+    if (playing == playing_) {
+        return;
+    }
+    playing_ = playing;
+    emit playingChanged(playing_);
+}
 double VideoSurface::position() const { return position_; }
 
 double VideoSurface::duration() const { return duration_; }
@@ -335,6 +360,45 @@ void VideoSurface::pumpEvents() {
         // Properties are unavailable before a file loads; that is not an error.
     }
     handleState();
+    updateStreamStats();
+}
+
+void VideoSurface::updateStreamStats() {
+    if (!statsClock_.isValid()) {
+        statsClock_.start();
+        return;
+    }
+    if (statsClock_.elapsed() < 500) {
+        return;
+    }
+    statsClock_.restart();
+
+    double bytesPerSecond = 0.0;
+    double framesPerSecond = 0.0;
+    try {
+        bytesPerSecond = mpv_->getNumber("cache-speed");
+    } catch (const MpvError&) {
+    }
+    try {
+        framesPerSecond = mpv_->getNumber("estimated-vf-fps");
+    } catch (const MpvError&) {
+    }
+    if (framesPerSecond <= 0.0) {
+        try {
+            framesPerSecond = mpv_->getNumber("container-fps");
+        } catch (const MpvError&) {
+        }
+    }
+
+    bytesPerSecond = std::max(0.0, bytesPerSecond);
+    framesPerSecond = std::max(0.0, framesPerSecond);
+    if (std::abs(bytesPerSecond - networkBytesPerSecond_) < 1024.0 &&
+        std::abs(framesPerSecond - streamFramesPerSecond_) < 0.01) {
+        return;
+    }
+    networkBytesPerSecond_ = bytesPerSecond;
+    streamFramesPerSecond_ = framesPerSecond;
+    emit streamStatsChanged(networkBytesPerSecond_, streamFramesPerSecond_);
 }
 
 void VideoSurface::handleState() {

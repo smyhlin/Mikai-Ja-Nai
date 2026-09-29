@@ -27,6 +27,16 @@ inline constexpr int kMinWindowWidth = 720;
 inline constexpr int kMinWindowHeight = 420;
 inline constexpr int kFrameMargin = 8;  // letterbox padding around the surface
 inline constexpr int kEdgeGrip = 8;     // frameless resize hit band
+inline constexpr int kDockMaxWidth = 980;
+inline constexpr int kDockHorizontalInset = 20;
+inline constexpr int kDockHeight = 104;
+inline constexpr int kDockBottomInset = 20;
+inline constexpr int kDockPlaySize = 52;
+inline constexpr int kDockPlayGlyph = 29;
+inline constexpr int kDockActionSize = 40;
+inline constexpr int kDockActionGlyph = 20;
+inline constexpr int kDockSideWidth = 220;
+inline constexpr int kInfoChipHeight = 32;
 inline constexpr double kAspectFallback = 16.0 / 9.0;
 
 // ── palette ────────────────────────────────────────────────────────────────

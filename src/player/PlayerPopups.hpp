@@ -32,7 +32,11 @@ struct MenuEntry {
     bool current = false;
 };
 
-/// Frameless popover listing a handful of choices.
+/// In-window popover listing a handful of choices.
+///
+/// It remains a child of the fullscreen player instead of becoming a native
+/// window, because Windows can composite a separate popup behind its fullscreen
+/// owner even while Qt reports it visible.
 ///
 /// Its rows are `Qt::NoFocus` on purpose: a focused QPushButton swallows Space,
 /// and Space belongs to the shell as play/pause. The popover takes focus itself
@@ -51,8 +55,8 @@ public:
     /// Re-fits to the size hint, after the host changed something out of band.
     void refresh();
 
-    /// Places the popover above the anchor, flipping below when it would fall
-    /// off the top of the screen, then clamps both axes to the work area.
+    /// Places the popover above the anchor, flipping below when needed, then
+    /// clamps both axes to its parent.
     void popupNear(const QPoint& anchorGlobal, bool preferAbove = true);
 
 signals:

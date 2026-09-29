@@ -1,14 +1,14 @@
 #include "PlayerShell.hpp"
 
-#include <QApplication>
+#include "PlayerPopups.hpp"
+
 #include <QCursor>
-#include <QDateTime>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
-#include <QMenu>
 #include <QMimeData>
 #include <QPainter>
+#include <QWindow>
 #include <QPainterPath>
 #include <QShowEvent>
 #include <QStyle>
@@ -76,10 +76,12 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     buildSurface();
     buildWindowControls();
+    buildTitleBar();
     buildChevrons();
     buildDock();
     buildFooter();
     buildOverlays();
+    buildPictureMenu();
 
     applyState();
     layoutChrome();
@@ -125,10 +127,7 @@ void PlayerShell::buildWindowControls() {
 
     btnWin_ = new IconButton(IconPainter::restore, QStringLiteral("toggle_window_mode"), 28, 15,
                              windowControls_);
-    connect(btnWin_, &QPushButton::clicked, this, [this] {
-        rounded_ = !rounded_;
-        applyState();
-    });
+    connect(btnWin_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
     lay->addWidget(btnWin_);
 
     btnClose_ = new IconButton(IconPainter::close, QStringLiteral("exit_viewer  (Esc)"), 28, 15,
@@ -137,6 +136,38 @@ void PlayerShell::buildWindowControls() {
     lay->addWidget(btnClose_);
 }
 
+void PlayerShell::buildTitleBar() {
+    // A frameless window has no OS title bar, so a windowed player had no
+    // way to be moved: every pixel belonged either to the picture or to a
+    // control. This is the grab handle that a decorated window would give.
+    titleBar_ = new Panel(blackSoft(), 0.0, w15(), this);
+    titleBar_->setObjectName(QStringLiteral("playerTitleBar"));
+    titleBar_->setCursor(Qt::OpenHandCursor);
+    auto* lay = new QHBoxLayout(titleBar_);
+    lay->setContentsMargins(12, 0, 6, 0);
+    lay->setSpacing(8);
+
+    auto* caption = new QLabel(QStringLiteral("MIKAI"), titleBar_);
+    caption->setObjectName(QStringLiteral("playerTitleCaption"));
+    caption->setStyleSheet(QStringLiteral("background: transparent; color: %1;").arg(w70().name()));
+    lay->addWidget(caption);
+    lay->addStretch(1);
+
+    titleMin_ = new IconButton(IconPainter::minimize, QStringLiteral("window_minimize"), 28, 15,
+                               titleBar_, w70());
+    connect(titleMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
+    lay->addWidget(titleMin_);
+
+    titleMax_ = new IconButton(IconPainter::restore, QStringLiteral("toggle_window_mode"), 28, 15,
+                               titleBar_, w70());
+    connect(titleMax_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
+    lay->addWidget(titleMax_);
+
+    titleClose_ = new IconButton(IconPainter::close, QStringLiteral("exit_viewer  (Esc)"), 28, 15,
+                                 titleBar_, w70());
+    connect(titleClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
+    lay->addWidget(titleClose_);
+}
 void PlayerShell::buildChevrons() {
     btnPrev_ = new IconButton(IconPainter::chevronLeft, QStringLiteral("load_previous_media  (<-)"),
                               42, 18, this, QColor(0, 0, 0, 165));
@@ -150,105 +181,161 @@ void PlayerShell::buildChevrons() {
 }
 
 void PlayerShell::buildDock() {
-    dock_ = new Panel(dock(), 9.0, w15(), this);
-    auto* lay = new QHBoxLayout(dock_);
-    lay->setContentsMargins(11, 7, 11, 7);
-    lay->setSpacing(8);
+    dock_ = new Panel(dock(), 16.0, w15(), this);
+    auto* dockLayout = new QVBoxLayout(dock_);
+    dockLayout->setContentsMargins(16, 8, 16, 8);
+    dockLayout->setSpacing(3);
 
-    vol_ = new VolumeGroup(dock_);
+    auto* topRow = new QHBoxLayout();
+    topRow->setContentsMargins(0, 0, 0, 0);
+    topRow->setSpacing(4);
+
+    auto* volumeHost = new QWidget(dock_);
+    volumeHost->setFixedWidth(kDockSideWidth);
+    volumeHost->setAttribute(Qt::WA_StyledBackground, false);
+    volumeHost->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto* volumeLayout = new QHBoxLayout(volumeHost);
+    volumeLayout->setContentsMargins(0, 0, 0, 0);
+    vol_ = new VolumeGroup(volumeHost);
     connect(vol_, &VolumeGroup::volumeChanged, this, &PlayerShell::onVolume);
     connect(vol_, &VolumeGroup::muteClicked, this, &PlayerShell::toggleMute);
-    lay->addWidget(vol_);
+    volumeLayout->addWidget(vol_);
+    volumeLayout->addStretch();
+    topRow->addWidget(volumeHost);
 
-    btnPlay_ = new IconButton(IconPainter::play, QStringLiteral("toggle_playback  (Space)"), 28, 15,
-                              dock_);
+    topRow->addStretch();
+    btnPlay_ = new IconButton(IconPainter::play, QStringLiteral("toggle_playback  (Space)"),
+                              kDockPlaySize, kDockPlayGlyph, dock_, accent());
+    btnPlay_->setObjectName(QStringLiteral("playerPlayToggle"));
+    btnPlay_->setFilled(true);
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
-    lay->addWidget(btnPlay_);
+    topRow->addWidget(btnPlay_);
+    topRow->addStretch();
 
+    auto* actionHost = new QWidget(dock_);
+    actionHost->setFixedWidth(kDockSideWidth);
+    actionHost->setAttribute(Qt::WA_StyledBackground, false);
+    actionHost->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto* actions = new QHBoxLayout(actionHost);
+    actions->setContentsMargins(0, 0, 0, 0);
+    actions->setSpacing(4);
+    actions->setAlignment(Qt::AlignRight);
+
+    btnPip_ = new IconButton(IconPainter::pip, QStringLiteral("toggle_picture_in_picture"),
+                             kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnPip_, &QPushButton::clicked, this, &PlayerShell::pipRequested);
+    actions->addWidget(btnPip_);
+
+    btnAudio_ = new IconButton(IconPainter::microphone,
+                               QStringLiteral("Озвучення — вибрати дубляж  (T)"),
+                               kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
+    btnAudio_->hide();
+    actions->addWidget(btnAudio_);
+
+    btnSubs_ = new IconButton(IconPainter::captions,
+                              QStringLiteral("Субтитри — вибрати доріжку  (C)"),
+                              kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
+    btnSubs_->hide();
+    actions->addWidget(btnSubs_);
+
+    btnEnhance_ = new IconButton(IconPainter::spark, QStringLiteral("open_enhancements"),
+                                 kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnEnhance_, &QPushButton::clicked, this, &PlayerShell::openEnhancements);
+    actions->addWidget(btnEnhance_);
+
+    btnSettings_ = new IconButton(IconPainter::gear, QStringLiteral("toggle_settings_popover"),
+                                  kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnSettings_, &QPushButton::clicked, this, &PlayerShell::openSettings);
+    actions->addWidget(btnSettings_);
+    topRow->addWidget(actionHost);
+    dockLayout->addLayout(topRow);
+
+    auto* timeline = new QHBoxLayout();
+    timeline->setContentsMargins(0, 0, 0, 0);
+    timeline->setSpacing(8);
     lblElapsed_ = new QLabel(QStringLiteral("00:00"), dock_);
     lblElapsed_->setFont(monoFont(9));
-    lblElapsed_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,230);"));
-    lblElapsed_->setFixedWidth(34);
-    lay->addWidget(lblElapsed_);
+    lblElapsed_->setStyleSheet(
+        QStringLiteral("background: transparent; color: rgba(255,255,255,230);"));
+    lblElapsed_->setFixedWidth(38);
+    timeline->addWidget(lblElapsed_);
 
     scrub_ = new ScrubBar(dock_);
     scrub_->setMinimumWidth(120);
     connect(scrub_, &RangeSlider::valueChanged, this, &PlayerShell::onScrub);
-    lay->addWidget(scrub_, 1);
+    timeline->addWidget(scrub_, 1);
 
     lblRemaining_ = new QLabel(QStringLiteral("-00:00"), dock_);
     lblRemaining_->setFont(monoFont(9));
-    lblRemaining_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,140);"));
-    lblRemaining_->setFixedWidth(38);
-    lay->addWidget(lblRemaining_);
+    lblRemaining_->setStyleSheet(
+        QStringLiteral("background: transparent; color: rgba(255,255,255,140);"));
+    lblRemaining_->setFixedWidth(42);
+    timeline->addWidget(lblRemaining_);
+    dockLayout->addLayout(timeline);
 
-    lay->addSpacing(2);
-
-    btnFullscreen_ = new IconButton(IconPainter::expand,
-                                     QStringLiteral("toggle_fullscreen_mode  (F)"), 28, 15, dock_);
-    connect(btnFullscreen_, &QPushButton::clicked, this, [this] {
-        if (fullscreen_) {
-            exitFullscreen();
-        } else {
-            enterFullscreen();
-        }
-    });
-    lay->addWidget(btnFullscreen_);
-
-    btnPip_ = new IconButton(IconPainter::pip, QStringLiteral("toggle_picture_in_picture"), 28, 15,
-                             dock_);
-    connect(btnPip_, &QPushButton::clicked, this, &PlayerShell::pipRequested);
-    lay->addWidget(btnPip_);
-
-    btnAudio_ = new IconButton(IconPainter::microphone,
-                               QStringLiteral("Озвучення — вибрати дубляж  (T)"), 28, 15, dock_);
-    connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
-    btnAudio_->hide();
-    lay->addWidget(btnAudio_);
-
-    btnSubs_ = new IconButton(IconPainter::captions,
-                              QStringLiteral("Субтитри — вибрати доріжку  (C)"), 28, 15, dock_);
-    connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
-    btnSubs_->hide();
-    lay->addWidget(btnSubs_);
-
-    btnSettings_ = new IconButton(IconPainter::gear, QStringLiteral("toggle_settings_popover"), 28,
-                                  15, dock_);
-    connect(btnSettings_, &QPushButton::clicked, this, &PlayerShell::openSettings);
-    lay->addWidget(btnSettings_);
-
-    flyout_ = new SettingsFlyout(this);
+    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    flyout_ = new SettingsFlyout(overlayHost);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
-    connect(flyout_, &SettingsFlyout::anime4KSelected, this, &PlayerShell::onAnime4KMode);
 
-    dock_->adjustSize();
+    enhancementsPopup_ = new MenuPopup(QStringLiteral("ПОКРАЩЕННЯ"), overlayHost);
+    enhancementsPopup_->setObjectName(QStringLiteral("playerEnhancementsPopup"));
+    connect(enhancementsPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
+        if (payload.toString() == QStringLiteral("anime4k")) {
+            openAnime4K();
+        }
+    });
+
+    anime4kPopup_ = new MenuPopup(QStringLiteral("ANIME4K"), overlayHost);
+    anime4kPopup_->setObjectName(QStringLiteral("playerAnime4KPopup"));
+    connect(anime4kPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
+        onAnime4KMode(static_cast<anime4k::Mode>(payload.toInt()));
+    });
+    btnEnhance_->setVisible(!anime4k::findShadersDir().isEmpty());
+    refreshEnhancementMenus();
 }
 
 void PlayerShell::buildFooter() {
-    footerLeft_ = new QWidget(this);
-    footerLeft_->setAttribute(Qt::WA_TranslucentBackground);
-    auto* v = new QVBoxLayout(footerLeft_);
-    v->setContentsMargins(0, 0, 0, 0);
-    v->setSpacing(1);
-    lblFile_ = new QLabel(QStringLiteral("no media loaded"), footerLeft_);
-    lblFile_->setFont(monoFont(8));
-    lblFile_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,130);"));
-    v->addWidget(lblFile_);
-    lblOrigin_ = new QLabel(QStringLiteral("drop a file · or pass one as argv[1]"), footerLeft_);
-    lblOrigin_->setFont(uiFont(9));
-    lblOrigin_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,85);"));
-    v->addWidget(lblOrigin_);
+    footerLeft_ = new Panel(pill(), 16.0, w15(), this);
+    footerLeft_->setObjectName(QStringLiteral("playerInfoChip"));
+    auto* info = new QHBoxLayout(footerLeft_);
+    info->setContentsMargins(12, 5, 12, 5);
+    info->setSpacing(8);
+
+    auto* app = new QLabel(QStringLiteral("MIKAI"), footerLeft_);
+    QFont appFont = monoFont(9);
+    appFont.setBold(true);
+    app->setFont(appFont);
+    app->setStyleSheet(QStringLiteral("background: transparent; color: #ffffff;"));
+    info->addWidget(app);
+
+    auto* divider = new QLabel(QStringLiteral("│"), footerLeft_);
+    divider->setStyleSheet(
+        QStringLiteral("background: transparent; color: rgba(255,255,255,70);"));
+    info->addWidget(divider);
+
+    lblNetworkStats_ = new QLabel(QStringLiteral("0.00 Mbps × — FPS"), footerLeft_);
+    lblNetworkStats_->setObjectName(QStringLiteral("playerNetworkStats"));
+    lblNetworkStats_->setFont(monoFont(8));
+    lblNetworkStats_->setStyleSheet(
+        QStringLiteral("background: transparent; color: rgba(255,255,255,185);"));
+    info->addWidget(lblNetworkStats_);
+
+    lblEnhancement_ = new QLabel(footerLeft_);
+    lblEnhancement_->setObjectName(QStringLiteral("playerEnhancementStatus"));
+    lblEnhancement_->setFont(monoFont(8));
+    lblEnhancement_->setStyleSheet(
+        QStringLiteral("background: transparent; color: #79dcf2;"));
+    lblEnhancement_->hide();
+    info->addWidget(lblEnhancement_);
+    footerLeft_->setFixedHeight(kInfoChipHeight);
 
     footerRight_ = new Panel(blackSoft(), 8.0, w15(), this);
     auto* h = new QHBoxLayout(footerRight_);
     h->setContentsMargins(4, 4, 4, 4);
     h->setSpacing(4);
-
-    btnReset_ = new IconButton(IconPainter::reset, QStringLiteral("reset_canvas_transform  (R / 0)"),
-                               28, 14, footerRight_);
-    connect(btnReset_, &QPushButton::clicked, this, &PlayerShell::resetTransform);
-    h->addWidget(btnReset_);
 
     btnKeys_ = new IconButton(IconPainter::keyboard, QStringLiteral("keyboard_shortcuts  (?)"), 28,
                               15, footerRight_);
@@ -260,9 +347,77 @@ void PlayerShell::buildFooter() {
     connect(btnMore_, &QPushButton::clicked, this, &PlayerShell::openMenu);
     h->addWidget(btnMore_);
 
-    keys_ = new KeyHints(this);
+    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    keys_ = new KeyHints(overlayHost);
+    morePopup_ = new MenuPopup(QStringLiteral("ДІЇ"), overlayHost);
+    morePopup_->setObjectName(QStringLiteral("playerMorePopup"));
+    QVector<MenuEntry> entries;
+    const auto addEntry = [&entries](const QString& text, const QString& action) {
+        MenuEntry entry;
+        entry.text = text;
+        entry.payload = action;
+        entries.append(entry);
+    };
+    addEntry(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
+    addEntry(QStringLiteral("Відкрити у папці"), QStringLiteral("open"));
+    addEntry(QStringLiteral("Скинути масштаб  (R)"), QStringLiteral("reset"));
+    addEntry(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
+    morePopup_->setEntries(entries);
+    connect(morePopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
+        morePopup_->close();
+        const QString action = payload.toString();
+        if (action == QStringLiteral("copy")) {
+            toast_->flash(QStringLiteral("URL copied"));
+        } else if (action == QStringLiteral("open")) {
+            toast_->flash(path_.isEmpty() ? QStringLiteral("—") : path_);
+        } else if (action == QStringLiteral("reset")) {
+            resetTransform();
+        } else if (action == QStringLiteral("exit")) {
+            exitViewer();
+        }
+    });
 }
 
+void PlayerShell::buildPictureMenu() {
+    // Built once and reused: a menu rebuilt on every right-click allocates a
+    // popover and its rows each time, and this one is opened often.
+    QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
+    pictureMenu_ = new MenuPopup(QString(), overlayHost);
+    pictureMenu_->setObjectName(QStringLiteral("playerPictureMenu"));
+    pictureMenu_->hide();
+    QVector<MenuEntry> entries;
+    const auto add = [&entries](const QString& text, const QString& action) {
+        MenuEntry entry;
+        entry.text = text;
+        entry.payload = action;
+        entries.append(entry);
+    };
+    add(QStringLiteral("Копіювати кадр"), QStringLiteral("frame"));
+    add(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
+    add(QStringLiteral("Скинути масштаб  (R)"), QStringLiteral("reset"));
+    add(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
+    pictureMenu_->setEntries(entries);
+    connect(pictureMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
+        pictureMenu_->close();
+        const QString action = payload.toString();
+        if (action == QStringLiteral("frame")) {
+            emit frameRequested();
+        } else if (action == QStringLiteral("copy")) {
+            emit copyLinkRequested();
+        } else if (action == QStringLiteral("reset")) {
+            resetTransform();
+        } else if (action == QStringLiteral("exit")) {
+            exitViewer();
+        }
+    });
+}
+
+void PlayerShell::openPictureMenu(const QPoint& position) {
+    if (pictureMenu_ == nullptr) {
+        return;
+    }
+    pictureMenu_->popupNear(mapToGlobal(position));
+}
 void PlayerShell::buildOverlays() {
     hud_ = new StateHUD(this);
     // the manifest readout duplicates the dock's numbers and is never shown
@@ -296,14 +451,16 @@ void PlayerShell::applyState() {
     // that is itself fullscreen, so gating on "not fullscreen" meant half the
     // UI could never appear. Idle auto-hide is what hides them.
     windowControls_->setVisible(!hidden);
-    btnPrev_->setVisible(!hidden && !zoom);
-    btnNext_->setVisible(!hidden && !zoom);
+    // The header is windowed-mode only: over a full monitor it would be
+    // a bar across the picture with nothing to move.
+    titleBar_->setVisible(!hidden && !fullscreen_);
+    btnPrev_->setVisible(!hidden && !zoom && hasPreviousEpisode_);
+    btnNext_->setVisible(!hidden && !zoom && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
     footerRight_->setVisible(!hidden);
     if (hidden) {
-        flyout_->close();
-        keys_->close();
+        dismissOverlay();
     }
 
     setStateCursor();
@@ -344,7 +501,22 @@ void PlayerShell::setStateCursor() {
 void PlayerShell::enterFullscreen() {
     fullscreen_ = true;
     hudHidden_ = false;
-    btnFullscreen_->setIcon(IconPainter::contract);
+    applyState();
+}
+
+void PlayerShell::windowModeToggled() {
+    if (fullscreen_) {
+        leaveFullscreen();
+    } else {
+        enterFullscreen();
+    }
+}
+void PlayerShell::leaveFullscreen() {
+    fullscreen_ = false;
+    hudHidden_ = false;
+    // The header is what makes a frameless window movable and closable, and
+    // it only exists in windowed mode: over a full monitor there is nothing
+    // to move, and a title bar across the picture is just clutter.
     applyState();
     hideTimer_.start(kAutohideMs);
     emit fullscreenChanged(true);
@@ -357,27 +529,42 @@ void PlayerShell::exitFullscreen() {
     // restores the centred preview - and the preview hides its chrome on idle
     // too, so the countdown is rearmed rather than stopped.
     hideTimer_.start(kAutohideMs);
-    btnFullscreen_->setIcon(IconPainter::expand);
     applyState();
     emit fullscreenChanged(false);
 }
 
 bool PlayerShell::dismissOverlay() {
-    if (flyout_ != nullptr && flyout_->isVisible()) {
-        flyout_->close();
-        return true;
+    QWidget* host = window();
+    if (host == nullptr) {
+        return false;
     }
-    if (keys_ != nullptr && keys_->isVisible()) {
-        keys_->close();
-        return true;
+    bool dismissed = false;
+    for (QWidget* overlay : host->findChildren<QWidget*>()) {
+        if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
+            overlay->close();
+            dismissed = true;
+        }
+    }
+    return dismissed;
+}
+
+bool PlayerShell::hasVisibleOverlay() const {
+    QWidget* host = window();
+    if (host == nullptr) {
+        return false;
+    }
+    for (QWidget* overlay : host->findChildren<QWidget*>()) {
+        if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
+            return true;
+        }
     }
     return false;
 }
 
 void PlayerShell::enterAutoHidden() {
-    // Never yank the chrome away mid-gesture: an open popup or a live drag
+    // Never yank the chrome away mid-gesture: an open overlay or a live drag
     // means the user is interacting even though no move crossed the shell.
-    if (QApplication::activePopupWidget() != nullptr) {
+    if (hasVisibleOverlay()) {
         hideTimer_.start(kAutohideMs);
         return;
     }
@@ -409,7 +596,7 @@ QSize PlayerShell::fitted() const {
         return {width(), height()};
     }
     const int pad = kFrameMargin;
-    const int chromeHeight = 150;
+    const int chromeHeight = 150 + titleBarOffset_;
     const int vw = std::max(160, width() - 2 * (pad + 24));
     const int vh = std::max(100, height() - chromeHeight);
     if (static_cast<double>(vw) / vh > aspect_) {
@@ -427,8 +614,17 @@ void PlayerShell::layoutChrome() {
     const int sw = std::max(1, static_cast<int>(fit.width() * scale_));
     const int sh = std::max(1, static_cast<int>(fit.height() * scale_));
     const int sx = static_cast<int>((w - sw) / 2.0 + offset_.x());
-    const int sy = static_cast<int>((h - sh) / 2.0 + offset_.y());
+    const int sy = titleBarOffset_ + static_cast<int>((h - titleBarOffset_ - sh) / 2.0 + offset_.y());
     surface_->setGeometry(sx, sy, sw, sh);
+    const int outputWidth =
+        std::max(1, static_cast<int>(std::round(sw * surface_->devicePixelRatioF())));
+    const int outputHeight =
+        std::max(1, static_cast<int>(std::round(sh * surface_->devicePixelRatioF())));
+    if (outputWidth_ != outputWidth || outputHeight_ != outputHeight) {
+        outputWidth_ = outputWidth;
+        outputHeight_ = outputHeight;
+        updateInfoChip();
+    }
 
     // ── window controls (top-right) ────────────────────────────────
     const int wcWidth = windowControls_->sizeHint().width() > 0 ? windowControls_->sizeHint().width()
@@ -436,21 +632,28 @@ void PlayerShell::layoutChrome() {
     const int wcX = std::clamp(static_cast<int>(w * 0.945) + 4, 0, std::max(0, w - wcWidth - 4));
     windowControls_->setGeometry(wcX, std::max(6, static_cast<int>(h * 0.008)), wcWidth, 36);
 
+    // ── title bar (windowed mode) ──────────────────────────────────
+    if (titleBar_ != nullptr) {
+        const int barHeight = 36;
+        titleBar_->setGeometry(0, 0, w, barHeight);
+        // The canvas starts below the bar, or the video is drawn under it.
+        titleBarOffset_ = fullscreen_ ? 0 : barHeight;
+    }
+
     // ── flank chevrons ─────────────────────────────────────────────
     const int cy = static_cast<int>(h * 0.5) - 21;
     btnPrev_->move(static_cast<int>(w * 0.012), cy);
     btnNext_->move(w - static_cast<int>(w * 0.012) - 42, cy);
 
     // ── dock (bottom-centre) ───────────────────────────────────────
-    const int dw = std::min(dock_->sizeHint().width() + 22, w - 24);
-    dock_->setGeometry((w - dw) / 2, h - static_cast<int>(h * 0.022) - 46, dw, 46);
+    const int dw = std::min(kDockMaxWidth, w - 2 * kDockHorizontalInset);
+    dock_->setGeometry((w - dw) / 2, h - kDockBottomInset - kDockHeight, dw, kDockHeight);
 
-    // ── footers ────────────────────────────────────────────────────
+    // ── status and secondary actions ───────────────────────────────
     footerLeft_->adjustSize();
-    footerLeft_->move(static_cast<int>(w * 0.010), h - footerLeft_->height() - 8);
+    footerLeft_->move(12, 8);
     footerRight_->adjustSize();
-    footerRight_->move(w - footerRight_->width() - static_cast<int>(w * 0.010),
-                       h - footerRight_->height() - 8);
+    footerRight_->move(w - footerRight_->width() - 12, h - footerRight_->height() - 8);
 
     // ── overlays ───────────────────────────────────────────────────
     hud_->adjustSize();
@@ -469,7 +672,7 @@ void PlayerShell::layoutChrome() {
     // before it - which is why the episodes drawer (a dialog child, raised by
     // layoutPanels) showed up while the bottom dock did not: nothing ever
     // raised the shell's own widgets.
-    QVector<QWidget*> chrome{windowControls_, btnPrev_, btnNext_, dock_,
+    QVector<QWidget*> chrome{windowControls_, titleBar_, btnPrev_, btnNext_, dock_,
                              footerLeft_, footerRight_, hud_, center_};
     for (QWidget* widget : chrome) {
         if (widget != nullptr && widget->isVisible()) {
@@ -535,12 +738,11 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
 
     const QString name =
         path.isEmpty() ? QStringLiteral("no media loaded") : QFileInfo(path).fileName();
-    lblFile_->setText(name);
-    lblOrigin_->setText(QStringLiteral("%1 · %2")
-                            .arg(origin_,
-                                 QDateTime::currentDateTime().toString(QStringLiteral("dd.MM.yyyy 'о' HH:mm"))));
     setWindowTitle(QStringLiteral("%1 · Media Lightbox").arg(name));
     position_ = 0.0;
+    networkBytesPerSecond_ = 0.0;
+    streamFramesPerSecond_ = 0.0;
+    updateInfoChip();
     layoutChrome();
 }
 
@@ -557,8 +759,32 @@ void PlayerShell::setPosition(double seconds) {
 
 void PlayerShell::setPlaying(bool playing) {
     playing_ = playing;
-    btnPlay_->setIcon(playing ? IconPainter::pause : IconPainter::play);
+    updatePlayIcon();
     center_->setKind(playing ? CenterGlyph::Kind::None : CenterGlyph::Kind::Play);
+}
+
+void PlayerShell::updatePlayIcon() {
+    // The shell caches the pause state, but the engine owns the truth: the
+    // first playingChanged lands before the cache is primed, and after a PiP
+    // hand-back the cache and the core can disagree. One property read, and a
+    // play control stuck on pause while the video runs is the one icon a
+    // viewer trusts absolutely.
+    const bool running = surface_ != nullptr && surface_->isPlaying();
+    btnPlay_->setIcon(running ? IconPainter::pause : IconPainter::play);
+}
+
+void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {
+    if (hasPreviousEpisode_ == hasPrevious && hasNextEpisode_ == hasNext) {
+        return;
+    }
+    hasPreviousEpisode_ = hasPrevious;
+    hasNextEpisode_ = hasNext;
+    // An arrow with nothing to load is a dead control, so it goes away rather
+    // than inviting a click that cannot do anything.
+    const bool shown = !hudHidden_ && scale_ <= 1.005;
+    btnPrev_->setVisible(hasPrevious && shown);
+    btnNext_->setVisible(hasNext && shown);
+    update();
 }
 
 void PlayerShell::setVolume(double volume, bool fromHost) {
@@ -683,48 +909,122 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
 
 void PlayerShell::setAnime4KMode(anime4k::Mode mode) {
     anime4kMode_ = mode;
-    flyout_->setAnime4KMode(mode);
+    refreshEnhancementMenus();
+    updateInfoChip();
+}
+
+void PlayerShell::setStreamStats(double bytesPerSecond, double framesPerSecond) {
+    networkBytesPerSecond_ = std::max(0.0, bytesPerSecond);
+    streamFramesPerSecond_ = std::max(0.0, framesPerSecond);
+    updateInfoChip();
+}
+
+void PlayerShell::setSourceSize(int width, int height) {
+    sourceWidth_ = std::max(0, width);
+    sourceHeight_ = std::max(0, height);
+    updateInfoChip();
 }
 
 void PlayerShell::onAnime4KMode(anime4k::Mode mode) {
-    anime4kMode_ = mode;
-    QString label = QStringLiteral("—");
+    setAnime4KMode(mode);
+    QString label = QStringLiteral("Вимкнено");
     for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
         if (info.mode == mode) {
             label = info.label;
+            break;
         }
     }
     toast_->flash(QStringLiteral("Anime4K: %1").arg(label));
     emit anime4KModeChanged(mode);
 }
 
+void PlayerShell::refreshEnhancementMenus() {
+    QVector<MenuEntry> enhancements;
+    MenuEntry anime4kEntry;
+    anime4kEntry.text = QStringLiteral("Anime4K  ›");
+    anime4kEntry.payload = QStringLiteral("anime4k");
+    anime4kEntry.current = anime4kMode_ != anime4k::Mode::Off;
+    enhancements.append(anime4kEntry);
+    enhancementsPopup_->setEntries(enhancements);
+
+    QVector<MenuEntry> modes;
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        MenuEntry entry;
+        entry.text = info.label;
+        entry.tooltip = info.hint;
+        entry.payload = static_cast<int>(info.mode);
+        entry.current = info.mode == anime4kMode_;
+        modes.append(entry);
+    }
+    anime4kPopup_->setEntries(modes);
+}
+
+void PlayerShell::updateInfoChip() {
+    const QString throughput =
+        QStringLiteral("%1 Mbps").arg(networkBytesPerSecond_ * 8.0 / 1'000'000.0, 0, 'f', 2);
+    const QString fps =
+        streamFramesPerSecond_ > 0.0
+            ? QStringLiteral("%1 FPS").arg(streamFramesPerSecond_, 0, 'f', 2)
+            : QStringLiteral("— FPS");
+    lblNetworkStats_->setText(QStringLiteral("%1 × %2").arg(throughput, fps));
+
+    if (anime4kMode_ == anime4k::Mode::Off) {
+        lblEnhancement_->hide();
+    } else {
+        QString label = QStringLiteral("Anime4K");
+        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+            if (info.mode == anime4kMode_) {
+                label = info.label;
+                break;
+            }
+        }
+        const int sourceWidth = sourceWidth_ > 0 ? sourceWidth_ : outputWidth_;
+        const int sourceHeight = sourceHeight_ > 0 ? sourceHeight_ : outputHeight_;
+        lblEnhancement_->setText(
+            QStringLiteral("│ Anime4K %1 · %2×%3 → %4×%5")
+                .arg(label)
+                .arg(sourceWidth)
+                .arg(sourceHeight)
+                .arg(outputWidth_)
+                .arg(outputHeight_));
+        lblEnhancement_->show();
+    }
+    footerLeft_->adjustSize();
+}
+
+void PlayerShell::openEnhancements() {
+    dismissOverlay();
+    wake();
+    refreshEnhancementMenus();
+    enhancementsPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
+}
+
+void PlayerShell::openAnime4K() {
+    dismissOverlay();
+    wake();
+    refreshEnhancementMenus();
+    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
+}
+
 void PlayerShell::openSettings() {
+    dismissOverlay();
+    wake();
     flyout_->setRate(rate_);
     flyout_->setQuality(quality_);
     flyout_->setQualityOptions(qualityOptions_);
-    flyout_->setAnime4KMode(anime4kMode_);
     flyout_->popupNear(btnSettings_->mapToGlobal(QPoint(btnSettings_->width(), 0)));
 }
 
-void PlayerShell::openKeys() { keys_->popupNear(btnKeys_->mapToGlobal(QPoint(0, 0))); }
+void PlayerShell::openKeys() {
+    dismissOverlay();
+    wake();
+    keys_->popupNear(btnKeys_->mapToGlobal(QPoint(0, 0)));
+}
 
 void PlayerShell::openMenu() {
-    QMenu menu(this);
-    menu.setFont(uiFont(10));
-    menu.setStyleSheet(QStringLiteral(
-        "QMenu { background: rgba(35,39,45,246); color: rgba(255,255,255,200);"
-        "  border: 1px solid rgba(255,255,255,30); border-radius: 8px; padding: 6px; }"
-        "QMenu::item { padding: 6px 22px; border-radius: 5px; }"
-        "QMenu::item:selected { background: rgba(255,255,255,26); }"
-        "QMenu::separator { height: 1px; background: rgba(255,255,255,25); margin: 4px 8px; }"));
-    menu.addAction(QStringLiteral("Копіювати посилання"),
-                   this, [this] { toast_->flash(QStringLiteral("URL copied")); });
-    menu.addAction(QStringLiteral("Відкрити у папці"), this,
-                   [this] { toast_->flash(path_.isEmpty() ? QStringLiteral("—") : path_); });
-    menu.addAction(QStringLiteral("Скинути масштаб  (R)"), this, &PlayerShell::resetTransform);
-    menu.addSeparator();
-    menu.addAction(QStringLiteral("Вихід  (Esc)"), this, &PlayerShell::exitViewer);
-    menu.exec(btnMore_->mapToGlobal(QPoint(0, btnMore_->height())));
+    dismissOverlay();
+    wake();
+    morePopup_->popupNear(btnMore_->mapToGlobal(QPoint(btnMore_->width(), 0)));
 }
 
 void PlayerShell::exitViewer() {
@@ -754,11 +1054,10 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             toggleMute();
             break;
         case Qt::Key_Escape:
-            if (flyout_->isVisible()) {
-                flyout_->close();
-            } else if (keys_->isVisible()) {
-                keys_->close();
-            } else if (fullscreen_) {
+            if (dismissOverlay()) {
+                break;
+            }
+            if (fullscreen_) {
                 exitFullscreen();
             } else if (std::abs(scale_ - 1.0) > 0.005) {
                 resetTransform();
@@ -853,7 +1152,33 @@ bool PlayerShell::hitEdges(const QPointF& pos) {
 
 void PlayerShell::mousePressEvent(QMouseEvent* event) {
     wake();
+    if (event->button() == Qt::RightButton) {
+        // The right button is the pointer, not a control: a click on the dock
+        // or a popover is handled by those widgets, and this only sees what
+        // reaches the picture.
+        openPictureMenu(event->position().toPoint());
+        event->accept();
+        return;
+    }
     if (event->button() != Qt::LeftButton) return;
+    if (dismissOverlay()) {
+        event->accept();
+        return;
+    }
+
+    // The bar is the window's grab handle. startSystemMove hands the drag to
+    // the window manager, which is what makes the player snap to edges and
+    // land on another monitor the way any other window does; a hand-rolled
+    // move() fights all of that.
+    if (titleBar_ != nullptr && titleBar_->isVisible() && !fullscreen_
+        && titleBar_->geometry().contains(static_cast<int>(event->position().x()),
+                                          static_cast<int>(event->position().y()))) {
+        if (QWindow* handle = windowHandle(); handle != nullptr) {
+            handle->startSystemMove();
+            event->accept();
+            return;
+        }
+    }
 
     if (hitEdges(event->position())) {
         dragGeometry_ = geometry();
@@ -1089,8 +1414,7 @@ void PlayerShell::closeEvent(QCloseEvent* event) {
     panning_ = false;
     resizingLeft_ = resizingTop_ = resizingRight_ = resizingBottom_ = false;
     hideTimer_.stop();
-    flyout_->close();
-    keys_->close();
+    dismissOverlay();
     QWidget::closeEvent(event);
 }
 

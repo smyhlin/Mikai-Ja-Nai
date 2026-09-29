@@ -4,10 +4,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
-#include <QGuiApplication>
 #include <QPainter>
 #include <QPointF>
-#include <QScreen>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -107,6 +105,11 @@ void IconButton::setIcon(IconFn icon) {
     update();
 }
 
+void IconButton::setFilled(bool filled) {
+    filled_ = filled;
+    update();
+}
+
 void IconButton::enterEvent(QEnterEvent* event) {
     hover_ = true;
     update();
@@ -122,8 +125,8 @@ void IconButton::leaveEvent(QEvent* event) {
 void IconButton::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    if (hover_ || isChecked()) {
-        paintRounded(painter, QRectF(1, 1, width() - 2, height() - 2), 7.0, hoverFill_, QColor());
+    if (filled_ || hover_ || isChecked()) {
+        paintRounded(painter, QRectF(1, 1, width() - 2, height() - 2), 10.0, hoverFill_, QColor());
     }
     const QColor color = hasTint_ ? tint_ : w90();
     const qreal off = (width() - glyph_) / 2.0;
@@ -137,9 +140,12 @@ void IconButton::paintEvent(QPaintEvent*) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 SettingsFlyout::SettingsFlyout(QWidget* parent)
-    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), quality_(QStringLiteral("HD")) {
-    setAttribute(Qt::WA_TranslucentBackground);
+    : QFrame(parent), quality_(QStringLiteral("HD")) {
+    setObjectName(QStringLiteral("playerSettingsFlyout"));
+    setProperty("playerOverlay", true);
+    setFocusPolicy(Qt::StrongFocus);
     setStyleSheet(QStringLiteral("SettingsFlyout { background: transparent; }"));
+    hide();
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(10, 10, 10, 10);
@@ -214,58 +220,6 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->addWidget(qualitySection_);
     qualitySection_->setVisible(false);
 
-    auto* sep3 = new QFrame(this);
-    sep3->setFixedHeight(1);
-    sep3->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
-    lay->addWidget(sep3);
-
-    anime4kSection_ = new QWidget(this);
-    anime4kSection_->setStyleSheet(QStringLiteral("background: transparent;"));
-    auto* alay = new QVBoxLayout(anime4kSection_);
-    alay->setContentsMargins(0, 0, 0, 0);
-    alay->setSpacing(5);
-
-    auto* arow = new QHBoxLayout();
-    auto* al = new QLabel(QStringLiteral("SHADERS"));
-    al->setFont(monoFont(8));
-    al->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
-    arow->addWidget(al);
-    arow->addStretch();
-    anime4kLabel_ = new QLabel(QStringLiteral("—"));
-    anime4kLabel_->setFont(monoFont(9));
-    anime4kLabel_->setStyleSheet(
-        QStringLiteral("color:%1; font-weight:700; background: transparent;").arg(green().name()));
-    arow->addWidget(anime4kLabel_);
-    alay->addLayout(arow);
-
-    auto* abody = new QVBoxLayout();
-    abody->setContentsMargins(0, 0, 0, 0);
-    abody->setSpacing(2);
-    alay->addLayout(abody);
-    lay->addWidget(anime4kSection_);
-
-    // A missing shader folder is not an error to show - it is a feature that
-    // is simply unavailable, so the rows are built anyway and the section is
-    // hidden in setAnime4KMode, which is the only place that knows the answer.
-    anime4kModes_ = anime4k::availableModes();
-    for (const anime4k::ModeInfo& info : anime4kModes_) {
-        auto* btn = new QPushButton(this);
-        btn->setFont(uiFont(10));
-        btn->setCursor(Qt::PointingHandCursor);
-        btn->setFixedHeight(26);
-        btn->setFocusPolicy(Qt::NoFocus);
-        btn->setToolTip(info.hint);
-        const anime4k::Mode mode = info.mode;
-        connect(btn, &QPushButton::clicked, this, [this, mode] {
-            anime4kMode_ = mode;
-            refresh();
-            emit anime4KSelected(mode);
-        });
-        abody->addWidget(btn);
-        anime4kRows_.append(btn);
-    }
-    anime4kSection_->setVisible(false);
-
     refresh();
 }
 
@@ -326,12 +280,6 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     refresh();
 }
 
-void SettingsFlyout::setAnime4KMode(anime4k::Mode mode) {
-    anime4kMode_ = mode;
-    anime4kSection_->setVisible(!anime4k::findShadersDir().isEmpty());
-    refresh();
-}
-
 void SettingsFlyout::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -342,22 +290,31 @@ void SettingsFlyout::paintEvent(QPaintEvent*) {
 }
 
 void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
-    refresh();
-    setFixedSize(sizeHint());
-    const int x = anchorGlobal.x() + 14 - width();
-    const int y = anchorGlobal.y() - height() - 10;
-    move(qMax(4, x), qMax(4, y));
     show();
+    refresh();
+    ensurePolished();
+    layout()->invalidate();
+    layout()->activate();
+    setFixedSize(layout()->sizeHint());
+    layout()->activate();
+    QWidget* host = parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+
+    const QPoint anchor = host->mapFromGlobal(anchorGlobal);
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    const int x = qBound(bounds.left(), anchor.x() + 14 - width(),
+                         bounds.right() - width() + 1);
+    const int y = qBound(bounds.top(), anchor.y() - height() - 10,
+                         bounds.bottom() - height() + 1);
+    move(x, y);
     raise();
-    // The topmost flag is set in the constructor: setWindowFlag on a visible
-    // widget hides it, so asking for the slot here would close the popover.
-    raise();
-    activateWindow();
+    setFocus(Qt::OtherFocusReason);
 }
 
 void SettingsFlyout::keyPressEvent(QKeyEvent* event) {
-    // A Qt::Popup owns the keyboard while it is open, so Esc lands here and
-    // never reaches the host that would otherwise close this.
+    // The overlay owns focus while open, so Esc lands here before the player.
     if (event->key() == Qt::Key_Escape) {
         close();
         event->accept();
@@ -389,18 +346,6 @@ void SettingsFlyout::refresh() {
         btn->setText((option.current ? QStringLiteral("✓  ") : QString()) + option.label);
         btn->setStyleSheet(rowQss(option.current));
     }
-    QString activeShader = QStringLiteral("—");
-    for (int i = 0; i < anime4kRows_.size() && i < anime4kModes_.size(); ++i) {
-        const anime4k::ModeInfo& info = anime4kModes_[i];
-        QPushButton* btn = anime4kRows_[i];
-        const bool selected = info.mode == anime4kMode_;
-        btn->setText((selected ? QStringLiteral("✓  ") : QString()) + info.label);
-        btn->setStyleSheet(rowQss(selected));
-        if (selected) {
-            activeShader = info.label;
-        }
-    }
-    anime4kLabel_->setText(activeShader);
     for (int i = 0; i < rows_.size(); ++i) {
         const double speed = rows_[i].first;
         QPushButton* btn = rows_[i].second;
@@ -643,9 +588,12 @@ QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
     };
 }
 
-KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
-    setAttribute(Qt::WA_TranslucentBackground);
+KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
+    setObjectName(QStringLiteral("playerKeyHints"));
+    setProperty("playerOverlay", true);
+    setFocusPolicy(Qt::StrongFocus);
     setStyleSheet(QStringLiteral("KeyHints { background: transparent; }"));
+    hide();
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(12, 10, 12, 10);
@@ -686,26 +634,30 @@ void KeyHints::paintEvent(QPaintEvent*) {
 }
 
 void KeyHints::popupNear(const QPoint& anchorGlobal) {
-    setFixedSize(sizeHint());
-    QScreen* screen = QGuiApplication::screenAt(anchorGlobal);
-    if (!screen)
-        screen = QGuiApplication::primaryScreen();
-
-    int x = anchorGlobal.x() + 14 - width();
-    int y = anchorGlobal.y() + 8;
-    if (screen) {
-        const QRect bounds = screen->availableGeometry();
-        x = qBound(bounds.left() + 4, x, bounds.right() - width() - 4);
-        y = qBound(bounds.top() + 4, y, bounds.bottom() - height() - 4);
-    }
-    move(x, y);
     show();
+    ensurePolished();
+    layout()->invalidate();
+    layout()->activate();
+    setFixedSize(layout()->sizeHint());
+    layout()->activate();
+    QWidget* host = parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+
+    const QPoint anchor = host->mapFromGlobal(anchorGlobal);
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    const int x = qBound(bounds.left(), anchor.x() + 14 - width(),
+                         bounds.right() - width() + 1);
+    const int y = qBound(bounds.top(), anchor.y() + 8,
+                         bounds.bottom() - height() + 1);
+    move(x, y);
     raise();
+    setFocus(Qt::OtherFocusReason);
 }
 
 void KeyHints::keyPressEvent(QKeyEvent* event) {
-    // Same reason as SettingsFlyout: an open popup holds the keyboard, so the
-    // key has to be handled here or nowhere.
+    // Same reason as SettingsFlyout: the focused overlay owns Esc.
     if (event->key() == Qt::Key_Escape) {
         close();
         event->accept();

@@ -9,7 +9,6 @@
 
 #include <QColor>
 #include <QPainter>
-#include <QVariantAnimation>
 #include <QWidget>
 
 #include "ShellTheme.hpp"
@@ -87,12 +86,12 @@ private:
     QFont font_;
 };
 
-/// Speaker button + slider that expands on hover (45 px track).
+/// Speaker button plus an always-visible volume track.
 class VolumeGroup : public QWidget {
     Q_OBJECT
 
 public:
-    static constexpr int kTrack = 45;
+    static constexpr int kTrack = 152;
 
     explicit VolumeGroup(QWidget* parent = nullptr);
 
@@ -107,22 +106,15 @@ signals:
     void muteClicked();
 
 protected:
-    void enterEvent(QEnterEvent* event) override;
-    void leaveEvent(QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:
-    void onAnimated(const QVariant& value);
-    void animateTo(double target);
-
     double vol_ = 0.7;
     bool muted_ = false;
-    double t_ = 0.0;  // 0 = collapsed, 1 = expanded
     bool drag_ = false;
-    QVariantAnimation anim_;
 };
 
 }  // namespace shell

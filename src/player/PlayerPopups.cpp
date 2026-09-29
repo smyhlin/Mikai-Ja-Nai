@@ -1,11 +1,9 @@
 #include "PlayerPopups.hpp"
 
-#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QPainter>
 #include <QPushButton>
-#include <QScreen>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
@@ -59,13 +57,13 @@ QString captionQss(int size) {
 //  MENU POPUP
 // ═══════════════════════════════════════════════════════════════════════════
 
-MenuPopup::MenuPopup(const QString& title, QWidget* parent)
-    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
+MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
     setObjectName(QStringLiteral("playerMenuPopup"));
     setProperty("chromePanel", true);
-    setAttribute(Qt::WA_TranslucentBackground);
+    setProperty("playerOverlay", true);
     setFocusPolicy(Qt::StrongFocus);
     setStyleSheet(QString::fromLatin1(kPanelQss));
+    hide();
 
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(kSpacingSmall, kSpacingSmall, kSpacingSmall, kSpacingXs);
@@ -137,28 +135,25 @@ void MenuPopup::refresh() {
 }
 
 void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
-    fitToHint();
-    QScreen* screen = QGuiApplication::screenAt(anchorGlobal);
-    if (!screen)
-        screen = QGuiApplication::primaryScreen();
-
-    const int above = anchorGlobal.y() - height() - 8;
-    int x = anchorGlobal.x() - width();
-    int y = preferAbove ? above : anchorGlobal.y() + 8;
-    if (screen) {
-        const QRect bounds = screen->availableGeometry();
-        if (preferAbove && above < bounds.top() + 4)
-            y = anchorGlobal.y() + 8;
-        x = qBound(bounds.left() + 4, x, bounds.right() - width() - 4);
-        y = qBound(bounds.top() + 4, y, bounds.bottom() - height() - 4);
-    }
-    move(x, y);
     show();
+    fitToHint();
+    QWidget* host = parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+
+    const QPoint anchor = host->mapFromGlobal(anchorGlobal);
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    const int above = anchor.y() - height() - 8;
+    int x = anchor.x() - width();
+    int y = preferAbove ? above : anchor.y() + 8;
+    if (preferAbove && above < bounds.top()) {
+        y = anchor.y() + 8;
+    }
+    x = qBound(bounds.left(), x, bounds.right() - width() + 1);
+    y = qBound(bounds.top(), y, bounds.bottom() - height() + 1);
+    move(x, y);
     raise();
-    // The topmost flag is set in the constructor: calling setWindowFlag on a
-    // visible widget hides it, because Qt rebuilds the native window.
-    raise();
-    activateWindow();
     setFocus(Qt::OtherFocusReason);
 }
 
@@ -202,11 +197,13 @@ void MenuPopup::keyPressEvent(QKeyEvent* event) {
 }
 
 void MenuPopup::fitToHint() {
-    // A previous popupNear pinned both edges, and adjustSize alone would be
-    // bounded by that stale geometry.
     setMinimumSize(0, 0);
     setMaximumSize(kUnlimited, kUnlimited);
-    setFixedSize(sizeHint());
+    ensurePolished();
+    layout()->invalidate();
+    layout()->activate();
+    setFixedSize(layout()->sizeHint());
+    layout()->activate();
 }
 
 void MenuPopup::moveHighlight(int delta) {

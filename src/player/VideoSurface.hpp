@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QOpenGLWidget>
 #include <QString>
 #include <QStringList>
@@ -70,6 +71,10 @@ public:
     bool waitForContext(int timeoutMs);
 
     bool isPlaying() const;
+    /// Records the pause state and announces a change. Every local pause goes
+    /// through here, because the state pump can only report what it did not
+    /// already know.
+    void setPlaying(bool playing);
     double position() const;
     double duration() const;
     int videoWidth() const;
@@ -81,6 +86,7 @@ signals:
     void positionChanged(double seconds);
     void durationChanged(double seconds);
     void videoSizeChanged(int width, int height);
+    void streamStatsChanged(double bytesPerSecond, double framesPerSecond);
     void errorOccurred(const QString& message);
 
 protected:
@@ -96,6 +102,7 @@ private:
     bool startPendingUrl();
     void pumpEvents();
     void handleState();
+    void updateStreamStats();
 
     // Held so the render context can be freed with it current at teardown.
     QOpenGLContext* context_ = nullptr;
@@ -108,6 +115,7 @@ private:
     // live in paintGL: a paused video produces no frames, and the clock,
     // the duration and the pause state would all freeze with the last one.
     QTimer statePump_;
+    QElapsedTimer statsClock_;
 
     bool contextReady_ = false;
     bool pendingOpen_ = false;
@@ -119,6 +127,8 @@ private:
     double duration_ = 0.0;
     int videoWidth_ = 0;
     int videoHeight_ = 0;
+    double networkBytesPerSecond_ = 0.0;
+    double streamFramesPerSecond_ = 0.0;
 };
 
 }  // namespace mplayer
