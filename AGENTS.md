@@ -35,6 +35,12 @@ Layering is strict and enforced by tests:
   bypasses the client's rate limiter entirely, so posters cost no API budget
   and are pure latency. `waitForDone(ms)` drains bulk and image pools first,
   then the shared one.
+- **A `WA_DeleteOnClose` dialog is destroyed the moment it closes, so the page
+  must not keep a pointer to it.** `TitlePage::coverViewer_` had exactly that
+  bug: closing the cover freed the dialog, and the next open called `close()` on
+  freed memory, which is why open-close-open-close crashed. The pointer is
+  cleared from `destroyed`, and nothing pairs `close()` with `deleteLater()`
+  on these. `shutdown()` takes the same care.
 - `MainWindow` is a `QStackedWidget` holding one `SearchPage` and at most one
   `TitlePage`; disposal shuts the title page down (closing every open player
   dialog and flushing the quality cache) before `deleteLater()`.
@@ -65,6 +71,19 @@ Layering is strict and enforced by tests:
   `http-header-fields=Accept-Language: uk-UA` (MoonAnime's CDN answers 400 to a
   playlist without it), user-agent, `hwdec=auto-safe`, `keepaspect=yes`, input
   bindings off (the keyboard belongs to the shell).
+- `src/app/CrashLog.cpp` is installed first thing in `main()`, before any other
+  work, so a failure during startup still leaves a trace. It writes
+  `mikai.log` beside the exe (rotating to `mikai.log.1` past 2 MB), installs a
+  `qInstallMessageHandler` so every Qt message lands there too, and installs a
+  `SetUnhandledExceptionFilter` that writes `mikai-crash-<timestamp>.txt` with
+  the exception code, the faulting address, the module it landed in, whether it
+  was a read or a write, and the tail of the session log. The folder is read
+  from the loader (`GetModuleFileNameW`), never `QDir::currentPath()`: launched
+  from a shortcut, the cwd is somewhere else entirely and a report in the wrong
+  directory is a report nobody finds. The crash handler uses Win32 file APIs
+  rather than Qt, because allocating again inside a fault is how a crash
+  becomes a hang. A session that starts with an old report still on disk says
+  so in the log, so a silent death is never invisible.
 - API envelope: `{ok: true, result, total?, page?, pages?}` or `{ok: false,
   error: {errorCode, code, message}}`. List payloads (`/anime`, relations,
   `similar`) give each summary a `status` and planned `episodes` count (`0` =
@@ -120,7 +139,11 @@ Layering is strict and enforced by tests:
   `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
   `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
-- `src/probes/` — hand-run probes (`mpv_surface_smoke`, `shell_probe`,
+- `src/probes/` — hand-run probes, including three that need the network and
+  a key: `title_page_probe` (the real `TitlePage` against the real API, and the
+  cover open/close loop that pins the use-after-free), `crash_probe`
+  (installs the app's logging then faults on purpose, to prove a report is
+  actually written) (`mpv_surface_smoke`, `shell_probe`,
   `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`,
   `InteractionProbe`) that build a real window and check pixels. CMake
   targets, not tests; nothing in `tests/` runs them.

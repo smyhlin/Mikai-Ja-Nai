@@ -166,5 +166,52 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "TITLE-PROBE: RESULT OK\n");
     });
 
+    // Stage 4: the reported crash. Opening and closing the cover repeatedly used
+    // to fault: the viewer is WA_DeleteOnClose, so closing it destroyed the
+    // dialog while the page kept the pointer, and the NEXT open called close()
+    // on freed memory. Four rounds, because one round passes by luck.
+    QTimer::singleShot(26000, [page] {
+        auto* cover = page->findChild<QWidget*>(QStringLiteral("titleCover"));
+        if (cover == nullptr) {
+            std::fprintf(stderr, "COVER-PROBE: no titleCover label found\n");
+            return;
+        }
+        if (!cover->isEnabled()) {
+            std::fprintf(stderr, "COVER-PROBE: cover is disabled, skipping\n");
+            return;
+        }
+        int opened = 0;
+        for (int round = 0; round < 4; ++round) {
+            const QPointF at(4, 4);
+            QMouseEvent press(QEvent::MouseButtonPress, at, cover->mapToGlobal(at),
+                              Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(cover, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, at, cover->mapToGlobal(at),
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(cover, &release);
+            QApplication::processEvents();
+
+            QWidget* viewer = nullptr;
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                if (QString::fromLatin1(w->metaObject()->className())
+                        .contains(QStringLiteral("CoverViewer"))) {
+                    viewer = w;
+                    break;
+                }
+            }
+            if (viewer == nullptr) {
+                std::fprintf(stderr, "COVER-PROBE: round %d did not open a viewer\n", round);
+                continue;
+            }
+            ++opened;
+            std::fprintf(stderr, "COVER-PROBE: round %d opened the viewer\n", round);
+            viewer->close();
+            QApplication::processEvents();
+        }
+        std::fprintf(stderr, "COVER-PROBE: %d/4 rounds opened; reaching here is the fix\n",
+                     opened);
+        std::fprintf(stderr, "COVER-PROBE: RESULT OK\n");
+    });
+
     return app.exec();
 }

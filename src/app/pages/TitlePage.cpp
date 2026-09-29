@@ -1612,10 +1612,16 @@ void TitlePage::openCoverViewer() {
     }
     if (coverViewer_ != nullptr) {
         coverViewer_->close();
-        coverViewer_->deleteLater();
+        coverViewer_ = nullptr;
     }
     coverViewer_ = new CoverViewer(coverPixmap_, heading_->text(), this);
     coverViewer_->setAttribute(Qt::WA_DeleteOnClose);
+    // WA_DeleteOnClose destroys the viewer the moment it closes, so the page's
+    // pointer is dangling from that instant on. Reopening without clearing it
+    // called close() on freed memory, which is why open-close-open-close
+    // crashed. Clearing on destroyed is the only thing that makes a second open
+    // safe; deleteLater() on top of it would be a double free.
+    connect(coverViewer_, &QObject::destroyed, this, [this] { coverViewer_ = nullptr; });
     coverViewer_->show();
 }
 
@@ -1660,9 +1666,11 @@ void TitlePage::shutdown() {
         }
     }
     if (coverViewer_ != nullptr) {
-        coverViewer_->close();
-        coverViewer_->deleteLater();
+        // close() destroys it via WA_DeleteOnClose, which fires destroyed and
+        // clears the pointer. A deleteLater() on top of that is a double free.
+        CoverViewer* viewer = coverViewer_;
         coverViewer_ = nullptr;
+        viewer->close();
     }
     qDeleteAll(ownedEntries_);
     ownedEntries_.clear();

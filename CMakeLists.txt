@@ -97,6 +97,12 @@ add_executable(interaction_probe src/probes/InteractionProbe.cpp)
 target_link_libraries(interaction_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(interaction_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
+# Proves the crash flow actually writes a report rather than merely being wired
+# up: it installs the same logging the app installs, then faults on purpose.
+add_executable(crash_probe src/probes/CrashProbe.cpp)
+target_link_libraries(crash_probe PRIVATE mikai_app Qt6::Core)
+set_target_properties(crash_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
 # Live title-page probe: builds the real TitlePage against the real API and
 # reports what each provider tab received, then what the player did with a pill.
 # It exists because "the Ashdi episode list never appears" survived every round
@@ -173,6 +179,7 @@ add_test(NAME mikai_tests COMMAND mikai_tests)
 
 if(TARGET mikai_backend)
   set(APP_SOURCES
+    src/app/CrashLog.cpp
     src/app/theme/Theme.cpp
     src/app/theme/Icons.cpp
     src/app/Labels.cpp
@@ -191,6 +198,7 @@ if(TARGET mikai_backend)
 
   set(APP_HEADERS
     src/app/Clipboard.hpp
+    src/app/CrashLog.hpp
     src/app/Labels.hpp
     src/app/theme/Theme.hpp
     src/app/theme/Colors.hpp
