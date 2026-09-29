@@ -55,7 +55,10 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     poster_->setAlignment(Qt::AlignCenter);
     poster_->setFixedSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
     poster_->setWordWrap(true);
-    row->addWidget(poster_, 0, Qt::AlignTop);
+    // AlignLeft as well as AlignTop: AlignTop alone leaves the horizontal
+    // unset, and the box centred the poster in whatever width it was given,
+    // which is what pushed it away from the card edge.
+    row->addWidget(poster_, 0, Qt::AlignTop | Qt::AlignLeft);
 
     auto* text = new QVBoxLayout();
     text->setContentsMargins(0, 0, 0, 0);
@@ -64,16 +67,24 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     title_ = makeLabel(QStringLiteral("carouselTitle"), backend::displayName(summary.titles));
     title_->setWordWrap(true);
     title_->setFixedHeight(title_->fontMetrics().height() * 2);
+    // Expanding, not Preferred. A word-wrapped label keeps its sizeHint width,
+    // so the column beside an 80px poster left the title wrapping inside a
+    // 57px sliver while the rest of the card sat empty.
+    title_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     status_ = makeLabel(QStringLiteral("carouselStatus"), QString());
     status_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     episodes_ = makeLabel(QStringLiteral("carouselEpisodes"), QString());
     episodes_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
 
-    text->addWidget(title_);
-    text->addWidget(status_);
-    text->addWidget(episodes_);
+    // The title box is always two lines tall, so a one-line title would leave
+    // the status and the count floating halfway down the card against a
+    // two-line one. Top-aligning the stack puts every card's facts on the
+    // same line whichever way the title happens to wrap.
+    text->addWidget(title_, 0, Qt::AlignTop);
+    text->addWidget(status_, 0, Qt::AlignTop);
+    text->addWidget(episodes_, 0, Qt::AlignTop);
     text->addStretch(1);
-    row->addLayout(text, 1);
+    row->addLayout(text, 1);  // the text column takes everything the poster does not
 
     connect(this, &QPushButton::clicked, this,
             [this] { Q_EMIT openRequested(ref_, posterUrl_); });
