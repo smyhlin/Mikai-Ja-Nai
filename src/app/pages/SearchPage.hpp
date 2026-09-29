@@ -122,6 +122,7 @@ private:
     void resultsContextMenu(const QPoint& position);
     void animeCardMenu(const QString& ref, const QPoint& globalPos);
     void requestThumb(const QString& url);
+    void applyThumb(const QString& url, const QByteArray& data);
     void applyThumbs();
     void applyFeedPosters();
 
@@ -146,7 +147,7 @@ private:
     QHash<QString, QVector<QPair<QString, QLabel*>>> feedPosterLabels_;
     QSet<QString> detailLookups_;
     QHash<QString, backend::AnimeDetail> cardDetails_;
-    QHash<QString, QString> healedPosters_;
+    QHash<QString, backend::PosterSet> healedPosters_;
     QHash<QString, int> feedSeq_;
     QHash<QString, CarouselSection*> carousels_;
     QHash<QString, FeedSection*> feeds_;

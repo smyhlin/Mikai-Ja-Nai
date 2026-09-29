@@ -23,4 +23,6 @@ class TestLiveOracle : public QObject {
   void oneDubCarriesEpisodesOneThroughTwelve();
   void aRealPosterWebpDecodes();
   void theLiveStreamLadderCarriesTheUsualHeights();
+  void everyProviderOfTheCourIsReachable();
+  void everyProviderOfEpisodeTwelveCarriesTheUsualHeights();
 };

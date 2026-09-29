@@ -1,5 +1,7 @@
 #include "pages/TitlePage.hpp"
 
+#include "pages/EpisodeGrid.hpp"
+
 #include "Clipboard.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
@@ -629,7 +631,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             }
             // A carousel arriving under a collapsed one must not expand it: the
             // reader already made that choice.
-            const bool expand = !relatedButton_->isVisible() || relatedButton_->isChecked();
+            const bool expand = relatedHost_->isVisible() || !relatedButton_->isVisible();
             relatedLayout_->addWidget(
                 buildRelatedCarousel(tr("Рекомендації на Mikai"), entries));
             setRelatedExpanded(expand);
@@ -752,9 +754,11 @@ QWidget* TitlePage::buildRelatedCarousel(
 }
 
 void TitlePage::setRelatedExpanded(bool expanded) {
-    relatedButton_->setVisible(expanded);
     relatedHost_->setVisible(expanded);
+    relatedButton_->setVisible(true);
     relatedButton_->setText(expanded ? tr("Сховати схожі") : tr("Пов’язані та схожі"));
+    const QSignalBlocker blocker(relatedButton_);
+    relatedButton_->setChecked(expanded);
     if (expanded) {
         QTimer::singleShot(0, this, [this] { overviewScroll_->ensureWidgetVisible(relatedHost_); });
     }
@@ -989,7 +993,16 @@ void TitlePage::renderTabPage(int stateIndex) {
         numbers << entry->number;
     }
     state.pager->setState(state.page + 1, totalPages, state.entries.size(), numbers);
-    reflowGrid(stateIndex);
+    const int columns = qMax(
+        1, state.grid->width() / (theme::kEpisodeButtonWidth + theme::kSpacingSmall));
+    QVector<QWidget*> buttons;
+    buttons.reserve(end - start);
+    for (int index = start; index < end; ++index) {
+        buttons.append(state.entries.at(index)->button);
+    }
+    layoutEpisodeGrid(state.gridLayout, buttons, columns);
+    state.columns = columns;
+    state.grid->updateGeometry();
     QTimer::singleShot(0, this, [this] { fitEpisodeSection(); });
 }
 
@@ -1018,18 +1031,14 @@ void TitlePage::reflowGrid(int stateIndex) {
     if (columns == state.columns) {
         return;
     }
-    while (QLayoutItem* stale = state.gridLayout->takeAt(0)) {
-        delete stale;
-    }
     const int start = state.page * state.pageSize;
     const int end = qMin(start + state.pageSize, state.entries.size());
+    QVector<QWidget*> buttons;
+    buttons.reserve(end - start);
     for (int index = start; index < end; ++index) {
-        state.gridLayout->addWidget(state.entries.at(index)->button, (index - start) / columns,
-                                    (index - start) % columns, Qt::AlignTop);
+        buttons.append(state.entries.at(index)->button);
     }
-    for (int column = 0; column < columns; ++column) {
-        state.gridLayout->setColumnStretch(column, 1);
-    }
+    layoutEpisodeGrid(state.gridLayout, buttons, columns);
     state.columns = columns;
     state.grid->updateGeometry();
     QTimer::singleShot(0, this, [this] { fitEpisodeSection(); });

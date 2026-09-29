@@ -6,6 +6,7 @@
 #include <QString>
 
 class QPixmap;
+class QShowEvent;
 
 namespace mikai::app {
 
@@ -42,6 +43,9 @@ class CoverViewer : public QDialog {
 public:
     CoverViewer(const QPixmap& pixmap, const QString& caption, QWidget* parent = nullptr);
     ~CoverViewer() override;
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private:
     class View;

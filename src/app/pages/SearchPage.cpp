@@ -341,6 +341,10 @@ QList<backend::AnimeSummary> SearchPage::readRecentTitles() {
         if (isRemoteUrl(poster)) {
             summary.poster.big.webp = poster;
         }
+        const QString thumb = record.value(QStringLiteral("thumb")).toString();
+        if (isRemoteUrl(thumb)) {
+            summary.poster.small.webp = thumb;
+        }
         items.append(summary);
         if (items.size() >= theme::kHomeRecentMaxTitles) {
             break;
@@ -357,6 +361,8 @@ void SearchPage::persistRecentTitles() {
         record.insert(QStringLiteral("title"), backend::displayName(recent.titles));
         const QString poster = backend::posterUrl(recent);
         record.insert(QStringLiteral("poster"), isRemoteUrl(poster) ? poster : QString());
+        const QString thumb = backend::thumbUrl(recent);
+        record.insert(QStringLiteral("thumb"), isRemoteUrl(thumb) ? thumb : QString());
         records.append(record);
     }
     QSettings settings;
@@ -421,11 +427,16 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
         connect(card, &TitleCard::menuRequested, this, &SearchPage::animeCardMenu);
         section->cards->addWidget(card);
         cards.append(card);
-        // One task per card: the image pool paints a whole feed at once instead
-        // of waiting for the slowest poster in it.
+    }
+    // Registered before the thumbs are asked for: a url already in the cache
+    // paints synchronously, and it can only find these cards once they are
+    // the ones carouselWidgets_ points at.
+    carouselWidgets_.insert(key, cards);
+    // One task per card: the image pool paints a whole feed at once instead
+    // of waiting for the slowest poster in it.
+    for (TitleCard* card : cards) {
         requestThumb(card->imageKey());
     }
-    carouselWidgets_.insert(key, cards);
 
     QWidget* track = section->scroll->widget();
     section->cards->activate();
@@ -505,6 +516,13 @@ void SearchPage::queueRecentPosterHeal(const QString& ref,
     if (!isRemoteUrl(cover)) {
         return;
     }
+    backend::PosterSet poster;
+    poster.big.webp = cover;
+    // A card keys on thumbUrl, i.e. poster.small. Left empty it falls back to
+    // the big cover, so every healed recent card pulls full-size artwork.
+    const QString small = detail.poster.small.webp.isEmpty() ? detail.poster.small.jpg
+                                                             : detail.poster.small.webp;
+    poster.small.webp = isRemoteUrl(small) ? small : cover;
     const QList<backend::AnimeSummary>& recent = carouselEntries_.value(kRecentKey);
     const bool isRecent = std::any_of(recent.cbegin(), recent.cend(),
                                       [&ref](const backend::AnimeSummary& item) {
@@ -513,23 +531,30 @@ void SearchPage::queueRecentPosterHeal(const QString& ref,
     if (!isRecent) {
         return;
     }
-    healedPosters_.insert(ref, cover);
+    healedPosters_.insert(ref, poster);
     healTimer_->start();
 }
 
 void SearchPage::flushRecentPosters() {
-    const QHash<QString, QString> healed = healedPosters_;
+    const QHash<QString, backend::PosterSet> healed = healedPosters_;
     healedPosters_.clear();
     if (healed.isEmpty()) {
         return;
     }
     QList<backend::AnimeSummary> refreshed = carouselEntries_.value(kRecentKey);
+    // A heal that lands on the url already stored changes nothing, and a
+    // rebuild for nothing is what blanks the carousel in the first place.
+    bool changed = false;
     for (backend::AnimeSummary& item : refreshed) {
         const auto it = healed.constFind(item.ref);
-        if (it != healed.constEnd()) {
-            item.poster = backend::PosterSet();
-            item.poster.big.webp = it.value();
+        if (it == healed.constEnd() || item.poster.big.webp == it.value().big.webp) {
+            continue;
         }
+        item.poster = it.value();
+        changed = true;
+    }
+    if (!changed) {
+        return;
     }
     carouselEntries_.insert(kRecentKey, refreshed);
     recentItems_ = refreshed.mid(0, theme::kHomeRecentMaxTitles);
@@ -545,14 +570,21 @@ void SearchPage::refreshFeedSettings() {
         return;
     }
     for (const QString& key : feeds::all()) {
-        feedSeq_[key] += 1;
+        const bool on = enabledFeeds_.contains(key);
+        // Bumping the sequence drops an in-flight result, so it belongs only
+        // to a feed being switched off. Bumping a feed that stays on threw away
+        // the answer to the request it was already waiting on and left the
+        // block on its loading line with nothing left to finish it.
+        if (previous.contains(key) && !on) {
+            feedSeq_[key] += 1;
+        }
         CarouselSection* carousel = carouselSection(key);
         FeedSection* feed = feedSection(key);
         if (carousel != nullptr) {
-            carousel->section->setVisible(enabledFeeds_.contains(key));
+            carousel->section->setVisible(on);
         }
         if (feed != nullptr) {
-            feed->section->setVisible(enabledFeeds_.contains(key));
+            feed->section->setVisible(on);
         }
     }
     // A feed switched on has to load; one switched off is simply never asked.
@@ -1104,7 +1136,15 @@ void SearchPage::requestThumb(const QString& url) {
     // One task per image. A single task looping over the URLs made sixty
     // downloads wait on each other inside one worker, which is what the home
     // page felt like.
-    if (url.isEmpty() || thumbCache_.contains(url) || thumbsInFlight_.contains(url)) {
+    if (url.isEmpty() || thumbsInFlight_.contains(url)) {
+        return;
+    }
+    // A render rebuilds its widgets, so a cached image has to paint the ones
+    // standing now. Skipping here left every rebuilt card on its placeholder
+    // until the next full reload of that url.
+    const auto cached = thumbCache_.constFind(url);
+    if (cached != thumbCache_.constEnd()) {
+        applyThumb(url, cached.value());
         return;
     }
     thumbsInFlight_.insert(url);
@@ -1113,15 +1153,19 @@ void SearchPage::requestThumb(const QString& url) {
         [this, url](const QVariant& result) {
             thumbsInFlight_.remove(url);
             thumbCache_.insert(url, result.toByteArray());
-            applyCarouselThumbs({{url, result.toByteArray()}});
-            const QPixmap pixmap = pixmapFrom(result.toByteArray());
-            if (!pixmap.isNull()) {
-                icons_.insert(url, pixmap);
-            }
-            applyThumbs();
-            applyFeedPosters();
+            applyThumb(url, result.toByteArray());
         },
         [this, url](const QString&) { thumbsInFlight_.remove(url); });
+}
+
+void SearchPage::applyThumb(const QString& url, const QByteArray& data) {
+    applyCarouselThumbs({{url, data}});
+    const QPixmap pixmap = pixmapFrom(data);
+    if (!pixmap.isNull()) {
+        icons_.insert(url, pixmap);
+    }
+    applyThumbs();
+    applyFeedPosters();
 }
 
 void SearchPage::applyThumbs() {

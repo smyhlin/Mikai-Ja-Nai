@@ -97,6 +97,14 @@ add_executable(interaction_probe src/probes/InteractionProbe.cpp)
 target_link_libraries(interaction_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(interaction_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
+# Live title-page probe: builds the real TitlePage against the real API and
+# reports what each provider tab received, then what the player did with a pill.
+# It exists because "the Ashdi episode list never appears" survived every round
+# of source reading, and the only honest way to settle it was to look.
+add_executable(title_page_probe src/probes/TitlePageProbe.cpp)
+target_link_libraries(title_page_probe PRIVATE mikai_app mikai_backend Qt6::Widgets Qt6::Test)
+set_target_properties(title_page_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
 # mikai_backend: the Qt-free domain models plus the Qt Network client that
 # replaced mikai_backend/. It only needs Core and Network so the worker pools
 # can use it from threads without dragging widgets in.

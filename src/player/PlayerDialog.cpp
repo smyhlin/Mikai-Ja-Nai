@@ -991,9 +991,14 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
         // just been opened, and the selector appeared not to work at all.
         audioPopup_->close();
         subtitlesPopup_->close();
-        seriesDrawer_->setVisible(false);
         strip_->setVisible(false);
         statusPanel_->hide();
+        // The episode drawer stays. It is a layout sibling of the video, not a
+        // floating panel, and the user opened it deliberately - closing it here
+        // made an explicitly expanded list blink out from under someone
+        // reading it, which is how "the player has no episode list" gets
+        // reported. The idle timer may take the chrome; it does not get to
+        // overrule that choice.
     } else {
         strip_->setVisible(true);
         seriesDrawer_->setVisible(seriesExpanded_);

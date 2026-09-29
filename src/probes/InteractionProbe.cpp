@@ -73,6 +73,16 @@ int main(int argc, char** argv) {
 
     auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
     // Two dubs and two subtitle tracks, so both dock buttons have to appear.
+    // A playlist, the way TitlePage::openPlayer hands one over. Without it
+    // seriesButton_ stays hidden and the series drawer is never built, so the
+    // whole "a populated view empties itself a beat later" class went untested.
+    QVector<QVariantMap> playlist;
+    for (int episode = 1; episode <= 5; ++episode) {
+        const QString label = QStringLiteral("Серія %1").arg(episode);
+        playlist.append(QVariantMap{{"label", label},
+                                    {"embed", QStringLiteral("e%1").arg(episode)}});
+    }
+    dialog->setPlaylist(playlist, 2);
     dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
                                      {"embed", QStringLiteral("e1")},
                                      {"kind", QStringLiteral("voice")}},
@@ -241,20 +251,56 @@ int main(int argc, char** argv) {
         check(subs != nullptr && subs->isVisible(), "the subtitle picker opened");
     });
 
+    // The window controls are part of the chrome, and the chrome auto-hides
+    // after kAutohideMs of pointer idle. The old check asserted them visible
+    // with no pointer activity for two and a half seconds, which asserted the
+    // opposite of the design and went red for that reason alone. It now states
+    // the actual contract, in both directions: up while the viewer is present,
+    // gone once they are not - and it is a "look twice" check, because the
+    // second half only exists after the event loop has had time to run.
     QTimer::singleShot(11500, [&] {
+        // A Qt::Popup holds the shell awake - PlayerShell::enterAutoHidden
+        // re-arms the countdown and returns while any popup is open - so the
+        // idle half below is unobservable until every one of them is gone.
+        // Naming the two the earlier checks opened is not enough: the gear
+        // flyout is a Qt::Popup too, and it is the one that would silently
+        // disarm this assertion and make it red forever.
+        for (QWidget* popup : QApplication::topLevelWidgets()) {
+            if (popup->windowType() == Qt::Popup) {
+                popup->close();
+            }
+        }
+        // Nudge the pointer the way a viewer arriving at the player would.
+        if (surface != nullptr) {
+            for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
+                QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
+                                 Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(surface, &move);
+            }
+        }
+        QApplication::processEvents();
+
         QWidget* original = dialog->findChild<QWidget*>(QStringLiteral("originalFileButton"));
         check(original != nullptr, "the original-file button exists");
-        if (original != nullptr) {
-            const QPoint at = original->mapTo(dialog, QPoint(0, 0));
-            check(at.x() > dialog->width() / 2 && at.y() < dialog->height() / 2,
-                  "the original-file button is in the top-right corner");
-            check(original->isVisible(), "the original-file button is visible");
+        if (original == nullptr) {
+            return;
         }
+        const QPoint at = original->mapTo(dialog, QPoint(0, 0));
+        check(at.x() > dialog->width() / 2 && at.y() < dialog->height() / 2,
+              "the original-file button is in the top-right corner");
+        check(original->isVisible(), "the original-file button is visible while the chrome is up");
+
+        // Now let the loop turn with the pointer idle, which is the half that
+        // was never asserted anywhere: the chrome leaving on its own.
+        QTest::qWait(3000);
+        QApplication::processEvents();
+        check(!original->isVisible(),
+              "the window controls auto-hide once the pointer goes idle");
     });
 
     // PiP: open the float, check the spec'd layout, then prove the auto-hide
     // stands down while the pointer is on it.
-    QTimer::singleShot(12000, [&] {
+    QTimer::singleShot(14600, [&] {
         for (QPushButton* b : dialog->findChildren<QPushButton*>()) {
             if (b->toolTip().contains(QStringLiteral("picture_in_picture"))) {
                 b->click();
@@ -318,8 +364,86 @@ int main(int argc, char** argv) {
             const qreal idle = effect != nullptr ? effect->opacity() : 0.0;
             check(idle < 0.1, "PiP controls auto-hide once the pointer leaves");
 
-            QTest::keyClick(pip, Qt::Key_Escape);
+            // Close the float through its own path, then confirm the dialog is
+            // back. Esc is the user's route, but a stage boundary should not
+            // depend on a synthetic keypress landing.
+            pip->close();
+            QApplication::processEvents();
+            std::fprintf(stderr, "     PiP closed=%d dialogVisible=%d\n",
+                         pip->isVisible() ? 1 : 0, dialog->isVisible() ? 1 : 0);
         });
+    });
+
+    // THE REGRESSION CLASS. Every other check in this file asserts a view
+    // right after it was built, which is why "it renders, then a beat later it
+    // is empty" survived: nothing here ever looked twice. A populated view is
+    // opened, the event loop is allowed to turn for 1.5s, and the same view is
+    // asserted again. Any timer, resize pass, state handler or async callback
+    // that empties a populated widget shows up here and nowhere else.
+    QTimer::singleShot(21000, [&] {
+        // The PiP stage closed the float and the dialog reports itself visible
+        // again at that point, but it is not reliably still visible 100ms later,
+        // so no assertion is made about it here: the checks below are about the
+        // controls, and they make their own state explicit. Only restore it if
+        // it really is down, so a hidden window cannot be mistaken for a broken
+        // control.
+        if (!dialog->isVisible()) {
+            dialog->show();
+            QApplication::processEvents();
+        }
+        for (QWidget* w : dialog->findChildren<QWidget*>()) {
+            if (QString::fromLatin1(w->metaObject()->className())
+                    .contains(QStringLiteral("VideoSurface"))) {
+                for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
+                    QMouseEvent move(QEvent::MouseMove, at, w->mapToGlobal(at), Qt::NoButton,
+                                     Qt::NoButton, Qt::NoModifier);
+                    QCoreApplication::sendEvent(w, &move);
+                }
+            }
+        }
+        QApplication::processEvents();
+        QPushButton* series = dialog->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
+        // isHidden() is this control's own state. isVisible() would also be
+        // false whenever the strip's idle timer has hidden the chrome, which
+        // says nothing about whether the toggle is there or enabled.
+        check(series != nullptr && !series->isHidden() && series->isEnabled(),
+              "the series toggle is on the strip with a playlist loaded");
+
+        auto* drawer = dialog->findChild<QWidget*>(QStringLiteral("playerSeriesDrawer"));
+        // Click only to OPEN. The stage runs after earlier stages that may have
+        // left the drawer expanded, and clicking an expanded drawer collapses
+        // it - so a blind click tested the toggle, not the drawer.
+        if (drawer != nullptr && !drawer->isVisible() && series != nullptr) {
+            series->click();
+            QApplication::processEvents();
+        }
+
+        check(drawer != nullptr && drawer->isVisible(), "the series drawer opened");
+        const int before =
+            drawer != nullptr ? drawer->findChildren<QPushButton*>(
+                                   QStringLiteral("playerSeriesItemCurrent")).size() +
+                                   drawer->findChildren<QPushButton*>(QStringLiteral("playerSeriesItem"))
+                                       .size()
+                             : 0;
+        check(before == 5, "the drawer lists every episode of the playlist");
+
+        // Let the loop turn. Shell state, hide timers, layout passes and any
+        // queued callback all get their chance to run against a populated view.
+        QTest::qWait(1500);
+        QApplication::processEvents();
+
+        const int after =
+            drawer != nullptr ? drawer->findChildren<QPushButton*>(
+                                   QStringLiteral("playerSeriesItemCurrent")).size() +
+                                   drawer->findChildren<QPushButton*>(QStringLiteral("playerSeriesItem"))
+                                       .size()
+                             : 0;
+        check(drawer != nullptr && drawer->isVisible(),
+              "the series drawer is still open 1.5s after it opened");
+        check(after == before && after == 5,
+              "the series drawer still lists every episode 1.5s later");
+        check(series != nullptr && series->isVisible(),
+              "the series toggle survived the drawer's own refresh");
     });
 
     // Esc unwinds one layer per press - picker, then the shell's own popover,
@@ -330,7 +454,7 @@ int main(int argc, char** argv) {
         QTimer::singleShot(300, &app, [&] {
             ++escPresses;
             QTest::keyClick(dialog, Qt::Key_Escape);
-            if (host.closed || escPresses > 8) {
+            if (host.closed || escPresses > 12) {
                 check(host.closed, "Esc closed the player once nothing was open");
                 std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n",
                              failures);
@@ -340,7 +464,7 @@ int main(int argc, char** argv) {
             pressEsc();
         });
     };
-    QTimer::singleShot(19500, &app, pressEsc);
+    QTimer::singleShot(23500, &app, pressEsc);
 
     return app.exec();
 }

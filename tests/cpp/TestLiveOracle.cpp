@@ -7,6 +7,8 @@
 #include <backend/Releases.hpp>
 #include <backend/Streams.hpp>
 
+#include <exception>
+
 #include <QtCore/QSet>
 #include <QtGui/QImage>
 #include <QtCore/QStringList>
@@ -153,6 +155,59 @@ void TestLiveOracle::aRealPosterWebpDecodes() {
            "the decoded poster has no pixels");
 }
 
+namespace {
+
+/// Every (provider, embed) pair a release offers, across all of its episodes.
+/// The providers are derived from the embed URL through the same detectSite the
+/// player uses, not from the API's own "provider" string, so a URL the extractor
+/// would reject shows up here instead of passing silently.
+QVector<QPair<QString, QString>> providerEmbeds(const Release& release) {
+  QVector<QPair<QString, QString>> pairs;
+  for (const auto& episode : release.episodes) {
+    for (const auto& source : episode.sources) {
+      const QString embed = asText(source.embed_url);
+      if (embed.isEmpty()) {
+        continue;
+      }
+      QString provider;
+      try {
+        provider = mikai::backend::detectSite(embed);
+      } catch (const std::exception&) {
+        provider = asText(source.provider).toLower();
+      }
+      pairs.append({provider, embed});
+    }
+  }
+  return pairs;
+}
+
+/// The ladder a provider serves for one embed, or an empty string plus the
+/// reason it could not be read. A provider being unreachable is not the same
+/// defect as a provider answering with a broken ladder, and conflating the two
+/// is how a live suite turns flaky: qualityStreams throws StreamError on an
+/// HTTP error, and an exception escaping a QTest slot terminates the process
+/// instead of failing one test.
+struct Ladder {
+  QString heights;
+  QString failure;
+};
+
+Ladder ladderOf(const QString& embed) {
+  try {
+    const QMap<int, QString> qualities = qualityStreams(embed);
+    QStringList list;
+    for (auto it = qualities.cbegin(); it != qualities.cend(); ++it) {
+      list << QString::number(it.key());
+    }
+    list.sort();
+    return {list.join(QLatin1Char(',')), {}};
+  } catch (const std::exception& error) {
+    return {{}, QString::fromUtf8(error.what())};
+  }
+}
+
+}  // namespace
+
 void TestLiveOracle::theLiveStreamLadderCarriesTheUsualHeights() {
   MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
   const PlayerResult player = client.getPlayer(QString::fromLatin1(kRef));
@@ -187,4 +242,86 @@ void TestLiveOracle::theLiveStreamLadderCarriesTheUsualHeights() {
   // 1080 would silently cap playback for everyone on a slow connection.
   QVERIFY2(heights.contains(480) && heights.contains(720) && heights.contains(1080),
            qPrintable(QStringLiteral("heights: %1").arg(list.join(','))));
+}
+
+void TestLiveOracle::everyProviderOfTheCourIsReachable() {
+  // Guards the fixture, not the code. This suite's ladder assertions run
+  // against a fixed set of providers, and if the API quietly stops offering one
+  // of them, those assertions would keep passing while covering less. Naming
+  // the providers makes that shrink loud instead of silent.
+  MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
+  const PlayerResult player = client.getPlayer(QString::fromLatin1(kRef));
+  QSet<QString> providers;
+  for (const Release& release : sortReleases(player.releases)) {
+    for (const auto& pair : providerEmbeds(release)) {
+      providers.insert(pair.first);
+    }
+  }
+  QVERIFY2(providers.contains(QStringLiteral("ashdi")),
+           qPrintable(QStringLiteral("providers: %1")
+                          .arg(QStringList(providers.begin(), providers.end()).join(','))));
+  QVERIFY2(providers.contains(QStringLiteral("moon")),
+           qPrintable(QStringLiteral("providers: %1")
+                          .arg(QStringList(providers.begin(), providers.end()).join(','))));
+}
+
+void TestLiveOracle::everyProviderOfEpisodeTwelveCarriesTheUsualHeights() {
+  // The single-provider ladder test above takes the FIRST source of episode 12,
+  // which on this title is always Ashdi. Moon therefore had no ladder coverage
+  // at all: a Moon-only extraction regression - a changed master format, a new
+  // wrapper - would keep every other test green. Both providers are walked
+  // explicitly here, one at a time, so each is asserted on its own terms.
+  MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
+  const PlayerResult player = client.getPlayer(QString::fromLatin1(kRef));
+  const QVector<Release> sorted = sortReleases(player.releases);
+  const int index =
+      indexOfRelease(sorted, QStringLiteral("voice"), QString::fromUtf8("Рідний Голос"));
+  QVERIFY(index >= 0);
+
+  QMap<QString, QString> byProvider;
+  for (const auto& episode : sorted[index].episodes) {
+    if (asEpisodeText(episode.number) != QStringLiteral("12")) {
+      continue;
+    }
+    for (const auto& source : episode.sources) {
+      const QString embed = asText(source.embed_url);
+      if (embed.isEmpty()) {
+        continue;
+      }
+      QString provider;
+      try {
+        provider = mikai::backend::detectSite(embed);
+      } catch (const std::exception&) {
+        provider = asText(source.provider).toLower();
+      }
+      if (!byProvider.contains(provider)) {
+        byProvider.insert(provider, embed);
+      }
+    }
+  }
+  QVERIFY2(byProvider.size() >= 2,
+           qPrintable(QStringLiteral("episode 12 offered %1 provider(s)")
+                          .arg(byProvider.size())));
+  QStringList checked;
+  for (auto it = byProvider.constBegin(); it != byProvider.constEnd(); ++it) {
+    const Ladder ladder = ladderOf(it.value());
+    if (!ladder.failure.isEmpty()) {
+      // Upstream being down is not a ladder defect, but silently skipping it
+      // would let this test decay into checking nothing. Say so, loudly, and
+      // keep going so the providers that DID answer are still asserted.
+      qWarning("provider %s could not be read: %s", qPrintable(it.key()),
+               qPrintable(ladder.failure));
+      continue;
+    }
+    checked << it.key();
+    // The message names the provider, so a red run says which one broke rather
+    // than making the reader re-derive it from the fixture.
+    QVERIFY2(ladder.heights.contains(QLatin1String("480")) &&
+                 ladder.heights.contains(QLatin1String("720")) &&
+                 ladder.heights.contains(QLatin1String("1080")),
+             qPrintable(QStringLiteral("%1 heights: %2").arg(it.key(), ladder.heights)));
+  }
+  // A run in which no provider could be read has verified nothing at all, and
+  // must not report success.
+  QVERIFY2(!checked.isEmpty(), "no provider of episode 12 could be read at all");
 }

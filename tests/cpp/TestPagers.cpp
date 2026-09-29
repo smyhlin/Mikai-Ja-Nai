@@ -1,13 +1,17 @@
 #include "TestPagers.hpp"
 
+#include <pages/EpisodeGrid.hpp>
 #include <theme/Metrics.hpp>
 #include <widgets/RangePager.hpp>
 
 #include <QtCore/QStringList>
 #include <QtTest/QSignalSpy>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QWidget>
 
 using mikai::app::RangePager;
+using mikai::app::layoutEpisodeGrid;
 using mikai::app::pageRangeLabel;
 
 namespace {
@@ -173,4 +177,125 @@ void TestPagers::pagerArrowEnablesAtTheEdges() {
   QVERIFY(previous->isEnabled());
   QVERIFY(!next->isEnabled());
   QVERIFY(!last->isEnabled());
+}
+
+// ── EpisodeGrid ─────────────────────────────────────────────────────────
+//
+// The bug these pin: reflowGrid used to open with `if (columns ==
+// state.columns) return;` while renderTabPage had just emptied the layout and
+// rebuilt the buttons. On any re-render at an unchanged width the guard fired,
+// nothing was ever added back, and the grid went blank - the pill row vanished
+// while the pager still advanced. The guard was reachable from two callers, only
+// one of which had invalidated what it was guarding.
+//
+// These call the real layoutEpisodeGrid, so they go red if the "populate" step
+// is ever made conditional again, however it comes to be spelled.
+
+int rowOf(QGridLayout* grid, int index) {
+  int row = -1, column = -1, rowSpan = -1, columnSpan = -1;
+  grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
+  return row;
+}
+int columnOf(QGridLayout* grid, int index) {
+  int row = -1, column = -1, rowSpan = -1, columnSpan = -1;
+  grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
+  return column;
+}
+
+// A grid and `count` buttons, the way a tab builds one page of pills.
+struct EpisodeGridFixture {
+  QWidget host;
+  QGridLayout* grid = nullptr;
+  QVector<QWidget*> buttons;
+
+  explicit EpisodeGridFixture(int count) : grid(new QGridLayout(&host)) {
+    for (int i = 0; i < count; ++i) {
+      auto* button = new QPushButton(QString::number(i + 1), &host);
+      buttons.append(button);
+    }
+  }
+};
+
+void TestPagers::episodeGridLaysOutAPageOfButtons() {
+  EpisodeGridFixture fixture(12);
+  layoutEpisodeGrid(fixture.grid, fixture.buttons, 4);
+  QCOMPARE(fixture.grid->count(), 12);
+  // 4 per row means the twelfth pill sits on the third row, first column.
+  QCOMPARE(rowOf(fixture.grid, 11), 2);
+  QCOMPARE(columnOf(fixture.grid, 11), 3);
+  // And the first row really is the first four, in order.
+  QCOMPARE(rowOf(fixture.grid, 0), 0);
+  QCOMPARE(columnOf(fixture.grid, 3), 3);
+}
+
+void TestPagers::episodeGridRerendersAtTheSameColumnCount() {
+  // THE REGRESSION. Emptied and rebuilt at an unchanged width, the grid must
+  // still end up holding the page. A guard that skips the work here is the
+  // whole defect: before the fix this left count() at 0.
+  EpisodeGridFixture fixture(12);
+  layoutEpisodeGrid(fixture.grid, fixture.buttons, 4);
+  QCOMPARE(fixture.grid->count(), 12);
+
+  // What renderTabPage does between renders: drop the old pills, build new ones.
+  while (QLayoutItem* stale = fixture.grid->takeAt(0)) {
+    delete stale;
+  }
+  QCOMPARE(fixture.grid->count(), 0);
+  QVector<QWidget*> fresh;
+  for (QWidget* button : fixture.buttons) {
+    fresh.append(new QPushButton(qobject_cast<QPushButton*>(button)->text(), &fixture.host));
+  }
+
+  // Same column count as last time. The populate must still happen.
+  layoutEpisodeGrid(fixture.grid, fresh, 4);
+  QCOMPARE(fixture.grid->count(), 12);
+  QCOMPARE(rowOf(fixture.grid, 11), 2);
+  // The pills on screen are this render's, not the ones it replaced.
+  QCOMPARE(qobject_cast<QPushButton*>(fixture.grid->itemAt(0)->widget()), fresh.at(0));
+  QCOMPARE(qobject_cast<QPushButton*>(fixture.grid->itemAt(11)->widget()), fresh.at(11));
+}
+
+void TestPagers::episodeGridSwapsTheVisiblePage() {
+  // Paging hands the function a different slice of the same entry list. The
+  // grid must show exactly that slice - not the union with the old page, which
+  // is the other half of "a pill from the previous page must never still be a
+  // click target".
+  EpisodeGridFixture fixture(300);
+  QVector<QWidget*> firstPage;
+  for (int i = 0; i < 140; ++i) {
+    firstPage.append(fixture.buttons.at(i));
+  }
+  layoutEpisodeGrid(fixture.grid, firstPage, 14);
+  QCOMPARE(fixture.grid->count(), 140);
+
+  QVector<QWidget*> secondPage;
+  for (int i = 140; i < 280; ++i) {
+    secondPage.append(fixture.buttons.at(i));
+  }
+  layoutEpisodeGrid(fixture.grid, secondPage, 14);
+  QCOMPARE(fixture.grid->count(), 140);
+  QCOMPARE(qobject_cast<QPushButton*>(fixture.grid->itemAt(0)->widget()), secondPage.at(0));
+  QCOMPARE(qobject_cast<QPushButton*>(fixture.grid->itemAt(139)->widget()), secondPage.at(139));
+  // A pill from the page that just left is gone from the layout.
+  for (int i = 0; i < fixture.grid->count(); ++i) {
+    QVERIFY(!firstPage.contains(fixture.grid->itemAt(i)->widget()));
+  }
+}
+
+void TestPagers::episodeGridSurvivesANullPointerAndAZeroWidth() {
+  // A grid that has not been sized yet computes a column count of 0, and a
+  // page slice can contain a null button. Neither may divide by zero or leave
+  // a half-built layout; the resolved column count clamps to 1.
+  EpisodeGridFixture fixture(3);
+  layoutEpisodeGrid(nullptr, fixture.buttons, 4);
+
+  layoutEpisodeGrid(fixture.grid, fixture.buttons, 0);
+  QCOMPARE(fixture.grid->count(), 3);
+  for (int i = 0; i < 3; ++i) {
+    QCOMPARE(columnOf(fixture.grid, i), 0);
+  }
+
+  QVector<QWidget*> withHole = {fixture.buttons.at(0), nullptr, fixture.buttons.at(2)};
+  layoutEpisodeGrid(fixture.grid, withHole, 2);
+  QCOMPARE(fixture.grid->count(), 2);
 }

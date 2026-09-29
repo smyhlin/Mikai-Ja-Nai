@@ -3,11 +3,14 @@
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QScreen>
+#include <QShowEvent>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -299,6 +302,18 @@ CoverViewer::CoverViewer(const QPixmap& pixmap, const QString& caption, QWidget*
 }
 
 CoverViewer::~CoverViewer() = default;
+
+void CoverViewer::showEvent(QShowEvent* event) {
+    QDialog::showEvent(event);
+    const QWidget* anchor = parentWidget() != nullptr ? parentWidget() : this;
+    QScreen* screen = anchor->screen();
+    if (screen == nullptr) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen != nullptr) {
+        setGeometry(screen->availableGeometry());
+    }
+}
 
 }  // namespace mikai::app
 

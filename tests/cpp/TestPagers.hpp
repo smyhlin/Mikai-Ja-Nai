@@ -27,4 +27,11 @@ class TestPagers : public QObject {
   void pagerWindowClampsAtTheEnd();
   void pagerEmitsTheRequestedPage();
   void pagerArrowEnablesAtTheEdges();
+
+  // EpisodeGrid: the layout a re-render rebuilds, at a width that did not
+  // change. This is the regression the pill grid actually shipped with.
+  void episodeGridLaysOutAPageOfButtons();
+  void episodeGridRerendersAtTheSameColumnCount();
+  void episodeGridSwapsTheVisiblePage();
+  void episodeGridSurvivesANullPointerAndAZeroWidth();
 };
