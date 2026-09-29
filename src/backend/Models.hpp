@@ -166,6 +166,10 @@ struct PlayerResult {
 QString displayName(const Titles& titles);
 QString genreDisplay(const GenreTag& tag);
 QString animePageUrl(const QString& ref);
+/// The public page for a title. `slug` is the human-readable tail the site
+/// actually serves - /anime/7584 answers 404 while /anime/7584-slozy-tiary is
+/// the page - so it is preferred whenever the payload carried one.
+QString animePageUrl(const QString& ref, const QString& slug);
 QString thumbUrl(const AnimeSummary& anime);
 QString posterUrl(const AnimeSummary& anime);
 QString coverUrl(const AnimeDetail& detail);

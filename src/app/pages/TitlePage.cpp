@@ -549,10 +549,12 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     }
 
     QVector<QPair<QString, QString>> links = backend::externalLinks(detail);
-    const QString slug = detail.ids.value(QStringLiteral("slug")).toString();
-    const QString page = slug.isEmpty() ? detail.ref : slug;
-    if (!page.isEmpty()) {
-        links.prepend({tr("Mikai"), QStringLiteral("https://mikai.me/anime/%1").arg(page)});
+    // The site serves the title at /anime/<id>-<slug> and 404s on either half
+    // alone, so the link is built from both rather than preferring the slug.
+    const QString page =
+        backend::animePageUrl(detail.ref, detail.ids.value(QStringLiteral("slug")).toString());
+    if (!detail.ref.isEmpty()) {
+        links.prepend({tr("Mikai"), page});
     }
     QStringList anchors;
     for (const auto& link : links) {
@@ -1182,10 +1184,51 @@ void TitlePage::markNoSource(EpisodeEntry* entry) {
 
 void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos) {
     QMenu menu(this);
-    QAction* copy = menu.addAction(tr("Копіювати в буфер обміну"));
-    copy->setToolTip(tr("Скопіювати URL серії"));
-    connect(copy, &QAction::triggered, this, [this, entry] { copyEpisode(entry); });
-    menu.addSeparator();
+    // The embed page is one URL, but a viewer usually wants the stream. The
+    // extraction fires here, on the press, and the rows fill in as it lands -
+    // one flight per embed, the same one an episode open uses, so opening a
+    // menu never costs a second extraction of a stream already resolved.
+    QMenu* copyMenu = menu.addMenu(tr("Копіювати в буфер обміну"));
+    QAction* copyUrl = copyMenu->addAction(tr("URL сторінки"));
+    copyUrl->setToolTip(tr("Скопіювати посилання на сторінку серії"));
+    connect(copyUrl, &QAction::triggered, this, [this, entry] { copyEpisode(entry); });
+    copyMenu->addSeparator();
+    // A provider with no video never calls back, so it gets a row that says so
+    // instead of one that spins forever.
+    const bool noSource = qualityCache_.isNoSource(entry->embedUrl);
+    QAction* loading = copyMenu->addAction(
+        noSource ? tr("Відео відсутнє") : tr("Завантаження якостей…"));
+    loading->setEnabled(false);
+    loading->setToolTip(noSource ? tr("У цього плеєра немає відео для цієї серії")
+                                   : tr("Отримання посилань на відео"));
+
+    // Fill the submenu in place: an extraction started now usually lands
+    // while the menu is still open, and a menu rebuilt under the pointer
+    // would close it. Rows are appended to this one instead.
+    const auto fillRows = [this, copyMenu, loading](const QMap<int, QString>& qualities) {
+        if (qualities.isEmpty()) {
+            return;
+        }
+        // QMap iterates ascending, so the rows are collected and reversed: the
+        // best quality belongs at the top, where a viewer looks first.
+        QList<int> heights = qualities.keys();
+        std::sort(heights.begin(), heights.end(), std::greater<int>());
+        for (int height : heights) {
+            const QString url = qualities.value(height);
+            QAction* row = copyMenu->addAction(tr("%1p").arg(height));
+            row->setToolTip(url);
+            connect(row, &QAction::triggered, this, [this, url, height] { copyStreamUrl(url, height); });
+        }
+        // Owned by the submenu, which dies with the page: detaching would leak
+        // it, and deleteLater on an action whose parent is being destroyed in
+        // the same turn is a double free waiting to happen.
+        loading->setVisible(false);
+    };
+
+    ensureQualities(entry, [fillRows](EpisodeEntry*, const QMap<int, QString>& qualities) {
+        fillRows(qualities);
+    });
+
     QAction* external = menu.addAction(tr("Відкрити у зовнішньому плеєрі"));
     external->setToolTip(tr("Відкрити найкращу якість у mpv або VLC"));
     external->setEnabled(!qualityCache_.isNoSource(entry->embedUrl));
@@ -1196,6 +1239,13 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     menu.exec(globalPos);
 }
 
+void TitlePage::copyStreamUrl(const QString& url, int height) {
+    if (!copyText(url)) {
+        flashStatus(tr("Не вдалося скопіювати посилання"));
+        return;
+    }
+    flashStatus(tr("Скопійовано пряме посилання (%1p)").arg(height));
+}
 void TitlePage::copyEpisode(EpisodeEntry* entry) {
     if (!copyText(entry->embedUrl)) {
         flashStatus(tr("Не вдалося скопіювати URL серії"));

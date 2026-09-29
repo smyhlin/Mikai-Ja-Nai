@@ -1166,8 +1166,7 @@ void SearchPage::resultsContextMenu(const QPoint& position) {
     connect(open, &QAction::triggered, this, [this, item] { openItem(item); });
     QAction* copyLink = menu.addAction(tr("Копіювати посилання"));
     copyLink->setToolTip(tr("Скопіювати адресу сторінки на mikai.me"));
-    connect(copyLink, &QAction::triggered, this,
-            [ref] { copyText(backend::animePageUrl(ref)); });
+    connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
     QAction* copyRef = menu.addAction(tr("Копіювати ID"));
     copyRef->setToolTip(tr("Скопіювати ідентифікатор тайтла"));
     connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
@@ -1181,16 +1180,26 @@ void SearchPage::animeCardMenu(const QString& ref, const QPoint& globalPos) {
     connect(open, &QAction::triggered, this, [this, ref] { openByRef(ref); });
     QAction* copyLink = menu.addAction(tr("Копіювати посилання"));
     copyLink->setToolTip(tr("Скопіювати адресу сторінки на mikai.me"));
-    connect(copyLink, &QAction::triggered, this,
-            [ref] { copyText(backend::animePageUrl(ref)); });
+    connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
     QAction* copyRef = menu.addAction(tr("Копіювати ID"));
     copyRef->setToolTip(tr("Скопіювати ідентифікатор тайтла"));
     connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
     QAction* browser = menu.addAction(tr("Відкрити в браузері"));
     browser->setToolTip(tr("Відкрити сторінку на mikai.me"));
     connect(browser, &QAction::triggered, this,
-            [ref] { QDesktopServices::openUrl(QUrl(backend::animePageUrl(ref))); });
+            [this, ref] { QDesktopServices::openUrl(QUrl(pageUrlFor(ref))); });
     menu.exec(globalPos);
+}
+
+QString SearchPage::pageUrlFor(const QString& ref) const {
+    // The card menus only carry a ref, but the detail response that filled the
+    // card also carries the slug the public page is served at. A link without
+    // it is a 404, so the cached detail is what turns the id into a page.
+    const auto it = cardDetails_.constFind(ref);
+    if (it == cardDetails_.constEnd()) {
+        return backend::animePageUrl(ref);
+    }
+    return backend::animePageUrl(ref, it.value().ids.value(QStringLiteral("slug")).toString());
 }
 
 void SearchPage::openByRef(const QString& ref) {

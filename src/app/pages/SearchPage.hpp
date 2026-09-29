@@ -127,6 +127,9 @@ private:
     void updatePager();
     void goToPage(int page);
     void openByRef(const QString& ref);
+    /// The public mikai.me page for a ref, including the slug from the detail
+    /// already cached for it. Without the slug the id alone is a dead link.
+    QString pageUrlFor(const QString& ref) const;
     void openItem(QListWidgetItem* item);
     void resultsContextMenu(const QPoint& position);
     void animeCardMenu(const QString& ref, const QPoint& globalPos);

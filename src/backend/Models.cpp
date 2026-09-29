@@ -93,6 +93,17 @@ QString genreDisplay(const GenreTag& tag) { return tag.ua.isEmpty() ? tag.name :
 
 QString animePageUrl(const QString& ref) { return kMikaiPageUrl + ref; }
 
+QString animePageUrl(const QString& ref, const QString& slug) {
+    // The bare id is not a page: mikai.me serves the title at /anime/<id>-<slug>
+    // and 404s on /anime/<id>, so a copied link that only the API understands
+    // is a dead link. The slug is optional because a list payload has none, and
+    // an id with a trailing dash would be worse than a 404.
+    if (!slug.isEmpty() && !ref.isEmpty()) {
+        return kMikaiPageUrl + ref + QLatin1Char('-') + slug;
+    }
+    return animePageUrl(ref);
+}
+
 QString thumbUrl(const AnimeSummary& anime) {
     return imageUrl(anime.poster.small);
 }

@@ -138,6 +138,9 @@ private:
 
     void episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos);
     void copyEpisode(EpisodeEntry* entry);
+    /// Copies a direct stream link of a known height and says so in the status
+    /// line, so a quality row behaves like the rest of the page.
+    void copyStreamUrl(const QString& url, int height);
     void openExternalPlayer(EpisodeEntry* entry);
     void openExternalStream(EpisodeEntry* entry, const QMap<int, QString>& qualities);
     void openEmbedInBrowser(EpisodeEntry* entry);
