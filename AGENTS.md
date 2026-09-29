@@ -149,7 +149,27 @@ Layering is strict and enforced by tests:
   `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
   `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
-  `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`);
+  `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
+  Picture-in-picture has three rules that each cost a real bug, and all three
+  are asserted in `InteractionProbe`:
+  - **The float owns its playback.** Every control - the scrubber, the play
+    button, click-to-pause, the arrow keys - acts on the float's own
+    `VideoSurface`. They used to emit signals the host forwarded to the main
+    surface, so they moved a video hidden behind the float and appeared to do
+    nothing. The three `PipFloat` play/seek signals are gone for that reason.
+  - **Only one core plays.** Entering PiP pauses the main core; leaving
+    pauses the float's. Either one playing decodes the stream twice.
+  - **The float is pooled, not destroyed.** `PlayerDialog::pipPool_` keeps it
+    alive and merely hides it. Tearing down a second `QOpenGLWidget` while the
+    player's is on screen faults the NVIDIA driver in `DrvPresentBuffers` - a
+    crash in the driver, but ours to avoid - and neither a `deleteLater` nor a
+    400 ms deferral avoids it. Re-entry reuses the surface, so it is also
+    instant. `setPaused` writes unconditionally: a version that short-circuited
+    on the cached `playing_` flag silently dropped the call when the cache was
+    stale, leaving a surface the caller believed it had resumed frozen.
+  Progress follows the float's own `positionChanged`, and `setTime` shows the
+  position whenever it is known - blanking it because the *duration* was not
+  threw away the only number a viewer can read.
   `Anime4K` (preset table + shader-path resolution, `Mode::Off`..`HqCA`).
 - `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
   by a POST_BUILD rule on `mikai`. `Anime4K::findShadersDir` looks beside the

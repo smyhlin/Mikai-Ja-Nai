@@ -273,6 +273,16 @@ PipFloat::PipFloat(QWidget* parent)
     });
     connect(surface_, &VideoSurface::errorOccurred, this,
             [this](const QString&) { revealControls(); });
+
+    // The float's clock follows its OWN core. It used to be fed from the host
+    // on the main surface, which is stopped while PiP is up - so the counter
+    // froze on the moment PiP opened and never moved again.
+    connect(surface_, &VideoSurface::positionChanged, this,
+            [this](double seconds) { setTime(seconds, surface_->duration()); });
+    connect(surface_, &VideoSurface::durationChanged, this,
+            [this](double seconds) { setTime(surface_->position(), seconds); });
+    connect(surface_, &VideoSurface::playingChanged, this,
+            [this](bool playing) { setPlaying(playing); });
 }
 
 void PipFloat::buildChrome() {
@@ -315,7 +325,7 @@ void PipFloat::buildChrome() {
     playButton_->setAccessibleName(QStringLiteral("Пауза"));
     playButton_->setFocusPolicy(Qt::NoFocus);
     playButton_->setMouseTracking(true);
-    connect(playButton_, &QPushButton::clicked, this, &PipFloat::togglePlayRequested);
+    connect(playButton_, &QPushButton::clicked, surface_, &VideoSurface::togglePause);
 
     elapsed_ = new QLabel(QStringLiteral("0:00"), overlay_);
     elapsed_->setObjectName(QStringLiteral("pipElapsed"));
@@ -337,7 +347,10 @@ void PipFloat::buildChrome() {
     connect(scrub_, &QSlider::sliderReleased, this, [this] {
         scrubbing_ = false;
         revealControls();
-        emit seekAbsoluteRequested(scrub_->value() / 1000.0);
+        // The float acts on its OWN core. Routing this to the host used to
+        // seek the main player, hidden behind the float, so the scrubber
+        // appeared to do nothing at all.
+        surface_->seek(scrub_->value() / 1000.0);
     });
 
     installEventFilter(this);
@@ -385,22 +398,35 @@ void PipFloat::setPlaying(bool playing) {
 }
 
 void PipFloat::setTime(double position, double duration) {
-    // Display only: nothing is emitted, so answering with a seek would loop.
-    if (duration > 0.0) {
+    // Display only: nothing is emitted, so answering with a seek could loop.
+    // The position is shown whenever it is known. Blanking it merely because
+    // the length is not - a live stream, or a clip still reporting zero -
+    // threw away the one number the viewer can actually read.
+    if (position > 0.0) {
         elapsed_->setText(pipFormatSeconds(position));
-        remaining_->setText(QStringLiteral("-%1").arg(pipFormatSeconds(std::max(0.0, duration - position))));
     } else {
-        // A live stream has no end to count down to, and a slider over an empty
-        // range would report every set as zero.
-        elapsed_->setText(QStringLiteral("--:--"));
-        remaining_->setText(QStringLiteral("--:--"));
+        elapsed_->setText(QStringLiteral("0:00"));
     }
-    scrub_->setRange(0, std::max(1, static_cast<int>(std::lround(duration * 1000.0))));
-    if (!scrubbing_) {
-        const double clamped = duration > 0.0 ? std::clamp(position, 0.0, duration) : 0.0;
-        scrub_->setValue(static_cast<int>(std::lround(clamped * 1000.0)));
+    remaining_->setText(duration > 0.0
+                            ? QStringLiteral("-%1").arg(pipFormatSeconds(std::max(0.0, duration - position)))
+                            : QStringLiteral("--:--"));
+    // An unknown length leaves the scrubber disabled rather than collapsing it
+    // to a 1 ms range, where every drag reads as a jump back to the start.
+    if (duration > 0.0) {
+        scrub_->setEnabled(true);
+        scrub_->setRange(0, static_cast<int>(std::lround(duration * 1000.0)));
+        if (!scrubbing_) {
+            const double clamped = std::clamp(position, 0.0, duration);
+            scrub_->setValue(static_cast<int>(std::lround(clamped * 1000.0)));
+        }
+    } else {
+        scrub_->setEnabled(false);
     }
 }
+
+double PipFloat::position() const { return surface_ != nullptr ? surface_->position() : 0.0; }
+double PipFloat::duration() const { return surface_ != nullptr ? surface_->duration() : 0.0; }
+bool PipFloat::isPlaying() const { return surface_ != nullptr && surface_->isPlaying(); }
 
 void PipFloat::setMuted(bool muted) {
     muted_ = muted;
@@ -554,7 +580,7 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
     pressed_ = false;
     dragging_ = false;
     if (!dragged) {
-        emit togglePlayRequested();
+        surface_->togglePause();
     }
 }
 
@@ -631,13 +657,13 @@ void PipFloat::resizeEvent(QResizeEvent* event) {
 bool PipFloat::handleKey(QKeyEvent* event) {
     switch (event->key()) {
         case Qt::Key_Left:
-            emit seekRequested(-kPipSeekStepSeconds);
+            surface_->seek(surface_->position() - kPipSeekStepSeconds);
             break;
         case Qt::Key_Right:
-            emit seekRequested(kPipSeekStepSeconds);
+            surface_->seek(surface_->position() + kPipSeekStepSeconds);
             break;
         case Qt::Key_Space:
-            emit togglePlayRequested();
+            surface_->togglePause();
             break;
         case Qt::Key_Escape:
             emit closeRequested();
@@ -1752,27 +1778,45 @@ void PlayerDialog::enterPip() {
     // Parentless on purpose: a child window is clipped to its parent's z-order,
     // so a float parented to the player slides under whatever app the user
     // switches to.
-    auto* window = new PipFloat;
+    // Reused across entries. Building or destroying a second QOpenGLWidget
+    // while the player's is on screen faults the display driver in
+    // DrvPresentBuffers, so the float outlives a single PiP session.
+    const bool fresh = pipPool_ == nullptr;
+    auto* window = fresh ? new PipFloat : pipPool_;
+    pipPool_ = window;
+    // Connected once. The float outlives a single PiP session, and connecting
+    // again on every entry would stack a second copy of each handler, so one
+    // restore click would run leavePip repeatedly.
+    if (fresh) {
+        // No play/seek signals: the float drives its own core, so routing them
+        // to the main surface would move a video the viewer cannot see.
+        connect(window, &PipFloat::muteChanged, this, [this](bool muted) {
+            muted_ = muted;
+            surface_->setMuted(muted_);
+            shell_->setMuted(muted_);
+        });
+        connect(window, &PipFloat::restoreRequested, this, [this] { leavePip(); });
+        connect(window, &PipFloat::closeRequested, this, [this] { leavePip(); });
+    }
     // The float runs a second mpv core, so it needs the same shader chain
     // separately: entering PiP must not silently drop the upscaling.
     window->videoSurface()->setAnime4KMode(anime4kMode_);
-    connect(window, &PipFloat::togglePlayRequested, surface_, &VideoSurface::togglePause);
-    connect(window, &PipFloat::seekRequested, this, [this](double delta) {
-        surface_->seek(surface_->position() + delta);
-    });
-    connect(window, &PipFloat::seekAbsoluteRequested, surface_, &VideoSurface::seek);
-    connect(window, &PipFloat::muteChanged, this, [this](bool muted) {
-        muted_ = muted;
-        surface_->setMuted(muted_);
-        shell_->setMuted(muted_);
-    });
-    connect(window, &PipFloat::restoreRequested, this, [this] { leavePip(); });
-    connect(window, &PipFloat::closeRequested, this, [this] { leavePip(); });
 
     window->setPlaying(surface_->isPlaying());
     window->setTime(surface_->position(), surface_->duration());
     window->setMuted(muted_);
     window->openStream(url_, surface_->position());
+    // Volume lives on the core and the float has its own. Without this it
+    // opens at mpv's default 100% while the player sits wherever the viewer
+    // set it, so the volume jumps on entering PiP.
+    window->videoSurface()->setVolume(volume_ * 100.0);
+    // The float has its own mpv core, so the main one keeps decoding behind a
+    // hidden window unless it is stopped. That doubled the bandwidth, burned
+    // the rate budget, and meant coming back to two videos at different
+    // positions. Only the float plays while PiP is up.
+    pipResumePosition_ = surface_->position();
+    pipResumePlaying_ = surface_->isPlaying();
+    surface_->setPaused(true);
 
     window->resize(kPipDefaultWidth, kPipDefaultHeight);
     if (QScreen* current = screen()) {
@@ -1792,32 +1836,58 @@ void PlayerDialog::enterPip() {
 void PlayerDialog::leavePip(bool closing) {
     PipFloat* window = pip_;
     pip_ = nullptr;
+    // Everything the viewer did in PiP happened in the float's core, so that
+    // is where the main player resumes - not the position it was parked at on
+    // entry. Read before anything else, and NOT clamped against the main
+    // surface's duration: the two cores can disagree, and clamping a good
+    // position to zero would silently skip the hand-back.
+    const double resumeAt = window != nullptr ? std::max(0.0, window->position()) : 0.0;
     if (window != nullptr) {
-        window->closeStream();
-        window->close();
-        window->deleteLater();
+        // Hidden, not destroyed. Tearing down its QOpenGLWidget while the
+        // player's is coming back crashed the display driver; keeping the float
+        // alive costs one idle surface and makes the next entry instant. It is
+        // released with the dialog.
+        window->hide();
+        // Paused, though: a hidden float still has a live mpv core, and a
+        // playing one decodes the stream a second time behind the player.
+        window->videoSurface()->setPaused(true);
     }
     if (closed_) {
         return;
     }
-    if (!isVisible()) {
-        show();
-    }
-    if (pipWasFullscreen_) {
-        showFullScreen();
-    }
+    const bool wasFullscreen = pipWasFullscreen_;
     pipWasFullscreen_ = false;
-    if (!closing) {
-        flashStatus(QStringLiteral("Повернуто у вікно"));
+    if (closing) {
+        return;
     }
+    QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen] {
+        if (closed_) {
+            return;
+        }
+        if (!isVisible()) {
+            show();
+        }
+        if (wasFullscreen) {
+            showFullScreen();
+        }
+        if (surface_->hasVideo()) {
+            if (resumeAt > 0.0) {
+                surface_->seek(resumeAt);
+                shell_->setPosition(resumeAt);
+            }
+            surface_->setPaused(!pipResumePlaying_);
+        }
+    });
+    flashStatus(QStringLiteral("Повернуто у вікно"));
 }
 
 void PlayerDialog::syncPipBar() {
     if (pip_ == nullptr) {
         return;
     }
-    pip_->setPlaying(surface_->isPlaying());
-    pip_->setTime(surface_->position(), surface_->duration());
+    // Mute only. Position and play state belong to the float's own core now:
+    // the main one is stopped while PiP is up, so pushing its frozen state in
+    // here is what pinned the counter to the moment PiP opened.
     pip_->setMuted(muted_);
 }
 

@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QGraphicsOpacityEffect>
+#include <QPointer>
 #include <QTest>
 #include <windows.h>
 #include <QGuiApplication>
@@ -151,6 +152,13 @@ QImage settledFrame(VideoSurface* surface) {
     }
     return QImage();
 }
+
+/// The float, kept here so the ownership checks can run after the step that
+/// opened it has returned. A QPointer because leavePip deleteLater()s it.
+QPointer<PipFloat> pipFloat;
+
+/// Where the float's core was when the viewer pressed restore.
+double floatExitPosition = 0.0;
 
 int failures = 0;
 
@@ -521,6 +529,7 @@ int main(int argc, char** argv) {
             if (pip == nullptr) {
                 return;
             }
+            pipFloat = qobject_cast<PipFloat*>(pip);
             auto child = [pip](const char* name) -> QWidget* {
                 return pip->findChild<QWidget*>(QString::fromLatin1(name));
             };
@@ -646,6 +655,125 @@ int main(int argc, char** argv) {
               "the series drawer still lists every episode 1.5s later");
         check(series != nullptr && series->isVisible(),
               "the series toggle survived the drawer's own refresh");
+    });
+
+    // PiP owns the picture while it is up. Three things were wrong and none of
+    // them showed as a crash - they showed as the float's controls doing
+    // nothing, so each is asserted on the state it changes.
+    QTimer::singleShot(16500, [&] {
+        check(pipFloat != nullptr, "the PiP float is still up for the ownership checks");
+    });
+
+    QTimer::singleShot(17500, [&] {
+        if (pipFloat == nullptr) {
+            return;
+        }
+        auto* pipSurface = pipFloat->videoSurface();
+        // NOT findChild: the float owns a VideoSurface too, and which one
+        // comes first depends on construction order - comparing a surface
+        // against itself passes every check here.
+        auto* mainSurface = shell->videoSurface();
+        if (mainSurface == nullptr || pipSurface == nullptr
+            || mainSurface == pipSurface) {
+            check(false, "the two surfaces are distinct and both reachable");
+            return;
+        }
+        // The float loads its own core when the window is first exposed, a beat
+        // after it opens. Everything below needs a live stream.
+        for (int i = 0; i < 100 && !pipSurface->hasVideo(); ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+        }
+        check(pipSurface->hasVideo(), "the float's own core loaded the stream");
+        if (!pipSurface->hasVideo()) {
+            return;
+        }
+        // The main core has to be stopped: the float has its own mpv handle,
+        // so a still-playing main core decodes a second copy of the same
+        // stream behind a hidden window.
+        check(!mainSurface->isPlaying(), "the hidden main player is not decoding while PiP is up");
+        check(mainSurface->hasVideo(), "the main player keeps its stream loaded for the return");
+        if (!pipSurface->isPlaying()) {
+            pipSurface->setPaused(false);
+        }
+        QTest::qWait(1000);
+        check(pipSurface->isPlaying(), "the float is the one playing");
+
+        // Each core is compared against ITSELF, not against the other: the
+        // float has been playing while the main one is parked, so only a
+        // before/after on the same core says anything.
+        const double floatBefore = pipSurface->position();
+        const double mainBefore = mainSurface->position();
+        // The float's scrubber used to seek the main surface, so dragging it
+        // moved a video nobody could see.
+        pipSurface->seek(floatBefore + 5.0);
+        QTest::qWait(400);
+        check(pipSurface->position() > floatBefore + 1.0, "seeking the float moves the float");
+        check(std::abs(mainSurface->position() - mainBefore) < 0.5,
+              "seeking the float leaves the hidden main player alone");
+
+        // The counter follows the float's core; it froze on the moment PiP
+        // opened when it was fed from the parked one.
+        // The counter is driven from the float's own positionChanged, so the
+        // label must track that core. A seek is the trigger: the elapsed label
+        // is only rewritten when a position arrives, and with the chain
+        // enabled mpv re-emits, so this is the cheapest moment to prove the
+        // label is live rather than the placeholder it used to freeze on.
+        auto* elapsed = pipFloat->findChild<QLabel*>(QString::fromLatin1("pipElapsed"));
+        check(elapsed != nullptr, "the float has a position label");
+        if (elapsed != nullptr) {
+            const QString before = elapsed->text();
+            pipSurface->seek(pipSurface->position() + 30.0);
+            QTest::qWait(900);
+            std::fprintf(stderr, "     label: \"%s\" -> \"%s\"\n", qPrintable(before),
+                         qPrintable(elapsed->text()));
+            check(elapsed->text() != before, "the float's clock follows its own core");
+        }
+    });
+
+    // Leaving PiP brings the main player back to where the viewer actually
+    // watched, which is the float's position and not where the main core was
+    // parked on entry.
+    QTimer::singleShot(19600, &app, [&] {
+        if (pipFloat == nullptr) {
+            check(false, "the float was still up for the return check");
+            return;
+        }
+        auto* floatSurface = pipFloat->videoSurface();
+        if (!floatSurface->isPlaying()) {
+            floatSurface->setPaused(false);
+        }
+        QTest::qWait(700);
+        floatExitPosition = floatSurface->position();
+        auto* restore = pipFloat->findChild<QPushButton*>(QString::fromLatin1("pipRestore"));
+        check(restore != nullptr, "the float has a restore button");
+        if (restore == nullptr) {
+            return;
+        }
+        restore->click();
+        // The hand-back is deferred by a tick on purpose, so give it room
+        // rather than sampling mid-transition.
+        QTimer::singleShot(3000, &app, [&] {
+            // The float is pooled rather than destroyed - each owns a
+            // QOpenGLWidget and tearing one down beside the player's crashes
+            // the display driver - so "closed" means hidden, not gone.
+            check(pipFloat != nullptr && !pipFloat->isVisible(),
+                  "the restore button put the float away");
+            check(dialog->isVisible(), "the player window is back");
+            auto* mainSurface = dialog->findChild<VideoSurface*>();
+            if (mainSurface == nullptr) {
+                return;
+            }
+            std::fprintf(stderr, "     returned to %.2fs, the float left it at %.2fs\n",
+                         mainSurface->position(), floatExitPosition);
+            check(std::abs(mainSurface->position() - floatExitPosition) < 1.5,
+                  "the main player resumes where the float left off");
+            // The main core inherits whatever it was doing before PiP, and
+            // the probe enters PiP from a paused player, so paused is the
+            // correct state to return to - not a failure to resume.
+            check(!mainSurface->isPlaying(),
+                  "the main core is back in the state PiP found it in");
+        });
     });
 
     // Esc unwinds one layer per press - picker, then the shell's own popover,

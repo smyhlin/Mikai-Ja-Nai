@@ -43,6 +43,9 @@ public:
     void close();
 
     void togglePause();
+    /// Sets the paused state outright. togglePause cannot restore a known
+    /// state, which is what handing playback back to a parked core needs.
+    void setPaused(bool paused);
     void seek(double seconds);
     void setVolume(double volume);   // 0..100
     void setMuted(bool muted);

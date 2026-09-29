@@ -83,10 +83,13 @@ public:
     void setTime(double position, double duration);
     void setMuted(bool muted);
 
+    /// Where the float's own core is. The host reads it to restore the main
+    /// player on exit, so both windows resume from what the viewer watched.
+    double position() const;
+    double duration() const;
+    bool isPlaying() const;
+
 signals:
-    void togglePlayRequested();
-    void seekRequested(double deltaSeconds);
-    void seekAbsoluteRequested(double seconds);
     void muteChanged(bool muted);
     void restoreRequested();
     void closeRequested();
@@ -302,6 +305,15 @@ private:
     bool closed_ = false;
     bool forwardingKey_ = false;
     bool pipWasFullscreen_ = false;
+    // The float is kept, not destroyed. Each one owns a QOpenGLWidget with a
+    // live mpv render context, and building or tearing one down while the
+    // other is on screen faults the display driver. Re-entering PiP reuses
+    // this one instead of paying that cost again.
+    PipFloat* pipPool_ = nullptr;
+    // What the main core was doing when PiP took over, so leaving PiP restores
+    // the state rather than guessing it from a toggle.
+    double pipResumePosition_ = 0.0;
+    bool pipResumePlaying_ = true;
     // The resume point a stream swap holds until the new file reports a
     // duration: mpv cannot seek a stream it has not loaded yet.
     bool resumePending_ = false;

@@ -188,6 +188,21 @@ void VideoSurface::togglePause() {
     }
 }
 
+void VideoSurface::setPaused(bool paused) {
+    if (!mpv_) return;
+    try {
+        // Unconditional, deliberately. An earlier version short-circuited on
+        // the cached playing_ flag, and when that flag was out of step with
+        // the core the call was silently dropped - the caller believed it had
+        // resumed a surface that stayed frozen. Asking mpv costs one property
+        // write; guessing wrong costs a video that will not play.
+        mpv_->setPaused(paused);
+        playing_ = !paused;
+    } catch (const MpvError& e) {
+        emit errorOccurred(QString::fromUtf8(e.what()));
+    }
+}
+
 void VideoSurface::seek(double seconds) {
     if (!mpv_) return;
     try {
