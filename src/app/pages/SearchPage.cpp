@@ -260,6 +260,8 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     QScrollBar* bar = section->scroll->horizontalScrollBar();
     QPushButton* previous = section->previous;
     QPushButton* next = section->next;
+    previous->setToolTip(tr("Попередня сторінка (або Alt + коліщатко)"));
+    next->setToolTip(tr("Наступна сторінка (або Alt + коліщатко)"));
     connect(previous, &QPushButton::clicked, this,
             [this, bar] { smoothScrollCarousel(bar, -theme::kHomeCarouselScrollStep); });
     connect(next, &QPushButton::clicked, this,
@@ -271,7 +273,8 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
             [bar, previous, next](int) { syncArrows(bar, previous, next); });
     syncArrows(bar, previous, next);
 
-    // Mouse wheel over the carousel translates to smooth horizontal navigation
+    // Mouse wheel only scrolls the carousel horizontally when Alt is held;
+    // normal vertical scrolling passes through to the discovery scroll area.
     section->scroll->viewport()->installEventFilter(this);
     section->scroll->hide();
 
@@ -302,18 +305,30 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
             if (section != nullptr && section->scroll != nullptr &&
                 watched == section->scroll->viewport()) {
                 auto* we = static_cast<QWheelEvent*>(event);
-                int delta = we->angleDelta().y();
-                if (delta == 0) {
-                    delta = we->angleDelta().x();
-                }
-                if (delta != 0) {
+                const bool altHeld = we->modifiers().testFlag(Qt::AltModifier);
+                const int hDelta = we->angleDelta().x();
+                const int vDelta = we->angleDelta().y();
+
+                // Horizontal wheeling occurs only when Alt is held, or when
+                // hardware emits a true horizontal scroll delta.
+                if (altHeld && vDelta != 0) {
                     QScrollBar* bar = section->scroll->horizontalScrollBar();
                     if (bar != nullptr) {
-                        smoothScrollCarousel(bar, -delta * 2);
+                        smoothScrollCarousel(bar, -vDelta * 2);
+                        return true;
+                    }
+                } else if (hDelta != 0) {
+                    QScrollBar* bar = section->scroll->horizontalScrollBar();
+                    if (bar != nullptr) {
+                        smoothScrollCarousel(bar, -hDelta * 2);
                         return true;
                     }
                 }
-                break;
+
+                // Normal vertical wheel scroll must bubble up to the main
+                // discovery scroll area so carousels do not hijack navigation.
+                event->ignore();
+                return false;
             }
         }
     }
