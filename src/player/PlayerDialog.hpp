@@ -21,6 +21,7 @@ class QMoveEvent;
 class QPushButton;
 class QResizeEvent;
 class QShowEvent;
+class QScreen;
 class QSlider;
 class QTimer;
 class QVariantAnimation;
@@ -78,6 +79,8 @@ public:
     VideoSurface* videoSurface() const { return surface_; }
     /// Opens `url` and seeks to `position` once the stream is up.
     void openStream(const QString& url, double position);
+    /// Parks the float against a screen work area, bottom-right by default.
+    void moveToCorner(QScreen* target);
     void closeStream();
 
     void setPlaying(bool playing);
@@ -119,6 +122,13 @@ private:
     /// Seeks the float's own core to the timeline position under `x`, in
     /// window coordinates, and moves the handle to match.
     void timelineSeekTo(double x);
+
+    /// Snaps to the nearest corner of the screen the float was dropped on.
+    void snapToCorner();
+    /// Pulls the float back inside a work area. After a monitor change the
+    /// pooled position can name a screen that is no longer there, and a window
+    /// there cannot be clicked at all.
+    void clampIntoWorkArea(QScreen* target);
     void pointerPress(QMouseEvent* event);
     void pointerMove(QMouseEvent* event);
     void pointerRelease(QMouseEvent* event);

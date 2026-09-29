@@ -37,6 +37,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegion>
 #include <QResizeEvent>
@@ -105,6 +106,10 @@ constexpr int kStripMargin = 8;
 
 constexpr int kPipSeekStepSeconds = 10;
 constexpr int kPipCornerRadiusPx = 16;
+// The gap a parked float keeps from the work-area edge: far enough that a
+// maximized window does not look like it is clipping it, close enough that
+// the controls at the edges are reachable.
+constexpr int kPipBoundsOffset = 24;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
@@ -340,19 +345,16 @@ void PipFloat::buildChrome() {
         emit volumeChanged(volume_);
         revealControls();
     });
+    // The level reaches mpv at the release, not on every tick. A QSlider emits
+    // valueChanged per pixel of travel, and each one was a synchronous property
+    // write plus a groove relayout; on a slow core that queue is what reads as
+    // lag. The handle still tracks the pointer - that is the widget painting
+    // itself - and the sound lands the moment the button is let go.
     connect(volumeSlider_, &QSlider::valueChanged, this, [this](int value) {
         if (!draggingVolume_) {
             return;
         }
-        // Live while dragging: the level is the feedback, and mpv follows it
-        // as it moves rather than at the release.
         volume_ = std::clamp(value / 100.0, 0.0, 1.0);
-        surface_->setVolume(volume_ * 100.0);
-        if (muted_ && volume_ > 0.0) {
-            setMuted(false);
-            emit muteChanged(false);
-        }
-        updateVolumeChip();
     });
     chipLayout->addWidget(volumeSlider_);
 
@@ -516,14 +518,14 @@ void PipFloat::updateVolumeChip() {
     if (volumeSlider_ == nullptr) {
         return;
     }
+    // Writing the value back while the pointer is on the slider is what made
+    // it feel like it was lagging: the widget was being told where the handle
+    // already was, on every one of the hundreds of ticks a drag produces, and
+    // each write re-lays the groove out. The slider is the source of truth
+    // mid-drag; this only mirrors an outside change.
     if (!draggingVolume_) {
         volumeSlider_->setValue(static_cast<int>(std::lround(volume_ * 100.0)));
     }
-    const int percent = static_cast<int>(std::lround(volume_ * 100.0));
-    // No tooltip: a popup that follows the pointer across a drag is the thing
-    // that made the control feel loose, and the level is already legible on
-    // the groove itself.
-    volumeSlider_->setAccessibleName(QStringLiteral("Громкість %1%").arg(percent));
 }
 
 // ── the controls come and go with the pointer ───────────────────────────
@@ -720,13 +722,58 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
         revealControls();
         return;
     }
-    if (!dragged) {
-        surface_->togglePause();
+    if (dragged) {
+        // Land on the nearest corner. Parked wherever the finger left it, a
+        // float ends up half over the taskbar or off the usable area.
+        snapToCorner();
+        return;
     }
+    surface_->togglePause();
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
 
+void PipFloat::moveToCorner(QScreen* target) {
+    if (target == nullptr) {
+        return;
+    }
+    // availableGeometry, not geometry: the taskbar and the docked app bar are
+    // not places a float can be dragged back from, so a window parked on the
+    // work area is one the viewer cannot reach.
+    const QRect area = target->availableGeometry();
+    move(area.right() - width() - kPipBoundsOffset + 1,
+         area.bottom() - height() - kPipBoundsOffset + 1);
+}
+
+void PipFloat::snapToCorner() {
+    // Snapping is a one-off on release, not a live guide: the float follows
+    // the pointer exactly while it is down, and lands on the nearest corner
+    // when it comes up. A live guide would be a second thing to look at while
+    // dragging the thing you came to move.
+    QScreen* target = QGuiApplication::screenAt(frameGeometry().center());
+    if (target == nullptr) {
+        return;
+    }
+    const QRect area = target->availableGeometry();
+    const QPoint centre = frameGeometry().center();
+    const bool left = centre.x() < area.center().x();
+    const bool top = centre.y() < area.center().y();
+    const int x = left ? area.left() + kPipBoundsOffset
+                        : area.right() - width() - kPipBoundsOffset + 1;
+    const int y = top ? area.top() + kPipBoundsOffset
+                       : area.bottom() - height() - kPipBoundsOffset + 1;
+    if (pos() == QPoint(x, y)) {
+        return;
+    }
+    // Animated because a float that jumps reads as a glitch; short, because it
+    // is the last thing that happened and the viewer is already looking away.
+    auto* anim = new QPropertyAnimation(this, "pos", this);
+    anim->setDuration(120);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    anim->setStartValue(pos());
+    anim->setEndValue(QPoint(x, y));
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
 void PipFloat::fitSurfaces() {
     surface_->setGeometry(rect());
     overlay_->setGeometry(rect());
@@ -2092,9 +2139,14 @@ void PlayerDialog::enterPip() {
     surface_->setPaused(true);
 
     window->resize(kPipDefaultWidth, kPipDefaultHeight);
-    if (QScreen* current = screen()) {
-        const QRect area = current->availableGeometry();
-        window->move(area.right() - kPipDefaultWidth - 24, area.bottom() - kPipDefaultHeight - 24);
+    // Placed against the screen under the pointer, not against the player.
+    // The whole point of a float is to move it to another monitor, and
+    // opening it in the corner of the fullscreen player put it exactly where
+    // the viewer was already looking.
+    if (QScreen* current = QGuiApplication::screenAt(QCursor::pos())) {
+        window->moveToCorner(current);
+    } else if (QScreen* fallback = screen()) {
+        window->moveToCorner(fallback);
     }
     pip_ = window;
     window->show();

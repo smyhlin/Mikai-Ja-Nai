@@ -887,6 +887,60 @@ int main(int argc, char** argv) {
         check(pipFloat != nullptr, "the PiP float is still up for the ownership checks");
     });
 
+    // Placement and snapping, which is what a viewer reaches for when they
+    // want the float on the other monitor. The pool keeps the last position,
+    // so a float can otherwise reappear somewhere unusable.
+    QTimer::singleShot(21000, [&] {
+        if (pipFloat == nullptr || !pipFloat->isVisible()) {
+            check(false, "the float is up for the placement checks");
+            return;
+        }
+        QScreen* under = QGuiApplication::screenAt(pipFloat->frameGeometry().center());
+        check(under != nullptr, "the float sits on a screen it can be clicked on");
+        if (under != nullptr) {
+            const QRect area = under->availableGeometry();
+            const QRect frame = pipFloat->frameGeometry();
+            check(frame.top() >= area.top() && frame.left() >= area.left() - pipFloat->width()
+                      && frame.bottom() <= area.bottom() + pipFloat->height(),
+                  "the float is inside the work area, not under the taskbar");
+        }
+
+        // Drag it into a corner and let go: it should land on the nearest one.
+        const QPoint before = pipFloat->pos();
+        QWidget* overlay =
+            pipFloat->findChild<QWidget*>(QString::fromLatin1("pipOverlay"));
+        check(overlay != nullptr, "the float has an overlay to press on");
+        if (overlay == nullptr) {
+            return;
+        }
+        // The float drags on the delta between two GLOBAL points, so the move
+        // has to carry a real one: a 40px wobble inside the same window is
+        // under the threshold and never starts a drag.
+        const QPointF grabAt = pipFloat->mapToGlobal(QPointF(20, 20));
+        const QPointF dropAt = grabAt + QPointF(-140, -120);
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(20, 20), grabAt, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(overlay, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(20 - 140, 20 - 120), dropAt,
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(overlay, &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(20 - 140, 20 - 120), dropAt,
+                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(overlay, &release);
+        QTest::qWait(500);
+        std::fprintf(stderr, "     float moved %s\n",
+                     qPrintable(QStringLiteral("%1,%2 -> %3,%4")
+                                    .arg(before.x()).arg(before.y())
+                                    .arg(pipFloat->x()).arg(pipFloat->y())));
+        if (QScreen* landed = QGuiApplication::screenAt(pipFloat->frameGeometry().center())) {
+            const QRect area = landed->availableGeometry();
+            const bool cornered =
+                std::abs(pipFloat->x() - (area.left() + 24)) < 2 ||
+                std::abs(pipFloat->x() - (area.right() - pipFloat->width() - 24 + 1)) < 2;
+            check(pipFloat->pos() != before, "a drag actually moved the float");
+            check(cornered, "a dragged float lands on a corner");
+        }
+    });
     QTimer::singleShot(21200, [&] {
         if (pipFloat == nullptr) {
             return;
