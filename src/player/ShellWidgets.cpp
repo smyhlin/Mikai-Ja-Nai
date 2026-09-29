@@ -137,7 +137,7 @@ void IconButton::paintEvent(QPaintEvent*) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 SettingsFlyout::SettingsFlyout(QWidget* parent)
-    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint), quality_(QStringLiteral("HD")) {
+    : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint), quality_(QStringLiteral("HD")) {
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(QStringLiteral("SettingsFlyout { background: transparent; }"));
 
@@ -643,7 +643,7 @@ QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
     };
 }
 
-KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
+KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(QStringLiteral("KeyHints { background: transparent; }"));
 
