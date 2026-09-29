@@ -21,6 +21,8 @@
 
 #include <memory>
 
+#include "Anime4K.hpp"
+
 namespace mplayer {
 class MpvHandle;
 class MpvRenderContext;
@@ -45,6 +47,24 @@ public:
     void setVolume(double volume);   // 0..100
     void setMuted(bool muted);
     void setSpeed(double speed);
+
+    // Swaps the Anime4K shader chain on the live handle, so the change lands
+    // on the next rendered frame without reopening the file. Remembered, and
+    // re-applied, because a mode picked before the engine exists still has to
+    // take effect once it does.
+    void setAnime4KMode(anime4k::Mode mode);
+    anime4k::Mode anime4KMode() const { return anime4kMode_; }
+    /// What mpv reports for glsl-shaders right now. It only echoes back the
+    /// string it was given - mpv does not validate a path list, so this cannot
+    /// tell a working chain from a preset naming a deleted file. Useful for
+    /// Off vs On; the probe proves the rest with pixels.
+    QString effectiveShaderChain() const;
+
+    bool isContextReady() const { return contextReady_; }
+    /// Spins the event loop until the render context exists. A surface that has
+    /// been constructed but not yet shown never gets one, so a caller that
+    /// needs a framebuffer has to be able to wait for it.
+    bool waitForContext(int timeoutMs);
 
     bool isPlaying() const;
     double position() const;
@@ -79,6 +99,7 @@ private:
     std::unique_ptr<MpvHandle> mpv_;
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;
+    anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 
     // mpv keeps running whether or not we repaint, so the state pump cannot
     // live in paintGL: a paused video produces no frames, and the clock,

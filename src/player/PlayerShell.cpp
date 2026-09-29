@@ -220,6 +220,7 @@ void PlayerShell::buildDock() {
     flyout_ = new SettingsFlyout(this);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
+    connect(flyout_, &SettingsFlyout::anime4KSelected, this, &PlayerShell::onAnime4KMode);
 
     dock_->adjustSize();
 }
@@ -667,10 +668,28 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
     qualityOptions_ = options;
 }
 
+void PlayerShell::setAnime4KMode(anime4k::Mode mode) {
+    anime4kMode_ = mode;
+    flyout_->setAnime4KMode(mode);
+}
+
+void PlayerShell::onAnime4KMode(anime4k::Mode mode) {
+    anime4kMode_ = mode;
+    QString label = QStringLiteral("—");
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (info.mode == mode) {
+            label = info.label;
+        }
+    }
+    toast_->flash(QStringLiteral("Anime4K: %1").arg(label));
+    emit anime4KModeChanged(mode);
+}
+
 void PlayerShell::openSettings() {
     flyout_->setRate(rate_);
     flyout_->setQuality(quality_);
     flyout_->setQualityOptions(qualityOptions_);
+    flyout_->setAnime4KMode(anime4kMode_);
     flyout_->popupNear(btnSettings_->mapToGlobal(QPoint(btnSettings_->width(), 0)));
 }
 

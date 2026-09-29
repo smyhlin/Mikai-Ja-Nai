@@ -35,6 +35,7 @@
 #include <QTimer>
 #include <QWidget>
 
+#include "Anime4K.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
 
@@ -80,6 +81,9 @@ public:
     void setQuality(const QString& quality);
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
+    /// Reflects the persisted choice back into the popover, so the ✓ sits on
+    /// the row that is actually running.
+    void setAnime4KMode(anime4k::Mode mode);
     /// The dub and subtitle pickers only appear when there is a choice.
     void setAudioAvailable(bool available);
     void setSubtitlesAvailable(bool available);
@@ -114,6 +118,7 @@ signals:
     void playPauseRequested();
     void seekRequested(double seconds);
     void rateChanged(double rate);
+    void anime4KModeChanged(anime4k::Mode mode);
     void volumeChanged(double volume);
     void muteChanged(bool muted);
     void fullscreenChanged(bool fullscreen);
@@ -163,6 +168,7 @@ private:
     void onVolume(double volume);
     void toggleMute();
     void onRate(double rate);
+    void onAnime4KMode(anime4k::Mode mode);
     void openKeys();
     void openMenu();
     void exitViewer();
@@ -198,6 +204,7 @@ private:
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
+    anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 
     QWidget* footerLeft_ = nullptr;
     QLabel* lblFile_ = nullptr;

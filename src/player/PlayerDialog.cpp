@@ -13,6 +13,8 @@
 
 #include "PlayerDialog.hpp"
 
+#include <QSettings>
+
 #include <QApplication>
 
 #include "PlayerPopups.hpp"
@@ -80,6 +82,28 @@ constexpr int kPipDefaultHeight = 270;
 // only the value handed to the shell is clamped; mpv gets what was asked for.
 constexpr double kShellRateMin = 0.25;
 constexpr double kShellRateMax = 2.0;
+
+constexpr auto kAnime4KSettingKey = "player/anime4k";
+
+/// The stored value is the preset id, not the enum ordinal, so a preset added
+/// later cannot silently repoint an existing choice at a different filter.
+QString modeId(anime4k::Mode mode) {
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (info.mode == mode) {
+            return info.id;
+        }
+    }
+    return QStringLiteral("off");
+}
+
+anime4k::Mode modeFromId(const QString& id) {
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (info.id == id) {
+            return info.mode;
+        }
+    }
+    return anime4k::Mode::Off;
+}
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
@@ -677,6 +701,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
     shell_->setFocusPolicy(Qt::StrongFocus);
     surface_ = shell_->videoSurface();
 
+    // Applied before any file is opened: the surface builds its mpv core on the
+    // first open() and glsl-shaders is only honoured as a construction option,
+    // so a mode restored later would land on a core that already ignored it.
+    anime4kMode_ = modeFromId(QSettings().value(kAnime4KSettingKey).toString());
+    surface_->setAnime4KMode(anime4kMode_);
+    shell_->setAnime4KMode(anime4kMode_);
+
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -794,6 +825,15 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::rateChanged, this, [this](double rate) {
         speed_ = rate;
         surface_->setSpeed(speed_);
+    });
+    connect(shell_, &PlayerShell::anime4KModeChanged, this, [this](anime4k::Mode mode) {
+        anime4kMode_ = mode;
+        surface_->setAnime4KMode(mode);
+        // The shader chain is a rendering choice, not per-episode state: it is
+        // the one player setting that outlives a session, and a 4x upscale on
+        // a GPU that cannot carry it is invisible until the next run.
+        QSettings settings;
+        settings.setValue(kAnime4KSettingKey, modeId(mode));
     });
     connect(shell_, &PlayerShell::volumeChanged, this, [this](double value) {
         // The shell speaks 0…1; the engine and mpv speak 0…100.
@@ -1713,6 +1753,9 @@ void PlayerDialog::enterPip() {
     // so a float parented to the player slides under whatever app the user
     // switches to.
     auto* window = new PipFloat;
+    // The float runs a second mpv core, so it needs the same shader chain
+    // separately: entering PiP must not silently drop the upscaling.
+    window->videoSurface()->setAnime4KMode(anime4kMode_);
     connect(window, &PipFloat::togglePlayRequested, surface_, &VideoSurface::togglePause);
     connect(window, &PipFloat::seekRequested, this, [this](double delta) {
         surface_->seek(surface_->position() + delta);

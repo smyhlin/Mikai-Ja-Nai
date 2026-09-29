@@ -1,9 +1,12 @@
 #include "VideoSurface.hpp"
 
+#include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QMetaObject>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QPointer>
+#include <QThread>
 #include <QTimer>
 #include <cmath>
 
@@ -42,6 +45,54 @@ void VideoSurface::ensureEngine() {
         {"osc", "no"},
     };
     mpv_ = std::make_unique<MpvHandle>(options);
+    // Applied as a construction option so a mode restored from settings is in
+    // place before the first frame. mpv accepts the same write at runtime - it
+    // is the path setAnime4KMode uses when the user changes preset mid-play.
+    const QString shaders = anime4k::shaderStringForMode(anime4kMode_);
+    if (!shaders.isEmpty()) {
+        try {
+            mpv_->setString("glsl-shaders", shaders.toStdString());
+        } catch (const MpvError& err) {
+            emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+        }
+    }
+}
+
+void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
+    if (mode == anime4kMode_) return;
+    anime4kMode_ = mode;
+    if (!mpv_) return;
+    try {
+        mpv_->setString("glsl-shaders", anime4k::shaderStringForMode(mode).toStdString());
+    } catch (const MpvError& err) {
+        emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+    }
+    // vo=libmpv only rebuilds the filter chain when a new frame is rendered,
+    // and a paused video produces none, so the mode would appear to have no
+    // effect until playback resumed.
+    if (contextReady_ && render_) {
+        render_->update();
+    }
+    update();
+}
+
+QString VideoSurface::effectiveShaderChain() const {
+    if (!mpv_) return QString();
+    try {
+        return QString::fromStdString(mpv_->getString("glsl-shaders"));
+    } catch (const MpvError&) {
+        return QString();
+    }
+}
+
+bool VideoSurface::waitForContext(int timeoutMs) {
+    QElapsedTimer clock;
+    clock.start();
+    while (!contextReady_ && clock.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(20);
+    }
+    return contextReady_;
 }
 
 VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {

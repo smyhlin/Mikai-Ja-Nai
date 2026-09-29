@@ -214,6 +214,58 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->addWidget(qualitySection_);
     qualitySection_->setVisible(false);
 
+    auto* sep3 = new QFrame(this);
+    sep3->setFixedHeight(1);
+    sep3->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
+    lay->addWidget(sep3);
+
+    anime4kSection_ = new QWidget(this);
+    anime4kSection_->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto* alay = new QVBoxLayout(anime4kSection_);
+    alay->setContentsMargins(0, 0, 0, 0);
+    alay->setSpacing(5);
+
+    auto* arow = new QHBoxLayout();
+    auto* al = new QLabel(QStringLiteral("SHADERS"));
+    al->setFont(monoFont(8));
+    al->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    arow->addWidget(al);
+    arow->addStretch();
+    anime4kLabel_ = new QLabel(QStringLiteral("—"));
+    anime4kLabel_->setFont(monoFont(9));
+    anime4kLabel_->setStyleSheet(
+        QStringLiteral("color:%1; font-weight:700; background: transparent;").arg(green().name()));
+    arow->addWidget(anime4kLabel_);
+    alay->addLayout(arow);
+
+    auto* abody = new QVBoxLayout();
+    abody->setContentsMargins(0, 0, 0, 0);
+    abody->setSpacing(2);
+    alay->addLayout(abody);
+    lay->addWidget(anime4kSection_);
+
+    // A missing shader folder is not an error to show - it is a feature that
+    // is simply unavailable, so the rows are built anyway and the section is
+    // hidden in setAnime4KMode, which is the only place that knows the answer.
+    anime4kModes_ = anime4k::availableModes();
+    for (const anime4k::ModeInfo& info : anime4kModes_) {
+        auto* btn = new QPushButton(this);
+        btn->setFont(uiFont(10));
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFixedHeight(26);
+        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setToolTip(info.hint);
+        const anime4k::Mode mode = info.mode;
+        connect(btn, &QPushButton::clicked, this, [this, mode] {
+            anime4kMode_ = mode;
+            refresh();
+            emit anime4KSelected(mode);
+        });
+        abody->addWidget(btn);
+        anime4kRows_.append(btn);
+    }
+    anime4kSection_->setVisible(false);
+
     refresh();
 }
 
@@ -274,6 +326,12 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     refresh();
 }
 
+void SettingsFlyout::setAnime4KMode(anime4k::Mode mode) {
+    anime4kMode_ = mode;
+    anime4kSection_->setVisible(!anime4k::findShadersDir().isEmpty());
+    refresh();
+}
+
 void SettingsFlyout::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
@@ -331,6 +389,18 @@ void SettingsFlyout::refresh() {
         btn->setText((option.current ? QStringLiteral("✓  ") : QString()) + option.label);
         btn->setStyleSheet(rowQss(option.current));
     }
+    QString activeShader = QStringLiteral("—");
+    for (int i = 0; i < anime4kRows_.size() && i < anime4kModes_.size(); ++i) {
+        const anime4k::ModeInfo& info = anime4kModes_[i];
+        QPushButton* btn = anime4kRows_[i];
+        const bool selected = info.mode == anime4kMode_;
+        btn->setText((selected ? QStringLiteral("✓  ") : QString()) + info.label);
+        btn->setStyleSheet(rowQss(selected));
+        if (selected) {
+            activeShader = info.label;
+        }
+    }
+    anime4kLabel_->setText(activeShader);
     for (int i = 0; i < rows_.size(); ++i) {
         const double speed = rows_[i].first;
         QPushButton* btn = rows_[i].second;

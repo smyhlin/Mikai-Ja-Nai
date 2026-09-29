@@ -21,6 +21,7 @@ set(PLAYER_SOURCES
   src/player/MpvHandle.cpp
   src/player/MpvRenderContext.cpp
   src/player/VideoSurface.cpp
+  src/player/Anime4K.cpp
   src/player/ShellTheme.cpp
   src/player/ShellWidgets.cpp
   src/player/ShellSliders.cpp
@@ -33,6 +34,7 @@ set(PLAYER_HEADERS
   src/player/MpvHandle.hpp
   src/player/MpvRenderContext.hpp
   src/player/VideoSurface.hpp
+  src/player/Anime4K.hpp
   src/player/ShellTheme.hpp
   src/player/ShellWidgets.hpp
   src/player/ShellSliders.hpp
@@ -233,6 +235,14 @@ if(TARGET mikai_backend)
   add_executable(mikai src/app/main.cpp)
   set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
   target_link_libraries(mikai PRIVATE mikai_app)
+
+  # Copy Anime4K shaders next to the executable so libmpv can find them at runtime.
+  add_custom_command(TARGET mikai POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+      $<TARGET_FILE_DIR:mikai>/shaders
+    COMMENT "Deploying Anime4K shaders to output directory"
+  )
 else()
   message(STATUS "mikai_backend not present: skipping the mikai app targets")
 endif()

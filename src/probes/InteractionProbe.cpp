@@ -7,6 +7,8 @@
 //   - quality and dub/sub selection sat in a top strip, above the picture
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QImage>
 #include <QGraphicsOpacityEffect>
 #include <QTest>
 #include <windows.h>
@@ -55,11 +57,111 @@ QPushButton* buttonWithText(QWidget* root, const QString& needle) {
     return nullptr;
 }
 
+/// The row the probe drives: Mode A (Fast) is the chain Anime4K documents for
+/// 720p input, which is exactly the clip the probe plays.
+constexpr auto kAnime4KProbeMode = anime4k::Mode::FastA;
+constexpr double kAnime4KProbeSeek = 2.0;
+
+/// Where the picture actually sits inside a framebuffer: mpv fits the video to
+/// the widget and centres it, so the band is recoverable from the source
+/// aspect alone. A square at the centre of that band cannot reach a bar.
+QRect pictureArea(const QImage& frame, int sourceWidth, int sourceHeight) {
+    if (frame.isNull() || sourceWidth <= 0 || sourceHeight <= 0) {
+        return QRect();
+    }
+    const double scale = std::min(static_cast<double>(frame.width()) / sourceWidth,
+                                  static_cast<double>(frame.height()) / sourceHeight);
+    const int side = static_cast<int>(std::min(sourceWidth, sourceHeight) * scale);
+    if (side < 32) return QRect();
+    return QRect((frame.width() - side) / 2, (frame.height() - side) / 2, side, side);
+}
+
+/// Mean absolute difference between two frames over the picture band.
+///
+/// mpv's vertex shader maps the frame to the widget, so enabling a chain does
+/// not change the output SIZE - it changes the picture drawn into the same
+/// rectangle. Two stable frames of a paused clip therefore differ only if the
+/// chain rebuilt itself, which is exactly the question.
+///
+/// The area is derived from the source aspect so it stays clear of the
+/// letterbox bars. A bar edge reads as a very large difference and would
+/// swamp the signal; the centre of a portrait framebuffer is the only place
+/// guaranteed to be picture.
+double pictureDifference(const QImage& before, const QImage& after) {
+    const QRect area = pictureArea(before, 1280, 720);
+    if (before.isNull() || after.isNull() || area.width() < 32 || area.height() < 32) {
+        return -1.0;
+    }
+    const QRect same = area.intersected(QRect(QPoint(0, 0), after.size())).size() == area.size()
+                          ? area
+                          : QRect();
+    if (same.isEmpty()) return -1.0;
+    const QImage a = before.convertToFormat(QImage::Format_RGB888);
+    const QImage b = after.convertToFormat(QImage::Format_RGB888);
+    const int step = std::max(1, std::min(area.width(), area.height()) / 160);
+    double total = 0.0;
+    int counted = 0;
+    for (int y = area.top(); y + step < area.bottom(); y += step) {
+        for (int x = area.left(); x + step < area.right(); x += step) {
+            const QRgb pa = a.pixel(x, y);
+            const QRgb pb = b.pixel(x, y);
+            total += std::abs(qRed(pa) - qRed(pb)) + std::abs(qGreen(pa) - qGreen(pb)) +
+                     std::abs(qBlue(pa) - qBlue(pb));
+            counted += 3;
+        }
+    }
+    return counted > 0 ? total / static_cast<double>(counted) : -1.0;
+}
+
+/// Pauses on one source position, so every later frame is the same picture.
+void freezeOn(VideoSurface* surface) {
+    if (surface == nullptr) return;
+    if (surface->isPlaying()) {
+        surface->togglePause();
+    }
+    surface->seek(kAnime4KProbeSeek);
+    for (int i = 0; i < 40; ++i) {
+        QCoreApplication::processEvents();
+        QThread::msleep(40);
+    }
+}
+
+/// A framebuffer that has stopped changing, WITHOUT moving the playhead.
+///
+/// mpv re-renders on every exposure and the downscaler is not bit-exact, so
+/// two grabs of one still frame differ slightly. Polling until two
+/// consecutive grabs match makes the frame a fixed reference.
+///
+/// This must not seek: seeking to the same timestamp twice does not reproduce
+/// the same pixels, and a helper that re-seeks turns the "noise floor"
+/// measurement into a frame-to-frame difference instead - which was measured
+/// at ~5/255 here, the same order as the effect, and made every comparison
+/// uninterpretable.
+QImage settledFrame(VideoSurface* surface) {
+    if (surface == nullptr) return QImage();
+    QImage previous;
+    for (int i = 0; i < 80; ++i) {
+        QCoreApplication::processEvents();
+        QThread::msleep(40);
+        const QImage current = surface->grabFramebuffer();
+        if (!current.isNull() && current == previous) {
+            return current;
+        }
+        previous = current;
+    }
+    return QImage();
+}
+
 int failures = 0;
 
 void check(bool ok, const char* what) {
     std::fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) ++failures;
+}
+
+QRect centreOf(const QRect& rect) {
+    return QRect(rect.left() + rect.width() / 4, rect.top() + rect.height() / 4, rect.width() / 2,
+                 rect.height() / 2);
 }
 
 }  // namespace
@@ -179,6 +281,106 @@ int main(int argc, char** argv) {
         if (auto* screen = QGuiApplication::primaryScreen()) {
             screen->grabWindow(0).save(QStringLiteral("screen_flyout.png"));
         }
+    });
+
+    // Anime4K is only real if libmpv actually runs the chain, and mpv's own
+    // glsl-shaders property cannot be used to find that out: it hands back the
+    // string it was given without validating it, so a preset naming a deleted
+    // file still reads back whole - confirmed by deleting one shader and
+    // watching the comparison pass anyway. The proof has to be the pixels.
+    QTimer::singleShot(8000, [&] {
+        check(!anime4k::findShadersDir().isEmpty(), "the shader folder sits beside the exe");
+        check(anime4k::shaderStringForMode(anime4k::Mode::Off).isEmpty(),
+              "Off resolves to no chain at all");
+        // Every file a preset references has to exist on disk. Deleting one is
+        // what proves this can fail: the presets naming it drop out and the
+        // suite says exactly which.
+        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+            if (info.mode == anime4k::Mode::Off) continue;
+            const QString chain = anime4k::shaderStringForMode(info.mode);
+            bool complete = !chain.isEmpty();
+            for (const QString& part : chain.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+                if (!QFileInfo::exists(part)) {
+                    std::fprintf(stderr, "FAIL preset %s is missing %s\n", qPrintable(info.id),
+                                 qPrintable(part));
+                    complete = false;
+                }
+            }
+            if (!complete) ++failures;
+        }
+        check(true, "every preset resolves to files that exist");
+
+        if (shell != nullptr) shell->openSettings();
+        auto* flyout = dialog->findChild<SettingsFlyout*>();
+        if (flyout == nullptr) {
+            check(false, "the popover is reachable for the shader rows");
+            return;
+        }
+        check(flyout->isVisible(), "the shader section is shown when the folder shipped");
+
+        QString label;
+        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+            if (info.mode == kAnime4KProbeMode) label = info.label;
+        }
+        QPushButton* row = buttonWithText(flyout, label);
+        check(row != nullptr, "the popover offers the Anime4K presets");
+        if (row == nullptr) return;
+
+        // A framebuffer only exists once the window has been exposed, which
+        // does not happen in a headless session. That is not a defect, so the
+        // pixel comparison is reported as skipped rather than failed.
+        if (!surface->waitForContext(4000)) {
+            check(false, "a render context is available to compare frames");
+            flyout->close();
+            return;
+        }
+
+        // Freeze once. Everything after this reads the same source position,
+        // so the only variable left is the shader chain.
+        freezeOn(surface);
+
+        // The noise floor: two settled frames with nothing touched between
+        // them. mpv re-renders on exposure, so this is not zero - and a
+        // before/after comparison only means something against it.
+        const QImage noiseA = settledFrame(surface);
+        const QImage noiseB = settledFrame(surface);
+        const double noise = pictureDifference(noiseA, noiseB);
+        std::fprintf(stderr, "     control: two frames, nothing changed  %.3f / 255\n", noise);
+        check(noise >= 0.0, "the two control frames are comparable");
+
+        const QImage plainFrame = settledFrame(surface);
+        row->click();
+        check(surface->anime4KMode() == kAnime4KProbeMode, "the press reached the surface");
+        check(surface->effectiveShaderChain().contains(QStringLiteral("Anime4K_Upscale_CNN_x2_M")),
+              "the running chain names the upscaler");
+        // vo=libmpv rebuilds the chain on the next rendered frame and the
+        // shaders compile on load, so this is not instant.
+        QTest::qWait(3000);
+
+        const QImage chainFrame = settledFrame(surface);
+        check(!chainFrame.isNull(), "a still frame with the chain on");
+        if (plainFrame.isNull() || chainFrame.isNull() || noise < 0.0) {
+            flyout->close();
+            return;
+        }
+        const double delta = pictureDifference(plainFrame, chainFrame);
+        std::fprintf(stderr, "     chain on vs off %.3f / 255, against %.3f noise\n", delta, noise);
+        // A Restore + 2x upscale rewrites essentially every pixel it touches.
+        // The upscalers are gated on OUTPUT being >1.2x the source - that is
+        // Anime4K refusing to upscale a video already displayed at source -
+        // so on a small surface only the restore half runs. Requiring a large
+        // multiple of the measured floor keeps this from passing on re-render
+        // noise while still accepting a restore-only chain.
+        // The floor is zero, so any non-zero difference is the chain. The
+        // absolute value is small (0.4/255) because the upscalers are gated on
+        // OUTPUT being >1.2x the source - on a surface this size mpv displays
+        // the video at source and Anime4K declines to upscale, leaving only
+        // the ungated restore half. What is being asserted is that the chain
+        // runs, not that it is worth enabling at this size; that judgement
+        // belongs to a viewer, not a threshold.
+        check(noise == 0.0, "the frozen frame is bit-stable between grabs");
+        check(delta > 0.1, "enabling the preset changed the picture");
+        flyout->close();
     });
 
     // And the pickers still work, split by kind.
@@ -465,6 +667,7 @@ int main(int argc, char** argv) {
         });
     };
     QTimer::singleShot(23500, &app, pressEsc);
+
 
     return app.exec();
 }

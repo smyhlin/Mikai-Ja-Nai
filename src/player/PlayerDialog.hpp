@@ -27,6 +27,8 @@ class QVariantAnimation;
 class QWidget;
 QT_END_NAMESPACE
 
+#include "Anime4K.hpp"
+
 namespace mplayer {
 class VideoSurface;
 }
@@ -291,6 +293,7 @@ private:
     double aspect_ = 16.0 / 9.0;
     double volume_ = 0.7;      // 0..1, what the shell shows
     double speed_ = 1.0;
+    anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     bool muted_ = false;
     bool fullscreen_ = false;
     bool seriesExpanded_ = false;

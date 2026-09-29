@@ -70,7 +70,18 @@ Layering is strict and enforced by tests:
   `VideoSurface::ensureEngine()` — `vo=libmpv`,
   `http-header-fields=Accept-Language: uk-UA` (MoonAnime's CDN answers 400 to a
   playlist without it), user-agent, `hwdec=auto-safe`, `keepaspect=yes`, input
-  bindings off (the keyboard belongs to the shell).
+  bindings off (the keyboard belongs to the shell). `glsl-shaders` is set there
+  too, and `VideoSurface::setAnime4KMode` swaps it on the live core: the mode is
+  remembered and applied at construction, and a later pick re-uses the
+  `change-list`-equivalent property write, which libmpv accepts at runtime
+  (confirmed against `mpv_request_log_messages`: `Set property: glsl-shaders`
+  succeeds with no shader compile errors). The choice persists under
+  `player/anime4k` as the preset *id*, not the enum ordinal, so a preset added
+  later cannot silently repoint an existing selection.
+  The upscalers are gated by `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`: Anime4K
+  declines to upscale a video mpv is already displaying at or above source
+  size. A 480p source in a 1080p window is what actually triggers it, which is
+  also the case the feature exists for.
 - `src/app/CrashLog.cpp` is installed first thing in `main()`, before any other
   work, so a failure during startup still leaves a trace. It writes
   `mikai.log` beside the exe (rotating to `mikai.log.1` past 2 MB), installs a
@@ -138,7 +149,12 @@ Layering is strict and enforced by tests:
   `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
   `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
-  `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
+  `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`);
+  `Anime4K` (preset table + shader-path resolution, `Mode::Off`..`HqCA`).
+- `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
+  by a POST_BUILD rule on `mikai`. `Anime4K::findShadersDir` looks beside the
+  exe and in the cwd; when it finds nothing the SHADERS section hides itself
+  rather than offering rows that cannot work.
 - `src/probes/` — hand-run probes, including three that need the network and
   a key: `title_page_probe` (the real `TitlePage` against the real API, and the
   cover open/close loop that pins the use-after-free), `crash_probe`
@@ -146,7 +162,26 @@ Layering is strict and enforced by tests:
   actually written) (`mpv_surface_smoke`, `shell_probe`,
   `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`,
   `InteractionProbe`) that build a real window and check pixels. CMake
-  targets, not tests; nothing in `tests/` runs them.
+  targets, not tests; nothing in `tests/` runs them. `InteractionProbe`
+  measures Anime4K by freezing the clip on one timestamp, taking a control pair
+  of frames with nothing touched, then enabling the preset and measuring the
+  picture difference. Three things about that measurement are load-bearing and
+  were each found by the check passing when it should not have:
+  - The control must be two settled frames *without* re-seeking. Seeking to
+    the same timestamp twice does not reproduce the same pixels, and a helper
+    that re-seeks makes the "noise floor" a frame-to-frame difference
+    (~5/255 here) instead of the real 0.000.
+  - The comparison must stay inside the picture band, derived from the source
+    aspect. The whole framebuffer includes the letterbox bars, whose edges read
+    as a 20x sharpening, and on a portrait framebuffer the middle *half*
+    still reaches them.
+  - mpv's `glsl-shaders` property echoes the string back without validating
+    it, so it cannot tell a working chain from a preset naming a deleted file.
+    Verified by deleting one `.glsl`: the property still read back complete.
+  The absolute difference is ~0.4/255 because the upscalers carry
+  `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...` and decline to upscale a video mpv
+  is already displaying at source; on a small surface only the ungated restore
+  half runs. The check asserts the chain runs, not that it is worth enabling.
 - `tests/cpp/` — `mikai_tests` (one exe, one ctest entry; `main.cpp` drives
   each suite and prints a per-suite PASS/FAIL line): `TestModels`,
   `TestReleases`, `TestStreams`, `TestPagers`, `TestQualityCache`,
