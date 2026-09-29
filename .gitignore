@@ -18,3 +18,4 @@ _*.log
 
 build-cmake/
 build-dbg/
+dist-mikai/
