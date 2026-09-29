@@ -205,7 +205,6 @@ private:
     QWidget* footerRight_ = nullptr;
     IconButton* btnReset_ = nullptr;
     IconButton* btnKeys_ = nullptr;
-    IconButton* btnDownload_ = nullptr;
     IconButton* btnMore_ = nullptr;
     KeyHints* keys_ = nullptr;
 

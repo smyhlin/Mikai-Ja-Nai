@@ -24,13 +24,13 @@ constexpr int kRowHeight = 28;
 // geometry a previous popupNear left behind.
 constexpr int kUnlimited = 16777215;
 
-const char* const kText = "#e7e7ea";
-const char* const kMuted = "#a0a0ab";
-const char* const kBorder = "#30303a";
+const char* const kText = "#f0f0f5";
+const char* const kMuted = "#9a9aa6";
+const char* const kBorder = "rgba(255, 255, 255, 0.16)";
 
 constexpr auto kPanelQss =
     "QFrame[chromePanel=\"true\"] {"
-    "  background-color: rgba(11, 11, 15, 0.92);"
+    "  background-color: #14151b;"
     "  border: 1px solid %1;"
     "  border-radius: 10px; }";
 
@@ -39,15 +39,17 @@ QString rowQss(const char* foreground, const char* fill) {
                "QPushButton {"
                "  color: %1;"
                "  background: %2;"
-               "  border: none; border-radius: 6px; text-align: left;"
-               "  padding: 0 %3px; min-height: 24px; }"
-               "QPushButton:hover { background: rgba(231, 231, 234, 0.12); }")
+               "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
+               "  padding: 0 %3px; min-height: 28px; font-size: 13px; font-weight: 500; }"
+               "QPushButton:hover {"
+               "  background: rgba(255, 255, 255, 0.12); color: #ffffff;"
+               "  border-color: rgba(255, 255, 255, 0.20); }")
         .arg(QLatin1String(foreground), QLatin1String(fill))
         .arg(kSpacingSmall);
 }
 
 QString captionQss(int size) {
-    return QStringLiteral("color: %1; font-size: %2px; background: transparent;")
+    return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
         .arg(QLatin1String(kMuted))
         .arg(size);
 }
@@ -228,11 +230,11 @@ void MenuPopup::activate(int spot) {
 void MenuPopup::paintRows() {
     for (int index = 0; index < rows_.size(); ++index) {
         if (index < rowEntries_.size() && rowEntries_.at(index).current)
-            rows_.at(index)->setStyleSheet(rowQss(kText, "rgba(189, 172, 255, 0.20)"));
+            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(88, 101, 242, 0.40)"));
         else if (index == highlight_)
-            rows_.at(index)->setStyleSheet(rowQss(kText, "rgba(231, 231, 234, 0.10)"));
+            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(255, 255, 255, 0.12)"));
         else
-            rows_.at(index)->setStyleSheet(rowQss(kMuted, "transparent"));
+            rows_.at(index)->setStyleSheet(rowQss("#e0e0e6", "rgba(255, 255, 255, 0.05)"));
     }
 }
 

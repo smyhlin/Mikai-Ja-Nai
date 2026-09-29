@@ -98,7 +98,6 @@ protected:
 
 private:
     void buildChrome();
-    QWidget* buildPill(const QString& name);
     QPushButton* buildButton(const QString& name, const QString& hint, qreal size);
     void pointerPress(QMouseEvent* event);
     void pointerMove(QMouseEvent* event);
@@ -112,8 +111,6 @@ private:
 
     VideoSurface* surface_ = nullptr;
     QWidget* overlay_ = nullptr;
-    QWidget* topPill_ = nullptr;
-    QWidget* bar_ = nullptr;
     QPushButton* muteButton_ = nullptr;
     QPushButton* restoreButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;

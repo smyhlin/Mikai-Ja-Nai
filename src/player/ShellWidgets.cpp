@@ -138,9 +138,8 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint), quality_(QStringLiteral("HD")) {
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(
-        QStringLiteral("SettingsFlyout { background-color: %1; border: 1px solid %2;"
-                       " border-radius: 9px; }")
-            .arg(rgba(flyout()), rgba(white(38))));
+        QStringLiteral("SettingsFlyout { background-color: #14151b; border: 1px solid rgba(255, 255, 255, 0.16);"
+                       " border-radius: 10px; }"));
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(10, 10, 10, 10);
@@ -149,7 +148,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     auto* head = new QHBoxLayout();
     auto* cap = new QLabel(QStringLiteral("ШВИДКІСТЬ"));
     cap->setFont(monoFont(8));
-    cap->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(115))));
+    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     head->addWidget(cap);
     head->addStretch();
     badge_ = new QLabel(QStringLiteral("1.0x"));
@@ -167,7 +166,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
 
     auto* sep = new QFrame(this);
     sep->setFixedHeight(1);
-    sep->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(white(25))));
+    sep->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
     lay->addWidget(sep);
 
     for (const SpeedPreset& preset : kSpeedPresets) {
@@ -183,7 +182,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
 
     auto* sep2 = new QFrame(this);
     sep2->setFixedHeight(1);
-    sep2->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(white(25))));
+    sep2->setStyleSheet(QStringLiteral("background: rgba(255, 255, 255, 0.10);"));
     lay->addWidget(sep2);
 
     // Quality lives here rather than in a chip over the picture: the gear is
@@ -197,7 +196,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     auto* qrow = new QHBoxLayout();
     auto* ql = new QLabel(QStringLiteral("ЯКІСТЬ"));
     ql->setFont(monoFont(8));
-    ql->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(100))));
+    ql->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     qrow->addWidget(ql);
     qrow->addStretch();
     qualityLabel_ = new QLabel(QStringLiteral("HD"));
@@ -223,12 +222,15 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
 // read correctly; both row styles go through here now.
 QString rowQss(bool current) {
     return QStringLiteral(
-               "QPushButton { color: %1; background: %2; border: none; border-radius: 5px;"
-               " text-align: left; padding: 0 8px; }"
-               "QPushButton:hover { background: rgba(255, 255, 255, 0.10); }")
-        .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("rgba(255, 255, 255, 0.69)"),
-             current ? QStringLiteral("rgba(189, 172, 255, 0.20)")
-                     : QStringLiteral("rgba(255, 255, 255, 0)"));
+               "QPushButton { color: %1; background: %2; border: 1px solid %3; border-radius: 6px;"
+               " text-align: left; padding: 0 10px; font-size: 13px; font-weight: 500; min-height: 26px; }"
+               "QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff;"
+               " border-color: rgba(255, 255, 255, 0.20); }")
+        .arg(current ? QStringLiteral("#ffffff") : QStringLiteral("#e0e0e6"),
+             current ? QStringLiteral("rgba(88, 101, 242, 0.40)")
+                     : QStringLiteral("rgba(255, 255, 255, 0.05)"),
+             current ? QStringLiteral("rgba(88, 101, 242, 0.60)")
+                     : QStringLiteral("transparent"));
 }
 
 void SettingsFlyout::setRate(double rate) {
@@ -563,16 +565,15 @@ QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
 KeyHints::KeyHints(QWidget* parent) : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint) {
     setAttribute(Qt::WA_TranslucentBackground);
     setStyleSheet(
-        QStringLiteral("KeyHints { background-color: %1; border: 1px solid %2;"
-                       " border-radius: 9px; }")
-            .arg(rgba(flyout()), rgba(white(38))));
+        QStringLiteral("KeyHints { background-color: #14151b; border: 1px solid rgba(255, 255, 255, 0.16);"
+                       " border-radius: 10px; }"));
 
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(11, 10, 11, 10);
     lay->setSpacing(3);
     auto* cap = new QLabel(QStringLiteral("supported_input_modalities"));
     cap->setFont(monoFont(8));
-    cap->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(115))));
+    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     lay->addWidget(cap);
     lay->addSpacing(2);
 

@@ -167,7 +167,7 @@ void PlayerShell::buildDock() {
 
     lblElapsed_ = new QLabel(QStringLiteral("00:00"), dock_);
     lblElapsed_->setFont(monoFont(9));
-    lblElapsed_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,230);"));
+    lblElapsed_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,230);"));
     lblElapsed_->setFixedWidth(34);
     lay->addWidget(lblElapsed_);
 
@@ -178,7 +178,7 @@ void PlayerShell::buildDock() {
 
     lblRemaining_ = new QLabel(QStringLiteral("-00:00"), dock_);
     lblRemaining_->setFont(monoFont(9));
-    lblRemaining_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,140);"));
+    lblRemaining_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,140);"));
     lblRemaining_->setFixedWidth(38);
     lay->addWidget(lblRemaining_);
 
@@ -232,11 +232,11 @@ void PlayerShell::buildFooter() {
     v->setSpacing(1);
     lblFile_ = new QLabel(QStringLiteral("no media loaded"), footerLeft_);
     lblFile_->setFont(monoFont(8));
-    lblFile_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,130);"));
+    lblFile_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,130);"));
     v->addWidget(lblFile_);
     lblOrigin_ = new QLabel(QStringLiteral("drop a file · or pass one as argv[1]"), footerLeft_);
     lblOrigin_->setFont(uiFont(9));
-    lblOrigin_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,85);"));
+    lblOrigin_->setStyleSheet(QStringLiteral("background: transparent; color: rgba(255,255,255,85);"));
     v->addWidget(lblOrigin_);
 
     footerRight_ = new QWidget(this);
@@ -254,11 +254,6 @@ void PlayerShell::buildFooter() {
                               15, footerRight_);
     connect(btnKeys_, &QPushButton::clicked, this, &PlayerShell::openKeys);
     h->addWidget(btnKeys_);
-
-    btnDownload_ = new IconButton(IconPainter::download, QStringLiteral("download_media_file"), 28,
-                                  16, footerRight_);
-    connect(btnDownload_, &QPushButton::clicked, this, &PlayerShell::downloadRequested);
-    h->addWidget(btnDownload_);
 
     btnMore_ = new IconButton(IconPainter::more, QStringLiteral("open_extended_menu"), 28, 16,
                               footerRight_);

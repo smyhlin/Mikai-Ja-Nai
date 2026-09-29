@@ -94,8 +94,7 @@ constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
 constexpr int kPipCenterButtonSize = 84;
 constexpr int kPipCenterIconSize = 34;
-constexpr int kPipFieldHeight = 32;
-constexpr int kPipPillHeight = kPipFieldHeight + 2 * kSpacingXS + 2;
+constexpr int kPipFieldHeight = 28;
 constexpr int kPipTimelineHeight = 4;
 constexpr int kPipTimelineHandle = 12;
 
@@ -131,46 +130,34 @@ QString statusTextQss() { return QStringLiteral("color: %1; background: transpar
 QString pipQss() {
     return QStringLiteral(
                "QWidget#pipOverlay { background: transparent; border: none; }"
-               "QWidget#pipPill, QWidget#pipBar {"
-               "  background: rgba(24, 25, 28, 200);"
-               "  border: 1px solid rgba(231, 231, 234, 0.10);"
-               "  border-radius: 16px;"
-               "}"
                "QLabel#pipElapsed, QLabel#pipRemaining {"
-               "  background: transparent; color: %1; font-size: 12px; font-family: monospace;"
-               "}"
+               "  background: transparent; color: #ffffff; font-size: 11px; font-weight: 600;"
+               "  font-family: monospace; }"
                "QPushButton#pipPlay {"
-               "  background: rgba(24, 25, 28, 200);"
-               "  border: 1px solid rgba(231, 231, 234, 0.10);"
-               "  border-radius: %2px; padding: 0;"
-               "  min-width: %3px; max-width: %3px;"
-               "  min-height: %3px; max-height: %3px;"
-               "}"
+               "  background: rgba(0, 0, 0, 0.45);"
+               "  border: 1px solid rgba(255, 255, 255, 0.20);"
+               "  border-radius: %1px; padding: 0;"
+               "  min-width: %2px; max-width: %2px;"
+               "  min-height: %2px; max-height: %2px; }"
+               "QPushButton#pipPlay:hover {"
+               "  background: rgba(0, 0, 0, 0.70);"
+               "  border-color: rgba(255, 255, 255, 0.40); }"
                "QPushButton#pipMute, QPushButton#pipRestore, QPushButton#pipClose {"
-               "  background: transparent; border: 1px solid transparent;"
-               "  border-radius: 8px; padding: 0;"
-               "}"
-               "QPushButton#pipPlay:hover, QPushButton#pipMute:hover,"
-               "QPushButton#pipRestore:hover, QPushButton#pipClose:hover {"
-               "  background: %4;"
-               "}"
+               "  background: rgba(0, 0, 0, 0.45);"
+               "  border: 1px solid rgba(255, 255, 255, 0.15);"
+               "  border-radius: 6px; padding: 0; }"
+               "QPushButton#pipMute:hover, QPushButton#pipRestore:hover, QPushButton#pipClose:hover {"
+               "  background: rgba(0, 0, 0, 0.75);"
+               "  border-color: rgba(255, 255, 255, 0.35); }"
                "QSlider#pipScrub { background: transparent; }"
                "QSlider#pipScrub::groove:horizontal {"
-               "  height: %5px; background: %6; border-radius: 2px; }"
-               "QSlider#pipScrub::sub-page:horizontal { background: %1; border-radius: 2px; }"
+               "  height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; }"
+               "QSlider#pipScrub::sub-page:horizontal { background: #5865F2; border-radius: 2px; }"
                "QSlider#pipScrub::handle:horizontal {"
-               "  background: %7; width: %8px; height: %8px;"
-               "  margin: %9px 0; border-radius: %10px; }")
-        .arg(kMuted)
+               "  background: #ffffff; width: 10px; height: 10px;"
+               "  margin: -3px 0; border-radius: 5px; }")
         .arg(kPipCenterButtonSize / 2)
-        .arg(kPipCenterButtonSize)
-        .arg(kGhostHover)
-        .arg(kPipTimelineHeight)
-        .arg(kSurfaceActive)
-        .arg(kText)
-        .arg(kPipTimelineHandle)
-        .arg(kPipTimelineHeight / 2 - kPipTimelineHandle / 2)
-        .arg(kPipTimelineHandle / 2);
+        .arg(kPipCenterButtonSize);
 }
 
 QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text) {
@@ -272,45 +259,30 @@ void PipFloat::buildChrome() {
     overlay_->setMouseTracking(true);
     overlay_->setStyleSheet(pipQss());
     overlay_->installEventFilter(this);
-    // The overlay is full-rect and would otherwise eat the gesture; the filter
-    // above forwards its presses here so click-to-play and drag-to-move land in
-    // one place.
+    // The overlay is full-rect and forwards input to the float for drag/move
+    // and click-to-pause.
     overlay_->setFocusProxy(this);
-
-    auto* layout = new QVBoxLayout(overlay_);
-    layout->setContentsMargins(kSpacingSmall, kSpacingSmall, kSpacingSmall, kSpacingSmall);
-    layout->setSpacing(0);
-
-    topPill_ = buildPill(QStringLiteral("pipPill"));
-    auto* topRow = new QHBoxLayout(topPill_);
-    topRow->setContentsMargins(kSpacingSmall, kSpacingXS, kSpacingSmall, kSpacingXS);
-    topRow->setSpacing(kSpacingSmall);
 
     muteButton_ = buildButton(QStringLiteral("pipMute"), QStringLiteral("Вимкнути звук"),
                               kPipFieldHeight);
+    muteButton_->setIcon(glyphIcon(&IconPainter::volume, 16));
     connect(muteButton_, &QPushButton::clicked, this, [this] {
         setMuted(!muted_);
         revealControls();
         emit muteChanged(muted_);
     });
-    topRow->addWidget(muteButton_);
-
-    topRow->addStretch(1);
 
     restoreButton_ =
         buildButton(QStringLiteral("pipRestore"), QStringLiteral("Повернути у вікно"),
                     kPipFieldHeight);
+    restoreButton_->setIcon(glyphIcon(&IconPainter::expand, 15));
     connect(restoreButton_, &QPushButton::clicked, this, &PipFloat::restoreRequested);
-    topRow->addWidget(restoreButton_);
 
     closeButton_ = buildButton(QStringLiteral("pipClose"), QStringLiteral("Закрити (Esc)"),
                                kPipFieldHeight);
+    closeButton_->setIcon(glyphIcon(&IconPainter::close, 15));
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
-    topRow->addWidget(closeButton_);
 
-    // The transport control is the one thing a float exists for, so it is the
-    // largest mark on the picture and it carries a white triangle rather than
-    // sitting in a chip the size of the others.
     playButton_ = new QPushButton(overlay_);
     playButton_->setObjectName(QStringLiteral("pipPlay"));
     playButton_->setFixedSize(kPipCenterButtonSize, kPipCenterButtonSize);
@@ -318,20 +290,21 @@ void PipFloat::buildChrome() {
     playButton_->setToolTip(QStringLiteral("Пауза (Пробіл)"));
     playButton_->setAccessibleName(QStringLiteral("Пауза"));
     playButton_->setFocusPolicy(Qt::NoFocus);
+    playButton_->setMouseTracking(true);
     connect(playButton_, &QPushButton::clicked, this, &PipFloat::togglePlayRequested);
 
-    bar_ = buildPill(QStringLiteral("pipBar"));
-    auto* bottomRow = new QHBoxLayout(bar_);
-    bottomRow->setContentsMargins(kSpacingSmall, kSpacingXS, kSpacingSmall, kSpacingXS);
-    bottomRow->setSpacing(kSpacingSmall);
-
-    elapsed_ = new QLabel(QStringLiteral("0:00"), bar_);
+    elapsed_ = new QLabel(QStringLiteral("0:00"), overlay_);
     elapsed_->setObjectName(QStringLiteral("pipElapsed"));
-    bottomRow->addWidget(elapsed_);
+    elapsed_->setMouseTracking(true);
 
-    scrub_ = new QSlider(Qt::Horizontal, bar_);
+    remaining_ = new QLabel(QStringLiteral("--:--"), overlay_);
+    remaining_->setObjectName(QStringLiteral("pipRemaining"));
+    remaining_->setMouseTracking(true);
+
+    scrub_ = new QSlider(Qt::Horizontal, overlay_);
     scrub_->setObjectName(QStringLiteral("pipScrub"));
     scrub_->setFocusPolicy(Qt::NoFocus);
+    scrub_->setMouseTracking(true);
     scrub_->setRange(0, 1);
     connect(scrub_, &QSlider::sliderPressed, this, [this] {
         scrubbing_ = true;
@@ -342,40 +315,19 @@ void PipFloat::buildChrome() {
         revealControls();
         emit seekAbsoluteRequested(scrub_->value() / 1000.0);
     });
-    bottomRow->addWidget(scrub_, 1);
-
-    remaining_ = new QLabel(QStringLiteral("--:--"), bar_);
-    remaining_->setObjectName(QStringLiteral("pipRemaining"));
-    bottomRow->addWidget(remaining_);
-
-    // The overlay is full rect, so the two pills and the centre button stack
-    // over the picture instead of taking a row of it.
-    layout->addWidget(topPill_, 0, Qt::AlignTop);
-    layout->addStretch(1);
-    layout->addWidget(playButton_, 0, Qt::AlignCenter);
-    layout->addStretch(1);
-    layout->addWidget(bar_, 0, Qt::AlignBottom);
 
     installEventFilter(this);
     surface_->installEventFilter(this);
-    const QVector<QWidget*> watched = {topPill_,  bar_,       elapsed_, remaining_, scrub_,
-                                       playButton_, muteButton_, restoreButton_,
+    const QVector<QWidget*> watched = {elapsed_,    remaining_,   scrub_,
+                                       playButton_, muteButton_,  restoreButton_,
                                        closeButton_};
     for (QWidget* widget : watched) {
         widget->installEventFilter(this);
     }
 }
 
-QWidget* PipFloat::buildPill(const QString& name) {
-    auto* pill = new QWidget(overlay_);
-    pill->setObjectName(name);
-    pill->setFixedHeight(kPipPillHeight);
-    pill->setMouseTracking(true);
-    return pill;
-}
-
 QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qreal size) {
-    auto* button = new QPushButton(this);
+    auto* button = new QPushButton(overlay_);
     button->setObjectName(name);
     button->setFixedSize(QSize(static_cast<int>(size), static_cast<int>(size)));
     button->setToolTip(hint);
@@ -429,7 +381,7 @@ void PipFloat::setTime(double position, double duration) {
 void PipFloat::setMuted(bool muted) {
     muted_ = muted;
     const QString hint = muted ? QStringLiteral("Увімкнути звук") : QStringLiteral("Вимкнути звук");
-    muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, kIconSize));
+    muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 16));
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
 }
@@ -585,12 +537,51 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
 // ── layout ───────────────────────────────────────────────────────────────
 
 void PipFloat::fitSurfaces() {
-    // The video and the overlay both claim the whole window. Nothing is
-    // reserved for chrome: a row left empty at the bottom would be a row of
-    // black the user watches instead of the picture.
     surface_->setGeometry(rect());
     overlay_->setGeometry(rect());
     overlay_->raise();
+
+    const int w = width();
+    const int h = height();
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    // Top-left: mute button at (12, 12)
+    if (muteButton_ != nullptr) {
+        muteButton_->move(12, 12);
+    }
+
+    // Top-right: close button (right: w - 12 - width), restore button (left of close)
+    if (closeButton_ != nullptr) {
+        closeButton_->move(w - 12 - closeButton_->width(), 12);
+    }
+    if (restoreButton_ != nullptr && closeButton_ != nullptr) {
+        restoreButton_->move(closeButton_->x() - 8 - restoreButton_->width(), 12);
+    }
+
+    // Center: play button
+    if (playButton_ != nullptr) {
+        playButton_->move((w - playButton_->width()) / 2, (h - playButton_->height()) / 2);
+    }
+
+    // Bottom: scrubber slider at very bottom (~5px above edge)
+    const int scrubH = 10;
+    const int scrubY = h - scrubH - 5;
+    if (scrub_ != nullptr) {
+        scrub_->setGeometry(10, scrubY, qMax(0, w - 20), scrubH);
+    }
+
+    // Bottom time labels: 10px from bottom / right above scrubber, 12px padding from sides
+    const int labelY = scrubY - 18;
+    if (elapsed_ != nullptr) {
+        elapsed_->adjustSize();
+        elapsed_->move(12, labelY);
+    }
+    if (remaining_ != nullptr) {
+        remaining_->adjustSize();
+        remaining_->move(qMax(0, w - 12 - remaining_->width()), labelY);
+    }
 }
 
 void PipFloat::applyCornerMask() {
