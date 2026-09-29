@@ -120,8 +120,6 @@ Layering is strict and enforced by tests:
   `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
   `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
-  `GLCheck.cpp` is a standalone one-file OpenGL version probe, deliberately
-  not in `CMakeLists.txt`.
 - `src/probes/` — hand-run probes (`mpv_surface_smoke`, `shell_probe`,
   `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`,
   `InteractionProbe`) that build a real window and check pixels. CMake

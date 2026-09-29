@@ -11,6 +11,3 @@
 *.dll binary
 *.7z binary
 *.exe binary
-
-# Lockfiles stay LF
-uv.lock text eol=lf
