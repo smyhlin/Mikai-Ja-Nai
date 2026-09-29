@@ -2,66 +2,146 @@
 
 ## Project Overview
 
-PySide6 desktop client for the Mikai public anime API (`https://api.mikai.me/public/v1`). Home feed with carousels (recently opened / ongoing / popular) plus updates and schedule rows; search with a format filter bar; a title page with detail, related titles, per-release tabs, and a compact episode grid where a click fetches that episode's qualities once and opens the built-in player.
-
-The app is two processes. Python + PySide6 owns everything except playback; the player is a C++/Qt6 executable in `src/player/`, built by CMake into `build-cmake/mikai-player.exe` and driven over stdin/stdout. `docs.md` is the authoritative API contract; `.env` holds the optional key; `skills/design-ui/` carries OS-native UI guidance (PySide6 / Slint first).
+C++/Qt6 desktop client for the Mikai public anime API
+(`https://api.mikai.me/public/v1`). One process, one Qt event loop: the app is
+`build-cmake/mikai.exe`, built by the root `CMakeLists.txt`. Home feed with
+carousels (recently opened / ongoing / popular) plus updates and schedule rows;
+search with a format filter bar; a title page with detail, related titles,
+per-release tabs, and a compact episode grid where a click fetches that
+episode's qualities once and opens the built-in player. `docs.md` is the
+authoritative API contract; `.env` holds the optional key; `skills/design-ui/`
+carries OS-native UI guidance.
 
 ## Architecture & Data Flow
 
 Layering is strict and enforced by tests:
 
-- `mikai_backend/` imports only stdlib + `requests`. It must stay importable with Qt absent (`tests/test_units.py::test_backend_loads_without_qt_runtime`, `::test_backend_source_has_no_gui_imports`).
-- `mikai_ui/` is the only Qt layer and depends on the backend through the `AnimeRepository` protocol — never through `MikaiClient` directly.
-- UI never blocks the GUI thread: pages submit callables to `Runner.run(fn, on_ok, on_err)` (`mikai_ui/workers.py`). `Runner` owns a `QThreadPool` capped at 4 threads and keeps `Task` refs alive until `TaskSignals.finished/failed` fires, so results always land on the main thread. Feed fan-out (one task per home card) goes through `Runner.run_bulk`, a second pool of 3 threads: on the shared pool 50-odd home lookups would queue a title the user just opened behind the whole feed. A third pool, `Runner.run_image` (12 threads, `IMAGE_POOL_THREADS`), carries artwork only: `fetch_bytes` bypasses the client's rate limiter entirely, so posters cost no API budget and are pure latency. Sharing the bulk pool capped sixty poster downloads at four at a time, and one task looping over the URLs made them wait on each other; one task per image moved 45 posters from the third second to the first half-second. `wait_for_done` waits on all three. `Runner.wait_for_done(ms)` waits on both pools — tests must use it, not `_pool.waitForDone`.
-- `MainWindow` is a `QStackedWidget` holding one `SearchPage` and at most one `TitlePage`; `_dispose_title()` calls `TitlePage.shutdown()` (closes every `PlayerProcess`, saving the quality cache and bumping `_extract_seq`) before `deleteLater()`. `closeEvent` disposes the title page.
-- `TitlePage` maps `releases[]` (`kind` = `voice`/`sub` + `teams`) through `mikai_backend.releases.sort_releases`, then renders one `QTabWidget` tab per release. Tabs are strictly isolated: each holds only its own episode buttons. Episodes render as a compact grid of number pills (`EPISODE_BUTTON_WIDTH`x`EPISODE_BUTTON_HEIGHT`, about 14 per row) in pages of `EPISODES_PER_PAGE = 140`, so a typical 24-episode season is a single page and the pager stays hidden; the pager sits above the grid, and the tabs section is capped at `EPISODE_SECTION_MAX_HEIGHT` so long lists scroll inside the grid instead of stretching the window.
-- Quality extraction happens once per episode, only when that episode is opened: `_play_episode` -> `_ensure_qualities` fetches `streams.get_quality_streams(embed_url)` on the bulk pool, dedupes concurrent callers per embed (`_fetch_waiters`), and opens the player at the best height. The in-player quality selector owns height choice; there are no per-episode quality chips. Results are cached per embed URL (`_quality_cache`) and persisted through `mikai_ui.quality_cache` under the `quality/urls` setting, so replaying an episode reuses the store instead of re-extracting; entries are stamped and dropped after `QUALITY_CACHE_TTL_MS` (signed URLs expire) and capped at `QUALITY_CACHE_MAX_ENTRIES`, and `no_source` stays a page-lifetime negative cache that also disables the episode's button. Because signed URLs expire, the child's `playbackFailed` event becomes `PlayerProcess.playbackFailed` and triggers `TitlePage._recover_stream`, which drops the cached entry, re-extracts once and calls `apply_refreshed_streams` — targeting whatever track the player is on *now*, read from `dialog.current_height` and `dialog._page_entry`, not the one it launched with. The retry is one-shot (`_refresh_attempted`) so a dead source cannot loop.
-- **The player is a separate process, and that is not a workaround.** PySide6 6.11.2 and the C++ Qt 6.8.3 are separate Qt builds whose `Qt6Core.dll` / `Qt6Gui.dll` / `Qt6Widgets.dll` collide by DLL name: the Windows loader binds the second copy to the first, the import table fails to resolve, and the import dies with `WinError 127`. A second `QApplication` in one process crashes too. A DLL is not an option; `mikai-player.exe` is. The reasoning is repeated in `mikai_ui/player_process.py`, `src/player/main.cpp` and `src/player/IpcChannel.hpp` — keep all three in step if it ever changes.
-- The wire contract is newline-delimited JSON, one object per line, both directions: Python writes commands to the child's stdin, the child writes events to its stdout, and nothing else is shared. Config arrives as a single JSON file path in `argv[1]` (`caption`, `url`, `qualities`, `height`, `variants`, `currentEmbed`, `playlist`, `episodeIndex`) — a playlist and a quality map are far too structured for a command line. `src/player/main.cpp` is the authority for both directions; the reader is `src/player/IpcChannel.cpp` and the Python side is `mikai_ui/player_process.py`.
-  - Commands (host → child): `applyEpisode`, `applyVariant`, `applyRefreshedStreams`, `setTrackQuality`, `setPlaylist`, `setVariants`, `queryQuality`, `showError`, `close`.
-  - Events (child → host): `variant`, `episode`, `trackProbe`, `openOriginal`, `copyUrl`, `playbackFailed`, `closed`, `quality`. `copyUrl` is bare by design: the host is the one that handed the player a URL, so the host is the one that knows what to copy. `quality` is a real report, not an echo — after a track swap the height the child settled on is not one Python can work out for itself, which is what `query_quality` is for.
-- `PlayerProcess(QObject)` keeps the old `ShellPlayerDialog` surface on purpose, so `title_page.py`'s wiring did not change shape: same signals (`runtimeRequested`, `playbackFailed`, `variantRequested`, `episodeRequested`, `trackProbeRequested`) and the same calls (`apply_episode`, `apply_variant`, `apply_refreshed_streams`, `set_track_quality`, `set_playlist`, `query_quality`, `show`, `close`). Two things differ. `show()` is a no-op beyond spawning — the child raised and showed its own window at launch. `current_height` replaces `ShellPlayerDialog.controller.state.quality`; there is no controller in this process, so the value is whatever the child last reported. The child gets episode *labels* only (`setPlaylist`); the embeds stay host-side and the host resolves an index back to an embed when the child asks.
-- C++ layering, one direction each: `PlayerDialog` (composition root, the only feature surface, hosts the `PlayerHost` bridge) → `PlayerShell` (all chrome and the whole display state machine, painted with `QPainter` — no icon assets, no stylesheet from us; the five states are `DefaultFit`, `ScrollOut`, `ZoomInPan`, `FullscreenActive`, `FullscreenAutoHidden`) → `VideoSurface` (a `QOpenGLWidget` mpv renders into). The shell emits intent signals and takes state back through slots; `PlayerDialog::connectShell` is the only translator. The mpv options are set in one place, `VideoSurface::ensureEngine()` — `vo=libmpv`, `http-header-fields=Accept-Language: uk-UA` (MoonAnime's CDN answers 400 to a playlist without it, so a stream that extracted perfectly would never play), user-agent, `hwdec=auto-safe`, `keepaspect=yes`, and the input bindings turned off (`input-default-bindings`, `input-vo-keyboard`, `input-cursor`, `osc` all `no`) because the keyboard belongs to the shell. They were set nowhere at first, which is invisible when testing against a local lavfi source and only shows up against a real CDN. Nothing here is Qt-native: mpv renders into a `QOpenGLWidget`'s framebuffer via `MpvRenderContext`, so the chrome is ordinary sibling widgets and z-order is Qt's problem.
-- API envelope: `{ok: true, result, total?, page?, pages?}` or `{ok: false, error: {errorCode, code, message}}`. List payloads (`/anime`, relations, `similar`) give each `AnimeSummary` a `status` (`finished`/`ongoing`/`announce`/`cancelled`/`break`/`unknown`) and `episodes` (planned count, `0` = unknown); the aired fraction exists only in `/anime/{ref}` as `episodes.aired`. `/updates` and `/schedule` embed summaries with ids, titles and posters only, so nothing airing-related can be shown in those rows without a detail call. `MikaiClient._get` raises `MikaiApiError(code, message, status)`; branch on the stable `error.code` string, never on HTTP status alone.
-- `MikaiClient` gates every call through a `threading.Condition` rate limiter (`_acquire_api_slot` / `_finish_api_call`) driven by `X-RateLimit-Limit/Remaining/Reset` and `Retry-After`; a 429 parks callers until the advertised window instead of failing. `rate_limit_state()` feeds the RPM label and the settings quota panel.
-- Identity: `{ref}` is a bare Mikai id or `mal:21` / `al:21` / `hikka:…` / `slug:…`. Incremental sync via `/updates`, never full-catalog polling.
+- `src/backend/` is the domain: `Models.hpp` structs (snake_case members, free
+  `parse*` functions, `QString` helpers with empty = none), `Errors.hpp`
+  (`MikaiApiError{code, message, status}`), `Releases.hpp`
+  (`playableEpisodeCount`, `sortReleases`: voice → sub, most playable, team
+  name), `Streams.hpp` (HLS extraction per site: `detectSite`, `fetchText` with
+  20 s timeout and 2 retries honoring `Retry-After`, `ashdiMaster`,
+  `moonMaster`, `tortugaDecode`, `tortugaMaster`, `parseVariants`,
+  `qualityUrl`, `qualityStreams`; `NoSourceError` marks a provider with no
+  video). The layering tests (`TestLayering`) assert it includes no Qt GUI
+  headers and never names the app layer.
+- `src/app/` is the only widget layer and talks to the domain through
+  `mikai::backend::MikaiClient` (blocking calls; threads via `Runner`).
+- UI never blocks the GUI thread: pages submit work to `Runner`
+  (`src/app/workers/Runner.hpp`) with three `QThreadPool`s — shared (4),
+  bulk (3) for feed fan-out so a title the user just opened is not queued
+  behind the whole feed, and image (12) for artwork only. `fetchBytes`
+  bypasses the client's rate limiter entirely, so posters cost no API budget
+  and are pure latency. `waitForDone(ms)` drains bulk and image pools first,
+  then the shared one.
+- `MainWindow` is a `QStackedWidget` holding one `SearchPage` and at most one
+  `TitlePage`; disposal shuts the title page down (closing every open player
+  dialog and flushing the quality cache) before `deleteLater()`.
+- `TitlePage` maps `releases[]` (`kind` = `voice`/`sub` + `teams`) through
+  `sortReleases`, then renders one tab per release. Tabs are strictly isolated:
+  each holds only its own episode buttons. Episodes render as a compact grid of
+  number pills in pages of `kEpisodesPerPage = 140`, so a typical 24-episode
+  season is a single page and the pager stays hidden. The `RangePager` widget
+  (`src/app/widgets/RangePager.hpp`) owns first/prev/chips/next/last plus a
+  spinbox jump; the 4-arg `setState` takes explicit episode numbers so a cour
+  starting at 110 reads "110 – 249", never "1 – 140".
+- Quality extraction happens once per episode, only when that episode is
+  opened, on the bulk pool; the in-player quality selector owns height choice.
+  Results are cached per embed URL (`QualityCache`, QSettings-backed, TTL 30
+  min for signed URLs, 240-entry cap with oldest-first eviction, `forget()`
+  for the expired-stream recovery path) and `no_source` stays a page-lifetime
+  negative cache that disables the episode's button.
+- **The player is in-process.** `TitlePage::Host` implements
+  `mplayer::shell::PlayerHost` and drives `PlayerDialog` directly: no
+  `QProcess`, no stdin/stdout JSON, no `mikai-player` child. The old
+  process-boundary files (`src/player/main.cpp`, `src/player/IpcChannel.*`)
+  and the Python bridge are deleted. C++ layering, one direction each:
+  `PlayerDialog` (composition root, the only feature surface, hosts the
+  `PlayerHost` bridge) → `PlayerShell` (all chrome and the whole display state
+  machine, painted with `QPainter`) → `VideoSurface` (a `QOpenGLWidget` mpv
+  renders into). The mpv options are set in one place,
+  `VideoSurface::ensureEngine()` — `vo=libmpv`,
+  `http-header-fields=Accept-Language: uk-UA` (MoonAnime's CDN answers 400 to a
+  playlist without it), user-agent, `hwdec=auto-safe`, `keepaspect=yes`, input
+  bindings off (the keyboard belongs to the shell).
+- API envelope: `{ok: true, result, total?, page?, pages?}` or `{ok: false,
+  error: {errorCode, code, message}}`. List payloads (`/anime`, relations,
+  `similar`) give each summary a `status` and planned `episodes` count (`0` =
+  unknown); the aired fraction exists only in `/anime/{ref}` as
+  `episodes.aired`. `/updates` and `/schedule` embed summaries with ids,
+  titles and posters only. Branch on the stable `error.code` string, never on
+  HTTP status alone.
+- `MikaiClient` gates every call through `RateLimiter` (`QMutex` +
+  `QWaitCondition`), driven by `X-RateLimit-Limit/Remaining/Reset` and
+  `Retry-After` (header lookup is case-insensitive: the CDN lowercases them);
+  a 429 parks callers until the advertised window instead of failing.
+  `rateLimitState()` feeds the RPM label and the settings quota panel. Every
+  request carries a browser `User-Agent`: the bot filter 403s requests without
+  one, and Qt sends none by default.
+- Identity: `{ref}` is a bare Mikai id or `mal:21` / `al:21` / `hikka:…` /
+  `slug:…`. Incremental sync via `/updates`, never full-catalog polling.
 
 ## Key Directories
 
-- `mikai_backend/` — Qt-free domain, reusable from any frontend:
-  - `client.py` — `MikaiClient` (`search`, `browse_ongoing`, `browse_popular`, `get_anime`, `get_player`, `get_updates`, `get_schedule`, `fetch_bytes`, `get_api_key`, `set_api_key`, `validate_api_key`, `rate_limit_state`) plus the rate-limit gate and `.env` persistence.
-  - `models.py` — frozen dataclasses (`AnimeSummary`, `AnimeDetail`, `Release`, `Episode`, `Source`, `Team`, `SearchResult`, `UpdatesResult`, `ScheduleResult`, `PlayerResult`, …) with `display_name`, `thumb_url` (small), `poster_url` (big), `cover_url` (UA posters first, then the normal poster), `external_links`.
-  - `ports.py` — `AnimeRepository` runtime-checkable Protocol; this is the DI seam and the fakes' contract.
-  - `releases.py` — `playable_episode_count`, `sort_releases` (voice → sub, then most playable episodes, then team name).
-  - `errors.py` — only `MikaiApiError(code, message, status)`.
-  - `streams.py` — HLS extraction per site (`ashdi.vip/vod/`, `moonanime.art/iframe/`, `tortuga.tw/vod/`): `detect_site`, `fetch_text` (20s timeout, 2 retries on 429/5xx honoring `Retry-After`), `ashdi_master`, `moon_master`, `tortuga_decode`, `tortuga_master`, `extract_master`, `parse_variants`, `get_quality_url`, `list_segments`, `get_quality_streams`; `NoSourceError` marks a provider that has no video for an episode.
-  - `mpv_runtime.py` — Qt-free libmpv discovery/download/extraction (latest x64 dev `.7z` from shinchiro/mpv-winbuild-cmake via the GitHub Releases API, py7zr with a fallback to a system or auto-downloaded `7zr.exe` because the dev archive uses BCJ2, DLL-dir registration + `ctypes` preload, cache in `%LOCALAPPDATA%/MPVBackend/runtime`).
-  - Range-chip pagers, both drawn the same way (`pagerControl` / `pagerChip` /
-    `pagerChipActive` in the QSS) and both one chip per page, labelled with the
-    entries that page actually holds — a chip never claims a range the grid will not
-    show. A window of `PAGER_CHIP_WINDOW` chips follows the current page; the arrows
-    step one page and a chip is a jump. The search pager takes
-    `SEARCH_RESULTS_PER_PAGE` entries per page, a release's episode pager keeps
-    `EPISODES_PER_PAGE = 140` for the episode grid. Page
-- `src/player/` — the C++ player, 22 `.cpp`/`.hpp` plus `main.cpp` and a dev tool `player_deploy.py`. `MpvHandle` (the only place that calls `mpv_*`, wrapping errors in `MpvError`) → `MpvRenderContext` (the `mpv_render_context` bridge) → `VideoSurface` (the `QOpenGLWidget`); `ShellTheme` (tokens + `IconPainter`'s 20 painted glyphs), `ShellWidgets`, `ShellSliders`; `PlayerShell` (chrome, display state machine, zoom/pan, input), `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`, `SeriesDrawer`), `PlayerDialog` (composition root + `PipFloat`); `IpcChannel` (`IpcReader` / `IpcWriter`). `GLCheck.cpp` is a standalone one-file OpenGL version probe and is deliberately not in `CMakeLists.txt`.
-- `src/probes/` — 6 hand-run probes (`mpv_surface_smoke`, `shell_probe`, `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`, `PixelProbe`) that build a real window and check pixels. They are CMake targets, not tests; nothing in `tests/` runs them.
-- `tests/` — `conftest.py` (fixtures, `pump_until` / `tab_chips` / `pagination_controls`, and `live_players()` + the autouse reaper that closes any `PlayerProcess` a test opened), `test_units.py` (hermetic), `test_player_process.py` (the only test that crosses the process boundary), `test_app.py` (live API).
-- `skills/design-ui/` — `SKILL.md` + `references/{refined-ui,typography,surfaces,animations,performance}.md`.
+- `src/backend/` — domain + Qt Network client:
+  - `MikaiClient.hpp/cpp` — `MikaiClient` (`search`, `browseOngoing`,
+    `browsePopular`, `getAnime`, `getPlayer`, `getUpdates`, `getSchedule`,
+    `fetchBytes`, `apiKey`, `setApiKey`, `validateApiKey`,
+    `rateLimitState`) plus `RateLimiter` and `.env` persistence.
+  - `Models.hpp/cpp` — structs (`AnimeSummary`, `AnimeDetail`, `Release`,
+    `Episode`, `Source`, `Team`, `SearchResult`, `UpdatesResult`,
+    `ScheduleResult`, `PlayerResult`, …) with `displayName`, `thumbUrl`
+    (small), `posterUrl` (big), `coverUrl` (UA posters first), `externalLinks`.
+  - `Releases.hpp/cpp` — `playableEpisodeCount`, `sortReleases`.
+  - `Errors.hpp` — only `MikaiApiError{code, message, status}`.
+  - `Streams.hpp/cpp` — HLS extraction per site; `NoSourceError`.
+  - `Runtime.hpp/cpp` — libmpv discovery (`%LOCALAPPDATA%/MPVBackend/runtime`).
+- `src/app/` — the Qt Widgets frontend, namespace `mikai::app`:
+  - `main.cpp` — entrypoint (Fusion style, one `setStyleSheet`,
+    `provisionMpvRuntime()` puts the mpv dir on `PATH` before the first
+    `QApplication`, then `MainWindow` over a `MikaiClient`).
+  - `pages/` — `MainWindow`, `SearchPage` (home discovery, async poster
+    thumbs, format bar, 55-per-page search pager, per-card detail fan-out),
+    `TitlePage` (per-release tabs, 140-episode grid, fetch-on-open qualities,
+    in-process `PlayerDialog` via `Host`, episode context menu,
+    external-player hand-off via `QProcess::startDetached(mpv|vlc)`).
+  - `widgets/` — `TitleCard` (360×140 home card), `RangePager`,
+    `RateLimitLabel` (RPM indicator).
+  - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles),
+    `CoverViewer` (chromeless full-screen cover with zoom/pan).
+  - `state/` — `Feeds` (home-block toggles), `QualityCache`.
+  - `workers/` — `Runner` (pools 4/3/12).
+  - `theme/` — `Colors.hpp`, `Metrics.hpp`, `Theme.hpp/cpp`
+    (`buildStylesheet()`), `Icons.hpp/cpp` (painted glyphs, never emoji).
+  - `Clipboard.hpp`, `Labels.hpp/cpp` (status labels).
+- `src/player/` — the player: `MpvHandle` (only place calling `mpv_*`) →
+  `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
+  `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
+  `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
+  `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
+  `GLCheck.cpp` is a standalone one-file OpenGL version probe, deliberately
+  not in `CMakeLists.txt`.
+- `src/probes/` — hand-run probes (`mpv_surface_smoke`, `shell_probe`,
+  `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`,
+  `InteractionProbe`) that build a real window and check pixels. CMake
+  targets, not tests; nothing in `tests/` runs them.
+- `tests/cpp/` — `mikai_tests` (one exe, one ctest entry; `main.cpp` drives
+  each suite and prints a per-suite PASS/FAIL line): `TestModels`,
+  `TestReleases`, `TestStreams`, `TestPagers`, `TestQualityCache`,
+  `TestRateLimiter`, `TestLayering`, `TestClipboard`, `TestLiveOracle`
+  (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`: BLACK TORCH → ref `7428`, 7
+  releases with 4 dubs / 3 subs, one dub carrying episodes 1–12, and a 480 /
+  720 / 1080 ladder).
+- `skills/design-ui/` — `SKILL.md` + `references/`.
 
 ## Development Commands
 
-Package manager is `uv` (PEP 621, hatchling build backend, venv at `.venv`, Python 3.14.3 from `.python-version`):
-
-```sh
-uv sync                  # create/refresh .venv, install deps + project (dev group incl. pytest)
-uv run mikai-wrapper     # launch the GUI
-uv run python -m mikai_ui  # equivalent entry point (mikai_ui/__main__.py)
-scripts\run.bat          # Windows launcher: guards on uv, then uv sync + uv run mikai-wrapper
-uv run pytest tests/ -v  # hermetic units + process-boundary smoke + live-API offscreen UI
-curl "https://api.mikai.me/public/v1/meta"   # API sanity check
-```
-
-The player is a separate CMake project at the repo root. It needs a MinGW-w64 toolchain, Qt 6.8.x and the mpv runtime directory (headers plus `libmpv-2.dll` — `mikai_backend.mpv_runtime` provisions that, and `%LOCALAPPDATA%/MPVBackend/runtime` is where it lands). `MPV_RUNTIME_DIR` has no default and CMake hard-fails without it.
+Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`), Qt 6.8.x
+(`C:/temp/qt6/6.8.3/mingw_64`), mpv runtime dir (headers + `libmpv-2.dll`;
+`MPV_RUNTIME_DIR` has no default and CMake hard-fails without it). This Qt
+build needs `QT_PLUGIN_PATH=<qt>/plugins` in the environment or TLS reports 0
+and every HTTPS call fails.
 
 ```sh
 cmake -S . -B build-cmake -G "MinGW Makefiles" \
@@ -69,82 +149,127 @@ cmake -S . -B build-cmake -G "MinGW Makefiles" \
   -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
   -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
   -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
-cmake --build build-cmake --target mikai-player
+cmake --build build-cmake --target mikai
+scripts\run.bat          # launches build-cmake/mikai.exe
+ctest --test-dir build-cmake -R mikai_tests   # hermetic + live oracle when keyed
+curl "https://api.mikai.me/public/v1/meta"   # API sanity check
 ```
 
-Configure needs the toolchain paths passed explicitly — a bare `-G "MinGW Makefiles"` fails with `CMAKE_MAKE_PROGRAM is not set` when the toolchain is not already on `PATH`. `player_process.find_player_exe` looks for `build-cmake/mikai-player.exe` at the repo root and in the cwd; `MIKAI_PLAYER_EXE` overrides both.
+`mikai.exe` links Qt dynamically, so the runtime has to sit beside it or be on
+`PATH`: `build-cmake/` already carries a `windeployqt` drop plus
+`libmpv-2.dll`; for a fresh tree run `windeployqt build-cmake/mikai.exe` and
+copy `libmpv-2.dll` in from `MPV_RUNTIME_DIR`. `mikai.exe` is
+`WIN32_EXECUTABLE` (no console); diagnostics go to the debugger output.
 
-`mikai-player.exe` links Qt dynamically, so the runtime has to sit beside it or be on `PATH` — a freshly built exe with no deployed DLLs exits with `0xC0000135` (DLL not found). `build-cmake/` already carries a full `windeployqt` drop (68 DLLs incl. `libmpv-2.dll`); for a fresh tree run `windeployqt <build>/mikai-player.exe` into the build dir. The Python side is unaffected either way: the app starts, browses and searches normally without the player, and only opening an episode raises — `require_player_exe` raises `FileNotFoundError` naming both the expected path and `MIKAI_PLAYER_EXE`.
+`mikai_tests` runs every suite in one process; `mikai_tests <SuiteName>` runs
+one. The `MIKAI_LIVE=1` + `MIKAI_API_KEY=mk_...` oracle hits the real API.
 
-Other targets: `mikai_player` is the `STATIC` library every probe and the exe link, plus `mpv_surface_smoke`, `shell_probe`, `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`. `python src/player/player_deploy.py` drives the real `PlayerProcess` against the shipping bridge by hand; it is a dev tool, not a test.
-
-If the Windows `uv.exe` launcher reports `uv trampoline failed to canonicalize script path`, `python -m uv` hits the same failure. Run straight out of the existing venv instead: `.venv\Scripts\python.exe -m pytest tests/ -v`.
-
-No linter, type checker, or coverage tool is configured. Formatting is the one exception: `[tool.ruff]` in `pyproject.toml` pins `line-length = 100` and `target-version = "py314"`.
-
-```sh
-uvx ruff format mikai_backend mikai_ui tests   # run before committing
-uvx ruff format --check mikai_backend mikai_ui tests
-```
-
-The formatter is idempotent (a second run reports no changes) and the full hermetic suite passes afterward. Add no other tooling without a stated reason.
+No linter, type checker, or coverage tool is configured.
 
 ## Code Conventions & Common Patterns
 
 API contract (when adding backend code):
 
-- Error handling: branch on the stable `error.code` string. Known codes and statuses: `invalid_parameter` / `invalid_reference` / `too_many_ids` (422), `invalid_request` (400), `not_found` (404), `invalid_api_key` (401), `api_key_disabled` (403), `rate_limited` (429), `internal_error` (500). An unknown filter value returns 422, never an empty list.
-- Rate limits: 60 req/min keyless (per IP), 300 req/min keyed (per key), no daily quota. Re-check live enums/limits via `GET /meta`; never hardcode.
-- Naming: the API is camelCase, timestamps are RFC3339, episode numbers are fractional (`1`, `1.5`). Licensed titles return `licensed: true` with empty releases.
-- Cache TTLs per `docs.md`: 1 h for dictionaries (`/genres`, `/tags`, `/studios`, `/meta`), 5 min for catalog/player/teams, 1 min for `/schedule`, `/updates`, `/posters/ua`, no-cache for `/me`, `/health`, `/anime/random`.
+- Error handling: branch on the stable `error.code` string. Known codes and
+  statuses: `invalid_parameter` / `invalid_reference` / `too_many_ids` (422),
+  `invalid_request` (400), `not_found` (404), `invalid_api_key` (401),
+  `api_key_disabled` (403), `rate_limited` (429), `internal_error` (500). An
+  unknown filter value returns 422, never an empty list.
+- Rate limits: 60 req/min keyless (per IP), 300 req/min keyed (per key), no
+  daily quota. Re-check live enums/limits via `GET /meta`; never hardcode.
+- Naming: the API is camelCase, timestamps are RFC3339, episode numbers are
+  fractional (`1`, `1.5`). Licensed titles return `licensed: true` with empty
+  releases.
+- Cache TTLs per `docs.md`: 1 h for dictionaries, 5 min for catalog/player/teams,
+  1 min for `/schedule`, `/updates`, `/posters/ua`, no-cache for `/me`,
+  `/health`, `/anime/random`.
 - Attribution: link mikai.me, preserve `team`/`author` credits, no bulk mirroring.
 
 UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 
-- Tokens once, compose everywhere: no raw hex or magic numbers outside `mikai_ui/theme/`; every new value becomes a token in `colors.py` or `metrics.py`. Apply `app.setStyleSheet(build_stylesheet())` exactly once in `main()`.
-- Native controls first (`QPushButton` / `QDialog` / `QMenu` / `QTabWidget` / `QTabBar`), styled through the QSS. Variant roles: primary / secondary / destructive. `colors.py` exposes canonical names only (`TEXT`, `SURFACE`, `ACCENT`) with no compatibility aliases, so a token rename stays a one-line change.
-- Rubric: ≤5 colors (1 primary + neutrals + ≤1 accent), ≤2 fonts, body line-height 1.4–1.6, 4/8-based spacing (`SPACING_*`), one primary action per view, override fg whenever bg is overridden, concentric radii (outer = inner + padding).
-- Icons: inline SVG through `theme.widgets.make_icon(name, color, size)` — never emoji. HiDPI-aware sizing.
-- Motion: 150–250 ms (`QPropertyAnimation`), opacity/position only, respect reduced motion. `ANIMATION_DURATION_MS`, `AUTO_HIDE_MS`, `TOAST_DURATION_MS` are the existing tokens.
-- Min-window-first: no clipped controls, targets ≥24 px desktop / ≥44 px touch (`PRIMARY_CONTROL_SIZE = 44`). Ship loading / empty / error states.
-- Async discipline: every async callback must be discardable. Use the existing sequence-token pattern, `QTimer.singleShot`, and `shiboken6.isValid(self)` before touching a widget that may have been deleted mid-flight.
-- `logging`: `log = logging.getLogger(__name__)` is the established pattern in the UI modules; do not swallow exceptions silently.
+- Tokens once, compose everywhere: no raw hex or magic numbers outside
+  `src/app/theme/`; every new value becomes a token in `Colors.hpp` or
+  `Metrics.hpp`. Apply `app.setStyleSheet(buildStylesheet())` exactly once in
+  `main()`.
+- Native controls first (`QPushButton` / `QDialog` / `QMenu` / `QTabWidget` /
+  `QTabBar`), styled through the QSS. Variant roles: primary / secondary /
+  destructive.
+- Rubric: ≤5 colors (1 primary + neutrals + ≤1 accent), ≤2 fonts, body
+  line-height 1.4–1.6, 4/8-based spacing, one primary action per view, override
+  fg whenever bg is overridden, concentric radii (outer = inner + padding).
+- Icons: painted glyphs through `theme/Icons` — never emoji. HiDPI-aware sizing.
+- Motion: 150–250 ms (`QPropertyAnimation`), opacity/position only, respect
+  reduced motion.
+- Min-window-first: no clipped controls, targets ≥24 px desktop / ≥44 px touch.
+  Ship loading / empty / error states.
+- Async discipline: every async callback must be discardable. Use the existing
+  sequence-token pattern, `QTimer::singleShot`, and `QPointer` guards before
+  touching a widget that may have been deleted mid-flight.
+- Logging: `qWarning()`/`qInfo()` with context; do not swallow errors silently.
 
 ## Important Files
 
-- `mikai_ui/main.py` — entrypoint `main()` (Fusion style, one `setStyleSheet`, `MainWindow(MikaiClient())`), `SearchPage` (home discovery, async poster thumbs, format bar, pager; `_result_label` builds the search row text — title · year · format · status · planned episodes, all free from the list response; `_show_discovery`/`_show_search_results` toggle `_discovery_scroll`, not the inner widget, so search mode leaves no empty band), `MainWindow` (navigation + title disposal). Recently-opened cards persist only `ref`/`title`/`poster`, so they carry no artwork fallback: poster values are accepted only when they start with `http://`/`https://` (`_is_remote_url`), and a card whose stored URL is missing or unusable is re-looked up once per ref per session via `get_anime(ref).cover_url` (`_resolve_carousel_posters`, recent feed only — the other feeds refresh from the API anyway). Search rows, carousel cards, and home-feed rows share a right-click menu (`_anime_card_menu` / `_results_context_menu`): open, copy the mikai.me link (`anime_page_url`), copy the raw id, and open the page in the browser — copies go straight to the clipboard, so they need no status feedback.
-- `TitleCard` (`mikai_ui/title_card.py`) is the home carousel card: horizontal layout, poster left, title/status/episodes right. List responses carry `status` and the planned `episodes` count but not the aired fraction, so a card shows `«12 серій»` from the list and upgrades to `«11 / 12 серій»` as soon as `_request_card_details` fires one `get_anime` task per card on every carousel render. Don't gate those lookups on visibility: a keyed session allows 300 req/min, a full home load spends ~20 of them, and the client's rate limiter paces the pool. `_detail_lookups` is the once-per-ref-per-session guard (a failed ref is not retried), `_card_details` caches the responses so a later card with the same ref costs nothing, and the same lookup heals recent-feed posters — `_heal_timer` collapses a burst of heals into one repaint. Carousel poster fetches are one task per card too, so a feed paints as each image lands. `STATUS_LABELS` lives in `mikai_ui/labels.py`, shared with `title_page.py`.
-- `mikai_ui/cover_viewer.py` — chromeless full-screen cover overlay. `CoverLabel` reports `activated()` on click; `CoverViewer` is a frameless dialog that covers its parent and has no bar, buttons or scrollbars: the image floats over a blurred copy of itself (`blurred_backdrop`, two downscale/upscale passes, dimmed by `COVER_BACKDROP_DIM`), a click on the empty background dismisses it, and the wheel zooms under the cursor. `CoverView` keeps zoom as a multiplier of the fit scale (clamped by `COVER_ZOOM_MIN/MAX`), pans by drag only where the image overflows the surface, and clamps the pan so the image cannot be dragged away. Esc and the Ctrl+`+`/`-`/`0` shortcuts still work. The dialog sets `WA_DeleteOnClose`, so the page must clear its reference in `destroyed` rather than keep a dangling handle.
-- `mikai_ui/title_page.py` — the largest module: release selector, isolated per-release player tabs, compact episode grid (140 per page, quality fetch only on open), clipboard feedback, external-player hand-off. Right-click menu on an episode button: copy-URL, external player, open in browser — no quality submenu, the player owns that; the cover offers copy-image-URL and save-to-file (`_cover_url` records the loaded image URL for this).
-- `mikai_ui/player_process.py` — the host half of the player boundary and the only module that knows the child exists. Spawns `mikai-player.exe` through `QProcess` (not `subprocess.PIPE`: teardown is a correctness requirement here, because a leaked player window is a top-level window that outlives mikai, and on Windows Qt's own pipe reader thread delivers stdout as a queued event so every handler runs on the GUI thread — a second reader thread would race it for the bytes and drop events). Writes a temp config JSON, prepends the mpv runtime to the child's `PATH`, and strips `QT_QPA_PLATFORM=offscreen` from the child environment: `QOpenGLWidget` has no OpenGL at all under the offscreen platform, so a child that inherited it could not create a context and would die. It also re-exports the protocol's pure helpers (`usable_qualities`, `qualities_to_json`, `clamp_index`), which is where the "a quality entry is real only if its URL is a non-blank string" rule lives.
-- `src/player/PlayerShell.cpp` / `.hpp` — the lightbox shell, ported from the user's standalone media lightbox and still close to it in shape: every control drawn with `QPainter`, the five display states, cursor-anchored canvas zoom/pan, edge-resize, its own shortcut/HUD panels. Two deliberate departures from the Python original, both documented in the header: the native-HWND chrome promotion, the re-raise bookkeeping and the cursor poll are gone entirely (`VideoSurface` is a `QOpenGLWidget`, so the chrome is ordinary sibling widgets and z-order is Qt's problem), and zoom now actually scales the surface, which the Python one did not. Read before editing; do not add a stylesheet to it.
-- `src/player/PlayerDialog.cpp` / `.hpp` — the C++ composition root, the counterpart of the deleted `ShellPlayerDialog`. Hosts the shell, translates its signals to `VideoSurface` and the surface's state back into the shell's slots (volume converted 0…1 ↔ mpv's 0…100; the shell only ever sees a rate within its own slider, mpv gets the raw value), and carries mikai's three features as its own panels — the quality popup, the episode series drawer, and the sound/sub track popup, which lazily probes unknown track qualities through `PlayerHost::requestTrackProbe` as the title page expects. `PipFloat` lives here too: a frameless always-on-top widget with its *own* `VideoSurface`, because mpv gives one core per surface, so the float decodes a second time rather than sharing a handle it cannot have. Panel keys are `S` (episode list), `T` (tracks) and `Q` (quality); Esc closes a popover, then the drawer, then the player.
-- `mikai_ui/rate_limit_label.py` — RPM indicator; probes `getattr(repository, "rate_limit_state", None)`, so it degrades to `RPM —` on fakes.
-- `mikai_ui/settings_dialog.py` — API key entry, token validation, live quota display, and the home-page block checkboxes; saves the token via `repository.set_api_key` and the blocks via `mikai_ui.feeds`. `MainWindow.open_settings` calls `SearchPage.refresh_feed_settings()` after an accepted dialog: it re-reads the store, hides switched-off blocks, drops their in-flight results and loads only newly enabled ones. A disabled block is never requested, so it costs zero API calls per home load.
-- `mikai_ui/theme/` — `colors.py`, `metrics.py`, `widgets.py`, and `build_stylesheet()` in `__init__.py` (there is no `theme.py` module).
-- `pyproject.toml` — deps, `mikai-wrapper` script, wheel packages, dev group; `uv.lock` — lockfile, never hand-edit.
-- `docs.md` — authoritative API contract (978 lines, Ukrainian); `.env` — single `X-API-Key: mk_…` line, never commit. The player also navigates episodes: the title page hands it the watched release tab as a playlist (`TitlePage._tab_playlist`), and prev/next buttons (PgUp/PgDown) step through it in place via `PlayerProcess.apply_episode`, which reuses the variant stream swap so playback continues at the same position instead of stacking a new player window. A collapsible episode list sits beside the video (`E` toggles it): it is a sibling of the native surface in the stage layout, so expanding it narrows the video instead of covering the picture. The toggle takes no focus, because a focused button would swallow Space, which is play/pause. The control bar also carries a microphone-icon track button: it lists every dub/sub release (and provider) carrying the current episode (`TitlePage._episode_variants`), hidden when only one track exists. Picking one reuses the on-open single fetch and `PlayerController.switch_variant`, which is the quality-switch machine with a different URL: a `_ResumePoint` restores position, pause, volume and speed, so the episode continues where it was. `dialog._page_entry` tracks the current track so stream recovery re-extracts the variant actually playing, not the one it opened with.
+- `src/app/pages/MainWindow.cpp` — navigation + title disposal.
+- `src/app/pages/SearchPage.cpp` — home discovery (per-card detail fan-out,
+  ~20 API calls per home load, paced by the limiter), search + 55-per-page
+  pager, feed toggles (a disabled block is never requested: zero API cost).
+- `src/app/pages/TitlePage.cpp` — the largest module: release selector,
+  per-release tabs, 140-per-page episode grid, fetch-on-open qualities,
+  in-process player wiring, episode context menu, external-player hand-off.
+- `src/app/main.cpp` — entrypoint; `provisionMpvRuntime()` runs before the
+  first `QApplication` because libmpv links at load time.
+- `src/backend/MikaiClient.hpp` — `RateLimiter` + `MikaiClient`; header
+  documents the Cloudflare notes (lowercased headers, mandatory User-Agent).
+- `CMakeLists.txt` — targets `mikai_player` (STATIC), `mikai_backend`
+  (STATIC), `mikai_app` (STATIC), `mikai` (WIN32 exe), `mikai_tests` + probes.
+- `docs.md` — authoritative API contract (Ukrainian); `.env` — single
+  `X-API-Key: mk_…` line, never commit.
 
 ## Runtime/Tooling Preferences
 
-- Python 3.14.3 (pinned in `.python-version`; `requires-python = ">=3.14"`), installed via `uv python install 3.14`. Package manager `uv` with `uv.lock` committed; add dependencies with `uv add`, never by hand.
-- Runtime deps: `PySide6>=6.10` (6.11.2 installed), `requests>=2.32` (2.34.2), `py7zr` (1.1.3). Dev: `pytest>=9.1.1` (9.1.1) in the `dev` dependency-group. `python-mpv` was dropped with the port: the player is C++ and links libmpv directly, so nothing in Python imports `mpv` any more.
-- The API key is optional and only raises limits. Resolution order in `MikaiClient.__init__`: explicit argument → `MIKAI_API_KEY` env var → repo-root `.env`. `set_api_key` writes the `X-API-Key:` line back to `.env`.
-- Windows-first: `mikai_backend.mpv_runtime` auto-provisions libmpv, and the `.venv/Scripts/` folder contains `mikai-wrapper.exe` and `py7zr.exe`. Non-Windows hosts skip the auto-download and rely on a system mpv. The C++ player is the only consumer now, and it links `libmpv-2.dll` at load time, so the runtime has to be findable before `main()` runs — `PlayerProcess` prepends it to the child's `PATH` rather than downloading anything itself.
-- UI stack is native PySide6 per `skills/`; do not introduce a web toolchain unless explicitly requested.
-- The repo is a git repository on branch `main`. The root `.gitignore` covers `.env`, `__pycache__/`, `.pytest_cache/`, `.venv/`, and `*.png`; there is no CI pipeline, no Dockerfile, and no linter, type checker, or coverage config.
+- C++20, Qt 6.8.x, MinGW-w64. No Python anywhere: no `pyproject.toml`, no
+  `uv.lock`, no `.venv`, no `pytest`. The only runtimes beside Qt are the mpv
+  runtime dir and the deployed Qt DLLs next to the exe.
+- The API key is optional and only raises limits. Resolution order in
+  `MikaiClient`: explicit argument → `MIKAI_API_KEY` env var → repo-root
+  `.env`. `setApiKey` writes the `X-API-Key:` line back to `.env`.
+- Windows-first: `%LOCALAPPDATA%/MPVBackend/runtime` is where the mpv runtime
+  lands; non-Windows hosts rely on a system mpv. The app links `libmpv-2.dll`
+  at load time, so the runtime dir must be on `PATH` before `main()` runs —
+  `provisionMpvRuntime()` handles that.
+- The repo is a git repository. The root `.gitignore` covers `.env`,
+  `__pycache__/` (leftover bytecode only, untracked), `.venv/` (removed),
+  `*.png`, and `build-cmake/` / `build-dbg/`; there is no CI pipeline, no
+  Dockerfile, and no linter, type checker, or coverage config.
 
 ## Testing & QA
 
 ```sh
-uv run pytest tests/ -v
+ctest --test-dir build-cmake -R mikai_tests
 ```
 
-- `tests/conftest.py` sets `QT_QPA_PLATFORM=offscreen` via `os.environ.setdefault` at import time (before PySide6 is imported), patches `mikai_ui.main.QSettings` in an autouse fixture so no test can read or write the user's real store, provides a session-scoped `app` fixture and a function-scoped `window` fixture that builds `MainWindow(MikaiClient())` against the real API. Shared helpers: `pump_until(app, cond, timeout=25.0)`, `tab_chips`, `pagination_controls`. It also tracks every `PlayerProcess` built in `_live_players()` and tears them down in an autouse fixture, because the live tests open a player per window and a leaked child process would outlive the run.
-- `tests/test_units.py` — hermetic, over a `FakeRepository`: layer guards (backend imports no Qt, loads without a Qt runtime, fake satisfies the `AnimeRepository` protocol), client/domain parsing, mocked HLS extraction, UI, search/home feeds, title-tab invariants, on-open quality fetching (zero fetches on render, one on click, cache and negative-cache behavior, failed-playback re-extraction), recent-poster recovery, the carousel card's status and episode lines, settings isolation, and the right-click menus. Total: 64 tests.
-- `tests/test_player_process.py` — crosses the process boundary: spawns `mikai-player.exe`, asserts the child is running, closes it, and asserts it exits normally with code 0. Total: 1 test.
-- `tests/test_app.py` — live API. Two autouse fixtures: one monkeypatches `mikai_ui.title_page.streams.get_quality_streams` to `{}` so no stream extraction happens (except `test_live_stream_extraction_acceptance`, which hits four hardcoded provider URLs and asserts master playlists, 480/720/1080 variants, ≥5 segments, and MPEG-TS 188-byte packets), the other stubs `SearchPage._request_card_details` — every `window` fixture builds the home page, and its per-card fan-out (~54 requests each) would outrun the key's 300 req/min and park every client on 429s. Those tests open title pages, not home cards; the card path is covered hermetically. Total: 13 tests.
-- The full suite is 78 tests (64 + 1 + 13), all passing in this checkout. The noted instabilities are due to live Qt in the offscreen environment and are pre-existing; they do not affect the process-boundary test, which is a plain `QProcess` round trip and runs in under two seconds.
-- Live oracle: search «Чорний смолоскип» and `BLACK TORCH` both resolve to ref `7428`; the title page shows the description and cover; the release selector has 7 entries, 4 prefixed `Озвучення` and 3 prefixed `Субтитри`, with team substrings `Inari`, `SunDragon`, `Рідний Голос`, `Didko`, `Цукіхана`; releases are sorted with the most-voiced dub at index 0; the `Рідний Голос` voice tab exposes `Ashdi` and `MoonAnime`, each containing episode 12, with the union covering 1–12.
-- Two known instabilities, both from offscreen Qt. (1) One test intermittently fails, and a run then reports 77 rather than 78 and takes a minute longer than usual; this predates the player-shell work and reproduces on `main`. (2) The the interpreter occasionally dies mid-run with `Windows fatal exception: access violation` and no Python traceback beyond a thread dump. It was NOT a teardown problem and NOT leaked widgets: the reaper chased the wrong thing. The cause was `MikaiClient` sharing one `requests.Session` across every thread, and the artwork pool running a dozen poster fetches on it at once — `requests.Session` is not thread-safe. Sessions are now per-thread (`MikaiClient._http()`). That pairing went from ~20% to ~2%, and the residual has not been reproduced.
-- Cost: a full run takes ~25 s. Live tests build a real `MainWindow` per test, so expect a few hundred image fetches and ~50 API requests; the per-card detail fan-out is stubbed there, as noted above. A keyed session allows 300 req/min; keyless allows 60, and the client parks callers rather than 429-spams, so a keyless run is slow, not flaky. No coverage threshold exists. For visual checks also launch `uv run mikai-wrapper`: no clipped controls at min window, contrast holds, no anti-slop tells.
+- `tests/cpp/main.cpp` drives every suite in turn, prints one
+  `[mikai_tests] <Suite>: PASS/FAIL (rc=…)` line per suite to stderr (QTest
+  itself stays silent on success), and accepts a suite name to run just one:
+  `build-cmake/mikai_tests.exe TestStreams`. `MIKAI_SOURCE_DIR` lets the
+  layer guards read the sources they police instead of passing vacuously.
+- Hermetic suites: `TestModels` (53 parse fixtures: ref fallback
+  `mikai/mal/al/hikka/slug:`, `displayName`, thumb/poster/cover order,
+  `externalLinks`, episode int/double/string/null), `TestReleases`
+  (playable count, voice→sub sort), `TestStreams` (`detectSite`, variant
+  parsing, `qualityUrl` ladders, a real tortuga token), `TestPagers` (chip
+  window 7, 55/140-per-page labels, the numbers overload for cours starting
+  mid-hundreds), `TestQualityCache` (TTL expiry, 240-entry oldest-first cap,
+  page-lifetime `no_source`, `forget()`), `TestRateLimiter` (429 parking on
+  `Retry-After`, reset expiry, queued callers), `TestLayering` (no Qt GUI
+  headers in the domain, no app-layer names), `TestClipboard`.
+- `TestLiveOracle` (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`): BLACK TORCH /
+  «Чорний смолоскип» → ref `7428`; 7 releases with 4 dubs / 3 subs; one dub
+  carrying episodes 1–12 with real embeds; a live 480/720/1080 ladder from
+  `qualityStreams()`.
+- The suite caught two real port bugs before cutover: `tortugaDecode` masking
+  with `7*i` for `i` starting at 1 (every byte decoded with the next key
+  value; playback broken for all tortuga episodes) and `finishCall` comparing
+  the stored `remaining_` with itself (quota froze at the first value).
+- Live oracle cost: a handful of API calls plus one stream extraction; the
+  hermetic run needs no network and finishes in ~4 s.

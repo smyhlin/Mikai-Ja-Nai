@@ -1,0 +1,127 @@
+#include "widgets/TitleCard.hpp"
+
+#include "Labels.hpp"
+#include "theme/Metrics.hpp"
+
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPixmap>
+#include <QPushButton>
+#include <QStyle>
+#include <QVBoxLayout>
+
+namespace mikai::app {
+namespace {
+
+const char* kPending = "…";
+
+QString episodeCountText(int aired, int planned) {
+    if (aired > 0 && planned > 0) {
+        return QStringLiteral("%1 / %2 серій").arg(aired).arg(planned);
+    }
+    if (aired > 0) {
+        return QStringLiteral("%1 серій").arg(aired);
+    }
+    return planned > 0 ? QStringLiteral("%1 серій").arg(planned) : QString();
+}
+
+}  // namespace
+
+TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
+    : QPushButton(parent) {
+    ref_ = summary.ref;
+    posterUrl_ = backend::posterUrl(summary);
+    imageKey_ = backend::thumbUrl(summary);
+    if (imageKey_.isEmpty()) {
+        imageKey_ = posterUrl_;
+    }
+    if (summary.episodes.has_value()) {
+        planned_ = *summary.episodes;
+    }
+
+    setObjectName(QStringLiteral("animeCard"));
+    setFixedSize(theme::kHomeCardWidth, theme::kHomeCardHeight);
+    setToolTip(backend::displayName(summary.titles));
+    setContextMenuPolicy(Qt::CustomContextMenu);
+
+    auto* row = new QHBoxLayout(this);
+    row->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium, theme::kSpacingLarge,
+                            theme::kSpacingMedium);
+    row->setSpacing(theme::kSpacingMedium);
+
+    poster_ = makeLabel(QStringLiteral("carouselPoster"), tr("Постер недоступний"));
+    poster_->setAlignment(Qt::AlignCenter);
+    poster_->setFixedSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
+    poster_->setWordWrap(true);
+    row->addWidget(poster_, 0, Qt::AlignTop);
+
+    auto* text = new QVBoxLayout();
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(theme::kSpacingXs);
+
+    title_ = makeLabel(QStringLiteral("carouselTitle"), backend::displayName(summary.titles));
+    title_->setWordWrap(true);
+    title_->setFixedHeight(title_->fontMetrics().height() * 2);
+    status_ = makeLabel(QStringLiteral("carouselStatus"), QString());
+    episodes_ = makeLabel(QStringLiteral("carouselEpisodes"), QString());
+
+    text->addWidget(title_);
+    text->addWidget(status_);
+    text->addWidget(episodes_);
+    text->addStretch(1);
+    row->addLayout(text, 1);
+
+    connect(this, &QPushButton::clicked, this,
+            [this] { Q_EMIT openRequested(ref_, posterUrl_); });
+    connect(this, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& position) { Q_EMIT menuRequested(ref_, mapToGlobal(position)); });
+
+    applyStatus(summary.status);
+    applyEpisodes(0, planned_);
+}
+
+TitleCard::~TitleCard() = default;
+
+QLabel* TitleCard::makeLabel(const QString& objectName, const QString& text) {
+    auto* label = new QLabel(text, this);
+    label->setObjectName(objectName);
+    // The card is the button; the labels are decoration and must not eat clicks.
+    label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    return label;
+}
+
+void TitleCard::applyPixmap(const QPixmap& pixmap) {
+    if (pixmap.isNull()) {
+        return;
+    }
+    poster_->setText(QString());
+    poster_->setPixmap(pixmap.scaled(poster_->size(), Qt::KeepAspectRatioByExpanding,
+                                     Qt::SmoothTransformation));
+}
+
+void TitleCard::applyStatus(const QString& status) {
+    const bool live = status == QLatin1String("ongoing");
+    status_->setObjectName(live ? QStringLiteral("carouselStatusLive")
+                                : QStringLiteral("carouselStatus"));
+    // Re-polish: the object name selects the QSS rule, and Qt caches the style
+    // against the old name until the widget is told to look again.
+    status_->style()->unpolish(status_);
+    status_->style()->polish(status_);
+    const QString text = labels::status(status);
+    status_->setText(text.isEmpty() ? QString::fromLatin1(kPending) : text);
+}
+
+void TitleCard::applyEpisodes(int aired, int planned) {
+    if (planned > 0) {
+        planned_ = planned;
+    }
+    const QString text = episodeCountText(aired, planned_);
+    episodes_->setText(text.isEmpty() ? QString::fromLatin1(kPending) : text);
+}
+
+void TitleCard::applyDetail(const backend::AnimeDetail& detail) {
+    applyStatus(detail.status);
+    applyEpisodes(detail.episodes.aired, detail.episodes.total.value_or(0));
+}
+
+}  // namespace mikai::app
