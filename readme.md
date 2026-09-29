@@ -2,17 +2,89 @@
 
 A C++/Qt6 desktop client for the [Mikai public API](https://api.mikai.me/public/docs).
 
-## Run
+## Build
 
-```powershell
-cmake -S . -B build-cmake -G "MinGW Makefiles" -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
+Needs MinGW-w64 g++, Qt 6.8.x, and the mpv runtime directory (headers plus
+`libmpv-2.dll`). `MPV_RUNTIME_DIR` has no default and CMake hard-fails without
+it. The toolchain paths have to be passed explicitly — a bare
+`-G "MinGW Makefiles"` fails with `CMAKE_MAKE_PROGRAM is not set` when the
+toolchain is not on `PATH`.
+
+```sh
+cmake -S . -B build-cmake -G "MinGW Makefiles" \
+  -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe \
+  -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
+  -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
+  -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
 cmake --build build-cmake --target mikai
-scripts\run.bat
 ```
 
-`MPV_RUNTIME_DIR` is the mpv runtime directory (headers plus `libmpv-2.dll`);
-CMake hard-fails without it. `scripts\run.bat` just launches
-`build-cmake\mikai.exe`; `scripts/PACKAGING.md` covers deploy and the test run.
+Then run `build-cmake\mikai.exe`.
+
+## WebP is required
+
+Posters are served as `.webp` and the app asks Qt to decode them. A base Qt
+install has **no WebP decoder** — its `imageformats` folder holds only `qgif`,
+`qico`, `qjpeg` and `qsvg`. Without `qwebp.dll` the app still runs, the
+network still works, and every image is simply blank: `QPixmap` returns a null
+image for a format it has no handler for and reports nothing at all.
+
+So `qwebp.dll` is a hard runtime dependency. It has to be in the Qt install, or
+`windeployqt` has nothing to copy:
+
+```
+<qt>/6.8.3/mingw_64/plugins/imageformats/qwebp.dll
+```
+
+The plugin must match the Qt build's toolchain. A MinGW app needs the
+`win64_mingw` plugin; an MSVC one will not load it, and the reverse is also
+true. Check with `objdump -p qwebp.dll | grep "DLL Name"` — a MinGW build
+imports `libstdc++-6.dll`, an MSVC build imports `VCRUNTIME140.dll`.
+
+A Qt installed with `aqtinstall` has no Maintenance Tool, so the module comes
+from the Qt online repository:
+
+```sh
+curl -LO https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_680/qt6_680/qt.qt6.680.addons.qtimageformats.win64_mingw/6.8.0-0-202410030750qtimageformats-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z
+tar -xf 6.8.0-*.7z            # bsdtar reads 7z
+cp 6.8.0/mingw_64/plugins/imageformats/qwebp.dll <qt>/6.8.3/mingw_64/plugins/imageformats/
+```
+
+`TestModels::webpIsDecodable` fails the build if the plugin is missing, so a
+missing one is a red test rather than a screen of blank placeholders.
+
+## Deploy
+
+`mikai.exe` links Qt dynamically, so the runtime has to sit beside it or be on
+`PATH`; a fresh exe with no deployed DLLs exits with `0xC0000135`.
+
+```sh
+windeployqt build-cmake/mikai.exe
+```
+
+`windeployqt` does not copy `libmpv-2.dll` — it lives in `MPV_RUNTIME_DIR` and
+has to be copied in by hand alongside the Qt DLLs. The resulting folder is
+self-contained and is what you hand to someone else.
+
+`mikai.exe` is `WIN32_EXECUTABLE`, so it has no console window. Diagnostics go
+to `mikai.log` beside the exe, not to stdout: every Qt message is appended
+there, it rotates to `mikai.log.1` past 2 MB, and an unhandled exception also
+writes `mikai-crash-<timestamp>.txt` carrying the exception code, the faulting
+module, and the tail of the session log. A session that starts with an old
+crash report still on disk says so in the log.
+
+## Tests
+
+```sh
+cmake --build build-cmake --target mikai_tests
+ctest --test-dir build-cmake -R mikai_tests
+```
+
+Hermetic except the live oracle, which runs only with both set:
+
+```sh
+set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build-cmake -R mikai_tests
+```
 
 ## What it does
 

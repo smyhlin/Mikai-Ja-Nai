@@ -171,7 +171,7 @@ cmake -S . -B build-cmake -G "MinGW Makefiles" \
   -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
   -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
 cmake --build build-cmake --target mikai
-scripts\run.bat          # launches build-cmake/mikai.exe
+build-cmake/mikai.exe       # run directly; no launcher script needed
 ctest --test-dir build-cmake -R mikai_tests   # hermetic + live oracle when keyed
 curl "https://api.mikai.me/public/v1/meta"   # API sanity check
 ```
