@@ -339,7 +339,7 @@ QList<backend::AnimeSummary> SearchPage::readRecentTitles() {
         summary.titles.ua = record.value(QStringLiteral("title")).toString();
         const QString poster = record.value(QStringLiteral("poster")).toString();
         if (isRemoteUrl(poster)) {
-            summary.poster.big.jpg = poster;
+            summary.poster.big.webp = poster;
         }
         items.append(summary);
         if (items.size() >= theme::kHomeRecentMaxTitles) {
@@ -378,7 +378,7 @@ void SearchPage::recordRecentTitle(const QString& ref, const QString& title,
     summary.ref = ref;
     summary.titles.ua = title;
     if (isRemoteUrl(poster)) {
-        summary.poster.big.jpg = poster;
+        summary.poster.big.webp = poster;
     }
     recentItems_.prepend(summary);
     while (recentItems_.size() > theme::kHomeRecentMaxTitles) {
@@ -528,7 +528,7 @@ void SearchPage::flushRecentPosters() {
         const auto it = healed.constFind(item.ref);
         if (it != healed.constEnd()) {
             item.poster = backend::PosterSet();
-            item.poster.big.jpg = it.value();
+            item.poster.big.webp = it.value();
         }
     }
     carouselEntries_.insert(kRecentKey, refreshed);

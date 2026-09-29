@@ -8,6 +8,7 @@
 #include <backend/Streams.hpp>
 
 #include <QtCore/QSet>
+#include <QtGui/QImage>
 #include <QtCore/QStringList>
 
 using mikai_test::asEpisodeText;
@@ -23,6 +24,7 @@ using mikai::backend::Release;
 using mikai::backend::SearchResult;
 using mikai::backend::qualityStreams;
 using mikai::backend::sortReleases;
+using mikai::backend::thumbUrl;
 
 namespace {
 
@@ -131,6 +133,24 @@ void TestLiveOracle::oneDubCarriesEpisodesOneThroughTwelve() {
   for (const auto& episode : sorted[index].episodes) {
     QVERIFY(!episode.sources.isEmpty());
   }
+}
+
+void TestLiveOracle::aRealPosterWebpDecodes() {
+  // Registration is not decoding: this pulls a real poster over the wire and
+  // puts it through the same path the UI does, so a plugin that loads but
+  // cannot decode still shows up here rather than as blank placeholders.
+  MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
+  const SearchResult result = client.browsePopular(1, 1);
+  QVERIFY(!result.items.isEmpty());
+  const QString url = thumbUrl(result.items.first());
+  QVERIFY2(url.endsWith(QStringLiteral(".webp"), Qt::CaseInsensitive),
+           qPrintable(QStringLiteral("expected a webp thumb, got %1").arg(url)));
+  const QByteArray bytes = client.fetchBytes(url);
+  QVERIFY2(!bytes.isEmpty(), "the poster download came back empty");
+  QImage image;
+  QVERIFY2(image.loadFromData(bytes, "WEBP"), "Qt could not decode the poster");
+  QVERIFY2(!image.isNull() && image.width() > 0 && image.height() > 0,
+           "the decoded poster has no pixels");
 }
 
 void TestLiveOracle::theLiveStreamLadderCarriesTheUsualHeights() {

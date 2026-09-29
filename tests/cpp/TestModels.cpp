@@ -5,6 +5,7 @@
 #include <backend/Models.hpp>
 
 #include <QtCore/QJsonArray>
+#include <QtGui/QImageReader>
 #include <QtCore/QJsonObject>
 
 using mikai_test::asEpisodeText;
@@ -172,20 +173,19 @@ void TestModels::displayNameFallsBackToQuestionMark() {
   QCOMPARE(displayName(titles), QStringLiteral("?"));
 }
 
-void TestModels::summaryThumbPrefersSmallJpg_data() {
+void TestModels::summaryThumbPrefersSmallWebp_data() {
   QTest::addColumn<QString>("webp");
   QTest::addColumn<QString>("jpg");
   QTest::addColumn<QString>("expected");
-  // Qt 6.8.3 decodes jpeg but has no webp plugin, so a webp URL is one that
-  // silently paints nothing. jpg wins; webp is only a fallback.
+  // Webp is the smaller of the two siblings, so it wins whenever it is there.
   QTest::newRow("both") << QStringLiteral("small.webp") << QStringLiteral("small.jpg")
-                        << QStringLiteral("small.jpg");
-  QTest::newRow("jpg only") << QString() << QStringLiteral("small.jpg") << QStringLiteral("small.jpg");
+                        << QStringLiteral("small.webp");
   QTest::newRow("webp only") << QStringLiteral("small.webp") << QString() << QStringLiteral("small.webp");
+  QTest::newRow("jpg only") << QString() << QStringLiteral("small.jpg") << QStringLiteral("small.jpg");
   QTest::newRow("neither") << QString() << QString() << QString();
 }
 
-void TestModels::summaryThumbPrefersSmallJpg() {
+void TestModels::summaryThumbPrefersSmallWebp() {
   QFETCH(QString, webp);
   QFETCH(QString, jpg);
   QFETCH(QString, expected);
@@ -198,18 +198,18 @@ void TestModels::summaryThumbPrefersSmallJpg() {
   QCOMPARE(thumbUrl(parseSummary(payload)), expected);
 }
 
-void TestModels::summaryPosterPrefersBigJpg_data() {
+void TestModels::summaryPosterPrefersBigWebp_data() {
   QTest::addColumn<QString>("webp");
   QTest::addColumn<QString>("jpg");
   QTest::addColumn<QString>("expected");
   QTest::newRow("both") << QStringLiteral("big.webp") << QStringLiteral("big.jpg")
-                        << QStringLiteral("big.jpg");
-  QTest::newRow("jpg only") << QString() << QStringLiteral("big.jpg") << QStringLiteral("big.jpg");
+                        << QStringLiteral("big.webp");
   QTest::newRow("webp only") << QStringLiteral("big.webp") << QString() << QStringLiteral("big.webp");
+  QTest::newRow("jpg only") << QString() << QStringLiteral("big.jpg") << QStringLiteral("big.jpg");
   QTest::newRow("neither") << QString() << QString() << QString();
 }
 
-void TestModels::summaryPosterPrefersBigJpg() {
+void TestModels::summaryPosterPrefersBigWebp() {
   QFETCH(QString, webp);
   QFETCH(QString, jpg);
   QFETCH(QString, expected);
@@ -406,12 +406,12 @@ void TestModels::coverUrlWalksUaPostersThenSizesInOrder_data() {
     return object;
   };
 
-  QTest::newRow("ua big jpg beats ua big webp")
+  QTest::newRow("ua big webp beats ua big jpg")
       << detailWith(emptyPosters(), uaWith(posters(variant(QStringLiteral("w"), QStringLiteral("j")), {}, {})))
-      << QStringLiteral("j");
-  QTest::newRow("ua big webp when there is no jpg")
-      << detailWith(emptyPosters(), uaWith(posters(variant(QStringLiteral("w"), QString()), {}, {})))
       << QStringLiteral("w");
+  QTest::newRow("ua big jpg when there is no webp")
+      << detailWith(emptyPosters(), uaWith(posters(variant(QString(), QStringLiteral("j")), {}, {})))
+      << QStringLiteral("j");
   QTest::newRow("ua medium beats api big")
       << detailWith(posters(variant(QStringLiteral("api"), QString()), {}, {}),
                     uaWith(posters({}, variant(QStringLiteral("ua-med"), QString()), {})))
@@ -433,7 +433,7 @@ void TestModels::coverUrlWalksUaPostersThenSizesInOrder() {
   QCOMPARE(coverUrl(parseDetail(payload)), expected);
 }
 
-void TestModels::coverUrlPrefersJpgOverWebp() {
+void TestModels::coverUrlPrefersWebpOverJpg() {
   QJsonObject payload;
   QJsonObject images;
   images.insert(QStringLiteral("poster"),
@@ -441,7 +441,18 @@ void TestModels::coverUrlPrefersJpgOverWebp() {
                         variant(QStringLiteral("med.webp"), QStringLiteral("med.jpg")),
                         variant(QStringLiteral("small.webp"), QStringLiteral("small.jpg"))));
   payload.insert(QStringLiteral("images"), images);
-  QCOMPARE(coverUrl(parseDetail(payload)), QStringLiteral("big.jpg"));
+  QCOMPARE(coverUrl(parseDetail(payload)), QStringLiteral("big.webp"));
+}
+
+void TestModels::webpIsDecodable() {
+  // The poster helpers hand Qt a .webp URL, and a base Qt install has no WebP
+  // decoder: QPixmap then answers with a null image and no error at all, which
+  // is how every poster in the app went blank. Assert the plugin is really
+  // there, so a build or deploy that loses it fails here instead of on screen.
+  const QList<QByteArray> formats = QImageReader::supportedImageFormats();
+  QVERIFY2(formats.contains(QByteArrayLiteral("webp")),
+           "the imageformats plugin is missing qwebp.dll: Qt cannot decode a "
+           "webp poster and every image will be blank");
 }
 
 void TestModels::coverUrlFallsBackToApiPoster() {

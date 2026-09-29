@@ -21,12 +21,14 @@ QString text(const QJsonValue& value) {
     return {};
 }
 
-// Every poster field ships a webp and a jpg sibling, and the jpg has to win:
-// Qt 6.8.3's imageformat plugins are gif/ico/jpeg/svg only, so QPixmap silently
-// returns a null image for a webp payload and every poster fails to paint.
-// Preferring webp here is what left the app with no artwork at all.
+// Every poster field ships a webp and a jpg sibling, and webp is the smaller
+// one, so it wins. That only works because the imageformats plugin carries
+// qwebp.dll: a base Qt install has gif/ico/jpeg/svg only, and QPixmap answers a
+// webp payload with a null image and no error at all. TestModels::webpIsDecodable
+// is the guard that makes a missing plugin a loud failure rather than a screen
+// of empty placeholders.
 QString imageUrl(const ImageVariant& variant) {
-    return variant.jpg.isEmpty() ? variant.webp : variant.jpg;
+    return variant.webp.isEmpty() ? variant.jpg : variant.webp;
 }
 
 std::optional<int> optInt(const QJsonValue& value) {

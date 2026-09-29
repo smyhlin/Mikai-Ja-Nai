@@ -21,5 +21,6 @@ class TestLiveOracle : public QObject {
   void searchFindsBlackTorchFirst();
   void theTitleHasFourDubsAndThreeSubtitles();
   void oneDubCarriesEpisodesOneThroughTwelve();
+  void aRealPosterWebpDecodes();
   void theLiveStreamLadderCarriesTheUsualHeights();
 };

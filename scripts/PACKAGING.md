@@ -19,6 +19,38 @@ cmake --build build-cmake --target mikai
 needs the toolchain paths passed explicitly: a bare `-G "MinGW Makefiles"`
 fails with `CMAKE_MAKE_PROGRAM is not set` when the toolchain is not on `PATH`.
 
+## WebP (required)
+
+Posters are served as `.webp`, and the app asks Qt to decode them. A base Qt
+install has no WebP decoder: its `imageformats` folder holds only `qgif`,
+`qico`, `qjpeg` and `qsvg`. Without `qwebp.dll` the app still runs, the
+network still works, and every image is simply blank — `QPixmap` returns a null
+image for a format it has no handler for and reports nothing.
+
+So `qwebp.dll` is a hard runtime dependency, and it has to be in two places:
+
+- the Qt install, or `windeployqt` has nothing to copy:
+  `<qt>/6.8.3/mingw_64/plugins/imageformats/qwebp.dll`
+- the deployed bundle, which `windeployqt` then places automatically.
+
+The plugin must match the Qt build's toolchain. A MinGW app needs the
+`win64_mingw` plugin; an MSVC one will not load it, and the reverse is also
+true. Check with `objdump -p qwebp.dll | grep "DLL Name"` — a MinGW build
+imports `libstdc++-6.dll`, an MSVC build imports `VCRUNTIME140.dll`.
+
+This Qt tree was installed with `aqtinstall`, so it has no Maintenance Tool.
+The module came from the Qt online repository instead:
+
+```sh
+curl -LO https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_680/qt6_680/qt.qt6.680.addons.qtimageformats.win64_mingw/6.8.0-0-202410030750qtimageformats-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z
+tar -xf 6.8.0-*.7z            # bsdtar reads 7z
+cp 6.8.0/mingw_64/plugins/imageformats/qwebp.dll <qt>/6.8.3/mingw_64/plugins/imageformats/
+```
+
+`TestModels::webpIsDecodable` fails the build if the plugin is missing, and
+`TestLiveOracle::aRealPosterWebpDecodes` (keyed) pulls a real poster and puts
+it through the same decode the UI does.
+
 ## Run
 
 `scripts\run.bat` builds nothing: it launches `build-cmake/mikai.exe`.
