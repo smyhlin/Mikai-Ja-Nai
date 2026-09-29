@@ -92,14 +92,12 @@ constexpr int kPipCornerRadiusPx = 16;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
-constexpr int kPipCenterButtonSize = 72;
+constexpr int kPipCenterButtonSize = 84;
+constexpr int kPipCenterIconSize = 34;
 constexpr int kPipFieldHeight = 32;
 constexpr int kPipPillHeight = kPipFieldHeight + 2 * kSpacingXS + 2;
-constexpr int kPipVolumeWidth = 110;
 constexpr int kPipTimelineHeight = 4;
 constexpr int kPipTimelineHandle = 12;
-constexpr int kPipVolumeHeight = 3;
-constexpr int kPipVolumeHandle = 10;
 
 QString chipQss() {
     return QStringLiteral(
@@ -156,30 +154,20 @@ QString pipQss() {
                "QPushButton#pipRestore:hover, QPushButton#pipClose:hover {"
                "  background: %4;"
                "}"
-               "QSlider#pipVolume, QSlider#pipScrub { background: transparent; }"
-               "QSlider#pipVolume::groove:horizontal {"
-               "  height: %5px; background: %6; border-radius: 2px; }"
-               "QSlider#pipVolume::sub-page:horizontal { background: %1; border-radius: 2px; }"
-               "QSlider#pipVolume::handle:horizontal {"
-               "  background: %7; width: %8px; height: %8px;"
-               "  margin: %9px 0; border-radius: %10px; }"
+               "QSlider#pipScrub { background: transparent; }"
                "QSlider#pipScrub::groove:horizontal {"
-               "  height: %11px; background: %6; border-radius: 2px; }"
+               "  height: %5px; background: %6; border-radius: 2px; }"
                "QSlider#pipScrub::sub-page:horizontal { background: %1; border-radius: 2px; }"
                "QSlider#pipScrub::handle:horizontal {"
-               "  background: %7; width: %12px; height: %12px;"
-               "  margin: %13px 0; border-radius: %14px; }")
+               "  background: %7; width: %8px; height: %8px;"
+               "  margin: %9px 0; border-radius: %10px; }")
         .arg(kMuted)
         .arg(kPipCenterButtonSize / 2)
         .arg(kPipCenterButtonSize)
         .arg(kGhostHover)
-        .arg(kPipVolumeHeight)
+        .arg(kPipTimelineHeight)
         .arg(kSurfaceActive)
         .arg(kText)
-        .arg(kPipVolumeHandle)
-        .arg(kPipVolumeHeight / 2 - kPipVolumeHandle / 2)
-        .arg(kPipVolumeHandle / 2)
-        .arg(kPipTimelineHeight)
         .arg(kPipTimelineHandle)
         .arg(kPipTimelineHeight / 2 - kPipTimelineHandle / 2)
         .arg(kPipTimelineHandle / 2);
@@ -307,19 +295,6 @@ void PipFloat::buildChrome() {
     });
     topRow->addWidget(muteButton_);
 
-    volumeSlider_ = new QSlider(Qt::Horizontal, topPill_);
-    volumeSlider_->setObjectName(QStringLiteral("pipVolume"));
-    // Without NoFocus the slider eats Space, so the shortcut that works in the
-    // main player would do nothing here.
-    volumeSlider_->setFocusPolicy(Qt::NoFocus);
-    volumeSlider_->setRange(0, 100);
-    volumeSlider_->setFixedWidth(kPipVolumeWidth);
-    connect(volumeSlider_, &QSlider::valueChanged, this, [this](int value) {
-        revealControls();
-        emit volumeChanged(value / 100.0);
-    });
-    topRow->addWidget(volumeSlider_);
-
     topRow->addStretch(1);
 
     restoreButton_ =
@@ -333,10 +308,13 @@ void PipFloat::buildChrome() {
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
     topRow->addWidget(closeButton_);
 
+    // The transport control is the one thing a float exists for, so it is the
+    // largest mark on the picture and it carries a white triangle rather than
+    // sitting in a chip the size of the others.
     playButton_ = new QPushButton(overlay_);
     playButton_->setObjectName(QStringLiteral("pipPlay"));
     playButton_->setFixedSize(kPipCenterButtonSize, kPipCenterButtonSize);
-    playButton_->setIcon(glyphIcon(&IconPainter::pause, kIconSize));
+    playButton_->setIcon(glyphIcon(&IconPainter::pause, kPipCenterIconSize));
     playButton_->setToolTip(QStringLiteral("Пауза (Пробіл)"));
     playButton_->setAccessibleName(QStringLiteral("Пауза"));
     playButton_->setFocusPolicy(Qt::NoFocus);
@@ -380,9 +358,9 @@ void PipFloat::buildChrome() {
 
     installEventFilter(this);
     surface_->installEventFilter(this);
-    const QVector<QWidget*> watched = {topPill_,  bar_,         elapsed_,     remaining_,
-                                       volumeSlider_, scrub_, playButton_, muteButton_,
-                                       restoreButton_, closeButton_};
+    const QVector<QWidget*> watched = {topPill_,  bar_,       elapsed_, remaining_, scrub_,
+                                       playButton_, muteButton_, restoreButton_,
+                                       closeButton_};
     for (QWidget* widget : watched) {
         widget->installEventFilter(this);
     }
@@ -422,7 +400,8 @@ void PipFloat::closeStream() {
 }
 
 void PipFloat::setPlaying(bool playing) {
-    playButton_->setIcon(glyphIcon(playing ? &IconPainter::pause : &IconPainter::play, kIconSize));
+    playButton_->setIcon(
+        glyphIcon(playing ? &IconPainter::pause : &IconPainter::play, kPipCenterIconSize));
     const QString hint = playing ? QStringLiteral("Пауза (Пробіл)")
                                  : QStringLiteral("Продовжити (Пробіл)");
     playButton_->setToolTip(hint);
@@ -445,12 +424,6 @@ void PipFloat::setTime(double position, double duration) {
         const double clamped = duration > 0.0 ? std::clamp(position, 0.0, duration) : 0.0;
         scrub_->setValue(static_cast<int>(std::lround(clamped * 1000.0)));
     }
-}
-
-void PipFloat::setVolume(double volume) {
-    const QSignalBlocker blocker(volumeSlider_);
-    volumeSlider_->setValue(
-        static_cast<int>(std::lround(std::clamp(volume, 0.0, 1.0) * 100.0)));
 }
 
 void PipFloat::setMuted(bool muted) {
@@ -476,12 +449,16 @@ void PipFloat::revealControls() {
     setOverlayOpacity(1.0);
     // A hover can reach a float the user never activated, so the controls have
     // to retire again on their own rather than wait for a focus event that may
-    // never arrive.
-    hideTimer_->start(kPipBarRevealHoldMs);
+    // never arrive - but never while the pointer is still on them.
+    if (!hovered_) {
+        hideTimer_->start(kPipBarRevealHoldMs);
+    }
 }
 
 void PipFloat::hideControls() {
-    if (overlayOpacity_ <= 0.01) {
+    // Never fade out from under a pointer that is still on the float: the
+    // controls would vanish mid-reach.
+    if (hovered_ || overlayOpacity_ <= 0.01) {
         return;
     }
     overlayFade_->stop();
@@ -504,14 +481,30 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
     // Win32 delivers activation to the top level, and a changeEvent override
     // never sees it, so the float watches its own events.
     if (watched == this) {
-        if (event->type() == QEvent::WindowActivate) {
-            revealControls();
-        } else if (event->type() == QEvent::WindowDeactivate) {
-            hideTimer_->stop();
-            hideControls();
+        switch (event->type()) {
+            case QEvent::Enter:
+            case QEvent::HoverEnter:
+                hovered_ = true;
+                revealControls();
+                break;
+            case QEvent::Leave:
+            case QEvent::HoverLeave:
+                hovered_ = false;
+                // Linger a moment after the pointer goes, so a click that ends
+                // outside does not make the controls blink.
+                hideTimer_->start(kPipBarRevealHoldMs);
+                break;
+            case QEvent::WindowActivate:
+                revealControls();
+                break;
+            case QEvent::WindowDeactivate:
+                hideTimer_->stop();
+                hideControls();
+                break;
+            default:
+                break;
         }
     } else if (watched == overlay_) {
-        // The gesture lives here so the picture and the controls cannot both
         // claim a press; the children never let one past the overlay.
         if (auto* press = dynamic_cast<QMouseEvent*>(event)) {
             switch (event->type()) {
@@ -1037,7 +1030,7 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     qualities_.clear();
     currentHeight_ = 0;
     publishQualityOptions();
-    shell_->setMedia(path, QString(), QStringLiteral("Локальний файл"), QString());
+    shell_->setMedia(path, QStringLiteral("Локальний файл"));
     openStream(path, QString(), /*resume=*/false);
     flashStatus(QStringLiteral("Відтворюю локальний файл"));
 }
@@ -1127,7 +1120,7 @@ void PlayerDialog::applyEpisode(const QString& label,
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             openStream(entry.url, QStringLiteral("%1p").arg(target));
-            shell_->setMedia(entry.url, QString(), caption_, QStringLiteral("%1p").arg(target));
+            shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
     }
@@ -1148,7 +1141,7 @@ void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             openStream(entry.url, QStringLiteral("%1p").arg(target));
-            shell_->setMedia(entry.url, QString(), caption_, QStringLiteral("%1p").arg(target));
+            shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
     }
@@ -1166,7 +1159,7 @@ void PlayerDialog::applyRefreshedStreams(const QList<QualityEntry>& qualities, i
             // A refreshed link is a fresh stream, not a continuation: the old
             // resume point belongs to the expired url.
             openStream(entry.url, QStringLiteral("%1p").arg(target), /*resume=*/false);
-            shell_->setMedia(entry.url, QString(), caption_, QStringLiteral("%1p").arg(target));
+            shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
     }
@@ -1367,7 +1360,7 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
         }
         flashStatus(QStringLiteral("Перемикання на %1p…").arg(height));
         openStream(entry.url, QStringLiteral("%1p").arg(height));
-        shell_->setMedia(entry.url, QString(), caption_, QStringLiteral("%1p").arg(height));
+        shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(height));
         return;
     }
 }
@@ -1474,7 +1467,7 @@ void PlayerDialog::startPlayer() {
     if (closed_ || url_.isEmpty()) {
         return;
     }
-    shell_->setMedia(url_, QString(), caption_,
+    shell_->setMedia(url_, caption_,
                      currentHeight_ > 0 ? QStringLiteral("%1p").arg(currentHeight_) : QString());
     if (!openStream(url_, QString(), /*resume=*/false)) {
         // No mpv core: the host has to provision the runtime before this can
@@ -1729,11 +1722,6 @@ void PlayerDialog::enterPip() {
         surface_->seek(surface_->position() + delta);
     });
     connect(window, &PipFloat::seekAbsoluteRequested, surface_, &VideoSurface::seek);
-    connect(window, &PipFloat::volumeChanged, this, [this](double value) {
-        volume_ = std::clamp(value, 0.0, 1.0);
-        surface_->setVolume(volume_ * 100.0);
-        shell_->setVolume(volume_);
-    });
     connect(window, &PipFloat::muteChanged, this, [this](bool muted) {
         muted_ = muted;
         surface_->setMuted(muted_);
@@ -1744,7 +1732,6 @@ void PlayerDialog::enterPip() {
 
     window->setPlaying(surface_->isPlaying());
     window->setTime(surface_->position(), surface_->duration());
-    window->setVolume(volume_);
     window->setMuted(muted_);
     window->openStream(url_, surface_->position());
 
@@ -1792,7 +1779,6 @@ void PlayerDialog::syncPipBar() {
     }
     pip_->setPlaying(surface_->isPlaying());
     pip_->setTime(surface_->position(), surface_->duration());
-    pip_->setVolume(volume_);
     pip_->setMuted(muted_);
 }
 

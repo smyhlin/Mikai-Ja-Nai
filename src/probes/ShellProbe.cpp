@@ -46,8 +46,8 @@ int main(int argc, char** argv) {
     shell->resize(1280, 760);
     shell->show();
 
-    shell->setMedia(QStringLiteral("C:/temp/probe.mp4"), QStringLiteral("probe"),
-                    QStringLiteral("local"), QStringLiteral("1080p"));
+    shell->setMedia(QStringLiteral("C:/temp/probe.mp4"), QStringLiteral("local"),
+                    QStringLiteral("1080p"));
     shell->setDuration(600);
     shell->setRate(1.0);
     shell->setVolume(0.6);

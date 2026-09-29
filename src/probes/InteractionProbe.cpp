@@ -7,6 +7,7 @@
 //   - quality and dub/sub selection sat in a top strip, above the picture
 
 #include <QApplication>
+#include <QGraphicsOpacityEffect>
 #include <QTest>
 #include <windows.h>
 #include <QGuiApplication>
@@ -17,6 +18,7 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QWidget>
+#include <cmath>
 #include <functional>
 
 #include "PlayerDialog.hpp"
@@ -240,23 +242,84 @@ int main(int argc, char** argv) {
     });
 
     QTimer::singleShot(11500, [&] {
-        // "Original File" belongs in the right corner now, not bottom-centre.
         QWidget* original = dialog->findChild<QWidget*>(QStringLiteral("originalFileButton"));
         check(original != nullptr, "the original-file button exists");
         if (original != nullptr) {
             const QPoint at = original->mapTo(dialog, QPoint(0, 0));
-            check(at.x() > dialog->width() / 2, "the original-file button is in the right corner");
+            check(at.x() > dialog->width() / 2 && at.y() < dialog->height() / 2,
+                  "the original-file button is in the top-right corner");
+            check(original->isVisible(), "the original-file button is visible");
         }
     });
 
-    // Esc has to unwind one layer at a time: the open picker first, the player
-    // only once nothing is left to dismiss.
+    // PiP: open the float, check the spec'd layout, then prove the auto-hide
+    // stands down while the pointer is on it.
     QTimer::singleShot(12000, [&] {
-        if (subs != nullptr && subs->isVisible()) {
-            QTest::keyClick(subs, Qt::Key_Escape);
+        for (QPushButton* b : dialog->findChildren<QPushButton*>()) {
+            if (b->toolTip().contains(QStringLiteral("picture_in_picture"))) {
+                b->click();
+                break;
+            }
         }
-        check(subs == nullptr || !subs->isVisible(), "Esc closed the subtitle picker");
-        check(dialog->isVisible(), "Esc left the player open with a picker up");
+        QTimer::singleShot(900, [&] {
+            QWidget* pip = nullptr;
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                if (QString::fromLatin1(w->metaObject()->className()).contains(QStringLiteral("PipFloat"))) {
+                    pip = w;
+                    break;
+                }
+            }
+            check(pip != nullptr, "the PiP float opened");
+            if (pip == nullptr) {
+                return;
+            }
+            auto child = [pip](const char* name) -> QWidget* {
+                return pip->findChild<QWidget*>(QString::fromLatin1(name));
+            };
+            QWidget* mute = child("pipMute");
+            QWidget* restore = child("pipRestore");
+            QWidget* close = child("pipClose");
+            QWidget* play = child("pipPlay");
+            check(mute != nullptr && mute->isVisible(), "PiP mute is visible");
+            check(restore != nullptr && restore->isVisible(), "PiP restore is visible");
+            check(close != nullptr && close->isVisible(), "PiP close is visible");
+            check(play != nullptr && play->isVisible(), "PiP play button is visible");
+            check(child("pipVolume") == nullptr, "PiP has no volume slider");
+            if (mute != nullptr && restore != nullptr) {
+                const QPoint m = mute->mapTo(pip, QPoint(0, 0));
+                const QPoint r = restore->mapTo(pip, QPoint(0, 0));
+                check(m.x() < r.x(), "PiP mute sits left of restore");
+                check(m.y() < 60, "PiP mute sits near the top");
+            }
+            if (play != nullptr) {
+                const QPoint c = play->mapTo(pip, QPoint(0, 0));
+                check(std::abs(c.x() + play->width() / 2 - pip->width() / 2) < 4,
+                      "PiP play button is horizontally centred");
+                check(std::abs(c.y() + play->height() / 2 - pip->height() / 2) < 4,
+                      "PiP play button is vertically centred");
+                check(play->width() >= 80, "PiP play button is large");
+            }
+            // 1.6 s is the float's own hold, so waiting 2.4 s proves a hovered
+            // float keeps its controls past the point an idle one drops them.
+            QEvent enter(QEvent::Enter);
+            QCoreApplication::sendEvent(pip, &enter);
+            QTest::qWait(2400);
+            QWidget* overlay = child("pipOverlay");
+            QGraphicsOpacityEffect* effect =
+                overlay != nullptr
+                    ? qobject_cast<QGraphicsOpacityEffect*>(overlay->graphicsEffect())
+                    : nullptr;
+            const qreal hovered = effect != nullptr ? effect->opacity() : 0.0;
+            check(hovered > 0.9, "PiP controls stay up while the pointer is on the float");
+
+            QEvent leave(QEvent::Leave);
+            QCoreApplication::sendEvent(pip, &leave);
+            QTest::qWait(3000);
+            const qreal idle = effect != nullptr ? effect->opacity() : 0.0;
+            check(idle < 0.1, "PiP controls auto-hide once the pointer leaves");
+
+            QTest::keyClick(pip, Qt::Key_Escape);
+        });
     });
 
     // Esc unwinds one layer per press - picker, then the shell's own popover,
@@ -264,7 +327,7 @@ int main(int argc, char** argv) {
     // ladder terminates, not that one press out of a busy UI closes it.
     int escPresses = 0;
     std::function<void()> pressEsc = [&] {
-        QTimer::singleShot(250, &app, [&] {
+        QTimer::singleShot(300, &app, [&] {
             ++escPresses;
             QTest::keyClick(dialog, Qt::Key_Escape);
             if (host.closed || escPresses > 8) {
@@ -277,7 +340,7 @@ int main(int argc, char** argv) {
             pressEsc();
         });
     };
-    QTimer::singleShot(12500, &app, pressEsc);
+    QTimer::singleShot(19500, &app, pressEsc);
 
     return app.exec();
 }

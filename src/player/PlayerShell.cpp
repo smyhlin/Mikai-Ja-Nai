@@ -69,7 +69,6 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     }
 
     quality_ = QStringLiteral("HD");
-    requester_ = QStringLiteral("Dmitry");
     origin_ = QStringLiteral("UDream");
 
     hideTimer_.setSingleShot(true);
@@ -78,7 +77,6 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     buildSurface();
     buildWindowControls();
     buildChevrons();
-    buildPill();
     buildDock();
     buildFooter();
     buildOverlays();
@@ -111,6 +109,15 @@ void PlayerShell::buildWindowControls() {
     lay->setContentsMargins(4, 4, 4, 4);
     lay->setSpacing(2);
 
+    // "Original File" is an action, so it lives with the other controls rather
+    // than floating over the middle of the picture. A PillButton keeps its own
+    // glyph and label, so it reads as a chip at the head of the row.
+    btnOriginal_ = new PillButton(windowControls_);
+    btnOriginal_->setObjectName(QStringLiteral("originalFileButton"));
+    btnOriginal_->setToolTip(QStringLiteral("open original file"));
+    connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
+    lay->addWidget(btnOriginal_);
+
     btnMin_ = new IconButton(IconPainter::minimize, QStringLiteral("window_minimize"), 28, 15,
                              windowControls_);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
@@ -140,22 +147,6 @@ void PlayerShell::buildChevrons() {
                               42, 18, this, QColor(0, 0, 0, 165));
     btnNext_->setTint(w70());
     connect(btnNext_, &QPushButton::clicked, this, &PlayerShell::nextRequested);
-}
-
-void PlayerShell::buildPill() {
-    pill_ = new Panel(pill(), 15.0, QColor(255, 255, 255, 22), this);
-    auto* lay = new QHBoxLayout(pill_);
-    lay->setContentsMargins(12, 4, 12, 4);
-    lay->setSpacing(8);
-
-    // The pill is attribution only. "Original File" is an action, not a credit,
-    // and it belonged with the other actions in the right corner rather than
-    // parked in the middle of the picture.
-    lblRequester_ = new QLabel(QStringLiteral("Requested by: %1").arg(requester_), pill_);
-    lblRequester_->setFont(uiFont(9));
-    lblRequester_->setStyleSheet(QStringLiteral("color: rgba(255,255,255,115);"));
-    lay->addWidget(lblRequester_);
-    pill_->adjustSize();
 }
 
 void PlayerShell::buildDock() {
@@ -254,14 +245,6 @@ void PlayerShell::buildFooter() {
     h->setContentsMargins(0, 0, 0, 0);
     h->setSpacing(4);
 
-    // "Original File" lives with the other actions now. It keeps its own
-    // label-and-glyph look, so it reads as a chip sitting inside the cluster.
-    btnOriginal_ = new PillButton(footerRight_);
-    btnOriginal_->setObjectName(QStringLiteral("originalFileButton"));
-    btnOriginal_->setToolTip(QStringLiteral("open original file"));
-    connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
-    h->addWidget(btnOriginal_);
-
     btnReset_ = new IconButton(IconPainter::reset, QStringLiteral("reset_canvas_transform  (R / 0)"),
                                28, 14, footerRight_);
     connect(btnReset_, &QPushButton::clicked, this, &PlayerShell::resetTransform);
@@ -320,7 +303,6 @@ void PlayerShell::applyState() {
     windowControls_->setVisible(!hidden);
     btnPrev_->setVisible(!hidden && !zoom);
     btnNext_->setVisible(!hidden && !zoom);
-    pill_->setVisible(!hidden);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
     footerRight_->setVisible(!hidden);
@@ -464,11 +446,6 @@ void PlayerShell::layoutChrome() {
     btnPrev_->move(static_cast<int>(w * 0.012), cy);
     btnNext_->move(w - static_cast<int>(w * 0.012) - 42, cy);
 
-    // ── source pill (bottom of the media frame) ────────────────────
-    pill_->adjustSize();
-    const int pillBottom = sy + static_cast<int>(sh * 0.90);
-    pill_->move(sx + (sw - pill_->width()) / 2, pillBottom - pill_->height());
-
     // ── dock (bottom-centre) ───────────────────────────────────────
     const int dw = std::min(dock_->sizeHint().width() + 22, w - 24);
     dock_->setGeometry((w - dw) / 2, h - static_cast<int>(h * 0.022) - 46, dw, 46);
@@ -542,18 +519,15 @@ void PlayerShell::toggleHud() {
 //  HOST → SHELL
 // ═════════════════════════════════════════════════════════════════════════════
 
-void PlayerShell::setMedia(const QString& path, const QString& requester, const QString& origin,
-                            const QString& quality) {
+void PlayerShell::setMedia(const QString& path, const QString& origin, const QString& quality) {
     path_ = path;
     hasMedia_ = !path.isEmpty();
-    if (!requester.isEmpty()) requester_ = requester;
     if (!origin.isEmpty()) origin_ = origin;
     if (!quality.isEmpty()) setQuality(quality);
 
     const QString name =
         path.isEmpty() ? QStringLiteral("no media loaded") : QFileInfo(path).fileName();
     lblFile_->setText(name);
-    lblRequester_->setText(QStringLiteral("Requested by: %1").arg(requester_));
     lblOrigin_->setText(QStringLiteral("%1 · %2")
                             .arg(origin_,
                                  QDateTime::currentDateTime().toString(QStringLiteral("dd.MM.yyyy 'о' HH:mm"))));

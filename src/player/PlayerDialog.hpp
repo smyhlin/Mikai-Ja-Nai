@@ -79,14 +79,12 @@ public:
     void setPlaying(bool playing);
     /// Display only: nothing is emitted, so answering with a seek could loop.
     void setTime(double position, double duration);
-    void setVolume(double volume);
     void setMuted(bool muted);
 
 signals:
     void togglePlayRequested();
     void seekRequested(double deltaSeconds);
     void seekAbsoluteRequested(double seconds);
-    void volumeChanged(double volume);
     void muteChanged(bool muted);
     void restoreRequested();
     void closeRequested();
@@ -120,7 +118,6 @@ private:
     QPushButton* restoreButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;
     QPushButton* playButton_ = nullptr;
-    QSlider* volumeSlider_ = nullptr;
     QSlider* scrub_ = nullptr;
     QLabel* elapsed_ = nullptr;
     QLabel* remaining_ = nullptr;
@@ -133,6 +130,10 @@ private:
     double pendingSeek_ = -1.0;
     bool muted_ = false;
     bool scrubbing_ = false;
+    /// True while the pointer is over the float. The auto-hide has to stand
+    /// down: fading the controls out from under a pointer that is reaching for
+    /// one is the difference between a control and a guessing game.
+    bool hovered_ = false;
 
     QPointF pressGlobal_;
     QPoint pressWindow_;

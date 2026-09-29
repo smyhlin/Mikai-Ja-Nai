@@ -70,8 +70,7 @@ public:
     VideoSurface* videoSurface() const { return surface_; }
 
     // ── host → shell ────────────────────────────────────────────────
-    void setMedia(const QString& path, const QString& requester = {},
-                  const QString& origin = {}, const QString& quality = {});
+    void setMedia(const QString& path, const QString& origin = {}, const QString& quality = {});
     void setDuration(double seconds);
     void setPosition(double seconds);
     void setPlaying(bool playing);
@@ -149,7 +148,6 @@ private:
     void buildSurface();
     void buildWindowControls();
     void buildChevrons();
-    void buildPill();
     void buildDock();
     void buildFooter();
     void buildOverlays();
@@ -179,16 +177,13 @@ private:
     VideoSurface* surface_ = nullptr;
 
     Panel* windowControls_ = nullptr;
+    PillButton* btnOriginal_ = nullptr;
     IconButton* btnMin_ = nullptr;
     IconButton* btnWin_ = nullptr;
     IconButton* btnClose_ = nullptr;
 
     IconButton* btnPrev_ = nullptr;
     IconButton* btnNext_ = nullptr;
-
-    Panel* pill_ = nullptr;
-    PillButton* btnOriginal_ = nullptr;
-    QLabel* lblRequester_ = nullptr;
 
     Panel* dock_ = nullptr;
     VolumeGroup* vol_ = nullptr;
@@ -242,7 +237,6 @@ private:
     bool muted_ = false;
     double rate_ = 1.0;
     QString quality_;
-    QString requester_;
     QString origin_;
     bool hasMedia_ = false;
 
