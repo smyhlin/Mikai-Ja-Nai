@@ -110,6 +110,11 @@ void IconButton::setFilled(bool filled) {
     update();
 }
 
+void IconButton::setCircular(bool circular) {
+    circular_ = circular;
+    update();
+}
+
 void IconButton::enterEvent(QEnterEvent* event) {
     hover_ = true;
     update();
@@ -126,7 +131,14 @@ void IconButton::paintEvent(QPaintEvent*) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     if (filled_ || hover_ || isChecked()) {
-        paintRounded(painter, QRectF(1, 1, width() - 2, height() - 2), 10.0, hoverFill_, QColor());
+        const QRectF bounds(1, 1, width() - 2, height() - 2);
+        if (circular_) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(hoverFill_);
+            painter.drawEllipse(bounds);
+        } else {
+            paintRounded(painter, bounds, 10.0, hoverFill_, QColor());
+        }
     }
     const QColor color = hasTint_ ? tint_ : w90();
     const qreal off = (width() - glyph_) / 2.0;

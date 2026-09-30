@@ -73,6 +73,7 @@ public:
     /// which one is up - a grab cannot tell them apart at dock scale.
     IconFn icon() const { return icon_; }
     void setFilled(bool filled);
+    void setCircular(bool circular);
 
 protected:
     void enterEvent(QEnterEvent* event) override;
@@ -87,6 +88,7 @@ private:
     bool hover_ = false;
     bool hasTint_ = false;
     bool filled_ = false;
+    bool circular_ = false;
 };
 
 // ── settings flyout ────────────────────────────────────────────────────────

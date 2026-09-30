@@ -214,6 +214,7 @@ void PlayerShell::buildDock() {
                               kDockPlaySize, kDockPlayGlyph, dock_, accent());
     btnPlay_->setObjectName(QStringLiteral("playerPlayToggle"));
     btnPlay_->setFilled(true);
+    btnPlay_->setCircular(true);
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
     topRow->addWidget(btnPlay_);
     topRow->addStretch();

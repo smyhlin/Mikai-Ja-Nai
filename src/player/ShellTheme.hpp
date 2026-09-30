@@ -31,9 +31,8 @@ inline constexpr int kDockPlaySize = 52;
 inline constexpr int kDockPlayGlyph = 29;
 inline constexpr int kDockActionSize = 40;
 inline constexpr int kDockActionGlyph = 20;
-// Seven action buttons at kDockActionSize plus their spacing, so the row is
-// not squeezed when the audio and subtitle entries appear.
-inline constexpr int kDockSideWidth = 7 * kDockActionSize + 6 * 4;
+// Six action buttons at kDockActionSize plus their spacing.
+inline constexpr int kDockSideWidth = 6 * kDockActionSize + 5 * 4;
 inline constexpr int kInfoChipHeight = 32;
 inline constexpr double kAspectFallback = 16.0 / 9.0;
 
