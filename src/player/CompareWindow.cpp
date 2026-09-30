@@ -37,13 +37,6 @@ constexpr int kGapSmall = 8;
 constexpr int kWindowWidth = 1280;
 constexpr int kWindowHeight = 800;
 constexpr int kInfoHeight = 44;
-constexpr int kTransportWidth = 160;
-/// One frame at a typical anime rate, in seconds. The surface exposes no frame
-/// index, so stepping by time is the honest equivalent.
-constexpr double kFrameStep = 1.0 / 24.0;
-/// How close the surface's reported position must land to the requested one
-/// before the grabbed frame counts as the right one.
-constexpr double kSeekTolerance = 0.12;
 /// How long a frame may sit still before the picture counts as settled. The
 /// surface reports its position from a 50 ms pump, so anything tighter would
 /// be measuring the pump rather than the video.
@@ -60,8 +53,6 @@ constexpr int kMinObserveRounds = 5;
 /// How long a capture waits for the picture to settle before giving up and
 /// saying so.
 constexpr int kSettleTimeoutMs = 3000;
-/// How long a seek is given to land before the capture is called a failure.
-constexpr int kSeekTimeoutMs = 3000;
 /// Poll spacing while waiting. Fine enough that kSettleRounds consecutive grabs
 /// span a real change, coarse enough not to starve the event loop.
 constexpr int kPollIntervalMs = 40;
@@ -146,7 +137,14 @@ void CompareWindow::buildUi() {
     connect(modeBox_, qOverload<int>(&QComboBox::currentIndexChanged), this,
             &CompareWindow::onModeChanged);
     header->addWidget(modeBox_);
-    header->addStretch(1);
+    hover_ = new QLabel(this);
+    hover_->setObjectName(QStringLiteral("compareHover"));
+    header->addWidget(hover_, 1);
+
+    auto* close = new QPushButton(QStringLiteral("Закрити"), this);
+    close->setObjectName(QStringLiteral("compareClose"));
+    connect(close, &QPushButton::clicked, this, &QDialog::close);
+    header->addWidget(close);
     right->addLayout(header);
 
     // --- view controls: one per mode that has a value --------------------
@@ -191,8 +189,6 @@ void CompareWindow::buildUi() {
     connect(gain_, &QSpinBox::valueChanged, this, &CompareWindow::onGainChanged);
     view->addWidget(gain_);
 
-    // The wheel does not zoom, so this is the only way back to the whole frame
-    // after a drag has walked off it.
     auto* fit = new QToolButton(this);
     fit->setObjectName(QStringLiteral("compareFit"));
     fit->setText(QStringLiteral("Вписати"));
@@ -200,51 +196,6 @@ void CompareWindow::buildUi() {
     view->addWidget(fit);
 
     right->addLayout(view);
-
-    // --- transport --------------------------------------------------------
-    auto* transport = new QHBoxLayout();
-    transport->setSpacing(kGapSmall);
-    play_ = new QToolButton(this);
-    play_->setObjectName(QStringLiteral("comparePlay"));
-    play_->setText(QStringLiteral("Грати"));
-    connect(play_, &QToolButton::clicked, this, &CompareWindow::onPlayPause);
-    transport->addWidget(play_);
-
-    auto* back = new QToolButton(this);
-    back->setObjectName(QStringLiteral("compareStepBack"));
-    back->setText(QStringLiteral("< кадр"));
-    connect(back, &QToolButton::clicked, this, &CompareWindow::onStepBack);
-    transport->addWidget(back);
-
-    auto* forward = new QToolButton(this);
-    forward->setObjectName(QStringLiteral("compareStepForward"));
-    forward->setText(QStringLiteral("кадр >"));
-    connect(forward, &QToolButton::clicked, this, &CompareWindow::onStepForward);
-    transport->addWidget(forward);
-
-    // Re-grab the frame where playback stands right now, without stepping: the
-    // two arrow buttons move one frame, and a paused picture that is not the
-    // picture being looked at any more needs a way back to the current one.
-    auto* recapture = new QToolButton(this);
-    recapture->setObjectName(QStringLiteral("compareRecapture"));
-    recapture->setText(QStringLiteral("Оновити кадр"));
-    connect(recapture, &QToolButton::clicked, this, &CompareWindow::captureNow);
-    transport->addWidget(recapture);
-
-    transport_ = new QLabel(this);
-    transport_->setObjectName(QStringLiteral("compareTransport"));
-    transport_->setMinimumWidth(kTransportWidth);
-    transport->addWidget(transport_);
-
-    hover_ = new QLabel(this);
-    hover_->setObjectName(QStringLiteral("compareHover"));
-    transport->addWidget(hover_, 1);
-
-    auto* close = new QPushButton(QStringLiteral("Закрити"), this);
-    close->setObjectName(QStringLiteral("compareClose"));
-    connect(close, &QPushButton::clicked, this, &QDialog::close);
-    transport->addWidget(close);
-    right->addLayout(transport);
 
     canvas_ = new CompareCanvas(this);
     canvas_->setObjectName(QStringLiteral("compareCanvas"));
@@ -416,49 +367,6 @@ void CompareWindow::captureFrame() {
     // Both sides render from this one image, so the difference between them is
     // the chain and nothing else.
     frame_ = grabbed;
-    position_ = settled;
-}
-
-void CompareWindow::captureAt(double seconds) {
-    // The frame-step buttons are the one place that moves the picture, so this
-    // is the one place that seeks. It then waits for the seek to land and for
-    // the framebuffer to catch up with it before keeping anything, and it keeps
-    // nothing at all when that does not happen - the same no-stale-fallback
-    // rule as captureFrame().
-    if (surface_ == nullptr) {
-        return;
-    }
-    frame_ = QImage();
-    captureError_.clear();
-    if (surface_->isPlaying()) {
-        surface_->setPaused(true);
-    }
-    const double duration = surface_->duration();
-    const double target = duration > 0.0 ? std::clamp(seconds, 0.0, duration) : seconds;
-    surface_->seek(target);
-    bool landed = false;
-    for (int waited = 0; waited < kSeekTimeoutMs; waited += kPollIntervalMs) {
-        QCoreApplication::processEvents();
-        QThread::msleep(kPollIntervalMs);
-        if (std::abs(surface_->position() - target) < kSeekTolerance) {
-            landed = true;
-            break;
-        }
-    }
-    if (!landed) {
-        captureError_ = QStringLiteral("Не вдалося перейти на кадр %1 с")
-                            .arg(QString::number(target, 'f', 2));
-        return;
-    }
-    double settled = 0.0;
-    const QImage grabbed = grabSettledFrame(&settled);
-    if (grabbed.isNull()) {
-        captureError_ = QStringLiteral("Не вдалося зняти кадр %1 с")
-                            .arg(QString::number(target, 'f', 2));
-        return;
-    }
-    frame_ = grabbed;
-    position_ = settled;
 }
 
 QImage CompareWindow::renderWithChain(const QString& id) {
@@ -547,7 +455,6 @@ void CompareWindow::render() {
                         {labelFor(sideA()), labelFor(sideB())});
     }
     updateInfo();
-    updateTransport();
 }
 
 void CompareWindow::updateFlickerTimer() {
@@ -614,30 +521,6 @@ void CompareWindow::onFlickerChanged(int value) {
 
 void CompareWindow::onGainChanged(int value) {
     canvas_->setDiffGain(value);
-    render();
-}
-
-void CompareWindow::onPlayPause() {
-    if (surface_ == nullptr) {
-        return;
-    }
-    surface_->setPaused(!surface_->isPlaying());
-    updateTransport();
-}
-
-void CompareWindow::onStepForward() {
-    if (surface_ == nullptr) {
-        return;
-    }
-    captureAt(std::max(0.0, position_ + kFrameStep));
-    render();
-}
-
-void CompareWindow::onStepBack() {
-    if (surface_ == nullptr) {
-        return;
-    }
-    captureAt(std::max(0.0, position_ - kFrameStep));
     render();
 }
 
@@ -728,25 +611,6 @@ void CompareWindow::updateInfo() {
                                               'f', 2)));
     }
     info_->setText(parts.join(QStringLiteral("  ·  ")));
-}
-
-void CompareWindow::updateTransport() {
-    if (surface_ == nullptr) {
-        transport_->setText(QString());
-        return;
-    }
-    // The window pauses playback to freeze a frame, so the label is derived from
-    // the surface rather than set where the button is pressed: on open the
-    // player is already paused and the button has to say so.
-    play_->setText(surface_->isPlaying() ? QStringLiteral("Пауза") : QStringLiteral("Грати"));
-    const double duration = surface_->duration();
-    // The position the two sides were actually taken from, not the surface's
-    // current one. They differ whenever a capture failed, and then this label
-    // is the only place that says so.
-    const double shown = frame_.isNull() ? surface_->position() : position_;
-    transport_->setText(QStringLiteral("%1 / %2 с")
-                            .arg(QString::number(shown, 'f', 2),
-                                 QString::number(duration, 'f', 2)));
 }
 
 QString CompareWindow::labelFor(const QString& id) const {

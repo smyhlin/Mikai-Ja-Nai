@@ -55,21 +55,18 @@ public:
     /// Empty unless the last capture failed, in which case it says why and the
     /// window is showing the failure rather than an older picture.
     QString captureError() const { return captureError_; }
-
-private slots:
     /// Re-freezes the live surface at wherever the player is now. Every
     /// explicit extraction goes through here, so "capture again" can only ever
     /// mean "capture this position".
     void captureNow();
+
+private slots:
     void onModeChanged(int index);
     void onSplitChanged(double value);
     void onOpacityChanged(int value);
     void onFlickerChanged(int value);
     void onGainChanged(int value);
     void onFlickerTimeout();
-    void onPlayPause();
-    void onStepForward();
-    void onStepBack();
     void onCandidateChosen(int side, const QString& id);
     void onHoverPixel(int x, int y, bool valid);
 
@@ -87,10 +84,6 @@ private:
     /// position the player is parked on. It does not seek: a capture is a
     /// reading of the player, not a command to it.
     void captureFrame();
-    /// Seeks to `seconds`, waits for the seek to land, and keeps that frame.
-    /// Only the frame-step buttons call this, where moving the picture is the
-    /// point of the control.
-    void captureAt(double seconds);
     /// Grabs the framebuffer once it has stopped changing, and only once the
     /// surface has stopped reporting a move. Null when no settled frame is
     /// available; never the previous picture.
@@ -100,7 +93,6 @@ private:
     /// comes back. Empty when there is no surface or no frame to work from.
     QImage renderWithChain(const QString& id);
     void updateInfo();
-    void updateTransport();
     void updateFlickerTimer();
     QString sideA() const;
     QString sideB() const;
@@ -120,9 +112,7 @@ private:
     QSpinBox* flicker_ = nullptr;
     QSpinBox* gain_ = nullptr;
     QLabel* info_ = nullptr;
-    QLabel* transport_ = nullptr;
     QLabel* hover_ = nullptr;
-    QToolButton* play_ = nullptr;
     QTimer* flickerTimer_ = nullptr;
 
     QImage frame_;
@@ -142,8 +132,6 @@ private:
     /// The ids the viewer has picked, A first. Empty when nothing is on disk.
     QStringList selection_;
     QString currentCandidateId_;
-    /// Frozen position, in seconds, so both sides render the same frame.
-    double position_ = 0.0;
     CompareMode mode_ = CompareMode::SideBySide;
     bool flickerShowA_ = true;
 };

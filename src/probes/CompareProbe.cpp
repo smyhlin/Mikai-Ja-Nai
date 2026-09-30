@@ -271,11 +271,7 @@ int main(int argc, char** argv) {
         const QImage referenceAtSecond = settledFrame(surface);
         check(!referenceAtSecond.isNull(),
               "the player settled on a frame at the second position");
-        auto* recapture = compare->findChild<QToolButton*>(QString::fromLatin1("compareRecapture"));
-        check(recapture != nullptr, "the window offers a re-capture control");
-        if (recapture != nullptr) {
-            recapture->click();
-        }
+        compare->captureNow();
         QTest::qWait(2500);
         const QImage secondCapture = compare->frozenFrame();
         check(!secondCapture.isNull(), "the second capture froze a frame");
