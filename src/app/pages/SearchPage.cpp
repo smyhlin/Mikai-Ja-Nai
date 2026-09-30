@@ -1266,10 +1266,22 @@ void SearchPage::requestThumb(const QString& url) {
     // A render rebuilds its widgets, so a cached image has to paint the ones
     // standing now. Skipping here left every rebuilt card on its placeholder
     // until the next full reload of that url.
+    const auto painted = rounded_.constFind(url);
+    if (painted != rounded_.constEnd()) {
+        for (TitleCard* card : cardsByImageKey_.value(url)) {
+            card->applyPixmap(painted.value());
+        }
+        applyThumbs();
+        applyFeedPosters();
+        return;
+    }
     const auto icon = icons_.constFind(url);
     if (icon != icons_.constEnd()) {
+        const QPixmap ready = TitleCard::rounded(
+            icon.value(), QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+        rounded_.insert(url, ready);
         for (TitleCard* card : cardsByImageKey_.value(url)) {
-            card->applyPixmap(icon.value());
+            card->applyPixmap(ready);
         }
         applyThumbs();
         applyFeedPosters();
@@ -1320,10 +1332,14 @@ void SearchPage::flushThumbs() {
         // reads from here on, so holding both doubles poster memory per feed.
         thumbCache_.remove(it.key());
         // A poster URL is shared by several cards; the index turns that into a
-        // lookup instead of a scan of every card on the page.
+        // lookup instead of a scan of every card on the page. The rounded
+        // variant is painted once per URL, not once per card.
+        const QPixmap ready = TitleCard::rounded(
+            pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+        rounded_.insert(it.key(), ready);
         const QList<TitleCard*> cards = cardsByImageKey_.value(it.key());
         for (TitleCard* card : cards) {
-            card->applyPixmap(pixmap);
+            card->applyPixmap(ready);
         }
     }
     applyThumbs();

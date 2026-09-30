@@ -105,33 +105,38 @@ QLabel* TitleCard::makeLabel(const QString& objectName, const QString& text) {
     return label;
 }
 
-void TitleCard::applyPixmap(const QPixmap& pixmap) {
-    if (pixmap.isNull()) {
-        return;
+QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& target) {
+    if (pixmap.isNull() || target.isEmpty()) {
+        return {};
     }
-    const QSize targetSize = poster_->size();
-    QPixmap scaled = pixmap.scaled(targetSize, Qt::KeepAspectRatioByExpanding,
-                                   Qt::SmoothTransformation);
-    const int cropX = qMax(0, (scaled.width() - targetSize.width()) / 2);
-    const int cropY = qMax(0, (scaled.height() - targetSize.height()) / 2);
+    QPixmap scaled =
+        pixmap.scaled(target, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    const int cropX = qMax(0, (scaled.width() - target.width()) / 2);
+    const int cropY = qMax(0, (scaled.height() - target.height()) / 2);
 
     // Clip to rounded corners matching the card's inner radius so artwork
     // sits seamlessly inside the container without square corners overflowing.
-    QPixmap rounded(targetSize);
-    rounded.fill(Qt::transparent);
-    QPainter painter(&rounded);
+    QPixmap out(target);
+    out.fill(Qt::transparent);
+    QPainter painter(&out);
     painter.setRenderHint(QPainter::Antialiasing);
     QPainterPath path;
-    path.addRoundedRect(QRectF(0, 0, targetSize.width(), targetSize.height()),
-                        theme::kRadiusSmall, theme::kRadiusSmall);
+    path.addRoundedRect(QRectF(0, 0, target.width(), target.height()), theme::kRadiusSmall,
+                        theme::kRadiusSmall);
     painter.setClipPath(path);
     // Draw the centred region directly at its negative offset: the clip is
     // exactly the target box, so the parts outside it are discarded and the
     // second allocation of scaled.copy() is pure cost.
     painter.drawPixmap(-cropX, -cropY, scaled);
+    return out;
+}
 
+void TitleCard::applyPixmap(const QPixmap& pixmap) {
+    if (pixmap.isNull()) {
+        return;
+    }
     poster_->setText(QString());
-    poster_->setPixmap(rounded);
+    poster_->setPixmap(pixmap);
 }
 
 void TitleCard::applyStatus(const QString& status) {

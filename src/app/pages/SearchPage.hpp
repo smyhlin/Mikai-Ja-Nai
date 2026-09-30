@@ -173,6 +173,9 @@ private:
     /// Thumb bytes waiting for the coalescing timer, keyed by url.
     QHash<QString, QByteArray> pendingThumbs_;
     QHash<QString, QPixmap> icons_;
+    /// Rounded card pixmaps per poster URL. Several cards share one feed
+    /// poster and one box, so the scale-crop-clip runs once per URL.
+    QHash<QString, QPixmap> rounded_;
     QHash<QString, QList<TitleCard*>> carouselWidgets_;
     /// Every carousel card keyed by its image url, so a landing thumb is a
     /// lookup rather than a scan over every card on the page.
