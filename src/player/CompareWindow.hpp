@@ -1,3 +1,15 @@
+// Two shader chains, side by side, on one frozen frame.
+//
+// Adapted from AnimeInterp's CompareWindow. The surface is a CompareCanvas that
+// takes its geometry from the pure buildLayout core, and the mode set is the
+// reference's own rather than a subset: Original, Processed, SplitH, SplitV,
+// SideBySide, Overlay, Flicker and Difference, each with the view controls that
+// mode actually uses.
+//
+// It is a viewer of stills. Nothing here rewrites the chain the player is
+// running; each side is rendered by applying its chain to one frozen frame
+// through a borrowed surface, so a difference between the two is the chain and
+// nothing else.
 #pragma once
 
 #include <QDialog>
@@ -5,11 +17,18 @@
 #include <QString>
 #include <QStringList>
 
+#include "CompareLayout.hpp"
+
+class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
-class QSlider;
-class QComboBox;
 class QPushButton;
+class QSlider;
+class QSpinBox;
+class QStackedWidget;
+class QTimer;
+class QToolButton;
 
 namespace mplayer {
 
@@ -17,85 +36,82 @@ class VideoSurface;
 
 namespace shell {
 
-/// A side-by-side look at two shader chains on one frozen frame.
-///
-/// It owns no mpv core and no network: the frame arrives as an image from the
-/// host, and each side is rendered by applying a chain to that image through a
-/// private surface. That is what makes the two sides comparable - they are the
-/// same pixels, so a difference between them is the chain and nothing else.
-///
-/// The window is non-blocking on purpose. The player keeps playing underneath
-/// and the comparison is a still frame the viewer steps through, because a
-/// live preview would differ between two grabs for reasons that have nothing to
-/// do with the shader.
+class CompareCanvas;
+class CompareGrid;
+
 class CompareWindow : public QDialog {
     Q_OBJECT
 
 public:
-    /// How the two sides are presented.
-    enum class Layout {
-        SideBySide,  ///< A and B next to each other
-        Split,       ///< one image with a draggable divide between A and B
-        Difference   ///< the absolute pixel difference, amplified
-    };
-
     /// `surface` is borrowed, not owned: the window reads frames from it and
     /// never outlives the player that created it.
-    CompareWindow(mplayer::VideoSurface* surface, const QString& currentCandidateId, QWidget* parent = nullptr);
+    CompareWindow(mplayer::VideoSurface* surface, const QString& currentCandidateId,
+                  QWidget* parent = nullptr);
     ~CompareWindow() override;
-
-    /// The candidate the viewer is meant to adopt. Empty when nothing applies.
-    QString appliedCandidateId() const { return appliedId_; }
-
-signals:
-    /// The viewer picked a winner. The host writes it to the live core.
-    void applyRequested(const QString& candidateId);
 
 private slots:
     void onSelectionChanged();
-    void onLayoutChanged(int index);
-    void onApplyA();
-    void onApplyB();
-    void onScrubMoved(int value);
-    void onSplitMoved(int value);
+    void onModeChanged(int index);
+    void onSplitChanged(double value);
+    void onOpacityChanged(int value);
+    void onFlickerChanged(int value);
+    void onGainChanged(int value);
+    void onFlickerTimeout();
+    void onPlayPause();
+    void onStepForward();
+    void onStepBack();
+    void onCandidateChosen(int side, const QString& id);
+    void onHoverPixel(int x, int y, bool valid);
 
 private:
     void buildUi();
     void populateList();
     void captureFrame();
+    /// Seeks to `seconds`, waits for the seek to land, and keeps that frame.
+    void captureAt(double seconds);
     void render();
-    /// Applies `id` to the live core and returns the settled frame that comes
-    /// back. Empty when there is no surface or no frame to work from.
+    /// Applies `id` to the borrowed core and returns the settled frame that
+    /// comes back. Empty when there is no surface or no frame to work from.
     QImage renderWithChain(const QString& id);
-    void renderSideBySide();
-    QString labelFor(const QString& id) const;
-    void renderSplit();
-    void renderDifference();
     void updateInfo();
-    /// The picked ids in press order: first is A, second is B. A selection is
-    /// a set, so the order the viewer chose has to be read explicitly.
+    void updateTransport();
+    void updateFlickerTimer();
+    /// The picked ids in press order: first is A, second is B. A selection is a
+    /// set, so the order the viewer chose is read explicitly.
     QStringList selection() const;
     QString sideA() const;
     QString sideB() const;
-    QString chainFor(const QString& id) const;
+    QString labelFor(const QString& id) const;
 
     mplayer::VideoSurface* surface_ = nullptr;
+    CompareCanvas* canvas_ = nullptr;
+    CompareGrid* grid_ = nullptr;
+    QStackedWidget* stack_ = nullptr;
     QListWidget* list_ = nullptr;
-    QComboBox* layoutBox_ = nullptr;
-    QLabel* canvas_ = nullptr;
+    QComboBox* modeBox_ = nullptr;
+    QLabel* splitLabel_ = nullptr;
+    QLabel* opacityLabel_ = nullptr;
+    QLabel* flickerLabel_ = nullptr;
+    QLabel* gainLabel_ = nullptr;
+    QDoubleSpinBox* split_ = nullptr;
+    QSlider* opacity_ = nullptr;
+    QSpinBox* flicker_ = nullptr;
+    QSpinBox* gain_ = nullptr;
     QLabel* info_ = nullptr;
-    QSlider* scrub_ = nullptr;
-    QSlider* split_ = nullptr;
-    QPushButton* applyA_ = nullptr;
-    QPushButton* applyB_ = nullptr;
+    QLabel* transport_ = nullptr;
+    QLabel* hover_ = nullptr;
+    QToolButton* play_ = nullptr;
+    QTimer* flickerTimer_ = nullptr;
 
     QImage frame_;
+    QImage renderedA_;
+    QImage renderedB_;
     QStringList candidates_;
-    QString appliedId_;
+    QString currentCandidateId_;
     /// Frozen position, in seconds, so both sides render the same frame.
     double position_ = 0.0;
-    /// 0..100 across the image, for the split layout only.
-    int splitAt_ = 500;
+    CompareMode mode_ = CompareMode::SideBySide;
+    bool flickerShowA_ = true;
 };
 
 }  // namespace shell
