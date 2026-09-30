@@ -114,7 +114,6 @@ void TitleCard::applyPixmap(const QPixmap& pixmap) {
                                    Qt::SmoothTransformation);
     const int cropX = qMax(0, (scaled.width() - targetSize.width()) / 2);
     const int cropY = qMax(0, (scaled.height() - targetSize.height()) / 2);
-    QPixmap cropped = scaled.copy(cropX, cropY, targetSize.width(), targetSize.height());
 
     // Clip to rounded corners matching the card's inner radius so artwork
     // sits seamlessly inside the container without square corners overflowing.
@@ -126,7 +125,10 @@ void TitleCard::applyPixmap(const QPixmap& pixmap) {
     path.addRoundedRect(QRectF(0, 0, targetSize.width(), targetSize.height()),
                         theme::kRadiusSmall, theme::kRadiusSmall);
     painter.setClipPath(path);
-    painter.drawPixmap(0, 0, cropped);
+    // Draw the centred region directly at its negative offset: the clip is
+    // exactly the target box, so the parts outside it are discarded and the
+    // second allocation of scaled.copy() is pure cost.
+    painter.drawPixmap(-cropX, -cropY, scaled);
 
     poster_->setText(QString());
     poster_->setPixmap(rounded);
@@ -134,12 +136,17 @@ void TitleCard::applyPixmap(const QPixmap& pixmap) {
 
 void TitleCard::applyStatus(const QString& status) {
     const bool live = status == QLatin1String("ongoing");
-    status_->setObjectName(live ? QStringLiteral("carouselStatusLive")
-                                : QStringLiteral("carouselStatus"));
-    // Re-polish: the object name selects the QSS rule, and Qt caches the style
-    // against the old name until the widget is told to look again.
-    status_->style()->unpolish(status_);
-    status_->style()->polish(status_);
+    if (live != statusLive_) {
+        statusLive_ = live;
+        status_->setObjectName(live ? QStringLiteral("carouselStatusLive")
+                                    : QStringLiteral("carouselStatus"));
+        // Re-polish: the object name selects the QSS rule, and Qt caches the
+        // style against the old name until the widget is told to look again.
+        // applyDetail replays the list status for every card on the page, so
+        // this pair is only worth paying when the role actually flips.
+        status_->style()->unpolish(status_);
+        status_->style()->polish(status_);
+    }
     const QString text = labels::status(status);
     status_->setText(text.isEmpty() ? QString::fromLatin1(kPending) : text);
 }

@@ -23,6 +23,8 @@ QScrollArea#titleOverview, QScrollArea#episodeScroll { background: transparent; 
 QLabel#titleCover { background: %8; color: %4; border: none; border-radius: %6px; }
 QLabel#titleFacts { color: %4; font-size: 13px; }
 QLabel#titleDescription { background: transparent; color: %2; font-size: 14px; }
+QLabel#titleScores { color: %11; font-weight: 600; }
+QLabel#titleLinks { color: %11; }
 QWidget#titleDetails { background: %5; color: %2; border: none; border-radius: %6px; }
 QWidget#titleDetails QLabel { background: transparent; }
 QPushButton#episodeButton { background: %5; border: 1px solid transparent;

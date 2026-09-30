@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -61,6 +62,14 @@ public:
     /// Put a title at the head of the "recently opened" carousel and persist it.
     void recordRecentTitle(const QString& ref, const QString& title, const QString& poster);
 
+    /// The detail already fetched for `ref`, if any. A card's detail lookup
+    /// lands for every title on the page, so opening one usually has the answer
+    /// in hand and the title page can skip asking for it again.
+    const backend::AnimeDetail* cachedDetail(const QString& ref) const {
+        const auto it = cardDetails_.constFind(ref);
+        return it == cardDetails_.constEnd() ? nullptr : &it.value();
+    }
+
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
@@ -89,6 +98,14 @@ private:
         QVBoxLayout* rows = nullptr;
     };
 
+    /// A feed poster waiting on one thumb URL, remembering which URL its label
+    /// already shows so a repeated pass over the icon table is a no-op.
+    struct FeedPosterSlot {
+        QString url;
+        QPointer<QLabel> label;
+        QString shown;
+    };
+
     void smoothScrollCarousel(QScrollBar* bar, int delta);
     CarouselSection* buildCarousel(const QString& heading, const QString& key);
     FeedSection* buildFeedSection(const QString& heading, const QString& key);
@@ -98,7 +115,6 @@ private:
     QList<backend::AnimeSummary> readRecentTitles();
     void persistRecentTitles();
     void showCarousel(const QString& key, const QList<backend::AnimeSummary>& items);
-    void applyCarouselThumbs(const QHash<QString, QByteArray>& fetched);
     void resolveRecentPosters(const QList<backend::AnimeSummary>& entries);
     void requestCardDetail(const QString& ref);
     void applyCardDetail(const QString& ref, const backend::AnimeDetail& detail);
@@ -135,6 +151,8 @@ private:
     void animeCardMenu(const QString& ref, const QPoint& globalPos);
     void requestThumb(const QString& url);
     void applyThumb(const QString& url, const QByteArray& data);
+    /// Decode and paint everything applyThumb queued, once per batch.
+    void flushThumbs();
     void applyThumbs();
     void applyFeedPosters();
 
@@ -152,11 +170,16 @@ private:
 
     QHash<QString, QByteArray> thumbCache_;
     QSet<QString> thumbsInFlight_;
+    /// Thumb bytes waiting for the coalescing timer, keyed by url.
+    QHash<QString, QByteArray> pendingThumbs_;
     QHash<QString, QPixmap> icons_;
     QHash<QString, QList<TitleCard*>> carouselWidgets_;
+    /// Every carousel card keyed by its image url, so a landing thumb is a
+    /// lookup rather than a scan over every card on the page.
+    QHash<QString, QList<TitleCard*>> cardsByImageKey_;
     QHash<QString, QList<backend::AnimeSummary>> carouselEntries_;
     /// Thumb URL paired with the label waiting for it, per feed block.
-    QHash<QString, QVector<QPair<QString, QLabel*>>> feedPosterLabels_;
+    QHash<QString, QVector<FeedPosterSlot>> feedPosterLabels_;
     QSet<QString> detailLookups_;
     QHash<QString, backend::AnimeDetail> cardDetails_;
     QHash<QString, backend::PosterSet> healedPosters_;
@@ -167,6 +190,7 @@ private:
     QSet<QString> enabledFeeds_;
 
     QTimer* healTimer_ = nullptr;
+    QTimer* thumbTimer_ = nullptr;
     QLineEdit* query_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;

@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStyle>
 
 namespace mikai::app {
 
@@ -21,6 +22,10 @@ QString pageRangeLabel(int page, int pageSize, int totalEntries) {
 }
 
 namespace {
+
+/// The page a chip points at lives in its property, so one connection built
+/// once at construction survives every re-label.
+const char* kChipPageProperty = "pagerPage";
 
 QPushButton* makeArrow(const QString& text, const QString& tooltip) {
     auto* button = new QPushButton(text);
@@ -85,9 +90,19 @@ RangePager::~RangePager() = default;
 void RangePager::setState(int page, int pages, int entries) { setState(page, pages, entries, {}); }
 
 void RangePager::setState(int page, int pages, int entries, const QStringList& numbers) {
-    pages_ = qMax(1, pages);
-    page_ = qBound(1, page, pages_);
-    entries_ = qMax(0, entries);
+    const int clampedPages = qMax(1, pages);
+    const int clampedPage = qBound(1, page, clampedPages);
+    const int clampedEntries = qMax(0, entries);
+    // Every episode page render and every search page change lands here, and
+    // re-running the whole update for an unchanged state would re-label, re-role
+    // and re-enable the same chips for nothing.
+    if (rendered_ && clampedPage == page_ && clampedPages == pages_ &&
+        clampedEntries == entries_ && numbers == numbers_) {
+        return;
+    }
+    pages_ = clampedPages;
+    page_ = clampedPage;
+    entries_ = clampedEntries;
     numbers_ = numbers;
     renderChips();
     updateEnabled();
@@ -115,25 +130,49 @@ void RangePager::updateEnabled() {
 }
 
 void RangePager::renderChips() {
-    while (chipLayout_->count() > 0) {
-        QLayoutItem* item = chipLayout_->takeAt(0);
-        if (item->widget() != nullptr) {
-            item->widget()->deleteLater();
+    // A window of chips follows the current page, centred on it and never
+    // running off either end of the range. The buttons are kept between calls
+    // and re-labelled: setState lands on every episode page render and every
+    // search page change, and building the window afresh there meant a fresh
+    // QSS polish and a fresh connect per chip per page.
+    const int window = qMin(theme::kPagerChipWindow, pages_);
+    // The window shrinks with the page count, and a chip past the window is not
+    // part of the pager at all, so it goes now rather than lingering as a hidden
+    // button the layout and any child lookup still have to walk past.
+    while (chips_.size() > window) {
+        QPushButton* extra = chips_.takeLast();
+        chipLayout_->removeWidget(extra);
+        delete extra;
+    }
+    while (chips_.size() < window) {
+        const int target = chips_.size() + 1;
+        auto* chip = new QPushButton(chipsHost_);
+        chip->setObjectName(QStringLiteral("pagerChip"));
+        chip->setProperty(kChipPageProperty, target);
+        connect(chip, &QPushButton::clicked, this, [this, chip] {
+            jumpTo(chip->property(kChipPageProperty).toInt());
+        });
+        chipLayout_->addWidget(chip);
+        chips_.append(chip);
+    }
+    const int first = qBound(0, page_ - 1 - window / 2, qMax(0, pages_ - window));
+    for (int offset = 0; offset < window; ++offset) {
+        QPushButton* chip = chips_.at(offset);
+        const int target = first + offset + 1;
+        chip->setProperty(kChipPageProperty, target);
+        chip->setText(chipLabel(target));
+        chip->setToolTip(tr("Сторінка %1").arg(target));
+        const bool active = target == page_;
+        if (active != (chip->objectName() == QLatin1String("pagerChipActive"))) {
+            chip->setObjectName(active ? QStringLiteral("pagerChipActive")
+                                       : QStringLiteral("pagerChip"));
+            // The object name selects the QSS rule, so only the chips that
+            // actually change role are worth re-polishing.
+            chip->style()->unpolish(chip);
+            chip->style()->polish(chip);
         }
     }
-    // A window of chips follows the current page, centred on it and never
-    // running off either end of the range.
-    const int window = qMin(theme::kPagerChipWindow, pages_);
-    const int first = qBound(0, page_ - 1 - window / 2, qMax(0, pages_ - window));
-    for (int index = first; index < first + window; ++index) {
-        const int target = index + 1;
-        auto* button = new QPushButton(chipLabel(target), chipsHost_);
-        button->setObjectName(target == page_ ? QStringLiteral("pagerChipActive")
-                                             : QStringLiteral("pagerChip"));
-        button->setToolTip(tr("Сторінка %1").arg(target));
-        connect(button, &QPushButton::clicked, this, [this, target] { jumpTo(target); });
-        chipLayout_->addWidget(button);
-    }
+    rendered_ = true;
 }
 
 QString RangePager::chipLabel(int target) const {

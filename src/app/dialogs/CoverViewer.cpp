@@ -11,12 +11,21 @@
 #include <QPixmap>
 #include <QScreen>
 #include <QShowEvent>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
 namespace mikai::app {
 namespace {
 
+/// The blurred backdrop, kept small.
+///
+/// A downscale-then-upscale pass is the whole trick: Qt's smooth scaler is a
+/// box filter, so two passes at different factors read as a real blur and cost
+/// two C++ calls instead of a per-pixel loop. Both passes run at backdrop
+/// resolution rather than screen resolution, and the last upscale is left to
+/// the painter, so a resize costs two scalings over a buffer a fraction of the
+/// screen instead of four over the whole of it.
 QPixmap blurredBackdrop(const QPixmap& pixmap, const QSize& size) {
     if (pixmap.isNull() || size.isEmpty()) {
         return {};
@@ -25,14 +34,11 @@ QPixmap blurredBackdrop(const QPixmap& pixmap, const QSize& size) {
     if (image.isNull()) {
         return {};
     }
-    // A downscale-then-upscale pass is the whole trick: Qt's smooth scaler is a
-    // box filter, so two passes at different factors read as a real blur and
-    // cost two C++ calls instead of a per-pixel loop.
-    for (int factor : {theme::kCoverBackdropDownscale, 2}) {
-        const QSize small(qMax(1, size.width() / factor), qMax(1, size.height() / factor));
-        image = image.scaled(small, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
-                    .scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    }
+    const QSize small(qMax(1, size.width() / theme::kCoverBackdropDownscale),
+                      qMax(1, size.height() / theme::kCoverBackdropDownscale));
+    image = image.scaled(small, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+                .scaled(QSize(small.width() * 2, small.height() * 2),
+                        Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
     // Deliberately not fill(): that rewrites every channel, alpha included, so
     // it erases the blur instead of dimming it and the overlay ends up on a flat
     // black field.
@@ -69,12 +75,22 @@ public:
         setMouseTracking(true);
         setFocusPolicy(Qt::StrongFocus);
         setCursor(Qt::OpenHandCursor);
+        backdropTimer_ = new QTimer(this);
+        backdropTimer_->setSingleShot(true);
+        backdropTimer_->setInterval(0);
+        connect(backdropTimer_, &QTimer::timeout, this, [this] {
+            if (backdrop_.size() != size()) {
+                backdrop_ = blurredBackdrop(image_, size());
+                update();
+            }
+        });
     }
 
     void setImage(const QPixmap& pixmap) {
         image_ = pixmap;
         zoom_ = 1.0;
         pan_ = QPointF();
+        backdrop_ = blurredBackdrop(image_, size());
         recomputeFit();
     }
 
@@ -85,11 +101,11 @@ protected:
         Q_UNUSED(event);
         QPainter painter(this);
         painter.fillRect(rect(), Qt::black);
-        if (!backdrop_.isNull() && backdrop_.size() != size()) {
-            backdrop_ = blurredBackdrop(image_, size());
-        }
         if (!backdrop_.isNull()) {
-            painter.drawPixmap(0, 0, backdrop_);
+            // The buffer is a fraction of the surface, so the upscale to fill it
+            // is the painter's one scaling pass rather than a third and fourth
+            // over the full resolution.
+            painter.drawPixmap(rect(), backdrop_, QRectF(backdrop_.rect()));
             // An alpha dim, not a fill: filling would rewrite the blur away.
             painter.fillRect(rect(), QColor(0, 0, 0, theme::kCoverBackdropAlpha));
         }
@@ -155,6 +171,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override {
         QWidget::resizeEvent(event);
         recomputeFit();
+        scheduleBackdrop();
     }
 
     void keyPressEvent(QKeyEvent* event) override {
@@ -222,6 +239,21 @@ private:
         setZoom(fit_ > 0.0 && zoom_ >= 1.0 ? 1.0 / fit_ : 1.0);
     }
 
+    /// Rebuild the blur once the resize settles.
+    ///
+    /// A drag raises a resize event per frame, and each one used to rebuild the
+    /// blur before the next frame was even drawn. One coalescing timer turns the
+    /// whole drag into a single rebuild. The stale buffer keeps painting in the
+    /// meantime, which on a blur is invisible where a cleared one would flash.
+    void scheduleBackdrop() {
+        if (image_.isNull()) {
+            return;
+        }
+        if (!backdropTimer_->isActive()) {
+            backdropTimer_->start();
+        }
+    }
+
     void recomputeFit() {
         if (image_.isNull() || width() <= 0 || height() <= 0) {
             return;
@@ -238,7 +270,6 @@ private:
             fit_ = fit;
         }
         clampPan();
-        backdrop_ = blurredBackdrop(image_, size());
         update();
     }
 
@@ -277,6 +308,7 @@ private:
 
     QPixmap image_;
     QPixmap backdrop_;
+    QTimer* backdropTimer_ = nullptr;
     double zoom_ = 1.0;
     double fit_ = 1.0;
     QPointF pan_;

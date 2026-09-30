@@ -13,9 +13,11 @@
 
 #include <backend/MikaiClient.hpp>
 
+#include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QHBoxLayout>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QEasingCurve>
 #include <QJsonDocument>
@@ -67,12 +69,34 @@ QString formatFeedTime(const QString& timestamp, bool timeOnly = false) {
                     : local.toString(QStringLiteral("dd.MM · HH:mm"));
 }
 
-QPixmap pixmapFrom(const QByteArray& data) {
-    QPixmap pixmap;
-    if (pixmap.loadFromData(data) && !pixmap.isNull()) {
-        return pixmap;
+/// The biggest box anything on the page draws a poster into: the home card
+/// poster. Search rows (56x78) and feed posters (34x48) are smaller, so
+/// decoding down to this leaves no consumer upscaling.
+const QSize kThumbDecodeSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
+
+QPixmap pixmapFrom(const QByteArray& data, const QSize& target) {
+    // A QImageReader built straight from the bytes would read them as a
+    // filename, not as an image: the reader needs a device to pull from.
+    QBuffer buffer;
+    buffer.setData(data);
+    if (!buffer.open(QIODevice::ReadOnly)) {
+        return {};
     }
-    return {};
+    QImageReader reader(&buffer);
+    // Scaling during the decode is far cheaper than decoding a full cover and
+    // then throwing nearly all of it away, and the two agree on the result to
+    // within a rounding step. Artwork already at or below the display rect is
+    // decoded whole: scaling it up first would only cost time.
+    const QSize source = reader.size();
+    if (source.isValid() && !target.isEmpty() &&
+        (source.width() > target.width() || source.height() > target.height())) {
+        reader.setScaledSize(source.scaled(target, Qt::KeepAspectRatioByExpanding));
+    }
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        return {};
+    }
+    return QPixmap::fromImage(image);
 }
 
 /// Enable a carousel's arrows only where there is somewhere to scroll to.
@@ -216,6 +240,13 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     healTimer_->setSingleShot(true);
     healTimer_->setInterval(200);
     connect(healTimer_, &QTimer::timeout, this, &SearchPage::flushRecentPosters);
+
+    // The same coalescing for thumbs, on a zero interval: a feed's posters land
+    // in one burst, and one pass over the whole batch beats one pass per image.
+    thumbTimer_ = new QTimer(this);
+    thumbTimer_->setSingleShot(true);
+    thumbTimer_->setInterval(0);
+    connect(thumbTimer_, &QTimer::timeout, this, &SearchPage::flushThumbs);
 
     QTimer::singleShot(0, this, &SearchPage::loadOngoing);
     if (!recentItems_.isEmpty()) {
@@ -513,7 +544,23 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
     // Registered before the thumbs are asked for: a url already in the cache
     // paints synchronously, and it can only find these cards once they are
     // the ones carouselWidgets_ points at.
+    // The cards this call is about to drop are on their way to deleteLater, so
+    // they have to leave the image index with them; a thumb landing afterwards
+    // must not reach a freed card.
+    for (TitleCard* card : carouselWidgets_.value(key)) {
+        const auto indexed = cardsByImageKey_.find(card->imageKey());
+        if (indexed == cardsByImageKey_.end()) {
+            continue;
+        }
+        indexed.value().removeAll(card);
+        if (indexed.value().isEmpty()) {
+            cardsByImageKey_.erase(indexed);
+        }
+    }
     carouselWidgets_.insert(key, cards);
+    for (TitleCard* card : cards) {
+        cardsByImageKey_[card->imageKey()].append(card);
+    }
     // One task per card: the image pool paints a whole feed at once instead
     // of waiting for the slowest poster in it.
     for (TitleCard* card : cards) {
@@ -531,24 +578,6 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
 
     for (const backend::AnimeSummary& anime : shown) {
         requestCardDetail(anime.ref);
-    }
-}
-
-void SearchPage::applyCarouselThumbs(const QHash<QString, QByteArray>& fetched) {
-    for (auto it = fetched.constBegin(); it != fetched.constEnd(); ++it) {
-        const QPixmap pixmap = pixmapFrom(it.value());
-        if (pixmap.isNull()) {
-            continue;
-        }
-        // A poster URL is shared by several cards and feeds.
-        for (auto cards = carouselWidgets_.constBegin(); cards != carouselWidgets_.constEnd();
-             ++cards) {
-            for (TitleCard* card : cards.value()) {
-                if (card->imageKey() == it.key()) {
-                    card->applyPixmap(pixmap);
-                }
-            }
-        }
     }
 }
 
@@ -911,7 +940,7 @@ void SearchPage::showFeedRows(
     section->state->setText(emptyText);
     section->state->hide();
 
-    QVector<QPair<QString, QLabel*>> posters;
+    QVector<FeedPosterSlot> posters;
     for (const auto& entry : entries) {
         const backend::AnimeSummary& anime = entry.first;
         auto* row = new QWidget(section->rowsHost);
@@ -928,7 +957,7 @@ void SearchPage::showFeedRows(
             poster->setFixedSize(theme::kHomeFeedPosterWidth, theme::kHomeFeedPosterHeight);
             poster->setAlignment(Qt::AlignCenter);
             poster->setAttribute(Qt::WA_TransparentForMouseEvents);
-            posters.append({thumb, poster});
+            posters.append({thumb, poster, {}});
             rowLayout->addWidget(poster, 0, Qt::AlignVCenter);
         }
         const QString name = backend::displayName(anime.titles);
@@ -952,8 +981,8 @@ void SearchPage::showFeedRows(
     }
     section->rowsHost->show();
     feedPosterLabels_.insert(key, posters);
-    for (const auto& poster : posters) {
-        requestThumb(poster.first);
+    for (const FeedPosterSlot& poster : posters) {
+        requestThumb(poster.url);
     }
 }
 
@@ -1010,12 +1039,16 @@ void SearchPage::showDiscovery() {
     results_->hide();
     formatBar_->hide();
     resultsHeading_->show();
+    // Thumbs that landed while the feeds were hidden were left unpainted, so
+    // the switch back is the moment to catch them up.
+    applyFeedPosters();
 }
 
 void SearchPage::showSearchResults() {
     discoveryScroll_->hide();
     results_->show();
     resultsHeading_->show();
+    applyThumbs();
 }
 
 void SearchPage::onResults(const backend::SearchResult& result, int requestedPage) {
@@ -1250,16 +1283,44 @@ void SearchPage::requestThumb(const QString& url) {
 }
 
 void SearchPage::applyThumb(const QString& url, const QByteArray& data) {
-    applyCarouselThumbs({{url, data}});
-    const QPixmap pixmap = pixmapFrom(data);
-    if (!pixmap.isNull()) {
-        icons_.insert(url, pixmap);
+    // A whole feed's worth of these lands in one burst. Each one used to decode
+    // twice, rescan every card, walk every result row and re-scale every feed
+    // poster, all before the next one; queueing them lets one pass over the
+    // whole batch do each of those jobs once, and each visible surface is
+    // touched once instead of once per arrival.
+    pendingThumbs_.insert(url, data);
+    thumbTimer_->start();
+}
+
+void SearchPage::flushThumbs() {
+    if (pendingThumbs_.isEmpty()) {
+        return;
+    }
+    QHash<QString, QByteArray> pending;
+    pending.swap(pendingThumbs_);
+    for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
+        const QPixmap pixmap = pixmapFrom(it.value(), kThumbDecodeSize);
+        if (pixmap.isNull()) {
+            continue;
+        }
+        icons_.insert(it.key(), pixmap);
+        // A poster URL is shared by several cards; the index turns that into a
+        // lookup instead of a scan of every card on the page.
+        const QList<TitleCard*> cards = cardsByImageKey_.value(it.key());
+        for (TitleCard* card : cards) {
+            card->applyPixmap(pixmap);
+        }
     }
     applyThumbs();
     applyFeedPosters();
 }
 
 void SearchPage::applyThumbs() {
+    // In browse mode the result list is empty and hidden, and a per-row map
+    // copy there is the whole cost of a thumb landing.
+    if (!results_->isVisible()) {
+        return;
+    }
     for (int row = 0; row < results_->count(); ++row) {
         QListWidgetItem* item = results_->item(row);
         const QVariantMap data = item->data(Qt::UserRole).toMap();
@@ -1272,15 +1333,26 @@ void SearchPage::applyThumbs() {
 }
 
 void SearchPage::applyFeedPosters() {
-    for (auto labels = feedPosterLabels_.constBegin(); labels != feedPosterLabels_.constEnd();
-         ++labels) {
-        for (const auto& entry : labels.value()) {
-            const auto cached = icons_.constFind(entry.first);
-            if (cached == icons_.constEnd() || entry.second == nullptr) {
+    if (!discoveryScroll_->isVisible()) {
+        return;
+    }
+    for (auto labels = feedPosterLabels_.begin(); labels != feedPosterLabels_.end(); ++labels) {
+        for (FeedPosterSlot& entry : labels.value()) {
+            if (entry.label.isNull()) {
                 continue;
             }
-            entry.second->setPixmap(cached.value().scaled(
-                entry.second->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+            // A label already showing its thumb has nothing to gain from another
+            // pass over the feed's icon table.
+            if (entry.shown == entry.url) {
+                continue;
+            }
+            const auto cached = icons_.constFind(entry.url);
+            if (cached == icons_.constEnd()) {
+                continue;
+            }
+            entry.label->setPixmap(cached.value().scaled(
+                entry.label->size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+            entry.shown = entry.url;
         }
     }
 }

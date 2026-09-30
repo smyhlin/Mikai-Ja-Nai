@@ -1,5 +1,6 @@
 #include "workers/Runner.hpp"
 
+#include <QElapsedTimer>
 #include <QMetaObject>
 #include <QRunnable>
 #include <backend/Errors.hpp>
@@ -18,6 +19,10 @@ namespace {
 constexpr int kSharedThreads = 4;
 constexpr int kBulkThreads = 3;
 constexpr int kImageThreads = 12;
+// Stream extraction is latency-critical and single-user: an episode click has
+// to answer now, not after the feed fan-out sharing the bulk pool. Two threads
+// is all one user clicking one episode at a time can spend.
+constexpr int kStreamThreads = 2;
 
 }  // namespace
 
@@ -100,15 +105,18 @@ private:
 struct Runner::Impl {
     explicit Impl(QObject* parent)
         : dispatcher(std::make_shared<Dispatcher>(parent)), shared(new QThreadPool(parent)),
-          bulk(new QThreadPool(parent)), image(new QThreadPool(parent)) {
+          bulk(new QThreadPool(parent)), stream(new QThreadPool(parent)),
+          image(new QThreadPool(parent)) {
         shared->setMaxThreadCount(kSharedThreads);
         bulk->setMaxThreadCount(kBulkThreads);
+        stream->setMaxThreadCount(kStreamThreads);
         image->setMaxThreadCount(kImageThreads);
     }
 
     std::shared_ptr<Dispatcher> dispatcher;
     QThreadPool* shared;
     QThreadPool* bulk;
+    QThreadPool* stream;
     QThreadPool* image;
 };
 
@@ -135,14 +143,24 @@ void Runner::runBulk(Work work, OnOk onOk, OnErr onErr) {
     start(impl_->bulk, std::move(work), std::move(onOk), std::move(onErr));
 }
 
+void Runner::runStream(Work work, OnOk onOk, OnErr onErr) {
+    start(impl_->stream, std::move(work), std::move(onOk), std::move(onErr));
+}
+
 void Runner::runImage(Work work, OnOk onOk, OnErr onErr) {
     start(impl_->image, std::move(work), std::move(onOk), std::move(onErr));
 }
 
 bool Runner::waitForDone(int timeoutMs) {
-    impl_->bulk->waitForDone(timeoutMs);
-    impl_->image->waitForDone(timeoutMs);
-    return impl_->shared->waitForDone(timeoutMs);
+    QElapsedTimer budget;
+    budget.start();
+    const auto left = [&budget, timeoutMs] {
+        return qMax(0, timeoutMs - static_cast<int>(budget.elapsed()));
+    };
+    const bool bulk = impl_->bulk->waitForDone(left());
+    const bool stream = impl_->stream->waitForDone(left());
+    const bool image = impl_->image->waitForDone(left());
+    return impl_->shared->waitForDone(left()) && bulk && stream && image;
 }
 
 }  // namespace mikai::app

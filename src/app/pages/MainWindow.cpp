@@ -36,10 +36,21 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     stack_->addWidget(search_);
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    // The close event covers the ordinary path, but a session that ends any
+    // other way (a quit() that never delivers one) would otherwise leave the
+    // entries unwritten. flushNow() is a no-op once the cache is clean, so
+    // running it twice costs nothing.
+    qualityCache_->flushNow();
+}
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     disposeTitle();
+    // The title page flushes when it shuts down, but a session that only browsed
+    // the home page never reaches that path. Persist here so those sessions
+    // keep their extracted streams, and use the forced variant so the debounce
+    // interval cannot swallow the last write.
+    qualityCache_->flushNow();
     QWidget::closeEvent(event);
 }
 
@@ -60,7 +71,11 @@ void MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
     disposeTitle();
     titleRef_ = ref;
     titlePoster_ = poster;
-    title_ = new TitlePage(*runner_, client_, *qualityCache_, ref, poster, stack_);
+    // The card's detail lookup usually already landed for this ref, so hand it
+    // over and skip the redundant getAnime inside the title page.
+    const backend::AnimeDetail* hint = search_->cachedDetail(ref);
+    title_ = new TitlePage(*runner_, client_, *qualityCache_, ref, poster,
+                           hint != nullptr ? *hint : backend::AnimeDetail(), stack_);
     connect(title_, &TitlePage::backRequested, this, &MainWindow::goSearch);
     connect(title_, &TitlePage::settingsRequested, this, &MainWindow::openSettings);
     connect(title_, &TitlePage::relatedOpenRequested, this,

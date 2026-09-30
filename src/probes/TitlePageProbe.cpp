@@ -46,12 +46,25 @@ QPushButton* playerSeriesToggle(QWidget* root) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    const QString ref = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QStringLiteral("7428");
+    const bool disposeEarly = app.arguments().contains(QStringLiteral("--dispose-early"));
+    const QString ref = argc > 1 && !disposeEarly ? QString::fromLocal8Bit(argv[1])
+                                                 : QStringLiteral("7428");
 
     MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
     Runner runner;
     QualityCache cache;
-    auto* page = new TitlePage(runner, client, cache, ref, QString(), nullptr);
+    auto* page = new TitlePage(runner, client, cache, ref);
+    if (disposeEarly) {
+        delete page;
+        if (!runner.waitForDone(60000)) {
+            std::fprintf(stderr, "TITLE-PROBE: early-disposal workers did not finish\n");
+            return 1;
+        }
+        QCoreApplication::sendPostedEvents();
+        QCoreApplication::processEvents();
+        std::fprintf(stderr, "TITLE-PROBE: early-disposal deliveries completed without crash\n");
+        return 0;
+    }
     page->resize(1400, 900);
     page->show();
 

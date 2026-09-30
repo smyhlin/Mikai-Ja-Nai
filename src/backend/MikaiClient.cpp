@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace mikai::backend {
 namespace {
@@ -32,6 +33,14 @@ constexpr int kApiTimeoutMs = 15000;
 constexpr int kArtworkTimeoutMs = 20000;
 constexpr int kValidateTimeoutMs = 10000;
 constexpr auto kApiHeader = "X-API-Key";
+// An abort is not synchronous: a reply parked in DNS or TLS finishes a moment
+// later. The drain after it needs a bound, because the second exec() used to
+// run with no timer at all and lost the worker thread for good.
+constexpr int kAbortDrainMs = 2000;
+// A 429 is retried, because the limiter parks the caller for Retry-After and
+// the same request may then succeed. It used to retry forever, so an endpoint
+// that always answered 429 pinned its worker thread for the whole session.
+constexpr int kMaxRateLimitRetries = 3;
 
 double monotonicSeconds() {
     static const QElapsedTimer timer = [] {
@@ -42,19 +51,49 @@ double monotonicSeconds() {
     return static_cast<double>(timer.nsecsElapsed()) / 1e9;
 }
 
-// Cloudflare lower-cases every header name on the way through, so a
-// case-sensitive lookup silently loses the whole quota snapshot.
-std::optional<int> headerInt(const QMap<QString, QString>& headers, const QString& key,
-                             std::optional<int> fallback = std::nullopt) {
-    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        if (it.key().compare(key, Qt::CaseInsensitive) != 0) {
-            continue;
-        }
-        bool ok = false;
-        const int parsed = it.value().toInt(&ok);
-        return ok ? std::optional<int>(std::max(0, parsed)) : fallback;
+// Cloudflare lower-cases every header name, so a case-sensitive lookup
+// silently loses the quota snapshot. A reply carries ~20 headers and the
+// limiter reads 4, so names are classified once per header here rather than
+// rescanning per lookup.
+template <std::size_t N>
+bool equalsLoweredAscii(QByteArrayView name, const char (&lowered)[N]) {
+    if (name.size() != static_cast<qsizetype>(N - 1)) {
+        return false;
     }
-    return fallback;
+    for (qsizetype i = 0; i < name.size(); ++i) {
+        char c = name[i];
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+        if (c != lowered[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+enum class QuotaHeader { kNone, kLimit, kRemaining, kReset, kRetryAfter };
+
+QuotaHeader classifyHeader(QByteArrayView name) {
+    if (equalsLoweredAscii(name, "x-ratelimit-limit")) {
+        return QuotaHeader::kLimit;
+    }
+    if (equalsLoweredAscii(name, "x-ratelimit-remaining")) {
+        return QuotaHeader::kRemaining;
+    }
+    if (equalsLoweredAscii(name, "x-ratelimit-reset")) {
+        return QuotaHeader::kReset;
+    }
+    if (equalsLoweredAscii(name, "retry-after")) {
+        return QuotaHeader::kRetryAfter;
+    }
+    return QuotaHeader::kNone;
+}
+
+std::optional<int> quotaInt(const QString& value) {
+    bool ok = false;
+    const int parsed = value.toInt(&ok);
+    return ok ? std::optional<int>(std::max(0, parsed)) : std::nullopt;
 }
 
 // The .env the Python client wrote next to the repo root. The C++ build has
@@ -103,23 +142,34 @@ QString readApiKeyFromEnv() {
 // artwork pool fires a dozen concurrent GETs, so give every worker its own
 // instead of serialising them behind one connection pool.
 QNetworkAccessManager* threadManager() {
-    static QMutex mutex;
-    static QHash<QThread*, QNetworkAccessManager*> managers;
-    QMutexLocker locker(&mutex);
-    QThread* thread = QThread::currentThread();
-    const auto it = managers.constFind(thread);
-    if (it != managers.constEnd()) {
-        return *it;
-    }
-    auto* manager = new QNetworkAccessManager;
-    managers.insert(thread, manager);
+    // One manager per thread, so the hot path is a thread-local read rather
+    // than a process-global mutex taken on every request. The old registry was
+    // keyed by QThread*, which also handed a replacement pool thread the
+    // recycled address of a dead one, along with its manager.
+    static thread_local QNetworkAccessManager* manager = [] {
+        auto* created = new QNetworkAccessManager;
+        // A pool thread that expires must not leave its manager behind: the
+        // thread is gone, and nothing can ever use or safely destroy it again.
+        QObject::connect(QThread::currentThread(), &QThread::finished, created,
+                         &QObject::deleteLater);
+        return created;
+    }();
     return manager;
 }
+
+// The four quota headers, read in one pass. Everything else on the reply is of
+// no interest and is not copied into a QString map at all.
+struct QuotaHeaders {
+    std::optional<int> limit;
+    std::optional<int> remaining;
+    std::optional<int> reset;
+    std::optional<int> retryAfter;
+};
 
 struct HttpResult {
     int status = 0;
     QByteArray body;
-    QMap<QString, QString> headers;
+    QuotaHeaders quota;
     QString error;
 };
 
@@ -134,15 +184,34 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     timer.start(timeoutMs);
     loop.exec();
     if (reply->isRunning()) {
-        // The deadline fired first: abort so the reply cannot outlive us.
+        // The deadline fired first: abort so the reply cannot outlive us. The
+        // drain is on the same timer rather than an unbounded wait, because an
+        // abort can complete late and this thread belongs to a pool.
         reply->abort();
+        timer.start(kAbortDrainMs);
         loop.exec();
     }
     timer.stop();
 
     result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    for (const auto& pair : reply->rawHeaderPairs()) {
-        result.headers.insert(QString::fromUtf8(pair.first), QString::fromUtf8(pair.second));
+    const auto pairs = reply->rawHeaderPairs();
+    for (const auto& pair : pairs) {
+        switch (classifyHeader(pair.first)) {
+            case QuotaHeader::kLimit:
+                result.quota.limit = quotaInt(QString::fromUtf8(pair.second));
+                break;
+            case QuotaHeader::kRemaining:
+                result.quota.remaining = quotaInt(QString::fromUtf8(pair.second));
+                break;
+            case QuotaHeader::kReset:
+                result.quota.reset = quotaInt(QString::fromUtf8(pair.second));
+                break;
+            case QuotaHeader::kRetryAfter:
+                result.quota.retryAfter = quotaInt(QString::fromUtf8(pair.second));
+                break;
+            case QuotaHeader::kNone:
+                break;
+        }
     }
     if (reply->error() != QNetworkReply::NoError) {
         result.error = reply->errorString();
@@ -225,17 +294,47 @@ int RateLimiter::acquireSlot() {
 }
 
 void RateLimiter::finishCall(const QMap<QString, QString>& headers, int generation, int statusCode) {
+    // One pass over the map, four values out. Cloudflare lower-cases every
+    // header name on the way through, so a case-sensitive lookup would silently
+    // lose the whole quota snapshot.
+    std::optional<int> limit;
+    std::optional<int> remaining;
+    std::optional<int> reset;
+    std::optional<int> retryAfter;
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        switch (classifyHeader(it.key().toLatin1())) {
+            case QuotaHeader::kLimit:
+                limit = quotaInt(it.value());
+                break;
+            case QuotaHeader::kRemaining:
+                remaining = quotaInt(it.value());
+                break;
+            case QuotaHeader::kReset:
+                reset = quotaInt(it.value());
+                break;
+            case QuotaHeader::kRetryAfter:
+                retryAfter = quotaInt(it.value());
+                break;
+            case QuotaHeader::kNone:
+                break;
+        }
+    }
+    applyQuota(std::move(limit), std::move(remaining), std::move(reset), std::move(retryAfter),
+               generation, statusCode);
+}
+
+void RateLimiter::applyQuota(std::optional<int> limit, std::optional<int> remaining,
+                             std::optional<int> reset, std::optional<int> retryAfter, int generation,
+                             int statusCode) {
     QMutexLocker locker(&mutex_);
     inFlight_ = std::max(0, inFlight_ - 1);
     if (generation != generation_) {
         // The key changed while this call was in flight: its headers describe
-        // a window that no longer applies.
-        condition_.wakeAll();
+        // a window that no longer applies. The key change itself already woke
+        // everyone through reset().
+        condition_.wakeOne();
         return;
     }
-    const std::optional<int> limit = headerInt(headers, QStringLiteral("X-RateLimit-Limit"));
-    const std::optional<int> remaining = headerInt(headers, QStringLiteral("X-RateLimit-Remaining"));
-    const std::optional<int> reset = headerInt(headers, QStringLiteral("X-RateLimit-Reset"));
     if (limit.has_value()) {
         limit_ = limit;
     }
@@ -252,10 +351,24 @@ void RateLimiter::finishCall(const QMap<QString, QString>& headers, int generati
         resetAt_ = monotonicSeconds() + *reset;
     }
     if (statusCode == 429) {
-        const int retryAfter = headerInt(headers, QStringLiteral("Retry-After"), 1).value_or(1);
-        retryAt_ = std::max(retryAt_, monotonicSeconds() + retryAfter);
+        retryAt_ = std::max(retryAt_, monotonicSeconds() + retryAfter.value_or(1));
     }
-    condition_.wakeAll();
+    // Wake only as many waiters as the quota can admit. Waking one is too few
+    // (a reply can open the window for several callers, and the rest would sit
+    // on their deadline for the whole window); waking everyone is too many
+    // (every response stirred the whole queue and most re-parked). A waiter
+    // re-polls on its own deadline regardless, so this is latency, not
+    // correctness: an idle limiter wakes everyone, an exhausted one wakes
+    // nobody, and a key change still broadcasts through reset().
+    int admissible = waiters_;
+    if (retryAt_ > monotonicSeconds()) {
+        admissible = 0;
+    } else if (remaining_.has_value()) {
+        admissible = std::min(admissible, *remaining_ - inFlight_);
+    }
+    for (int i = 0; i < admissible; ++i) {
+        condition_.wakeOne();
+    }
 }
 
 RateLimitState RateLimiter::state(bool keyed) const {
@@ -322,13 +435,13 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         request.setRawHeader(kApiHeader, key.toUtf8());
     }
 
-    for (;;) {
+    for (int attempt = 0;; ++attempt) {
         const int generation = limiter_.acquireSlot();
         const HttpResult result = runBlocking(managerForThread(), request, timeoutMs);
-        const QMap<QString, QString> headers = result.headers;
         const int status = result.status;
-        limiter_.finishCall(headers, generation, status);
-        if (status == 429) {
+        limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
+                            result.quota.retryAfter, generation, status);
+        if (status == 429 && attempt < kMaxRateLimitRetries) {
             continue;  // the limiter parked us; the same request may now succeed
         }
         if (!result.error.isEmpty()) {
@@ -475,7 +588,8 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const
             const int generation = limiter_.acquireSlot();
             result = runBlocking(managerForThread(), request, kValidateTimeoutMs);
             const int status = result.status;
-            limiter_.finishCall(result.headers, generation, status);
+            limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
+                                result.quota.retryAfter, generation, status);
         } else {
             // A candidate key, anonymous access included, has its own quota:
             // keep its response out of the saved key's counter.

@@ -100,6 +100,7 @@ protected:
     void initializeGL() override;
     void paintGL() override;
     void resizeGL(int width, int height) override;
+    void showEvent(QShowEvent* event) override;
 
 private:
     /// Creates the engine with vo=libmpv. Both open() and initializeGL() need it
@@ -129,6 +130,15 @@ private:
     bool pendingOpen_ = false;
     uint64_t lastGeneration_ = 0;
     bool framePending_ = false;   // set by mpv's update callback
+    /// Forces the next paint to render even with no freshly decoded frame:
+    /// set when Qt hands the widget a new framebuffer (resize, re-show) and
+    /// the previous picture is no longer there to composite.
+    bool forceRender_ = true;
+    /// The framebuffer the last render drew into. Qt allocates a new one on a
+    /// resize and may do so again on re-show, so a mismatch is proof that the
+    /// buffer holds no picture - which matters because grabFramebuffer() reads
+    /// it directly instead of repainting first.
+    GLuint lastFramebuffer_ = 0;
     bool playing_ = false;
     double position_ = 0.0;
     bool hasVideo_ = false;

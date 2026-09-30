@@ -43,6 +43,9 @@ private:
     QString imageKey_;
     QString posterUrl_;
     int planned_ = 0;
+    /// Whether `status_` currently carries the live-status object name; the
+    /// label starts out with the non-live name, matching statusLive_'s zero.
+    bool statusLive_ = false;
 
     QLabel* poster_ = nullptr;
     QLabel* title_ = nullptr;

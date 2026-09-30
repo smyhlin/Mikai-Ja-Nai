@@ -4,6 +4,7 @@
 
 #include <QMap>
 #include <QPoint>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -12,6 +13,7 @@
 #include <QWidget>
 
 #include <functional>
+#include <memory>
 
 class QComboBox;
 class QGridLayout;
@@ -22,6 +24,7 @@ class QPixmap;
 class QPushButton;
 class QScrollArea;
 class QTabWidget;
+class QTimer;
 class QVBoxLayout;
 
 namespace mikai::backend {
@@ -55,8 +58,12 @@ class TitlePage : public QWidget {
     Q_OBJECT
 
 public:
+    /// `detailHint` is an already-fetched AnimeDetail for `ref` (e.g. from
+    /// SearchPage's card detail cache). When its ref matches, the redundant
+    /// getAnime call is skipped and the player payload is fetched alone.
     TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache& qualityCache,
-              const QString& ref, const QString& posterHint = {}, QWidget* parent = nullptr);
+              const QString& ref, const QString& posterHint = {},
+              const backend::AnimeDetail& detailHint = {}, QWidget* parent = nullptr);
     ~TitlePage() override;
 
     /// Save the quality cache and close every open player. Safe to call twice.
@@ -89,10 +96,15 @@ private:
         int page = 0;
         int pageSize = 0;
         QWidget* grid = nullptr;
+        QScrollArea* scroll = nullptr;
         QGridLayout* gridLayout = nullptr;
         RangePager* pager = nullptr;
         int columns = 0;
         int rows = 0;
+        /// False until the tab's first page is built. A release has one tab per
+        /// provider and only one is ever on screen, so the rest stay unbuilt
+        /// until they are first shown.
+        bool rendered = false;
     };
 
     /// One open player window and the episode it is currently on.
@@ -100,8 +112,20 @@ private:
     /// The `PlayerHost` bridge answering the dialog's intent signals.
     class Host;
 
+    /// What a two-task title load has collected so far. Shared by both halves
+    /// and read only on the GUI thread, so it needs no lock.
+    struct LoadState {
+        backend::AnimeDetail detail;
+        backend::PlayerResult player;
+        QString error;
+        bool hasDetail = false;
+        bool hasPlayer = false;
+    };
+
     void buildUi();
     void load();
+    /// Hand the page its title once both halves of a two-task load have landed.
+    void joinLoad(const std::shared_ptr<LoadState>& state);
     void onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player);
     void onError(const QString& message);
 
@@ -110,7 +134,11 @@ private:
     void loadRecommendations(const backend::AnimeDetail& detail);
     QWidget* buildRelatedCarousel(
         const QString& heading, const QVector<QPair<QString, backend::AnimeSummary>>& entries);
-    void setRelatedExpanded(bool expanded);
+    /// `fromUser` is false when data landing expands the block itself. Only a
+    /// toggle the reader pressed scrolls the overview: the recommendations
+    /// carousel arriving is not a request to be scrolled away from whatever
+    /// they are reading.
+    void setRelatedExpanded(bool expanded, bool fromUser = true);
     void toggleDescription();
     QString descriptionPreview() const;
     void toggleMetadata(bool expanded);
@@ -122,6 +150,8 @@ private:
 
     void fillEpisodes(int index);
     void fitEpisodeSection();
+    /// Queue one fit pass for the end of the current event batch.
+    void scheduleFit();
     void renderTabPage(int stateIndex);
     void goToEpisodePage(int stateIndex, int page);
     /// Creates the pill for `entry` and points `entry->button` at it.
@@ -204,9 +234,19 @@ protected:
     QLabel* status_ = nullptr;
     QScrollArea* overviewScroll_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
+    /// One coalescing timer behind fitEpisodeSection: a title load queues a fit
+    /// per tab, and each fit resizes each grid, which queues another fit.
+    QTimer* fitTimer_ = nullptr;
+    /// The height the last fit settled on, so a repeat of the same layout does
+    /// not re-measure and re-set it.
+    int fittedHeight_ = 0;
 
     QPixmap coverPixmap_;
     QString coverUrl_;
+    /// The already-fetched detail for ref_, if the caller had one. When it is
+    /// set, load() skips the redundant getAnime call.
+    backend::AnimeDetail detailHint_;
+    bool hasDetailHint_ = false;
     CoverViewer* coverViewer_ = nullptr;
     QString fullDescription_;
     bool descriptionExpanded_ = false;

@@ -215,7 +215,11 @@ QString modeId(Mode mode) {
     return QString();
 }
 QVector<ModeInfo> availableModes() {
-    return {
+    // Built once. This is a compile-time constant table, and it was being
+    // rebuilt - 10 ModeInfo, 30 QStrings and a QVector - on every call, from
+    // menu refreshes, the info chip (twice a second while a stream plays) and
+    // every shader-directory scan the compare window performs.
+    static const QVector<ModeInfo> kModes = {
         {Mode::Off, QStringLiteral("off"), QStringLiteral("Вимкнено"), QStringLiteral("Оригінальне зображення")},
         {Mode::FastA, QStringLiteral("fast_a"), QStringLiteral("A (Швидкий)"), QStringLiteral("Відновлення ліній + апскейл (1080p/SD)")},
         {Mode::FastB, QStringLiteral("fast_b"), QStringLiteral("B (Швидкий)"), QStringLiteral("Згладжування артефактів + апскейл (720p)")},
@@ -227,6 +231,9 @@ QVector<ModeInfo> availableModes() {
         {Mode::HqBB, QStringLiteral("hq_bb"), QStringLiteral("B+B (Максимум)"), QStringLiteral("Подвійне м'яке відновлення")},
         {Mode::HqCA, QStringLiteral("hq_ca"), QStringLiteral("C+A (Максимум)"), QStringLiteral("Denoise + максимальне відновлення деталей")}
     };
+    // Returned by value, as before: callers range over a temporary. The copy is
+    // a refcount bump on the same QVector, not a rebuild of the table.
+    return kModes;
 }
 
 QVector<Candidate> allCandidates(const QString& shadersDir) {

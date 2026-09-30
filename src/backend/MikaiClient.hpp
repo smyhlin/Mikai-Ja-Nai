@@ -40,11 +40,21 @@ public:
     RateLimiter() = default;
 
     int acquireSlot();
+    // Takes the whole header map and pulls the four quota values out of it in a
+    // single pass.
     void finishCall(const QMap<QString, QString>& headers, int generation, int statusCode = 0);
     RateLimitState state(bool keyed) const;
 
     // Called after the key changes so the next caller starts a fresh window.
     void reset();
+
+    // The request path already has the four values in hand, so it applies them
+    // without re-walking a header map nobody built for it. MikaiClient uses this
+    // on the request path; finishCall is the same thing spelled for a caller
+    // that only has the raw header map.
+    void applyQuota(std::optional<int> limit, std::optional<int> remaining,
+                    std::optional<int> reset, std::optional<int> retryAfter, int generation,
+                    int statusCode);
 
 private:
     mutable QMutex mutex_;

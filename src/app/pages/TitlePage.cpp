@@ -41,6 +41,7 @@
 #include <QStyle>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
+#include <QPointer>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
@@ -229,9 +230,19 @@ private:
 };
 
 TitlePage::TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache& qualityCache,
-                     const QString& ref, const QString& posterHint, QWidget* parent)
+                     const QString& ref, const QString& posterHint,
+                     const backend::AnimeDetail& detailHint, QWidget* parent)
     : QWidget(parent), runner_(runner), client_(client), qualityCache_(qualityCache),
       ref_(ref), posterHint_(posterHint) {
+    // Only a hint for this exact title is worth anything: a stale detail for a
+    // different ref would paint the wrong header, and an empty one is no hint.
+    if (!detailHint.ref.isEmpty() && detailHint.ref == ref) {
+        detailHint_ = detailHint;
+        hasDetailHint_ = true;
+    }
+    fitTimer_ = new QTimer(this);
+    fitTimer_->setSingleShot(true);
+    connect(fitTimer_, &QTimer::timeout, this, &TitlePage::fitEpisodeSection);
     buildUi();
     load();
 }
@@ -298,8 +309,10 @@ void TitlePage::buildUi() {
     textColumn->addWidget(facts_);
 
     scores_ = new QLabel(this);
-    scores_->setStyleSheet(
-        QStringLiteral("color: %1; font-weight: 600;").arg(QLatin1String(theme::kAccent)));
+    // The rule lives in the app stylesheet under this name. A per-widget
+    // stylesheet makes Qt build a separate style cache for that subtree and
+    // re-resolve the whole sheet against it.
+    scores_->setObjectName(QStringLiteral("titleScores"));
     textColumn->addWidget(scores_);
 
     description_ = new QLabel(this);
@@ -323,7 +336,10 @@ void TitlePage::buildUi() {
     relatedButton_->setObjectName(QStringLiteral("textAction"));
     relatedButton_->setCheckable(true);
     relatedButton_->hide();
-    connect(relatedButton_, &QPushButton::toggled, this, &TitlePage::setRelatedExpanded);
+    // The button is the user pressing it, so this is the one expansion that
+    // scrolls the overview.
+    connect(relatedButton_, &QPushButton::toggled, this,
+            [this](bool checked) { setRelatedExpanded(checked, true); });
     disclosure->addWidget(descriptionButton_);
     disclosure->addWidget(metaButton_);
     disclosure->addWidget(relatedButton_);
@@ -342,9 +358,9 @@ void TitlePage::buildUi() {
     textColumn->addWidget(metaHost_);
 
     links_ = new QLabel(this);
+    links_->setObjectName(QStringLiteral("titleLinks"));
     links_->setTextFormat(Qt::RichText);
     links_->setOpenExternalLinks(true);
-    links_->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(theme::kAccent)));
     textColumn->addWidget(links_);
 
     relatedHost_ = new QWidget(this);
@@ -387,31 +403,90 @@ void TitlePage::buildUi() {
     tabs_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     tabs_->setDocumentMode(true);
     root->addWidget(tabs_);
+    // A tab that has never been shown has no pills in it; this is where they
+    // get built, once, the first time the reader goes there.
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index < 0 || index >= tabStates_.size() || tabStates_.at(index).rendered) {
+            return;
+        }
+        renderTabPage(index);
+        fitEpisodeSection();
+    });
     fitEpisodeSection();
 }
 
 void TitlePage::load() {
     setStatus(tr("Завантаження…"));
+    // A task can outlive the page: the worker lambda runs on a pool thread, and
+    // the delivery lambdas are queued to the GUI thread, so both may fire after
+    // the widget is gone. The worker captures the client and ref by value (the
+    // client outlives the page), and the delivery lambdas hold a QPointer that
+    // goes null on destruction.
+    backend::MikaiClient* client = &client_;
+    const QString ref = ref_;
+    const QPointer<TitlePage> self(this);
+    if (hasDetailHint_) {
+        const backend::AnimeDetail detail = detailHint_;
+        runner_.run(
+            [client, ref] { return QVariant::fromValue(client->getPlayer(ref)); },
+            [self, detail](const QVariant& result) {
+                if (self.isNull() || self->closed_) {
+                    return;
+                }
+                self->onLoaded(detail, result.value<backend::PlayerResult>());
+            },
+            [self](const QString& message) {
+                if (!self.isNull() && !self->closed_) {
+                    self->onError(message);
+                }
+            });
+        return;
+    }
+    const auto state = std::make_shared<LoadState>();
     runner_.run(
-        [this] {
-            // Both calls share one task: the detail paints the header and the
-            // player payload fills the tabs, and one task keeps them in step.
-            return QVariant::fromValue(QPair<backend::AnimeDetail, backend::PlayerResult>(
-                client_.getAnime(ref_), client_.getPlayer(ref_)));
-        },
-        [this](const QVariant& result) {
-            if (closed_) {
+        [client, ref] { return QVariant::fromValue(client->getAnime(ref)); },
+        [self, state](const QVariant& result) {
+            if (self.isNull() || self->closed_) {
                 return;
             }
-            const auto payload =
-                result.value<QPair<backend::AnimeDetail, backend::PlayerResult>>();
-            onLoaded(payload.first, payload.second);
+            state->detail = result.value<backend::AnimeDetail>();
+            state->hasDetail = true;
+            self->joinLoad(state);
         },
-        [this](const QString& message) {
-            if (!closed_) {
-                onError(message);
+        [self, state](const QString& message) {
+            if (self.isNull() || self->closed_ || !state->error.isEmpty()) {
+                return;
             }
+            state->error = message;
+            self->onError(message);
         });
+    runner_.run(
+        [client, ref] { return QVariant::fromValue(client->getPlayer(ref)); },
+        [self, state](const QVariant& result) {
+            if (self.isNull() || self->closed_) {
+                return;
+            }
+            state->player = result.value<backend::PlayerResult>();
+            state->hasPlayer = true;
+            self->joinLoad(state);
+        },
+        [self, state](const QString& message) {
+            if (self.isNull() || self->closed_ || !state->error.isEmpty()) {
+                return;
+            }
+            state->error = message;
+            self->onError(message);
+        });
+}
+
+/// Hand the page its title once both halves of a two-task load have landed.
+void TitlePage::joinLoad(const std::shared_ptr<LoadState>& state) {
+    if (!state->hasDetail || !state->hasPlayer || closed_) {
+        return;
+    }
+    const backend::AnimeDetail detail = state->detail;
+    const backend::PlayerResult player = state->player;
+    onLoaded(detail, player);
 }
 
 void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player) {
@@ -596,20 +671,22 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
     if (!similar.isEmpty()) {
         relatedLayout_->addWidget(buildRelatedCarousel(tr("Схожі аніме"), similar));
     }
-    setRelatedExpanded(true);
+    setRelatedExpanded(true, false);
 }
 
 void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
+    backend::MikaiClient* client = &client_;
+    const QPointer<TitlePage> self(this);
     runner_.run(
-        [this] {
+        [client] {
             return QVariant::fromValue(
-                client_.browsePopular(1, theme::kHomeCarouselMaxTitles));
+                client->browsePopular(1, theme::kHomeCarouselMaxTitles));
         },
-        [this, detail](const QVariant& result) {
-            if (closed_) {
+        [self, detail](const QVariant& result) {
+            if (self.isNull() || self->closed_) {
                 return;
             }
-            QSet<QString> excluded = {ref_, detail.ref};
+            QSet<QString> excluded = {self->ref_, detail.ref};
             for (const backend::AnimeRelation& relation : detail.relations) {
                 excluded.insert(relation.anime.ref);
             }
@@ -633,10 +710,11 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             }
             // A carousel arriving under a collapsed one must not expand it: the
             // reader already made that choice.
-            const bool expand = relatedHost_->isVisible() || !relatedButton_->isVisible();
-            relatedLayout_->addWidget(
-                buildRelatedCarousel(tr("Рекомендації на Mikai"), entries));
-            setRelatedExpanded(expand);
+            const bool expand =
+                self->relatedHost_->isVisible() || !self->relatedButton_->isVisible();
+            self->relatedLayout_->addWidget(
+                self->buildRelatedCarousel(tr("Рекомендації на Mikai"), entries));
+            self->setRelatedExpanded(expand, false);
         },
         [](const QString&) {});
 }
@@ -716,17 +794,20 @@ QWidget* TitlePage::buildRelatedCarousel(
         if (!posterUrl.isEmpty()) {
             // One task per poster, on the image pool: a shared poster costs one
             // download, and a fan-out costs no API budget.
+            backend::MikaiClient* client = &client_;
+            const QPointer<TitlePage> self(this);
+            const QPointer<QLabel> poster(posterLabel);
             runner_.runImage(
-                [this, posterUrl] { return client_.fetchBytes(posterUrl); },
-                [this, posterLabel](const QVariant& result) {
-                    if (closed_ || posterLabel == nullptr) {
+                [client, posterUrl] { return client->fetchBytes(posterUrl); },
+                [self, poster](const QVariant& result) {
+                    if (self.isNull() || poster.isNull()) {
                         return;
                     }
                     QPixmap pixmap;
                     if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
-                        posterLabel->setText(QString());
-                        posterLabel->setPixmap(pixmap.scaled(
-                            posterLabel->size(), Qt::KeepAspectRatioByExpanding,
+                        poster->setText(QString());
+                        poster->setPixmap(pixmap.scaled(
+                            poster->size(), Qt::KeepAspectRatioByExpanding,
                             Qt::SmoothTransformation));
                     }
                 },
@@ -755,13 +836,13 @@ QWidget* TitlePage::buildRelatedCarousel(
     return section;
 }
 
-void TitlePage::setRelatedExpanded(bool expanded) {
+void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
     relatedHost_->setVisible(expanded);
     relatedButton_->setVisible(true);
     relatedButton_->setText(expanded ? tr("Сховати схожі") : tr("Пов’язані та схожі"));
     const QSignalBlocker blocker(relatedButton_);
     relatedButton_->setChecked(expanded);
-    if (expanded) {
+    if (expanded && fromUser) {
         QTimer::singleShot(0, this, [this] { overviewScroll_->ensureWidgetVisible(relatedHost_); });
     }
 }
@@ -864,6 +945,9 @@ void TitlePage::fillEpisodes(int index) {
     fetchWaiters_.clear();
     tabStates_.clear();
     tabEmbeds_.clear();
+    // The tabs are new widgets at the default height, so the last fit's answer
+    // says nothing about this one.
+    fittedHeight_ = 0;
     if (index < 0 || index >= releases_.size()) {
         return;
     }
@@ -916,6 +1000,7 @@ void TitlePage::fillEpisodes(int index) {
         auto* scroll = new QScrollArea(tabPage);
         scroll->setObjectName(QStringLiteral("episodeScroll"));
         scroll->setWidgetResizable(true);
+        state.scroll = scroll;
         auto* grid = new QWidget(scroll);
         grid->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         state.grid = grid;
@@ -937,7 +1022,17 @@ void TitlePage::fillEpisodes(int index) {
         tabStates_.append(state);
         const QString known = labels::provider(provider);
         tabs_->addTab(tabPage, known.isEmpty() ? capitalize(provider) : known);
-        renderTabPage(stateIndex);
+    }
+
+    // Only the visible tab gets its pills. A release can carry three providers
+    // and each tab holds up to kEpisodesPerPage buttons, so building them all
+    // up front cost three times the widget constructions, QSS polishes and
+    // tooltips for the two thirds of them nobody ever saw. The rest are built
+    // the first time they are selected.
+    for (int stateIndex = 0; stateIndex < tabStates_.size(); ++stateIndex) {
+        if (stateIndex == tabs_->currentIndex()) {
+            renderTabPage(stateIndex);
+        }
     }
 
     copyAll_->setEnabled(tabs_->count() > 0);
@@ -972,6 +1067,7 @@ void TitlePage::renderTabPage(int stateIndex) {
         return;
     }
     TabState& state = tabStates_[stateIndex];
+    state.rendered = true;
     while (QLayoutItem* stale = state.gridLayout->takeAt(0)) {
         if (stale->widget() != nullptr) {
             stale->widget()->deleteLater();
@@ -1005,7 +1101,17 @@ void TitlePage::renderTabPage(int stateIndex) {
     layoutEpisodeGrid(state.gridLayout, buttons, columns);
     state.columns = columns;
     state.grid->updateGeometry();
-    QTimer::singleShot(0, this, [this] { fitEpisodeSection(); });
+    scheduleFit();
+}
+
+void TitlePage::scheduleFit() {
+    // One timer, restarted rather than a new singleShot per caller. Fitting
+    // resizes the grids, which posts a Resize each, which reflows, which fits
+    // again: a chain of one-shot posts kept a whole title load busy re-measuring
+    // 140 pills several times over. Restarting collapses the chain to one pass.
+    if (fitTimer_ != nullptr) {
+        fitTimer_->start();
+    }
 }
 
 void TitlePage::goToEpisodePage(int stateIndex, int page) {
@@ -1028,8 +1134,8 @@ void TitlePage::reflowGrid(int stateIndex) {
     }
     TabState& state = tabStates_[stateIndex];
     // A compact pill per episode: 72px plus the gutter fits a row of 14.
-    const int columns = qMax(
-        1, state.grid->width() / (theme::kEpisodeButtonWidth + theme::kSpacingSmall));
+    const int columns = qMax(1, state.grid->width() /
+                                      (theme::kEpisodeButtonWidth + theme::kSpacingSmall));
     if (columns == state.columns) {
         return;
     }
@@ -1043,7 +1149,7 @@ void TitlePage::reflowGrid(int stateIndex) {
     layoutEpisodeGrid(state.gridLayout, buttons, columns);
     state.columns = columns;
     state.grid->updateGeometry();
-    QTimer::singleShot(0, this, [this] { fitEpisodeSection(); });
+    scheduleFit();
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
@@ -1070,9 +1176,19 @@ void TitlePage::fitEpisodeSection() {
         return;
     }
     const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
-    const int available = qMax(1, tabs_->width() - 2 * frame);
     for (int index = 0; index < tabStates_.size(); ++index) {
-        tabStates_[index].grid->resize(available, tabStates_[index].grid->height());
+        TabState& state = tabStates_[index];
+        // The width that decides the column count is the scroll viewport's, not
+        // the tab's: the section is clamped at kEpisodeSectionMaxHeight, so a
+        // long list grows a vertical scrollbar that takes its width away. Sizing
+        // off the tab made the grid a scrollbar's width too wide, which Qt then
+        // answered with another Resize and another reflow.
+        const int available = state.scroll != nullptr
+                                  ? state.scroll->viewport()->width()
+                                  : qMax(1, tabs_->width() - 2 * frame);
+        if (state.grid->width() != available) {
+            state.grid->resize(available, state.grid->height());
+        }
         reflowGrid(index);
     }
     int gridHeight = 0;
@@ -1088,6 +1204,10 @@ void TitlePage::fitEpisodeSection() {
     int desired = tabBarHeight + gridHeight + pagerHeight + gap + 2 * frame;
     // A 140-episode page would push the whole window; long lists scroll inside.
     desired = qBound(76, desired, theme::kEpisodeSectionMaxHeight);
+    if (fittedHeight_ == desired && tabs_->height() == desired) {
+        return;
+    }
+    fittedHeight_ = desired;
     if (tabs_->height() != desired) {
         tabs_->setFixedHeight(desired);
     }
@@ -1124,13 +1244,21 @@ void TitlePage::ensureQualities(
     }
     if (waiters.isEmpty()) {
         flashStatus(tr("Завантаження якостей…"));
-        runner_.runBulk(
+        // The stream pool, not the bulk one: this probe's result is what the
+        // reader is waiting on to start playback, so it should not queue behind
+        // the discovery page's own fan-out.
+        const QPointer<TitlePage> self(this);
+        runner_.runStream(
             [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
-            [this, embed](const QVariant& result) {
-                finishFetch(embed, result.value<QMap<int, QString>>(), QString());
+            [self, embed](const QVariant& result) {
+                if (!self.isNull()) {
+                    self->finishFetch(embed, result.value<QMap<int, QString>>(), QString());
+                }
             },
-            [this, embed](const QString& message) {
-                finishFetch(embed, QMap<int, QString>(), message);
+            [self, embed](const QString& message) {
+                if (!self.isNull()) {
+                    self->finishFetch(embed, QMap<int, QString>(), message);
+                }
             });
     }
     waiters.append(entry);
@@ -1337,13 +1465,20 @@ void TitlePage::probeReleaseQualities() {
             continue;
         }
         const int seq = releaseProbeSeq_;
-        runner_.runBulk(
+        // The chip is on screen waiting for this, so it rides the stream pool
+        // rather than the bulk one the rest of the discovery fan-out uses.
+        const QPointer<TitlePage> self(this);
+        runner_.runStream(
             [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
-            [this, index, seq](const QVariant& result) {
-                applyReleaseQuality(index, result.value<QMap<int, QString>>(), seq);
+            [self, index, seq](const QVariant& result) {
+                if (!self.isNull()) {
+                    self->applyReleaseQuality(index, result.value<QMap<int, QString>>(), seq);
+                }
             },
-            [this, index, seq](const QString&) {
-                applyReleaseQuality(index, QMap<int, QString>(), seq);
+            [self, index, seq](const QString&) {
+                if (!self.isNull()) {
+                    self->applyReleaseQuality(index, QMap<int, QString>(), seq);
+                }
             });
     }
 }
@@ -1493,14 +1628,16 @@ void TitlePage::recoverStream(PlayerSession* session) {
     // same dead link on the next click instead of extracting again.
     qualityCache_.forget(embed);
     flashStatus(tr("Потік застарів — оновлюю посилання…"));
-    runner_.run(
+    const QPointer<TitlePage> self(this);
+    runner_.runStream(
         [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
-        [this, session, embed, height](const QVariant& result) {
+        [self, session, embed, height](const QVariant& result) {
             const QMap<int, QString> qualities = result.value<QMap<int, QString>>();
-            if (closed_ || qualities.isEmpty() || session->dialog == nullptr) {
+            if (self.isNull() || self->closed_ || qualities.isEmpty() ||
+                !self->sessions_.contains(session) || session->dialog == nullptr) {
                 return;
             }
-            qualityCache_.remember(embed, qualities);
+            self->qualityCache_.remember(embed, qualities);
             session->dialog->applyRefreshedStreams(toQualities(qualities), height);
         },
         [](const QString&) {});
@@ -1542,18 +1679,29 @@ void TitlePage::probeTrackQuality(PlayerSession* session, const QString& embed) 
         return;
     }
     trackWaiters_[embed].append(session);
-    runner_.runBulk(
+    // The player is open and waiting on this answer, so it rides the stream
+    // pool rather than the bulk one the discovery fan-out uses.
+    const QPointer<TitlePage> self(this);
+    runner_.runStream(
         [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
-        [this, session, embed](const QVariant& result) {
-            trackWaiters_[embed].removeAll(session);
-            const QMap<int, QString> qualities = result.value<QMap<int, QString>>();
-            if (closed_ || qualities.isEmpty() || session->dialog == nullptr) {
+        [self, session, embed](const QVariant& result) {
+            if (self.isNull()) {
                 return;
             }
-            qualityCache_.remember(embed, qualities);
+            self->trackWaiters_[embed].removeAll(session);
+            const QMap<int, QString> qualities = result.value<QMap<int, QString>>();
+            if (self->closed_ || qualities.isEmpty() ||
+                !self->sessions_.contains(session) || session->dialog == nullptr) {
+                return;
+            }
+            self->qualityCache_.remember(embed, qualities);
             session->dialog->setTrackQuality(embed, maxQuality(qualities));
         },
-        [this, session, embed](const QString&) { trackWaiters_[embed].removeAll(session); });
+        [self, session, embed](const QString&) {
+            if (!self.isNull()) {
+                self->trackWaiters_[embed].removeAll(session);
+            }
+        });
 }
 
 void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item, int index) {
@@ -1699,9 +1847,7 @@ void TitlePage::shutdown() {
     trackWaiters_.clear();
     // Bumping the sequence makes any release probe still in flight a no-op.
     releaseProbeSeq_ += 1;
-    if (qualityCache_.size() > 0) {
-        qualityCache_.flush();
-    }
+    qualityCache_.flushNow();
     const QVector<PlayerSession*> open = sessions_;
     for (PlayerSession* session : open) {
         mplayer::shell::PlayerDialog* dialog = session->dialog;

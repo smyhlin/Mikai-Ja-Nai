@@ -82,6 +82,22 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     buildFooter();
     buildOverlays();
     buildPictureMenu();
+    // The chrome has to sit above the surface, and it already does: the surface
+    // is the first child built, and Qt stacks later siblings above earlier
+    // ones. That is stated once, here, rather than re-asserted on every layout
+    // pass - layoutChrome runs from applyState, which runs on every input
+    // event, and each raise() is an explicit z-order mutation that invalidates
+    // the covered region even when the order is already correct.
+    //
+    // Nothing lowers the surface and no chrome widget is created after this
+    // point, so the order established here is the order that holds.
+    for (QWidget* widget : {static_cast<QWidget*>(windowControls_), static_cast<QWidget*>(titleBar_),
+                            static_cast<QWidget*>(btnPrev_), static_cast<QWidget*>(btnNext_),
+                            static_cast<QWidget*>(dock_), static_cast<QWidget*>(footerLeft_),
+                            static_cast<QWidget*>(footerRight_), static_cast<QWidget*>(hud_),
+                            static_cast<QWidget*>(center_)}) {
+        widget->raise();
+    }
 
     applyState();
     layoutChrome();
@@ -295,6 +311,10 @@ void PlayerShell::buildDock() {
     });
     btnEnhance_->setVisible(!anime4k::findShadersDir().isEmpty());
     refreshEnhancementMenus();
+
+    registerOverlay(flyout_);
+    registerOverlay(enhancementsPopup_);
+    registerOverlay(anime4kPopup_);
 }
 
 void PlayerShell::buildFooter() {
@@ -351,6 +371,8 @@ void PlayerShell::buildFooter() {
     keys_ = new KeyHints(overlayHost);
     morePopup_ = new MenuPopup(QStringLiteral("ДІЇ"), overlayHost);
     morePopup_->setObjectName(QStringLiteral("playerMorePopup"));
+    registerOverlay(keys_);
+    registerOverlay(morePopup_);
     QVector<MenuEntry> entries;
     const auto addEntry = [&entries](const QString& text, const QString& action) {
         MenuEntry entry;
@@ -385,6 +407,7 @@ void PlayerShell::buildPictureMenu() {
     pictureMenu_ = new MenuPopup(QString(), overlayHost);
     pictureMenu_->setObjectName(QStringLiteral("playerPictureMenu"));
     pictureMenu_->hide();
+    registerOverlay(pictureMenu_);
     QVector<MenuEntry> entries;
     const auto add = [&entries](const QString& text, const QString& action) {
         MenuEntry entry;
@@ -479,14 +502,19 @@ void PlayerShell::applyState() {
 
     setStateCursor();
 
+
     // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask.
     const int radius = (rounded_ && !fullscreen_ && frameless_) ? 12 : 0;
     if (radius > 0) {
         QPainterPath path;
         path.addRoundedRect(QRectF(surface_->geometry()), radius, radius);
         surface_->setMask(QRegion(path.toFillPolygon().toPolygon()));
-    } else if (!surface_->mask().isEmpty()) {
+        hasMask_ = true;
+    } else if (hasMask_) {
+        // Tracked rather than asked of the widget: QWidget::mask() hands back a
+        // QRegion by value, and this branch runs on every input event.
         surface_->clearMask();
+        hasMask_ = false;
     }
 
     if (name != lastState_) {
@@ -537,14 +565,17 @@ void PlayerShell::windowModeToggled() {
     emit fullscreenChanged(desired);
 }
 
-bool PlayerShell::dismissOverlay() {
-    QWidget* host = window();
-    if (host == nullptr) {
-        return false;
+void PlayerShell::registerOverlay(QWidget* overlay) {
+    if (overlay == nullptr || overlays_.contains(overlay)) {
+        return;
     }
+    overlays_.append(overlay);
+}
+
+bool PlayerShell::dismissOverlay() {
     bool dismissed = false;
-    for (QWidget* overlay : host->findChildren<QWidget*>()) {
-        if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
+    for (QWidget* overlay : overlays_) {
+        if (overlay->isVisible()) {
             overlay->close();
             dismissed = true;
         }
@@ -553,12 +584,8 @@ bool PlayerShell::dismissOverlay() {
 }
 
 bool PlayerShell::hasVisibleOverlay() const {
-    QWidget* host = window();
-    if (host == nullptr) {
-        return false;
-    }
-    for (QWidget* overlay : host->findChildren<QWidget*>()) {
-        if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
+    for (const QWidget* overlay : overlays_) {
+        if (overlay->isVisible()) {
             return true;
         }
     }
@@ -619,11 +646,18 @@ void PlayerShell::layoutChrome() {
     const int sh = std::max(1, static_cast<int>(fit.height() * scale_));
     const int sx = static_cast<int>((w - sw) / 2.0 + offset_.x());
     const int sy = titleBarOffset_ + static_cast<int>((h - titleBarOffset_ - sh) / 2.0 + offset_.y());
-    surface_->setGeometry(sx, sy, sw, sh);
-    const int outputWidth =
-        std::max(1, static_cast<int>(std::round(sw * surface_->devicePixelRatioF())));
-    const int outputHeight =
-        std::max(1, static_cast<int>(std::round(sh * surface_->devicePixelRatioF())));
+    // Guarded: a geometry write on a QOpenGLWidget schedules a repaint, and
+    // layoutChrome runs from applyState, which runs on every input event. The
+    // common case is a layout pass that computes the rectangle it already has.
+    const QRect canvas(sx, sy, sw, sh);
+    if (surface_->geometry() != canvas) {
+        surface_->setGeometry(canvas);
+    }
+    // devicePixelRatioF walks widget -> window -> screen, and both uses below
+    // want the same number.
+    const qreal ratio = surface_->devicePixelRatioF();
+    const int outputWidth = std::max(1, static_cast<int>(std::round(sw * ratio)));
+    const int outputHeight = std::max(1, static_cast<int>(std::round(sh * ratio)));
     if (outputWidth_ != outputWidth || outputHeight_ != outputHeight) {
         outputWidth_ = outputWidth;
         outputHeight_ = outputHeight;
@@ -631,8 +665,10 @@ void PlayerShell::layoutChrome() {
     }
 
     // ── window controls (top-right) ────────────────────────────────
-    const int wcWidth = windowControls_->sizeHint().width() > 0 ? windowControls_->sizeHint().width()
-                                                                : 96;
+    // sizeHint() forces a full QHBoxLayout measure over three children, and
+    // the ternary used to ask for it twice.
+    const int hintedWidth = windowControls_->sizeHint().width();
+    const int wcWidth = hintedWidth > 0 ? hintedWidth : 96;
     const int wcX = std::clamp(static_cast<int>(w * 0.945) + 4, 0, std::max(0, w - wcWidth - 4));
     windowControls_->setGeometry(wcX, std::max(6, static_cast<int>(h * 0.008)), wcWidth, 36);
 
@@ -660,28 +696,17 @@ void PlayerShell::layoutChrome() {
     footerRight_->move(w - footerRight_->width() - 12, h - footerRight_->height() - 8);
 
     // ── overlays ───────────────────────────────────────────────────
-    hud_->adjustSize();
-    hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
+    // The HUD is hidden by default and holds a 7-row label tree, so measuring
+    // it on every layout pass is ~17 widgets of work for a widget nobody can
+    // see. It is measured when it is shown instead, which is also the only
+    // time its size can differ from what is already cached.
+    if (!hud_->isHidden()) {
+        hud_->adjustSize();
+        hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
+    }
     center_->move((w - center_->width()) / 2, (h - center_->height()) / 2);
     if (toast_->isVisible()) {
         toast_->move((w - toast_->width()) / 2, static_cast<int>(h * 0.80));
-    }
-
-    if (showHud_ && !hudHidden_) {
-        hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
-    }
-
-    // Raise the chrome above the surface. The surface is a QOpenGLWidget that
-    // composites its own framebuffer, so it paints over any sibling created
-    // before it - which is why the episodes drawer (a dialog child, raised by
-    // layoutPanels) showed up while the bottom dock did not: nothing ever
-    // raised the shell's own widgets.
-    QVector<QWidget*> chrome{windowControls_, titleBar_, btnPrev_, btnNext_, dock_,
-                             footerLeft_, footerRight_, hud_, center_};
-    for (QWidget* widget : chrome) {
-        if (widget != nullptr && widget->isVisible()) {
-            widget->raise();
-        }
     }
 }
 
@@ -846,10 +871,16 @@ void PlayerShell::setAspectRatio(double ratio) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 void PlayerShell::updateTimeLabels() {
-    lblElapsed_->setText(formatTime(position_));
-    lblRemaining_->setText(formatSigned(std::max(0.0, duration_ - position_)));
+    const QString elapsed = formatTime(position_);
+    if (elapsed != lblElapsed_->text()) lblElapsed_->setText(elapsed);
+    const QString remaining = formatSigned(std::max(0.0, duration_ - position_));
+    if (remaining != lblRemaining_->text()) lblRemaining_->setText(remaining);
     if (duration_ > 0 && !scrub_->isDragging()) {
-        scrub_->setValueSilent(position_ / duration_);
+        // The bar is painted at pixel resolution, so a fraction finer than one
+        // pixel moves the handle to where it already is. Snapping first keeps
+        // 59 of every 60 emissions from repainting the whole timeline.
+        const double pixels = std::max(1.0, static_cast<double>(scrub_->width()));
+        scrub_->setValueSilent(std::round(position_ / duration_ * pixels) / pixels);
     }
     if (showHud_ && !hudHidden_) {
         hud_->updateData(stateName(),

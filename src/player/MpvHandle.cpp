@@ -121,12 +121,10 @@ void MpvHandle::setString(const std::string& name, const std::string& value) {
 
 // ── events ─────────────────────────────────────────────────────────────────
 
-std::vector<mpv_event*> MpvHandle::drainEvents() {
-    std::vector<mpv_event*> events;
+void MpvHandle::drainEvents() {
     while (true) {
         mpv_event* e = mpv_wait_event(handle_, 0);
         if (e == nullptr || e->event_id == MPV_EVENT_NONE) break;
-        events.push_back(e);
         if (sink_) sink_(e);
         if (e->event_id == MPV_EVENT_PROPERTY_CHANGE) {
             auto* change = static_cast<mpv_event_property*>(e->data);
@@ -156,7 +154,6 @@ std::vector<mpv_event*> MpvHandle::drainEvents() {
             }
         }
     }
-    return events;
 }
 
 void MpvHandle::setEventSink(std::function<void(mpv_event*)> sink) {

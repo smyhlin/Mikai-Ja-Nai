@@ -83,8 +83,14 @@ public:
     void setFlag(const std::string& name, bool value);
     void setString(const std::string& name, const std::string& value);
 
-    // Drain the event queue. Safe to call often; returns the events handled.
-    std::vector<mpv_event*> drainEvents();
+    // Drain the event queue, dispatching every event to the sink and the
+    // property observers as it arrives. Safe to call often.
+    //
+    // Returns nothing on purpose: the only caller wants the queue empty and
+    // the observers notified, and collecting the events into a vector just to
+    // drop it on the floor was a heap allocation on every pump - one per
+    // decoded frame, sized by whatever mpv had queued.
+    void drainEvents();
 
     // Called for every event the queue yields, before it is dropped.
     void setEventSink(std::function<void(mpv_event*)> sink);

@@ -339,23 +339,45 @@ void SettingsFlyout::onSlider(double fraction) {
 }
 
 void SettingsFlyout::refresh() {
-    badge_->setText(formatG(rate_) + QStringLiteral("x"));
-    qualityLabel_->setText(quality_);
+    // refresh() runs on every slider tick, so a drag produces dozens of calls
+    // in which only the badge and the slider move. Writing a QLabel/QPushButton
+    // re-lays it out and invalidates it, and setStyleSheet re-parses the sheet
+    // and re-polishes the button - so each row is written only when its text
+    // or its selected state actually differs from what is on screen.
+    const QString badgeText = formatG(rate_) + QStringLiteral("x");
+    if (badge_->text() != badgeText) {
+        badge_->setText(badgeText);
+    }
+    if (qualityLabel_->text() != quality_) {
+        qualityLabel_->setText(quality_);
+    }
     slider_->setValueSilent((rate_ - 0.25) / 1.75);
+
     for (int i = 0; i < qualityRows_.size() && i < qualityOptions_.size(); ++i) {
         const QualityOption& option = qualityOptions_[i];
         QPushButton* btn = qualityRows_[i];
-        btn->setText((option.current ? QStringLiteral("✓  ") : QString()) + option.label);
-        btn->setStyleSheet(rowQss(option.current));
+        const QString text = (option.current ? QStringLiteral("✓  ") : QString()) + option.label;
+        if (btn->text() != text) {
+            btn->setText(text);
+        }
+        const QString sheet = rowQss(option.current);
+        if (btn->styleSheet() != sheet) {
+            btn->setStyleSheet(sheet);
+        }
     }
     for (int i = 0; i < rows_.size(); ++i) {
         const double speed = rows_[i].first;
         QPushButton* btn = rows_[i].second;
         const bool selected = std::abs(rate_ - speed) < 0.026;
-        const QString label =
-            QStringLiteral("%1x   %2").arg(formatG(speed), presetLabel(i));
-        btn->setText((selected ? QStringLiteral("✓  ") : QString()) + label);
-        btn->setStyleSheet(rowQss(selected));
+        const QString text = (selected ? QStringLiteral("✓  ") : QString())
+            + QStringLiteral("%1x   %2").arg(formatG(speed), presetLabel(i));
+        if (btn->text() != text) {
+            btn->setText(text);
+        }
+        const QString sheet = rowQss(selected);
+        if (btn->styleSheet() != sheet) {
+            btn->setStyleSheet(sheet);
+        }
     }
 }
 

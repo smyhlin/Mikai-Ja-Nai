@@ -315,6 +315,10 @@ void VideoSurface::initializeGL() {
                                       Qt::QueuedConnection);
         });
         contextReady_ = true;
+        // The first paint after the context exists has to render whatever mpv
+        // is holding, even if no frame has been decoded yet: the framebuffer
+        // has never been drawn into.
+        forceRender_ = true;
         statePump_.setInterval(50);
         connect(&statePump_, &QTimer::timeout, this, &VideoSurface::pumpEvents);
         statePump_.start();
@@ -327,7 +331,19 @@ void VideoSurface::initializeGL() {
 
 void VideoSurface::resizeGL(int width, int height) {
     QOpenGLWidget::resizeGL(width, height);
+    // Qt hands QOpenGLWidget a freshly allocated framebuffer on a resize, so
+    // whatever the last paint drew into the old one is gone. The next paint
+    // has to render even though no frame has been decoded since.
+    forceRender_ = true;
     if (contextReady_) render_->update();
+}
+
+void VideoSurface::showEvent(QShowEvent* event) {
+    QOpenGLWidget::showEvent(event);
+    // Same reasoning as resizeGL: a surface that was hidden (the pooled PiP
+    // float) cannot assume its framebuffer still holds the last frame, and
+    // with a paused core there may never be another one.
+    forceRender_ = true;
 }
 
 void VideoSurface::paintGL() {
@@ -335,13 +351,33 @@ void VideoSurface::paintGL() {
     if (!contextReady_ || !render_) {
         return;
     }
-    pumpEvents();
-    // update() bumps mpv's generation counter only when the decoder
-    // actually produced a frame, so it doubles as the frame-available
-    // check and the keep-going signal. Repainting unconditionally here
-    // would spin a core on a paused video.
+    // No state pump here, deliberately. paintGL runs once per decoded frame,
+    // and pumpEvents costs six synchronous property round-trips through the
+    // mpv core lock each time, competing with mpv's own render thread. The
+    // 50 ms statePump_ timer covers the case the pump existed for - a paused
+    // core producing no frames - at 20 Hz instead of at frame rate.
+    //
+    // update() flags a redraw only when the decoder actually produced a frame,
+    // so it doubles as the frame-available check and the keep-going signal.
     const uint64_t generation = render_->update();
-    const bool haveFrame = framePending_ || generation != lastGeneration_;
+    // The framebuffer identity is part of the test. Qt hands the widget a
+    // different one on a resize, and may hand it a different one again when a
+    // hidden surface comes back, so a name change is proof that what is in the
+    // buffer is not the picture that belongs there - and grabFramebuffer(),
+    // which reads that buffer directly rather than repainting, would hand back
+    // whatever the old one held.
+    const GLuint target = static_cast<GLuint>(defaultFramebufferObject());
+    const bool haveFrame = framePending_ || generation != lastGeneration_ || forceRender_
+                           || target != lastFramebuffer_;
+    if (!haveFrame) {
+        // Nothing new to draw. Qt composites the framebuffer as it stands and
+        // the frame from the last paint is exactly what belongs there, so the
+        // whole glsl-shaders chain - seven passes at up to 4x resolution with
+        // Anime4K - is not re-run and thrown away on every incidental repaint.
+        // mpv's own pending flags are deliberately left alone: the next
+        // update() reports them again, so nothing is dropped.
+        return;
+    }
     lastGeneration_ = generation;
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
     // make mpv bind the window's default framebuffer and paint nothing. The FBO
@@ -350,10 +386,15 @@ void VideoSurface::paintGL() {
     const qreal ratio = devicePixelRatioF();
     const int targetWidth = std::max(1, static_cast<int>(width() * ratio));
     const int targetHeight = std::max(1, static_cast<int>(height() * ratio));
-    render_->render(static_cast<int>(defaultFramebufferObject()), targetWidth, targetHeight, 0);
+    render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
+    // Only ever paired with the render above: reporting a swap that did not
+    // happen tells mpv a frame was presented when it was not, which feeds its
+    // frame-timing and drop logic a picture it never drew.
     render_->reportSwap();
     framePending_ = false;
-    if (haveFrame) QOpenGLWidget::update();
+    forceRender_ = false;
+    lastFramebuffer_ = target;
+    QOpenGLWidget::update();
 }
 
 // ── state pump ────────────────────────────────────────────────────────────
@@ -433,10 +474,13 @@ void VideoSurface::updateStreamStats() {
 void VideoSurface::handleState() {
     if (!mpv_) return;
     try {
-        const bool vid = mpv_->getNumber("video-params/w") > 0;
+        // One read, two answers. The width decides both whether there is a
+        // video at all and how wide it is, and every mpv_get_property takes
+        // the core lock against mpv's own render thread.
+        const int w = static_cast<int>(mpv_->getNumber("video-params/w"));
+        const bool vid = w > 0;
         if (vid != hasVideo_) hasVideo_ = vid;
         if (hasVideo_) {
-            const int w = static_cast<int>(mpv_->getNumber("video-params/w"));
             const int h = static_cast<int>(mpv_->getNumber("video-params/h"));
             if (w != videoWidth_ || h != videoHeight_) {
                 videoWidth_ = w;

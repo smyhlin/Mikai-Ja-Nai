@@ -77,8 +77,11 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     timer.start(kTimeoutMs);
     loop.exec();
     if (reply->isRunning()) {
-        // The deadline fired first: abort so the reply cannot outlive us.
+        // The deadline fired first: abort so the reply cannot outlive us. The
+        // drain is on the same timer rather than an unbounded wait, because an
+        // abort can complete late and this thread belongs to a pool.
         reply->abort();
+        timer.start(kTimeoutMs);
         loop.exec();
     }
     timer.stop();
@@ -347,13 +350,22 @@ QStringList listSegments(QNetworkAccessManager* manager, const QString& qualityU
 
 QMap<int, QString> qualityStreams(const QString& pageUrl) {
     const QString site = detectSite(pageUrl);
-    QNetworkAccessManager manager;
-    const QString master = extractMaster(&manager, pageUrl);
+    // One manager per worker thread rather than one per call: a fresh manager
+    // means a fresh cookie jar and a fresh TLS handshake, so a local one paid
+    // for the provider handshake again on every episode click. Tied to the
+    // thread's lifetime so an expiring pool thread leaves nothing behind.
+    static thread_local QNetworkAccessManager* manager = [] {
+        auto* created = new QNetworkAccessManager;
+        QObject::connect(QThread::currentThread(), &QThread::finished, created,
+                         &QObject::deleteLater);
+        return created;
+    }();
+    const QString master = extractMaster(manager, pageUrl);
     const QMap<QString, QString> headers =
         (site == QLatin1String("ashdi") || site == QLatin1String("tortuga")) ? bareHeaderSet()
                                                                              : mediaHeaderSet();
     const QVector<QualityVariant> variants =
-        parseVariants(fetchText(&manager, master, headers), master);
+        parseVariants(fetchText(manager, master, headers), master);
     QMap<int, QString> streams;
     for (const QualityVariant& variant : variants) {
         if (variant.height > 0 && !variant.url.isEmpty()) {

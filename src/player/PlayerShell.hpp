@@ -126,6 +126,14 @@ public:
     /// Closes every floating overlay in the player window and reports whether
     /// one was visible.
     bool dismissOverlay();
+    /// Adds a host-owned floating overlay to the set dismissOverlay() closes
+    /// and hasVisibleOverlay() reports on. The shell registers its own
+    /// popovers; the dialog's dub and subtitle pickers are children of the
+    /// dialog, built after the shell exists, so it cannot know them.
+    void registerOverlay(QWidget* overlay);
+    /// Whether any registered overlay is on screen. The host asks this instead
+    /// of walking its own subtree for popovers.
+    bool hasVisibleOverlay() const;
     void wake();
 signals:
     // ── shell → host ────────────────────────────────────────────────
@@ -199,7 +207,6 @@ private:
     void buildPictureMenu();
     void exitViewer();
     void updateTimeLabels();
-    bool hasVisibleOverlay() const;
 
     QSize fitted() const;
     QPointF clampOffset(double scale, const QPointF& offset) const;
@@ -258,6 +265,20 @@ private:
 
     QTimer hideTimer_;
     QElapsedTimer sincePosition_;
+
+    /// Every floating overlay in the player window: the four popovers, the
+    /// settings flyout, the shortcut card, plus whatever the host registers.
+    /// dismissOverlay()/hasVisibleOverlay() used to find these by walking the
+    /// whole widget tree and asking each node for a dynamic property, which
+    /// on a long playlist means a 150-widget walk several times a second.
+    ///
+    /// Held raw because every entry is a child widget that outlives its own
+    /// registration: the shell's belong to the shell, the dialog's to the
+    /// dialog, and neither outlives the other in the hosted player.
+    QVector<QWidget*> overlays_;
+    /// Whether a corner mask is currently installed on the surface. Tracked
+    /// rather than read back from QWidget::mask(), which returns by value.
+    bool hasMask_ = false;
 
     // canvas / fsm
     double scale_ = 1.0;

@@ -65,11 +65,16 @@ private:
     int entries_ = 0;
     QStringList numbers_;
     bool syncing_ = false;
+    /// False until the first renderChips, so the first setState always applies
+    /// even when it repeats the constructor defaults.
+    bool rendered_ = false;
 
     QPushButton* firstButton_ = nullptr;
     QPushButton* prevButton_ = nullptr;
     QWidget* chipsHost_ = nullptr;
     QHBoxLayout* chipLayout_ = nullptr;
+    /// The fixed-size chip window, built once and re-labelled by renderChips.
+    QList<QPushButton*> chips_;
     QPushButton* nextButton_ = nullptr;
     QPushButton* lastButton_ = nullptr;
     QLabel* jumpLabel_ = nullptr;

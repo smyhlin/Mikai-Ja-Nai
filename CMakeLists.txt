@@ -8,7 +8,30 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Qt6Widgets pulls in OpenGL; QOpenGLWidget itself lives in Qt6OpenGLWidgets.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network Test)
+# Test is deliberately not in this list: it is only needed by the QA probes and
+# mikai_tests, so the app itself configures on a Qt install without it.
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network)
+
+# The QA probes and the C++ test runner. ON by default so the tree configures
+# exactly as it did before, but the probe *executables* are EXCLUDE_FROM_ALL: a
+# bare `cmake --build build-cmake` no longer pays for eleven extra Qt link
+# steps just to produce mikai.exe. Build them by name instead:
+#   cmake --build build-cmake --target title_page_probe
+#   cmake --build build-cmake --target widget_pixel_probe
+#   cmake --build build-cmake --target shell_probe
+#   cmake --build build-cmake --target dialog_probe
+#   cmake --build build-cmake --target interaction_probe
+#   cmake --build build-cmake --target compare_probe
+#   cmake --build build-cmake --target compare_shot_probe
+#   cmake --build build-cmake --target mpv_surface_smoke
+#   cmake --build build-cmake --target headless_pixel_probe
+#   cmake --build build-cmake --target crash_probe
+#   cmake --build build-cmake --target resolver_probe
+option(MIKAI_BUILD_PROBES "Build the QA probes and mikai_tests" ON)
+if(MIKAI_BUILD_PROBES)
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+  enable_testing()
+endif()
 
 # libmpv is provided by the runtime the app already downloads. Point
 # MPV_RUNTIME_DIR at it; the headers and the import library both live there.
@@ -84,34 +107,35 @@ find_library(MPV_LIBRARY
 )
 target_link_libraries(mikai_player PUBLIC ${MPV_LIBRARY})
 
+if(MIKAI_BUILD_PROBES)
 # Live smoke: a real Qt window with the VideoSurface, proving mpv actually
 # draws through the render bridge rather than through a native HWND.
-add_executable(mpv_surface_smoke src/probes/mpv_surface_smoke.cpp)
+add_executable(mpv_surface_smoke EXCLUDE_FROM_ALL src/probes/mpv_surface_smoke.cpp)
 target_link_libraries(mpv_surface_smoke PRIVATE mikai_player Qt6::Widgets)
-add_executable(headless_pixel_probe src/probes/HeadlessPixelProbe.cpp)
+add_executable(headless_pixel_probe EXCLUDE_FROM_ALL src/probes/HeadlessPixelProbe.cpp)
 target_link_libraries(headless_pixel_probe PRIVATE mikai_player Qt6::Core Qt6::Gui Qt6::OpenGL)
 set_target_properties(headless_pixel_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
 
-add_executable(widget_pixel_probe src/probes/WidgetPixelProbe.cpp)
+add_executable(widget_pixel_probe EXCLUDE_FROM_ALL src/probes/WidgetPixelProbe.cpp)
 target_link_libraries(widget_pixel_probe PRIVATE mikai_player Qt6::Widgets)
 
 
-add_executable(shell_probe src/probes/ShellProbe.cpp)
+add_executable(shell_probe EXCLUDE_FROM_ALL src/probes/ShellProbe.cpp)
 target_link_libraries(shell_probe PRIVATE mikai_player Qt6::Widgets)
 set_target_properties(shell_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
-add_executable(dialog_probe src/probes/DialogProbe.cpp)
+add_executable(dialog_probe EXCLUDE_FROM_ALL src/probes/DialogProbe.cpp)
 target_link_libraries(dialog_probe PRIVATE mikai_player Qt6::Widgets)
 set_target_properties(dialog_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
-add_executable(interaction_probe src/probes/InteractionProbe.cpp)
+add_executable(interaction_probe EXCLUDE_FROM_ALL src/probes/InteractionProbe.cpp)
 target_link_libraries(interaction_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(interaction_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
 # Proves the crash flow actually writes a report rather than merely being wired
 # up: it installs the same logging the app installs, then faults on purpose.
-add_executable(crash_probe src/probes/CrashProbe.cpp)
+add_executable(crash_probe EXCLUDE_FROM_ALL src/probes/CrashProbe.cpp)
 target_link_libraries(crash_probe PRIVATE mikai_app Qt6::Core)
 set_target_properties(crash_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
@@ -119,19 +143,20 @@ set_target_properties(crash_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 # reports what each provider tab received, then what the player did with a pill.
 # It exists because "the Ashdi episode list never appears" survived every round
 # of source reading, and the only honest way to settle it was to look.
-add_executable(compare_shot_probe src/probes/CompareShotProbe.cpp)
+add_executable(compare_shot_probe EXCLUDE_FROM_ALL src/probes/CompareShotProbe.cpp)
 target_link_libraries(compare_shot_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(compare_shot_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
-add_executable(compare_probe src/probes/CompareProbe.cpp)
+add_executable(compare_probe EXCLUDE_FROM_ALL src/probes/CompareProbe.cpp)
 target_link_libraries(compare_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(compare_probe PROPERTIES WIN32_EXECUTABLE FALSE)
-add_executable(resolver_probe src/probes/ResolverProbe.cpp)
+add_executable(resolver_probe EXCLUDE_FROM_ALL src/probes/ResolverProbe.cpp)
 target_link_libraries(resolver_probe PRIVATE mikai_player Qt6::Core)
 set_target_properties(resolver_probe PROPERTIES WIN32_EXECUTABLE FALSE)
-add_executable(title_page_probe src/probes/TitlePageProbe.cpp)
+add_executable(title_page_probe EXCLUDE_FROM_ALL src/probes/TitlePageProbe.cpp)
 target_link_libraries(title_page_probe PRIVATE mikai_app mikai_backend Qt6::Widgets Qt6::Test)
 set_target_properties(title_page_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+endif() # MIKAI_BUILD_PROBES
 
 # mikai_backend: the Qt-free domain models plus the Qt Network client that
 # replaced mikai_backend/. It only needs Core and Network so the worker pools
@@ -149,7 +174,9 @@ add_library(mikai_backend STATIC
   src/backend/Runtime.cpp
   src/backend/Runtime.hpp
 )
-set_target_properties(mikai_backend PROPERTIES AUTOMOC ON POSITION_INDEPENDENT_CODE ON)
+# No AUTOMOC: src/backend declares no Q_OBJECT/Q_GADGET, so the autogen step
+# would scan all nine headers and moc each one into nothing.
+set_target_properties(mikai_backend PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(mikai_backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(mikai_backend PUBLIC Qt6::Core Qt6::Network)
 
@@ -159,8 +186,11 @@ target_link_libraries(mikai_backend PUBLIC Qt6::Core Qt6::Network)
 #
 # The suite links mikai_app for the pager, the quality cache and the clipboard,
 # and mikai_backend for the domain. Set MIKAI_LIVE=1 to add the live oracle.
-enable_testing()
-
+#
+# Unlike the probes this stays in the default `all` target, so a plain
+# `cmake --build build-cmake` still produces mikai_tests.exe and ctest still
+# knows about it. It needs Qt6::Test, hence the MIKAI_BUILD_PROBES guard.
+if(MIKAI_BUILD_PROBES)
 add_executable(mikai_tests
   tests/cpp/main.cpp
   tests/cpp/TestSupport.hpp
@@ -193,6 +223,7 @@ target_compile_definitions(mikai_tests PRIVATE
 target_link_libraries(mikai_tests PRIVATE mikai_app mikai_backend Qt6::Test Qt6::Widgets)
 
 add_test(NAME mikai_tests COMMAND mikai_tests)
+endif() # MIKAI_BUILD_PROBES
 
 
 # ---------------------------------------------------------------------------
@@ -267,4 +298,52 @@ if(TARGET mikai_backend)
   )
 else()
   message(STATUS "mikai_backend not present: skipping the mikai app targets")
+endif()
+
+# ---------------------------------------------------------------------------
+# Release-only tuning for the four targets that make up the shipped app.
+# Generator expressions keep this inert for Debug and for any non-GNU/Clang
+# toolchain, so the build commands in readme.md/AGENTS.md need no extra flags.
+#
+# -march=x86-64-v2 (SSE4.2 + POPCNT) is the ceiling that keeps the deploy
+# folder handable to any Windows x64 box; -march=native would not be.
+# -ffunction-sections/-fdata-sections plus -Wl,--gc-sections drop the player and
+# compare code that is unreachable from the home path. GCC 16 MinGW accepts all
+# four. The link option belongs only on the executable, not on the archives.
+# IPO lets the three archives inline across each other; they are header-coupled
+# and all PIC, which is what LTO needs.
+# ---------------------------------------------------------------------------
+# LTO is only requested where the toolchain actually has it. Some MinGW GCC
+# builds ship a cc1plus with LTO compiled out, and CMake's IPO flags are
+# unconditional, so setting the property blind turns every build into a wall of
+# "LTO support has not been enabled in this configuration". Probed once per
+# configure, cached afterwards.
+set(MIKAI_IPO OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT MIKAI_IPO_OUTPUT LANGUAGES CXX)
+  if(MIKAI_IPO_OUTPUT)
+    set(MIKAI_IPO ON)
+  else()
+    message(STATUS "LTO unsupported by this toolchain: building Release without IPO")
+  endif()
+endif()
+
+set(MIKAI_TUNED_TARGETS mikai_player mikai_backend mikai_app mikai)
+foreach(t IN LISTS MIKAI_TUNED_TARGETS)
+  if(TARGET ${t})
+    if(MIKAI_IPO)
+      set_property(TARGET ${t} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
+    target_compile_options(${t} PRIVATE
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-march=x86-64-v2>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-ffunction-sections>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-fdata-sections>
+    )
+  endif()
+endforeach()
+if(TARGET mikai)
+  target_link_options(mikai PRIVATE
+    $<$<AND:$<CONFIG:Release>,$<LINK_LANG_AND_ID:CXX,GNU,Clang>>:-Wl,--gc-sections>
+  )
 endif()

@@ -12,6 +12,7 @@ namespace mikai::app {
 
 const qint64 kQualityCacheTtlMs = 1800000;
 const int kQualityCacheMaxEntries = 240;
+const qint64 kQualityCacheFlushIntervalMs = 5000;
 
 namespace {
 
@@ -41,6 +42,10 @@ void QualityCache::prune() {
 
 void QualityCache::load() {
     entries_.clear();
+    // What is in memory now is what is on disk, so there is nothing to write
+    // until something changes.
+    dirty_ = false;
+    lastFlushAtMs_ = 0;
     QSettings settings;
     const QString raw = settings.value(key_).toString();
     if (raw.isEmpty()) {
@@ -75,6 +80,20 @@ void QualityCache::load() {
 }
 
 void QualityCache::flush() {
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (lastFlushAtMs_ != 0 && now - lastFlushAtMs_ < kQualityCacheFlushIntervalMs) {
+        return;
+    }
+    flushNow();
+}
+
+void QualityCache::flushNow() {
+    if (!dirty_) {
+        // Memory already matches the file, so writing it again would produce a
+        // byte-identical blob. Skipping here is what lets the teardown paths
+        // call this unconditionally.
+        return;
+    }
     prune();
     QJsonObject entries;
     for (auto it = entries_.constBegin(); it != entries_.constEnd(); ++it) {
@@ -91,6 +110,8 @@ void QualityCache::flush() {
     root.insert(QStringLiteral("entries"), entries);
     QSettings settings;
     settings.setValue(key_, QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact)));
+    dirty_ = false;
+    lastFlushAtMs_ = QDateTime::currentMSecsSinceEpoch();
 }
 
 void QualityCache::clear() {
@@ -98,6 +119,8 @@ void QualityCache::clear() {
     noSource_.clear();
     QSettings settings;
     settings.remove(key_);
+    // The key is gone from disk, so there is nothing left for a flush to write.
+    dirty_ = false;
 }
 
 QMap<int, QString> QualityCache::qualities(const QString& embed) const {
@@ -119,6 +142,7 @@ void QualityCache::remember(const QString& embed, const QMap<int, QString>& map,
     const qint64 stamp =
         nowMsecsSinceEpoch != 0 ? nowMsecsSinceEpoch : QDateTime::currentMSecsSinceEpoch();
     entries_.insert(embed, Entry{stamp, map});
+    dirty_ = true;
     // Evict the oldest until the cap holds: a signed URL that is nearly expired
     // is worth less than a fresh one, so recency is the right order to drop in.
     while (entries_.size() > kQualityCacheMaxEntries) {
@@ -137,6 +161,7 @@ void QualityCache::forget(const QString& embed) {
     // The no-source mark goes too: the provider may well serve the episode now,
     // and a page-lifetime veto is not the place to keep a recovered one.
     noSource_.remove(embed);
+    dirty_ = true;
 }
 
 bool QualityCache::isNoSource(const QString& embed) const { return noSource_.contains(embed); }

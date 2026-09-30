@@ -295,8 +295,17 @@ PipFloat::PipFloat(QWidget* parent)
     // froze on the moment PiP opened and never moved again.
     connect(surface_, &VideoSurface::positionChanged, this,
             [this](double seconds) { setTime(seconds, surface_->duration()); });
-    connect(surface_, &VideoSurface::durationChanged, this,
-            [this](double seconds) { setTime(surface_->position(), seconds); });
+    // The scrubber's range belongs to the length, so it is set where the
+    // length arrives rather than on every position tick.
+    connect(surface_, &VideoSurface::durationChanged, this, [this](double seconds) {
+        if (seconds > 0.0) {
+            scrub_->setEnabled(true);
+            scrub_->setRange(0, static_cast<int>(std::lround(seconds * 1000.0)));
+        } else {
+            scrub_->setEnabled(false);
+        }
+        setTime(surface_->position(), seconds);
+    });
     connect(surface_, &VideoSurface::playingChanged, this,
             [this](bool playing) { setPlaying(playing); });
 }
@@ -478,7 +487,9 @@ void PipFloat::setTime(double position, double duration) {
     // to a 1 ms range, where every drag reads as a jump back to the start.
     if (duration > 0.0) {
         scrub_->setEnabled(true);
-        scrub_->setRange(0, static_cast<int>(std::lround(duration * 1000.0)));
+        // The range is set by the durationChanged handler, not here: the
+        // length does not change between position ticks, and setRange re-lays
+        // out the styled groove on every call.
         if (!scrubbing_) {
             const double clamped = std::clamp(position, 0.0, duration);
             scrub_->setValue(static_cast<int>(std::lround(clamped * 1000.0)));
@@ -540,6 +551,17 @@ void PipFloat::setOverlayOpacity(double value) {
 }
 
 void PipFloat::revealControls() {
+    // Already fully revealed and nothing pending: every call below is a no-op,
+    // except that setOpacity() is not one. QGraphicsEffect::setOpacity
+    // invalidates the effect and forces the whole overlay - buttons, labels,
+    // slider and all, under QSS - through the offscreen opacity buffer again
+    // on the next paint. This runs on every mouse-move over the float, so
+    // without this the controls were re-composited continuously under a
+    // pointer that was not going anywhere.
+    if (hovered_ && overlayOpacity_ >= 1.0 && overlayFade_->state() != QAbstractAnimation::Running
+        && !hideTimer_->isActive()) {
+        return;
+    }
     // The reveal is instant on purpose: a fade in makes the controls feel late
     // to a pointer that is already on the picture.
     hideTimer_->stop();
@@ -960,6 +982,12 @@ PlayerDialog::PlayerDialog(const QString& caption,
     audioPopup_->setObjectName(QStringLiteral("playerAudioPopup"));
     subtitlesPopup_ = new MenuPopup(QStringLiteral("СУБТИТРИ"), this);
     subtitlesPopup_->setObjectName(QStringLiteral("playerSubtitlesPopup"));
+    // These two are the dialog's, but they are overlays all the same: a click
+    // on the picture has to dismiss them, and one left open has to keep the
+    // chrome awake. They are children of the dialog and are built after the
+    // shell exists, so the shell cannot register them itself.
+    shell_->registerOverlay(audioPopup_);
+    shell_->registerOverlay(subtitlesPopup_);
 
     connect(audioPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
     connect(subtitlesPopup_, &MenuPopup::picked, this, &PlayerDialog::onTrackPicked);
@@ -2011,14 +2039,11 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
         return false;
     }
     if (watched == this && event->type() == QEvent::WindowActivate) {
-        bool overlayVisible = false;
-        for (QWidget* overlay : findChildren<QWidget*>()) {
-            if (overlay->property("playerOverlay").toBool() && overlay->isVisible()) {
-                overlayVisible = true;
-                break;
-            }
-        }
-        if (shell_ != nullptr && !overlayVisible) {
+        // The shell's registry is the same set of popovers this walk used to
+        // rediscover - it holds this dialog's two pickers, registered at
+        // construction, plus the shell's own - without the per-node dynamic
+        // property lookup over the whole subtree.
+        if (shell_ != nullptr && !shell_->hasVisibleOverlay()) {
             shell_->setFocus(Qt::OtherFocusReason);
         }
         return false;
@@ -2028,19 +2053,25 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
     }
     // Panel activity counts as user presence: re-arm the shell's idle timer
     // without consuming the event.
-    if (!panelWatchers_.isEmpty() && panelWatchers_.contains(watched)) {
-        switch (event->type()) {
-            case QEvent::Enter:
-            case QEvent::HoverEnter:
-            case QEvent::HoverMove:
-            case QEvent::MouseMove:
-            case QEvent::MouseButtonPress:
-            case QEvent::Wheel:
+    //
+    // The type is tested first on purpose. panelWatchers_ holds every widget
+    // in three panel subtrees - one entry per episode row on a long playlist -
+    // and the scan is linear, so putting it ahead of the type switch made
+    // every Paint, LayoutRequest, ChildAdded and Resize that any panel widget
+    // received pay for a membership test nothing below reads.
+    switch (event->type()) {
+        case QEvent::Enter:
+        case QEvent::HoverEnter:
+        case QEvent::HoverMove:
+        case QEvent::MouseMove:
+        case QEvent::MouseButtonPress:
+        case QEvent::Wheel:
+            if (!panelWatchers_.isEmpty() && panelWatchers_.contains(watched)) {
                 shell_->wake();
-                break;
-            default:
-                break;
-        }
+            }
+            break;
+        default:
+            break;
     }
     return QDialog::eventFilter(watched, event);
 }
