@@ -37,7 +37,7 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
         }
         pane->setContent(ids.at(i), images.at(i), names.value(i));
         pane->setChoices(choiceIds_, choiceLabels_, ids.at(i));
-        pane->setLocalView(zoom_, center_);
+        pane->setLocalView(center_);
     }
 }
 
@@ -58,19 +58,18 @@ ComparePane* CompareGrid::paneAt(int index) const {
 
 void CompareGrid::reconcile() {
     // One pane moved; every other pane follows the same region. The centre is
-    // normalized and the zoom is fit-relative, so the same numbers mean the
-    // same region in every pane whatever their resolutions.
+    // normalized, so the same number means the same region in every pane
+    // whatever their resolutions.
     auto* sender = qobject_cast<ComparePane*>(QObject::sender());
     if (sender == nullptr) {
         return;
     }
-    zoom_ = sender->zoom();
     if (const auto c = sender->center(); c.has_value()) {
         center_ = c;
     }
     for (ComparePane* pane : panes_) {
         if (pane != sender) {
-            pane->setLocalView(zoom_, center_);
+            pane->setLocalView(center_);
         }
     }
 }

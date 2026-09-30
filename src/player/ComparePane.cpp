@@ -8,11 +8,6 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QToolButton>
-#include <QTransform>
-#include <QWheelEvent>
-
-#include <algorithm>
-#include <cmath>
 
 namespace mplayer::shell {
 
@@ -92,20 +87,16 @@ void ComparePane::setChoices(const QStringList& ids, const QStringList& labels,
     syncBadgeMenu();
 }
 
-void ComparePane::setLocalView(double zoom, const std::optional<QPointF>& center) {
-    zoom_ = std::clamp(zoom, kCompareZoomMin, kCompareZoomMax);
-    const double scale = base_ * zoom_;
-    QTransform transform;
-    transform.scale(scale, scale);
+void ComparePane::setLocalView(const std::optional<QPointF>& center) {
+    if (!center.has_value() || item_->pixmap().isNull()) {
+        return;
+    }
+    const QSize size = imageSize();
     const bool wasSyncing = syncing_;
     syncing_ = true;
-    setTransform(transform);
-    if (center.has_value() && !item_->pixmap().isNull()) {
-        const QSize size = imageSize();
-        // The centre is applied in scene units and measured against the scale
-        // just set, which is why the transform comes first.
-        centerOn(center->x() * size.width(), center->y() * size.height());
-    }
+    // The centre is in scene units - fractions of this pane's own picture - so
+    // the fit already in force is what it is measured against.
+    centerOn(center->x() * size.width(), center->y() * size.height());
     syncing_ = wasSyncing;
 }
 
@@ -117,16 +108,12 @@ void ComparePane::fit() {
     syncing_ = true;
     if (image_.isNull()) {
         resetTransform();
-        base_ = 1.0;
     } else {
         fitInView(item_, Qt::KeepAspectRatio);
-        const double scale = transform().m11();
-        base_ = scale > 0.0 ? scale : 1.0;
     }
     syncing_ = wasSyncing;
-    // Re-apply the shared numbers: the pane's own fit just rewrote the
-    // transform, and zoom/centre are multiples of that fit.
-    setLocalView(zoom_, centerNormalized());
+    // Re-apply the shared centre: the pane's own fit just moved the view.
+    setLocalView(centerNormalized());
 }
 
 QPointF ComparePane::centerNormalized() const {
@@ -184,36 +171,6 @@ void ComparePane::anchorBadge() {
     }
 }
 
-void ComparePane::wheelEvent(QWheelEvent* event) {
-    const int steps = event->angleDelta().y() / 120;
-    if (steps == 0) {
-        QGraphicsView::wheelEvent(event);
-        return;
-    }
-    const double newZoom =
-        std::clamp(zoom_ * std::pow(kCompareWheelStep, steps), kCompareZoomMin, kCompareZoomMax);
-    if (qFuzzyCompare(newZoom, zoom_)) {
-        event->accept();
-        return;
-    }
-    // Zoom about the point under the cursor: rescale, then shift the view so
-    // the pixel the pointer sits on has not moved. The anchor survives every
-    // step, which is what makes zooming into a corner useful.
-    const QPointF before = mapToScene(event->position().toPoint());
-    zoom_ = newZoom;
-    const double scale = base_ * zoom_;
-    QTransform transform;
-    transform.scale(scale, scale);
-    const bool wasSyncing = syncing_;
-    syncing_ = true;
-    setTransform(transform);
-    const QPointF after = mapToScene(event->position().toPoint());
-    translate(after.x() - before.x(), after.y() - before.y());
-    syncing_ = wasSyncing;
-    emit viewChanged();
-    event->accept();
-}
-
 void ComparePane::resizeEvent(QResizeEvent* event) {
     // The base resize moves the scrollbars before fit() runs, and an unguarded
     // pane would report that transient position as its own view.
@@ -226,8 +183,8 @@ void ComparePane::resizeEvent(QResizeEvent* event) {
 
 void ComparePane::scrollContentsBy(int dx, int dy) {
     // The base moves every child of the viewport by the scroll delta, the badge
-    // included; this is the one point where that happens for a pan, a fit and a
-    // zoom alike, so it is the one place to undo it.
+    // included; this is the one point where that happens for a pan and a fit
+    // alike, so it is the one place to undo it.
     QGraphicsView::scrollContentsBy(dx, dy);
     anchorBadge();
 }

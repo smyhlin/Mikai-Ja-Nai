@@ -7,11 +7,18 @@
 // checks. This probe exists to be looked at.
 #include <QApplication>
 #include "CompareCanvas.hpp"
+#include <QComboBox>
+#include <QGraphicsView>
 #include <QPixmap>
+#include <QPointingDevice>
+#include <QTest>
 #include <QTimer>
+#include <QWheelEvent>
+#include <cmath>
 #include <cstdio>
 
 #include "Anime4K.hpp"
+#include "ComparePane.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
@@ -27,6 +34,23 @@ int failures = 0;
 void check(bool ok, const char* what) {
     std::fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) ++failures;
+}
+
+/// True when the wheel rescaled the picture this view is showing. The scale on
+/// screen is the view transform, so that is what is measured, and the wheel is
+/// sent into the viewport, where a real wheel event lands.
+bool wheelRescales(const QGraphicsView* view) {
+    const double before = view->transform().m11();
+    const QPointF centre(view->viewport()->width() / 2.0, view->viewport()->height() / 2.0);
+    for (int notch : {3, -3, 5, -5}) {
+        QWheelEvent wheel(centre, view->viewport()->mapToGlobal(centre.toPoint()), QPoint(),
+                          QPoint(0, notch * 120), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
+                          QPointingDevice::primaryPointingDevice());
+        QApplication::sendEvent(view->viewport(), &wheel);
+        QCoreApplication::processEvents();
+    }
+    return qAbs(view->transform().m11() - before) > 1e-9;
 }
 
 class Host : public PlayerHost {
@@ -98,6 +122,35 @@ int main(int argc, char** argv) {
         const double share = sampled > 0 ? 100.0 * varied / sampled : 0.0;
         std::fprintf(stderr, "     canvas has picture: %.1f%% of samples in range\n", share);
         check(share > 20.0, "the canvas shows an actual picture, not a blank panel");
+
+        // ── the wheel must not zoom, in either surface ────────────
+        // The single canvas and the pane grid are separate classes with
+        // separate event handlers, so one wheel is not evidence about the
+        // other; both are wheeled here.
+        auto* modes = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
+        check(modes != nullptr && modes->count() > 1,
+              "the window can switch to the surface being wheeled");
+        if (modes != nullptr) {
+            modes->setCurrentIndex(0);
+            QTest::qWait(300);
+            check(!wheelRescales(canvas), "the wheel does not rescale the single canvas");
+            std::fprintf(stderr, "     canvas scale %.4f\n", canvas->transform().m11());
+
+            const int sideBySide =
+                modes->findData(QString::fromLatin1(modeKey(CompareMode::SideBySide)));
+            modes->setCurrentIndex(sideBySide >= 0 ? sideBySide : 0);
+            QTest::qWait(300);
+            const QList<ComparePane*> panes = compare->findChildren<ComparePane*>();
+            check(!panes.isEmpty(), "the side-by-side layout builds its panes");
+            for (ComparePane* pane : panes) {
+                if (!pane->isVisible()) {
+                    continue;
+                }
+                check(!wheelRescales(pane), "the wheel does not rescale a side-by-side pane");
+                std::fprintf(stderr, "     pane %s scale %.4f\n", qPrintable(pane->key()),
+                             pane->transform().m11());
+            }
+        }
 
         compare->grab().save(QStringLiteral("compare_shot.png"));
         std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");

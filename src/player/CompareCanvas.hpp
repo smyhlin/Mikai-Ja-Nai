@@ -1,10 +1,11 @@
 // The QGraphicsView the comparison is drawn into.
 //
 // Adapted from AnimeInterp's CompareCanvas. It owns the scene, the camera and
-// the gesture rules, and three of those rules are easy to get wrong:
+// the gesture rules, and two of those rules are easy to get wrong:
 //
-//  * **Zoom is anchored at the cursor.** The maths lives in Camera, so the
-//    point under the pointer stays put.
+//  * **The wheel does not zoom.** The view is the fit and nothing else: a
+//    comparison judged on a picture the viewer has silently rescaled is a
+//    comparison of the interpolation, not of the chain.
 //  * **Fit never upscales past 1:1.** A 480p frame blown up to a large window
 //    shows interpolation artefacts, not detail.
 //  * **The side badges are viewport children, re-anchored after every scroll.**
@@ -66,12 +67,10 @@ public:
 
 signals:
     void splitDragged(double fraction);
-    void zoomChanged(int percent);
     void hoverPixel(int x, int y, bool valid);
     void candidateChosen(int side, const QString& id);
 
 protected:
-    void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -109,7 +108,6 @@ private:
     int heldSide_ = -1;
     bool flickerShowA_ = true;
     bool dragging_ = false;
-    bool viewTouched_ = false;
 };
 
 }  // namespace mplayer::shell

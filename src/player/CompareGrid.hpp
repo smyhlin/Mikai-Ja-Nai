@@ -3,9 +3,8 @@
 // Adapted from AnimeInterp's CompareGrid, bounded to what this window uses:
 // one or two panes and one shared view. Pane i shows picture i; every badge
 // offers every candidate, so a result that is not on screen is still one click
-// away. The shared view is what two panes must agree on: zoom as a multiple of
-// each pane's own fit and a normalized centre, so 480p and 1080p panes look at
-// the same region.
+// away. The shared view is what two panes must agree on: a normalized centre,
+// so 480p and 1080p panes look at the same region at their own fits.
 #pragma once
 
 #include <QImage>
@@ -52,7 +51,6 @@ private:
     QStringList ids_;
     QStringList choiceIds_;
     QStringList choiceLabels_;
-    double zoom_ = 1.0;
     std::optional<QPointF> center_;
 };
 

@@ -22,7 +22,6 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
-class QListWidget;
 class QPushButton;
 class QSlider;
 class QSpinBox;
@@ -49,8 +48,19 @@ public:
                   QWidget* parent = nullptr);
     ~CompareWindow() override;
 
+    /// The frame both sides are currently rendered from. Public so a test can
+    /// see WHICH picture the window froze, not just that something is on
+    /// screen: a stale frame and a fresh one are equally non-null.
+    QImage frozenFrame() const { return frame_; }
+    /// Empty unless the last capture failed, in which case it says why and the
+    /// window is showing the failure rather than an older picture.
+    QString captureError() const { return captureError_; }
+
 private slots:
-    void onSelectionChanged();
+    /// Re-freezes the live surface at wherever the player is now. Every
+    /// explicit extraction goes through here, so "capture again" can only ever
+    /// mean "capture this position".
+    void captureNow();
     void onModeChanged(int index);
     void onSplitChanged(double value);
     void onOpacityChanged(int value);
@@ -63,12 +73,28 @@ private slots:
     void onCandidateChosen(int side, const QString& id);
     void onHoverPixel(int x, int y, bool valid);
 
+protected:
+    /// The window is kept and reused by the player, so being shown again is
+    /// the viewer's "compare where I am now" and has to take a new frame.
+    void showEvent(QShowEvent* event) override;
+
 private:
     void buildUi();
-    void populateList();
+    /// Fills the catalogue and opens on the running chain as A and the next
+    /// preset as B. The viewer picks sides from the badges on the pictures.
+    void populateCandidates();
+    /// Freezes the frame the live surface is showing right now, at whatever
+    /// position the player is parked on. It does not seek: a capture is a
+    /// reading of the player, not a command to it.
     void captureFrame();
     /// Seeks to `seconds`, waits for the seek to land, and keeps that frame.
+    /// Only the frame-step buttons call this, where moving the picture is the
+    /// point of the control.
     void captureAt(double seconds);
+    /// Grabs the framebuffer once it has stopped changing, and only once the
+    /// surface has stopped reporting a move. Null when no settled frame is
+    /// available; never the previous picture.
+    QImage grabSettledFrame(double* settledPosition);
     void render();
     /// Applies `id` to the borrowed core and returns the settled frame that
     /// comes back. Empty when there is no surface or no frame to work from.
@@ -76,9 +102,6 @@ private:
     void updateInfo();
     void updateTransport();
     void updateFlickerTimer();
-    /// The picked ids in press order: first is A, second is B. A selection is a
-    /// set, so the order the viewer chose is read explicitly.
-    QStringList selection() const;
     QString sideA() const;
     QString sideB() const;
     QString labelFor(const QString& id) const;
@@ -87,7 +110,6 @@ private:
     CompareCanvas* canvas_ = nullptr;
     CompareGrid* grid_ = nullptr;
     QStackedWidget* stack_ = nullptr;
-    QListWidget* list_ = nullptr;
     QComboBox* modeBox_ = nullptr;
     QLabel* splitLabel_ = nullptr;
     QLabel* opacityLabel_ = nullptr;
@@ -106,7 +128,19 @@ private:
     QImage frame_;
     QImage renderedA_;
     QImage renderedB_;
+    /// Why the last capture produced no frame, shown in place of the picture.
+    /// A capture that cannot read a fresh frame fails visibly rather than
+    /// falling back on the previous one.
+    QString captureError_;
+    /// Counts the surface's position updates. The surface reports its position
+    /// from a 50 ms pump, so a capture has to know whether a move is still
+    /// being reported before it can trust the framebuffer: without this, a
+    /// rewind followed immediately by a capture reads the position and the
+    /// picture of the frame the viewer just left.
+    quint64 positionEpoch_ = 0;
     QStringList candidates_;
+    /// The ids the viewer has picked, A first. Empty when nothing is on disk.
+    QStringList selection_;
     QString currentCandidateId_;
     /// Frozen position, in seconds, so both sides render the same frame.
     double position_ = 0.0;

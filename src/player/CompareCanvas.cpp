@@ -12,10 +12,8 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QToolButton>
-#include <QWheelEvent>
 
 #include <algorithm>
-#include <cmath>
 
 namespace mplayer::shell {
 
@@ -205,9 +203,7 @@ void CompareCanvas::applyLayout() {
     badgeB_->setVisible(layout.b.visible);
     scene()->setSceneRect(QRectF(QPointF(0, 0), layout.scene));
     placeBadges();
-    if (!viewTouched_) {
-        camera_.fit(layout.scene, viewport()->width(), viewport()->height());
-    }
+    camera_.fit(layout.scene, viewport()->width(), viewport()->height());
     applyView();
     placeBadges();
 }
@@ -280,12 +276,10 @@ void CompareCanvas::applyView() {
     resetTransform();
     scale(camera_.clampedZoom(), camera_.clampedZoom());
     translate(camera_.panX, camera_.panY);
-    emit zoomChanged(static_cast<int>(camera_.clampedZoom() * 100.0));
 }
 
 void CompareCanvas::fitToContent() {
     camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
-    viewTouched_ = false;
     applyView();
     placeBadges();
 }
@@ -312,20 +306,6 @@ bool CompareCanvas::pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b,
     g = static_cast<uchar>(qGreen(px));
     b = static_cast<uchar>(qBlue(px));
     return true;
-}
-
-void CompareCanvas::wheelEvent(QWheelEvent* event) {
-    const int steps = event->angleDelta().y() / 120;
-    if (steps == 0) {
-        QGraphicsView::wheelEvent(event);
-        return;
-    }
-    const QPointF anchor = mapToScene(event->position().toPoint());
-    camera_.zoomBySteps(steps, anchor.x(), anchor.y(), viewport()->width(), viewport()->height());
-    viewTouched_ = true;
-    applyView();
-    placeBadges();
-    event->accept();
 }
 
 void CompareCanvas::mousePressEvent(QMouseEvent* event) {
@@ -367,17 +347,15 @@ void CompareCanvas::mouseReleaseEvent(QMouseEvent* event) {
 
 void CompareCanvas::resizeEvent(QResizeEvent* event) {
     QGraphicsView::resizeEvent(event);
-    if (!viewTouched_) {
-        camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
-        applyView();
-    }
+    camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
+    applyView();
     placeBadges();
 }
 
 void CompareCanvas::scrollContentsBy(int dx, int dy) {
     // The base moves every child of the viewport by the scroll delta, the badges
-    // included; this is the one point where that happens for a pan, a fit and a
-    // zoom alike, so it is the one place to undo it.
+    // included; this is the one point where that happens for a fit and a pan
+    // alike, so it is the one place to undo it.
     QGraphicsView::scrollContentsBy(dx, dy);
     placeBadges();
 }

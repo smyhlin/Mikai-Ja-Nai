@@ -85,13 +85,11 @@ QImage differenceGrayscale(const QImage& a, const QImage& b, int gain);
 /// "are these different at all" question needs.
 double meanAbsoluteDifference(const QImage& a, const QImage& b);
 
-/// The reference's bounds. Deliberately wider than the player's own zoom
-/// (ShellTheme's kZoomMin/kZoomMax): this is a pixel-inspection tool, and
-/// clamping a 480p frame at 5x would hide the very interpolation the
-/// comparison exists to look at.
+/// Fit-relative zoom bounds. The wheel no longer zooms, so zoom is always 1.0
+/// (the pane's own fit); these constants only guard against a degenerate
+/// transform leaking in from elsewhere.
 inline constexpr double kCompareZoomMin = 0.05;
 inline constexpr double kCompareZoomMax = 32.0;
-inline constexpr double kCompareWheelStep = 1.25;
 inline constexpr int kDiffGainMin = 1;
 inline constexpr int kDiffGainMax = 64;
 
@@ -111,13 +109,6 @@ struct Camera {
     double clampedFlickerHz() const;
     int clampedGain() const;
 
-    /// Zoom by `steps` notches about a scene anchor, so the point under the
-    /// cursor stays put. The pan is derived from the anchor, never the reverse:
-    /// the caller depends on (vw/2 - panX)/zoom == anchorSceneX afterwards.
-    void zoomBySteps(int steps, double anchorSceneX, double anchorSceneY, double viewportWidth,
-                     double viewportHeight);
-    void zoomTo(double target, double anchorSceneX, double anchorSceneY, double viewportWidth,
-                double viewportHeight);
     /// Fit `content` into a viewport, never upscaling past 1:1: a small frame
     /// blown up to a large window shows interpolation, not detail.
     void fit(const QSize& content, double viewportWidth, double viewportHeight);

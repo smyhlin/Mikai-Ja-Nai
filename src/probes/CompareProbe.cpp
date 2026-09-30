@@ -12,15 +12,22 @@
 //     unknown id resolves to nothing, and a chain that is applied actually
 //     changes the picture - mpv's glsl-shaders echoes the string back without
 //     validating it, so the only evidence is pixels.
+//
+//  3. A capture is fresh. The window is kept and reused, so "capture again"
+//     after a rewind must give the new frame, not the one already frozen.
+//     testsrc2 changes every frame, so two captures at two timestamps are
+//     provably two different pictures, and the second must match what the
+//     player is actually showing.
 #include <QApplication>
-#include <QImage>
 #include <QComboBox>
+#include <QImage>
 #include <QLabel>
-#include <QListWidget>
-#include <QPushButton>
+#include <QMenu>
 #include <QTest>
 #include <QThread>
 #include <QTimer>
+#include <QToolButton>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -204,39 +211,22 @@ int main(int argc, char** argv) {
             return;
         }
         check(compare->isVisible(), "the compare window is on screen");
-        check(!compare->isModal(), "the player keeps playing underneath it");
 
-        auto* list = compare->findChild<QListWidget*>(QString::fromLatin1("compareCandidates"));
-        check(list != nullptr, "the window lists candidates");
-        if (list != nullptr) {
-            std::fprintf(stderr, "     listed rows: %d\n", list->count());
-            check(list->count() == all.size(), "every catalogue entry is listed");
+        // The sidebar is gone; the catalogue reaches the viewer through the
+        // badge menus on the pictures, so the model list has to be there in
+        // full for both sides to be choosable at all.
+        int widestMenu = 0;
+        for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
+            if (chip->menu() != nullptr) {
+                widestMenu = std::max(widestMenu, int(chip->menu()->actions().size()));
+            }
         }
-        auto* applyA = compare->findChild<QPushButton*>(QString::fromLatin1("compareApplyA"));
-        auto* applyB = compare->findChild<QPushButton*>(QString::fromLatin1("compareApplyB"));
-        check(applyA != nullptr && applyB != nullptr, "both sides can be adopted");
-        auto* mode = compare->findChild<QComboBox*>(QString::fromLatin1("compareLayout"));
-        check(mode != nullptr && mode->count() == 3,
-              "the three compare modes are offered");
+        std::fprintf(stderr, "     widest chip menu: %d entries\n", widestMenu);
+        check(widestMenu == all.size(), "every catalogue entry is in the chip menus");
 
-        // Applying must reach the live core, which is the whole point: a
-        // comparison the viewer cannot adopt is a toy.
-        if (applyB != nullptr) {
-            // Park the core on Off so the click has somewhere to go: a chain
-            // that is already applied is a no-op by design, and the check would
-            // pass or fail on that coincidence rather than on the signal.
-            surface->setAnime4KChain(QStringLiteral("off"));
-            QTest::qWait(300);
-            const QString before2 = surface->anime4KChainId();
-            std::fprintf(stderr, "     core chain before apply: %s\n", qPrintable(before2));
-            applyB->click();
-            QTest::qWait(700);
-            const QString after2 = surface->anime4KChainId();
-            std::fprintf(stderr, "     core chain after apply: %s\n", qPrintable(after2));
-            check(!after2.isEmpty() && after2 != QLatin1String("off"),
-                  "applying a side writes a chain to the live core");
-            check(after2 != before2, "applying a side changed what the core runs");
-        }
+        auto* mode = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
+        check(mode != nullptr && mode->count() == 8,
+              "the eight compare modes are offered");
 
         // ── 5. the info line is real, not a label ─────────────────
         auto* info = compare->findChild<QLabel*>(QString::fromLatin1("compareInfo"));
@@ -247,13 +237,76 @@ int main(int argc, char** argv) {
             check(info->text().contains(QStringLiteral("A")), "the info line names side A");
         }
 
-        // ── 6. the window is non-blocking and closable ────────────
+        // ── 6. a second capture is the new frame, not the old one ──
+        // The failure this covers is not hypothetical: the window used to
+        // re-seek the live player to the position it was already at and then
+        // keep whatever the framebuffer happened to hold, so rewinding and
+        // capturing again could hand back the frame the viewer had left. The
+        // core is parked Off here so the frozen frame is the plain picture and
+        surface->setAnime4KChain(QStringLiteral("off"));
+        QTest::qWait(500);
+
+        // Two positions far enough apart that the picture cannot be confused:
+        // testsrc2 advances its counters and its colour bars every frame.
+        const double firstAt = 3.0;
+        const double secondAt = 11.0;
+        surface->setPaused(true);
+
+        // Capture once at the first position. The window is closed first
+        // because showing an ALREADY-shown window does not re-fire showEvent,
+        // and re-opening the kept window is the path under test here.
+        compare->close();
+        surface->seek(firstAt);
+        QTest::qWait(1500);
+        emit shell->compareRequested();
+        QTest::qWait(3000);
+        const QImage firstCapture = compare->frozenFrame();
+        check(!firstCapture.isNull(), "the first capture froze a frame");
+        check(compare->captureError().isEmpty(), "the first capture reported no error");
+
+        // Now move the player and capture again on the SAME window. If the
+        // window were caching, the second capture would equal the first.
+        surface->seek(secondAt);
+        QTest::qWait(1500);
+        const QImage referenceAtSecond = settledFrame(surface);
+        check(!referenceAtSecond.isNull(),
+              "the player settled on a frame at the second position");
+        auto* recapture = compare->findChild<QToolButton*>(QString::fromLatin1("compareRecapture"));
+        check(recapture != nullptr, "the window offers a re-capture control");
+        if (recapture != nullptr) {
+            recapture->click();
+        }
+        QTest::qWait(2500);
+        const QImage secondCapture = compare->frozenFrame();
+        check(!secondCapture.isNull(), "the second capture froze a frame");
+        check(compare->captureError().isEmpty(), "the second capture reported no error");
+
+        // The three-way check: the two captures differ from each other, and
+        // the second one matches the picture the player is actually showing.
+        const double capturesDiffer = meanDifference(firstCapture, secondCapture);
+        const double secondVsReference = meanDifference(secondCapture, referenceAtSecond);
+        const double secondVsFirst = meanDifference(secondCapture, firstCapture);
+        std::fprintf(stderr, "     first vs second: %.3f / 255\n", capturesDiffer);
+        std::fprintf(stderr, "     second vs player: %.3f / 255\n", secondVsReference);
+        std::fprintf(stderr, "     second vs first:  %.3f / 255\n", secondVsFirst);
+        check(capturesDiffer > 0.05,
+              "two captures at two positions are two different frames");
+        check(secondVsFirst > 0.05, "the second capture is not the first frame again");
+        check(secondVsReference < secondVsFirst,
+              "the second capture is closer to the new position than to the old one");
+
+        // Both sides come from one frozen source, so every capture of the same
+        // stream has to be the same source size.
+        check(!firstCapture.isNull() && firstCapture.size() == secondCapture.size(),
+              "both captures are the same source size");
+
+        // ── 7. the window is non-blocking and closable ────────────
         check(!compare->isModal(), "the comparison does not take the player hostage");
         compare->close();
         QTest::qWait(400);
         check(!compare->isVisible(), "the window closes on its own");
 
-        // ── 7. a chain with no Mode survives a restart ────────────
+        // ── 8. a chain with no Mode survives a restart ────────────
         // A single .glsl has no enum value, so an ordinal would drop it on
         // every start. The id is what is stored, and it is what is read back.
         surface->setAnime4KChain(single);
