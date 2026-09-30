@@ -1,4 +1,8 @@
-// The lightbox shell: chrome, display state machine, zoom/pan and input.
+// The lightbox shell: chrome, display state machine and input.
+//
+// The picture is always shown fitted: there is no zoom and no pan. Every way
+// in to a scaled frame (wheel, +/-/R keys, drag, the reset menu rows) is gone,
+// so a viewer cannot end up in a frame they cannot find their way out of.
 //
 // This is a port of mikai_ui/media_shell.py, and the port is deliberately not
 // faithful in one respect. The Python shell promotes every chrome widget to a
@@ -10,11 +14,9 @@
 // translated, along with the cursor poll that existed only because mouse moves
 // over a foreign window never reached Qt.
 //
-// The other deliberate difference: zoom actually scales the surface. In the
-// Python, _layout() positions the surface at the *fitted* size plus the pan
-// offset, so ZOOM_IN_PAN moves a rectangle that was never scaled - the state,
-// the cursor shape, the "drag to pan" hint and _clamp()'s scaled bounds all
-// assume a scaled rect, and the surface is the only thing not scaled.
+// The second deliberate difference, since the port: zoom is gone entirely,
+// where the Python kept a ZOOM_IN_PAN state whose _layout() moved a rectangle
+// that was never actually scaled.
 
 #pragma once
 
@@ -29,7 +31,6 @@
 #include <QPointF>
 #include <QResizeEvent>
 #include <QShowEvent>
-#include <QWheelEvent>
 #include <QRect>
 #include <QString>
 #include <QTimer>
@@ -62,7 +63,7 @@ class PlayerShell : public QWidget {
     Q_OBJECT
 
 public:
-    enum class State { DefaultFit, ScrollOut, ZoomInPan, FullscreenActive, FullscreenAutoHidden };
+    enum class State { DefaultFit, FullscreenActive, FullscreenAutoHidden };
 
     explicit PlayerShell(QWidget* parent = nullptr, bool frameless = true);
     ~PlayerShell() override;
@@ -99,10 +100,6 @@ public:
     State state() const;
     QString stateName() const;
 
-    // ── canvas transform ────────────────────────────────────────────
-    void resetTransform();
-    void zoomAt(double target, const QPointF& anchor = QPointF());
-    void zoomBy(double factor, const QPointF& anchor = QPointF());
     void toggleHud();
 
     /// The dialog is the shell's host and drives both of these directly:
@@ -170,7 +167,6 @@ protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
-    void wheelEvent(QWheelEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -209,7 +205,6 @@ private:
     void updateTimeLabels();
 
     QSize fitted() const;
-    QPointF clampOffset(double scale, const QPointF& offset) const;
     bool hitEdges(const QPointF& pos);
     void grabPointer();
     void releasePointer();
@@ -281,9 +276,6 @@ private:
     bool hasMask_ = false;
 
     // canvas / fsm
-    double scale_ = 1.0;
-    QPointF offset_;
-    bool panning_ = false;
     bool fullscreen_ = false;
     /// Height the title bar takes off the top of the canvas; 0 when no title
     /// bar is painted.
@@ -319,7 +311,6 @@ private:
 
     // pointer gesture
     QPointF press_;
-    QPointF pressOffset_;
     bool moved_ = false;
     QRect dragGeometry_;
     QPoint dragOrigin_;

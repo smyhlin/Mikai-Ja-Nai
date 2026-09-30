@@ -17,9 +17,6 @@ namespace shell {
 
 // ── geometry ───────────────────────────────────────────────────────────────
 
-inline constexpr double kZoomMin = 0.25;
-inline constexpr double kZoomMax = 5.0;
-inline constexpr double kZoomStep = 0.15;
 inline constexpr int kDragThresholdPx = 3;
 inline constexpr int kAutohideMs = 2500;
 inline constexpr int kMinWindowWidth = 720;

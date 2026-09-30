@@ -26,8 +26,6 @@ namespace {
 QString stateName(PlayerShell::State state) {
     switch (state) {
         case PlayerShell::State::DefaultFit: return QStringLiteral("DEFAULT_FIT");
-        case PlayerShell::State::ScrollOut: return QStringLiteral("SCROLL_OUT");
-        case PlayerShell::State::ZoomInPan: return QStringLiteral("ZOOM_IN_PAN");
         case PlayerShell::State::FullscreenActive: return QStringLiteral("FULLSCREEN_ACTIVE");
         case PlayerShell::State::FullscreenAutoHidden:
             return QStringLiteral("FULLSCREEN_AUTO_HIDDEN");
@@ -35,12 +33,9 @@ QString stateName(PlayerShell::State state) {
     return QStringLiteral("DEFAULT_FIT");
 }
 
-QString cursorName(PlayerShell::State state, bool panning) {
+QString cursorName(PlayerShell::State state) {
     switch (state) {
         case PlayerShell::State::FullscreenAutoHidden: return QStringLiteral("none");
-        case PlayerShell::State::ZoomInPan: return panning ? QStringLiteral("grabbing")
-                                                          : QStringLiteral("grab");
-        case PlayerShell::State::ScrollOut: return QStringLiteral("zoom-in");
         case PlayerShell::State::DefaultFit:
         case PlayerShell::State::FullscreenActive: return QStringLiteral("default");
     }
@@ -115,7 +110,7 @@ void PlayerShell::buildSurface() {
     surface_->setMouseTracking(true);
     surface_->setFocusPolicy(Qt::NoFocus);
     // Input over the picture belongs to the shell, not the surface: a click
-    // toggles playback, a drag pans, the wheel zooms. The Python needed a
+    // toggles playback and a drag is not a click. The Python needed a
     // _ReposedEvent shim for this because the surface was a foreign native
     // window; here it is an ordinary child, so an event filter is enough.
     surface_->installEventFilter(this);
@@ -382,7 +377,6 @@ void PlayerShell::buildFooter() {
     };
     addEntry(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
     addEntry(QStringLiteral("Відкрити у папці"), QStringLiteral("open"));
-    addEntry(QStringLiteral("Скинути масштаб  (R)"), QStringLiteral("reset"));
     addEntry(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
     morePopup_->setEntries(entries);
     connect(morePopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
@@ -392,8 +386,6 @@ void PlayerShell::buildFooter() {
             toast_->flash(QStringLiteral("URL copied"));
         } else if (action == QStringLiteral("open")) {
             toast_->flash(path_.isEmpty() ? QStringLiteral("—") : path_);
-        } else if (action == QStringLiteral("reset")) {
-            resetTransform();
         } else if (action == QStringLiteral("exit")) {
             exitViewer();
         }
@@ -418,7 +410,6 @@ void PlayerShell::buildPictureMenu() {
     add(QStringLiteral("Копіювати кадр"), QStringLiteral("frame"));
     add(QStringLiteral("Порівняти якість"), QStringLiteral("compare"));
     add(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
-    add(QStringLiteral("Скинути масштаб  (R)"), QStringLiteral("reset"));
     add(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
     pictureMenu_->setEntries(entries);
     connect(pictureMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
@@ -430,8 +421,6 @@ void PlayerShell::buildPictureMenu() {
             emit compareRequested();
         } else if (action == QStringLiteral("copy")) {
             emit copyLinkRequested();
-        } else if (action == QStringLiteral("reset")) {
-            resetTransform();
         } else if (action == QStringLiteral("exit")) {
             exitViewer();
         }
@@ -460,8 +449,6 @@ void PlayerShell::buildOverlays() {
 PlayerShell::State PlayerShell::state() const {
     if (hudHidden_) return State::FullscreenAutoHidden;
     if (fullscreen_) return State::FullscreenActive;
-    if (scale_ > 1.005) return State::ZoomInPan;
-    if (scale_ < 0.995) return State::ScrollOut;
     return State::DefaultFit;
 }
 
@@ -471,7 +458,6 @@ void PlayerShell::applyState() {
     const State st = state();
     const QString name = ::mplayer::shell::stateName(st);
     const bool hidden = hudHidden_;
-    const bool zoom = scale_ > 1.005;
 
     // Fullscreen does NOT suppress the chrome. The shell is hosted in a dialog
     // that is itself fullscreen, so gating on "not fullscreen" meant half the
@@ -491,8 +477,8 @@ void PlayerShell::applyState() {
         btnWindowMode_->setToolTip(fullscreen_ ? QStringLiteral("windowed_mode")
                                                : QStringLiteral("fullscreen_mode"));
     }
-    btnPrev_->setVisible(!hidden && !zoom && hasPreviousEpisode_);
-    btnNext_->setVisible(!hidden && !zoom && hasNextEpisode_);
+    btnPrev_->setVisible(!hidden && hasPreviousEpisode_);
+    btnNext_->setVisible(!hidden && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
     footerRight_->setVisible(!hidden);
@@ -526,15 +512,7 @@ void PlayerShell::applyState() {
 }
 
 void PlayerShell::setStateCursor() {
-    if (hudHidden_) {
-        setCursor(Qt::BlankCursor);
-    } else if (scale_ > 1.005) {
-        setCursor(panning_ ? Qt::ClosedHandCursor : Qt::OpenHandCursor);
-    } else if (scale_ < 0.995) {
-        setCursor(Qt::PointingHandCursor);
-    } else {
-        setCursor(Qt::ArrowCursor);
-    }
+    setCursor(hudHidden_ ? Qt::BlankCursor : Qt::ArrowCursor);
 }
 
 // ── fullscreen / autohide ──────────────────────────────────────────────
@@ -599,7 +577,7 @@ void PlayerShell::enterAutoHidden() {
         hideTimer_.start(kAutohideMs);
         return;
     }
-    if (scrub_->isDragging() || vol_->isDragging() || panning_ || resizingLeft_ || resizingTop_ ||
+    if (scrub_->isDragging() || vol_->isDragging() || resizingLeft_ || resizingTop_ ||
         resizingRight_ || resizingBottom_) {
         hideTimer_.start(kAutohideMs);
         return;
@@ -642,10 +620,10 @@ void PlayerShell::layoutChrome() {
 
     // ── canvas ────────────────────────────────────────────────────
     const QSize fit = fitted();
-    const int sw = std::max(1, static_cast<int>(fit.width() * scale_));
-    const int sh = std::max(1, static_cast<int>(fit.height() * scale_));
-    const int sx = static_cast<int>((w - sw) / 2.0 + offset_.x());
-    const int sy = titleBarOffset_ + static_cast<int>((h - titleBarOffset_ - sh) / 2.0 + offset_.y());
+    const int sw = fit.width();
+    const int sh = fit.height();
+    const int sx = (w - sw) / 2;
+    const int sy = titleBarOffset_ + (h - titleBarOffset_ - sh) / 2;
     // Guarded: a geometry write on a QOpenGLWidget schedules a repaint, and
     // layoutChrome runs from applyState, which runs on every input event. The
     // common case is a layout pass that computes the rectangle it already has.
@@ -710,45 +688,6 @@ void PlayerShell::layoutChrome() {
     }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  ZOOM & PAN
-// ═════════════════════════════════════════════════════════════════════════════
-
-void PlayerShell::resetTransform() {
-    scale_ = 1.0;
-    offset_ = QPointF();
-    applyState();
-}
-
-QPointF PlayerShell::clampOffset(double scale, const QPointF& offset) const {
-    if (scale <= 1.001) return QPointF();
-    const QSize fit = fitted();
-    const double sw = fit.width() * scale;
-    const double sh = fit.height() * scale;
-    const double lx = std::max(0.0, (sw - width()) / 2 + 60);
-    const double ly = std::max(0.0, (sh - height()) / 2 + 60);
-    return {std::clamp(offset.x(), -lx, lx), std::clamp(offset.y(), -ly, ly)};
-}
-
-void PlayerShell::zoomAt(double target, const QPointF& anchor) {
-    const QPointF a = anchor.isNull() ? QPointF(width() / 2.0, height() / 2.0) : anchor;
-    const double s0 = scale_;
-    const QPointF o0 = offset_;
-    const double s1 = std::clamp(target, kZoomMin, kZoomMax);
-    if (std::abs(s1 - s0) < 1e-9) return;
-
-    // Keep the point under the anchor pinned while the scale changes.
-    const double cx = a.x() - width() / 2.0;
-    const double cy = a.y() - height() / 2.0;
-    const double px = (cx - o0.x()) / s0;
-    const double py = (cy - o0.y()) / s0;
-    offset_ = clampOffset(s1, QPointF(cx - px * s1, cy - py * s1));
-    scale_ = s1;
-    applyState();
-}
-
-void PlayerShell::zoomBy(double factor, const QPointF& anchor) { zoomAt(scale_ * factor, anchor); }
-
 void PlayerShell::toggleHud() {
     showHud_ = !showHud_;
     hud_->setVisible(showHud_ && !hudHidden_);
@@ -810,9 +749,8 @@ void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {
     hasNextEpisode_ = hasNext;
     // An arrow with nothing to load is a dead control, so it goes away rather
     // than inviting a click that cannot do anything.
-    const bool shown = !hudHidden_ && scale_ <= 1.005;
-    btnPrev_->setVisible(hasPrevious && shown);
-    btnNext_->setVisible(hasNext && shown);
+    btnPrev_->setVisible(hasPrevious && !hudHidden_);
+    btnNext_->setVisible(hasNext && !hudHidden_);
     update();
 }
 
@@ -884,11 +822,7 @@ void PlayerShell::updateTimeLabels() {
     }
     if (showHud_ && !hudHidden_) {
         hud_->updateData(stateName(),
-                         {{QStringLiteral("scale"), QString::number(scale_, 'f', 2)},
-                          {QStringLiteral("offset"), QStringLiteral("%1, %2")
-                                                       .arg(static_cast<int>(offset_.x()))
-                                                       .arg(static_cast<int>(offset_.y()))},
-                          {QStringLiteral("cursor"), cursorName(state(), panning_)},
+                         {{QStringLiteral("cursor"), cursorName(state())},
                           {QStringLiteral("t"),
                            QStringLiteral("%1 / %2").arg(formatTime(position_),
                                                         formatTime(duration_))},
@@ -1101,8 +1035,6 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             }
             if (fullscreen_) {
                 windowModeToggled();
-            } else if (std::abs(scale_ - 1.0) > 0.005) {
-                resetTransform();
             } else {
                 exitViewer();
             }
@@ -1135,17 +1067,6 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             toast_->flash(QStringLiteral("Volume %1 %").arg(static_cast<int>(v * 100)));
             break;
         }
-        case Qt::Key_Plus:
-        case Qt::Key_Equal:
-            zoomBy(1 + kZoomStep);
-            break;
-        case Qt::Key_Minus:
-            zoomBy(1 - kZoomStep);
-            break;
-        case Qt::Key_R:
-        case Qt::Key_0:
-            resetTransform();
-            break;
         case Qt::Key_D:
             toggleHud();
             break;
@@ -1164,22 +1085,8 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
 //  POINTER
 // ═════════════════════════════════════════════════════════════════════════════
 
-void PlayerShell::wheelEvent(QWheelEvent* event) {
-    wake();
-    const int delta = event->angleDelta().y();
-    if (delta == 0) return;
-    zoomBy(1 + kZoomStep * (delta > 0 ? 1 : -1), event->position());
-    event->accept();
-}
-
 void PlayerShell::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) return;
-    // Window mode, like F. A double click used to zoom the picture, which
-    // stranded a viewer in a zoomed frame with no visible way back - the zoom
-    // is still reachable from the wheel and the pinch fit.
-    if (scale_ > 1.02) {
-        resetTransform();
-    }
     windowModeToggled();
     event->accept();
 }
@@ -1233,9 +1140,7 @@ void PlayerShell::mousePressEvent(QMouseEvent* event) {
     }
 
     press_ = event->position();
-    pressOffset_ = offset_;
     moved_ = false;
-    panning_ = false;
     grabPointer();
     event->accept();
 }
@@ -1282,10 +1187,6 @@ void PlayerShell::mouseMoveEvent(QMouseEvent* event) {
     const double dy = event->position().y() - press_.y();
     if (!moved_ && std::hypot(dx, dy) < kDragThresholdPx) return;
     moved_ = true;
-    if (scale_ <= 1.001) return;  // pan is inactive at fit scale
-    panning_ = true;
-    offset_ = clampOffset(scale_, pressOffset_ + QPointF(dx, dy));
-    layoutChrome();
     event->accept();
 }
 
@@ -1298,14 +1199,8 @@ void PlayerShell::mouseReleaseEvent(QMouseEvent* event) {
         event->accept();
         return;
     }
-    const bool wasPanning = panning_;
-    panning_ = false;
-    if (wasPanning) {
-        applyState();
-    } else {
-        setStateCursor();
-        if (!moved_ && event->button() == Qt::LeftButton) onPlayClicked();
-    }
+    setStateCursor();
+    if (!moved_ && event->button() == Qt::LeftButton) onPlayClicked();
     event->accept();
 }
 
@@ -1424,20 +1319,6 @@ void PlayerShell::paintEvent(QPaintEvent*) {
         }
     }
 
-    // Floating overlay while zoomed.
-    if (state() == State::ZoomInPan && !hudHidden_) {
-        const QFont f = monoFont(8);
-        const QString text =
-            QStringLiteral("ZOOM_IN_PAN · drag to pan · double-click to reset");
-        const double tw = textWidth(f, text) + 22;
-        const double x = (width() - tw) / 2;
-        const double y = height() * 0.055;
-        paintRounded(p, QRectF(x, y, tw, 20), 10, QColor(0, 0, 0, 135));
-        p.setFont(f);
-        p.setPen(w55());
-        p.drawText(QRectF(x, y, tw, 20), Qt::AlignCenter, text);
-    }
-
     // Empty-state hint.
     if (!hasMedia_ && !hudHidden_) {
         const QFont f = uiFont(11);
@@ -1466,7 +1347,6 @@ void PlayerShell::showEvent(QShowEvent* event) {
 
 void PlayerShell::closeEvent(QCloseEvent* event) {
     releasePointer();
-    panning_ = false;
     resizingLeft_ = resizingTop_ = resizingRight_ = resizingBottom_ = false;
     hideTimer_.stop();
     dismissOverlay();

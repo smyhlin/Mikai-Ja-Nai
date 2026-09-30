@@ -642,7 +642,6 @@ QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
         {QStringLiteral("Q"), QStringLiteral("Якість та швидкість")},
         {QStringLiteral("←  →"), QStringLiteral("Перемотування ∓5с")},
         {QStringLiteral("↑  ↓"), QStringLiteral("Гучність ±10 %")},
-        {QStringLiteral("Alt + коліщатко"), QStringLiteral("Прокрутка каруселей")},
         {QStringLiteral("Esc"), QStringLiteral("Закрити панель / вікно")},
     };
 }

@@ -153,7 +153,8 @@ Layering is strict and enforced by tests:
   - `Clipboard.hpp`, `Labels.hpp/cpp` (status labels).
 - `src/player/` — the player: `MpvHandle` (only place calling `mpv_*`) →
   `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
-  `ShellSliders`; `PlayerShell` (chrome, display states, zoom/pan, input);
+  `ShellSliders`; `PlayerShell` (chrome, display states, input; the picture is
+  always fitted, there is no zoom or pan);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
   `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
   Picture-in-picture has three rules that each cost a real bug, and all three
