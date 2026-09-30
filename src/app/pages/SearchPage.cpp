@@ -1266,17 +1266,17 @@ void SearchPage::requestThumb(const QString& url) {
     // A render rebuilds its widgets, so a cached image has to paint the ones
     // standing now. Skipping here left every rebuilt card on its placeholder
     // until the next full reload of that url.
+    const auto icon = icons_.constFind(url);
+    if (icon != icons_.constEnd()) {
+        for (TitleCard* card : cardsByImageKey_.value(url)) {
+            card->applyPixmap(icon.value());
+        }
+        applyThumbs();
+        applyFeedPosters();
+        return;
+    }
     const auto cached = thumbCache_.constFind(url);
     if (cached != thumbCache_.constEnd()) {
-        const auto icon = icons_.constFind(url);
-        if (icon != icons_.constEnd()) {
-            for (TitleCard* card : cardsByImageKey_.value(url)) {
-                card->applyPixmap(icon.value());
-            }
-            applyThumbs();
-            applyFeedPosters();
-            return;
-        }
         applyThumb(url, cached.value());
         return;
     }
@@ -1316,6 +1316,9 @@ void SearchPage::flushThumbs() {
             continue;
         }
         icons_.insert(it.key(), pixmap);
+        // Bytes served their purpose: the decoded icon is what every consumer
+        // reads from here on, so holding both doubles poster memory per feed.
+        thumbCache_.remove(it.key());
         // A poster URL is shared by several cards; the index turns that into a
         // lookup instead of a scan of every card on the page.
         const QList<TitleCard*> cards = cardsByImageKey_.value(it.key());
