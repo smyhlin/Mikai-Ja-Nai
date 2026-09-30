@@ -134,11 +134,6 @@ private:
     /// set when Qt hands the widget a new framebuffer (resize, re-show) and
     /// the previous picture is no longer there to composite.
     bool forceRender_ = true;
-    /// The framebuffer the last render drew into. Qt allocates a new one on a
-    /// resize and may do so again on re-show, so a mismatch is proof that the
-    /// buffer holds no picture - which matters because grabFramebuffer() reads
-    /// it directly instead of repainting first.
-    GLuint lastFramebuffer_ = 0;
     bool playing_ = false;
     double position_ = 0.0;
     bool hasVideo_ = false;

@@ -366,35 +366,28 @@ void VideoSurface::paintGL() {
     // buffer is not the picture that belongs there - and grabFramebuffer(),
     // which reads that buffer directly rather than repainting, would hand back
     // whatever the old one held.
-    const GLuint target = static_cast<GLuint>(defaultFramebufferObject());
-    const bool haveFrame = framePending_ || generation != lastGeneration_ || forceRender_
-                           || target != lastFramebuffer_;
-    if (!haveFrame) {
-        // Nothing new to draw. Qt composites the framebuffer as it stands and
-        // the frame from the last paint is exactly what belongs there, so the
-        // whole glsl-shaders chain - seven passes at up to 4x resolution with
-        // Anime4K - is not re-run and thrown away on every incidental repaint.
-        // mpv's own pending flags are deliberately left alone: the next
-        // update() reports them again, so nothing is dropped.
-        return;
-    }
+    const bool haveFrame = framePending_ || generation != lastGeneration_ || forceRender_;
     lastGeneration_ = generation;
+
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
     // make mpv bind the window's default framebuffer and paint nothing. The FBO
     // is also sized in device pixels, so passing logical width()/height() fills
     // only the bottom-left quarter on a HiDPI display.
+    const GLuint target = static_cast<GLuint>(defaultFramebufferObject());
     const qreal ratio = devicePixelRatioF();
     const int targetWidth = std::max(1, static_cast<int>(width() * ratio));
     const int targetHeight = std::max(1, static_cast<int>(height() * ratio));
     render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
-    // Only ever paired with the render above: reporting a swap that did not
-    // happen tells mpv a frame was presented when it was not, which feeds its
-    // frame-timing and drop logic a picture it never drew.
     render_->reportSwap();
     framePending_ = false;
     forceRender_ = false;
-    lastFramebuffer_ = target;
-    QOpenGLWidget::update();
+
+    // Only schedule the next frame if a fresh decoded frame arrived. When
+    // paused, haveFrame is false so it stops scheduling updates and sits still
+    // on the current frame without spinning or going black.
+    if (haveFrame) {
+        QOpenGLWidget::update();
+    }
 }
 
 // ── state pump ────────────────────────────────────────────────────────────
