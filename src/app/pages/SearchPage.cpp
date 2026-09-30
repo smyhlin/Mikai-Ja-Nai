@@ -1268,6 +1268,15 @@ void SearchPage::requestThumb(const QString& url) {
     // until the next full reload of that url.
     const auto cached = thumbCache_.constFind(url);
     if (cached != thumbCache_.constEnd()) {
+        const auto icon = icons_.constFind(url);
+        if (icon != icons_.constEnd()) {
+            for (TitleCard* card : cardsByImageKey_.value(url)) {
+                card->applyPixmap(icon.value());
+            }
+            applyThumbs();
+            applyFeedPosters();
+            return;
+        }
         applyThumb(url, cached.value());
         return;
     }
@@ -1299,6 +1308,9 @@ void SearchPage::flushThumbs() {
     QHash<QString, QByteArray> pending;
     pending.swap(pendingThumbs_);
     for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
+        if (icons_.contains(it.key())) {
+            continue;
+        }
         const QPixmap pixmap = pixmapFrom(it.value(), kThumbDecodeSize);
         if (pixmap.isNull()) {
             continue;
