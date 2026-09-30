@@ -180,6 +180,9 @@ private:
     /// Every carousel card keyed by its image url, so a landing thumb is a
     /// lookup rather than a scan over every card on the page.
     QHash<QString, QList<TitleCard*>> cardsByImageKey_;
+    /// Cards by title ref, so a detail landing is a lookup rather than a scan
+    /// of every carousel on the page.
+    QHash<QString, QList<TitleCard*>> cardsByRef_;
     QHash<QString, QList<backend::AnimeSummary>> carouselEntries_;
     /// Thumb URL paired with the label waiting for it, per feed block.
     QHash<QString, QVector<FeedPosterSlot>> feedPosterLabels_;

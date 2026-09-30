@@ -549,17 +549,24 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
     // must not reach a freed card.
     for (TitleCard* card : carouselWidgets_.value(key)) {
         const auto indexed = cardsByImageKey_.find(card->imageKey());
-        if (indexed == cardsByImageKey_.end()) {
-            continue;
+        if (indexed != cardsByImageKey_.end()) {
+            indexed.value().removeAll(card);
+            if (indexed.value().isEmpty()) {
+                cardsByImageKey_.erase(indexed);
+            }
         }
-        indexed.value().removeAll(card);
-        if (indexed.value().isEmpty()) {
-            cardsByImageKey_.erase(indexed);
+        const auto byRef = cardsByRef_.find(card->ref());
+        if (byRef != cardsByRef_.end()) {
+            byRef.value().removeAll(card);
+            if (byRef.value().isEmpty()) {
+                cardsByRef_.erase(byRef);
+            }
         }
     }
     carouselWidgets_.insert(key, cards);
     for (TitleCard* card : cards) {
         cardsByImageKey_[card->imageKey()].append(card);
+        cardsByRef_[card->ref()].append(card);
     }
     // One task per card: the image pool paints a whole feed at once instead
     // of waiting for the slowest poster in it.
@@ -609,13 +616,8 @@ void SearchPage::requestCardDetail(const QString& ref) {
 void SearchPage::applyCardDetail(const QString& ref, const backend::AnimeDetail& detail) {
     cardDetails_.insert(ref, detail);
     queueRecentPosterHeal(ref, detail);
-    for (auto cards = carouselWidgets_.constBegin(); cards != carouselWidgets_.constEnd();
-         ++cards) {
-        for (TitleCard* card : cards.value()) {
-            if (card->ref() == ref) {
-                card->applyDetail(detail);
-            }
-        }
+    for (TitleCard* card : cardsByRef_.value(ref)) {
+        card->applyDetail(detail);
     }
 }
 
