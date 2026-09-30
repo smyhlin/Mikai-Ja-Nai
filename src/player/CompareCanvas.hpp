@@ -22,7 +22,9 @@
 #include <QStringList>
 
 #include "CompareLayout.hpp"
+#include "PlayerPopups.hpp"
 
+class QAction;
 class QGraphicsLineItem;
 class QGraphicsSimpleTextItem;
 class QMenu;
@@ -43,9 +45,10 @@ public:
 
     void setSideImages(const QImage& a, const QImage& b, const QImage& difference);
     void setSideNames(const QString& a, const QString& b);
-    /// The ids and labels behind the two badges; each badge opens its own menu.
-    void setCandidates(const QStringList& ids, const QStringList& labels,
-                       const QString& selectedA, const QString& selectedB);
+    /// What the two badges offer; each badge opens its own menu, grouped by the
+    /// entry's own menu path.
+    void setChoices(const QVector<ChoiceEntry>& choices, const QString& selectedA,
+                    const QString& selectedB);
     void setFlickerShowA(bool showA);
     /// -1 for neither, 0 for A, 1 for B: the hold-to-peek override.
     void setHeldSide(int side);
@@ -100,8 +103,13 @@ private:
     QImage imageDifference_;
     QString nameA_;
     QString nameB_;
-    QStringList candidateIds_;
-    QStringList candidateLabels_;
+    QVector<ChoiceEntry> choices_;
+    /// What the badge menus were built from and the actions they hold, so a
+    /// refill that changes nothing only moves the check marks: the refill runs
+    /// from a menu action's own handler, and rebuilding would destroy it.
+    QVector<ChoiceEntry> builtChoices_;
+    QVector<QAction*> leavesA_;
+    QVector<QAction*> leavesB_;
     QString selectedA_;
     QString selectedB_;
 

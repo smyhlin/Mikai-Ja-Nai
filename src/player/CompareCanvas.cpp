@@ -92,7 +92,7 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
             emit candidateChosen(badge == badgeA_ ? 0 : 1, action->data().toString());
         });
     }
-    setCandidates({}, {}, QString(), QString());
+    setChoices({}, QString(), QString());
 }
 
 void CompareCanvas::setMode(CompareMode mode) {
@@ -121,10 +121,9 @@ void CompareCanvas::setSideNames(const QString& a, const QString& b) {
     updateBadge(badgeB_, 1);
 }
 
-void CompareCanvas::setCandidates(const QStringList& ids, const QStringList& labels,
-                                  const QString& selectedA, const QString& selectedB) {
-    candidateIds_ = ids;
-    candidateLabels_ = labels;
+void CompareCanvas::setChoices(const QVector<ChoiceEntry>& choices, const QString& selectedA,
+                               const QString& selectedB) {
+    choices_ = choices;
     selectedA_ = selectedA;
     selectedB_ = selectedB;
     updateBadge(badgeA_, 0);
@@ -204,31 +203,35 @@ void CompareCanvas::applyLayout() {
 }
 
 void CompareCanvas::updateBadge(QToolButton* badge, int side) {
-    const QStringList& names = candidateLabels_;
     const QString& selected = side == 0 ? selectedA_ : selectedB_;
-    const int index = candidateIds_.indexOf(selected);
     QString name = side == 0 ? nameA_ : nameB_;
-    if (index >= 0 && index < names.size()) {
-        name = names.at(index);
+    for (const ChoiceEntry& entry : choices_) {
+        if (entry.id == selected) {
+            name = entry.label;
+            break;
+        }
     }
     badge->setText(QStringLiteral("%1 · %2").arg(side == 0 ? QStringLiteral("A")
                                                             : QStringLiteral("B"), name));
     badge->setAccessibleName(QStringLiteral("Select %1").arg(name));
     badge->setToolTip(QStringLiteral("Select what side %1 shows").arg(side == 0 ? "A" : "B"));
     QMenu* menu = side == 0 ? menuA_ : menuB_;
-    menu->clear();
+    QVector<QAction*>& leaves = side == 0 ? leavesA_ : leavesB_;
     // One result on screen leaves no choice to offer, so the badge stays the
     // plain label it always was.
-    if (candidateIds_.size() < 2) {
+    if (choices_.size() < 2) {
+        menu->clear();
+        builtChoices_.clear();
+        leaves.clear();
         menu->setEnabled(false);
         return;
     }
     menu->setEnabled(true);
-    for (qsizetype i = 0; i < candidateIds_.size(); ++i) {
-        QAction* action = menu->addAction(candidateLabels_.value(i));
-        action->setData(candidateIds_.at(i));
-        action->setCheckable(true);
-        action->setChecked(candidateIds_.at(i) == selected);
+    if (choices_ != builtChoices_ || leaves.size() != choices_.size()) {
+        fillChoiceMenu(menu, choices_, selected, &leaves);
+        builtChoices_ = choices_;
+    } else {
+        markChoice(leaves, choices_, selected);
     }
 }
 

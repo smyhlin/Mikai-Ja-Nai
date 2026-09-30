@@ -14,7 +14,10 @@
 #include <QWidget>
 
 QT_BEGIN_NAMESPACE
+class QAction;
 class QKeyEvent;
+class QLabel;
+class QMenu;
 class QPushButton;
 class QVBoxLayout;
 QT_END_NAMESPACE
@@ -30,7 +33,41 @@ struct MenuEntry {
     QString tooltip;
     QVariant payload;
     bool current = false;
+    /// A row that leads to another level: activating it leaves the popover
+    /// open, so the caller can swap this level's rows for the next one's. A
+    /// plain row closes the popover, which is what a terminal choice does.
+    bool submenu = false;
+    /// A row that is shown but cannot be chosen - used for the models that are
+    /// only planned, so the menu says so instead of hiding them. A disabled row
+    /// never emits, so it can never change the selection.
+    bool disabled = false;
 };
+
+/// One entry of a candidate chooser with the menu path it sits under, outermost
+/// level first (empty path is a flat list).
+struct ChoiceEntry {
+    QString id;
+    QString label;
+    QStringList path;
+
+    bool operator==(const ChoiceEntry& other) const {
+        return id == other.id && label == other.label && path == other.path;
+    }
+    bool operator!=(const ChoiceEntry& other) const { return !(*this == other); }
+};
+
+/// Builds `menu` as one checkable action per entry, nested one submenu per path
+/// level, and hands back the leaf actions in entry order. Building destroys the
+/// previous tree, so callers keep those leaves and use `markChoice` while the
+/// list is unchanged.
+void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
+                    QVector<QAction*>* leaves = nullptr);
+
+/// Moves only the check marks, using the leaves of a previous fill: no action
+/// is created or destroyed, which is what makes it safe to call from a menu
+/// action's own handler.
+void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries,
+                const QString& selected);
 
 /// In-window popover listing a handful of choices.
 ///
@@ -51,6 +88,10 @@ public:
     /// a row, so repainting the standing rows would show the qualities of
     /// whatever was playing before.
     void setEntries(const QVector<MenuEntry>& entries);
+    /// Retitles the caption. One popover serves several menus - the enhancement
+    /// drill-down is the Anime4K menu at one level and a planned-model page at
+    /// another - so the title has to follow the level.
+    void setTitle(const QString& title);
     int rowCount() const;
     /// The widget behind a row, for a host that needs per-row gestures such as
     /// a hover that opens a submenu. Null for a spot that is not a row.
@@ -76,6 +117,7 @@ private:
     void activate(int spot);
     void paintRows();
 
+    QLabel* caption_ = nullptr;
     QVBoxLayout* body_ = nullptr;
     QVector<QPushButton*> rows_;
     QVector<MenuEntry> rowEntries_;

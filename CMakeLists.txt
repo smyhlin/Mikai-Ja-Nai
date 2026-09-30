@@ -23,6 +23,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Netwo
 #   cmake --build build-cmake --target interaction_probe
 #   cmake --build build-cmake --target compare_probe
 #   cmake --build build-cmake --target compare_shot_probe
+#   cmake --build build-cmake --target anime4k_menu_probe
 #   cmake --build build-cmake --target mpv_surface_smoke
 #   cmake --build build-cmake --target headless_pixel_probe
 #   cmake --build build-cmake --target crash_probe
@@ -150,6 +151,14 @@ set_target_properties(compare_shot_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(compare_probe EXCLUDE_FROM_ALL src/probes/CompareProbe.cpp)
 target_link_libraries(compare_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
 set_target_properties(compare_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+# Live Anime4K menu walk: real popovers, every leaf, the planned-model pages,
+# settings survival across a reopen, and the pixels the chain actually draws.
+# Run it from the repo root with the shaders deployed beside the exe.
+add_executable(anime4k_menu_probe EXCLUDE_FROM_ALL src/probes/Anime4KMenuProbe.cpp)
+target_link_libraries(anime4k_menu_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test)
+set_target_properties(anime4k_menu_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
 add_executable(resolver_probe EXCLUDE_FROM_ALL src/probes/ResolverProbe.cpp)
 target_link_libraries(resolver_probe PRIVATE mikai_player Qt6::Core)
 set_target_properties(resolver_probe PROPERTIES WIN32_EXECUTABLE FALSE)
@@ -288,6 +297,12 @@ if(TARGET mikai_backend)
   add_executable(mikai src/app/main.cpp)
   set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
   target_link_libraries(mikai PRIVATE mikai_app)
+
+  if(MIKAI_BUILD_PROBES)
+    add_executable(external_media_probe EXCLUDE_FROM_ALL src/probes/ExternalMediaProbe.cpp)
+    target_link_libraries(external_media_probe PRIVATE mikai_app Qt6::Test)
+    set_target_properties(external_media_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+  endif()
 
   # Copy Anime4K shaders next to the executable so libmpv can find them at runtime.
   add_custom_command(TARGET mikai POST_BUILD

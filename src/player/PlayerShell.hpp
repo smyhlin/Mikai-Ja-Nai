@@ -196,9 +196,18 @@ private:
     void toggleMute();
     void onRate(double rate);
     void onAnime4KMode(anime4k::Mode mode);
+    void onAnime4KPreset(const QString& presetId);
     void openEnhancements();
     void openAnime4K();
+    /// Opens one of the planned-model pages in the same popover the Anime4K
+    /// levels use, so it gets the same Back row without a window of its own.
+    void openEnhancementPage(const QString& pageId);
     void refreshEnhancementMenus();
+    /// Rebuilds the Anime4K popover at the level the viewer is standing on.
+    void refreshAnime4KMenu();
+    /// Re-places the already-open popover after a level change, so the rows that
+    /// replaced it are fitted and clamped to the window again.
+    void replaceAnime4KMenu();
     void updateInfoChip();
     void openKeys();
     void openMenu();
@@ -244,6 +253,10 @@ private:
     /// The Anime4K row inside enhancementsPopup_, rebuilt on every refresh.
     /// Hovering it opens the submenu; the popover itself stays click-only.
     QWidget* anime4kRow_ = nullptr;
+    /// The catalogue category the Anime4K popover is showing. The popover is one
+    /// window that swaps levels rather than one window per level: a drill-down
+    /// that stacked windows would overlap and clip against the window edge.
+    QString anime4kLevel_ = QStringLiteral("anime4k");
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 

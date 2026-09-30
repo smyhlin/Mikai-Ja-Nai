@@ -18,6 +18,7 @@
 //     testsrc2 changes every frame, so two captures at two timestamps are
 //     provably two different pictures, and the second must match what the
 //     player is actually showing.
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QImage>
@@ -30,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 
 #include "Anime4K.hpp"
 #include "CompareWindow.hpp"
@@ -213,16 +215,108 @@ int main(int argc, char** argv) {
         check(compare->isVisible(), "the compare window is on screen");
 
         // The sidebar is gone; the catalogue reaches the viewer through the
-        // badge menus on the pictures, so the model list has to be there in
-        // full for both sides to be choosable at all.
+        // badge menus on the pictures, grouped rather than flat, so every entry
+        // has to be reachable inside the sections for both sides to be
+        // choosable at all.
+        // A named std::function rather than auto: the walk is recursive, and a
+        // lambda cannot call itself through a name whose type is still being
+        // deduced.
+        std::function<int(QMenu*)> leavesUnder = [&leavesUnder](QMenu* menu) {
+            int count = 0;
+            for (QAction* action : menu->actions()) {
+                if (QMenu* submenu = action->menu()) {
+                    count += leavesUnder(submenu);
+                } else if (!action->text().isEmpty()) {
+                    ++count;
+                }
+            }
+            return count;
+        };
+        // The sections are not immediate children of the badge menu: the
+        // chooser nests them inside the Anime4K branch, so the lookup has to
+        // descend the tree a submenu at a time, and it has to say where it
+        // found them. Counting the distinct submenus carrying an exact label
+        // makes a missing section (zero) and a duplicated one (two) both read
+        // as something other than one - asking merely "is the name anywhere"
+        // would pass on both, and asking only the immediate children would miss
+        // the real grouping entirely. Same named-std::function reason as above:
+        // both walks are recursive.
+        std::function<int(QMenu*, const QString&)> submenusNamed =
+            [&submenusNamed](QMenu* menu, const QString& name) {
+                int found = 0;
+                for (QAction* action : menu->actions()) {
+                    if (QMenu* submenu = action->menu()) {
+                        if (action->text() == name) {
+                            ++found;
+                        }
+                        found += submenusNamed(submenu, name);
+                    }
+                }
+                return found;
+            };
+        std::function<QMenu*(QMenu*, const QString&)> firstSubmenuNamed =
+            [&firstSubmenuNamed](QMenu* menu, const QString& name) -> QMenu* {
+                for (QAction* action : menu->actions()) {
+                    if (QMenu* submenu = action->menu()) {
+                        if (action->text() == name) {
+                            return submenu;
+                        }
+                        if (QMenu* nested = firstSubmenuNamed(submenu, name)) {
+                            return nested;
+                        }
+                    }
+                }
+                return nullptr;
+            };
         int widestMenu = 0;
+        int chipMenus = 0;
+        int anime4kBranches = 0;
+        int presetSections = 0;
+        int shaderSections = 0;
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
-            if (chip->menu() != nullptr) {
-                widestMenu = std::max(widestMenu, int(chip->menu()->actions().size()));
+            if (chip->menu() == nullptr) {
+                continue;
+            }
+            ++chipMenus;
+            widestMenu = std::max(widestMenu, leavesUnder(chip->menu()));
+            anime4kBranches += submenusNamed(chip->menu(), QStringLiteral("Anime4K"));
+            if (QMenu* branch = firstSubmenuNamed(chip->menu(), QStringLiteral("Anime4K"))) {
+                presetSections += submenusNamed(branch, QStringLiteral("Пресети"));
+                shaderSections += submenusNamed(branch, QStringLiteral("Окремі шейдери"));
             }
         }
         std::fprintf(stderr, "     widest chip menu: %d entries\n", widestMenu);
-        check(widestMenu == all.size(), "every catalogue entry is in the chip menus");
+        check(chipMenus > 0, "the compare badges carry a candidate chooser menu");
+        check(widestMenu == all.size(), "every catalogue entry is reachable in the chip menus");
+        // Exactly one Anime4K branch per badge menu, and exactly one of each
+        // section inside it: an OR across the badges would pass with a single
+        // side left flat, a count taken anywhere in the tree would pass with a
+        // stray second copy beside the real one, and a root-level count would
+        // pass on a flat list that never built the branch at all.
+        check(anime4kBranches == chipMenus, "every chip menu nests one Anime4K branch");
+        check(presetSections == chipMenus,
+              "every chip menu groups the presets into one section under Anime4K");
+        check(shaderSections == chipMenus,
+              "every chip menu groups the loose shaders into one section under Anime4K");
+        // The two AutoDownscale steps are chain internals, so they must not be
+        // offered as standalone choices anywhere in those menus.
+        bool offeredInternal = false;
+        for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
+            if (chip->menu() == nullptr) {
+                continue;
+            }
+            std::function<void(QMenu*)> scan = [&](QMenu* menu) {
+                for (QAction* action : menu->actions()) {
+                    if (QMenu* submenu = action->menu()) {
+                        scan(submenu);
+                    } else if (action->data().toString().contains(QLatin1String("AutoDownscalePre"))) {
+                        offeredInternal = true;
+                    }
+                }
+            };
+            scan(chip->menu());
+        }
+        check(!offeredInternal, "the chain-internal downscale steps are not offered standalone");
 
         auto* mode = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
         check(mode != nullptr && mode->count() == 5,

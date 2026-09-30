@@ -7,6 +7,11 @@
 namespace mplayer {
 namespace anime4k {
 
+/// Every selectable preset: the ten built-ins, then the experiments as
+/// single-purpose chains of their own.
+///
+/// The enum is a menu shorthand, never the persisted value: the id in
+/// `ModeInfo` is what `player/anime4k` stores.
 enum class Mode {
     Off,
     FastA,       // Mode A (Fast) - Restore_CNN_M + Upscale_CNN_x2_M + Upscale_CNN_x2_S
@@ -17,20 +22,53 @@ enum class Mode {
     HqC,         // Mode C (HQ) - Upscale_Denoise_CNN_x2_VL + Upscale_CNN_x2_M
     HqAA,        // Mode A+A (HQ) - Perceptual quality restoration
     HqBB,        // Mode B+B (HQ) - Denoise + Deblur
-    HqCA         // Mode C+A (HQ) - Highest fidelity
+    HqCA,        // Mode C+A (HQ) - Highest fidelity
+    // Experiments: one fixed chain each, offered under Експериментальні.
+    Exp3dGraphics,
+    ExpOldFilm,
+    ExpDeblurStrong,
+    ExpNoiseBilateralMean,
+    ExpNoiseBilateralMedian,
+    ExpNoiseBilateralMode,
+    ExpThinVeryFast,
+    ExpThinFast,
+    ExpThinHq,
+    ExpTextureDtdX2,
+    ExpTextureDogX2,
+    ExpDarkenVeryFast,
+    ExpDarkenFast,
+    ExpDarkenHq
 };
 
+/// One preset: its persisted id, its menu label and hint, the category it hangs
+/// under, and the ordered chain it applies. Metadata and chain live in this one
+/// table, so a preset is added in one place.
 struct ModeInfo {
     Mode mode;
     QString id;
     QString label;
     QString hint;
+    /// The menu category this preset is a leaf of, by `CategoryInfo::id`.
+    QString category;
+    /// Shader file names in chain order, without the folder. Empty is Off.
+    QStringList files;
+};
+
+/// One node of the enhancement menu above the presets. A `placeholder` node is
+/// informational and can never be selected.
+struct CategoryInfo {
+    QString id;
+    /// The category this one hangs under; empty for a top-level row.
+    QString parent;
+    QString label;
+    QString tooltip;
+    bool placeholder = false;
 };
 
 /// What kind of work a candidate does, which is how the compare window groups
-/// the 49 individual shaders. A preset belongs to the group of the first step
-/// that does the real work, so a reader scanning the list finds the restore
-/// models together rather than scattered by file name.
+/// the individual shaders. A preset belongs to the group of the first step that
+/// does the real work, so a reader scanning the list finds the restore models
+/// together rather than scattered by file name.
 enum class Kind {
     Preset,
     Restore,
@@ -46,8 +84,7 @@ enum class Kind {
 
 QString kindLabel(Kind kind);
 
-/// One selectable thing: either a named preset (the nine above) or a single
-/// .glsl file.
+/// One selectable thing: either a named preset or a single .glsl file.
 ///
 /// `id` is the persistence key. It is the file name for a single shader and the
 /// preset's own id otherwise, never the enum ordinal: a preset added to the
@@ -66,21 +103,57 @@ struct Candidate {
     int scale = 0;
 };
 
-/// Every selectable candidate: the nine presets plus each .glsl found in the
-/// shaders folder, so a chain can name a shader that has no preset at all.
-///
-/// Returns empty when there is no shaders folder, which is the only thing that
-/// makes the comparison impossible - a missing file inside a folder that does
-/// exist is reported per candidate by `resolve`.
+/// Every selectable candidate: the presets, which are a table in code, plus
+/// each .glsl found in the shaders folder. With no folder the presets are still
+/// listed - only their files cannot be resolved, which `chainIsComplete`
+/// reports per candidate.
 QVector<Candidate> allCandidates(const QString& shadersDir = QString());
 
-/// The id of a mode, which is its persistence key. Empty for Off: a disabled
-/// chain has no preset, and writing an ordinal instead is what would let a
-/// preset added later silently repoint an existing selection.
+/// The id of a mode, which is its persistence key. Empty for a mode the table
+/// does not carry: a disabled chain has no preset, and writing an ordinal
+/// instead is what would let a preset added later silently repoint an existing
+/// selection.
 QString modeId(Mode mode);
+
+/// The mode a persisted id names, `Mode::Off` for anything the table does not
+/// carry - which is how a stale setting is detected rather than silently
+/// applied.
+Mode modeForId(const QString& id);
 
 /// The presets alone, in menu order.
 QVector<ModeInfo> availableModes();
+
+/// The menu categories and the placeholder leaves, in menu order.
+QVector<CategoryInfo> availableCategories();
+
+/// The Ukrainian label of a category, empty when the id names none.
+QString categoryLabel(const QString& categoryId);
+
+/// A chip label that stands on its own: a nested experiment is qualified with
+/// its family ("Thin Lines · HQ"), a top-level preset is not.
+QString displayLabel(Mode mode);
+
+/// Whether `presetId` hangs anywhere under `categoryId`, so a menu can mark the
+/// closed groups the current selection is hidden inside.
+bool categoryContainsPreset(const QString& categoryId, const QString& presetId);
+
+/// One row of the enhancement menu, which is what the shell paints.
+struct MenuRow {
+    enum class Role { Preset, Category, Placeholder };
+    Role role = Role::Category;
+    /// The preset id, or the category id for a Category/Placeholder row.
+    QString id;
+    QString label;
+    QString tooltip;
+    /// True when a Category row really has something under it, which is what a
+    /// menu uses to decide whether to offer the drill-down at all.
+    bool hasChildren = false;
+};
+
+/// The rows of menu level `parent`: its preset leaves first, then the
+/// categories under it. Empty `parent` is the Покращення root. A category row
+/// only drills down and a placeholder row is disabled, so neither selects.
+QVector<MenuRow> menuRows(const QString& parent);
 
 /// The chain behind a candidate id, as file names. Empty for an id nothing
 /// resolves to, which is also how an unknown persisted selection is detected
@@ -99,11 +172,6 @@ bool chainIsComplete(const Candidate& candidate, const QString& shadersDir = QSt
 /// Resolves a candidate's file names into an mpv-compatible `glsl-shaders`
 /// string of absolute paths. Empty for Off, an unknown id, or a missing folder.
 QString shaderStringForCandidate(const QString& id, const QString& shadersDir = QString());
-
-/// Resolves shader file names for the given mode into an mpv-compatible
-/// `glsl-shaders` string with absolute paths using the shaders folder beside
-/// the executable or in the current working directory.
-QString shaderStringForMode(Mode mode, const QString& shadersDir = QString());
 
 /// Finds the directory containing Anime4K .glsl files.
 QString findShadersDir();

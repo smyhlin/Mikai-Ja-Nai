@@ -20,10 +20,14 @@ int main(int argc, char** argv) {
     const QVector<Candidate> all = allCandidates();
     std::fprintf(stderr, "candidates: %d\n", int(all.size()));
 
-    int presets = 0, singles = 0, incomplete = 0, emptyId = 0;
+    int presets = 0, singles = 0, incomplete = 0, emptyId = 0, internals = 0;
     for (const Candidate& c : all) {
         if (c.kind == Kind::Preset) { ++presets; } else { ++singles; }
         if (c.id.isEmpty()) { ++emptyId; }
+        if (c.id.contains(QLatin1String("AutoDownscalePre"))) {
+            ++internals;
+            std::fprintf(stderr, "  STANDALONE INTERNAL %s\n", qPrintable(c.id));
+        }
         if (!chainIsComplete(c, dir)) {
             ++incomplete;
             std::fprintf(stderr, "  INCOMPLETE %s -> %s\n", qPrintable(c.id),
@@ -32,6 +36,14 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stderr, "presets=%d singles=%d incomplete=%d emptyId=%d\n", presets, singles,
                  incomplete, emptyId);
+    // presets: the ten built-ins plus the fourteen experiments. singles: the 49
+    // files on disk minus the two AutoDownscalePre steps, which only ever run
+    // inside a preset's chain.
+    std::fprintf(stderr, "standalone internals=%d\n", internals);
+    std::fprintf(stderr, "experiment exp_thin_hq parts: %d\n",
+                 int(filesForId(QStringLiteral("exp_thin_hq"), dir).size()));
+    std::fprintf(stderr, "experiment exp_deblur_strong parts: %d\n",
+                 int(filesForId(QStringLiteral("exp_deblur_strong"), dir).size()));
 
     // round trip: every id must resolve back to itself
     int roundTripFail = 0;
@@ -52,8 +64,26 @@ int main(int argc, char** argv) {
     const QString one = shaderStringForCandidate(QStringLiteral("Anime4K_Restore_GAN_UUL.glsl"), dir);
     std::fprintf(stderr, "single chain: %s\n", qPrintable(one));
 
+    // The ten built-in ids are a compatibility contract: a value stored under
+    // player/anime4k must keep naming the same chain, so the probe fails if one
+    // of them disappears even though the catalogue grew around them.
+    int missingBuiltins = 0;
+    for (const char* id : {"off", "fast_a", "fast_b", "fast_c", "hq_a", "hq_b", "hq_c", "hq_aa",
+                           "hq_bb", "hq_ca"}) {
+        const QString key = QString::fromLatin1(id);
+        const bool known = key == QLatin1String("off")
+                               ? modeId(Mode::Off) == key
+                               : !filesForId(key, dir).isEmpty();
+        if (!known) {
+            ++missingBuiltins;
+            std::fprintf(stderr, "  MISSING BUILTIN %s\n", id);
+        }
+    }
+    std::fprintf(stderr, "missingBuiltins=%d\n", missingBuiltins);
+
     const bool ok = incomplete == 0 && emptyId == 0 && roundTripFail == 0 &&
-                    presets == 10 && singles > 30 && !chain.isEmpty() && !one.isEmpty();
+                    internals == 0 && missingBuiltins == 0 && presets == 24 && singles == 47 &&
+                    !chain.isEmpty() && !one.isEmpty();
     std::fprintf(stderr, "RESULT: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

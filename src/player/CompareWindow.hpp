@@ -18,6 +18,7 @@
 #include <QStringList>
 
 #include "CompareLayout.hpp"
+#include "PlayerPopups.hpp"
 
 class QComboBox;
 class QDoubleSpinBox;
@@ -125,6 +126,10 @@ private:
     /// picture of the frame the viewer just left.
     quint64 positionEpoch_ = 0;
     QStringList candidates_;
+    /// What the badge menus offer: the same candidates, each with the menu path
+    /// that puts the presets and the loose shader families in their own
+    /// sections. Built once with `candidates_`.
+    QVector<ChoiceEntry> choices_;
     /// The ids the viewer has picked, A first. Empty when nothing is on disk.
     QStringList selection_;
     QString currentCandidateId_;

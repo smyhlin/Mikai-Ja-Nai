@@ -16,6 +16,8 @@
 #include <optional>
 #include <vector>
 
+#include "PlayerPopups.hpp"
+
 class QGridLayout;
 
 namespace mplayer::shell {
@@ -34,7 +36,7 @@ public:
                   const QStringList& names);
     /// What every badge's menu offers, ahead of (or refreshed between)
     /// setItems calls.
-    void setChoices(const QStringList& ids, const QStringList& labels);
+    void setChoices(const QVector<ChoiceEntry>& choices);
 
 signals:
     /// A badge chose another candidate for pane `index`.
@@ -49,8 +51,7 @@ private:
     QGridLayout* grid_ = nullptr;
     std::vector<ComparePane*> panes_;
     QStringList ids_;
-    QStringList choiceIds_;
-    QStringList choiceLabels_;
+    QVector<ChoiceEntry> choices_;
     std::optional<QPointF> center_;
     double zoom_ = 1.0;
 };

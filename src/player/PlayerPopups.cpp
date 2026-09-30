@@ -1,7 +1,10 @@
 #include "PlayerPopups.hpp"
 
+#include <QAction>
+#include <QHash>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
@@ -45,6 +48,19 @@ QString rowQss(const char* foreground, const char* fill) {
         .arg(kSpacingSmall);
 }
 
+/// A row that is shown but cannot be chosen. No hover rule on purpose: a
+/// highlight promises a click that this row will not answer.
+QString disabledRowQss() {
+    return QStringLiteral(
+               "QPushButton {"
+               "  color: %1;"
+               "  background: rgba(255, 255, 255, 0.03);"
+               "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
+               "  padding: 0 %3px; min-height: 28px; font-size: 13px; font-weight: 500; }")
+        .arg(QLatin1String(kMuted))
+        .arg(kSpacingSmall);
+}
+
 QString captionQss(int size) {
     return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
         .arg(QLatin1String(kMuted))
@@ -52,6 +68,76 @@ QString captionQss(int size) {
 }
 
 }  // namespace
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GROUPED CHOICE MENUS
+// ═══════════════════════════════════════════════════════════════════════════
+
+void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
+                    QVector<QAction*>* leaves) {
+    // Rebuilding destroys actions, so the caller keeps what this returns and
+    // moves the checks with markChoice() while its list is unchanged.
+    if (leaves != nullptr) {
+        leaves->clear();
+        leaves->reserve(entries.size());
+    }
+    // The submenus are widgets owned by this menu: clear() drops the actions,
+    // so they are deleted explicitly or a rebuild would leak a tree each time.
+    QVector<QMenu*> stale;
+    for (QAction* action : menu->actions()) {
+        if (QMenu* submenu = action->menu()) {
+            stale.append(submenu);
+        }
+    }
+    for (QMenu* submenu : stale) {
+        delete submenu;
+    }
+    menu->clear();
+
+    // One submenu per distinct path, not one per entry: addMenu() always
+    // creates a new menu, so walking the path per entry would put a second
+    // "Anime4K" branch beside the first for every candidate in the list.
+    QHash<QString, QMenu*> levels;
+    const auto levelFor = [menu, &levels](const QStringList& path) {
+        QMenu* level = menu;
+        QString key;
+        for (const QString& name : path) {
+            if (name.isEmpty()) {
+                continue;
+            }
+            key += QLatin1Char('\n') + name;
+            const auto found = levels.constFind(key);
+            if (found != levels.constEnd()) {
+                level = found.value();
+                continue;
+            }
+            QMenu* created = level->addMenu(name);
+            levels.insert(key, created);
+            level = created;
+        }
+        return level;
+    };
+
+    for (const ChoiceEntry& entry : entries) {
+        QAction* action = levelFor(entry.path)->addAction(entry.label);
+        action->setData(entry.id);
+        action->setCheckable(true);
+        action->setChecked(entry.id == selected);
+        if (leaves != nullptr) {
+            leaves->append(action);
+        }
+    }
+}
+
+void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries,
+                const QString& selected) {
+    if (leaves.size() != entries.size()) {
+        return;
+    }
+    for (qsizetype i = 0; i < entries.size(); ++i) {
+        leaves.at(i)->setChecked(entries.at(i).id == selected);
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  MENU POPUP
@@ -69,10 +155,10 @@ MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
     outer->setContentsMargins(kSpacingSmall, kSpacingSmall, kSpacingSmall, kSpacingXs);
     outer->setSpacing(kSpacingXs);
 
-    auto* caption = new QLabel(title, this);
-    caption->setObjectName(QStringLiteral("playerMenuCaption"));
-    caption->setStyleSheet(captionQss(11));
-    outer->addWidget(caption);
+    caption_ = new QLabel(title, this);
+    caption_->setObjectName(QStringLiteral("playerMenuCaption"));
+    caption_->setStyleSheet(captionQss(11));
+    outer->addWidget(caption_);
 
     body_ = new QVBoxLayout();
     body_->setContentsMargins(0, 0, 0, 0);
@@ -102,15 +188,14 @@ QWidget* MenuPopup::rowWidget(int spot) const {
 
 void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
     while (body_->count()) {
-        if (QWidget* widget = body_->takeAt(0)->widget()) {
-            // takeAt already removed it from the layout. Reparenting to nullptr
-            // on top of that turns a visible row into its own top-level window
-            // at the corner, so a rebuild while the menu is open - which is
-            // what a late quality result does - stacked every row on top of
-            // the others and left the popup collapsed.
+        QLayoutItem* item = body_->takeAt(0);
+        if (QWidget* widget = item->widget()) {
             widget->hide();
             widget->deleteLater();
         }
+        // takeAt hands the item over, and the widget keeps its parent: the item
+        // is deleted here, the row is only retired.
+        delete item;
     }
     rows_.clear();
     rowEntries_.clear();
@@ -122,6 +207,7 @@ void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
             label->setObjectName(QStringLiteral("playerMenuHeading"));
             label->setStyleSheet(captionQss(11) + QStringLiteral(" padding: 4px 6px;"));
             body_->addWidget(label);
+            label->show();
             continue;
         }
         const QString text = entry.text;
@@ -129,16 +215,34 @@ void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
         button->setObjectName(QStringLiteral("playerMenuRow"));
         button->setToolTip(entry.tooltip.isEmpty() ? text : entry.tooltip);
         button->setAccessibleName(text);
-        button->setCursor(Qt::PointingHandCursor);
+        button->setCursor(entry.disabled ? Qt::ArrowCursor : Qt::PointingHandCursor);
         button->setFocusPolicy(Qt::NoFocus);
         button->setFixedHeight(kRowHeight);
-        const int spot = rows_.size();
-        connect(button, &QPushButton::clicked, this, [this, spot] { activate(spot); });
+        button->setEnabled(!entry.disabled);
+        // A disabled row is still added to rows_ and rowEntries_ so the two
+        // stay index-aligned; it is only the click that it does not have.
+        if (!entry.disabled) {
+            const int spot = rows_.size();
+            connect(button, &QPushButton::clicked, this, [this, spot] { activate(spot); });
+        }
         body_->addWidget(button);
         rows_.append(button);
         rowEntries_.append(entry);
+        // Qt does not show a widget created after its parent is already visible,
+        // and a drill-down rebuilds the rows of an open popover.
+        button->show();
     }
     paintRows();
+    fitToHint();
+}
+
+void MenuPopup::setTitle(const QString& title) {
+    if (caption_ == nullptr || caption_->text() == title) {
+        return;
+    }
+    caption_->setText(title);
+    // The caption is what the captionQss letter-spacing and size are tuned for,
+    // so the popover is re-fitted: a longer title must not be clipped.
     fitToHint();
 }
 
@@ -227,11 +331,17 @@ void MenuPopup::fitToHint() {
 void MenuPopup::moveHighlight(int delta) {
     if (rows_.isEmpty())
         return;
-    if (highlight_ < 0) {
-        setHighlight(delta > 0 ? 0 : rows_.size() - 1);
-        return;
+    // Disabled rows are stepped over: a highlight on a row that cannot be
+    // activated reads as a broken keyboard.
+    const int step = delta >= 0 ? 1 : -1;
+    int spot = highlight_ < 0 ? (step > 0 ? -1 : rows_.size()) : highlight_;
+    for (int guard = 0; guard < rows_.size(); ++guard) {
+        spot = (spot + step + rows_.size()) % rows_.size();
+        if (!rowEntries_.at(spot).disabled) {
+            setHighlight(spot);
+            return;
+        }
     }
-    setHighlight((highlight_ + delta) % rows_.size());
 }
 
 void MenuPopup::setHighlight(int spot) {
@@ -244,14 +354,24 @@ void MenuPopup::setHighlight(int spot) {
 void MenuPopup::activate(int spot) {
     if (spot < 0 || spot >= rowEntries_.size())
         return;
-    const QVariant payload = rowEntries_.at(spot).payload;
-    close();
-    emit picked(payload);
+    const MenuEntry& entry = rowEntries_.at(spot);
+    // A disabled row is informational: it neither closes the popover nor emits,
+    // so it cannot change what is selected.
+    if (entry.disabled)
+        return;
+    // A submenu row stays open: the caller swaps in the next level's rows and
+    // re-places the popover, which is what makes the drill-down navigable
+    // without stacking one window per level.
+    if (!entry.submenu)
+        close();
+    emit picked(entry.payload);
 }
 
 void MenuPopup::paintRows() {
     for (int index = 0; index < rows_.size(); ++index) {
-        if (index < rowEntries_.size() && rowEntries_.at(index).current)
+        if (index < rowEntries_.size() && rowEntries_.at(index).disabled)
+            rows_.at(index)->setStyleSheet(disabledRowQss());
+        else if (index < rowEntries_.size() && rowEntries_.at(index).current)
             rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(88, 101, 242, 0.40)"));
         else if (index == highlight_)
             rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(255, 255, 255, 0.12)"));

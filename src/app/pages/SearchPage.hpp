@@ -73,6 +73,8 @@ public:
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
+    void mediaFileRequested();
+    void mediaUrlRequested();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

@@ -7,7 +7,6 @@
 //   - quality and dub/sub selection sat in a top strip, above the picture
 
 #include <QApplication>
-#include <QFileInfo>
 #include <QImage>
 #include <QGraphicsOpacityEffect>
 #include <QPointer>
@@ -53,6 +52,72 @@ public:
 QPushButton* buttonWithText(QWidget* root, const QString& needle) {
     for (QPushButton* button : root->findChildren<QPushButton*>()) {
         if (button->text().contains(needle)) return button;
+    }
+    return nullptr;
+}
+
+/// The row whose text is exactly `text` and which is actually on screen. A
+/// popover rebuilds its rows rather than editing them - the replaced ones are
+/// hidden and deleted through the event loop - so a plain child search can
+/// hand back a row that has already left the menu.
+QPushButton* visibleRowWithText(QWidget* root, const QString& text) {
+    if (root == nullptr) return nullptr;
+    for (QPushButton* button : root->findChildren<QPushButton*>()) {
+        if (button->isVisible() && button->text() == text) return button;
+    }
+    return nullptr;
+}
+
+/// Waits, bounded, for the player's own window to be back - and to stay back
+/// for a beat rather than only for the instant it is sampled.
+///
+/// The dock's popovers are children of that window, and the probe's own later
+/// stages share this event loop: the PiP stage hides the window for about ten
+/// seconds and hands it back only when the float is restored, and the shell
+/// re-runs its state pass on the way back, which is free to dismiss whatever
+/// overlay was up. A menu step taken across that hand-over would drive a dock
+/// that is not on screen yet. Requiring the window to be visible twice, about
+/// half a second apart, also catches a stage that is about to take it away
+/// again - which is this probe's own PiP stage, arriving while the step before
+/// it is still running.
+bool playerWindowIsBack(const QPointer<QWidget>& dialog, int timeoutMs = 14000) {
+    int heldVisibleFor = 0;
+    for (int waited = 0; waited < timeoutMs; waited += 50) {
+        if (dialog.isNull()) return false;
+        QCoreApplication::processEvents();
+        if (dialog->isVisible()) {
+            heldVisibleFor += 50;
+            if (heldVisibleFor >= 800) return true;
+        } else {
+            heldVisibleFor = 0;
+        }
+        QThread::msleep(50);
+    }
+    return false;
+}
+
+/// The row `text` in a popover of `host`, re-fetched and waited for rather than
+/// assumed.
+///
+/// A popover replaces its rows instead of editing them and retires the old ones
+/// through the event loop, so a row has to be looked up after the transition
+/// that rebuilt the menu, and it has to come out of the popover that is really
+/// on screen. Both popovers are children of the player's dialog, and the
+/// probe's own stages share this one event loop: the PiP stage hides that
+/// dialog, and a popover under a hidden host - rows and all - is invisible
+/// until the host is back. The look-up is therefore retried, bounded: generous
+/// enough to span that stage, finite so that a row which never arrives fails
+/// its check instead of hanging the probe.
+QPushButton* popupRowWhenVisible(const QPointer<QWidget>& host, const QString& popupName,
+                                 const QString& text, int timeoutMs = 12000) {
+    for (int waited = 0; waited < timeoutMs; waited += 40) {
+        if (host.isNull()) return nullptr;
+        QCoreApplication::processEvents();
+        QWidget* popup = host->findChild<QWidget*>(popupName);
+        if (popup != nullptr && popup->isVisible()) {
+            if (QPushButton* row = visibleRowWithText(popup, text)) return row;
+        }
+        QThread::msleep(40);
     }
     return nullptr;
 }
@@ -461,26 +526,27 @@ int main(int argc, char** argv) {
     // file still reads back whole - confirmed by deleting one shader and
     // watching the comparison pass anyway. The proof has to be the pixels.
     QTimer::singleShot(8000, [&] {
-        check(!anime4k::findShadersDir().isEmpty(), "the shader folder sits beside the exe");
-        check(anime4k::shaderStringForMode(anime4k::Mode::Off).isEmpty(),
+        const QString shadersDir = anime4k::findShadersDir();
+        check(!shadersDir.isEmpty(), "the shader folder sits beside the exe");
+        check(anime4k::shaderStringForCandidate(QStringLiteral("off"), shadersDir).isEmpty(),
               "Off resolves to no chain at all");
         // Every file a preset references has to exist on disk. Deleting one is
         // what proves this can fail: the presets naming it drop out and the
         // suite says exactly which.
+        int missingPresets = 0;
+        int checkedPresets = 0;
         for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
             if (info.mode == anime4k::Mode::Off) continue;
-            const QString chain = anime4k::shaderStringForMode(info.mode);
-            bool complete = !chain.isEmpty();
-            for (const QString& part : chain.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
-                if (!QFileInfo::exists(part)) {
-                    std::fprintf(stderr, "FAIL preset %s is missing %s\n", qPrintable(info.id),
-                                 qPrintable(part));
-                    complete = false;
-                }
+            ++checkedPresets;
+            if (!anime4k::chainIsComplete(anime4k::candidateForId(info.id, shadersDir),
+                                          shadersDir)) {
+                std::fprintf(stderr, "FAIL preset %s is missing a file\n", qPrintable(info.id));
+                ++missingPresets;
             }
-            if (!complete) ++failures;
         }
-        check(true, "every preset resolves to files that exist");
+        std::fprintf(stderr, "     presets checked: %d\n", checkedPresets);
+        check(checkedPresets > 10 && missingPresets == 0,
+              "every preset resolves to files that exist");
 
         QPushButton* enhancementsButton = nullptr;
         for (QPushButton* button : shell->findChildren<QPushButton*>()) {
@@ -501,25 +567,78 @@ int main(int argc, char** argv) {
         check(enhancements != nullptr && !enhancements->isWindow() &&
                   enhancements->parentWidget() == dialog,
               "the enhancements menu uses the fullscreen overlay plane");
+        // A model this player does not run is an enabled row that opens its own
+        // page in the shared popover - one disabled В планах leaf and a way
+        // back - rather than a dead row left in the menu.
+        QPushButton* rifeEntry =
+            enhancements != nullptr ? visibleRowWithText(enhancements, QStringLiteral("RIFE  ›"))
+                                    : nullptr;
+        check(rifeEntry != nullptr && rifeEntry->isEnabled(),
+              "a planned model opens its page from an enabled row");
+        if (rifeEntry == nullptr) return;
+        rifeEntry->click();
+        QTest::qWait(60);
+
+        auto* plannedPage =
+            dialog->findChild<MenuPopup*>(QStringLiteral("playerAnime4KPopup"));
+        check(plannedPage != nullptr && plannedPage->isVisible(),
+              "the planned model's page opened in the shared popover");
+        QPushButton* plannedRow =
+            plannedPage != nullptr ? visibleRowWithText(plannedPage, QStringLiteral("В планах"))
+                                   : nullptr;
+        check(plannedRow != nullptr && !plannedRow->isEnabled(),
+              "a planned model is listed and cannot be chosen");
+        const anime4k::Mode beforeRifePage = surface->anime4KMode();
+        if (plannedRow != nullptr) {
+            plannedRow->click();
+            QTest::qWait(40);
+        }
+        check(surface->anime4KMode() == beforeRifePage,
+              "clicking a planned model leaves the chain alone");
+        QPushButton* plannedBack =
+            plannedPage != nullptr ? visibleRowWithText(plannedPage, QStringLiteral("‹  Назад"))
+                                   : nullptr;
+        check(plannedBack != nullptr, "the planned page offers a way back");
+        if (plannedBack == nullptr) return;
+        plannedBack->click();
+        QTest::qWait(60);
         QPushButton* anime4kEntry =
-            enhancements != nullptr ? buttonWithText(enhancements, QStringLiteral("Anime4K"))
+            enhancements != nullptr ? visibleRowWithText(enhancements, QStringLiteral("Anime4K  ›"))
                                     : nullptr;
         check(anime4kEntry != nullptr, "the enhancements menu offers Anime4K");
         if (anime4kEntry == nullptr) return;
         anime4kEntry->click();
+        QTest::qWait(60);
 
         auto* anime4kPopup =
             dialog->findChild<MenuPopup*>(QStringLiteral("playerAnime4KPopup"));
         check(anime4kPopup != nullptr && anime4kPopup->isVisible(),
               "the Anime4K submenu opened");
 
+        // The presets hang under categories, so the row is two clicks in - and
+        // the category itself must not change the chain on the way.
+        const anime4k::Mode beforeCategory = surface->anime4KMode();
+        QPushButton* speedRow =
+            anime4kPopup != nullptr ? visibleRowWithText(anime4kPopup, QStringLiteral("Швидкість  ›"))
+                                    : nullptr;
+        check(speedRow != nullptr, "the Anime4K submenu offers the Швидкість category");
+        if (speedRow == nullptr) return;
+        speedRow->click();
+        QTest::qWait(60);
+        check(surface->anime4KMode() == beforeCategory,
+              "opening a category does not change the applied chain");
+        check(anime4kPopup != nullptr && anime4kPopup->isVisible(),
+              "the category opened in place instead of a second window");
+        check(visibleRowWithText(anime4kPopup, QStringLiteral("‹  Назад")) != nullptr,
+              "a drilled-down level offers a way back");
+
         QString label;
         for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
             if (info.mode == kAnime4KProbeMode) label = info.label;
         }
         QPushButton* row =
-            anime4kPopup != nullptr ? buttonWithText(anime4kPopup, label) : nullptr;
-        check(row != nullptr, "the Anime4K submenu offers every preset");
+            anime4kPopup != nullptr ? visibleRowWithText(anime4kPopup, label) : nullptr;
+        check(row != nullptr, "the Швидкість category lists its presets");
         if (row == nullptr) return;
 
         // A framebuffer only exists once the window has been exposed, which
@@ -583,6 +702,64 @@ int main(int argc, char** argv) {
         // belongs to a viewer, not a threshold.
         check(noise == 0.0, "the frozen frame is bit-stable between grabs");
         check(delta > 0.1, "enabling the preset changed the picture");
+
+        // Back out of the category, then prove a planned model cannot select
+        // anything: the disabled leaf is the one place where a click is
+        // expected to do nothing, so it is asserted rather than assumed.
+        //
+        // Each row below is taken from the popover as it stands at that moment,
+        // by object name, and only once that popover is really on screen: every
+        // step rebuilds the rows of the popover it drives, so a row kept from
+        // the step before is one the rebuild has already retired. The popovers
+        // are children of the player's dialog, and the probe's later stages
+        // share this loop - the PiP stage hides that dialog, and the shell runs
+        // its state pass on the way back - so the window is waited for first,
+        // and then every row, instead of sampling either once.
+        playerWindowIsBack(dialog);
+        enhancementsButton->click();
+        anime4kEntry = popupRowWhenVisible(dialog, QStringLiteral("playerEnhancementsPopup"),
+                                           QStringLiteral("Anime4K  ›"));
+        if (anime4kEntry != nullptr) {
+            anime4kEntry->click();
+            QPushButton* reopen = popupRowWhenVisible(
+                dialog, QStringLiteral("playerAnime4KPopup"), QStringLiteral("Швидкість  ›"));
+            if (reopen != nullptr) {
+                reopen->click();
+                QPushButton* back = popupRowWhenVisible(
+                    dialog, QStringLiteral("playerAnime4KPopup"), QStringLiteral("‹  Назад"));
+                check(back != nullptr, "the drilled-down level still offers a way back");
+                if (back != nullptr) {
+                    back->click();
+                    check(popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
+                                              QStringLiteral("Вимкнено")) != nullptr,
+                          "going back returns to the Anime4K root");
+                }
+            }
+        }
+        shell->dismissOverlay();
+        enhancementsButton->click();
+        QPushButton* rifeRoot =
+            popupRowWhenVisible(dialog, QStringLiteral("playerEnhancementsPopup"),
+                                QStringLiteral("RIFE  ›"));
+        check(rifeRoot != nullptr && rifeRoot->isEnabled(),
+              "the planned RIFE row stays an enabled entry in the enhancements menu");
+        const anime4k::Mode beforePlanned = surface->anime4KMode();
+        if (rifeRoot != nullptr) {
+            rifeRoot->click();
+        }
+        QPushButton* planned = popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
+                                                  QStringLiteral("В планах"));
+        if (planned != nullptr) {
+            planned->click();
+            QTest::qWait(40);
+        }
+        check(planned != nullptr && !planned->isEnabled(),
+              "the planned RIFE leaf stays disabled on its own page");
+        check(surface->anime4KMode() == beforePlanned,
+              "clicking a planned model leaves the chain alone");
+        check(popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
+                                  QStringLiteral("‹  Назад")) != nullptr,
+              "the planned page still offers a way back");
         shell->dismissOverlay();
     });
 

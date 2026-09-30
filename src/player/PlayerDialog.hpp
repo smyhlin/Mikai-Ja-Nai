@@ -41,7 +41,6 @@ class CompareWindow;
 
 class PlayerShell;
 class MenuPopup;
-class MenuPopup;
 class SeriesDrawer;
 struct MenuEntry;
 
@@ -179,6 +178,7 @@ class PlayerDialog : public QDialog {
     Q_OBJECT
 
 public:
+    PlayerDialog(const QString& caption, const QString& url, QWidget* parent = nullptr);
     PlayerDialog(const QString& caption,
                  const QString& url,
                  const QList<QualityEntry>& qualities,
@@ -249,6 +249,7 @@ private:
         int quality = 0;
     };
 
+    void copyStreamUrl();
     void buildStrip();
     void buildStatus();
     void connectShell();
@@ -307,6 +308,7 @@ private:
     PlayerShell* shell_ = nullptr;
     VideoSurface* surface_ = nullptr;
     PlayerHost* host_ = nullptr;
+    bool directMedia_ = false;
 
     MenuPopup* audioPopup_ = nullptr;
     MenuPopup* subtitlesPopup_ = nullptr;

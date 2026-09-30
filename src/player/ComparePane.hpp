@@ -24,7 +24,9 @@
 #include <optional>
 
 #include "CompareLayout.hpp"
+#include "PlayerPopups.hpp"
 
+class QAction;
 class QGraphicsPixmapItem;
 class QGraphicsScene;
 class QMenu;
@@ -41,7 +43,7 @@ public:
     QString key() const { return key_; }
 
     void setContent(const QString& key, const QImage& image, const QString& name);
-    void setChoices(const QStringList& ids, const QStringList& labels, const QString& current);
+    void setChoices(const QVector<ChoiceEntry>& choices, const QString& current);
 
     /// Adopt a shared view: `zoom` is a multiple of this pane's own fit and the
     /// centre is normalized (fractions of its own picture).
@@ -83,8 +85,12 @@ private:
     QString key_;
     QImage image_;
     QString name_;
-    QStringList choiceIds_;
-    QStringList choiceLabels_;
+    QVector<ChoiceEntry> choices_;
+    /// What this pane's menu was built from and the actions it holds: a refill
+    /// that changes nothing only moves the check marks, so no action is
+    /// destroyed from inside its own handler.
+    QVector<ChoiceEntry> builtChoices_;
+    QVector<QAction*> leaves_;
     QString current_;
 
     /// True while this pane is writing its own view, so the scroll it causes is

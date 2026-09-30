@@ -104,7 +104,8 @@ private:
 
 struct Runner::Impl {
     explicit Impl(QObject* parent)
-        : dispatcher(std::make_shared<Dispatcher>(parent)), shared(new QThreadPool(parent)),
+        // QObject parenting cannot share ownership of make_shared's allocation.
+        : dispatcher(std::make_shared<Dispatcher>(nullptr)), shared(new QThreadPool(parent)),
           bulk(new QThreadPool(parent)), stream(new QThreadPool(parent)),
           image(new QThreadPool(parent)) {
         shared->setMaxThreadCount(kSharedThreads);
@@ -120,7 +121,7 @@ struct Runner::Impl {
     QThreadPool* image;
 };
 
-Runner::Runner(QObject* parent) : impl_(std::make_unique<Impl>(parent)) {}
+Runner::Runner(QObject* parent) : QObject(parent), impl_(std::make_unique<Impl>(this)) {}
 
 Runner::~Runner() {
     // A completion already queued still holds its own shared_ptr, so the

@@ -8,6 +8,11 @@
 
 #include <backend/MikaiClient.hpp>
 
+#include <PlayerDialog.hpp>
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QUrl>
 #include <QCloseEvent>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -33,10 +38,13 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     connect(search_, &SearchPage::openRequested, this,
             [this](const QString& ref, const QString& poster) { openTitle(ref, poster); });
     connect(search_, &SearchPage::settingsRequested, this, &MainWindow::openSettings);
+    connect(search_, &SearchPage::mediaFileRequested, this, &MainWindow::chooseMediaFile);
+    connect(search_, &SearchPage::mediaUrlRequested, this, &MainWindow::chooseMediaUrl);
     stack_->addWidget(search_);
 }
 
 MainWindow::~MainWindow() {
+    closeMedia();
     // The close event covers the ordinary path, but a session that ends any
     // other way (a quit() that never delivers one) would otherwise leave the
     // entries unwritten. flushNow() is a no-op once the cache is clean, so
@@ -45,6 +53,7 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    closeMedia();
     disposeTitle();
     // The title page flushes when it shuts down, but a session that only browsed
     // the home page never reaches that path. Persist here so those sessions
@@ -52,6 +61,45 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // interval cannot swallow the last write.
     qualityCache_->flushNow();
     QWidget::closeEvent(event);
+}
+
+void MainWindow::chooseMediaFile() {
+    const QString file = QFileDialog::getOpenFileName(
+        this, tr("Відкрити відеофайл"), {},
+        tr("Відео (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg);;Усі файли (*)"));
+    if (!file.isEmpty()) {
+        openMedia(file);
+    }
+}
+
+void MainWindow::chooseMediaUrl() {
+    bool accepted = false;
+    const QString source = QInputDialog::getText(
+        this, tr("Відкрити відео за посиланням"), tr("Посилання на відео або потік:"),
+        QLineEdit::Normal, {}, &accepted).trimmed();
+    if (accepted && !source.isEmpty()) {
+        openMedia(source);
+    }
+}
+
+void MainWindow::openMedia(const QString& source) {
+    const QUrl url = QUrl::fromUserInput(source, {}, QUrl::AssumeLocalFile);
+    const QString media = url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded);
+    QString caption = url.fileName();
+    if (caption.isEmpty()) {
+        caption = url.host().isEmpty() ? tr("Відео") : url.host();
+    }
+    closeMedia();
+    mediaPlayer_ = new mplayer::shell::PlayerDialog(caption, media, this);
+    mediaPlayer_->show();
+    mediaPlayer_->startPlayer();
+}
+
+void MainWindow::closeMedia() {
+    if (mediaPlayer_) {
+        mediaPlayer_->close();
+        mediaPlayer_.clear();
+    }
 }
 
 void MainWindow::openSettings() {

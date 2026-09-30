@@ -35,6 +35,9 @@ Layering is strict and enforced by tests:
   bypasses the client's rate limiter entirely, so posters cost no API budget
   and are pure latency. `waitForDone(ms)` drains bulk and image pools first,
   then the shared one.
+  The owning widget parents `Runner`, which parents its pools. Its dispatcher
+  has no QObject parent: only `shared_ptr` owns that allocation, including
+  while completions are queued.
 - **A `WA_DeleteOnClose` dialog is destroyed the moment it closes, so the page
   must not keep a pointer to it.** `TitlePage::coverViewer_` had exactly that
   bug: closing the cover freed the dialog, and the next open called `close()` on
@@ -44,6 +47,10 @@ Layering is strict and enforced by tests:
 - `MainWindow` is a `QStackedWidget` holding one `SearchPage` and at most one
   `TitlePage`; disposal shuts the title page down (closing every open player
   dialog and flushing the quality cache) before `deleteLater()`.
+  The home page's `Відкрити відео` menu opens a local file or media URL in one
+  separate, `QPointer`-tracked `PlayerDialog`. Its hostless constructor keeps
+  playback, Compare and Anime4K but hides quality, episode and release controls;
+  direct-media failures retry the same source without API extraction.
 - `TitlePage` maps `releases[]` (`kind` = `voice`/`sub` + `teams`) through
   `sortReleases`, then renders one tab per release. Tabs are strictly isolated:
   each holds only its own episode buttons. Episodes render as a compact grid of
@@ -71,17 +78,23 @@ Layering is strict and enforced by tests:
   `http-header-fields=Accept-Language: uk-UA` (MoonAnime's CDN answers 400 to a
   playlist without it), user-agent, `hwdec=auto-safe`, `keepaspect=yes`, input
   bindings off (the keyboard belongs to the shell). `glsl-shaders` is set there
-  too, and `VideoSurface::setAnime4KMode` swaps it on the live core: the mode is
-  remembered and applied at construction, and a later pick re-uses the
+  too, and `VideoSurface::setAnime4KMode`/`setAnime4KChain` swap it on the live
+  core: what is *applied* is resolved from the recorded candidate id at
+  construction and on every later change, so a chain chosen before the engine
+  exists is honoured on the first frame, and a later pick re-uses the
   `change-list`-equivalent property write, which libmpv accepts at runtime
   (confirmed against `mpv_request_log_messages`: `Set property: glsl-shaders`
   succeeds with no shader compile errors). The choice persists under
   `player/anime4k` as the preset *id*, not the enum ordinal, so a preset added
-  later cannot silently repoint an existing selection.
+  later cannot silently repoint an existing selection. PiP copies the mode and
+  the applied id into the float's own core, and entering the float never
+  inherits the previous session's chain.
   The bottom chrome is one opaque two-row dock: permanent volume + a large
   centred play control + episode/track/enhancement/settings actions above the
   full-width timeline. Anime4K lives under the sparkle button's
-  **Enhancements → Anime4K** submenu, not the speed/quality gear popover. A
+  **Покращення → Anime4K** submenu, not the speed/quality gear popover, and that
+  one popover swaps levels in place (categories, then a **‹ Назад** row) instead
+  of stacking a window per level. A
   top-left `MIKAI` chip shows `cache-speed`, `estimated-vf-fps`, and, while a
   preset is active, source → output resolution.
   The upscalers are gated by `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`: Anime4K
@@ -177,18 +190,33 @@ Layering is strict and enforced by tests:
   Progress follows the float's own `positionChanged`, and `setTime` shows the
   position whenever it is known - blanking it because the *duration* was not
   threw away the only number a viewer can read.
-  `Anime4K` (preset table + shader-path resolution, `Mode::Off`..`HqCA`).
+  `Anime4K` — one declarative catalogue (id, label, hint, category, ordered
+  chain) in `Anime4K.cpp` plus the menu tree above it: ten built-in presets
+  (`Mode::Off`..`HqCA`, ids frozen), fourteen experiments grouped under
+  Anime4K's own family names (Noise Reduction, Thin Lines, Texture
+  Enhancement, Darken), and three planned-model pages (RIFE, RealESRGAN,
+  Інші моделі) each holding a disabled В планах leaf. `menuRows(parent)` is
+  what the shell paints; a category row only drills down and a placeholder row
+  is disabled, so neither can change the chain. `shaderStringForCandidate(id)`
+  is the only chain resolver, used for a mode and for a loose `.glsl` alike.
   `CompareWindow` — the shader comparison, reached from the picture's
-  right-click menu. It lists every candidate (the nine presets plus each of
-  the 49 `.glsl` files on its own), lets the viewer pick two and shows them in
+  right-click menu. Its badge chooser groups every candidate under
+  **Anime4K → Пресети** and **Anime4K → Окремі шейдери → <family>** (24
+  presets, plus each of the 47 usable `.glsl` files on its own; the two
+  `AutoDownscalePre` steps are chain internals and are never offered), lets the
+  viewer pick two and shows them in
   one of three layouts: side by side, one image with a draggable divide, or
   the amplified per-pixel difference.
-  Three things about it are load-bearing, each found the same way the
+  Four things about it are load-bearing, each found the same way the
   Anime4K pixel check was:
   - **A side is a chain applied to the live core, not a re-implementation.**
     `renderWithChain` writes the chain through `VideoSurface::setAnime4KChain`
     and grabs what comes back. Drawing the same image twice would look like a
     comparison and measure nothing.
+  - **A comparison leaves the player as it found it.** The surface's own chain
+    is read before the two sides render and written back afterwards, so the
+    window never leaves the live core - or the stored setting it would be
+    compared against - running a preview chain.
   - **The frame is frozen before it is compared.** Re-seeking to one
     timestamp does not reproduce the same pixels, so the window takes one
     frame and both sides render from it; two settled frames of a still picture

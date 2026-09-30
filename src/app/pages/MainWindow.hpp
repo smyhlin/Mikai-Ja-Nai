@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QPair>
+#include <QPointer>
 #include <QString>
 #include <QWidget>
 
@@ -9,6 +10,10 @@ class QStackedWidget;
 
 namespace mikai::backend {
 class MikaiClient;
+}
+
+namespace mplayer::shell {
+class PlayerDialog;
 }
 
 namespace mikai::app {
@@ -36,6 +41,10 @@ protected:
 
 private:
     void openSettings();
+    void chooseMediaFile();
+    void chooseMediaUrl();
+    void openMedia(const QString& source);
+    void closeMedia();
     void openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
     void openRelated(const QString& ref, const QString& poster);
     void goSearch();
@@ -47,6 +56,7 @@ private:
     QStackedWidget* stack_ = nullptr;
     SearchPage* search_ = nullptr;
     TitlePage* title_ = nullptr;
+    QPointer<mplayer::shell::PlayerDialog> mediaPlayer_;
     QString titleRef_;
     QString titlePoster_;
     QList<QPair<QString, QString>> titleHistory_;

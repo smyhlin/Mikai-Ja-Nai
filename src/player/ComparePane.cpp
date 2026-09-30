@@ -84,10 +84,8 @@ void ComparePane::setContent(const QString& key, const QImage& image, const QStr
     fit();
 }
 
-void ComparePane::setChoices(const QStringList& ids, const QStringList& labels,
-                             const QString& current) {
-    choiceIds_ = ids;
-    choiceLabels_ = labels;
+void ComparePane::setChoices(const QVector<ChoiceEntry>& choices, const QString& current) {
+    choices_ = choices;
     if (!current.isEmpty()) {
         current_ = current;
     }
@@ -195,10 +193,13 @@ QSize ComparePane::imageSize() const {
 }
 
 void ComparePane::refreshBadge() {
-    const int index = choiceIds_.indexOf(current_);
-    const QString shown = index >= 0 && index < choiceLabels_.size()
-                              ? choiceLabels_.at(index)
-                              : (name_.isEmpty() ? current_ : name_);
+    QString shown = name_.isEmpty() ? current_ : name_;
+    for (const ChoiceEntry& entry : choices_) {
+        if (entry.id == current_) {
+            shown = entry.label;
+            break;
+        }
+    }
     badge_->setText(shown);
     badge_->adjustSize();
     badge_->setToolTip(QStringLiteral("Select comparison"));
@@ -207,21 +208,23 @@ void ComparePane::refreshBadge() {
 }
 
 void ComparePane::syncBadgeMenu() {
-    menu_->clear();
-    if (choiceIds_.size() < 2) {
+    if (choices_.size() < 2) {
         // One result on screen leaves no choice to offer, so the badge stays
         // the plain label it always was.
+        menu_->clear();
+        builtChoices_.clear();
+        leaves_.clear();
         badge_->setPopupMode(QToolButton::DelayedPopup);
         badge_->setMenu(nullptr);
         return;
     }
     badge_->setPopupMode(QToolButton::InstantPopup);
     badge_->setMenu(menu_);
-    for (qsizetype i = 0; i < choiceIds_.size(); ++i) {
-        QAction* action = menu_->addAction(choiceLabels_.value(i));
-        action->setData(choiceIds_.at(i));
-        action->setCheckable(true);
-        action->setChecked(choiceIds_.at(i) == current_);
+    if (choices_ != builtChoices_ || leaves_.size() != choices_.size()) {
+        fillChoiceMenu(menu_, choices_, current_, &leaves_);
+        builtChoices_ = choices_;
+    } else {
+        markChoice(leaves_, choices_, current_);
     }
 }
 

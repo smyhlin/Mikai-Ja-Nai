@@ -45,10 +45,18 @@ void VideoSurface::ensureEngine() {
         {"osc", "no"},
     };
     mpv_ = std::make_unique<MpvHandle>(options);
-    // Applied as a construction option so a mode restored from settings is in
-    // place before the first frame. mpv accepts the same write at runtime - it
-    // is the path setAnime4KMode uses when the user changes preset mid-play.
-    const QString shaders = anime4k::shaderStringForMode(anime4kMode_);
+    mpv_->setEventSink([this](mpv_event* event) {
+        if (event->event_id != MPV_EVENT_END_FILE || event->data == nullptr) return;
+        const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
+        if (ended->reason != MPV_END_FILE_REASON_ERROR) return;
+        emit errorOccurred(QStringLiteral("Не вдалося відтворити відео (mpv: %1)").arg(ended->error));
+    });
+    // The applied id, not the mode: a chain with no Mode is only recorded until
+    // the engine exists, so reading the mode here would drop it before the
+    // first frame.
+    const QString chainId =
+        anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
+    const QString shaders = anime4k::shaderStringForCandidate(chainId);
     if (!shaders.isEmpty()) {
         try {
             mpv_->setString("glsl-shaders", shaders.toStdString());
@@ -84,15 +92,21 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     update();
 }
 void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
-    if (mode == anime4kMode_) return;
+    // The id is compared too: an override the compare window applied must be
+    // taken back when the same mode is picked again.
+    const QString id = anime4k::modeId(mode);
+    if (mode == anime4kMode_ && id == anime4kChainId_) return;
     anime4kMode_ = mode;
     // The id is the persistence key, so it is recorded here too: a mode chosen
     // from the menu and a chain chosen in the compare window are the same
     // setting, and whichever came last must be what a restart restores.
-    anime4kChainId_ = anime4k::modeId(mode);
+    anime4kChainId_ = id;
     if (!mpv_) return;
     try {
-        mpv_->setString("glsl-shaders", anime4k::shaderStringForMode(mode).toStdString());
+        // The id is resolved, so a mode and a chain go through one path - and
+        // only one of the two can name a chain that is not on disk.
+        mpv_->setString("glsl-shaders",
+                        anime4k::shaderStringForCandidate(anime4kChainId_).toStdString());
     } catch (const MpvError& err) {
         emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
     }

@@ -229,8 +229,25 @@ void CompareWindow::populateCandidates() {
     const QVector<anime4k::Candidate> all = anime4k::allCandidates(shadersDir);
     candidates_.clear();
     candidates_.reserve(all.size());
+    choices_.clear();
+    choices_.reserve(all.size());
     for (const anime4k::Candidate& candidate : all) {
         candidates_.append(candidate.id);
+        // Two sections under one Anime4K submenu: the presets - every chain the
+        // player can actually run - and the loose files, each under the family
+        // it belongs to. The AutoDownscalePre steps are not candidates at all,
+        // because the catalogue does not list them: they only exist inside a
+        // preset's chain.
+        ChoiceEntry entry;
+        entry.id = candidate.id;
+        entry.label = candidate.label;
+        if (candidate.kind == anime4k::Kind::Preset) {
+            entry.path = {QStringLiteral("Anime4K"), QStringLiteral("Пресети")};
+        } else {
+            entry.path = {QStringLiteral("Anime4K"), QStringLiteral("Окремі шейдери"),
+                          anime4k::kindLabel(candidate.kind)};
+        }
+        choices_.append(entry);
     }
     // No shaders on disk is a real state, not an error: the window opens with
     // both sides empty and says so in the info line.
@@ -408,8 +425,20 @@ void CompareWindow::render() {
         updateInfo();
         return;
     }
+    // Read first and put back after both sides: rendering applies chains to the
+    // borrowed surface, and Compare must not leave the player running one.
+    const QString liveChain = surface_ != nullptr ? surface_->anime4KChainId() : QString();
     const QImage a = renderWithChain(sideA());
     const QImage b = renderWithChain(sideB());
+    if (surface_ != nullptr) {
+        if (liveChain.isEmpty()) {
+            // No id to put back: fall back to the mode, which clears anything
+            // the comparison left on the surface.
+            surface_->setAnime4KMode(surface_->anime4KMode());
+        } else if (surface_->anime4KChainId() != liveChain) {
+            surface_->setAnime4KChain(liveChain);
+        }
+    }
     renderedA_ = a;
     renderedB_ = b;
     QImage difference;
@@ -420,24 +449,12 @@ void CompareWindow::render() {
                                         : differenceJet(a, b);
     }
     canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
-    canvas_->setCandidates(candidates_, [&] {
-        QStringList labels;
-        labels.reserve(candidates_.size());
-        for (const QString& id : candidates_) {
-            labels.append(labelFor(id));
-        }
-        return labels;
-    }(), sideA(), sideB());
+    canvas_->setChoices(choices_, sideA(), sideB());
     canvas_->setMode(mode_);
     canvas_->setSideImages(a.isNull() ? frame_ : a, b.isNull() ? frame_ : b, difference);
     stack_->setCurrentIndex(mode_ == CompareMode::SideBySide ? 1 : 0);
     if (mode_ == CompareMode::SideBySide) {
-        QStringList labels;
-        labels.reserve(candidates_.size());
-        for (const QString& id : candidates_) {
-            labels.append(labelFor(id));
-        }
-        grid_->setChoices(candidates_, labels);
+        grid_->setChoices(choices_);
         grid_->setItems({sideA(), sideB()},
                         {a.isNull() ? frame_ : a, b.isNull() ? frame_ : b},
                         {labelFor(sideA()), labelFor(sideB())});

@@ -293,15 +293,47 @@ void PlayerShell::buildDock() {
     enhancementsPopup_ = new MenuPopup(QStringLiteral("ПОКРАЩЕННЯ"), overlayHost);
     enhancementsPopup_->setObjectName(QStringLiteral("playerEnhancementsPopup"));
     connect(enhancementsPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
-        if (payload.toString() == QStringLiteral("anime4k")) {
+        const QString row = payload.toString();
+        if (row == QLatin1String("anime4k")) {
             openAnime4K();
+        } else if (row.startsWith(QLatin1String("page|"))) {
+            openEnhancementPage(row.mid(5));
         }
     });
 
     anime4kPopup_ = new MenuPopup(QStringLiteral("ANIME4K"), overlayHost);
     anime4kPopup_->setObjectName(QStringLiteral("playerAnime4KPopup"));
     connect(anime4kPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
-        onAnime4KMode(static_cast<anime4k::Mode>(payload.toInt()));
+        // Three kinds of row share this popover: a category drills down, a
+        // preset selects, and a planned model does neither. The prefix is what
+        // tells them apart, so a category can never apply a chain.
+        const QString row = payload.toString();
+        if (row == QLatin1String("back")) {
+            QString parent;
+            for (const anime4k::CategoryInfo& category : anime4k::availableCategories()) {
+                if (category.id == anime4kLevel_) {
+                    parent = category.parent;
+                    break;
+                }
+            }
+            if (parent.isEmpty()) {
+                // Above a top-level page is the Покращення popover, which is a
+                // popover of its own: Back reopens it rather than an empty level.
+                openEnhancements();
+                return;
+            }
+            anime4kLevel_ = parent;
+            replaceAnime4KMenu();
+            return;
+        }
+        if (row.startsWith(QLatin1String("cat|"))) {
+            anime4kLevel_ = row.mid(4);
+            replaceAnime4KMenu();
+            return;
+        }
+        if (row.startsWith(QLatin1String("preset|"))) {
+            onAnime4KPreset(row.mid(7));
+        }
     });
     btnEnhance_->setVisible(!anime4k::findShadersDir().isEmpty());
     refreshEnhancementMenus();
@@ -904,15 +936,18 @@ void PlayerShell::setSourceSize(int width, int height) {
 
 void PlayerShell::onAnime4KMode(anime4k::Mode mode) {
     setAnime4KMode(mode);
-    QString label = QStringLiteral("Вимкнено");
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        if (info.mode == mode) {
-            label = info.label;
-            break;
-        }
+    QString label = anime4k::displayLabel(mode);
+    if (label.isEmpty()) {
+        label = anime4k::modeId(mode);
     }
     toast_->flash(QStringLiteral("Anime4K: %1").arg(label));
     emit anime4KModeChanged(mode);
+}
+
+void PlayerShell::onAnime4KPreset(const QString& presetId) {
+    // The id is the catalogue's own key, so a menu row can never select a
+    // preset the rewrite of the menu no longer points at.
+    onAnime4KMode(anime4k::modeForId(presetId));
 }
 
 void PlayerShell::refreshEnhancementMenus() {
@@ -922,22 +957,80 @@ void PlayerShell::refreshEnhancementMenus() {
     anime4kEntry.payload = QStringLiteral("anime4k");
     anime4kEntry.current = anime4kMode_ != anime4k::Mode::Off;
     enhancements.append(anime4kEntry);
+    // The models this player does not run open their own page rather than a
+    // dead row, so the menu says where they will live.
+    for (const anime4k::MenuRow& row : anime4k::menuRows(QString())) {
+        if (row.role != anime4k::MenuRow::Role::Category || row.id == QLatin1String("anime4k")) {
+            continue;
+        }
+        MenuEntry entry;
+        entry.text = row.label + QStringLiteral("  ›");
+        entry.tooltip = row.tooltip;
+        entry.payload = QStringLiteral("page|") + row.id;
+        enhancements.append(entry);
+    }
     enhancementsPopup_->setEntries(enhancements);
     anime4kRow_ = enhancementsPopup_->rowWidget(0);
     if (anime4kRow_ != nullptr) {
         anime4kRow_->installEventFilter(this);
     }
+    refreshAnime4KMenu();
+}
 
-    QVector<MenuEntry> modes;
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        MenuEntry entry;
-        entry.text = info.label;
-        entry.tooltip = info.hint;
-        entry.payload = static_cast<int>(info.mode);
-        entry.current = info.mode == anime4kMode_;
-        modes.append(entry);
+void PlayerShell::refreshAnime4KMenu() {
+    const QString currentId = anime4k::modeId(anime4kMode_);
+    // The popover is one window at several levels, so the caption follows the
+    // level: the Anime4K tree or the planned-model page that was opened.
+    const QString levelLabel = anime4k::categoryLabel(anime4kLevel_);
+    anime4kPopup_->setTitle(levelLabel.isEmpty() ? QStringLiteral("ANIME4K")
+                                                 : levelLabel.toUpper());
+    QVector<MenuEntry> rows;
+    if (anime4kLevel_ != QLatin1String("anime4k")) {
+        // The popover is reused for every level, so the level above has to have
+        // a way back inside it; Esc leaves the whole popover instead.
+        MenuEntry back;
+        back.text = QStringLiteral("‹  Назад");
+        back.tooltip = QStringLiteral("Повернутися на рівень вище");
+        back.payload = QStringLiteral("back");
+        back.submenu = true;
+        rows.append(back);
     }
-    anime4kPopup_->setEntries(modes);
+    for (const anime4k::MenuRow& row : anime4k::menuRows(anime4kLevel_)) {
+        MenuEntry entry;
+        entry.text = row.label;
+        entry.tooltip = row.tooltip;
+        switch (row.role) {
+            case anime4k::MenuRow::Role::Preset:
+                entry.payload = QStringLiteral("preset|") + row.id;
+                entry.current = row.id == currentId;
+                break;
+            case anime4k::MenuRow::Role::Category:
+                // The chevron is a promise that something opens: it is only
+                // added for a category that actually has children.
+                if (row.hasChildren) {
+                    entry.text = row.label + QStringLiteral("  ›");
+                }
+                entry.payload = QStringLiteral("cat|") + row.id;
+                // Opens the next level in place rather than in a window of its
+                // own, and is marked when the current preset hides inside it.
+                entry.submenu = true;
+                entry.current = anime4k::categoryContainsPreset(row.id, currentId);
+                break;
+            case anime4k::MenuRow::Role::Placeholder:
+                entry.payload = QStringLiteral("planned|") + row.id;
+                entry.disabled = true;
+                break;
+        }
+        rows.append(entry);
+    }
+    anime4kPopup_->setEntries(rows);
+}
+
+void PlayerShell::replaceAnime4KMenu() {
+    refreshAnime4KMenu();
+    // The rows changed height and count, so the popover is fitted and clamped
+    // again at the same anchor it was opened at.
+    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
 }
 
 void PlayerShell::updateInfoChip() {
@@ -952,12 +1045,11 @@ void PlayerShell::updateInfoChip() {
     if (anime4kMode_ == anime4k::Mode::Off) {
         lblEnhancement_->hide();
     } else {
-        QString label = QStringLiteral("Anime4K");
-        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-            if (info.mode == anime4kMode_) {
-                label = info.label;
-                break;
-            }
+        // Qualified, because an experiment's own label ("HQ") only means
+        // something inside the category it sits in.
+        QString label = anime4k::displayLabel(anime4kMode_);
+        if (label.isEmpty()) {
+            label = QStringLiteral("Anime4K");
         }
         const int sourceWidth = sourceWidth_ > 0 ? sourceWidth_ : outputWidth_;
         const int sourceHeight = sourceHeight_ > 0 ? sourceHeight_ : outputHeight_;
@@ -990,7 +1082,23 @@ void PlayerShell::openAnime4K() {
         anime4kPopup_->close();
     }
     wake();
+    // Opening always lands on the Anime4K root: a level left behind by the last
+    // visit would open the menu halfway down.
+    anime4kLevel_ = QStringLiteral("anime4k");
     refreshEnhancementMenus();
+    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
+}
+
+void PlayerShell::openEnhancementPage(const QString& pageId) {
+    if (flyout_->isVisible()) {
+        flyout_->close();
+    }
+    if (anime4kPopup_->isVisible()) {
+        anime4kPopup_->close();
+    }
+    wake();
+    anime4kLevel_ = pageId;
+    refreshAnime4KMenu();
     anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
 }
 

@@ -36,16 +36,15 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
             panes_.push_back(pane);
         }
         pane->setContent(ids.at(i), images.at(i), names.value(i));
-        pane->setChoices(choiceIds_, choiceLabels_, ids.at(i));
+        pane->setChoices(choices_, ids.at(i));
         pane->setLocalView(zoom_, center_);
     }
 }
 
-void CompareGrid::setChoices(const QStringList& ids, const QStringList& labels) {
-    choiceIds_ = ids;
-    choiceLabels_ = labels;
+void CompareGrid::setChoices(const QVector<ChoiceEntry>& choices) {
+    choices_ = choices;
     for (int i = 0; i < static_cast<int>(panes_.size()); ++i) {
-        panes_.at(i)->setChoices(ids, labels, ids_.value(i));
+        panes_.at(i)->setChoices(choices, ids_.value(i));
     }
 }
 

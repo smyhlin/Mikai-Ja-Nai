@@ -24,6 +24,7 @@
 #include "VideoSurface.hpp"
 
 #include <QCoreApplication>
+#include <QDesktopServices>
 #include <QEasingCurve>
 #include <QFileInfo>
 #include <QFrame>
@@ -47,6 +48,7 @@
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 
@@ -88,16 +90,6 @@ constexpr double kShellRateMin = 0.25;
 constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
-
-
-anime4k::Mode modeFromId(const QString& id) {
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        if (info.id == id) {
-            return info.mode;
-        }
-    }
-    return anime4k::Mode::Off;
-}
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
@@ -902,6 +894,9 @@ void PipFloat::keyPressEvent(QKeyEvent* event) {
 //  PlayerDialog
 // ═══════════════════════════════════════════════════════════════════════════
 
+PlayerDialog::PlayerDialog(const QString& caption, const QString& url, QWidget* parent)
+    : PlayerDialog(caption, url, {}, 0, nullptr, parent) {}
+
 PlayerDialog::PlayerDialog(const QString& caption,
                            const QString& url,
                            const QList<QualityEntry>& qualities,
@@ -910,6 +905,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
                            QWidget* parent)
     : QDialog(parent),
       host_(host),
+      directMedia_(host == nullptr),
       caption_(caption),
       url_(url),
       qualities_(usableQualities(qualities)),
@@ -941,7 +937,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
     shell_->setFocusPolicy(Qt::StrongFocus);
     surface_ = shell_->videoSurface();
 
-    const QString initialEpisode = caption_.contains(QStringLiteral(" · "))
+    const QString initialEpisode = !directMedia_ && caption_.contains(QStringLiteral(" · "))
                                        ? caption_.split(QStringLiteral(" · ")).first().trimmed()
                                        : caption_;
     if (!initialEpisode.isEmpty()) {
@@ -952,7 +948,8 @@ PlayerDialog::PlayerDialog(const QString& caption,
     // first open() and glsl-shaders is only honoured as a construction option,
     // so a mode restored later would land on a core that already ignored it.
     const QString storedChain = QSettings().value(kAnime4KSettingKey).toString();
-    anime4kMode_ = modeFromId(storedChain);
+    // Resolves the experiments too: every catalogue entry has an id.
+    anime4kMode_ = anime4k::modeForId(storedChain);
     // A chain with no Mode is stored under the same key, so the id is loaded
     // even when the enum came back as Off: a single .glsl is a real setting
     // and reading only the mode would drop it on every start.
@@ -1012,6 +1009,8 @@ PlayerDialog::PlayerDialog(const QString& caption,
     seriesDrawer_->hide();
     retryButton_->hide();
     publishQualityOptions();
+    setPlaylist({});
+    setVariants({}, {});
     layoutPanels();
 }
 
@@ -1093,11 +1092,13 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::anime4KModeChanged, this, [this](anime4k::Mode mode) {
         anime4kMode_ = mode;
         surface_->setAnime4KMode(mode);
+        // The applied id must follow the mode, or PiP copies a stale chain.
+        anime4kChainId_ = anime4k::modeId(mode);
         // The shader chain is a rendering choice, not per-episode state: it is
         // the one player setting that outlives a session, and a 4x upscale on
         // a GPU that cannot carry it is invisible until the next run.
         QSettings settings;
-        settings.setValue(kAnime4KSettingKey, modeId(mode));
+        settings.setValue(kAnime4KSettingKey, anime4kChainId_);
     });
     connect(shell_, &PlayerShell::volumeChanged, this, [this](double value) {
         // The shell speaks 0…1; the engine and mpv speak 0…100.
@@ -1111,20 +1112,20 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::prevRequested, this, [this] { stepEpisode(-1); });
     connect(shell_, &PlayerShell::nextRequested, this, [this] { stepEpisode(1); });
     connect(shell_, &PlayerShell::pipRequested, this, &PlayerDialog::togglePip);
-    connect(shell_, &PlayerShell::openOriginalRequested, this,
-            [this] { host_->requestOpenOriginal(); });
-    connect(shell_, &PlayerShell::downloadRequested, this, [this] {
-        // There is no file behind an HLS stream, so "download" means the link
-        // the user can actually save from.
-        host_->requestCopyStreamUrl();
-        flashStatus(QStringLiteral("Посилання на потік скопійовано"));
+    connect(shell_, &PlayerShell::openOriginalRequested, this, [this] {
+        if (!directMedia_) {
+            host_->requestOpenOriginal();
+            return;
+        }
+        const QUrl source = QUrl::fromUserInput(url_);
+        if (!QDesktopServices::openUrl(source)) {
+            flashStatus(QStringLiteral("Не вдалося відкрити джерело відео"));
+        }
     });
+    connect(shell_, &PlayerShell::downloadRequested, this, &PlayerDialog::copyStreamUrl);
     connect(shell_, &PlayerShell::mediaDropped, this, &PlayerDialog::onMediaDropped);
     connect(shell_, &PlayerShell::closeRequested, this, &PlayerDialog::close);
-    connect(shell_, &PlayerShell::copyLinkRequested, this, [this] {
-        host_->requestCopyStreamUrl();
-        flashStatus(QStringLiteral("Посилання на потік скопійовано"));
-    });
+    connect(shell_, &PlayerShell::copyLinkRequested, this, &PlayerDialog::copyStreamUrl);
     connect(shell_, &PlayerShell::frameRequested, this, &PlayerDialog::copyCurrentFrame);
     connect(shell_, &PlayerShell::compareRequested, this, &PlayerDialog::openCompareWindow);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
@@ -1134,6 +1135,15 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
     shell_->installEventFilter(this);
+}
+
+void PlayerDialog::copyStreamUrl() {
+    if (!directMedia_) {
+        host_->requestCopyStreamUrl();
+    } else {
+        QGuiApplication::clipboard()->setText(url_);
+    }
+    flashStatus(QStringLiteral("Посилання на відео скопійовано"));
 }
 
 void PlayerDialog::connectEngine() {
@@ -1173,7 +1183,7 @@ void PlayerDialog::onEngineError(const QString& message) {
     showErrorStatus(message.isEmpty() ? QStringLiteral("Не вдалося відтворити потік") : message);
     // One shot: the host re-extracts and reloads, and a second failure must not
     // start the loop over again.
-    if (!refreshAttempted_) {
+    if (!directMedia_ && !refreshAttempted_) {
         refreshAttempted_ = true;
         host_->playbackFailed();
     }
@@ -1304,7 +1314,7 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
         // reported. The idle timer may take the chrome; it does not get to
         // overrule that choice.
     } else {
-        strip_->setVisible(true);
+        strip_->setVisible(!playlist_.isEmpty());
         seriesDrawer_->setVisible(seriesExpanded_);
         syncStatusVisibility();
     }
@@ -1390,13 +1400,23 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     if (closed_ || path.isEmpty()) {
         return;
     }
-    // The dropped file replaces the episode, so the qualities of the stream
-    // just left behind would offer to switch back into what is not playing.
+    // Late episode/stream callbacks must not replace a directly opened video.
+    directMedia_ = true;
+    leavePip();
     qualities_.clear();
     currentHeight_ = 0;
+    currentEmbed_.clear();
+    setSeriesExpanded(false);
+    setPlaylist({});
+    setVariants({}, {});
+    audioPopup_->close();
+    subtitlesPopup_->close();
+    shell_->dismissOverlay();
     publishQualityOptions();
-    shell_->setEpisodeLabel(QFileInfo(path).fileName());
-    shell_->setMedia(path, QStringLiteral("Локальний файл"));
+    caption_ = QFileInfo(path).fileName();
+    setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
+    shell_->setEpisodeLabel(caption_);
+    shell_->setMedia(path, caption_);
     openStream(path, QString(), /*resume=*/false);
     flashStatus(QStringLiteral("Відтворюю локальний файл"));
 }
@@ -1406,7 +1426,14 @@ void PlayerDialog::onMediaDropped(const QString& path) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) {
+    if (directMedia_ && !playlist.isEmpty()) {
+        return;
+    }
     playlist_ = playlist;
+    if (playlist_.isEmpty()) {
+        seriesExpanded_ = false;
+    }
+    strip_->setVisible(!playlist_.isEmpty() && shell_->state() != PlayerShell::State::FullscreenAutoHidden);
     episodeIndex_ = (index >= 0 && index < playlist_.size()) ? index : 0;
     seriesButton_->setVisible(!playlist_.isEmpty());
 
@@ -1440,7 +1467,7 @@ void PlayerDialog::goToEpisode(int position, bool closeList) {
     // means "this one, now"; the flank chevrons leave it open, since stepping
     // while browsing a long list and having it snap shut under the pointer is a
     // fight.
-    if (closed_ || position < 0 || position >= playlist_.size()) {
+    if (closed_ || directMedia_ || position < 0 || position >= playlist_.size()) {
         return;
     }
     if (closeList) {
@@ -1466,6 +1493,9 @@ int PlayerDialog::pickTargetHeight(int requested) const {
 }
 
 void PlayerDialog::setQualities(const QList<QualityEntry>& qualities) {
+    if (directMedia_) {
+        return;
+    }
     qualities_ = usableQualities(qualities);
     publishQualityOptions();
 }
@@ -1475,7 +1505,7 @@ void PlayerDialog::applyEpisode(const QString& label,
                                 int index,
                                 const QList<QualityEntry>& qualities,
                                 const QVector<QVariantMap>& variants) {
-    if (closed_ || qualities.isEmpty()) {
+    if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
     }
     episodeIndex_ = index;
@@ -1511,7 +1541,7 @@ void PlayerDialog::applyEpisode(const QString& label,
 void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
                                 const QString& label,
                                 const QString& embed) {
-    if (closed_ || qualities.isEmpty()) {
+    if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
     }
     if (!embed.isEmpty()) {
@@ -1530,7 +1560,7 @@ void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
 }
 
 void PlayerDialog::applyRefreshedStreams(const QList<QualityEntry>& qualities, int height) {
-    if (closed_ || qualities.isEmpty()) {
+    if (closed_ || directMedia_ || qualities.isEmpty()) {
         return;
     }
     setQualities(qualities);
@@ -1584,7 +1614,7 @@ void PlayerDialog::publishQualityOptions() {
 }
 
 void PlayerDialog::openAudioMenu() {
-    if (closed_) {
+    if (closed_ || directMedia_) {
         return;
     }
     shell_->dismissOverlay();
@@ -1599,7 +1629,7 @@ void PlayerDialog::openAudioMenu() {
 }
 
 void PlayerDialog::openSubtitlesMenu() {
-    if (closed_) {
+    if (closed_ || directMedia_) {
         return;
     }
     shell_->dismissOverlay();
@@ -1648,6 +1678,9 @@ QVector<MenuEntry> PlayerDialog::trackEntries(const QString& kind) const {
 }
 
 void PlayerDialog::probeUnknownTracks() {
+    if (directMedia_) {
+        return;
+    }
     // Lazy on purpose: a track nobody looks at never costs a request.
     for (const VariantInfo& variant : variants_) {
         if (variant.embed.isEmpty() || variant.embed == currentEmbed_) {
@@ -1660,6 +1693,9 @@ void PlayerDialog::probeUnknownTracks() {
 }
 
 void PlayerDialog::setVariants(const QVector<QVariantMap>& variants, const QString& currentEmbed) {
+    if (directMedia_ && !variants.isEmpty()) {
+        return;
+    }
     variants_.clear();
     variants_.reserve(variants.size());
     for (const QVariantMap& map : variants) {
@@ -1718,7 +1754,7 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
 }
 
 void PlayerDialog::onTrackPicked(const QVariant& payload) {
-    if (closed_ || payload.userType() != QMetaType::QVariantMap) {
+    if (closed_ || directMedia_ || payload.userType() != QMetaType::QVariantMap) {
         return;
     }
     const QVariantMap map = payload.toMap();
@@ -1765,7 +1801,7 @@ QPoint PlayerDialog::settingsAnchor() const {
 void PlayerDialog::toggleSeries() { setSeriesExpanded(!seriesExpanded_); }
 
 void PlayerDialog::setSeriesExpanded(bool expanded) {
-    seriesExpanded_ = expanded;
+    seriesExpanded_ = expanded && !directMedia_ && !playlist_.isEmpty();
     if (seriesExpanded_) {
         shell_->dismissOverlay();
     }
@@ -1858,7 +1894,7 @@ void PlayerDialog::startPlayer() {
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
         showErrorStatus(QStringLiteral("Не вдалося відтворити потік"));
-        if (!refreshAttempted_) {
+        if (!directMedia_ && !refreshAttempted_) {
             refreshAttempted_ = true;
             host_->playbackFailed();
         }
@@ -2102,7 +2138,9 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     // VideoSurface owns the libmpv handle: a dialog closed by the host's
     // shutdown must not leave the core running behind it.
     surface_->close();
-    host_->playerClosed();
+    if (host_ != nullptr) {
+        host_->playerClosed();
+    }
     QDialog::closeEvent(event);
 }
 
@@ -2169,9 +2207,16 @@ void PlayerDialog::enterPip() {
         // pooled float is still the one that gets put away.
         connect(window, &PipFloat::closeRequested, this, &PlayerDialog::close);
     }
-    // The float runs a second mpv core, so it needs the same shader chain
-    // separately: entering PiP must not silently drop the upscaling.
+    // The float owns a second core, so it needs the chain separately: the mode
+    // alone would drop a chain the compare window applied. It is pooled, so the
+    // recorded id is compared rather than assumed - "off" clears whatever a
+    // previous session left on it.
     window->videoSurface()->setAnime4KMode(anime4kMode_);
+    const QString floatChain =
+        anime4kChainId_.isEmpty() ? anime4k::modeId(anime4kMode_) : anime4kChainId_;
+    if (!floatChain.isEmpty() && window->videoSurface()->anime4KChainId() != floatChain) {
+        window->videoSurface()->setAnime4KChain(floatChain);
+    }
 
     window->setPlaying(surface_->isPlaying());
     window->setTime(surface_->position(), surface_->duration());

@@ -127,6 +127,19 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
     topRow->addStretch();
+    auto* mediaButton = new QPushButton(tr("Відкрити відео"), this);
+    mediaButton->setObjectName(QStringLiteral("secondary"));
+    mediaButton->setAccessibleName(tr("Відкрити відео"));
+    auto* mediaMenu = new QMenu(mediaButton);
+    mediaMenu->setObjectName(QStringLiteral("openMediaMenu"));
+    auto* fileAction = mediaMenu->addAction(tr("Відеофайл…"));
+    fileAction->setObjectName(QStringLiteral("openVideoFile"));
+    connect(fileAction, &QAction::triggered, this, &SearchPage::mediaFileRequested);
+    auto* urlAction = mediaMenu->addAction(tr("Посилання на відео…"));
+    urlAction->setObjectName(QStringLiteral("openVideoUrl"));
+    connect(urlAction, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
+    mediaButton->setMenu(mediaMenu);
+    topRow->addWidget(mediaButton);
     rateLabel_ = new RateLimitLabel(client_, this);
     topRow->addWidget(rateLabel_);
 
