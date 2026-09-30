@@ -25,6 +25,7 @@
 
 #include <QCoreApplication>
 #include <QEasingCurve>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGraphicsOpacityEffect>
 #include <QClipboard>
@@ -940,6 +941,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
     shell_->setFocusPolicy(Qt::StrongFocus);
     surface_ = shell_->videoSurface();
 
+    const QString initialEpisode = caption_.contains(QStringLiteral(" · "))
+                                       ? caption_.split(QStringLiteral(" · ")).first().trimmed()
+                                       : caption_;
+    if (!initialEpisode.isEmpty()) {
+        shell_->setEpisodeLabel(initialEpisode);
+    }
+
     // Applied before any file is opened: the surface builds its mpv core on the
     // first open() and glsl-shaders is only honoured as a construction option,
     // so a mode restored later would land on a core that already ignored it.
@@ -1387,6 +1395,7 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     qualities_.clear();
     currentHeight_ = 0;
     publishQualityOptions();
+    shell_->setEpisodeLabel(QFileInfo(path).fileName());
     shell_->setMedia(path, QStringLiteral("Локальний файл"));
     openStream(path, QString(), /*resume=*/false);
     flashStatus(QStringLiteral("Відтворюю локальний файл"));
@@ -1411,6 +1420,12 @@ void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) 
     // follow the playlist: on episode 1 of 11 the previous arrow leads nowhere
     // and should not be offered at all.
     shell_->setEpisodeStepping(episodeIndex_ > 0, episodeIndex_ + 1 < playlist_.size());
+    if (episodeIndex_ >= 0 && episodeIndex_ < playlist_.size()) {
+        const QString ep = playlist_.at(episodeIndex_).value(QStringLiteral("label")).toString();
+        if (!ep.isEmpty()) {
+            shell_->setEpisodeLabel(ep);
+        }
+    }
     // The drawer's rows were torn down and rebuilt: re-arm the wake watchers
     // over the fresh buttons or hovering the list stops counting as activity.
     watchPanels();
@@ -1476,6 +1491,7 @@ void PlayerDialog::applyEpisode(const QString& label,
     const int target = pickTargetHeight(0);
     caption_ = QStringLiteral("%1 · %2p").arg(label).arg(target);
     setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
+    shell_->setEpisodeLabel(label);
     setPlaylist(playlist_, index);
     flashStatus(QStringLiteral("Серія: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {

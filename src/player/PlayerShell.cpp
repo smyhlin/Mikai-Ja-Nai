@@ -319,12 +319,13 @@ void PlayerShell::buildFooter() {
     info->setContentsMargins(12, 5, 12, 5);
     info->setSpacing(8);
 
-    auto* app = new QLabel(QStringLiteral("MIKAI"), footerLeft_);
+    lblEpisode_ = new QLabel(episodeLabel_.isEmpty() ? QStringLiteral("MIKAI") : episodeLabel_, footerLeft_);
+    lblEpisode_->setObjectName(QStringLiteral("playerEpisodeLabel"));
     QFont appFont = monoFont(9);
     appFont.setBold(true);
-    app->setFont(appFont);
-    app->setStyleSheet(QStringLiteral("background: transparent; color: #ffffff;"));
-    info->addWidget(app);
+    lblEpisode_->setFont(appFont);
+    lblEpisode_->setStyleSheet(QStringLiteral("background: transparent; color: #ffffff;"));
+    info->addWidget(lblEpisode_);
 
     auto* divider = new QLabel(QStringLiteral("│"), footerLeft_);
     divider->setStyleSheet(
@@ -752,6 +753,14 @@ void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {
     btnPrev_->setVisible(hasPrevious && !hudHidden_);
     btnNext_->setVisible(hasNext && !hudHidden_);
     update();
+}
+
+void PlayerShell::setEpisodeLabel(const QString& label) {
+    episodeLabel_ = label;
+    if (lblEpisode_ != nullptr) {
+        lblEpisode_->setText(label.isEmpty() ? QStringLiteral("MIKAI") : label);
+        footerLeft_->adjustSize();
+    }
 }
 
 void PlayerShell::setVolume(double volume, bool fromHost) {

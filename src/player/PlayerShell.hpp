@@ -87,6 +87,8 @@ public:
     void setStreamStats(double bytesPerSecond, double framesPerSecond);
     void setSourceSize(int width, int height);
     void setEpisodeStepping(bool hasPrevious, bool hasNext);
+    void setEpisodeLabel(const QString& label);
+    QString episodeLabel() const { return episodeLabel_; }
     /// Re-reads the engine's pause state and repaints the play control, for
     /// the paths that change the core without a playingChanged arriving.
     void updatePlayIcon();
@@ -246,6 +248,7 @@ private:
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 
     Panel* footerLeft_ = nullptr;
+    QLabel* lblEpisode_ = nullptr;
     QLabel* lblNetworkStats_ = nullptr;
     QLabel* lblEnhancement_ = nullptr;
     Panel* footerRight_ = nullptr;
@@ -308,6 +311,7 @@ private:
     int sourceHeight_ = 0;
     int outputWidth_ = 0;
     int outputHeight_ = 0;
+    QString episodeLabel_;
 
     // pointer gesture
     QPointF press_;
