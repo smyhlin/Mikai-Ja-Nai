@@ -8,6 +8,13 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QToolButton>
+#include <QTransform>
+#include <QWheelEvent>
+
+#include <algorithm>
+#include <cmath>
+
+#include "CompareLayout.hpp"
 
 namespace mplayer::shell {
 
@@ -87,17 +94,22 @@ void ComparePane::setChoices(const QStringList& ids, const QStringList& labels,
     syncBadgeMenu();
 }
 
-void ComparePane::setLocalView(const std::optional<QPointF>& center) {
-    if (!center.has_value() || item_->pixmap().isNull()) {
-        return;
-    }
-    const QSize size = imageSize();
+void ComparePane::setLocalView(double zoom, const std::optional<QPointF>& center) {
+    zoom_ = std::clamp(zoom, kCompareZoomMin, kCompareZoomMax);
+    const double scale = base_ * zoom_;
+    QTransform transform;
+    transform.scale(scale, scale);
+
     const bool wasSyncing = syncing_;
     syncing_ = true;
-    // The centre is in scene units - fractions of this pane's own picture - so
-    // the fit already in force is what it is measured against.
-    centerOn(center->x() * size.width(), center->y() * size.height());
+    setTransform(transform);
+    if (center && item_ != nullptr && !imageSize().isEmpty()) {
+        const double cx = center->x() * imageSize().width();
+        const double cy = center->y() * imageSize().height();
+        centerOn(cx, cy);
+    }
     syncing_ = wasSyncing;
+    anchorBadge();
 }
 
 void ComparePane::fit() {
@@ -108,12 +120,28 @@ void ComparePane::fit() {
     syncing_ = true;
     if (image_.isNull()) {
         resetTransform();
+        base_ = 1.0;
     } else {
         fitInView(item_, Qt::KeepAspectRatio);
+        const double scale = transform().m11();
+        base_ = scale > 0.0 ? scale : 1.0;
     }
     syncing_ = wasSyncing;
-    // Re-apply the shared centre: the pane's own fit just moved the view.
-    setLocalView(centerNormalized());
+    // Re-apply the shared numbers: the pane's own fit just rewrote the
+    // transform, and zoom/centre are multiples of that fit.
+    setLocalView(zoom_, centerNormalized());
+}
+
+void ComparePane::wheelEvent(QWheelEvent* event) {
+    const int steps = event->angleDelta().y() / 120;
+    if (steps == 0) {
+        QGraphicsView::wheelEvent(event);
+        return;
+    }
+    const double target = zoom_ * std::pow(kCompareWheelStep, steps);
+    setLocalView(target, centerNormalized());
+    event->accept();
+    emit viewChanged();
 }
 
 QPointF ComparePane::centerNormalized() const {

@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QToolButton>
+#include <QWheelEvent>
 
 #include <algorithm>
 
@@ -203,7 +204,9 @@ void CompareCanvas::applyLayout() {
     badgeB_->setVisible(layout.b.visible);
     scene()->setSceneRect(QRectF(QPointF(0, 0), layout.scene));
     placeBadges();
-    camera_.fit(layout.scene, viewport()->width(), viewport()->height());
+    if (!viewTouched_) {
+        camera_.fit(layout.scene, viewport()->width(), viewport()->height());
+    }
     applyView();
     placeBadges();
 }
@@ -276,9 +279,11 @@ void CompareCanvas::applyView() {
     resetTransform();
     scale(camera_.clampedZoom(), camera_.clampedZoom());
     translate(camera_.panX, camera_.panY);
+    emit zoomChanged(static_cast<int>(camera_.clampedZoom() * 100.0));
 }
 
 void CompareCanvas::fitToContent() {
+    viewTouched_ = false;
     camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
     applyView();
     placeBadges();
@@ -345,9 +350,25 @@ void CompareCanvas::mouseReleaseEvent(QMouseEvent* event) {
     QGraphicsView::mouseReleaseEvent(event);
 }
 
+void CompareCanvas::wheelEvent(QWheelEvent* event) {
+    const int steps = event->angleDelta().y() / 120;
+    if (steps == 0) {
+        QGraphicsView::wheelEvent(event);
+        return;
+    }
+    const QPointF anchor = mapToScene(event->position().toPoint());
+    camera_.zoomBySteps(steps, anchor.x(), anchor.y(), viewport()->width(), viewport()->height());
+    viewTouched_ = true;
+    applyView();
+    placeBadges();
+    event->accept();
+}
+
 void CompareCanvas::resizeEvent(QResizeEvent* event) {
     QGraphicsView::resizeEvent(event);
-    camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
+    if (!viewTouched_) {
+        camera_.fit(scene()->sceneRect().size().toSize(), viewport()->width(), viewport()->height());
+    }
     applyView();
     placeBadges();
 }

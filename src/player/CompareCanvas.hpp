@@ -66,11 +66,13 @@ public:
     bool pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b, uchar& g, uchar& r) const;
 
 signals:
+    void zoomChanged(int percent);
     void splitDragged(double fraction);
     void hoverPixel(int x, int y, bool valid);
     void candidateChosen(int side, const QString& id);
 
 protected:
+    void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -78,6 +80,7 @@ protected:
     void scrollContentsBy(int dx, int dy) override;
 
 private:
+    bool viewTouched_ = false;
     void applyLayout();
     void placeBadges();
     void updateBadge(QToolButton* badge, int side);

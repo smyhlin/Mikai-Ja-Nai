@@ -52,6 +52,7 @@ private:
     QStringList choiceIds_;
     QStringList choiceLabels_;
     std::optional<QPointF> center_;
+    double zoom_ = 1.0;
 };
 
 }  // namespace mplayer::shell

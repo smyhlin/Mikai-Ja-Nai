@@ -42,12 +42,13 @@ public:
     void setContent(const QString& key, const QImage& image, const QString& name);
     void setChoices(const QStringList& ids, const QStringList& labels, const QString& current);
 
-    /// Adopt a shared centre, normalized (fractions of this pane's own
-    /// picture), so one number means the same region in every pane.
-    void setLocalView(const std::optional<QPointF>& center);
-    /// Re-fit to the picture; the shared centre survives it.
+    /// Adopt a shared view: `zoom` is a multiple of this pane's own fit and the
+    /// centre is normalized (fractions of its own picture).
+    void setLocalView(double zoom, const std::optional<QPointF>& center);
+    /// Re-fit to the picture; the shared zoom and centre survive it.
     void fit();
 
+    double zoom() const { return zoom_; }
     std::optional<QPointF> center() const;
 
     QSize sizeHint() const override { return {480, 320}; }
@@ -59,6 +60,7 @@ signals:
     void choiceChosen(const QString& id);
 
 protected:
+    void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
 
@@ -84,6 +86,11 @@ private:
     /// True while this pane is writing its own view, so the scroll it causes is
     /// not reported back to the group as if the user had dragged it.
     bool syncing_ = false;
+
+    /// The fit scale of the picture, recorded by fit().
+    double base_ = 1.0;
+    /// Fit-relative zoom, the shared camera's number.
+    double zoom_ = 1.0;
 };
 
 }  // namespace mplayer::shell

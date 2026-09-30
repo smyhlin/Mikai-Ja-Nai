@@ -248,6 +248,25 @@ double Camera::clampedOpacity() const { return std::clamp(opacity, 0.0, 1.0); }
 double Camera::clampedFlickerHz() const { return std::clamp(flickerHz, 1.0, 30.0); }
 int Camera::clampedGain() const { return std::clamp(diffGain, kDiffGainMin, kDiffGainMax); }
 
+void Camera::zoomTo(double target, double anchorSceneX, double anchorSceneY, double viewportWidth,
+                    double viewportHeight) {
+    const double after = std::clamp(target > 0.0 ? target : 1.0, kCompareZoomMin, kCompareZoomMax);
+    zoom = after;
+    if (viewportWidth <= 0.0 || viewportHeight <= 0.0) return;
+    // The anchor is a scene coordinate and stays under the viewport centre
+    // across the zoom, so the pan is *derived from* the anchor:
+    //   (vw/2 - panX)/zoom == anchorSceneX, which is the invariant the caller
+    // depends on.
+    panX = viewportWidth / 2.0 - anchorSceneX * after;
+    panY = viewportHeight / 2.0 - anchorSceneY * after;
+}
+
+void Camera::zoomBySteps(int steps, double anchorSceneX, double anchorSceneY, double viewportWidth,
+                         double viewportHeight) {
+    const double target = clampedZoom() * std::pow(kCompareWheelStep, steps);
+    zoomTo(target, anchorSceneX, anchorSceneY, viewportWidth, viewportHeight);
+}
+
 void Camera::fit(const QSize& content, double viewportWidth, double viewportHeight) {
     if (content.width() <= 0 || content.height() <= 0 || viewportWidth <= 0.0 ||
         viewportHeight <= 0.0) {
