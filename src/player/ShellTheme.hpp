@@ -27,8 +27,8 @@ inline constexpr int kDockMaxWidth = 980;
 inline constexpr int kDockHorizontalInset = 20;
 inline constexpr int kDockHeight = 104;
 inline constexpr int kDockBottomInset = 20;
-inline constexpr int kDockPlaySize = 52;
-inline constexpr int kDockPlayGlyph = 29;
+inline constexpr int kDockPlaySize = 48;
+inline constexpr int kDockPlayGlyph = 24;
 inline constexpr int kDockActionSize = 40;
 inline constexpr int kDockActionGlyph = 20;
 // Six action buttons at kDockActionSize plus their spacing.

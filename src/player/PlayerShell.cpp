@@ -211,10 +211,8 @@ void PlayerShell::buildDock() {
 
     topRow->addStretch();
     btnPlay_ = new IconButton(IconPainter::play, QStringLiteral("toggle_playback  (Space)"),
-                              kDockPlaySize, kDockPlayGlyph, dock_, accent());
+                              kDockPlaySize, kDockPlayGlyph, dock_);
     btnPlay_->setObjectName(QStringLiteral("playerPlayToggle"));
-    btnPlay_->setFilled(true);
-    btnPlay_->setCircular(true);
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
     topRow->addWidget(btnPlay_);
     topRow->addStretch();

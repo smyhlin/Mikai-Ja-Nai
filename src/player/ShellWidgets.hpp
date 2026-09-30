@@ -72,9 +72,6 @@ public:
     /// painted by this class, so the function pointer is the only handle on
     /// which one is up - a grab cannot tell them apart at dock scale.
     IconFn icon() const { return icon_; }
-    void setFilled(bool filled);
-    void setCircular(bool circular);
-
 protected:
     void enterEvent(QEnterEvent* event) override;
     void leaveEvent(QEvent* event) override;
@@ -87,8 +84,6 @@ private:
     QColor tint_;
     bool hover_ = false;
     bool hasTint_ = false;
-    bool filled_ = false;
-    bool circular_ = false;
 };
 
 // ── settings flyout ────────────────────────────────────────────────────────
