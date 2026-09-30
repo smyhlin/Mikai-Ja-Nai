@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QToolButton>
+#include <QTransform>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -276,9 +277,8 @@ void CompareCanvas::clear(const QString& message) {
 int CompareCanvas::imageWidth() const { return imageSize_.width(); }
 
 void CompareCanvas::applyView() {
-    resetTransform();
-    scale(camera_.clampedZoom(), camera_.clampedZoom());
-    translate(camera_.panX, camera_.panY);
+    setTransform(QTransform(camera_.clampedZoom(), 0.0, 0.0, camera_.clampedZoom(),
+                            camera_.panX, camera_.panY));
     emit zoomChanged(static_cast<int>(camera_.clampedZoom() * 100.0));
 }
 
@@ -314,6 +314,12 @@ bool CompareCanvas::pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b,
 }
 
 void CompareCanvas::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::AltModifier)) {
+        panning_ = true;
+        lastPanPoint_ = event->position().toPoint();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton &&
         (mode_ == CompareMode::SplitH || mode_ == CompareMode::SplitV)) {
         dragging_ = true;
@@ -322,7 +328,17 @@ void CompareCanvas::mousePressEvent(QMouseEvent* event) {
 }
 
 void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
-    if (dragging_ && !imageSize_.isEmpty()) {
+    if (panning_) {
+        const QPoint point = event->position().toPoint();
+        const QPoint delta = point - lastPanPoint_;
+        lastPanPoint_ = point;
+        camera_.panX += delta.x();
+        camera_.panY += delta.y();
+        viewTouched_ = true;
+        applyView();
+        placeBadges();
+        event->accept();
+    } else if (dragging_ && !imageSize_.isEmpty()) {
         const QPointF sp = mapToScene(event->position().toPoint());
         if (mode_ == CompareMode::SplitV && imageSize_.width() > 0) {
             camera_.split = std::clamp(sp.x() / imageSize_.width(), 0.0, 1.0);
@@ -347,6 +363,11 @@ void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
 
 void CompareCanvas::mouseReleaseEvent(QMouseEvent* event) {
     dragging_ = false;
+    if (panning_ && event->button() == Qt::LeftButton) {
+        panning_ = false;
+        event->accept();
+        return;
+    }
     QGraphicsView::mouseReleaseEvent(event);
 }
 

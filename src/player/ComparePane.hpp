@@ -16,6 +16,7 @@
 
 #include <QGraphicsView>
 #include <QImage>
+#include <QPoint>
 #include <QPointF>
 #include <QString>
 #include <QStringList>
@@ -61,6 +62,9 @@ signals:
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
 
@@ -86,6 +90,8 @@ private:
     /// True while this pane is writing its own view, so the scroll it causes is
     /// not reported back to the group as if the user had dragged it.
     bool syncing_ = false;
+    bool altPanning_ = false;
+    QPoint lastPanPoint_;
 
     /// The fit scale of the picture, recorded by fit().
     double base_ = 1.0;

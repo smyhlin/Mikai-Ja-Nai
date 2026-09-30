@@ -4,6 +4,7 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -130,6 +131,38 @@ void ComparePane::fit() {
     // Re-apply the shared numbers: the pane's own fit just rewrote the
     // transform, and zoom/centre are multiples of that fit.
     setLocalView(zoom_, centerNormalized());
+}
+
+void ComparePane::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::AltModifier)) {
+        altPanning_ = true;
+        lastPanPoint_ = event->position().toPoint();
+        event->accept();
+        return;
+    }
+    QGraphicsView::mousePressEvent(event);
+}
+
+void ComparePane::mouseMoveEvent(QMouseEvent* event) {
+    if (altPanning_) {
+        const QPoint point = event->position().toPoint();
+        const QPoint delta = point - lastPanPoint_;
+        lastPanPoint_ = point;
+        horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void ComparePane::mouseReleaseEvent(QMouseEvent* event) {
+    if (altPanning_ && event->button() == Qt::LeftButton) {
+        altPanning_ = false;
+        event->accept();
+        return;
+    }
+    QGraphicsView::mouseReleaseEvent(event);
 }
 
 void ComparePane::wheelEvent(QWheelEvent* event) {

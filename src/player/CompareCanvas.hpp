@@ -17,6 +17,7 @@
 
 #include <QGraphicsView>
 #include <QImage>
+#include <QPoint>
 #include <QString>
 #include <QStringList>
 
@@ -111,6 +112,8 @@ private:
     int heldSide_ = -1;
     bool flickerShowA_ = true;
     bool dragging_ = false;
+    bool panning_ = false;
+    QPoint lastPanPoint_;
 };
 
 }  // namespace mplayer::shell
