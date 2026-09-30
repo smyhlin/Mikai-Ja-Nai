@@ -155,13 +155,6 @@ void CompareCanvas::setSplit(double fraction) {
     applyLayout();
 }
 
-void CompareCanvas::setOpacity(double fraction) {
-    camera_.opacity = std::clamp(fraction, 0.0, 1.0);
-    if (mode_ == CompareMode::Overlay) {
-        applyLayout();
-    }
-}
-
 void CompareCanvas::setFlickerRate(double hz) { camera_.flickerHz = std::clamp(hz, 1.0, 30.0); }
 
 void CompareCanvas::setDiffGain(int gain) {
@@ -173,8 +166,7 @@ void CompareCanvas::applyLayout() {
         return;
     }
     const CompareLayout layout =
-        buildLayout(mode_, imageSize_, camera_.clampedSplit(), camera_.clampedOpacity(),
-                    flickerShowA_, heldSide_);
+        buildLayout(mode_, imageSize_, camera_.clampedSplit(), flickerShowA_, heldSide_);
 
     const auto apply = [this](CompareImageItem* item, const ItemState& state) {
         if (!state.visible) {
@@ -183,7 +175,6 @@ void CompareCanvas::applyLayout() {
         }
         item->show();
         item->setPos(state.x, state.y);
-        item->setOpacity(state.opacity);
         if (state.hasClip) {
             item->setClipRect(QRectF(state.clipX, state.clipY, state.clipW, state.clipH));
         } else {

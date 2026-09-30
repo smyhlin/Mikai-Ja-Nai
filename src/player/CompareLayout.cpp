@@ -8,16 +8,13 @@ namespace mplayer::shell {
 
 const char* modeKey(CompareMode mode) {
     switch (mode) {
-        case CompareMode::Original: return "original";
-        case CompareMode::Processed: return "processed";
         case CompareMode::SplitH: return "split_h";
         case CompareMode::SplitV: return "split_v";
         case CompareMode::SideBySide: return "side_by_side";
-        case CompareMode::Overlay: return "overlay";
         case CompareMode::Flicker: return "flicker";
         case CompareMode::Difference: return "difference";
     }
-    return "original";
+    return "side_by_side";
 }
 
 bool modeFromKey(const char* key, CompareMode& out) {
@@ -27,10 +24,11 @@ bool modeFromKey(const char* key, CompareMode& out) {
         CompareMode mode;
     };
     static const Entry table[] = {
-        {"original", CompareMode::Original},         {"processed", CompareMode::Processed},
-        {"split_h", CompareMode::SplitH},            {"split_v", CompareMode::SplitV},
-        {"side_by_side", CompareMode::SideBySide},   {"overlay", CompareMode::Overlay},
-        {"flicker", CompareMode::Flicker},           {"difference", CompareMode::Difference},
+        {"split_h", CompareMode::SplitH},
+        {"split_v", CompareMode::SplitV},
+        {"side_by_side", CompareMode::SideBySide},
+        {"flicker", CompareMode::Flicker},
+        {"difference", CompareMode::Difference},
     };
     for (const Entry& e : table) {
         if (std::strcmp(e.key, key) == 0) {
@@ -43,25 +41,21 @@ bool modeFromKey(const char* key, CompareMode& out) {
 
 const char* modeLabel(CompareMode mode) {
     switch (mode) {
-        case CompareMode::Original: return "Original";
-        case CompareMode::Processed: return "Processed";
         case CompareMode::SplitH: return "Split H";
         case CompareMode::SplitV: return "Split V";
         case CompareMode::SideBySide: return "Side-by-side";
-        case CompareMode::Overlay: return "Overlay";
         case CompareMode::Flicker: return "Flicker";
         case CompareMode::Difference: return "Difference";
     }
-    return "Original";
+    return "Side-by-side";
 }
 
-CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, double opacity,
-                          bool flickerShowA, int heldSide) {
+CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, bool flickerShowA,
+                          int heldSide) {
     CompareLayout out;
     if (size.width() <= 0 || size.height() <= 0) return out;
 
     const double s = std::clamp(split, 0.0, 1.0);
-    const double o = std::clamp(opacity, 0.0, 1.0);
 
     // Space hides the second side everywhere alike: A takes the whole frame and
     // the divider and the second name go with it. Geometry and the stored mode
@@ -75,16 +69,6 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, dou
     }
 
     switch (mode) {
-        case CompareMode::Original:
-            out.a.visible = true;
-            out.a.clipFull(size);
-            break;
-
-        case CompareMode::Processed:
-            out.b.visible = true;
-            out.b.clipFull(size);
-            break;
-
         case CompareMode::SplitH: {
             const int cut = static_cast<int>(size.height() * s);
             out.a.visible = true;
@@ -137,14 +121,6 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, dou
             out.b.x = size.width() + kSideBySideGap;
             out.scene = QSize(size.width() * 2 + kSideBySideGap, size.height());
             return out;  // the scene is wider; do not overwrite it below
-
-        case CompareMode::Overlay:
-            out.a.visible = true;
-            out.a.clipFull(size);
-            out.b.visible = true;
-            out.b.clipFull(size);
-            out.b.opacity = o;
-            break;
 
         case CompareMode::Flicker:
             // One side at full strength; the timer decides which.
@@ -244,7 +220,6 @@ double Camera::clampedZoom() const {
 }
 
 double Camera::clampedSplit() const { return std::clamp(split, 0.0, 1.0); }
-double Camera::clampedOpacity() const { return std::clamp(opacity, 0.0, 1.0); }
 double Camera::clampedFlickerHz() const { return std::clamp(flickerHz, 1.0, 30.0); }
 int Camera::clampedGain() const { return std::clamp(diffGain, kDiffGainMin, kDiffGainMax); }
 
@@ -287,7 +262,6 @@ void Camera::reset() {
     panX = 0.0;
     panY = 0.0;
     split = 0.5;
-    opacity = 0.5;
     flickerHz = 1.0;
     diffGain = 1;
 }

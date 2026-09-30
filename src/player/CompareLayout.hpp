@@ -13,12 +13,9 @@
 namespace mplayer::shell {
 
 enum class CompareMode {
-    Original,
-    Processed,
     SplitH,
     SplitV,
     SideBySide,
-    Overlay,
     Flicker,
     Difference
 };
@@ -34,7 +31,6 @@ struct ItemState {
     bool visible = false;
     int x = 0;
     int y = 0;
-    double opacity = 1.0;
     int clipX = 0;
     int clipY = 0;
     int clipW = 0;
@@ -70,8 +66,8 @@ struct CompareLayout {
 /// `heldSide` is the Space-hold override (-1 when not held): it shows one side
 /// full and hides everything else, leaving the stored mode untouched so
 /// releasing restores the view, zoom and pan included.
-CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, double opacity,
-                          bool flickerShowA, int heldSide = -1);
+CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, bool flickerShowA,
+                          int heldSide = -1);
 
 /// OpenCV's JET ramp, computed rather than tabulated, so the difference view
 /// runs dark blue -> cyan -> green -> yellow -> dark red.
@@ -101,13 +97,11 @@ struct Camera {
     double panX = 0.0;
     double panY = 0.0;
     double split = 0.5;
-    double opacity = 0.5;
     double flickerHz = 1.0;
     int diffGain = 1;
 
     double clampedZoom() const;
     double clampedSplit() const;
-    double clampedOpacity() const;
     double clampedFlickerHz() const;
     int clampedGain() const;
 

@@ -53,7 +53,6 @@ public:
     Camera& camera() { return camera_; }
     const Camera& camera() const { return camera_; }
     void setSplit(double fraction);
-    void setOpacity(double fraction);
     void setFlickerRate(double hz);
     void setDiffGain(int gain);
 
@@ -107,7 +106,7 @@ private:
     QString selectedB_;
 
     Camera camera_;
-    CompareMode mode_ = CompareMode::Original;
+    CompareMode mode_ = CompareMode::SideBySide;
     QSize imageSize_;
     int heldSide_ = -1;
     bool flickerShowA_ = true;

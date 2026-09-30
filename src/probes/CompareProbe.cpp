@@ -225,8 +225,8 @@ int main(int argc, char** argv) {
         check(widestMenu == all.size(), "every catalogue entry is in the chip menus");
 
         auto* mode = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
-        check(mode != nullptr && mode->count() == 8,
-              "the eight compare modes are offered");
+        check(mode != nullptr && mode->count() == 5,
+              "the five remaining compare modes are offered");
 
         // ── 5. the info line is real, not a label ─────────────────
         auto* info = compare->findChild<QLabel*>(QString::fromLatin1("compareInfo"));

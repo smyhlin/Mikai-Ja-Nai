@@ -14,7 +14,6 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QShowEvent>
-#include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QThread>
@@ -123,10 +122,9 @@ void CompareWindow::buildUi() {
     header->addWidget(new QLabel(QStringLiteral("Режим:"), this));
     modeBox_ = new QComboBox(this);
     modeBox_->setObjectName(QStringLiteral("compareMode"));
-    for (const CompareMode mode : {CompareMode::Original, CompareMode::Processed,
-                                   CompareMode::SplitH, CompareMode::SplitV,
-                                   CompareMode::SideBySide, CompareMode::Overlay,
-                                   CompareMode::Flicker, CompareMode::Difference}) {
+    for (const CompareMode mode : {CompareMode::SplitH, CompareMode::SplitV,
+                                   CompareMode::SideBySide, CompareMode::Flicker,
+                                   CompareMode::Difference}) {
         modeBox_->addItem(QString::fromLatin1(modeLabel(mode)),
                           QString::fromLatin1(modeKey(mode)));
     }
@@ -160,16 +158,6 @@ void CompareWindow::buildUi() {
     split_->setValue(0.5);
     connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
     view->addWidget(split_);
-
-    opacityLabel_ = new QLabel(QStringLiteral("Накладання:"), this);
-    view->addWidget(opacityLabel_);
-    opacity_ = new QSlider(Qt::Horizontal, this);
-    opacity_->setObjectName(QStringLiteral("compareOpacity"));
-    opacity_->setRange(0, 100);
-    opacity_->setValue(50);
-    opacity_->setFixedWidth(110);
-    connect(opacity_, &QSlider::valueChanged, this, &CompareWindow::onOpacityChanged);
-    view->addWidget(opacity_);
 
     flickerLabel_ = new QLabel(QStringLiteral("Мигання, Гц:"), this);
     view->addWidget(flickerLabel_);
@@ -484,19 +472,15 @@ void CompareWindow::onModeChanged(int index) {
     // it: a disabled knob is a knob that invites a click before admitting it
     // does nothing, and a hidden one cannot be asked.
     const bool isSplit = mode == CompareMode::SplitH || mode == CompareMode::SplitV;
-    const bool isOverlay = mode == CompareMode::Overlay;
     const bool isFlicker = mode == CompareMode::Flicker;
     const bool isDifference = mode == CompareMode::Difference;
     splitLabel_->setVisible(isSplit);
     split_->setVisible(isSplit);
-    opacityLabel_->setVisible(isOverlay);
-    opacity_->setVisible(isOverlay);
     flickerLabel_->setVisible(isFlicker);
     flicker_->setVisible(isFlicker);
     gainLabel_->setVisible(isDifference);
     gain_->setVisible(isDifference);
     canvas_->setSplit(split_->value());
-    canvas_->setOpacity(opacity_->value() / 100.0);
     canvas_->setFlickerRate(flicker_->value());
     canvas_->setDiffGain(gain_->value());
     updateFlickerTimer();
@@ -508,10 +492,6 @@ void CompareWindow::onModeChanged(int index) {
 
 void CompareWindow::onSplitChanged(double value) {
     canvas_->setSplit(value);
-}
-
-void CompareWindow::onOpacityChanged(int value) {
-    canvas_->setOpacity(value / 100.0);
 }
 
 void CompareWindow::onFlickerChanged(int value) {

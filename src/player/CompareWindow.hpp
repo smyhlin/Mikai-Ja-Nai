@@ -23,7 +23,6 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
-class QSlider;
 class QSpinBox;
 class QStackedWidget;
 class QTimer;
@@ -63,7 +62,6 @@ public:
 private slots:
     void onModeChanged(int index);
     void onSplitChanged(double value);
-    void onOpacityChanged(int value);
     void onFlickerChanged(int value);
     void onGainChanged(int value);
     void onFlickerTimeout();
@@ -104,11 +102,9 @@ private:
     QStackedWidget* stack_ = nullptr;
     QComboBox* modeBox_ = nullptr;
     QLabel* splitLabel_ = nullptr;
-    QLabel* opacityLabel_ = nullptr;
     QLabel* flickerLabel_ = nullptr;
     QLabel* gainLabel_ = nullptr;
     QDoubleSpinBox* split_ = nullptr;
-    QSlider* opacity_ = nullptr;
     QSpinBox* flicker_ = nullptr;
     QSpinBox* gain_ = nullptr;
     QLabel* info_ = nullptr;

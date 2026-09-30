@@ -96,32 +96,26 @@ set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build-cmake -R mi
 
 Qualities are extracted once per episode, only when that episode opens, and the resulting stream URLs are cached for half an hour, so reopening a title repaints instead of re-hitting every provider. The links are signed and do expire; if a stream fails to play the player re-extracts it once on its own before reporting the error.
 
-The shader comparison is a port of AnimeInterp's comparison window. The eight modes
-(Original, Processed, Split H, Split V, Side-by-side, Overlay, Flicker, Difference) and
-their geometry live in `src/player/CompareLayout.cpp` as one pure `buildLayout` call, so a
+The shader comparison is a port of AnimeInterp's comparison window. The five modes
+(Split H, Split V, Side-by-side, Flicker, Difference) and their geometry live in
+`src/player/CompareLayout.cpp` as one pure `buildLayout` call, so a
 mode's whole picture is a value rather than a chain of scene mutations. `CompareCanvas`
-turns that value into scene items and owns the gestures: the wheel does not zoom, so the
-picture is shown at one honest size and a comparison cannot be judged on a frame the viewer
-has silently rescaled; it is never upscaled past 1:1 either, because a 480p frame blown up
-shows interpolation artefacts rather than detail. A split is drawn by clipping the two cached
-images, so the divider costs no recomposite and no shader re-render; drag it directly on the
-picture. Clickable model-name badges stay pinned to the left and right image corners, each
-opening that side's own candidate list, and they are re-anchored after every scroll so a pan
-cannot carry a label off the picture it names. Those badges are the only chooser: the window
-has no candidate sidebar beside the picture. There are no frame or split sliders under the
-image and no Apply A/B buttons: the window compares, and never rewrites the chain the player
-is running.
+turns that value into scene items and owns the gestures: the wheel zooms around the cursor,
+and Alt+drag pans; in split modes, ordinary drag moves the divider. The image is never
+upscaled past 1:1, because a 480p frame blown up shows interpolation artefacts rather than
+detail. A split is drawn by clipping the two cached images, so the divider costs no
+recomposite and no shader re-render. Clickable model-name badges stay pinned to the left and
+right image corners, each opening that side's own candidate list, and they are re-anchored
+after every scroll so a pan cannot carry a label off the picture it names. Those badges are
+the only chooser: the window has no candidate sidebar beside the picture. The window compares
+and never rewrites the chain the player is running.
 
-Every extraction is fresh. Opening the window freezes the frame the player is parked on, and
-**Оновити кадр** re-freezes it at whatever position the player has since reached, so rewinding
-and capturing again compares the new frame rather than the one already on screen; the window is
-kept and reused, so re-opening it counts as the same request. A capture reads the player, it
-does not move it — only the frame-step buttons seek. A frame is accepted only once the surface
-has stopped reporting a move and the framebuffer has held still across several rounds, because
-the reported position arrives before the picture does. If no settled frame can be read, the
-window says so and shows no picture rather than falling back on the previous frame, since a
-stale comparison is worse than none. Both sides always render from that one frozen frame, so
-the difference between them is the chain and nothing else.
+Every opening captures a fresh frame at the player's current position. A frame is accepted
+only once the surface has stopped reporting a move and the framebuffer has held still across
+several rounds, because the reported position arrives before the picture does. If no settled
+frame can be read, the window says so and shows no picture rather than falling back on the
+previous frame. Both sides always render from that one frozen frame, so the difference between
+them is the chain and nothing else.
 
 ## API limits
 
