@@ -52,6 +52,9 @@ public:
     /// whatever was playing before.
     void setEntries(const QVector<MenuEntry>& entries);
     int rowCount() const;
+    /// The widget behind a row, for a host that needs per-row gestures such as
+    /// a hover that opens a submenu. Null for a spot that is not a row.
+    QWidget* rowWidget(int spot) const;
     /// Re-fits to the size hint, after the host changed something out of band.
     void refresh();
 

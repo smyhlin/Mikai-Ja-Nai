@@ -113,8 +113,8 @@ constexpr int kPipBoundsOffset = 24;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
-constexpr int kPipCenterButtonSize = 84;
-constexpr int kPipCenterIconSize = 34;
+constexpr int kPipCenterButtonSize = 72;
+constexpr int kPipCenterIconSize = 30;
 constexpr int kPipFieldHeight = 28;
 // The level pill is always this size: the mute button, a gap, and a slider wide
 // enough to aim at. It was built to grow on hover, which resized the window
@@ -160,14 +160,18 @@ QString pipQss() {
                "  background: transparent; color: #ffffff; font-size: 11px; font-weight: 600;"
                "  font-family: monospace; }"
                "QPushButton#pipPlay {"
-               "  background: rgba(0, 0, 0, 0.45);"
-               "  border: 1px solid rgba(255, 255, 255, 0.20);"
+               "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+               "    stop:0 rgba(0, 0, 0, 0.42), stop:1 rgba(0, 0, 0, 0.58));"
+               "  border: 1px solid rgba(255, 255, 255, 0.26);"
                "  border-radius: %1px; padding: 0;"
                "  min-width: %2px; max-width: %2px;"
                "  min-height: %2px; max-height: %2px; }"
                "QPushButton#pipPlay:hover {"
-               "  background: rgba(0, 0, 0, 0.70);"
-               "  border-color: rgba(255, 255, 255, 0.40); }"
+               "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+               "    stop:0 rgba(0, 0, 0, 0.60), stop:1 rgba(0, 0, 0, 0.76));"
+               "  border-color: rgba(255, 255, 255, 0.46); }"
+               "QPushButton#pipPlay:pressed {"
+               "  background: rgba(0, 0, 0, 0.80); }"
                "QPushButton#pipMute, QPushButton#pipRestore, QPushButton#pipClose {"
                "  background: rgba(0, 0, 0, 0.45);"
                "  border: 1px solid rgba(255, 255, 255, 0.15);"
@@ -893,7 +897,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
       volume_(0.7),
       speed_(1.0),
       muted_(false),
-      fullscreen_(false),
+      fullscreen_(true),
       seriesExpanded_(false),
       errorActive_(false),
       refreshAttempted_(false),
@@ -902,15 +906,12 @@ PlayerDialog::PlayerDialog(const QString& caption,
       pipWasFullscreen_(false) {
     setObjectName(QStringLiteral("playerWindow"));
     setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
-    setWindowFlag(Qt::FramelessWindowHint, true);
+    setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
+                   Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
     setAttribute(Qt::WA_DeleteOnClose, true);
     setMinimumSize(kPlayerMinWidth, kPlayerMinHeight);
 
-    if (QScreen* screen = QGuiApplication::primaryScreen()) {
-        resize(screen->availableGeometry().size());
-    } else {
-        resize(kPlayerDefaultWidth, kPlayerDefaultHeight);
-    }
+    placeWindowed();
     setContentsMargins(0, 0, 0, 0);
 
     shell_ = new PlayerShell(this, false);
@@ -1248,11 +1249,6 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
     if (closed_) {
         return;
     }
-    const bool fullscreen = state == QStringLiteral("FULLSCREEN_ACTIVE") ||
-                            state == QStringLiteral("FULLSCREEN_AUTO_HIDDEN");
-    if (fullscreen != fullscreen_) {
-        fullscreen_ = fullscreen;
-    }
     // The shell hides ALL its chrome after an idle moment, and these
     // dialog-owned panels ride along: a strip floating over a blank screen is a
     // stray panel.
@@ -1283,31 +1279,26 @@ void PlayerDialog::onShellFullscreenChanged(bool fullscreen) {
     if (closed_ || pip_ != nullptr) {
         return;
     }
-    // Both directions are real now. Windowed mode used to be refused, so the
-    // toggle in the top-right did nothing but flash - and a viewer who wants
-    // the player on a second screen has no way to express that at all.
+    fullscreen_ = fullscreen;
+    transitioning_ = true;
     if (fullscreen) {
-        // Whatever the viewer arranged in windowed mode is what they get
-        // back: a fullscreen trip must not reset the size they chose.
-        if (!isFullScreen() && !windowedSize_.isValid()) {
-            windowedSize_ = QRect(QPoint(0, 0), size());
-        }
         if (!isFullScreen()) {
+            windowedSize_ = geometry();
             showFullScreen();
         }
-        shell_->setGeometry(rect());
-        return;
-    }
-    if (isFullScreen()) {
-        showNormal();
-    }
-    if (windowedSize_.isValid()) {
-        setGeometry(windowedSize_);
     } else {
-        resize(kPlayerDefaultWidth, kPlayerDefaultHeight);
+        if (isFullScreen()) {
+            showNormal();
+        }
+        if (windowedSize_.isValid()) {
+            setGeometry(windowedSize_);
+        } else {
+            placeWindowed();
+        }
     }
+    transitioning_ = false;
     shell_->setGeometry(rect());
-    shell_->leaveFullscreen();
+    layoutPanels();
 }
 
 void PlayerDialog::openCompareWindow() {
@@ -1333,35 +1324,12 @@ void PlayerDialog::openCompareWindow() {
     // would fight the first for the same core while it swaps chains.
     if (compare_ == nullptr) {
         compare_ = new CompareWindow(surface_, anime4kChainId_, this);
-        connect(compare_, &CompareWindow::applyRequested, this,
-                &PlayerDialog::applyAnime4KChain);
     }
     compare_->show();
     compare_->raise();
     compare_->activateWindow();
 }
 
-void PlayerDialog::applyAnime4KChain(const QString& candidateId) {
-    if (closed_ || candidateId.isEmpty()) {
-        return;
-    }
-    const anime4k::Candidate candidate = anime4k::candidateForId(candidateId);
-    if (!anime4k::chainIsComplete(candidate)) {
-        flashStatus(QStringLiteral("Не вдалося застосувати: файл шейдера відсутній"));
-        return;
-    }
-    anime4kChainId_ = candidateId;
-    // The enum is left alone: a chain that has no Mode is still a choice, and
-    // writing Off over it would drop the setting the menu reports.
-    surface_->setAnime4KChain(candidateId);
-    // The float runs its own core and would keep the old chain, so a second
-    // decode is running the filter the viewer just rejected.
-    if (pip_ != nullptr) {
-        pip_->videoSurface()->setAnime4KChain(candidateId);
-    }
-    QSettings().setValue(kAnime4KSettingKey, candidateId);
-    flashStatus(QStringLiteral("Застосовано: %1").arg(candidate.label));
-}
 void PlayerDialog::copyCurrentFrame() {
     if (closed_ || surface_ == nullptr || !surface_->hasVideo()) {
         flashStatus(QStringLiteral("Немає кадру для копіювання"));
@@ -1903,11 +1871,7 @@ void PlayerDialog::watchPanels() {
     }
 }
 
-void PlayerDialog::fitToCurrentScreen() {
-    // The lightbox adapts to the screen it is on, per monitor. Windows frameless
-    // windows do not always honour showFullScreen() the first time, and without
-    // this explicit pin the player would sit at its constructed default size for
-    // the whole session.
+void PlayerDialog::placeWindowed() {
     if (closed_) {
         return;
     }
@@ -1915,40 +1879,75 @@ void PlayerDialog::fitToCurrentScreen() {
     if (current == nullptr) {
         current = QGuiApplication::primaryScreen();
     }
-    if (current != nullptr) {
-        setGeometry(current->geometry());
+    if (current == nullptr) {
+        resize(kPlayerDefaultWidth, kPlayerDefaultHeight);
+        return;
     }
+    const QRect area = current->availableGeometry();
+    QSize size(kPlayerDefaultWidth, kPlayerDefaultHeight);
+    size = size.boundedTo(area.size());
+    setGeometry(area.x() + (area.width() - size.width()) / 2,
+                area.y() + (area.height() - size.height()) / 2,
+                size.width(), size.height());
+    windowedSize_ = geometry();
 }
 
 void PlayerDialog::showEvent(QShowEvent* event) {
-    QDialog::showEvent(event);
-    fitToCurrentScreen();
-    if (!isFullScreen()) {
-        showFullScreen();
+    const bool wasTransitioning = transitioning_;
+    transitioning_ = true;
+    // The state is requested before the base handler shows the window, so the
+    // platform window is created at monitor size. Calling showFullScreen()
+    // afterwards meant it was created at the windowed rect and then animated
+    // up, which read as a stutter on every episode open. It has to happen
+    // here and not in the constructor: the shell and its OpenGL surface do
+    // not exist yet at that point, and asking for full screen underneath them
+    // faulted in Qt6Widgets three seconds into a session.
+    if (fullscreen_ && !isFullScreen()) {
+        setWindowState(windowState() | Qt::WindowFullScreen);
     }
+    QDialog::showEvent(event);
     shell_->setGeometry(rect());
     shell_->show();
     shell_->setFocus(Qt::OtherFocusReason);
-    shell_->enterFullscreen();
+    if (fullscreen_) {
+        if (!isFullScreen()) {
+            showFullScreen();
+        }
+        shell_->enterFullscreen();
+    } else {
+        if (isFullScreen()) {
+            showNormal();
+        }
+        if (windowedSize_.isValid()) {
+            setGeometry(windowedSize_);
+        } else {
+            placeWindowed();
+        }
+        shell_->leaveFullscreen();
+    }
+    transitioning_ = wasTransitioning;
+    shell_->setGeometry(rect());
     layoutPanels();
 }
 
 void PlayerDialog::resizeEvent(QResizeEvent* event) {
     QDialog::resizeEvent(event);
+    rememberWindowedGeometry();
     shell_->setGeometry(rect());
     layoutPanels();
 }
 
 void PlayerDialog::moveEvent(QMoveEvent* event) {
     QDialog::moveEvent(event);
-    // A full-screen lightbox follows the monitor the OS moves it to.
-    if (!closed_ && isFullScreen()) {
-        if (QScreen* current = QWidget::screen()) {
-            if (geometry() != current->geometry()) {
-                fitToCurrentScreen();
-            }
-        }
+    rememberWindowedGeometry();
+}
+
+void PlayerDialog::rememberWindowedGeometry() {
+    // Qt emits move/resize during mode changes; those rectangles are not user placement.
+    if (closed_ || transitioning_ || fullscreen_ || isFullScreen() || !isVisible()) {
+        return;
     }
+    windowedSize_ = geometry();
 }
 
 bool PlayerDialog::onShellKey(QKeyEvent* event) {
@@ -1961,13 +1960,12 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
         } else if (subtitlesPopup_->isVisible()) {
             subtitlesPopup_->close();
         } else if (!shell_->dismissOverlay()) {
+            if (fullscreen_) {
+                return false;
+            }
             if (seriesExpanded_) {
                 setSeriesExpanded(false);
             } else {
-                // No overlay left, so close. Falling through to the shell here meant
-                // Esc only cleared the shell's fullscreen flag - invisible, because
-                // this dialog refits itself to the monitor - and the player looked
-                // unresponsive while the user pressed it again and again.
                 close();
             }
         }
@@ -2085,9 +2083,15 @@ void PlayerDialog::enterPip() {
     if (url_.isEmpty()) {
         return;
     }
-    pipWasFullscreen_ = isFullScreen();
-    if (pipWasFullscreen_) {
-        showNormal();
+    pipWasFullscreen_ = fullscreen_;
+    if (fullscreen_) {
+        fullscreen_ = false;
+        transitioning_ = true;
+        if (isFullScreen()) {
+            showNormal();
+        }
+        transitioning_ = false;
+        shell_->leaveFullscreen();
     }
     // Parentless on purpose: a child window is clipped to its parent's z-order,
     // so a float parented to the player slides under whatever app the user
@@ -2192,8 +2196,12 @@ void PlayerDialog::leavePip(bool closing) {
         if (!isVisible()) {
             show();
         }
-        if (wasFullscreen) {
+        if (wasFullscreen && !fullscreen_) {
+            fullscreen_ = true;
+            transitioning_ = true;
             showFullScreen();
+            transitioning_ = false;
+            shell_->enterFullscreen();
         }
         if (surface_->hasVideo()) {
             if (resumeAt > 0.0) {

@@ -93,10 +93,22 @@ int MenuPopup::rowCount() const {
     return rows_.size();
 }
 
+QWidget* MenuPopup::rowWidget(int spot) const {
+    if (spot < 0 || spot >= rows_.size()) {
+        return nullptr;
+    }
+    return rows_.at(spot);
+}
+
 void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
     while (body_->count()) {
         if (QWidget* widget = body_->takeAt(0)->widget()) {
-            widget->setParent(nullptr);
+            // takeAt already removed it from the layout. Reparenting to nullptr
+            // on top of that turns a visible row into its own top-level window
+            // at the corner, so a rebuild while the menu is open - which is
+            // what a late quality result does - stacked every row on top of
+            // the others and left the popup collapsed.
+            widget->hide();
             widget->deleteLater();
         }
     }
@@ -202,8 +214,14 @@ void MenuPopup::fitToHint() {
     ensurePolished();
     layout()->invalidate();
     layout()->activate();
-    setFixedSize(layout()->sizeHint());
-    layout()->activate();
+    // A hidden widget has no geometry yet, so its layout can report a hint
+    // smaller than the content it will hold once shown - and setFixedSize
+    // would make that the popup's permanent size, stacking every row into it.
+    // The visible path re-fits after show(), so there is nothing to cache here.
+    if (isVisible()) {
+        setFixedSize(layout()->sizeHint());
+        layout()->activate();
+    }
 }
 
 void MenuPopup::moveHighlight(int delta) {
@@ -289,7 +307,7 @@ SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
 void SeriesDrawer::setEntries(const QStringList& labels, int current) {
     while (rowsLayout_->count()) {
         if (QWidget* widget = rowsLayout_->takeAt(0)->widget()) {
-            widget->setParent(nullptr);
+            widget->hide();
             widget->deleteLater();
         }
     }

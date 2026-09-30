@@ -20,7 +20,6 @@ namespace shell {
 inline constexpr double kZoomMin = 0.25;
 inline constexpr double kZoomMax = 5.0;
 inline constexpr double kZoomStep = 0.15;
-inline constexpr double kZoomDoubleClick = 2.2;
 inline constexpr int kDragThresholdPx = 3;
 inline constexpr int kAutohideMs = 2500;
 inline constexpr int kMinWindowWidth = 720;
@@ -35,7 +34,9 @@ inline constexpr int kDockPlaySize = 52;
 inline constexpr int kDockPlayGlyph = 29;
 inline constexpr int kDockActionSize = 40;
 inline constexpr int kDockActionGlyph = 20;
-inline constexpr int kDockSideWidth = 220;
+// Seven action buttons at kDockActionSize plus their spacing, so the row is
+// not squeezed when the audio and subtitle entries appear.
+inline constexpr int kDockSideWidth = 7 * kDockActionSize + 6 * 4;
 inline constexpr int kInfoChipHeight = 32;
 inline constexpr double kAspectFallback = 16.0 / 9.0;
 

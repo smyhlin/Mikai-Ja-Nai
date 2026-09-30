@@ -258,13 +258,13 @@ private:
     void updateSeriesToggle();
     void publishQualityOptions();
     void syncStatusVisibility();
-    void syncWindowFullscreen();
     void syncPipBar();
     void flashStatus(const QString& message);
     void showErrorStatus(const QString& message);
     void retryPlayback();
     void watchPanels();
-    void fitToCurrentScreen();
+    void placeWindowed();
+    void rememberWindowedGeometry();
     void fillQualityMenu();
     void probeUnknownTracks();
     void setVariantsVisibility();
@@ -281,9 +281,6 @@ private:
     void copyCurrentFrame();
     /// Opens (or raises) the shader comparison window.
     void openCompareWindow();
-    /// Adopts a chain the comparison window chose and records it so a restart
-    /// restores the same one.
-    void applyAnime4KChain(const QString& candidateId);
     void onShellStateChanged(const QString& state);
     void onShellFullscreenChanged(bool fullscreen);
     void onEngineError(const QString& message);
@@ -341,10 +338,9 @@ private:
     /// surface, and two of them would fight over the same core.
     CompareWindow* compare_ = nullptr;
     bool muted_ = false;
-    /// The size the viewer arranged in windowed mode, so leaving fullscreen
-    /// puts the player back where they put it instead of at a default.
     QRect windowedSize_;
-    bool fullscreen_ = false;
+    bool fullscreen_ = true;
+    bool transitioning_ = false;
     bool seriesExpanded_ = false;
     bool errorActive_ = false;
     bool refreshAttempted_ = false;

@@ -90,11 +90,25 @@ set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build-cmake -R mi
 
 - **Home** — carousels for titles you recently opened, titles airing now, and Mikai's current popular picks, plus the latest episode updates and the weekly airing schedule. Every card shows the poster, the airing status and the aired/planned episode count, and a search result row reads the same way (`Бліч · 2004 · TV · Завершено · 366 серій`) straight from the list response, with no extra request; right-click a card to open it, copy its mikai.me link or raw id, or open the site page in a browser.
 - **Title** — description, cover, scores, genres and related titles, then one tab per release (voice or subtitles, grouped by dubbing team). Each episode opens the player at the qualities the provider actually has; the right-click menu adds copy-URL-only, re-extract, and hand-off to an external player. The cover opens full size with pan and zoom.
-- **Player** — a full-screen player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. The picture fills the screen edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports network throughput, decoded FPS and, while enhancement is active, the source-to-output resolution. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float drops the video into a small always-on-top window with its own overlaid controls — click to pause, hold and drag to move it.
+- **Player** — a player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. It opens full screen, and the `><` / `<>` buttons beside the PiP icon — or a double click on the picture, or `F` / `F11` — toggle a real decorated native window, so leaving full screen restores the previous windowed geometry and the OS titlebar handles dragging, resizing, snap layouts and moving the window to another monitor. The toggle is scoped to the player; the app's main window is unaffected. The picture fills the window edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports network throughput, decoded FPS and, while enhancement is active, the source-to-output resolution. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float drops the video into a small always-on-top window with its own overlaid controls — click to pause, hold and drag to move it.
 - **Anime4K** — the dock's sparkle button opens **Enhancements → Anime4K**, with ten presets from *Off* through the Fast A/B/C chains to the HQ and double-restore ones. The choice is applied to the running mpv core, so it lands on the next rendered frame without reopening the episode, and it is remembered across runs. The presets live in `shaders/` and are deployed next to the executable; the enhancement control hides itself if that folder did not ship.
 - **Settings** — the API token with its live quota, plus a checklist of the home blocks to load. A block you switch off is never requested, which is the cheapest way to cut API spend on a slow or metered connection.
 
 Qualities are extracted once per episode, only when that episode opens, and the resulting stream URLs are cached for half an hour, so reopening a title repaints instead of re-hitting every provider. The links are signed and do expire; if a stream fails to play the player re-extracts it once on its own before reporting the error.
+
+The shader comparison is a port of AnimeInterp's comparison window. The eight modes
+(Original, Processed, Split H, Split V, Side-by-side, Overlay, Flicker, Difference) and
+their geometry live in `src/player/CompareLayout.cpp` as one pure `buildLayout` call, so a
+mode's whole picture is a value rather than a chain of scene mutations. `CompareCanvas`
+turns that value into scene items and owns the gestures: the wheel zooms about the cursor
+and the view is never upscaled past 1:1, because a 480p frame blown up shows interpolation
+artefacts rather than detail. A split is drawn by clipping the two cached images, so the
+divider costs no recomposite and no shader re-render; drag it directly on the picture.
+Clickable model-name badges stay pinned to the left and right image corners, each opening
+that side's own candidate selector, and they are re-anchored after every scroll so a pan
+cannot carry a label off the picture it names. There are no frame or split sliders under
+the image and no Apply A/B buttons: the window compares, and never rewrites the chain the
+player is running.
 
 ## API limits
 

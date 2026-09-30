@@ -125,11 +125,6 @@ void PlayerShell::buildWindowControls() {
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(btnMin_);
 
-    btnWin_ = new IconButton(IconPainter::restore, QStringLiteral("toggle_window_mode"), 28, 15,
-                             windowControls_);
-    connect(btnWin_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
-    lay->addWidget(btnWin_);
-
     btnClose_ = new IconButton(IconPainter::close, QStringLiteral("exit_viewer  (Esc)"), 28, 15,
                                windowControls_, QColor(237, 66, 69, 190));
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
@@ -225,6 +220,11 @@ void PlayerShell::buildDock() {
                              kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnPip_, &QPushButton::clicked, this, &PlayerShell::pipRequested);
     actions->addWidget(btnPip_);
+
+    btnWindowMode_ = new IconButton(IconPainter::contract, QStringLiteral("windowed_mode"),
+                                    kDockActionSize, kDockActionGlyph, actionHost);
+    connect(btnWindowMode_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
+    actions->addWidget(btnWindowMode_);
 
     btnAudio_ = new IconButton(IconPainter::microphone,
                                QStringLiteral("Озвучення — вибрати дубляж  (T)"),
@@ -453,10 +453,21 @@ void PlayerShell::applyState() {
     // Fullscreen does NOT suppress the chrome. The shell is hosted in a dialog
     // that is itself fullscreen, so gating on "not fullscreen" meant half the
     // UI could never appear. Idle auto-hide is what hides them.
-    windowControls_->setVisible(!hidden);
-    // The header is windowed-mode only: over a full monitor it would be
-    // a bar across the picture with nothing to move.
-    titleBar_->setVisible(!hidden && !fullscreen_);
+    //
+    // The painted min/max/close are a substitute for a missing OS frame, so
+    // they exist only where there is no frame: over a full monitor, or in a
+    // standalone frameless window. Inside the hosted decorated window the real
+    // title bar owns those actions, and showing both gives the viewer two
+    // close buttons.
+    windowControls_->setVisible(!hidden && (fullscreen_ || frameless_));
+    titleBar_->setVisible(!hidden && !fullscreen_ && frameless_);
+    // The glyph states the action the press would take, so the dock never
+    // offers a mode the player is already in.
+    if (btnWindowMode_ != nullptr) {
+        btnWindowMode_->setIcon(fullscreen_ ? IconPainter::contract : IconPainter::expand);
+        btnWindowMode_->setToolTip(fullscreen_ ? QStringLiteral("windowed_mode")
+                                               : QStringLiteral("fullscreen_mode"));
+    }
     btnPrev_->setVisible(!hidden && !zoom && hasPreviousEpisode_);
     btnNext_->setVisible(!hidden && !zoom && hasNextEpisode_);
     dock_->setVisible(!hidden);
@@ -468,9 +479,8 @@ void PlayerShell::applyState() {
 
     setStateCursor();
 
-    // Rounded frame in windowed mode, hard edge in fullscreen. QOpenGLWidget does
-    // not honour a stylesheet, so the corner rounding is a real mask.
-    const int radius = (rounded_ && !fullscreen_) ? 12 : 0;
+    // QOpenGLWidget ignores stylesheets, so corner rounding is a real mask.
+    const int radius = (rounded_ && !fullscreen_ && frameless_) ? 12 : 0;
     if (radius > 0) {
         QPainterPath path;
         path.addRoundedRect(QRectF(surface_->geometry()), radius, radius);
@@ -501,39 +511,30 @@ void PlayerShell::setStateCursor() {
 
 // ── fullscreen / autohide ──────────────────────────────────────────────
 
+// The host owns the window, so these setters sync composition and emit
+// nothing; windowModeToggled() is the only place an intent leaves the shell.
 void PlayerShell::enterFullscreen() {
     fullscreen_ = true;
     hudHidden_ = false;
     applyState();
+    hideTimer_.start(kAutohideMs);
 }
 
-void PlayerShell::windowModeToggled() {
-    if (fullscreen_) {
-        leaveFullscreen();
-    } else {
-        enterFullscreen();
-    }
-}
 void PlayerShell::leaveFullscreen() {
     fullscreen_ = false;
     hudHidden_ = false;
-    // The header is what makes a frameless window movable and closable, and
-    // it only exists in windowed mode: over a full monitor there is nothing
-    // to move, and a title bar across the picture is just clutter.
     applyState();
     hideTimer_.start(kAutohideMs);
-    emit fullscreenChanged(true);
 }
 
-void PlayerShell::exitFullscreen() {
-    fullscreen_ = false;
-    hudHidden_ = false;
-    // The host dialog owns the window geometry, so leaving fullscreen only
-    // restores the centred preview - and the preview hides its chrome on idle
-    // too, so the countdown is rearmed rather than stopped.
-    hideTimer_.start(kAutohideMs);
-    applyState();
-    emit fullscreenChanged(false);
+void PlayerShell::windowModeToggled() {
+    const bool desired = !fullscreen_;
+    if (desired) {
+        enterFullscreen();
+    } else {
+        leaveFullscreen();
+    }
+    emit fullscreenChanged(desired);
 }
 
 bool PlayerShell::dismissOverlay() {
@@ -639,8 +640,8 @@ void PlayerShell::layoutChrome() {
     if (titleBar_ != nullptr) {
         const int barHeight = 36;
         titleBar_->setGeometry(0, 0, w, barHeight);
-        // The canvas starts below the bar, or the video is drawn under it.
-        titleBarOffset_ = fullscreen_ ? 0 : barHeight;
+        // No painted bar means no reserved strip.
+        titleBarOffset_ = (fullscreen_ || !frameless_) ? 0 : barHeight;
     }
 
     // ── flank chevrons ─────────────────────────────────────────────
@@ -661,7 +662,7 @@ void PlayerShell::layoutChrome() {
     // ── overlays ───────────────────────────────────────────────────
     hud_->adjustSize();
     hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
-    center_->move((w - 74) / 2, (h - 74) / 2);
+    center_->move((w - center_->width()) / 2, (h - center_->height()) / 2);
     if (toast_->isVisible()) {
         toast_->move((w - toast_->width()) / 2, static_cast<int>(h * 0.80));
     }
@@ -949,6 +950,10 @@ void PlayerShell::refreshEnhancementMenus() {
     anime4kEntry.current = anime4kMode_ != anime4k::Mode::Off;
     enhancements.append(anime4kEntry);
     enhancementsPopup_->setEntries(enhancements);
+    anime4kRow_ = enhancementsPopup_->rowWidget(0);
+    if (anime4kRow_ != nullptr) {
+        anime4kRow_->installEventFilter(this);
+    }
 
     QVector<MenuEntry> modes;
     for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
@@ -1003,7 +1008,14 @@ void PlayerShell::openEnhancements() {
 }
 
 void PlayerShell::openAnime4K() {
-    dismissOverlay();
+    // The enhancements popover stays open: this is a submenu reached from it,
+    // and dismissOverlay() would close the row the pointer is resting on.
+    if (flyout_->isVisible()) {
+        flyout_->close();
+    }
+    if (anime4kPopup_->isVisible()) {
+        anime4kPopup_->close();
+    }
     wake();
     refreshEnhancementMenus();
     anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
@@ -1047,11 +1059,7 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             break;
         case Qt::Key_F:
         case Qt::Key_F11:
-            if (fullscreen_) {
-                exitFullscreen();
-            } else {
-                enterFullscreen();
-            }
+            windowModeToggled();
             break;
         case Qt::Key_M:
             toggleMute();
@@ -1061,7 +1069,7 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
                 break;
             }
             if (fullscreen_) {
-                exitFullscreen();
+                windowModeToggled();
             } else if (std::abs(scale_ - 1.0) > 0.005) {
                 resetTransform();
             } else {
@@ -1135,11 +1143,13 @@ void PlayerShell::wheelEvent(QWheelEvent* event) {
 
 void PlayerShell::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) return;
+    // Window mode, like F. A double click used to zoom the picture, which
+    // stranded a viewer in a zoomed frame with no visible way back - the zoom
+    // is still reachable from the wheel and the pinch fit.
     if (scale_ > 1.02) {
         resetTransform();
-    } else {
-        zoomAt(kZoomDoubleClick, event->position());
     }
+    windowModeToggled();
     event->accept();
 }
 
@@ -1283,6 +1293,17 @@ void PlayerShell::releasePointer() {
 }
 
 bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
+    // Hover opens the Anime4K submenu from inside the open enhancements popover,
+    // but NOT the popover itself - that one is click-only. A menu that appears
+    // the instant the pointer arrives makes it impossible to approach on
+    // purpose; a submenu reached by resting on its one row is the ordinary
+    // submenu gesture.
+    if (watched == anime4kRow_ && event->type() == QEvent::Enter) {
+        if (anime4kPopup_ != nullptr && !anime4kPopup_->isVisible()) {
+            openAnime4K();
+        }
+        return false;
+    }
     if (watched == surface_) {
         // The surface is a real child widget, so re-targeting is a matter of
         // translating the position into shell coordinates. The Python needed a

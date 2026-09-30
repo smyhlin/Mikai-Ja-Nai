@@ -110,10 +110,14 @@ public:
     /// auto-hide when the pointer is over the feature strip, the status
     /// panel or the series drawer - without it the drawer vanishes under the
     /// pointer, because no move ever crosses the shell itself.
+    /// enterFullscreen()/leaveFullscreen() only sync the shell's composition:
+    /// the host has already moved its own window, so they emit nothing.
     void enterFullscreen();
-    /// Windowed mode. The header appears with it, because a frameless window
-    /// without one cannot be moved or closed with the pointer at all.
+    /// Windowed mode. Only a standalone frameless shell paints a header for
+    /// it; a hosted shell has an OS frame.
     void leaveFullscreen();
+    /// The only intent path: every window-mode gesture lands here and emits
+    /// exactly one fullscreenChanged(desired).
     void windowModeToggled();
     void buildTitleBar();
 
@@ -179,7 +183,6 @@ private:
     void setStateCursor();
     void layoutChrome();
 
-    void exitFullscreen();
     void enterAutoHidden();
     void onPlayClicked();
     void onScrub(double fraction);
@@ -214,7 +217,6 @@ private:
     IconButton* titleClose_ = nullptr;
     PillButton* btnOriginal_ = nullptr;
     IconButton* btnMin_ = nullptr;
-    IconButton* btnWin_ = nullptr;
     IconButton* btnClose_ = nullptr;
 
     IconButton* btnPrev_ = nullptr;
@@ -227,6 +229,7 @@ private:
     ScrubBar* scrub_ = nullptr;
     QLabel* lblRemaining_ = nullptr;
     IconButton* btnPip_ = nullptr;
+    IconButton* btnWindowMode_ = nullptr;
     IconButton* btnAudio_ = nullptr;
     IconButton* btnSubs_ = nullptr;
     IconButton* btnEnhance_ = nullptr;
@@ -234,6 +237,9 @@ private:
     SettingsFlyout* flyout_ = nullptr;
     MenuPopup* enhancementsPopup_ = nullptr;
     MenuPopup* anime4kPopup_ = nullptr;
+    /// The Anime4K row inside enhancementsPopup_, rebuilt on every refresh.
+    /// Hovering it opens the submenu; the popover itself stays click-only.
+    QWidget* anime4kRow_ = nullptr;
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 
@@ -258,12 +264,15 @@ private:
     QPointF offset_;
     bool panning_ = false;
     bool fullscreen_ = false;
-    /// Height the title bar takes off the top of the canvas, 0 in fullscreen.
+    /// Height the title bar takes off the top of the canvas; 0 when no title
+    /// bar is painted.
     int titleBarOffset_ = 0;
     bool hudHidden_ = false;
     bool rounded_ = true;
     double aspect_ = kAspectFallback;
     bool showHud_ = false;
+    /// True only for a standalone frameless top-level shell, which must supply
+    /// its own header. A hosted shell uses the OS frame.
     bool frameless_ = true;
     QString lastState_;
 

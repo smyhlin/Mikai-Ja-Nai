@@ -255,7 +255,9 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     while (qualityBody_->count() > 0) {
         QLayoutItem* item = qualityBody_->takeAt(0);
         if (QWidget* widget = item->widget()) {
-            widget->setParent(nullptr);
+            // takeAt already detached it from the layout; reparenting to null
+            // on top of that makes a visible row its own top-level window.
+            widget->hide();
             widget->deleteLater();
         }
         delete item;
@@ -466,9 +468,18 @@ void StateHUD::updateData(const QString& state, const QVector<QPair<QString, QSt
 //  CENTER GLYPH
 // ═══════════════════════════════════════════════════════════════════════════
 
+namespace {
+/// The disc the glyph is painted into, and the halo margin the widget reserves
+/// around it. One constant for both, because a disc larger than its widget is
+/// clipped at the edges - which is what left only part of the circle showing.
+constexpr qreal kCenterDisc = 78.0;
+constexpr qreal kCenterHalo = 5.0;
+constexpr qreal kCenterWidget = kCenterDisc + 2.0 * kCenterHalo;
+}  // namespace
+
 CenterGlyph::CenterGlyph(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_TransparentForMouseEvents);
-    setFixedSize(74, 74);
+    setFixedSize(static_cast<int>(kCenterWidget), static_cast<int>(kCenterWidget));
     hide();
 }
 
@@ -489,12 +500,38 @@ void CenterGlyph::paintEvent(QPaintEvent*) {
     }
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    paintRounded(painter, QRectF(0.5, 0.5, 73, 73), 37.0, QColor(0, 0, 0, 130), w25());
-    const qreal off = 74 / 2.0 - 22 / 2.0;
+
+    const QRectF disc(kCenterHalo + 0.5, kCenterHalo + 0.5, kCenterDisc - 1.0, kCenterDisc - 1.0);
+    // A soft outer halo, then the disc, then a hairline rim. One flat fill read
+    // as a sticker pasted on the picture; the halo is what makes it sit above
+    // a white frame without a hard black edge.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 55));
+    painter.drawEllipse(disc.adjusted(-kCenterHalo + 2.0, -kCenterHalo + 2.0, kCenterHalo - 2.0,
+                                      kCenterHalo - 2.0));
+    painter.setBrush(QColor(0, 0, 0, 145));
+    painter.drawEllipse(disc);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(QColor(255, 255, 255, 38), 1.2));
+    painter.drawEllipse(disc);
+    // A top-lit gradient inside the disc: lighter where the light would fall.
+    QLinearGradient sheen(disc.topLeft(), disc.bottomLeft());
+    sheen.setColorAt(0.0, QColor(255, 255, 255, 26));
+    sheen.setColorAt(0.55, QColor(255, 255, 255, 0));
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(sheen);
+    painter.drawEllipse(disc);
+
+    // Centred on the glyph's own bounds, not on the 24-grid cell: the triangle
+    // spans 8..19.5 and the bars 7..17, so both sit a little right of centre in
+    // the cell and need a per-shape correction to land optically centred.
+    constexpr qreal kGlyph = 26.0;
+    const qreal scale = kGlyph / 24.0;
+    const qreal off = kCenterHalo + (kCenterDisc - kGlyph) / 2.0;
     if (kind_ == Kind::Play) {
-        IconPainter::play(painter, off + 3, off, 22, w95());
+        IconPainter::play(painter, off - 1.75 * scale, off, kGlyph, w95());
     } else {
-        IconPainter::pause(painter, off, off, 22, w95());
+        IconPainter::pause(painter, off, off, kGlyph, w95());
     }
 }
 
@@ -575,7 +612,7 @@ void Toast::flash(const QString& text, int ms) {
 QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
     return {
         {QStringLiteral("Пробіл"), QStringLiteral("Пауза / Відтворення")},
-        {QStringLiteral("F"), QStringLiteral("Повний екран")},
+        {QStringLiteral("F"), QStringLiteral("Повний екран / вікно")},
         {QStringLiteral("M"), QStringLiteral("Вимкнути / увімкнути звук")},
         {QStringLiteral("S"), QStringLiteral("Список серій")},
         {QStringLiteral("T"), QStringLiteral("Вибір озвучення")},

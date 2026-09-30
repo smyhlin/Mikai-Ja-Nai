@@ -188,23 +188,21 @@ void IconPainter::mute(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) 
 
 void IconPainter::expand(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
     stroke(p, x, y, s);
-    p.setPen(glyphPen(resolve(c, w90()), 1.8 * 24 / s));
-    p.drawLine(QPointF(14.5, 4.5), QPointF(19.5, 4.5));
-    p.drawLine(QPointF(19.5, 4.5), QPointF(19.5, 9.5));
-    p.drawLine(QPointF(19.5, 4.5), QPointF(13, 11));
-    p.drawLine(QPointF(9.5, 19.5), QPointF(4.5, 19.5));
-    p.drawLine(QPointF(4.5, 19.5), QPointF(4.5, 14.5));
-    p.drawLine(QPointF(4.5, 19.5), QPointF(11, 13));
+    p.setPen(glyphPen(resolve(c, w90()), 2.25 * 24 / s));
+    p.drawPolyline(QPolygonF({QPointF(15, 3), QPointF(21, 3), QPointF(21, 9)}));
+    p.drawPolyline(QPolygonF({QPointF(9, 21), QPointF(3, 21), QPointF(3, 15)}));
+    p.drawLine(QPointF(21, 3), QPointF(14, 10));
+    p.drawLine(QPointF(3, 21), QPointF(10, 14));
     p.restore();
 }
 
 void IconPainter::contract(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
     stroke(p, x, y, s);
-    p.setPen(glyphPen(resolve(c, w90()), 1.8 * 24 / s));
-    p.drawLine(QPointF(19.5, 9.5), QPointF(14.5, 9.5));
-    p.drawLine(QPointF(14.5, 9.5), QPointF(19.5, 4.5));
-    p.drawLine(QPointF(4.5, 14.5), QPointF(9.5, 14.5));
-    p.drawLine(QPointF(9.5, 14.5), QPointF(4.5, 19.5));
+    p.setPen(glyphPen(resolve(c, w90()), 2.25 * 24 / s));
+    p.drawPolyline(QPolygonF({QPointF(4, 14), QPointF(10, 14), QPointF(10, 20)}));
+    p.drawPolyline(QPolygonF({QPointF(20, 10), QPointF(14, 10), QPointF(14, 4)}));
+    p.drawLine(QPointF(14, 10), QPointF(21, 3));
+    p.drawLine(QPointF(3, 21), QPointF(10, 14));
     p.restore();
 }
 
