@@ -20,6 +20,7 @@
 
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
+#include "PresetShortcuts.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 
@@ -44,6 +45,8 @@
 #include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QSet>
+#include <QShortcut>
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QSlider>
@@ -1002,6 +1005,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
     watchPanels();
     connectShell();
     connectEngine();
+    loadPresetShortcuts();
 
     // A child widget is shown when its parent is, so the panels that start
     // closed have to say so: an empty episode drawer and a retry chip would
@@ -1135,6 +1139,45 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
     shell_->installEventFilter(this);
+}
+
+void PlayerDialog::loadPresetShortcuts() {
+    QSettings settings;
+    settings.beginGroup(QLatin1String(kPresetShortcutSettingsGroup));
+    // Claims are keyed on the sequence as it will fire, so a second preset bound
+    // to the same keystroke is skipped rather than fighting the first one over
+    // every press. The catalogue order decides which of the two wins.
+    QSet<QKeySequence> claimed;
+    const QVector<anime4k::ModeInfo> modes = anime4k::availableModes();
+    for (const anime4k::ModeInfo& info : modes) {
+        const QString stored = settings.value(info.id).toString();
+        if (stored.isEmpty()) {
+            continue;
+        }
+        const QKeySequence sequence =
+            QKeySequence::fromString(stored, QKeySequence::PortableText);
+        // Empty here means the stored text named no key at all, which is the
+        // same thing as never having bound it.
+        if (sequence.isEmpty() || isReservedPresetShortcut(sequence)) {
+            continue;
+        }
+        if (claimed.contains(sequence)) {
+            continue;
+        }
+        claimed.insert(sequence);
+
+        // Parented to the dialog and WindowShortcut-scoped: active while the
+        // player window is, and for the overlays that are its children, which
+        // is exactly where the shell's own keys are live. ApplicationShortcut
+        // would make a preset fire from the rest of mikai too.
+        const QString presetId = info.id;
+        auto* shortcut = new QShortcut(sequence, this);
+        shortcut->setContext(Qt::WindowShortcut);
+        connect(shortcut, &QShortcut::activated, this, [this, presetId] {
+            shell_->applyAnime4KPreset(presetId);
+        });
+    }
+    settings.endGroup();
 }
 
 void PlayerDialog::copyStreamUrl() {

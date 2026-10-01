@@ -86,6 +86,12 @@ public:
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
     void setAnime4KMode(anime4k::Mode mode);
+    /// Applies the catalogue preset `presetId` through the same path an
+    /// enhancement-menu row takes, so a hotkey, the menu and the tree cannot
+    /// drift: one toast, one mode change, one saved chain. The id is
+    /// resolved against the catalogue, so an unknown id is a no-op rather than
+    /// a chain nobody has. "off" is a real preset here and turns the chain off.
+    void applyAnime4KPreset(const QString& presetId);
     void setStreamStats(double bytesPerSecond, double framesPerSecond);
     void setSourceSize(int width, int height);
     void setEpisodeStepping(bool hasPrevious, bool hasNext);

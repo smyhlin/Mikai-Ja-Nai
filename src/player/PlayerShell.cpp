@@ -961,6 +961,19 @@ void PlayerShell::onAnime4KMode(anime4k::Mode mode) {
     emit anime4KModeChanged(mode);
 }
 
+void PlayerShell::applyAnime4KPreset(const QString& presetId) {
+    // Guarded, because this entry point is fed by stored settings: a key can
+    // outlive the preset it was bound to. onAnime4KPreset() maps an unknown id
+    // onto Off, which would silently switch the chain off on a typo.
+    const QVector<anime4k::ModeInfo> modes = anime4k::availableModes();
+    for (const anime4k::ModeInfo& info : modes) {
+        if (info.id == presetId) {
+            onAnime4KPreset(presetId);
+            return;
+        }
+    }
+}
+
 void PlayerShell::onAnime4KPreset(const QString& presetId) {
     // The id is the catalogue's own key, so a menu row can never select a
     // preset the rewrite of the menu no longer points at.

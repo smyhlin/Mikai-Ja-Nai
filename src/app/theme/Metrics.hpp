@@ -16,6 +16,8 @@ inline constexpr int kRadiusLarge = 16;
 inline constexpr int kPrimaryControlSize = 44;
 inline constexpr int kSecondaryControlSize = 36;
 inline constexpr int kSettingsControlSize = 36;
+inline constexpr int kSettingsDialogMinWidth = 560;
+inline constexpr int kSettingsPresetListMaxHeight = 440;
 inline constexpr int kIconSize = 18;
 inline constexpr int kMenuItemMinHeight = 34;
 

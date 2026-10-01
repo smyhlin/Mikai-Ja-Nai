@@ -301,6 +301,11 @@ private:
     /// Picks a height: the requested one when it is on offer, else the best.
     int pickTargetHeight(int requested) const;
     bool onShellKey(QKeyEvent* event);
+    /// Reads the stored Anime4K preset bindings and installs one window shortcut
+    /// per usable one. Empty, unparsable, reserved and already-taken sequences
+    /// are skipped rather than installed: a binding is a preference that can be
+    /// stale, and a stale one must never take a key the player owns.
+    void loadPresetShortcuts();
     QPoint settingsAnchor() const;
     void enterPip();
     void leavePip(bool closing = false);

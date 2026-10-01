@@ -64,6 +64,7 @@ set(PLAYER_HEADERS
   src/player/MpvRenderContext.hpp
   src/player/VideoSurface.hpp
   src/player/Anime4K.hpp
+  src/player/PresetShortcuts.hpp
   src/player/ShellTheme.hpp
   src/player/ShellWidgets.hpp
   src/player/ShellSliders.hpp
