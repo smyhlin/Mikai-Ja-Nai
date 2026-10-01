@@ -379,8 +379,6 @@ QVector<ModeInfo> availableModes() {
     return catalogue();
 }
 
-QVector<CategoryInfo> availableCategories() { return categories(); }
-
 QString categoryLabel(const QString& categoryId) {
     const CategoryInfo* category = categoryForId(categoryId);
     return category != nullptr ? category->label : QString();

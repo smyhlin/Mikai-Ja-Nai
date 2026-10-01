@@ -33,7 +33,9 @@
 #include <QShowEvent>
 #include <QRect>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
+#include <QVector>
 #include <QWidget>
 
 #include "Anime4K.hpp"
@@ -197,17 +199,24 @@ private:
     void onRate(double rate);
     void onAnime4KMode(anime4k::Mode mode);
     void onAnime4KPreset(const QString& presetId);
+    /// Opens the enhancement tree at its root, replacing whatever was open.
     void openEnhancements();
-    void openAnime4K();
-    /// Opens one of the planned-model pages in the same popover the Anime4K
-    /// levels use, so it gets the same Back row without a window of its own.
-    void openEnhancementPage(const QString& pageId);
-    void refreshEnhancementMenus();
-    /// Rebuilds the Anime4K popover at the level the viewer is standing on.
-    void refreshAnime4KMenu();
-    /// Re-places the already-open popover after a level change, so the rows that
-    /// replaced it are fitted and clamped to the window again.
-    void replaceAnime4KMenu();
+    /// One row of the enhancement tree, either rested on (activated == false) or
+    /// chosen (activated == true). A submenu row opens the next level beside
+    /// this panel; a preset row is applied when it was chosen. Either way the
+    /// levels below this panel go away with it.
+    void onEnhancementRow(MenuPopup* panel, int spot, bool activated);
+    /// Shows one catalogue level in the panel at `depth`, beside `anchor`, and
+    /// closes every level below it.
+    void showEnhancementLevel(int depth, const QString& levelId, QWidget* anchor);
+    /// Closes every panel of the tree deeper than `depth`.
+    void collapseEnhancementTree(int depth);
+    /// Rebuilds the rows of every level on screen, which is how the marks
+    /// follow a chain that changed underneath them.
+    void refreshEnhancementTree();
+    /// Puts the hover filter on the rows of one panel, so resting on a row
+    /// opens what sits under it.
+    void watchEnhancementRows(MenuPopup* panel);
     void updateInfoChip();
     void openKeys();
     void openMenu();
@@ -248,15 +257,20 @@ private:
     IconButton* btnEnhance_ = nullptr;
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
-    MenuPopup* enhancementsPopup_ = nullptr;
-    MenuPopup* anime4kPopup_ = nullptr;
-    /// The Anime4K row inside enhancementsPopup_, rebuilt on every refresh.
-    /// Hovering it opens the submenu; the popover itself stays click-only.
-    QWidget* anime4kRow_ = nullptr;
-    /// The catalogue category the Anime4K popover is showing. The popover is one
-    /// window that swaps levels rather than one window per level: a drill-down
-    /// that stacked windows would overlap and clip against the window edge.
-    QString anime4kLevel_ = QStringLiteral("anime4k");
+    /// The enhancement tree: one panel per level, side by side. The first is
+    /// ПОКРАЩЕННЯ, and every later one is the submenu of a row in the panel
+    /// before it, so the tree is the prefix of this vector that is on screen.
+    /// The panels are pooled and hidden rather than destroyed, because a level
+    /// is reopened every time the pointer crosses the row that leads to it.
+    QVector<MenuPopup*> enhancementPanels_;
+    /// The catalogue level each panel shows, parallel to `enhancementPanels_`.
+    /// Empty is the root, which lists the tree's own branches rather than a
+    /// catalogue level.
+    QStringList enhancementLevels_;
+    /// Whether the tree grows to the left. Decided when the first submenu is
+    /// placed, from which side of its panel has room, and held for the whole
+    /// open tree: a cascade that flipped sides per level would cover itself.
+    bool enhancementGrowLeft_ = false;
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
 

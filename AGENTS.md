@@ -92,9 +92,12 @@ Layering is strict and enforced by tests:
   The bottom chrome is one opaque two-row dock: permanent volume + a large
   centred play control + episode/track/enhancement/settings actions above the
   full-width timeline. Anime4K lives under the sparkle button's
-  **Покращення → Anime4K** submenu, not the speed/quality gear popover, and that
-  one popover swaps levels in place (categories, then a **‹ Назад** row) instead
-  of stacking a window per level. A
+  **Покращення → Anime4K** submenu, not the speed/quality gear popover. That
+  menu is a tree of pooled `MenuPopup` panels standing side by side: a `QEvent::Enter`
+  on a row opens the level it names as a panel beside the one it sits in (rows are
+  watched by the shell's event filter), the panels above it stay on screen, and the
+  levels below it close. So there is no **‹ Назад** row, and a click on a category row
+  opens the same panel while a click on a preset applies it and closes the tree. A
   top-left `MIKAI` chip shows `cache-speed`, `estimated-vf-fps`, and, while a
   preset is active, source → output resolution.
   The upscalers are gated by `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`: Anime4K
@@ -194,16 +197,16 @@ Layering is strict and enforced by tests:
   chain) in `Anime4K.cpp` plus the menu tree above it: ten built-in presets
   (`Mode::Off`..`HqCA`, ids frozen), fourteen experiments grouped under
   Anime4K's own family names (Noise Reduction, Thin Lines, Texture
-  Enhancement, Darken), and three planned-model pages (RIFE, RealESRGAN,
+  Enhancement, Darken), and three planned-model submenus (RIFE, RealESRGAN,
   Інші моделі) each holding a disabled В планах leaf. `menuRows(parent)` is
-  what the shell paints; a category row only drills down and a placeholder row
-  is disabled, so neither can change the chain. `shaderStringForCandidate(id)`
+  what the shell paints, one level per panel; a category row only opens the panel
+  beside it and a placeholder row is disabled, so neither can change the chain. `shaderStringForCandidate(id)`
   is the only chain resolver, used for a mode and for a loose `.glsl` alike.
   `CompareWindow` — the shader comparison, reached from the picture's
-  right-click menu. Its badge chooser groups every candidate under
-  **Anime4K → Пресети** and **Anime4K → Окремі шейдери → <family>** (24
-  presets, plus each of the 47 usable `.glsl` files on its own; the two
-  `AutoDownscalePre` steps are chain internals and are never offered), lets the
+  right-click menu. Its badge chooser mirrors the player menu's Anime4K tree:
+  exactly the 24 preset ids and labels from `availableModes()`, under the same
+  categories and experiment families. Loose `.glsl` files are not extra choices,
+  so every compared model is selectable in the player, and it lets the
   viewer pick two and shows them in
   one of three layouts: side by side, one image with a draggable divide, or
   the amplified per-pixel difference.

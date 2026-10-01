@@ -1352,8 +1352,8 @@ void PlayerDialog::openCompareWindow() {
         return;
     }
     // Both guards say what is wrong rather than opening a window that cannot
-    // show anything: a missing folder means every row in the list is dead, and
-    // no video means there is no frame to compare.
+    // show anything: without the shader folder the preset chains cannot render,
+    // and without video there is no frame to compare.
     if (!surface_->hasVideo()) {
         flashStatus(QStringLiteral("Немає відео для порівняння"));
         return;
@@ -1362,7 +1362,7 @@ void PlayerDialog::openCompareWindow() {
         flashStatus(QStringLiteral("Папка shaders не знайдена — порівняння недоступне"));
         return;
     }
-    if (anime4k::allCandidates().size() < 2) {
+    if (anime4k::availableModes().size() < 2) {
         flashStatus(QStringLiteral("Замало варіантів для порівняння"));
         return;
     }

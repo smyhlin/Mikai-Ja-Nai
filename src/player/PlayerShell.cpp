@@ -33,6 +33,44 @@ QString stateName(PlayerShell::State state) {
     return QStringLiteral("DEFAULT_FIT");
 }
 
+/// One panel per level of the enhancement tree: the root, the Anime4K level, a
+/// category, an experiment family, and the deepest one a preset hangs in.
+constexpr int kEnhancementTreeDepth = 5;
+
+/// The rows of one catalogue level of the enhancement tree. A category row
+/// carries the level it opens, so the panel beside it is built from the row
+/// alone; a disabled row carries nothing, because it leads nowhere.
+QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId) {
+    QVector<MenuEntry> entries;
+    for (const anime4k::MenuRow& row : anime4k::menuRows(levelId)) {
+        MenuEntry entry;
+        entry.text = row.label;
+        entry.tooltip = row.tooltip;
+        switch (row.role) {
+            case anime4k::MenuRow::Role::Preset:
+                entry.payload = QStringLiteral("preset|") + row.id;
+                entry.current = row.id == currentId;
+                break;
+            case anime4k::MenuRow::Role::Category:
+                // The chevron is a promise that something opens: it is only
+                // added for a category that actually has children.
+                if (row.hasChildren) {
+                    entry.text = row.label + QStringLiteral("  ›");
+                }
+                entry.payload = QStringLiteral("level|") + row.id;
+                entry.submenu = row.hasChildren;
+                entry.current = currentId != QLatin1String("off") &&
+                                anime4k::categoryContainsPreset(row.id, currentId);
+                break;
+            case anime4k::MenuRow::Role::Placeholder:
+                entry.disabled = true;
+                break;
+        }
+        entries.append(entry);
+    }
+    return entries;
+}
+
 QString cursorName(PlayerShell::State state) {
     switch (state) {
         case PlayerShell::State::FullscreenAutoHidden: return QStringLiteral("none");
@@ -290,57 +328,36 @@ void PlayerShell::buildDock() {
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
 
-    enhancementsPopup_ = new MenuPopup(QStringLiteral("ПОКРАЩЕННЯ"), overlayHost);
-    enhancementsPopup_->setObjectName(QStringLiteral("playerEnhancementsPopup"));
-    connect(enhancementsPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
-        const QString row = payload.toString();
-        if (row == QLatin1String("anime4k")) {
-            openAnime4K();
-        } else if (row.startsWith(QLatin1String("page|"))) {
-            openEnhancementPage(row.mid(5));
-        }
-    });
-
-    anime4kPopup_ = new MenuPopup(QStringLiteral("ANIME4K"), overlayHost);
-    anime4kPopup_->setObjectName(QStringLiteral("playerAnime4KPopup"));
-    connect(anime4kPopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
-        // Three kinds of row share this popover: a category drills down, a
-        // preset selects, and a planned model does neither. The prefix is what
-        // tells them apart, so a category can never apply a chain.
-        const QString row = payload.toString();
-        if (row == QLatin1String("back")) {
-            QString parent;
-            for (const anime4k::CategoryInfo& category : anime4k::availableCategories()) {
-                if (category.id == anime4kLevel_) {
-                    parent = category.parent;
-                    break;
+    // The enhancement tree is one panel per level, standing side by side:
+    // ПОКРАЩЕННЯ is the root, and every panel after it is the submenu of a row
+    // in the panel before. They are pooled rather than built per level, because
+    // a level is reopened every time the pointer crosses the row that leads to
+    // it - and a hidden panel is a panel that is not on screen, which is the
+    // whole of the tree's state.
+    for (int depth = 0; depth < kEnhancementTreeDepth; ++depth) {
+        const bool root = depth == 0;
+        auto* panel = new MenuPopup(root ? QStringLiteral("ПОКРАЩЕННЯ") : QString(), overlayHost);
+        panel->setObjectName(root ? QStringLiteral("playerEnhancementsPopup")
+                                 : QStringLiteral("playerEnhancementLevelPopup"));
+        connect(panel, &MenuPopup::picked, this, [this, panel](const QVariant& payload) {
+            // A click names a row; the panel it came from is what says which
+            // level of the tree that row belongs to, which the payload alone
+            // cannot - the same preset id is reachable from the panel it hangs
+            // in and from nowhere else.
+            for (int spot = 0; spot < panel->rowCount(); ++spot) {
+                if (panel->entryAt(spot).payload == payload) {
+                    onEnhancementRow(panel, spot, true);
+                    return;
                 }
             }
-            if (parent.isEmpty()) {
-                // Above a top-level page is the Покращення popover, which is a
-                // popover of its own: Back reopens it rather than an empty level.
-                openEnhancements();
-                return;
-            }
-            anime4kLevel_ = parent;
-            replaceAnime4KMenu();
-            return;
-        }
-        if (row.startsWith(QLatin1String("cat|"))) {
-            anime4kLevel_ = row.mid(4);
-            replaceAnime4KMenu();
-            return;
-        }
-        if (row.startsWith(QLatin1String("preset|"))) {
-            onAnime4KPreset(row.mid(7));
-        }
-    });
+        });
+        enhancementPanels_.append(panel);
+        enhancementLevels_.append(QString());
+        registerOverlay(panel);
+    }
     btnEnhance_->setVisible(!anime4k::findShadersDir().isEmpty());
-    refreshEnhancementMenus();
 
     registerOverlay(flyout_);
-    registerOverlay(enhancementsPopup_);
-    registerOverlay(anime4kPopup_);
 }
 
 void PlayerShell::buildFooter() {
@@ -918,7 +935,7 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
 
 void PlayerShell::setAnime4KMode(anime4k::Mode mode) {
     anime4kMode_ = mode;
-    refreshEnhancementMenus();
+    refreshEnhancementTree();
     updateInfoChip();
 }
 
@@ -950,87 +967,86 @@ void PlayerShell::onAnime4KPreset(const QString& presetId) {
     onAnime4KMode(anime4k::modeForId(presetId));
 }
 
-void PlayerShell::refreshEnhancementMenus() {
-    QVector<MenuEntry> enhancements;
-    MenuEntry anime4kEntry;
-    anime4kEntry.text = QStringLiteral("Anime4K  ›");
-    anime4kEntry.payload = QStringLiteral("anime4k");
-    anime4kEntry.current = anime4kMode_ != anime4k::Mode::Off;
-    enhancements.append(anime4kEntry);
-    // The models this player does not run open their own page rather than a
-    // dead row, so the menu says where they will live.
-    for (const anime4k::MenuRow& row : anime4k::menuRows(QString())) {
-        if (row.role != anime4k::MenuRow::Role::Category || row.id == QLatin1String("anime4k")) {
+void PlayerShell::refreshEnhancementTree() {
+    const QString currentId = anime4k::modeId(anime4kMode_);
+    for (int depth = 0; depth < enhancementPanels_.size(); ++depth) {
+        MenuPopup* panel = enhancementPanels_.at(depth);
+        if (!panel->isVisible()) {
             continue;
         }
-        MenuEntry entry;
-        entry.text = row.label + QStringLiteral("  ›");
-        entry.tooltip = row.tooltip;
-        entry.payload = QStringLiteral("page|") + row.id;
-        enhancements.append(entry);
+        panel->setEntries(enhancementEntries(enhancementLevels_.at(depth), currentId));
+        watchEnhancementRows(panel);
     }
-    enhancementsPopup_->setEntries(enhancements);
-    anime4kRow_ = enhancementsPopup_->rowWidget(0);
-    if (anime4kRow_ != nullptr) {
-        anime4kRow_->installEventFilter(this);
-    }
-    refreshAnime4KMenu();
 }
 
-void PlayerShell::refreshAnime4KMenu() {
-    const QString currentId = anime4k::modeId(anime4kMode_);
-    // The popover is one window at several levels, so the caption follows the
-    // level: the Anime4K tree or the planned-model page that was opened.
-    const QString levelLabel = anime4k::categoryLabel(anime4kLevel_);
-    anime4kPopup_->setTitle(levelLabel.isEmpty() ? QStringLiteral("ANIME4K")
-                                                 : levelLabel.toUpper());
-    QVector<MenuEntry> rows;
-    if (anime4kLevel_ != QLatin1String("anime4k")) {
-        // The popover is reused for every level, so the level above has to have
-        // a way back inside it; Esc leaves the whole popover instead.
-        MenuEntry back;
-        back.text = QStringLiteral("‹  Назад");
-        back.tooltip = QStringLiteral("Повернутися на рівень вище");
-        back.payload = QStringLiteral("back");
-        back.submenu = true;
-        rows.append(back);
-    }
-    for (const anime4k::MenuRow& row : anime4k::menuRows(anime4kLevel_)) {
-        MenuEntry entry;
-        entry.text = row.label;
-        entry.tooltip = row.tooltip;
-        switch (row.role) {
-            case anime4k::MenuRow::Role::Preset:
-                entry.payload = QStringLiteral("preset|") + row.id;
-                entry.current = row.id == currentId;
-                break;
-            case anime4k::MenuRow::Role::Category:
-                // The chevron is a promise that something opens: it is only
-                // added for a category that actually has children.
-                if (row.hasChildren) {
-                    entry.text = row.label + QStringLiteral("  ›");
-                }
-                entry.payload = QStringLiteral("cat|") + row.id;
-                // Opens the next level in place rather than in a window of its
-                // own, and is marked when the current preset hides inside it.
-                entry.submenu = true;
-                entry.current = anime4k::categoryContainsPreset(row.id, currentId);
-                break;
-            case anime4k::MenuRow::Role::Placeholder:
-                entry.payload = QStringLiteral("planned|") + row.id;
-                entry.disabled = true;
-                break;
+void PlayerShell::collapseEnhancementTree(int depth) {
+    for (int deeper = depth + 1; deeper < enhancementPanels_.size(); ++deeper) {
+        MenuPopup* panel = enhancementPanels_.at(deeper);
+        if (panel->isVisible()) {
+            panel->close();
         }
-        rows.append(entry);
+        enhancementLevels_[deeper].clear();
     }
-    anime4kPopup_->setEntries(rows);
 }
 
-void PlayerShell::replaceAnime4KMenu() {
-    refreshAnime4KMenu();
-    // The rows changed height and count, so the popover is fitted and clamped
-    // again at the same anchor it was opened at.
-    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
+void PlayerShell::watchEnhancementRows(MenuPopup* panel) {
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        if (QWidget* row = panel->rowWidget(spot)) {
+            row->installEventFilter(this);
+        }
+    }
+}
+
+void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidget* anchor) {
+    if (depth <= 0 || depth >= enhancementPanels_.size() || anchor == nullptr) {
+        return;
+    }
+    MenuPopup* panel = enhancementPanels_.at(depth);
+    const QString label = anime4k::categoryLabel(levelId);
+    panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
+    panel->setEntries(enhancementEntries(levelId, anime4k::modeId(anime4kMode_)));
+    enhancementLevels_[depth] = levelId;
+    panel->setProperty("enhancementLevel", levelId);
+    watchEnhancementRows(panel);
+    collapseEnhancementTree(depth);
+    QWidget* host = panel->parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+    panel->popupBeside(QRect(anchor->mapTo(host, QPoint(0, 0)), anchor->size()),
+                       enhancementGrowLeft_);
+}
+
+void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
+    const int depth = enhancementPanels_.indexOf(panel);
+    if (depth < 0 || spot < 0 || spot >= panel->rowCount()) {
+        return;
+    }
+    const MenuEntry entry = panel->entryAt(spot);
+    if (entry.disabled) {
+        return;
+    }
+    if (entry.submenu) {
+        if (depth == 0) {
+            // Which way the tree grows is decided once, from the room beside
+            // the root, and then held for every level below it: a cascade that
+            // re-decided per level would flip back over its own panels.
+            QWidget* host = panel->parentWidget();
+            if (host != nullptr) {
+                const QRect rect(panel->mapTo(host, QPoint(0, 0)), panel->size());
+                enhancementGrowLeft_ = rect.left() > host->width() - rect.right();
+            }
+        }
+        showEnhancementLevel(depth + 1, entry.payload.toString().mid(6), panel->rowWidget(spot));
+        return;
+    }
+    // A preset row: the levels below it are no longer about anything.
+    collapseEnhancementTree(depth);
+    if (!activated) {
+        return;
+    }
+    onAnime4KPreset(entry.payload.toString().mid(7));
+    dismissOverlay();
 }
 
 void PlayerShell::updateInfoChip() {
@@ -1068,38 +1084,15 @@ void PlayerShell::updateInfoChip() {
 void PlayerShell::openEnhancements() {
     dismissOverlay();
     wake();
-    refreshEnhancementMenus();
-    enhancementsPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
-}
-
-void PlayerShell::openAnime4K() {
-    // The enhancements popover stays open: this is a submenu reached from it,
-    // and dismissOverlay() would close the row the pointer is resting on.
-    if (flyout_->isVisible()) {
-        flyout_->close();
-    }
-    if (anime4kPopup_->isVisible()) {
-        anime4kPopup_->close();
-    }
-    wake();
-    // Opening always lands on the Anime4K root: a level left behind by the last
-    // visit would open the menu halfway down.
-    anime4kLevel_ = QStringLiteral("anime4k");
-    refreshEnhancementMenus();
-    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
-}
-
-void PlayerShell::openEnhancementPage(const QString& pageId) {
-    if (flyout_->isVisible()) {
-        flyout_->close();
-    }
-    if (anime4kPopup_->isVisible()) {
-        anime4kPopup_->close();
-    }
-    wake();
-    anime4kLevel_ = pageId;
-    refreshAnime4KMenu();
-    anime4kPopup_->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
+    // Always the root: a tree left standing halfway down by the last visit
+    // would open on a level nobody asked for.
+    collapseEnhancementTree(0);
+    MenuPopup* root = enhancementPanels_.first();
+    root->setTitle(QStringLiteral("ПОКРАЩЕННЯ"));
+    root->setEntries(enhancementEntries(QString(), anime4k::modeId(anime4kMode_)));
+    root->setProperty("enhancementLevel", QString());
+    watchEnhancementRows(root);
+    root->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));
 }
 
 void PlayerShell::openSettings() {
@@ -1335,16 +1328,23 @@ void PlayerShell::releasePointer() {
 }
 
 bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
-    // Hover opens the Anime4K submenu from inside the open enhancements popover,
-    // but NOT the popover itself - that one is click-only. A menu that appears
-    // the instant the pointer arrives makes it impossible to approach on
-    // purpose; a submenu reached by resting on its one row is the ordinary
-    // submenu gesture.
-    if (watched == anime4kRow_ && event->type() == QEvent::Enter) {
-        if (anime4kPopup_ != nullptr && !anime4kPopup_->isVisible()) {
-            openAnime4K();
+    // Resting on a row of the tree opens the level that hangs under it, which
+    // is what makes the tree a tree: with a click per level, four levels would
+    // be four choices and three Back rows. Only the rows are watched - a panel
+    // that opened the moment the pointer touched it could not be approached.
+    if (event->type() == QEvent::Enter) {
+        for (int depth = 0; depth < enhancementPanels_.size(); ++depth) {
+            MenuPopup* panel = enhancementPanels_.at(depth);
+            if (!panel->isVisible()) {
+                continue;
+            }
+            for (int spot = 0; spot < panel->rowCount(); ++spot) {
+                if (panel->rowWidget(spot) == watched) {
+                    onEnhancementRow(panel, spot, false);
+                    return false;
+                }
+            }
         }
-        return false;
     }
     if (watched == surface_) {
         // The surface is a real child widget, so re-targeting is a matter of

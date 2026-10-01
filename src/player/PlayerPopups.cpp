@@ -186,6 +186,13 @@ QWidget* MenuPopup::rowWidget(int spot) const {
     return rows_.at(spot);
 }
 
+MenuEntry MenuPopup::entryAt(int spot) const {
+    if (spot < 0 || spot >= rowEntries_.size()) {
+        return MenuEntry();
+    }
+    return rowEntries_.at(spot);
+}
+
 void MenuPopup::setEntries(const QVector<MenuEntry>& entries) {
     while (body_->count()) {
         QLayoutItem* item = body_->takeAt(0);
@@ -268,6 +275,25 @@ void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
     }
     x = qBound(bounds.left(), x, bounds.right() - width() + 1);
     y = qBound(bounds.top(), y, bounds.bottom() - height() + 1);
+    move(x, y);
+    raise();
+    setFocus(Qt::OtherFocusReason);
+}
+
+void MenuPopup::popupBeside(const QRect& anchor, bool preferLeft, int gap) {
+    show();
+    fitToHint();
+    QWidget* host = parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    // The preferred side is taken as given: a tree that flipped sides per level
+    // would stack its own panels on top of each other.
+    const int beside = preferLeft ? anchor.left() - gap - width() : anchor.right() + 1 + gap;
+    const int x = qBound(bounds.left(), beside, bounds.right() - width() + 1);
+    const int y = qBound(bounds.top(), anchor.top(), bounds.bottom() - height() + 1);
     move(x, y);
     raise();
     setFocus(Qt::OtherFocusReason);
@@ -359,9 +385,8 @@ void MenuPopup::activate(int spot) {
     // so it cannot change what is selected.
     if (entry.disabled)
         return;
-    // A submenu row stays open: the caller swaps in the next level's rows and
-    // re-places the popover, which is what makes the drill-down navigable
-    // without stacking one window per level.
+    // A submenu row stays open: the caller places the next level's panel beside
+    // this one, which is what makes the tree navigable without a Back row.
     if (!entry.submenu)
         close();
     emit picked(entry.payload);

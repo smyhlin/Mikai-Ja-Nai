@@ -8,6 +8,7 @@
 
 #include <QFrame>
 #include <QPoint>
+#include <QRect>
 #include <QStringList>
 #include <QVariant>
 #include <QVector>
@@ -34,7 +35,7 @@ struct MenuEntry {
     QVariant payload;
     bool current = false;
     /// A row that leads to another level: activating it leaves the popover
-    /// open, so the caller can swap this level's rows for the next one's. A
+    /// open, so the caller can place that level's panel beside this one. A
     /// plain row closes the popover, which is what a terminal choice does.
     bool submenu = false;
     /// A row that is shown but cannot be chosen - used for the models that are
@@ -96,12 +97,21 @@ public:
     /// The widget behind a row, for a host that needs per-row gestures such as
     /// a hover that opens a submenu. Null for a spot that is not a row.
     QWidget* rowWidget(int spot) const;
+    /// The entry behind a row. Indices count rows only - headings are skipped -
+    /// so they are the same indices rowWidget() takes.
+    MenuEntry entryAt(int spot) const;
     /// Re-fits to the size hint, after the host changed something out of band.
     void refresh();
 
     /// Places the popover above the anchor, flipping below when needed, then
     /// clamps both axes to its parent.
     void popupNear(const QPoint& anchorGlobal, bool preferAbove = true);
+
+    /// Places the popover beside an anchor rectangle given in its parent's own
+    /// coordinates: top-aligned to it, to the left when `preferLeft` is set and
+    /// to the right otherwise, then clamped to the parent. This is what lets a
+    /// whole tree of levels stand on screen at the same time.
+    void popupBeside(const QRect& anchor, bool preferLeft, int gap = 6);
 
 signals:
     void picked(const QVariant& payload);

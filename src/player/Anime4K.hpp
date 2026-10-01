@@ -65,10 +65,8 @@ struct CategoryInfo {
     bool placeholder = false;
 };
 
-/// What kind of work a candidate does, which is how the compare window groups
-/// the individual shaders. A preset belongs to the group of the first step that
-/// does the real work, so a reader scanning the list finds the restore models
-/// together rather than scattered by file name.
+/// What kind of work a loose shader candidate does, used for its inventory
+/// label and hint. Presets use `Kind::Preset`.
 enum class Kind {
     Preset,
     Restore,
@@ -84,7 +82,7 @@ enum class Kind {
 
 QString kindLabel(Kind kind);
 
-/// One selectable thing: either a named preset or a single .glsl file.
+/// One catalog candidate: either a named player preset or a single .glsl file.
 ///
 /// `id` is the persistence key. It is the file name for a single shader and the
 /// preset's own id otherwise, never the enum ordinal: a preset added to the
@@ -103,10 +101,10 @@ struct Candidate {
     int scale = 0;
 };
 
-/// Every selectable candidate: the presets, which are a table in code, plus
-/// each .glsl found in the shaders folder. With no folder the presets are still
-/// listed - only their files cannot be resolved, which `chainIsComplete`
-/// reports per candidate.
+/// The catalog inventory: presets from the code table plus each .glsl found in
+/// the shaders folder. The player menu and Compare chooser use presets only;
+/// with no folder, presets are still listed but their files cannot be resolved,
+/// which `chainIsComplete` reports per candidate.
 QVector<Candidate> allCandidates(const QString& shadersDir = QString());
 
 /// The id of a mode, which is its persistence key. Empty for a mode the table
@@ -122,9 +120,6 @@ Mode modeForId(const QString& id);
 
 /// The presets alone, in menu order.
 QVector<ModeInfo> availableModes();
-
-/// The menu categories and the placeholder leaves, in menu order.
-QVector<CategoryInfo> availableCategories();
 
 /// The Ukrainian label of a category, empty when the id names none.
 QString categoryLabel(const QString& categoryId);

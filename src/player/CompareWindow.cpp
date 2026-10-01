@@ -60,6 +60,22 @@ QString caption(const QString& text) {
     return QStringLiteral(" %1 ").arg(text);
 }
 
+QStringList categoryPath(const QString& categoryId) {
+    QStringList path;
+    QString parent;
+    for (const QString& component : categoryId.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
+        if (!parent.isEmpty()) {
+            parent += QLatin1Char('/');
+        }
+        parent += component;
+        const QString label = anime4k::categoryLabel(parent);
+        if (!label.isEmpty()) {
+            path.append(label);
+        }
+    }
+    return path;
+}
+
 }  // namespace
 
 CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandidateId,
@@ -225,40 +241,26 @@ void CompareWindow::buildUi() {
 }
 
 void CompareWindow::populateCandidates() {
-    const QString shadersDir = anime4k::findShadersDir();
-    const QVector<anime4k::Candidate> all = anime4k::allCandidates(shadersDir);
+    const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
     candidates_.clear();
-    candidates_.reserve(all.size());
+    candidates_.reserve(presets.size());
     choices_.clear();
-    choices_.reserve(all.size());
-    for (const anime4k::Candidate& candidate : all) {
-        candidates_.append(candidate.id);
-        // Two sections under one Anime4K submenu: the presets - every chain the
-        // player can actually run - and the loose files, each under the family
-        // it belongs to. The AutoDownscalePre steps are not candidates at all,
-        // because the catalogue does not list them: they only exist inside a
-        // preset's chain.
+    choices_.reserve(presets.size());
+    for (const anime4k::ModeInfo& preset : presets) {
+        candidates_.append(preset.id);
         ChoiceEntry entry;
-        entry.id = candidate.id;
-        entry.label = candidate.label;
-        if (candidate.kind == anime4k::Kind::Preset) {
-            entry.path = {QStringLiteral("Anime4K"), QStringLiteral("Пресети")};
-        } else {
-            entry.path = {QStringLiteral("Anime4K"), QStringLiteral("Окремі шейдери"),
-                          anime4k::kindLabel(candidate.kind)};
-        }
+        entry.id = preset.id;
+        entry.label = preset.label;
+        entry.path = categoryPath(preset.category);
         choices_.append(entry);
     }
-    // No shaders on disk is a real state, not an error: the window opens with
-    // both sides empty and says so in the info line.
     selection_.clear();
     if (candidates_.isEmpty()) {
         return;
     }
-    // Two sides, always: the chain the player is running opens as A, and the
-    // next preset as B, so the window opens on a comparison rather than on an
-    // empty pane. A catalogue of one compares a chain with itself, which is
-    // still better than nothing.
+    // Two sides, always: the chain the player is running opens as A and another
+    // player-menu preset as B, so the window opens on a comparison rather than
+    // on an empty pane. A catalogue of one compares a chain with itself.
     const qsizetype current =
         std::max<qsizetype>(0, candidates_.indexOf(currentCandidateId_));
     selection_.append(candidates_.value(current));
