@@ -1,7 +1,11 @@
 #include "CompareLayout.hpp"
 
+#include <QByteArray>
 #include <QColor>
+#include <QCoreApplication>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 
 namespace mplayer::shell {
@@ -40,14 +44,23 @@ bool modeFromKey(const char* key, CompareMode& out) {
 }
 
 const char* modeLabel(CompareMode mode) {
-    switch (mode) {
-        case CompareMode::SplitH: return "Split H";
-        case CompareMode::SplitV: return "Split V";
-        case CompareMode::SideBySide: return "Side-by-side";
-        case CompareMode::Flicker: return "Flicker";
-        case CompareMode::Difference: return "Difference";
+    // The declared return is a C string, so the translated text is held in a
+    // per-mode byte array that lives as long as the process and never moves.
+    // The first call builds them, which is after the startup catalogue is
+    // installed, so callers read the label in the language that was selected.
+    // They decode it with QString::fromUtf8.
+    static const std::array<QByteArray, 5> kLabels = {
+        QCoreApplication::translate("CompareLayout", "Split H").toUtf8(),
+        QCoreApplication::translate("CompareLayout", "Split V").toUtf8(),
+        QCoreApplication::translate("CompareLayout", "Side-by-side").toUtf8(),
+        QCoreApplication::translate("CompareLayout", "Flicker").toUtf8(),
+        QCoreApplication::translate("CompareLayout", "Difference").toUtf8(),
+    };
+    const std::size_t index = static_cast<std::size_t>(mode);
+    if (index >= kLabels.size()) {
+        return kLabels[static_cast<std::size_t>(CompareMode::SideBySide)].constData();
     }
-    return "Side-by-side";
+    return kLabels[index].constData();
 }
 
 CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, bool flickerShowA,

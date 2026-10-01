@@ -320,7 +320,7 @@ private:
 CoverViewer::CoverViewer(const QPixmap& pixmap, const QString& caption, QWidget* parent)
     : QDialog(parent) {
     setObjectName(QStringLiteral("coverViewer"));
-    setWindowTitle(caption.isEmpty() ? tr("Обкладинка") : tr("Обкладинка — %1").arg(caption));
+    setWindowTitle(caption.isEmpty() ? tr("Cover") : tr("Cover — %1").arg(caption));
     setWindowFlag(Qt::FramelessWindowHint, true);
     setWindowFlag(Qt::Dialog, true);
 

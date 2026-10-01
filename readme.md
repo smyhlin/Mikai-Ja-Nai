@@ -4,9 +4,9 @@ A C++/Qt6 desktop client for the [Mikai public API](https://api.mikai.me/public/
 
 ## Build
 
-Needs MinGW-w64 g++, Qt 6.8.x, and the mpv runtime directory (headers plus
-`libmpv-2.dll`). `MPV_RUNTIME_DIR` has no default and CMake hard-fails without
-it. The toolchain paths have to be passed explicitly — a bare
+Needs MinGW-w64 g++, Qt 6.8.x with LinguistTools, and the mpv runtime
+directory (headers and `libmpv-2.dll`). `MPV_RUNTIME_DIR` has no default and
+CMake hard-fails without it. The toolchain paths have to be passed explicitly — a bare
 `-G "MinGW Makefiles"` fails with `CMAKE_MAKE_PROGRAM is not set` when the
 toolchain is not on `PATH`.
 
@@ -20,6 +20,20 @@ cmake --build build-cmake --target mikai --parallel
 ```
 
 Then run `build-cmake\mikai.exe`.
+
+## Interface languages
+
+Mikai's interface is available in English and Ukrainian. English is the source language in the C++ `tr()` and `QCoreApplication::translate()` calls; the Ukrainian catalog is `translations/mikai_uk.ts`. In **Settings → General → Interface language**, choose **Use system language**, **English**, or **Ukrainian**. System mode selects Ukrainian only when the operating-system locale is Ukrainian and otherwise uses English. A language change takes effect after restarting Mikai.
+
+To refresh the catalog after changing source strings, build the `update_translations` target, then translate the new entries in `translations/mikai_uk.ts`:
+
+```sh
+cmake --build build-cmake --target update_translations
+```
+
+Keep stable IDs, API values, file patterns, URLs, and dynamic title/team/provider names untranslated. Preserve Qt placeholders such as `%1` and `%n`, HTML markup, and all numerus forms. The app build compiles and embeds the application catalog; Qt omits unfinished entries, which then fall back to the English source text. Before release, check that the catalog contains no unfinished entries.
+
+A new language needs a TS file added to `qt_add_translations()` in `CMakeLists.txt`, a runtime translator and language option in `src/app/main.cpp` and `SettingsDialog`, and its system-language mapping in `src/app/I18n.cpp`. English remains the source-language fallback and does not need a separate catalog.
 
 ## WebP is required
 
@@ -59,12 +73,14 @@ missing one is a red test rather than a screen of blank placeholders.
 `PATH`; a fresh exe with no deployed DLLs exits with `0xC0000135`.
 
 ```sh
-windeployqt build-cmake/mikai.exe
+windeployqt --translations uk build-cmake/mikai.exe
 ```
 
 `windeployqt` does not copy `libmpv-2.dll` — it lives in `MPV_RUNTIME_DIR` and
-has to be copied in by hand alongside the Qt DLLs. The resulting folder is
-self-contained and is what you hand to someone else.
+has to be copied in by hand alongside the Qt DLLs. `--translations uk` deploys
+Qt's Ukrainian catalogs, and the `mikai` build copies `qtbase_uk.qm` from the
+configured Qt installation into the executable's `translations` directory.
+The resulting folder is self-contained and is what you hand to someone else.
 
 `mikai.exe` is `WIN32_EXECUTABLE`, so it has no console window. Diagnostics go
 to `mikai.log` beside the exe, not to stdout: every Qt message is appended
@@ -94,20 +110,22 @@ set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build-cmake -R mi
 
 ## What it does
 
+Labels shown in these examples use Ukrainian; the interface can also run in English.
+
 - **Home** — carousels for titles you recently opened, titles airing now, and Mikai's current popular picks, plus the latest episode updates and the weekly airing schedule. Every card shows the poster, the airing status and the aired/planned episode count, and a search result row reads the same way (`Бліч · 2004 · TV · Завершено · 366 серій`) straight from the list response, with no extra request; right-click a card to open it, copy its mikai.me link or raw id, or open the site page in a browser.
 - **Title** — description, cover, scores, genres and related titles, then one tab per release (voice or subtitles, grouped by dubbing team). Each episode opens the player at the qualities the provider actually has; the right-click menu adds copy-URL-only, re-extract, and hand-off to an external player. The cover opens full size with pan and zoom.
 - **Player** — a player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. It opens full screen, and the `><` / `<>` buttons beside the PiP icon — or a double click on the picture, or `F` / `F11` — toggle a real decorated native window, so leaving full screen restores the previous windowed geometry and the OS titlebar handles dragging, resizing, snap layouts and moving the window to another monitor. The toggle is scoped to the player; the app's main window is unaffected. The picture fills the window edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports network throughput, decoded FPS and, while enhancement is active, the source-to-output resolution. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float drops the video into a small always-on-top window with its own overlaid controls — click to pause, hold and drag to move it.
 - **Anime4K** — the dock's sparkle button opens **Покращення**, whose **Anime4K** row opens a tree on hover: resting on a row opens the level under it as a panel beside the one it sits in, so the four categories - *Швидкість* (Fast A/B/C), *Якість* (HQ A/B/C), *Максимум* (the double-restore chains) and *Експериментальні* (3D Graphics, Old Film Restore, Deblur, plus single-file Noise Reduction, Thin Lines, Texture Enhancement and Darken presets). **Вимкнено** turns enhancement off. The choice is applied to the running mpv core, so it lands on the next rendered frame without reopening the episode, and it is remembered across runs. The same tree lists **RIFE**, **RealESRGAN** and **Інші моделі** as panels of their own, each holding a disabled *В планах* leaf: they have no engine yet, and nothing in them can be chosen. The presets live in `shaders/` and are deployed next to the executable; the enhancement control hides itself if that folder did not ship.
 - **External video** — the home-page **Відкрити відео** menu opens a local file or a media/stream URL in the built-in mpv player. Standalone playback keeps seeking, volume, speed, PiP, **Enhancements → Anime4K**, and the picture's right-click **Порівняти якість** action, but has no anime quality selector, episode list, or release picker. URLs go directly to mpv; anime-provider page extraction is not used. A failed source displays an error, and **Повторити** retries that same file or URL.
-- **Settings** — the API token with its live quota, plus a checklist of the home blocks to load. A block you switch off is never requested, which is the cheapest way to cut API spend on a slow or metered connection. The **Пресети** tab assigns a one-keypress shortcut to every Anime4K preset, including **Вимкнено**; leave a binding empty to clear it. Duplicate assignments are rejected immediately, and built-in player keys remain reserved.
+- **Settings** — the API token with its live quota, a checklist of home blocks, and an **Interface language** selector for system, English, or Ukrainian. A disabled block is never requested. The **Presets** tab assigns a one-keypress shortcut to every Anime4K preset; duplicate assignments are rejected and built-in player keys remain reserved.
 
 ### Anime4K handoff
 
-**What it is.** `src/player/Anime4K.cpp` holds one declarative catalogue: for every preset it carries the stable id, the Ukrainian menu label and hint, the category it hangs under, and the *ordered* shader chain. `availableModes()` returns that table and `menuRows(parent)` returns the level above it as the rows a panel renders, so nothing else keeps a second copy of a chain - adding a preset is one table entry. `shaders/` contains 49 individual GLSL files; a preset is an ordered chain, not a separate shader. The Compare window (`src/player/CompareWindow.cpp`) offers the same 24 preset ids and labels as the player menu, under the same categories and experiment families; individual `.glsl` files are not extra choices, so every option compared is one the player can select.
+**What it is.** `src/player/Anime4K.cpp` holds one declarative catalogue: for every preset it carries the stable id, the localized menu label and hint, the category it hangs under, and the *ordered* shader chain. `availableModes()` returns that table and `menuRows(parent)` returns the level above it as the rows a panel renders, so nothing else keeps a second copy of a chain - adding a preset is one table entry. `shaders/` contains 49 individual GLSL files; a preset is an ordered chain, not a separate shader. The Compare window (`src/player/CompareWindow.cpp`) offers the same 24 preset ids and labels as the player menu, under the same categories and experiment families; individual `.glsl` files are not extra choices, so every option compared is one the player can select.
 
 **Menu.** The dock's sparkle button opens **Покращення**: an **Anime4K ›** row plus **RIFE ›**, **RealESRGAN ›** and **Інші моделі ›**. The menu is a tree rather than a sequence of screens: resting the pointer on a row opens the level under it as a panel *beside* the panel that row sits in, and every level stays on screen, so there is no **‹ Назад** row anywhere. From the root that is the Anime4K level (**Вимкнено**, then the four categories), one panel per category, then one per experiment family - four panels at the deepest leaf, each top-aligned to the row that opened it and placed on the side of the tree with room. Clicking a category row opens the same panel, so the tree is reachable without a pointer motion, and clicking a preset row applies it and closes the whole tree. A category row only drills down - it never selects a shader - and each top-level category carries its purpose as a tooltip (*Швидкість* low GPU use in real time, *Якість* balanced quality, *Максимум* multi-stage at a higher GPU cost, *Експериментальні* special cases that are not defaults). The family names inside *Експериментальні* are Anime4K's own (*Noise Reduction*, *Thin Lines*, *Texture Enhancement*, *Darken*) with Ukrainian tooltips. The row holding the current preset is highlighted, including the closed category it sits in.
 
-**Built-in presets** (menu labels and hints are Ukrainian in the catalogue; stable IDs are English and are what settings persist). Each chain name expands to `Anime4K_<name>.glsl`:
+**Built-in presets** (menu labels and hints are localized; stable IDs are never translated and are what settings persist). Each chain name expands to `Anime4K_<name>.glsl`:
 
 | Menu label / ID | Intended use | Ordered shader chain (files in `shaders/`) |
 | --- | --- | --- |
@@ -153,9 +171,9 @@ The three planned models are submenus, not presets: **RIFE**, **RealESRGAN** and
 - Thin lines: `Thin_{VeryFast,Fast,HQ}`.
 - Other: `Clamp_Highlights`, `AutoDownscalePre_{x2,x4}`, `3DGraphics_Upscale_x2_US`, `3DGraphics_AA_Upscale_x2_US`.
 
-**Runtime and persistence.** Every preset and its Ukrainian hint comes from the catalogue, and a menu row selects by that preset's id - never by an enum ordinal or a menu index. `VideoSurface` resolves the applied *id* (not the mode) to ordered absolute paths and writes them to mpv's `glsl-shaders`, both when the core is created and on every later change, so a chain picked before the engine exists is still honoured on the first frame. `player/anime4k` stores that id: the ten built-in ids are frozen (`off`, `fast_a`…`hq_ca`) so an existing selection cannot be repointed, and the experiments have permanent readable ids (`exp_thin_hq`, `exp_deblur_strong`, …) rather than positions in a menu. PiP copies both the mode and the applied chain id into the float's own core; the info chip shows a nested experiment qualified by its category (`Тонкі лінії · HQ`). The Compare window borrows the live surface to render each side and puts the player's own chain back when it is done, so a comparison never leaves the player running a preview chain. At startup the app searches `<exe directory>/shaders`, then `./shaders`, then `./build-cmake/shaders`; when none exists, Anime4K controls are hidden. The shader `//!WHEN` conditions can decline to upscale when the output is not larger than the source, so enabling a chain does not guarantee every stage changes every frame.
+**Runtime and persistence.** Every preset and its localized hint comes from the catalogue, and a menu row selects by that preset's id - never by an enum ordinal or a menu index. `VideoSurface` resolves the applied *id* (not the mode) to ordered absolute paths and writes them to mpv's `glsl-shaders`, both when the core is created and on every later change, so a chain picked before the engine exists is still honoured on the first frame. `player/anime4k` stores that id: the ten built-in ids are frozen (`off`, `fast_a`…`hq_ca`) so an existing selection cannot be repointed, and the experiments have permanent readable ids (`exp_thin_hq`, `exp_deblur_strong`, …) rather than positions in a menu. PiP copies both the mode and the applied chain id into the float's own core; the info chip shows a nested experiment qualified by its category (`Тонкі лінії · HQ`). The Compare window borrows the live surface to render each side and puts the player's own chain back when it is done, so a comparison never leaves the player running a preview chain. At startup the app searches `<exe directory>/shaders`, then `./shaders`, then `./build-cmake/shaders`; when none exists, Anime4K controls are hidden. The shader `//!WHEN` conditions can decline to upscale when the output is not larger than the source, so enabling a chain does not guarantee every stage changes every frame.
 
-**Build and language.** Implementation and build configuration are C++20/CMake; shader programs are GLSL. The 49 source assets live in root `shaders/`. `CMakeLists.txt`'s `mikai` POST_BUILD rule copies that directory beside `mikai.exe`; CMake does not precompile GLSL—mpv loads the copied files at runtime. Build from the configured tree with `cmake --build build-cmake --target mikai --parallel`. The Anime4K categories, preset labels and hints are localized UI text; the future-model submenus intentionally remain placeholder-only with a disabled **В планах** leaf each. Keep menu labels/tooltips in Ukrainian to match the app UI; keep preset IDs and shader filenames unchanged because settings and chain resolution depend on them. `cmake --build build-cmake --target anime4k_menu_probe --parallel && build-cmake/anime4k_menu_probe.exe` runs the full native Anime4K smoke (every menu leaf, pixel rendering, settings reopen, Compare groups, PiP chain and minimum-window fit); `build-cmake/resolver_probe.exe` verifies the 71-candidate catalog resolves cleanly.
+**Build and language.** Implementation and build configuration are C++20/CMake; shader programs are GLSL. The 49 source assets live in root `shaders/`. `CMakeLists.txt`'s `mikai` POST_BUILD rule copies that directory beside `mikai.exe`; CMake does not precompile GLSL—mpv loads the copied files at runtime. Build from the configured tree with `cmake --build build-cmake --target mikai --parallel`. The Anime4K categories, preset labels and hints are localized UI text; the future-model submenus intentionally remain placeholder-only with a disabled **В планах** leaf each. Keep menu labels and tooltips in translation catalogs; keep preset IDs and shader filenames unchanged because settings and chain resolution depend on them. `cmake --build build-cmake --target anime4k_menu_probe --parallel && build-cmake/anime4k_menu_probe.exe` runs the full native Anime4K smoke (every menu leaf, pixel rendering, settings reopen, Compare groups, PiP chain and minimum-window fit); `build-cmake/resolver_probe.exe` verifies the 71-candidate catalog resolves cleanly.
 
 Qualities are extracted once per episode, only when that episode opens, and the resulting stream URLs are cached for half an hour, so reopening a title repaints instead of re-hitting every provider. The links are signed and do expire; if a stream fails to play the player re-extracts it once on its own before reporting the error.
 

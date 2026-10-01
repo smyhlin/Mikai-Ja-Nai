@@ -81,7 +81,7 @@ QStringList categoryPath(const QString& categoryId) {
 CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandidateId,
                              QWidget* parent)
     : QDialog(parent), surface_(surface), currentCandidateId_(currentCandidateId) {
-    setWindowTitle(QStringLiteral("Порівняння якості"));
+    setWindowTitle(tr("Quality Comparison"));
     setModal(false);
     resize(kWindowWidth, kWindowHeight);
     buildUi();
@@ -135,13 +135,13 @@ void CompareWindow::buildUi() {
     // --- header: the mode picker -----------------------------------------
     auto* header = new QHBoxLayout();
     header->setSpacing(kGapSmall);
-    header->addWidget(new QLabel(QStringLiteral("Режим:"), this));
+    header->addWidget(new QLabel(tr("Mode:"), this));
     modeBox_ = new QComboBox(this);
     modeBox_->setObjectName(QStringLiteral("compareMode"));
     for (const CompareMode mode : {CompareMode::SplitH, CompareMode::SplitV,
                                    CompareMode::SideBySide, CompareMode::Flicker,
                                    CompareMode::Difference}) {
-        modeBox_->addItem(QString::fromLatin1(modeLabel(mode)),
+        modeBox_->addItem(QString::fromUtf8(modeLabel(mode)),
                           QString::fromLatin1(modeKey(mode)));
     }
     const int sideBySide = modeBox_->findData(QString::fromLatin1(modeKey(CompareMode::SideBySide)));
@@ -155,7 +155,7 @@ void CompareWindow::buildUi() {
     hover_->setObjectName(QStringLiteral("compareHover"));
     header->addWidget(hover_, 1);
 
-    auto* close = new QPushButton(QStringLiteral("Закрити"), this);
+    auto* close = new QPushButton(tr("Close"), this);
     close->setObjectName(QStringLiteral("compareClose"));
     connect(close, &QPushButton::clicked, this, &QDialog::close);
     header->addWidget(close);
@@ -165,7 +165,7 @@ void CompareWindow::buildUi() {
     auto* view = new QHBoxLayout();
     view->setSpacing(kGapSmall);
 
-    splitLabel_ = new QLabel(QStringLiteral("Розділ:"), this);
+    splitLabel_ = new QLabel(tr("Split:"), this);
     view->addWidget(splitLabel_);
     split_ = new QDoubleSpinBox(this);
     split_->setObjectName(QStringLiteral("compareSplit"));
@@ -175,7 +175,7 @@ void CompareWindow::buildUi() {
     connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
     view->addWidget(split_);
 
-    flickerLabel_ = new QLabel(QStringLiteral("Мигання, Гц:"), this);
+    flickerLabel_ = new QLabel(tr("Flicker, Hz:"), this);
     view->addWidget(flickerLabel_);
     flicker_ = new QSpinBox(this);
     flicker_->setObjectName(QStringLiteral("compareFlicker"));
@@ -184,7 +184,7 @@ void CompareWindow::buildUi() {
     connect(flicker_, &QSpinBox::valueChanged, this, &CompareWindow::onFlickerChanged);
     view->addWidget(flicker_);
 
-    gainLabel_ = new QLabel(QStringLiteral("Підсилення:"), this);
+    gainLabel_ = new QLabel(tr("Gain:"), this);
     view->addWidget(gainLabel_);
     gain_ = new QSpinBox(this);
     gain_->setObjectName(QStringLiteral("compareGain"));
@@ -195,7 +195,7 @@ void CompareWindow::buildUi() {
 
     auto* fit = new QToolButton(this);
     fit->setObjectName(QStringLiteral("compareFit"));
-    fit->setText(QStringLiteral("Вписати"));
+    fit->setText(tr("Fit"));
     connect(fit, &QToolButton::clicked, this, [this] { canvas_->fitToContent(); });
     view->addWidget(fit);
 
@@ -355,11 +355,11 @@ void CompareWindow::captureFrame() {
     frame_ = QImage();
     captureError_.clear();
     if (surface_ == nullptr) {
-        captureError_ = QStringLiteral("Немає поверхні відтворення");
+        captureError_ = tr("No playback surface");
         return;
     }
     if (!surface_->hasVideo()) {
-        captureError_ = QStringLiteral("Немає відео для порівняння");
+        captureError_ = tr("No video to compare");
         return;
     }
     if (surface_->isPlaying()) {
@@ -368,7 +368,7 @@ void CompareWindow::captureFrame() {
     double settled = 0.0;
     const QImage grabbed = grabSettledFrame(&settled);
     if (grabbed.isNull()) {
-        captureError_ = QStringLiteral("Не вдалося зняти новий кадр");
+        captureError_ = tr("Could not capture a new frame");
         return;
     }
     // Both sides render from this one image, so the difference between them is
@@ -419,9 +419,7 @@ void CompareWindow::render() {
         // Nothing of the previous picture is left on screen either.
         renderedA_ = QImage();
         renderedB_ = QImage();
-        canvas_->clear(captureError_.isEmpty()
-                           ? QStringLiteral("Немає кадру для порівняння")
-                           : captureError_);
+        canvas_->clear(captureError_.isEmpty() ? tr("No frame to compare") : captureError_);
         canvas_->setSideImages(QImage(), QImage(), QImage());
         grid_->setItems({}, {}, {});
         updateInfo();
@@ -565,12 +563,13 @@ void CompareWindow::updateInfo() {
             return;
         }
         QString line = caption(tag) + QStringLiteral(" %1").arg(candidate.label);
-        line += QStringLiteral(" · %1 шейдер").arg(candidate.files.size());
+        line += QStringLiteral(" · ") +
+                tr("%n shader", nullptr, static_cast<int>(candidate.files.size()));
         if (candidate.scale > 0) {
             line += QStringLiteral(" · ×%1").arg(candidate.scale);
         }
         if (!anime4k::chainIsComplete(candidate, shadersDir)) {
-            line += QStringLiteral(" · ФАЙЛ ВІДСУТНІЙ");
+            line += QStringLiteral(" · ") + tr("FILE MISSING");
         }
         parts.append(line);
     };
@@ -579,11 +578,11 @@ void CompareWindow::updateInfo() {
     // A failed capture leads the line. Whatever the two sides are, the
     // comparison itself did not happen, and that outranks naming them.
     if (!captureError_.isEmpty()) {
-        info_->setText(QStringLiteral("Помилка захоплення: %1").arg(captureError_));
+        info_->setText(tr("Capture error: %1").arg(captureError_));
         return;
     }
     if (parts.isEmpty()) {
-        info_->setText(QStringLiteral("Оберіть щонайменше один варіант для порівняння."));
+        info_->setText(tr("Select at least one variant to compare."));
         return;
     }
     // The gate the shaders carry. Every upscaler is prefixed
@@ -600,12 +599,12 @@ void CompareWindow::updateInfo() {
     if (sourceWidth > 0 && sourceHeight > 0) {
         const double outputWidth = static_cast<double>(canvas_->imageWidth());
         if (outputWidth / 1.200 < sourceWidth) {
-            parts.append(QStringLiteral("вікно вужче за джерелом — апскейл не запуститься"));
+            parts.append(tr("window is narrower than the source - upscaling will not run"));
         }
     }
     if (mode_ == CompareMode::Difference && !renderedA_.isNull() && !renderedB_.isNull() &&
         renderedA_.size() == renderedB_.size()) {
-        parts.append(QStringLiteral("сер. різниця %1/255")
+        parts.append(tr("mean difference %1/255")
                          .arg(QString::number(meanAbsoluteDifference(renderedA_, renderedB_),
                                               'f', 2)));
     }

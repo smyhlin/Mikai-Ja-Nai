@@ -10,7 +10,7 @@ endif()
 # Qt6Widgets pulls in OpenGL; QOpenGLWidget itself lives in Qt6OpenGLWidgets.
 # Test is deliberately not in this list: it is only needed by the QA probes and
 # mikai_tests, so the app itself configures on a Qt install without it.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
 
 # The QA probes and the C++ test runner. ON by default so the tree configures
 # exactly as it did before, but the probe *executables* are EXCLUDE_FROM_ALL: a
@@ -210,6 +210,8 @@ add_executable(mikai_tests
   tests/cpp/TestReleases.cpp
   tests/cpp/TestAnime4K.hpp
   tests/cpp/TestAnime4K.cpp
+  tests/cpp/TestI18n.hpp
+  tests/cpp/TestI18n.cpp
   tests/cpp/TestStreams.hpp
   tests/cpp/TestStreams.cpp
   tests/cpp/TestPagers.hpp
@@ -245,6 +247,7 @@ endif() # MIKAI_BUILD_PROBES
 if(TARGET mikai_backend)
   set(APP_SOURCES
     src/app/CrashLog.cpp
+    src/app/I18n.cpp
     src/app/theme/Theme.cpp
     src/app/theme/Icons.cpp
     src/app/Labels.cpp
@@ -264,6 +267,7 @@ if(TARGET mikai_backend)
   set(APP_HEADERS
     src/app/Clipboard.hpp
     src/app/CrashLog.hpp
+    src/app/I18n.hpp
     src/app/Labels.hpp
     src/app/theme/Theme.hpp
     src/app/theme/Colors.hpp
@@ -298,6 +302,28 @@ if(TARGET mikai_backend)
   add_executable(mikai src/app/main.cpp)
   set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
   target_link_libraries(mikai PRIVATE mikai_app)
+
+  qt_add_translations(mikai
+    SOURCE_TARGETS mikai mikai_app mikai_player
+    TS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/translations/mikai_uk.ts
+    RESOURCE_PREFIX "/i18n"
+    LUPDATE_TARGET update_translations
+    LRELEASE_OPTIONS -nounfinished
+  )
+
+  get_filename_component(MIKAI_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+  set(MIKAI_QTBASE_UK_CATALOG "${MIKAI_QT_PREFIX}/translations/qtbase_uk.qm")
+  if(EXISTS "${MIKAI_QTBASE_UK_CATALOG}")
+    add_custom_command(TARGET mikai POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/translations"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MIKAI_QTBASE_UK_CATALOG}"
+        "$<TARGET_FILE_DIR:mikai>/translations/qtbase_uk.qm"
+      COMMENT "Deploying Qt Ukrainian base translations"
+    )
+  else()
+    message(WARNING "Qt Ukrainian base translations not found at ${MIKAI_QTBASE_UK_CATALOG}")
+  endif()
 
   if(MIKAI_BUILD_PROBES)
     add_executable(external_media_probe EXCLUDE_FROM_ALL src/probes/ExternalMediaProbe.cpp)

@@ -44,24 +44,24 @@ RangePager::RangePager(int pageSize, QWidget* parent)
                             theme::kSpacingXs);
     row->setSpacing(theme::kSpacingSmall);
 
-    firstButton_ = makeArrow(QStringLiteral("⏮"), tr("На першу сторінку"));
-    prevButton_ = makeArrow(QStringLiteral("←"), tr("Попередня сторінка"));
+    firstButton_ = makeArrow(QStringLiteral("⏮"), tr("Go to first page"));
+    prevButton_ = makeArrow(QStringLiteral("←"), tr("Previous page"));
 
     chipsHost_ = new QWidget(this);
     chipLayout_ = new QHBoxLayout(chipsHost_);
     chipLayout_->setContentsMargins(0, 0, 0, 0);
     chipLayout_->setSpacing(theme::kSpacingSmall);
 
-    nextButton_ = makeArrow(QStringLiteral("→"), tr("Наступна сторінка"));
-    lastButton_ = makeArrow(QStringLiteral("⏭"), tr("На останню сторінку"));
+    nextButton_ = makeArrow(QStringLiteral("→"), tr("Next page"));
+    lastButton_ = makeArrow(QStringLiteral("⏭"), tr("Go to last page"));
 
     jumpLabel_ = new QLabel(this);
     jumpLabel_->setObjectName(QStringLiteral("muted"));
 
     jump_ = new QSpinBox(this);
     jump_->setRange(1, 1);
-    jump_->setToolTip(tr("Перейти на сторінку"));
-    jump_->setAccessibleName(tr("Номер сторінки"));
+    jump_->setToolTip(tr("Jump to page"));
+    jump_->setAccessibleName(tr("Page number"));
 
     connect(firstButton_, &QPushButton::clicked, this, [this] { jumpTo(1); });
     connect(prevButton_, &QPushButton::clicked, this, [this] { step(-1); });
@@ -106,7 +106,7 @@ void RangePager::setState(int page, int pages, int entries, const QStringList& n
     numbers_ = numbers;
     renderChips();
     updateEnabled();
-    jumpLabel_->setText(tr("сторінка з %1").arg(pages_));
+    jumpLabel_->setText(tr("page of %1").arg(pages_));
     syncing_ = true;
     jump_->setRange(1, pages_);
     jump_->setValue(page_);
@@ -161,7 +161,7 @@ void RangePager::renderChips() {
         const int target = first + offset + 1;
         chip->setProperty(kChipPageProperty, target);
         chip->setText(chipLabel(target));
-        chip->setToolTip(tr("Сторінка %1").arg(target));
+        chip->setToolTip(tr("Page %1").arg(target));
         const bool active = target == page_;
         if (active != (chip->objectName() == QLatin1String("pagerChipActive"))) {
             chip->setObjectName(active ? QStringLiteral("pagerChipActive")

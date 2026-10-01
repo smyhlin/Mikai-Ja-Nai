@@ -618,13 +618,16 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const
         } else {
             const QJsonObject error = data.value(QStringLiteral("error")).toObject();
             out.insert(QStringLiteral("valid"), false);
+            out.insert(QStringLiteral("error_code"),
+                       error.value(QStringLiteral("code")).toString(QStringLiteral("unknown")));
             out.insert(QStringLiteral("error"), error.value(QStringLiteral("message"))
-                                                     .toString(QStringLiteral("invalid key")));
+                                                    .toString(QStringLiteral("invalid key")));
         }
         return out;
     } catch (const MikaiApiError& error) {
         QMap<QString, QVariant> out;
         out.insert(QStringLiteral("valid"), false);
+        out.insert(QStringLiteral("error_code"), error.code);
         out.insert(QStringLiteral("error"), error.message);
         return out;
     }

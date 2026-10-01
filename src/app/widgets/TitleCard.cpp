@@ -3,6 +3,7 @@
 #include "Labels.hpp"
 #include "theme/Metrics.hpp"
 
+#include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -17,14 +18,20 @@ namespace {
 
 const char* kPending = "…";
 
+/// The card shows one count, never a sentence around it, so the plural is
+/// the only thing a language has to reshape. Numerus keeps the "%n episodes"
+/// form out of the source entirely and lets each catalog entry carry its own
+/// singular/plural wording.
 QString episodeCountText(int aired, int planned) {
     if (aired > 0 && planned > 0) {
-        return QStringLiteral("%1 / %2 серій").arg(aired).arg(planned);
+        return QCoreApplication::translate("TitleCard", "%1 / %n episode(s)", nullptr, planned)
+            .arg(aired);
     }
-    if (aired > 0) {
-        return QStringLiteral("%1 серій").arg(aired);
+    const int count = aired > 0 ? aired : planned;
+    if (count <= 0) {
+        return {};
     }
-    return planned > 0 ? QStringLiteral("%1 серій").arg(planned) : QString();
+    return QCoreApplication::translate("TitleCard", "%n episode(s)", nullptr, count);
 }
 
 }  // namespace
@@ -51,7 +58,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
                             theme::kSpacingMedium);
     row->setSpacing(theme::kSpacingMedium);
 
-    poster_ = makeLabel(QStringLiteral("carouselPoster"), tr("Постер недоступний"));
+    poster_ = makeLabel(QStringLiteral("carouselPoster"), tr("Poster unavailable"));
     poster_->setAlignment(Qt::AlignCenter);
     poster_->setFixedSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
     poster_->setWordWrap(true);

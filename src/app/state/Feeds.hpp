@@ -16,7 +16,7 @@ namespace feeds {
 /// The four home feed blocks, in the order the settings dialog lists them.
 const QStringList& all();
 
-/// Ukrainian heading for a feed key, empty when the key is unknown.
+/// Translated heading for a feed key, empty when the key is unknown.
 QString label(const QString& key);
 
 /// A store that never saw the key means every feed is on.

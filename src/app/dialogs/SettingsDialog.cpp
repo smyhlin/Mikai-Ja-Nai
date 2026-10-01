@@ -1,5 +1,6 @@
 #include "dialogs/SettingsDialog.hpp"
 
+#include "I18n.hpp"
 #include "state/Feeds.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
@@ -11,6 +12,7 @@
 #include <player/PresetShortcuts.hpp>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -47,7 +49,7 @@ int shortcutFieldWidth(const QKeySequenceEdit* edit) {
 
 SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent)
     : QDialog(parent), client_(client), runner_(runner) {
-    setWindowTitle(tr("Налаштування"));
+    setWindowTitle(tr("Settings"));
     setMinimumWidth(theme::kSettingsDialogMinWidth);
 
     auto* root = new QVBoxLayout(this);
@@ -58,18 +60,18 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     tabs_ = new QTabWidget(this);
     tabs_->setDocumentMode(true);
     tabs_->addTab(buildGeneralTab(), theme::gearIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Загальні"));
+                  tr("General"));
     tabs_->addTab(buildPresetsTab(),
                   theme::keyboardIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Пресети"));
+                  tr("Presets"));
     if (!presetError_->isHidden()) {
         tabs_->setCurrentWidget(presetError_->parentWidget());
     }
     root->addWidget(tabs_, 1);
 
     auto* buttons = new QDialogButtonBox(this);
-    auto* cancel = buttons->addButton(tr("Скасувати"), QDialogButtonBox::RejectRole);
-    auto* save = buttons->addButton(tr("Зберегти"), QDialogButtonBox::AcceptRole);
+    auto* cancel = buttons->addButton(tr("Cancel"), QDialogButtonBox::RejectRole);
+    auto* save = buttons->addButton(tr("Save"), QDialogButtonBox::AcceptRole);
     save->setObjectName(QStringLiteral("primary"));
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
     connect(save, &QPushButton::clicked, this, &SettingsDialog::save);
@@ -94,7 +96,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     auto* headerRow = new QHBoxLayout();
     auto* iconLabel = new QLabel(page);
     iconLabel->setPixmap(theme::gearIcon(22, QLatin1String(theme::kAccent)).pixmap(22, 22));
-    auto* heading = new QLabel(tr("Токен доступу Mikai API"), page);
+    auto* heading = new QLabel(tr("Mikai API access token"), page);
     heading->setObjectName(QStringLiteral("heading"));
     headerRow->addWidget(iconLabel);
     headerRow->addWidget(heading);
@@ -102,8 +104,8 @@ QWidget* SettingsDialog::buildGeneralTab() {
     root->addLayout(headerRow);
 
     auto* description = new QLabel(
-        tr("Ключ доступу підіймає ліміт з 60 до 300 запитів на хвилину і зберігається "
-           "локально в .env файлі."),
+        tr("An API key raises the limit from 60 to 300 requests per minute and is stored "
+           "locally in the .env file."),
         page);
     description->setObjectName(QStringLiteral("muted"));
     description->setWordWrap(true);
@@ -113,14 +115,14 @@ QWidget* SettingsDialog::buildGeneralTab() {
     link->setTextFormat(Qt::RichText);
     link->setText(tr("<a style=\"color: %1; text-decoration: none;\" "
                      "href=\"https://mikai.me/user/developers\">"
-                     "Отримати ключ у кабінеті розробника на mikai.me ↗</a>")
+                     "Get a key from the developer dashboard on mikai.me ↗</a>")
                        .arg(QLatin1String(theme::kAccent)));
     link->setOpenExternalLinks(true);
     link->setWordWrap(true);
     root->addWidget(link);
 
     token_ = new QLineEdit(page);
-    token_->setPlaceholderText(tr("mk_... (залиште порожнім для анонімного доступу)"));
+    token_->setPlaceholderText(tr("mk_... (leave blank for anonymous access)"));
     token_->setClearButtonEnabled(true);
     const QString current = client_.apiKey();
     if (!current.isEmpty()) {
@@ -133,12 +135,12 @@ QWidget* SettingsDialog::buildGeneralTab() {
     auto* tokenRow = new QHBoxLayout();
     tokenRow->setSpacing(theme::kSpacingSmall);
     tokenRow->addStretch();
-    testButton_ = new QPushButton(tr("Перевірити"), page);
+    testButton_ = new QPushButton(tr("Test"), page);
     connect(testButton_, &QPushButton::clicked, this, &SettingsDialog::testToken);
     tokenRow->addWidget(testButton_);
     root->addLayout(tokenRow);
 
-    auto* quotaTitle = new QLabel(tr("Використання API"), page);
+    auto* quotaTitle = new QLabel(tr("API usage"), page);
     quotaTitle->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(quotaTitle);
     quota_ = new QLabel(page);
@@ -146,12 +148,12 @@ QWidget* SettingsDialog::buildGeneralTab() {
     quota_->setWordWrap(true);
     root->addWidget(quota_);
 
-    auto* feedsTitle = new QLabel(tr("Блоки головної сторінки"), page);
+    auto* feedsTitle = new QLabel(tr("Home page sections"), page);
     feedsTitle->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(feedsTitle);
     auto* feedsHint = new QLabel(
-        tr("Вимкнений блок не завантажується і не витрачає запити API. Пошук і сторінка "
-           "тайтлу працюють завжди."),
+        tr("Disabled sections are not loaded and do not use API requests. Search and title "
+           "pages are always available."),
         page);
     feedsHint->setObjectName(QStringLiteral("muted"));
     feedsHint->setWordWrap(true);
@@ -165,6 +167,27 @@ QWidget* SettingsDialog::buildGeneralTab() {
         root->addWidget(box);
         feedBoxes_.insert(key, box);
     }
+
+    auto* languageTitle = new QLabel(tr("Interface language"), page);
+    languageTitle->setObjectName(QStringLiteral("sectionHeading"));
+    root->addWidget(languageTitle);
+
+    language_ = new QComboBox(page);
+    language_->addItem(tr("Use system language"), QStringLiteral("system"));
+    language_->addItem(tr("English"), QStringLiteral("en"));
+    language_->addItem(tr("Ukrainian"), QStringLiteral("uk"));
+    language_->setAccessibleName(tr("Interface language"));
+    const int languageIndex = language_->findData(languagePreference());
+    if (languageIndex >= 0) {
+        language_->setCurrentIndex(languageIndex);
+    }
+    root->addWidget(language_);
+
+    auto* languageHint =
+        new QLabel(tr("Changes take effect after restarting Mikai."), page);
+    languageHint->setObjectName(QStringLiteral("muted"));
+    languageHint->setWordWrap(true);
+    root->addWidget(languageHint);
 
     status_ = new QLabel(page);
     status_->setObjectName(QStringLiteral("status"));
@@ -182,14 +205,14 @@ QWidget* SettingsDialog::buildPresetsTab() {
                              theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    auto* heading = new QLabel(tr("Гарячі клавіші пресетів Anime4K"), page);
+    auto* heading = new QLabel(tr("Anime4K preset shortcuts"), page);
     heading->setObjectName(QStringLiteral("heading"));
     root->addWidget(heading);
 
     auto* description = new QLabel(
-        tr("Натисніть поле й задайте клавішу або комбінацію з Ctrl, Alt чи Shift. "
-           "Кнопка «×» очищає призначення. Одна комбінація може належати лише одному "
-           "пресету; вбудовані клавіші плеєра зарезервовані."),
+        tr("Focus a field and press a key or combination with Ctrl, Alt, or Shift. "
+           "The × button clears a binding. A combination can be assigned to only one "
+           "preset; built-in player shortcuts are reserved."),
         page);
     description->setObjectName(QStringLiteral("muted"));
     description->setWordWrap(true);
@@ -239,7 +262,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
         edit->setMinimumHeight(theme::kSettingsControlSize);
         edit->setFixedWidth(shortcutFieldWidth(edit));
         if (auto* input = edit->findChild<QLineEdit*>()) {
-            input->setPlaceholderText(tr("Натисніть клавішу"));
+            input->setPlaceholderText(tr("Press a key"));
         }
         const QString stored = settings.value(mode.id).toString();
         if (!stored.isEmpty()) {
@@ -251,15 +274,15 @@ QWidget* SettingsDialog::buildPresetsTab() {
                 if (mplayer::shell::isReservedPresetShortcut(sequence)) {
                     if (loadError.isEmpty()) {
                         loadError =
-                            tr("Збережену клавішу %1 вже використовує плеєр; призначення для "
-                               "«%2» очищено.")
+                            tr("Saved key %1 is already used by the player; the binding for "
+                               "“%2” was cleared.")
                                 .arg(portable, label);
                     }
                 } else if (!owner.isEmpty()) {
                     if (loadError.isEmpty()) {
                         loadError =
-                            tr("Збережена комбінація %1 дублювалася. Її залишено для «%2», "
-                               "а призначення «%3» очищено.")
+                            tr("Saved combination %1 was duplicated. It was kept for “%2” "
+                               "and cleared for “%3”.")
                                 .arg(portable, owner, label);
                     }
                 } else {
@@ -268,7 +291,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
                 }
             }
         }
-        edit->setAccessibleName(tr("Гаряча клавіша для %1").arg(label));
+        edit->setAccessibleName(tr("Shortcut for %1").arg(label));
         edit->setToolTip(mode.hint);
         row->addWidget(edit, 0, Qt::AlignVCenter);
 
@@ -289,8 +312,8 @@ QWidget* SettingsDialog::buildPresetsTab() {
                                 QSignalBlocker blocker(edit);
                                 edit->setKeySequence(previous);
                                 showPresetError(
-                                    tr("Комбінація %1 вже призначена пресету «%2». "
-                                       "Для «%3» залишено попереднє значення.")
+                                    tr("Combination %1 is already assigned to preset “%2”. "
+                                       "The previous value was kept for “%3”.")
                                         .arg(portable, other.label, label));
                                 return;
                             }
@@ -299,8 +322,8 @@ QWidget* SettingsDialog::buildPresetsTab() {
                             QSignalBlocker blocker(edit);
                             edit->setKeySequence(previous);
                             showPresetError(
-                                tr("Клавіша %1 вже використовується плеєром. "
-                                   "Призначення для «%2» не змінено.")
+                                tr("Key %1 is already used by the player. "
+                                   "The binding for “%2” was not changed.")
                                     .arg(portable, label));
                             return;
                         }
@@ -323,7 +346,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
 
 void SettingsDialog::testToken() {
     const QString candidate = token_->text().trimmed();
-    status_->setText(tr("Перевірка токена…"));
+    status_->setText(tr("Checking token…"));
     testButton_->setEnabled(false);
     runner_.run(
         [this, candidate] {
@@ -339,21 +362,25 @@ void SettingsDialog::testToken() {
                 const QString name = result.value(QStringLiteral("name")).toString();
                 if (authenticated && !name.isEmpty()) {
                     status_->setText(
-                        tr("✓ Ключ дійсний (користувач: %1, ліміт: %2/хв)").arg(name).arg(limit));
+                        tr("Key is valid (user: %1, limit: %2/min)").arg(name).arg(limit));
                 } else if (authenticated) {
-                    status_->setText(tr("✓ Ключ дійсний (ліміт: %1/хв)").arg(limit));
+                    status_->setText(tr("Key is valid (limit: %1/min)").arg(limit));
                 } else {
-                    status_->setText(tr("Анонімний доступ (ліміт: %1/хв)").arg(limit));
+                    status_->setText(tr("Anonymous access (limit: %1/min)").arg(limit));
                 }
             } else {
+                const QString code = result.value(QStringLiteral("error_code")).toString();
                 const QString error = result.value(QStringLiteral("error")).toString();
-                status_->setText(
-                    tr("❌ Помилка: %1").arg(error.isEmpty() ? tr("Недійсний токен") : error));
+                const QString translatedError = localizedApiError(code);
+                const QString displayError =
+                    translatedError.isEmpty() ? (error.isEmpty() ? tr("Invalid token") : error)
+                                              : translatedError;
+                status_->setText(tr("Error: %1").arg(displayError));
             }
         },
         [this](const QString& message) {
             testButton_->setEnabled(true);
-            status_->setText(tr("❌ Помилка з'єднання: %1").arg(message));
+            status_->setText(tr("Connection error: %1").arg(message));
         });
 }
 
@@ -362,19 +389,20 @@ void SettingsDialog::refreshQuota() {
     const QString limit = state.limit > 0 ? QString::number(state.limit) : QStringLiteral("—");
     QString text;
     if (!state.used.has_value() || !state.remaining.has_value()) {
-        text = tr("Ліміт: %1 запитів/хв · лічильник очікує наступну відповідь API").arg(limit);
+        text = tr("Limit: %1 requests/min · waiting for the next API response to update the counter")
+                   .arg(limit);
     } else {
-        text = tr("За вікно: використано %1, доступно %2 із %3 запитів")
+        text = tr("Window: %1 used, %2 of %3 requests available")
                    .arg(*state.used)
                    .arg(*state.remaining)
                    .arg(limit);
         if (state.resetIn > 0) {
-            text += tr(" · оновлення через %1 с").arg(state.resetIn);
+            text += tr(" · resets in %1 s").arg(state.resetIn);
         }
     }
-    text += tr("\nАктивні: %1 · у черзі: %2").arg(state.inFlight).arg(state.queued);
+    text += tr("\nActive: %1 · queued: %2").arg(state.inFlight).arg(state.queued);
     if (state.queued > 0) {
-        text += tr(" · запити продовжаться автоматично після оновлення ліміту");
+        text += tr(" · requests will continue automatically when the limit resets");
     }
     quota_->setText(text);
 }
@@ -390,12 +418,12 @@ QString SettingsDialog::collectPresetShortcuts(QMap<QString, QString>* presets) 
         }
         const QString portable = sequence.toString(QKeySequence::PortableText);
         if (mplayer::shell::isReservedPresetShortcut(sequence)) {
-            return tr("Клавіша %1 вже зайнята плеєром і не може бути призначена пресету «%2».")
+            return tr("Key %1 is reserved by the player and cannot be assigned to preset “%2”.")
                 .arg(portable, row.label);
         }
         const QString owner = ownerBySequence.value(portable);
         if (!owner.isEmpty()) {
-            return tr("Комбінація %1 вже призначена пресету «%2».").arg(portable, owner);
+            return tr("Combination %1 is already assigned to preset “%2”.").arg(portable, owner);
         }
         ownerBySequence.insert(portable, row.label);
         presets->insert(row.id, portable);
@@ -430,6 +458,8 @@ void SettingsDialog::save() {
         }
     }
     QSettings settings;
+    settings.setValue(QString::fromLatin1(kUiLanguageSettingKey),
+                      language_->currentData().toString());
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
     for (const PresetRow& row : presetRows_) {

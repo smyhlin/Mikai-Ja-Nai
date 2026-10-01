@@ -83,7 +83,7 @@ QString cursorName(PlayerShell::State state) {
 }  // namespace
 
 PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
-    setWindowTitle(QStringLiteral("Media Lightbox"));
+    setWindowTitle(tr("Media Lightbox"));
     setMinimumSize(kMinWindowWidth, kMinWindowHeight);
     if (parent != nullptr) {
         resize(parent->size());
@@ -165,16 +165,16 @@ void PlayerShell::buildWindowControls() {
     // glyph and label, so it reads as a chip at the head of the row.
     btnOriginal_ = new PillButton(windowControls_);
     btnOriginal_->setObjectName(QStringLiteral("originalFileButton"));
-    btnOriginal_->setToolTip(QStringLiteral("open original file"));
+    btnOriginal_->setToolTip(tr("Open the original file"));
     connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
     lay->addWidget(btnOriginal_);
 
-    btnMin_ = new IconButton(IconPainter::minimize, QStringLiteral("window_minimize"), 28, 15,
+    btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), 28, 15,
                              windowControls_);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(btnMin_);
 
-    btnClose_ = new IconButton(IconPainter::close, QStringLiteral("exit_viewer  (Esc)"), 28, 15,
+    btnClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), 28, 15,
                                windowControls_, QColor(237, 66, 69, 190));
     connect(btnClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
     lay->addWidget(btnClose_);
@@ -197,28 +197,28 @@ void PlayerShell::buildTitleBar() {
     lay->addWidget(caption);
     lay->addStretch(1);
 
-    titleMin_ = new IconButton(IconPainter::minimize, QStringLiteral("window_minimize"), 28, 15,
+    titleMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), 28, 15,
                                titleBar_, w70());
     connect(titleMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
     lay->addWidget(titleMin_);
 
-    titleMax_ = new IconButton(IconPainter::restore, QStringLiteral("toggle_window_mode"), 28, 15,
+    titleMax_ = new IconButton(IconPainter::restore, tr("Toggle fullscreen / windowed"), 28, 15,
                                titleBar_, w70());
     connect(titleMax_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
     lay->addWidget(titleMax_);
 
-    titleClose_ = new IconButton(IconPainter::close, QStringLiteral("exit_viewer  (Esc)"), 28, 15,
+    titleClose_ = new IconButton(IconPainter::close, tr("Exit the player  (Esc)"), 28, 15,
                                  titleBar_, w70());
     connect(titleClose_, &QPushButton::clicked, this, &PlayerShell::exitViewer);
     lay->addWidget(titleClose_);
 }
 void PlayerShell::buildChevrons() {
-    btnPrev_ = new IconButton(IconPainter::chevronLeft, QStringLiteral("load_previous_media  (<-)"),
+    btnPrev_ = new IconButton(IconPainter::chevronLeft, tr("Previous episode  (←)"),
                               42, 18, this, QColor(0, 0, 0, 165));
     btnPrev_->setTint(w70());
     connect(btnPrev_, &QPushButton::clicked, this, &PlayerShell::prevRequested);
 
-    btnNext_ = new IconButton(IconPainter::chevronRight, QStringLiteral("load_next_media  (->)"),
+    btnNext_ = new IconButton(IconPainter::chevronRight, tr("Next episode  (→)"),
                               42, 18, this, QColor(0, 0, 0, 165));
     btnNext_->setTint(w70());
     connect(btnNext_, &QPushButton::clicked, this, &PlayerShell::nextRequested);
@@ -248,7 +248,7 @@ void PlayerShell::buildDock() {
     topRow->addWidget(volumeHost);
 
     topRow->addStretch();
-    btnPlay_ = new IconButton(IconPainter::play, QStringLiteral("toggle_playback  (Space)"),
+    btnPlay_ = new IconButton(IconPainter::play, tr("Play / pause  (Space)"),
                               kDockPlaySize, kDockPlayGlyph, dock_);
     btnPlay_->setObjectName(QStringLiteral("playerPlayToggle"));
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
@@ -264,38 +264,37 @@ void PlayerShell::buildDock() {
     actions->setSpacing(4);
     actions->setAlignment(Qt::AlignRight);
 
-    btnPip_ = new IconButton(IconPainter::pip, QStringLiteral("toggle_picture_in_picture"),
+    btnPip_ = new IconButton(IconPainter::pip, tr("Picture in picture"),
                              kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnPip_, &QPushButton::clicked, this, &PlayerShell::pipRequested);
     actions->addWidget(btnPip_);
 
-    btnWindowMode_ = new IconButton(IconPainter::contract, QStringLiteral("windowed_mode"),
+    btnWindowMode_ = new IconButton(IconPainter::contract, tr("Windowed mode"),
                                     kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnWindowMode_, &QPushButton::clicked, this, &PlayerShell::windowModeToggled);
     actions->addWidget(btnWindowMode_);
 
     btnAudio_ = new IconButton(IconPainter::microphone,
-                               QStringLiteral("Озвучення — вибрати дубляж  (T)"),
+                               tr("Audio — choose a dub  (T)"),
                                kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
     btnAudio_->hide();
     actions->addWidget(btnAudio_);
 
     btnSubs_ = new IconButton(IconPainter::captions,
-                              QStringLiteral("Субтитри — вибрати доріжку  (C)"),
+                              tr("Subtitles — choose a track  (C)"),
                               kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
     btnSubs_->hide();
     actions->addWidget(btnSubs_);
 
-    btnEnhance_ = new IconButton(IconPainter::spark, QStringLiteral("open_enhancements"),
+    btnEnhance_ = new IconButton(IconPainter::spark, tr("Open enhancements"),
                                  kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnEnhance_, &QPushButton::clicked, this, &PlayerShell::openEnhancements);
     actions->addWidget(btnEnhance_);
-
-    btnSettings_ = new IconButton(IconPainter::gear, QStringLiteral("toggle_settings_popover"),
+    btnSettings_ = new IconButton(IconPainter::gear, tr("Quality and speed"),
                                   kDockActionSize, kDockActionGlyph, actionHost);
-    connect(btnSettings_, &QPushButton::clicked, this, &PlayerShell::openSettings);
+    btnSettings_->setObjectName(QStringLiteral("playerSettingsButton"));
     actions->addWidget(btnSettings_);
     topRow->addWidget(actionHost);
     dockLayout->addLayout(topRow);
@@ -329,14 +328,14 @@ void PlayerShell::buildDock() {
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
 
     // The enhancement tree is one panel per level, standing side by side:
-    // ПОКРАЩЕННЯ is the root, and every panel after it is the submenu of a row
+    // the root is ENHANCEMENTS, and every panel after it is the submenu of a row
     // in the panel before. They are pooled rather than built per level, because
     // a level is reopened every time the pointer crosses the row that leads to
     // it - and a hidden panel is a panel that is not on screen, which is the
     // whole of the tree's state.
     for (int depth = 0; depth < kEnhancementTreeDepth; ++depth) {
         const bool root = depth == 0;
-        auto* panel = new MenuPopup(root ? QStringLiteral("ПОКРАЩЕННЯ") : QString(), overlayHost);
+        auto* panel = new MenuPopup(root ? tr("ENHANCEMENTS") : QString(), overlayHost);
         panel->setObjectName(root ? QStringLiteral("playerEnhancementsPopup")
                                  : QStringLiteral("playerEnhancementLevelPopup"));
         connect(panel, &MenuPopup::picked, this, [this, panel](const QVariant& payload) {
@@ -401,19 +400,19 @@ void PlayerShell::buildFooter() {
     h->setContentsMargins(4, 4, 4, 4);
     h->setSpacing(4);
 
-    btnKeys_ = new IconButton(IconPainter::keyboard, QStringLiteral("keyboard_shortcuts  (?)"), 28,
+    btnKeys_ = new IconButton(IconPainter::keyboard, tr("Keyboard shortcuts  (?)"), 28,
                               15, footerRight_);
     connect(btnKeys_, &QPushButton::clicked, this, &PlayerShell::openKeys);
     h->addWidget(btnKeys_);
 
-    btnMore_ = new IconButton(IconPainter::more, QStringLiteral("open_extended_menu"), 28, 16,
+    btnMore_ = new IconButton(IconPainter::more, tr("Open more menu"), 28, 16,
                               footerRight_);
     connect(btnMore_, &QPushButton::clicked, this, &PlayerShell::openMenu);
     h->addWidget(btnMore_);
 
     QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
     keys_ = new KeyHints(overlayHost);
-    morePopup_ = new MenuPopup(QStringLiteral("ДІЇ"), overlayHost);
+    morePopup_ = new MenuPopup(tr("MORE"), overlayHost);
     morePopup_->setObjectName(QStringLiteral("playerMorePopup"));
     registerOverlay(keys_);
     registerOverlay(morePopup_);
@@ -424,15 +423,15 @@ void PlayerShell::buildFooter() {
         entry.payload = action;
         entries.append(entry);
     };
-    addEntry(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
-    addEntry(QStringLiteral("Відкрити у папці"), QStringLiteral("open"));
-    addEntry(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
+    addEntry(tr("Copy link"), QStringLiteral("copy"));
+    addEntry(tr("Open containing folder"), QStringLiteral("open"));
+    addEntry(tr("Exit  (Esc)"), QStringLiteral("exit"));
     morePopup_->setEntries(entries);
     connect(morePopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
         morePopup_->close();
         const QString action = payload.toString();
         if (action == QStringLiteral("copy")) {
-            toast_->flash(QStringLiteral("URL copied"));
+            toast_->flash(tr("URL copied"));
         } else if (action == QStringLiteral("open")) {
             toast_->flash(path_.isEmpty() ? QStringLiteral("—") : path_);
         } else if (action == QStringLiteral("exit")) {
@@ -456,10 +455,10 @@ void PlayerShell::buildPictureMenu() {
         entry.payload = action;
         entries.append(entry);
     };
-    add(QStringLiteral("Копіювати кадр"), QStringLiteral("frame"));
-    add(QStringLiteral("Порівняти якість"), QStringLiteral("compare"));
-    add(QStringLiteral("Копіювати посилання"), QStringLiteral("copy"));
-    add(QStringLiteral("Вихід  (Esc)"), QStringLiteral("exit"));
+    add(tr("Copy frame"), QStringLiteral("frame"));
+    add(tr("Compare quality"), QStringLiteral("compare"));
+    add(tr("Copy link"), QStringLiteral("copy"));
+    add(tr("Exit  (Esc)"), QStringLiteral("exit"));
     pictureMenu_->setEntries(entries);
     connect(pictureMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
         pictureMenu_->close();
@@ -523,8 +522,8 @@ void PlayerShell::applyState() {
     // offers a mode the player is already in.
     if (btnWindowMode_ != nullptr) {
         btnWindowMode_->setIcon(fullscreen_ ? IconPainter::contract : IconPainter::expand);
-        btnWindowMode_->setToolTip(fullscreen_ ? QStringLiteral("windowed_mode")
-                                               : QStringLiteral("fullscreen_mode"));
+        btnWindowMode_->setToolTip(fullscreen_ ? tr("Windowed mode")
+                                               : tr("Fullscreen mode"));
     }
     btnPrev_->setVisible(!hidden && hasPreviousEpisode_);
     btnNext_->setVisible(!hidden && hasNextEpisode_);
@@ -754,8 +753,8 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     if (!quality.isEmpty()) setQuality(quality);
 
     const QString name =
-        path.isEmpty() ? QStringLiteral("no media loaded") : QFileInfo(path).fileName();
-    setWindowTitle(QStringLiteral("%1 · Media Lightbox").arg(name));
+        path.isEmpty() ? tr("no media loaded") : QFileInfo(path).fileName();
+    setWindowTitle(tr("%1 · Media Lightbox").arg(name));
     position_ = 0.0;
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
@@ -819,7 +818,7 @@ void PlayerShell::setVolume(double volume, bool fromHost) {
         vol_->setMuted(false);
     }
     if (fromHost) {
-        toast_->flash(QStringLiteral("Volume %1 %").arg(static_cast<int>(volume_ * 100)));
+        toast_->flash(tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
     }
 }
 
@@ -886,7 +885,7 @@ void PlayerShell::updateTimeLabels() {
                           {QStringLiteral("rate"), QStringLiteral("%1x").arg(rate_)},
                           {QStringLiteral("volume"), QStringLiteral("%1%2")
                                                             .arg(static_cast<int>(volume_ * 100))
-                                                            .arg(muted_ ? QStringLiteral("  muted")
+                                                            .arg(muted_ ? tr("  muted")
                                                                         : QString())}});
         hud_->adjustSize();
         layoutChrome();
@@ -895,7 +894,7 @@ void PlayerShell::updateTimeLabels() {
 
 void PlayerShell::onPlayClicked() {
     if (!hasMedia_) {
-        toast_->flash(QStringLiteral("No media loaded — drop a file to begin"));
+        toast_->flash(tr("No media loaded — drop a file to begin"));
         return;
     }
     emit playPauseRequested();
@@ -912,21 +911,21 @@ void PlayerShell::onScrub(double fraction) {
 void PlayerShell::onVolume(double volume) {
     setVolume(volume);
     emit volumeChanged(volume_);
-    toast_->flash(QStringLiteral("Volume %1 %").arg(static_cast<int>(volume_ * 100)));
+    toast_->flash(tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
 }
 
 void PlayerShell::toggleMute() {
     muted_ = !muted_;
     vol_->setMuted(muted_);
     emit muteChanged(muted_);
-    toast_->flash(muted_ ? QStringLiteral("Muted")
-                         : QStringLiteral("Volume %1 %").arg(static_cast<int>(volume_ * 100)));
+    toast_->flash(muted_ ? tr("Muted")
+                         : tr("Volume %1%").arg(static_cast<int>(volume_ * 100)));
 }
 
 void PlayerShell::onRate(double rate) {
     setRate(rate);
     emit rateChanged(rate_);
-    toast_->flash(QStringLiteral("Speed %1x").arg(rate_, 0, 'g', 3));
+    toast_->flash(tr("Speed %1x").arg(rate_, 0, 'g', 3));
 }
 
 void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options) {
@@ -957,7 +956,7 @@ void PlayerShell::onAnime4KMode(anime4k::Mode mode) {
     if (label.isEmpty()) {
         label = anime4k::modeId(mode);
     }
-    toast_->flash(QStringLiteral("Anime4K: %1").arg(label));
+    toast_->flash(tr("Anime4K: %1").arg(label));
     emit anime4KModeChanged(mode);
 }
 
@@ -1101,7 +1100,7 @@ void PlayerShell::openEnhancements() {
     // would open on a level nobody asked for.
     collapseEnhancementTree(0);
     MenuPopup* root = enhancementPanels_.first();
-    root->setTitle(QStringLiteral("ПОКРАЩЕННЯ"));
+    root->setTitle(tr("ENHANCEMENTS"));
     root->setEntries(enhancementEntries(QString(), anime4k::modeId(anime4kMode_)));
     root->setProperty("enhancementLevel", QString());
     watchEnhancementRows(root);
@@ -1186,7 +1185,7 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             const double v = std::clamp(volume_ + (event->key() == Qt::Key_Up ? 0.1 : -0.1), 0.0, 1.0);
             setVolume(v);
             emit volumeChanged(v);
-            toast_->flash(QStringLiteral("Volume %1 %").arg(static_cast<int>(v * 100)));
+            toast_->flash(tr("Volume %1%").arg(static_cast<int>(v * 100)));
             break;
         }
         case Qt::Key_D:
@@ -1451,8 +1450,8 @@ void PlayerShell::paintEvent(QPaintEvent*) {
     // Empty-state hint.
     if (!hasMedia_ && !hudHidden_) {
         const QFont f = uiFont(11);
-        const QStringList lines = {QStringLiteral("no media loaded"),
-                                   QStringLiteral("drop a video file here  ·  or pass one as argv[1]")};
+        const QStringList lines = {tr("no media loaded"),
+                                   tr("drop a video file here  ·  or pass one as argv[1]")};
         p.setFont(f);
         for (int i = 0; i < lines.size(); ++i) {
             p.setPen(i == 0 ? w55() : w35());

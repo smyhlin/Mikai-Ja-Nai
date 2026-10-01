@@ -211,10 +211,10 @@ void CompareCanvas::updateBadge(QToolButton* badge, int side) {
             break;
         }
     }
-    badge->setText(QStringLiteral("%1 · %2").arg(side == 0 ? QStringLiteral("A")
-                                                            : QStringLiteral("B"), name));
-    badge->setAccessibleName(QStringLiteral("Select %1").arg(name));
-    badge->setToolTip(QStringLiteral("Select what side %1 shows").arg(side == 0 ? "A" : "B"));
+    const QString sideName = side == 0 ? QStringLiteral("A") : QStringLiteral("B");
+    badge->setText(tr("%1 · %2").arg(sideName, name));
+    badge->setAccessibleName(tr("Select %1").arg(name));
+    badge->setToolTip(tr("Select what side %1 shows").arg(sideName));
     QMenu* menu = side == 0 ? menuA_ : menuB_;
     QVector<QAction*>& leaves = side == 0 ? leavesA_ : leavesB_;
     // One result on screen leaves no choice to offer, so the badge stays the

@@ -330,7 +330,7 @@ void PipFloat::buildChrome() {
     chipLayout->setContentsMargins(4, 4, 4, 4);
     chipLayout->setSpacing(6);
 
-    muteButton_ = buildButton(QStringLiteral("pipMute"), QStringLiteral("Вимкнути звук"),
+    muteButton_ = buildButton(QStringLiteral("pipMute"), tr("Mute audio"),
                               kPipFieldHeight, volumeChip_);
     muteButton_->setIcon(glyphIcon(&IconPainter::volume, 16));
     connect(muteButton_, &QPushButton::clicked, this, [this] {
@@ -370,12 +370,12 @@ void PipFloat::buildChrome() {
     volumeChip_->setFixedSize(kPipChipWidth, kPipFieldHeight + 8);
 
     restoreButton_ =
-        buildButton(QStringLiteral("pipRestore"), QStringLiteral("Повернути у вікно"),
+        buildButton(QStringLiteral("pipRestore"), tr("Return to the window"),
                     kPipFieldHeight);
     restoreButton_->setIcon(glyphIcon(&IconPainter::expand, 15));
     connect(restoreButton_, &QPushButton::clicked, this, &PipFloat::restoreRequested);
 
-    closeButton_ = buildButton(QStringLiteral("pipClose"), QStringLiteral("Закрити (Esc)"),
+    closeButton_ = buildButton(QStringLiteral("pipClose"), tr("Close (Esc)"),
                                kPipFieldHeight);
     closeButton_->setIcon(glyphIcon(&IconPainter::close, 15));
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
@@ -384,8 +384,8 @@ void PipFloat::buildChrome() {
     playButton_->setObjectName(QStringLiteral("pipPlay"));
     playButton_->setFixedSize(kPipCenterButtonSize, kPipCenterButtonSize);
     playButton_->setIcon(glyphIcon(&IconPainter::pause, kPipCenterIconSize));
-    playButton_->setToolTip(QStringLiteral("Пауза (Пробіл)"));
-    playButton_->setAccessibleName(QStringLiteral("Пауза"));
+    playButton_->setToolTip(tr("Pause (Space)"));
+    playButton_->setAccessibleName(tr("Pause"));
     playButton_->setFocusPolicy(Qt::NoFocus);
     playButton_->setMouseTracking(true);
     connect(playButton_, &QPushButton::clicked, surface_, &VideoSurface::togglePause);
@@ -460,8 +460,8 @@ void PipFloat::closeStream() {
 void PipFloat::setPlaying(bool playing) {
     playButton_->setIcon(
         glyphIcon(playing ? &IconPainter::pause : &IconPainter::play, kPipCenterIconSize));
-    const QString hint = playing ? QStringLiteral("Пауза (Пробіл)")
-                                 : QStringLiteral("Продовжити (Пробіл)");
+    const QString hint = playing ? tr("Pause (Space)")
+                                 : tr("Play (Space)");
     playButton_->setToolTip(hint);
     playButton_->setAccessibleName(hint);
 }
@@ -507,7 +507,7 @@ void PipFloat::setMuted(bool muted) {
     // a muted core at level 0 is a mute the slider cannot then undo.
     surface_->setMuted(muted);
     surface_->setVolume(volume_ * 100.0);
-    const QString hint = muted ? QStringLiteral("Увімкнути звук") : QStringLiteral("Вимкнути звук");
+    const QString hint = muted ? tr("Unmute audio") : tr("Mute audio");
     muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 16));
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
@@ -927,7 +927,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
       forwardingKey_(false),
       pipWasFullscreen_(false) {
     setObjectName(QStringLiteral("playerWindow"));
-    setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
+    setWindowTitle(tr("Player — %1").arg(caption_));
     setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
                    Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
     setAttribute(Qt::WA_DeleteOnClose, true);
@@ -986,9 +986,9 @@ PlayerDialog::PlayerDialog(const QString& caption,
     buildStatus();
 
     seriesDrawer_ = new SeriesDrawer(this);
-    audioPopup_ = new MenuPopup(QStringLiteral("ОЗВУЧЕННЯ"), this);
+    audioPopup_ = new MenuPopup(tr("AUDIO"), this);
     audioPopup_->setObjectName(QStringLiteral("playerAudioPopup"));
-    subtitlesPopup_ = new MenuPopup(QStringLiteral("СУБТИТРИ"), this);
+    subtitlesPopup_ = new MenuPopup(tr("SUBTITLES"), this);
     subtitlesPopup_->setObjectName(QStringLiteral("playerSubtitlesPopup"));
     // These two are the dialog's, but they are overlays all the same: a click
     // on the picture has to dismiss them, and one left open has to keep the
@@ -1047,8 +1047,8 @@ void PlayerDialog::buildStrip() {
     seriesButton_->setObjectName(QStringLiteral("playerSeriesToggle"));
     seriesButton_->setFixedSize(kStripHeight, kStripHeight);
     seriesButton_->setCursor(Qt::PointingHandCursor);
-    seriesButton_->setToolTip(QStringLiteral("Список серій (S)"));
-    seriesButton_->setAccessibleName(QStringLiteral("Список серій"));
+    seriesButton_->setToolTip(tr("Episode list (S)"));
+    seriesButton_->setAccessibleName(tr("Episode list"));
     seriesButton_->setFocusPolicy(Qt::NoFocus);
     seriesButton_->setStyleSheet(chipQss());
     connect(seriesButton_, &QPushButton::clicked, this, &PlayerDialog::toggleSeries);
@@ -1074,9 +1074,9 @@ void PlayerDialog::buildStatus() {
     row->addWidget(statusLabel_, 1);
 
     retryButton_ =
-        makeChip(statusPanel_, QStringLiteral("playerRetryButton"), QStringLiteral("Повторити"));
-    retryButton_->setToolTip(QStringLiteral("Повторити відтворення"));
-    retryButton_->setAccessibleName(QStringLiteral("Повторити відтворення"));
+        makeChip(statusPanel_, QStringLiteral("playerRetryButton"), tr("Retry"));
+    retryButton_->setToolTip(tr("Retry playback"));
+    retryButton_->setAccessibleName(tr("Retry playback"));
     connect(retryButton_, &QPushButton::clicked, this, &PlayerDialog::retryPlayback);
     row->addWidget(retryButton_, 0);
     statusPanel_->hide();
@@ -1123,7 +1123,7 @@ void PlayerDialog::connectShell() {
         }
         const QUrl source = QUrl::fromUserInput(url_);
         if (!QDesktopServices::openUrl(source)) {
-            flashStatus(QStringLiteral("Не вдалося відкрити джерело відео"));
+            flashStatus(tr("Could not open the video source"));
         }
     });
     connect(shell_, &PlayerShell::downloadRequested, this, &PlayerDialog::copyStreamUrl);
@@ -1186,7 +1186,7 @@ void PlayerDialog::copyStreamUrl() {
     } else {
         QGuiApplication::clipboard()->setText(url_);
     }
-    flashStatus(QStringLiteral("Посилання на відео скопійовано"));
+    flashStatus(tr("Video link copied"));
 }
 
 void PlayerDialog::connectEngine() {
@@ -1223,7 +1223,7 @@ void PlayerDialog::onEngineError(const QString& message) {
         return;
     }
     syncPipBar();
-    showErrorStatus(message.isEmpty() ? QStringLiteral("Не вдалося відтворити потік") : message);
+    showErrorStatus(message.isEmpty() ? tr("Could not play the stream") : message);
     // One shot: the host re-extracts and reloads, and a second failure must not
     // start the loop over again.
     if (!directMedia_ && !refreshAttempted_) {
@@ -1398,15 +1398,15 @@ void PlayerDialog::openCompareWindow() {
     // show anything: without the shader folder the preset chains cannot render,
     // and without video there is no frame to compare.
     if (!surface_->hasVideo()) {
-        flashStatus(QStringLiteral("Немає відео для порівняння"));
+        flashStatus(tr("No video to compare"));
         return;
     }
     if (anime4k::findShadersDir().isEmpty()) {
-        flashStatus(QStringLiteral("Папка shaders не знайдена — порівняння недоступне"));
+        flashStatus(tr("Shaders folder not found — comparison is unavailable"));
         return;
     }
     if (anime4k::availableModes().size() < 2) {
-        flashStatus(QStringLiteral("Замало варіантів для порівняння"));
+        flashStatus(tr("Not enough variants to compare"));
         return;
     }
     // One window, kept and reused: it borrows the surface, and a second one
@@ -1421,7 +1421,7 @@ void PlayerDialog::openCompareWindow() {
 
 void PlayerDialog::copyCurrentFrame() {
     if (closed_ || surface_ == nullptr || !surface_->hasVideo()) {
-        flashStatus(QStringLiteral("Немає кадру для копіювання"));
+        flashStatus(tr("No frame to copy"));
         return;
     }
     // grabFramebuffer reads the GL front buffer, so this is the frame on
@@ -1429,15 +1429,15 @@ void PlayerDialog::copyCurrentFrame() {
     // which would hand over a thumbnail on a HiDPI display.
     QImage frame = surface_->grabFramebuffer();
     if (frame.isNull()) {
-        flashStatus(QStringLiteral("Не вдалося прочитати кадр"));
+        flashStatus(tr("Could not read the current frame"));
         return;
     }
     if (!QGuiApplication::clipboard()) {
-        flashStatus(QStringLiteral("Буфер обміну недоступний"));
+        flashStatus(tr("Clipboard is unavailable"));
         return;
     }
     QGuiApplication::clipboard()->setImage(frame);
-    flashStatus(QStringLiteral("Кадр скопійовано (%1×%2)").arg(frame.width()).arg(frame.height()));
+            flashStatus(tr("Frame copied (%1×%2)").arg(frame.width()).arg(frame.height()));
 }
 void PlayerDialog::onMediaDropped(const QString& path) {
     if (closed_ || path.isEmpty()) {
@@ -1457,11 +1457,11 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     shell_->dismissOverlay();
     publishQualityOptions();
     caption_ = QFileInfo(path).fileName();
-    setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
+    setWindowTitle(tr("Player — %1").arg(caption_));
     shell_->setEpisodeLabel(caption_);
     shell_->setMedia(path, caption_);
     openStream(path, QString(), /*resume=*/false);
-    flashStatus(QStringLiteral("Відтворюю локальний файл"));
+            flashStatus(tr("Playing local file"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1563,10 +1563,10 @@ void PlayerDialog::applyEpisode(const QString& label,
     setQualities(qualities);
     const int target = pickTargetHeight(0);
     caption_ = QStringLiteral("%1 · %2p").arg(label).arg(target);
-    setWindowTitle(QStringLiteral("Плеєр — ") + caption_);
+    setWindowTitle(tr("Player — %1").arg(caption_));
     shell_->setEpisodeLabel(label);
     setPlaylist(playlist_, index);
-    flashStatus(QStringLiteral("Серія: %1").arg(label));
+            flashStatus(tr("Episode: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             // A new episode starts at its beginning, always. openStream
@@ -1592,7 +1592,7 @@ void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
     }
     setQualities(qualities);
     const int target = pickTargetHeight(0);
-    flashStatus(QStringLiteral("Доріжка: %1").arg(label));
+            flashStatus(tr("Track: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             openStream(entry.url, QStringLiteral("%1p").arg(target));
@@ -1608,7 +1608,7 @@ void PlayerDialog::applyRefreshedStreams(const QList<QualityEntry>& qualities, i
     }
     setQualities(qualities);
     const int target = pickTargetHeight(height);
-    flashStatus(QStringLiteral("Посилання на потік прострочене — оновлюю"));
+            flashStatus(tr("Stream link has expired — refreshing"));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             // A refreshed link is a fresh stream, not a continuation: the old
@@ -1664,7 +1664,7 @@ void PlayerDialog::openAudioMenu() {
     shell_->wake();
     audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
     if (audioPopup_->rowCount() == 0) {
-        flashStatus(QStringLiteral("Немає інших озвучень"));
+        flashStatus(tr("No other audio tracks available"));
         return;
     }
     probeUnknownTracks();
@@ -1679,7 +1679,7 @@ void PlayerDialog::openSubtitlesMenu() {
     shell_->wake();
     subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     if (subtitlesPopup_->rowCount() == 0) {
-        flashStatus(QStringLiteral("Немає доступних субтитрів"));
+        flashStatus(tr("No subtitles available"));
         return;
     }
     probeUnknownTracks();
@@ -1823,7 +1823,7 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
         if (entry.height != height) {
             continue;
         }
-        flashStatus(QStringLiteral("Перемикання на %1p…").arg(height));
+        flashStatus(tr("Switching to %1p…").arg(height));
         openStream(entry.url, QStringLiteral("%1p").arg(height));
         shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(height));
         return;
@@ -1832,10 +1832,9 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
 
 
 QPoint PlayerDialog::settingsAnchor() const {
-    for (QPushButton* button : shell_->findChildren<QPushButton*>()) {
-        if (button->toolTip() == QStringLiteral("toggle_settings_popover")) {
-            return button->mapToGlobal(QPoint(button->width(), 0));
-        }
+    if (auto* button =
+            shell_->findChild<QPushButton*>(QStringLiteral("playerSettingsButton"))) {
+        return button->mapToGlobal(QPoint(button->width(), 0));
     }
     return shell_->mapToGlobal(QPoint(shell_->width() / 2, shell_->height() - 46));
 }
@@ -1854,8 +1853,7 @@ void PlayerDialog::setSeriesExpanded(bool expanded) {
 }
 
 void PlayerDialog::updateSeriesToggle() {
-    const QString hint = seriesExpanded_ ? QStringLiteral("Сховати список серій (S)")
-                                         : QStringLiteral("Список серій (S)");
+    const QString hint = seriesExpanded_ ? tr("Hide episode list (S)") : tr("Episode list (S)");
     seriesButton_->setToolTip(hint);
     seriesButton_->setAccessibleName(hint);
     seriesButton_->setIcon(glyphIcon(seriesExpanded_ ? &IconPainter::chevronLeft
@@ -1936,7 +1934,7 @@ void PlayerDialog::startPlayer() {
     if (!openStream(url_, QString(), /*resume=*/false)) {
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
-        showErrorStatus(QStringLiteral("Не вдалося відтворити потік"));
+        showErrorStatus(tr("Could not play the stream"));
         if (!directMedia_ && !refreshAttempted_) {
             refreshAttempted_ = true;
             host_->playbackFailed();
@@ -2291,7 +2289,7 @@ void PlayerDialog::enterPip() {
     window->show();
     window->raise();
     syncPipBar();
-    flashStatus(QStringLiteral("Картинка в картинці"));
+            flashStatus(tr("Picture in picture"));
     // The float owns the picture now, so what is left behind would be an empty
     // black frame.
     hide();
@@ -2346,7 +2344,7 @@ void PlayerDialog::leavePip(bool closing) {
             surface_->setPaused(!pipResumePlaying_);
         }
     });
-    flashStatus(QStringLiteral("Повернуто у вікно"));
+            flashStatus(tr("Returned to window"));
 }
 
 void PlayerDialog::syncPipBar() {

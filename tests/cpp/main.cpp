@@ -5,6 +5,7 @@
 // here and the first failure decides the exit code.
 
 #include "TestAnime4K.hpp"
+#include "TestI18n.hpp"
 #include "TestLayering.hpp"
 #include "TestLiveOracle.hpp"
 #include "TestModels.hpp"
@@ -39,10 +40,10 @@ bool wantsSuite(const QStringList& arguments, const char* name) {
 }
 
 bool suiteFilterActive(const QStringList& arguments) {
-  static const char* kSuites[] = {"TestModels",   "TestReleases",     "TestAnime4K",
-                                  "TestStreams",  "TestPagers",       "TestQualityCache",
-                                  "TestRateLimiter", "TestLayering",  "TestClipboard",
-                                  "TestLiveOracle"};
+  static const char* kSuites[] = {"TestModels",      "TestReleases",  "TestAnime4K",
+                                  "TestI18n",         "TestStreams",   "TestPagers",
+                                  "TestQualityCache", "TestRateLimiter", "TestLayering",
+                                  "TestClipboard",    "TestLiveOracle"};
   for (const char* suite : kSuites) {
     if (wantsSuite(arguments, suite)) {
       return true;
@@ -75,6 +76,7 @@ int main(int argc, char** argv) {
   TestModels models;
   TestReleases releases;
   TestAnime4K anime4k;
+  TestI18n i18n;
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
@@ -98,8 +100,8 @@ int main(int argc, char** argv) {
   {
     bool firstIsSuite = false;
     if (arguments.size() > 1) {
-      static const char* kSuites[] = {"TestModels",  "TestReleases",  "TestAnime4K",
-                                      "TestPagers",  "TestQualityCache", "TestRateLimiter",
+      static const char* kSuites[] = {"TestModels", "TestReleases", "TestAnime4K", "TestI18n",
+                                      "TestPagers", "TestQualityCache", "TestRateLimiter",
                                       "TestLayering", "TestClipboard", "TestLiveOracle"};
       for (const char* suite : kSuites) {
         if (arguments.at(1) == QString::fromLatin1(suite)) {
@@ -126,6 +128,7 @@ int main(int argc, char** argv) {
   MIKAI_RUN_ONE("TestModels", models);
   MIKAI_RUN_ONE("TestReleases", releases);
   MIKAI_RUN_ONE("TestAnime4K", anime4k);
+  MIKAI_RUN_ONE("TestI18n", i18n);
   MIKAI_RUN_ONE("TestStreams", streams);
   MIKAI_RUN_ONE("TestPagers", pagers);
   MIKAI_RUN_ONE("TestQualityCache", qualityCache);

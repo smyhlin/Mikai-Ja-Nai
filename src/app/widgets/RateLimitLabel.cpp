@@ -31,20 +31,20 @@ void RateLimitLabel::refresh() {
         label_->setText(
             QStringLiteral("RPM —/%1").arg(state.limit > 0 ? QString::number(state.limit)
                                                            : QStringLiteral("—")));
-        label_->setToolTip(tr("Ще немає відповіді із заголовками ліміту"));
+        label_->setToolTip(tr("No response with rate limit headers yet"));
     } else {
         label_->setText(QStringLiteral("RPM %1/%2").arg(*state.used).arg(state.limit));
-        QString detail = tr("Остання відповідь API: використано %1 із %2 запитів за поточне вікно")
+        QString detail = tr("Last API response: %1 of %2 requests used in the current window")
                              .arg(*state.used)
                              .arg(state.limit);
         if (state.remaining.has_value()) {
-            detail += tr("; доступно %1").arg(*state.remaining);
+            detail += tr("; %1 remaining").arg(*state.remaining);
         }
         if (state.resetIn > 0) {
-            detail += tr("; оновлення через %1 с").arg(state.resetIn);
+            detail += tr("; resets in %1 s").arg(state.resetIn);
         }
         if (state.queued > 0) {
-            detail += tr("; у черзі: %1 запитів").arg(state.queued);
+            detail += tr("; %1 queued").arg(state.queued);
         }
         label_->setToolTip(detail);
     }

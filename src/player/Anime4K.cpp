@@ -21,10 +21,11 @@ namespace {
 /// tree holds a second one.
 const QVector<ModeInfo>& catalogue() {
     static const QVector<ModeInfo> kModes = {
-        {Mode::Off, QStringLiteral("off"), QStringLiteral("Вимкнено"),
-         QStringLiteral("Оригінальне зображення"), QStringLiteral("anime4k"), {}},
-        {Mode::FastA, QStringLiteral("fast_a"), QStringLiteral("A (Швидкий)"),
-         QStringLiteral("Відновлення ліній + апскейл (1080p/SD)"),
+        {Mode::Off, QStringLiteral("off"), QCoreApplication::translate("Anime4K", "Disabled"),
+         QCoreApplication::translate("Anime4K", "Original image"), QStringLiteral("anime4k"), {}},
+        {Mode::FastA, QStringLiteral("fast_a"),
+         QCoreApplication::translate("Anime4K", "A (Fast)"),
+         QCoreApplication::translate("Anime4K", "Line restoration + upscale (1080p/SD)"),
          QStringLiteral("anime4k/speed"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
@@ -32,8 +33,9 @@ const QVector<ModeInfo>& catalogue() {
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_S.glsl")}},
-        {Mode::FastB, QStringLiteral("fast_b"), QStringLiteral("B (Швидкий)"),
-         QStringLiteral("Згладжування артефактів + апскейл (720p)"),
+        {Mode::FastB, QStringLiteral("fast_b"),
+         QCoreApplication::translate("Anime4K", "B (Fast)"),
+         QCoreApplication::translate("Anime4K", "Artifact smoothing + upscale (720p)"),
          QStringLiteral("anime4k/speed"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_Soft_M.glsl"),
@@ -41,38 +43,47 @@ const QVector<ModeInfo>& catalogue() {
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_S.glsl")}},
-        {Mode::FastC, QStringLiteral("fast_c"), QStringLiteral("C (Швидкий)"),
-         QStringLiteral("Denoise + апскейл для якісного відео"), QStringLiteral("anime4k/speed"),
+        {Mode::FastC, QStringLiteral("fast_c"),
+         QCoreApplication::translate("Anime4K", "C (Fast)"),
+         QCoreApplication::translate("Anime4K", "Denoise + upscale for high-quality video"),
+         QStringLiteral("anime4k/speed"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Upscale_Denoise_CNN_x2_M.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_S.glsl")}},
-        {Mode::HqA, QStringLiteral("hq_a"), QStringLiteral("A (Якісний)"),
-         QStringLiteral("Глибоке відновлення ліній (CNN VL)"), QStringLiteral("anime4k/quality"),
+        {Mode::HqA, QStringLiteral("hq_a"),
+         QCoreApplication::translate("Anime4K", "A (High Quality)"),
+         QCoreApplication::translate("Anime4K", "Deep line restoration (CNN VL)"),
+         QStringLiteral("anime4k/quality"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_VL.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_VL.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
-        {Mode::HqB, QStringLiteral("hq_b"), QStringLiteral("B (Якісний)"),
-         QStringLiteral("М'яке відновлення та згладжування"), QStringLiteral("anime4k/quality"),
+        {Mode::HqB, QStringLiteral("hq_b"),
+         QCoreApplication::translate("Anime4K", "B (High Quality)"),
+         QCoreApplication::translate("Anime4K", "Soft restoration and smoothing"),
+         QStringLiteral("anime4k/quality"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_Soft_VL.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_VL.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
-        {Mode::HqC, QStringLiteral("hq_c"), QStringLiteral("C (Якісний)"),
-         QStringLiteral("Високий PSNR + очищення шумів"), QStringLiteral("anime4k/quality"),
+        {Mode::HqC, QStringLiteral("hq_c"),
+         QCoreApplication::translate("Anime4K", "C (High Quality)"),
+         QCoreApplication::translate("Anime4K", "High PSNR + noise cleanup"),
+         QStringLiteral("anime4k/quality"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Upscale_Denoise_CNN_x2_VL.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
-        {Mode::HqAA, QStringLiteral("hq_aa"), QStringLiteral("A+A (Максимум)"),
-         QStringLiteral("Подвійне відновлення для розмитого відео"),
+        {Mode::HqAA, QStringLiteral("hq_aa"),
+         QCoreApplication::translate("Anime4K", "A+A (Maximum)"),
+         QCoreApplication::translate("Anime4K", "Double restoration for blurry video"),
          QStringLiteral("anime4k/maximum"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_VL.glsl"),
@@ -81,8 +92,10 @@ const QVector<ModeInfo>& catalogue() {
           QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl"),
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
-        {Mode::HqBB, QStringLiteral("hq_bb"), QStringLiteral("B+B (Максимум)"),
-         QStringLiteral("Подвійне м'яке відновлення"), QStringLiteral("anime4k/maximum"),
+        {Mode::HqBB, QStringLiteral("hq_bb"),
+         QCoreApplication::translate("Anime4K", "B+B (Maximum)"),
+         QCoreApplication::translate("Anime4K", "Double soft restoration"),
+         QStringLiteral("anime4k/maximum"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_Soft_VL.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_VL.glsl"),
@@ -90,8 +103,9 @@ const QVector<ModeInfo>& catalogue() {
           QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_Soft_M.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
-        {Mode::HqCA, QStringLiteral("hq_ca"), QStringLiteral("C+A (Максимум)"),
-         QStringLiteral("Denoise + максимальне відновлення деталей"),
+        {Mode::HqCA, QStringLiteral("hq_ca"),
+         QCoreApplication::translate("Anime4K", "C+A (Maximum)"),
+         QCoreApplication::translate("Anime4K", "Denoise + maximum detail restoration"),
          QStringLiteral("anime4k/maximum"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Upscale_Denoise_CNN_x2_VL.glsl"),
@@ -105,73 +119,83 @@ const QVector<ModeInfo>& catalogue() {
         // have to do by hand, and guessing extra stages would be inventing a
         // pipeline Anime4K does not document.
         {Mode::Exp3dGraphics, QStringLiteral("exp_3d_graphics"),
-         QStringLiteral("3D Graphics"),
-         QStringLiteral("Антиаліасинг для 3D-графіки — експериментально"),
+         QCoreApplication::translate("Anime4K", "3D Graphics"),
+         QCoreApplication::translate("Anime4K", "Anti-aliasing for 3D graphics - experimental"),
          QStringLiteral("anime4k/experimental"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_3DGraphics_AA_Upscale_x2_US.glsl")}},
         {Mode::ExpOldFilm, QStringLiteral("exp_old_film"),
-         QStringLiteral("Old Film Restore"),
-         QStringLiteral("Відновлення старого фільму — експериментально"),
+         QCoreApplication::translate("Anime4K", "Old Film Restore"),
+         QCoreApplication::translate("Anime4K", "Old film restoration - experimental"),
          QStringLiteral("anime4k/experimental"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Deblur_Original.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
         {Mode::ExpDeblurStrong, QStringLiteral("exp_deblur_strong"),
-         QStringLiteral("Deblur"),
-         QStringLiteral("Сильне знеблюрення (Strong Deblur) — експериментально"),
+         QCoreApplication::translate("Anime4K", "Deblur"),
+         QCoreApplication::translate("Anime4K", "Strong deblurring (Strong Deblur) - experimental"),
          QStringLiteral("anime4k/experimental"),
          {QStringLiteral("Anime4K_Clamp_Highlights.glsl"),
           QStringLiteral("Anime4K_Deblur_DoG.glsl"),
           QStringLiteral("Anime4K_Restore_CNN_M.glsl"),
           QStringLiteral("Anime4K_Upscale_CNN_x2_M.glsl")}},
         {Mode::ExpNoiseBilateralMean, QStringLiteral("exp_noise_bilateral_mean"),
-         QStringLiteral("Bilateral Mean"),
-         QStringLiteral("Повний пресет шумоподавлення — експериментально"),
+         QCoreApplication::translate("Anime4K", "Bilateral Mean"),
+         QCoreApplication::translate("Anime4K", "Complete denoising preset - experimental"),
          QStringLiteral("anime4k/experimental/noise"),
          {QStringLiteral("Anime4K_Denoise_Bilateral_Mean.glsl")}},
         {Mode::ExpNoiseBilateralMedian, QStringLiteral("exp_noise_bilateral_median"),
-         QStringLiteral("Bilateral Median"),
-         QStringLiteral("Повний пресет шумоподавлення — експериментально"),
+         QCoreApplication::translate("Anime4K", "Bilateral Median"),
+         QCoreApplication::translate("Anime4K", "Complete denoising preset - experimental"),
          QStringLiteral("anime4k/experimental/noise"),
          {QStringLiteral("Anime4K_Denoise_Bilateral_Median.glsl")}},
         {Mode::ExpNoiseBilateralMode, QStringLiteral("exp_noise_bilateral_mode"),
-         QStringLiteral("Bilateral Mode"),
-         QStringLiteral("Повний пресет шумоподавлення — експериментально"),
+         QCoreApplication::translate("Anime4K", "Bilateral Mode"),
+         QCoreApplication::translate("Anime4K", "Complete denoising preset - experimental"),
          QStringLiteral("anime4k/experimental/noise"),
          {QStringLiteral("Anime4K_Denoise_Bilateral_Mode.glsl")}},
-        {Mode::ExpThinVeryFast, QStringLiteral("exp_thin_veryfast"), QStringLiteral("VeryFast"),
-         QStringLiteral("Повний пресет для тонких ліній — експериментально"),
+        {Mode::ExpThinVeryFast, QStringLiteral("exp_thin_veryfast"),
+         QCoreApplication::translate("Anime4K", "VeryFast"),
+         QCoreApplication::translate("Anime4K", "Complete preset for thin lines - experimental"),
          QStringLiteral("anime4k/experimental/thin"),
          {QStringLiteral("Anime4K_Thin_VeryFast.glsl")}},
-        {Mode::ExpThinFast, QStringLiteral("exp_thin_fast"), QStringLiteral("Fast"),
-         QStringLiteral("Повний пресет для тонких ліній — експериментально"),
+        {Mode::ExpThinFast, QStringLiteral("exp_thin_fast"),
+         QCoreApplication::translate("Anime4K", "Fast"),
+         QCoreApplication::translate("Anime4K", "Complete preset for thin lines - experimental"),
          QStringLiteral("anime4k/experimental/thin"),
          {QStringLiteral("Anime4K_Thin_Fast.glsl")}},
-        {Mode::ExpThinHq, QStringLiteral("exp_thin_hq"), QStringLiteral("HQ"),
-         QStringLiteral("Повний пресет для тонких ліній — експериментально"),
+        {Mode::ExpThinHq, QStringLiteral("exp_thin_hq"),
+         QCoreApplication::translate("Anime4K", "HQ"),
+         QCoreApplication::translate("Anime4K", "Complete preset for thin lines - experimental"),
          QStringLiteral("anime4k/experimental/thin"),
          {QStringLiteral("Anime4K_Thin_HQ.glsl")}},
-        {Mode::ExpTextureDtdX2, QStringLiteral("exp_texture_dtd_x2"), QStringLiteral("DTD x2"),
-         QStringLiteral("Повний пресет для текстури — експериментально"),
+        {Mode::ExpTextureDtdX2, QStringLiteral("exp_texture_dtd_x2"),
+         QCoreApplication::translate("Anime4K", "DTD x2"),
+         QCoreApplication::translate("Anime4K", "Complete preset for texture - experimental"),
          QStringLiteral("anime4k/experimental/texture"),
          {QStringLiteral("Anime4K_Upscale_DTD_x2.glsl")}},
-        {Mode::ExpTextureDogX2, QStringLiteral("exp_texture_dog_x2"), QStringLiteral("DoG x2"),
-         QStringLiteral("Повний пресет для текстури — експериментально"),
+        {Mode::ExpTextureDogX2, QStringLiteral("exp_texture_dog_x2"),
+         QCoreApplication::translate("Anime4K", "DoG x2"),
+         QCoreApplication::translate("Anime4K", "Complete preset for texture - experimental"),
          QStringLiteral("anime4k/experimental/texture"),
          {QStringLiteral("Anime4K_Upscale_DoG_x2.glsl")}},
         {Mode::ExpDarkenVeryFast, QStringLiteral("exp_darken_veryfast"),
-         QStringLiteral("VeryFast"),
-         QStringLiteral("Повний пресет затемнення ліній — експериментально"),
+         QCoreApplication::translate("Anime4K", "VeryFast"),
+         QCoreApplication::translate("Anime4K",
+                                     "Complete preset for line darkening - experimental"),
          QStringLiteral("anime4k/experimental/darken"),
          {QStringLiteral("Anime4K_Darken_VeryFast.glsl")}},
-        {Mode::ExpDarkenFast, QStringLiteral("exp_darken_fast"), QStringLiteral("Fast"),
-         QStringLiteral("Повний пресет затемнення ліній — експериментально"),
+        {Mode::ExpDarkenFast, QStringLiteral("exp_darken_fast"),
+         QCoreApplication::translate("Anime4K", "Fast"),
+         QCoreApplication::translate("Anime4K",
+                                     "Complete preset for line darkening - experimental"),
          QStringLiteral("anime4k/experimental/darken"),
          {QStringLiteral("Anime4K_Darken_Fast.glsl")}},
-        {Mode::ExpDarkenHq, QStringLiteral("exp_darken_hq"), QStringLiteral("HQ"),
-         QStringLiteral("Повний пресет затемнення ліній — експериментально"),
+        {Mode::ExpDarkenHq, QStringLiteral("exp_darken_hq"),
+         QCoreApplication::translate("Anime4K", "HQ"),
+         QCoreApplication::translate("Anime4K",
+                                     "Complete preset for line darkening - experimental"),
          QStringLiteral("anime4k/experimental/darken"),
          {QStringLiteral("Anime4K_Darken_HQ.glsl")}}
     };
@@ -184,51 +208,68 @@ const QVector<ModeInfo>& catalogue() {
 const QVector<CategoryInfo>& categories() {
     static const QVector<CategoryInfo> kCategories = {
         {QStringLiteral("anime4k"), QString(), QStringLiteral("Anime4K"),
-         QStringLiteral("Пресети Anime4K: апскейл і відновлення зображення"), false},
-        {QStringLiteral("anime4k/speed"), QStringLiteral("anime4k"), QStringLiteral("Швидкість"),
-         QStringLiteral("Низьке навантаження на GPU, реальний час"), false},
-        {QStringLiteral("anime4k/quality"), QStringLiteral("anime4k"), QStringLiteral("Якість"),
-         QStringLiteral("Збалансована висока якість"), false},
-        {QStringLiteral("anime4k/maximum"), QStringLiteral("anime4k"), QStringLiteral("Максимум"),
-         QStringLiteral("Багатоетапне покращення, вища ціна GPU"), false},
+         QCoreApplication::translate("Anime4K", "Anime4K presets: upscaling and image restoration"),
+         false},
+        {QStringLiteral("anime4k/speed"), QStringLiteral("anime4k"),
+         QCoreApplication::translate("Anime4K", "Speed"),
+         QCoreApplication::translate("Anime4K", "Low GPU load, real time"), false},
+        {QStringLiteral("anime4k/quality"), QStringLiteral("anime4k"),
+         QCoreApplication::translate("Anime4K", "Quality"),
+         QCoreApplication::translate("Anime4K", "Balanced high quality"), false},
+        {QStringLiteral("anime4k/maximum"), QStringLiteral("anime4k"),
+         QCoreApplication::translate("Anime4K", "Maximum"),
+         QCoreApplication::translate("Anime4K", "Multi-stage enhancement, higher GPU cost"), false},
         {QStringLiteral("anime4k/experimental"), QStringLiteral("anime4k"),
-         QStringLiteral("Експериментальні"),
-         QStringLiteral("Спеціальні випадки, не типові налаштування"), false},
+         QCoreApplication::translate("Anime4K", "Experimental"),
+         QCoreApplication::translate("Anime4K", "Special cases, not typical settings"), false},
         // The four experiment families are named the way Anime4K names them, so
         // a viewer looking for a documented preset finds it under the same name;
         // the warning that they are not defaults is in the tooltip.
         {QStringLiteral("anime4k/experimental/noise"),
-         QStringLiteral("anime4k/experimental"), QStringLiteral("Noise Reduction"),
-         QStringLiteral("Шумоподавлення: один шейдер — повний пресет. "
-                        "Експериментально, не типове налаштування"), false},
+         QStringLiteral("anime4k/experimental"),
+         QCoreApplication::translate("Anime4K", "Noise Reduction"),
+         QCoreApplication::translate("Anime4K",
+                                     "Noise reduction: one shader - a complete preset. "
+                                     "Experimental, not a typical setting"),
+         false},
         {QStringLiteral("anime4k/experimental/thin"), QStringLiteral("anime4k/experimental"),
-         QStringLiteral("Thin Lines"),
-         QStringLiteral("Тонкі лінії: один шейдер — повний пресет. "
-                        "Експериментально, не типове налаштування"), false},
+         QCoreApplication::translate("Anime4K", "Thin Lines"),
+         QCoreApplication::translate("Anime4K", "Thin lines: one shader - a complete preset. "
+                                                 "Experimental, not a typical setting"),
+         false},
         {QStringLiteral("anime4k/experimental/texture"), QStringLiteral("anime4k/experimental"),
-         QStringLiteral("Texture Enhancement"),
-         QStringLiteral("Текстури: один шейдер — повний пресет. "
-                        "Експериментально, не типове налаштування"), false},
+         QCoreApplication::translate("Anime4K", "Texture Enhancement"),
+         QCoreApplication::translate("Anime4K", "Textures: one shader - a complete preset. "
+                                                 "Experimental, not a typical setting"),
+         false},
         {QStringLiteral("anime4k/experimental/darken"), QStringLiteral("anime4k/experimental"),
-         QStringLiteral("Darken"),
-         QStringLiteral("Затемнення ліній: один шейдер — повний пресет. "
-                        "Експериментально, не типове налаштування"), false},
+         QCoreApplication::translate("Anime4K", "Darken"),
+         QCoreApplication::translate("Anime4K", "Line darkening: one shader - a complete preset. "
+                                                 "Experimental, not a typical setting"),
+         false},
         // The models this player does not run each get their own page rather
         // than a dead row, so the menu can say where they will live: the page
-        // holds a single disabled В планах leaf and the usual way back.
+        // holds a single disabled "Planned" leaf and the usual way back.
         {QStringLiteral("rife"), QString(), QStringLiteral("RIFE"),
-         QStringLiteral("Інтерполяція кадрів: двигун не реалізовано"), false},
+         QCoreApplication::translate("Anime4K", "Frame interpolation: engine not implemented"),
+         false},
         {QStringLiteral("realesrgan"), QString(), QStringLiteral("RealESRGAN"),
-         QStringLiteral("Нейромережевий апскейл: двигун не реалізовано"), false},
-        {QStringLiteral("other-models"), QString(), QStringLiteral("Інші моделі"),
-         QStringLiteral("Інші моделі покращення: двигун не реалізовано"), false},
-        {QStringLiteral("rife/planned"), QStringLiteral("rife"), QStringLiteral("В планах"),
-         QStringLiteral("У планах: RIFE ще не реалізовано"), true},
+         QCoreApplication::translate("Anime4K", "Neural upscaling: engine not implemented"),
+         false},
+        {QStringLiteral("other-models"), QString(),
+         QCoreApplication::translate("Anime4K", "Other models"),
+         QCoreApplication::translate("Anime4K", "Other enhancement models: engine not implemented"),
+         false},
+        {QStringLiteral("rife/planned"), QStringLiteral("rife"),
+         QCoreApplication::translate("Anime4K", "Planned"),
+         QCoreApplication::translate("Anime4K", "Planned: RIFE is not implemented yet"), true},
         {QStringLiteral("realesrgan/planned"), QStringLiteral("realesrgan"),
-         QStringLiteral("В планах"), QStringLiteral("У планах: RealESRGAN ще не реалізовано"),
+         QCoreApplication::translate("Anime4K", "Planned"),
+         QCoreApplication::translate("Anime4K", "Planned: RealESRGAN is not implemented yet"),
          true},
         {QStringLiteral("other-models/planned"), QStringLiteral("other-models"),
-         QStringLiteral("В планах"), QStringLiteral("У планах: ці моделі ще не реалізовано"),
+         QCoreApplication::translate("Anime4K", "Planned"),
+         QCoreApplication::translate("Anime4K", "Planned: these models are not implemented yet"),
          true}
     };
     return kCategories;
@@ -322,21 +363,32 @@ QString labelFromFile(const QString& file) {
 QString hintFromFile(const QString& file, Kind kind) {
     const QString label = labelFromFile(file);
     const int scale = scaleFromName(file);
-    QString hint = kindLabel(kind);
-    if (scale > 0) {
-        hint += QStringLiteral(" ×%1").arg(scale);
-    }
-    // The size suffix is the part a viewer cannot read off the family name,
-    // so it is worth spelling out where there is one.
-    for (const QString& size : {QStringLiteral("VL"), QStringLiteral("UUL"),
-                                 QStringLiteral("UL"), QStringLiteral("L"),
-                                 QStringLiteral("M"), QStringLiteral("S")}) {
-        if (label.endsWith(QLatin1Char(' ') + size) || label.endsWith(size)) {
-            hint += QStringLiteral(" · розмір %1").arg(size);
+    // The size suffix is the part a viewer cannot read off the family name, so
+    // it is worth spelling out where there is one. Each shape the hint can take
+    // is one message rather than a run of glued pieces, so a translation is
+    // free to put the scale and the size in whatever order reads in its
+    // language.
+    QString size;
+    for (const QString& candidate : {QStringLiteral("VL"), QStringLiteral("UUL"),
+                                     QStringLiteral("UL"), QStringLiteral("L"),
+                                     QStringLiteral("M"), QStringLiteral("S")}) {
+        if (label.endsWith(QLatin1Char(' ') + candidate) || label.endsWith(candidate)) {
+            size = candidate;
             break;
         }
     }
-    return hint;
+    const QString family = kindLabel(kind);
+    if (scale > 0 && !size.isEmpty()) {
+        return QCoreApplication::translate("Anime4K", "%1 ×%2 · size %3")
+            .arg(family, QString::number(scale), size);
+    }
+    if (scale > 0) {
+        return QCoreApplication::translate("Anime4K", "%1 ×%2").arg(family, QString::number(scale));
+    }
+    if (!size.isEmpty()) {
+        return QCoreApplication::translate("Anime4K", "%1 · size %2").arg(family, size);
+    }
+    return family;
 }
 
 }  // namespace
@@ -345,16 +397,16 @@ QString hintFromFile(const QString& file, Kind kind) {
 
 QString kindLabel(Kind kind) {
     switch (kind) {
-        case Kind::Preset: return QStringLiteral("Пресети");
-        case Kind::Restore: return QStringLiteral("Відновлення");
-        case Kind::Denoise: return QStringLiteral("Шумоподавлення");
-        case Kind::Deblur: return QStringLiteral("Розмиття");
-        case Kind::Thin: return QStringLiteral("Тонкі лінії");
-        case Kind::Darken: return QStringLiteral("Затемнення");
-        case Kind::Upscale: return QStringLiteral("Апскейл");
-        case Kind::Downscale: return QStringLiteral("Даунскейл");
-        case Kind::Clamp: return QStringLiteral("Обмеження");
-        case Kind::Graphics: return QStringLiteral("3D-графіка");
+        case Kind::Preset: return QCoreApplication::translate("Anime4K", "Presets");
+        case Kind::Restore: return QCoreApplication::translate("Anime4K", "Restoration");
+        case Kind::Denoise: return QCoreApplication::translate("Anime4K", "Noise reduction");
+        case Kind::Deblur: return QCoreApplication::translate("Anime4K", "Blur");
+        case Kind::Thin: return QCoreApplication::translate("Anime4K", "Thin lines");
+        case Kind::Darken: return QCoreApplication::translate("Anime4K", "Darkening");
+        case Kind::Upscale: return QCoreApplication::translate("Anime4K", "Upscaling");
+        case Kind::Downscale: return QCoreApplication::translate("Anime4K", "Downscaling");
+        case Kind::Clamp: return QCoreApplication::translate("Anime4K", "Clamping");
+        case Kind::Graphics: return QCoreApplication::translate("Anime4K", "3D graphics");
     }
     return QString();
 }
@@ -391,8 +443,8 @@ QString displayLabel(Mode mode) {
     }
     // A leaf deeper than one category reads as a bare "HQ" or "Fast" on its
     // own, so it is qualified with the group it sits in. A leaf of a top-level
-    // group already says what it is ("A (Швидкий)", "3D Graphics"), so the
-    // four main categories add nothing and are left off.
+    // group already says what it is ("A (Fast)", "3D Graphics"), so the four
+    // main categories add nothing and are left off.
     const CategoryInfo* parent = categoryForId(info->category);
     const bool nested = parent != nullptr && !parent->parent.isEmpty() &&
                         parent->parent != QLatin1String("anime4k");
@@ -419,8 +471,8 @@ bool categoryContainsPreset(const QString& categoryId, const QString& presetId) 
 QVector<MenuRow> menuRows(const QString& parent) {
     QVector<MenuRow> rows;
     // Presets first, in catalogue order, then the categories that hang under
-    // this level: Вимкнено leads the Anime4K menu, and the three direct
-    // experiments lead Експериментальні, exactly as the menu is meant to read.
+    // this level: "Disabled" leads the Anime4K menu, and the three direct
+    // experiments lead "Experimental", exactly as the menu is meant to read.
     for (const ModeInfo& info : catalogue()) {
         if (info.category != parent) {
             continue;

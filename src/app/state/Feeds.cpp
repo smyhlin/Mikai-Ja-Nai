@@ -1,5 +1,7 @@
 #include "state/Feeds.hpp"
 
+#include <QCoreApplication>
+
 namespace mikai::app::feeds {
 
 const QStringList& all() {
@@ -13,10 +15,15 @@ const QStringList& all() {
 }
 
 QString label(const QString& key) {
-    if (key == QLatin1String("ongoing")) return QStringLiteral("Зараз виходять");
-    if (key == QLatin1String("popular")) return QStringLiteral("Популярні на Mikai");
-    if (key == QLatin1String("updates")) return QStringLiteral("Останні оновлення");
-    if (key == QLatin1String("schedule")) return QStringLiteral("Розклад виходу");
+    // The feed ids stay as the API spells them: they are also the persisted
+    // selection keys, so translating them would rewrite the stored setting.
+    if (key == QLatin1String("ongoing")) return QCoreApplication::translate("Feeds", "Airing now");
+    if (key == QLatin1String("popular"))
+        return QCoreApplication::translate("Feeds", "Popular on Mikai");
+    if (key == QLatin1String("updates"))
+        return QCoreApplication::translate("Feeds", "Latest updates");
+    if (key == QLatin1String("schedule"))
+        return QCoreApplication::translate("Feeds", "Release schedule");
     return {};
 }
 

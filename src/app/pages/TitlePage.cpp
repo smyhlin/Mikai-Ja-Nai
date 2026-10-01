@@ -256,7 +256,7 @@ void TitlePage::buildUi() {
     root->setSpacing(theme::kSpacingMedium);
 
     auto* top = new QHBoxLayout();
-    auto* back = new QPushButton(tr("← Назад"), this);
+    auto* back = new QPushButton(tr("← Back"), this);
     connect(back, &QPushButton::clicked, this, &TitlePage::backRequested);
     status_ = new QLabel(this);
     status_->setObjectName(QStringLiteral("status"));
@@ -264,7 +264,8 @@ void TitlePage::buildUi() {
     settingsButton->setObjectName(QStringLiteral("settingsChip"));
     settingsButton->setIcon(theme::gearIcon());
     settingsButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton->setToolTip(tr("Налаштування токена API"));
+    settingsButton->setToolTip(tr("API token settings"));
+    settingsButton->setAccessibleName(tr("API token settings"));
     connect(settingsButton, &QPushButton::clicked, this, &TitlePage::settingsRequested);
     rateLabel_ = new RateLimitLabel(client_, this);
     top->addWidget(back);
@@ -283,7 +284,7 @@ void TitlePage::buildUi() {
     pageLayout->setContentsMargins(0, 0, 0, 0);
     pageLayout->setSpacing(theme::kSpacingLarge);
 
-    cover_ = new CoverLabel(tr("Завантаження…"), page);
+    cover_ = new CoverLabel(tr("Loading…"), page);
     cover_->setObjectName(QStringLiteral("titleCover"));
     cover_->setFixedSize(theme::kTitleCoverWidth, theme::kTitleCoverHeight);
     connect(cover_, &CoverLabel::activated, this, &TitlePage::openCoverViewer);
@@ -324,15 +325,15 @@ void TitlePage::buildUi() {
     textColumn->addWidget(description_);
 
     auto* disclosure = new QHBoxLayout();
-    descriptionButton_ = new QPushButton(tr("Читати далі"), this);
+    descriptionButton_ = new QPushButton(tr("Read more"), this);
     descriptionButton_->setObjectName(QStringLiteral("textAction"));
     descriptionButton_->hide();
     connect(descriptionButton_, &QPushButton::clicked, this, &TitlePage::toggleDescription);
-    metaButton_ = new QPushButton(tr("Докладніше про тайтл"), this);
+    metaButton_ = new QPushButton(tr("More details"), this);
     metaButton_->setObjectName(QStringLiteral("textAction"));
     metaButton_->setCheckable(true);
     connect(metaButton_, &QPushButton::toggled, this, &TitlePage::toggleMetadata);
-    relatedButton_ = new QPushButton(tr("Пов’язані та схожі"), this);
+    relatedButton_ = new QPushButton(tr("Related and similar"), this);
     relatedButton_->setObjectName(QStringLiteral("textAction"));
     relatedButton_->setCheckable(true);
     relatedButton_->hide();
@@ -377,7 +378,7 @@ void TitlePage::buildUi() {
 
     auto* selectorRow = new QHBoxLayout();
     selectorRow->setSpacing(theme::kSpacingSmall);
-    auto* episodesHeading = new QLabel(tr("Серії"), this);
+    auto* episodesHeading = new QLabel(tr("Episodes"), this);
     episodesHeading->setObjectName(QStringLiteral("sectionHeading"));
     selectorRow->addWidget(episodesHeading);
     selector_ = new QComboBox(this);
@@ -393,7 +394,7 @@ void TitlePage::buildUi() {
     }
     connect(selector_, &QComboBox::currentIndexChanged, this, &TitlePage::fillEpisodes);
     selectorRow->addWidget(selector_, 1);
-    copyAll_ = new QPushButton(tr("Копіювати всі"), this);
+    copyAll_ = new QPushButton(tr("Copy all"), this);
     copyAll_->setEnabled(false);
     connect(copyAll_, &QPushButton::clicked, this, &TitlePage::copyAllUrls);
     selectorRow->addWidget(copyAll_);
@@ -416,7 +417,7 @@ void TitlePage::buildUi() {
 }
 
 void TitlePage::load() {
-    setStatus(tr("Завантаження…"));
+    setStatus(tr("Loading…"));
     // A task can outlive the page: the worker lambda runs on a pool thread, and
     // the delivery lambdas are queued to the GUI thread, so both may fire after
     // the widget is gone. The worker captures the client and ref by value (the
@@ -501,11 +502,12 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
                              cover.isEmpty() ? posterHint_ : cover);
     loadRecommendations(detail);
 
-    fullDescription_ =
-        detail.description.trimmed().isEmpty() ? tr("Опис відсутній.") : detail.description.trimmed();
+    fullDescription_ = detail.description.trimmed().isEmpty()
+                           ? tr("No description available.")
+                           : detail.description.trimmed();
     descriptionExpanded_ = false;
     description_->setText(descriptionPreview());
-    descriptionButton_->setText(tr("Читати далі"));
+    descriptionButton_->setText(tr("Read more"));
     descriptionButton_->setVisible(fullDescription_.size() > theme::kTitleDescriptionPreviewChars);
 
     if (!cover.isEmpty()) {
@@ -513,7 +515,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     } else if (!posterHint_.isEmpty()) {
         loadCover(posterHint_, false);
     } else {
-        cover_->setText(tr("Без обкладинки"));
+        cover_->setText(tr("No cover"));
     }
 
     releases_ = backend::sortReleases(player.releases);
@@ -533,7 +535,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     }
 
     if (releases_.isEmpty()) {
-        setStatus(tr("Релізів немає"));
+        setStatus(tr("No releases available"));
         return;
     }
     selector_->setEnabled(true);
@@ -544,7 +546,7 @@ void TitlePage::onError(const QString& message) {
     rateLabel_->refresh();
     setStatus(message);
     cover_->setZoomable(false);
-    cover_->setText(tr("Без обкладинки"));
+    cover_->setText(tr("No cover"));
 }
 
 void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
@@ -575,24 +577,24 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     if (!statusText.isEmpty()) facts << statusText;
     if (!formatText.isEmpty()) facts << formatText;
     if (!seasonText.isEmpty()) facts << seasonText;
-    if (!episodesLabel.isEmpty()) facts << tr("%1 серій").arg(episodesLabel);
+    if (!episodesLabel.isEmpty()) facts << tr("%1 episodes").arg(episodesLabel);
     facts_->setText(facts.join(QStringLiteral("   ·   ")));
 
     QVector<QPair<QString, QString>> rows;
-    if (!episodesLabel.isEmpty()) rows.append({tr("Серій"), episodesLabel});
-    if (!formatText.isEmpty()) rows.append({tr("Тип"), formatText});
+    if (!episodesLabel.isEmpty()) rows.append({tr("Episodes"), episodesLabel});
+    if (!formatText.isEmpty()) rows.append({tr("Type"), formatText});
     if (episodes.duration_min.value_or(0) > 0) {
-        rows.append({tr("Тривалість"), tr("%1 хв").arg(*episodes.duration_min)});
+        rows.append({tr("Duration"), tr("%1 min").arg(*episodes.duration_min)});
     }
-    if (!statusText.isEmpty()) rows.append({tr("Статус"), statusText});
-    if (!seasonText.isEmpty()) rows.append({tr("Сезон"), seasonText});
+    if (!statusText.isEmpty()) rows.append({tr("Status"), statusText});
+    if (!seasonText.isEmpty()) rows.append({tr("Season"), seasonText});
     if (!detail.source.isEmpty()) {
-        rows.append({tr("Першоджерело"), labels::source(detail.source)});
+        rows.append({tr("Original source"), labels::source(detail.source)});
     }
-    if (!detail.studio.isEmpty()) rows.append({tr("Студія"), detail.studio});
-    if (!detail.country.isEmpty()) rows.append({tr("Країна"), labels::country(detail.country)});
+    if (!detail.studio.isEmpty()) rows.append({tr("Studio"), detail.studio});
+    if (!detail.country.isEmpty()) rows.append({tr("Country"), labels::country(detail.country)});
     if (!detail.age_rating.isEmpty()) {
-        rows.append({tr("Вікові обмеження"), labels::ageRating(detail.age_rating)});
+        rows.append({tr("Age rating"), labels::ageRating(detail.age_rating)});
     }
     QStringList genres;
     for (const backend::GenreTag& genre : detail.genres) {
@@ -601,7 +603,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
             genres << text;
         }
     }
-    if (!genres.isEmpty()) rows.append({tr("Жанри"), genres.join(QStringLiteral(", "))});
+    if (!genres.isEmpty()) rows.append({tr("Genres"), genres.join(QStringLiteral(", "))});
     QStringList tags;
     for (const backend::GenreTag& tag : detail.tags) {
         const QString text = tag.ua.isEmpty() ? tag.name : tag.ua;
@@ -609,7 +611,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
             tags << text;
         }
     }
-    if (!tags.isEmpty()) rows.append({tr("Теги"), tags.join(QStringLiteral(", "))});
+    if (!tags.isEmpty()) rows.append({tr("Tags"), tags.join(QStringLiteral(", "))});
 
     int row = 0;
     for (const auto& entry : rows) {
@@ -666,10 +668,10 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         return;
     }
     if (!relations.isEmpty()) {
-        relatedLayout_->addWidget(buildRelatedCarousel(tr("Пов’язані тайтли"), relations));
+        relatedLayout_->addWidget(buildRelatedCarousel(tr("Related titles"), relations));
     }
     if (!similar.isEmpty()) {
-        relatedLayout_->addWidget(buildRelatedCarousel(tr("Схожі аніме"), similar));
+        relatedLayout_->addWidget(buildRelatedCarousel(tr("Similar anime"), similar));
     }
     setRelatedExpanded(true, false);
 }
@@ -713,7 +715,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             const bool expand =
                 self->relatedHost_->isVisible() || !self->relatedButton_->isVisible();
             self->relatedLayout_->addWidget(
-                self->buildRelatedCarousel(tr("Рекомендації на Mikai"), entries));
+                self->buildRelatedCarousel(tr("Recommended on Mikai"), entries));
             self->setRelatedExpanded(expand, false);
         },
         [](const QString&) {});
@@ -767,7 +769,7 @@ QWidget* TitlePage::buildRelatedCarousel(
         cardLayout->setContentsMargins(theme::kSpacingSmall, theme::kSpacingSmall,
                                        theme::kSpacingSmall, theme::kSpacingSmall);
         cardLayout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
-        auto* posterLabel = new QLabel(tr("Постер недоступний"), card);
+        auto* posterLabel = new QLabel(tr("Poster unavailable"), card);
         posterLabel->setObjectName(QStringLiteral("carouselPoster"));
         posterLabel->setAlignment(Qt::AlignCenter);
         posterLabel->setFixedSize(theme::kCarouselPosterWidth, theme::kCarouselPosterHeight);
@@ -839,7 +841,7 @@ QWidget* TitlePage::buildRelatedCarousel(
 void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
     relatedHost_->setVisible(expanded);
     relatedButton_->setVisible(true);
-    relatedButton_->setText(expanded ? tr("Сховати схожі") : tr("Пов’язані та схожі"));
+    relatedButton_->setText(expanded ? tr("Hide similar") : tr("Related and similar"));
     const QSignalBlocker blocker(relatedButton_);
     relatedButton_->setChecked(expanded);
     if (expanded && fromUser) {
@@ -850,8 +852,8 @@ void TitlePage::setRelatedExpanded(bool expanded, bool fromUser) {
 void TitlePage::toggleDescription() {
     descriptionExpanded_ = !descriptionExpanded_;
     description_->setText(descriptionExpanded_ ? fullDescription_ : descriptionPreview());
-    descriptionButton_->setText(descriptionExpanded_ ? tr("Згорнути опис")
-                                                      : tr("Читати далі"));
+    descriptionButton_->setText(descriptionExpanded_ ? tr("Collapse description")
+                                                      : tr("Read more"));
 }
 
 QString TitlePage::descriptionPreview() const {
@@ -871,7 +873,7 @@ QString TitlePage::descriptionPreview() const {
 
 void TitlePage::toggleMetadata(bool expanded) {
     metaHost_->setVisible(expanded);
-    metaButton_->setText(expanded ? tr("Сховати подробиці") : tr("Докладніше про тайтл"));
+    metaButton_->setText(expanded ? tr("Hide details") : tr("More details"));
     if (expanded) {
         QTimer::singleShot(0, this, [this] { overviewScroll_->ensureWidgetVisible(metaHost_); });
     }
@@ -907,12 +909,12 @@ QString TitlePage::releaseLabel(const backend::Release& release, bool withCount)
     QString label =
         teams.isEmpty() ? kindText : kindText + QStringLiteral(" — ") + teams.join(QLatin1String(", "));
     if (release.is_collab) {
-        label += tr(" (колаб)");
+        label += tr(" (collab)");
     }
     if (withCount) {
         const int count = backend::playableEpisodeCount(release);
         if (count > 0) {
-            label += tr(" · %1 серій").arg(count);
+            label += tr(" · %n episode(s)", nullptr, count);
         }
     }
     return label;
@@ -921,7 +923,7 @@ QString TitlePage::releaseLabel(const backend::Release& release, bool withCount)
 QString TitlePage::releaseTrackLabel(const backend::Release& release) const {
     // Team only, no kind and no episode count: the kind heads the section in the
     // player's track menu, and a track menu is scoped to the episode on screen,
-    // so "12 серій" there would read as the length of what is about to play.
+    // so "12 episodes" there would read as the length of what is about to play.
     QStringList teams;
     for (const backend::Team& team : release.teams) {
         if (!team.name.isEmpty()) {
@@ -929,7 +931,7 @@ QString TitlePage::releaseTrackLabel(const backend::Release& release) const {
         }
     }
     if (!teams.isEmpty()) {
-        return release.is_collab ? teams.join(QLatin1String(", ")) + tr(" (колаб)")
+        return release.is_collab ? teams.join(QLatin1String(", ")) + tr(" (collab)")
                                  : teams.join(QLatin1String(", "));
     }
     return labels::kind(release.kind);
@@ -1036,7 +1038,7 @@ void TitlePage::fillEpisodes(int index) {
     }
 
     copyAll_->setEnabled(tabs_->count() > 0);
-    setStatus(tabs_->count() > 0 ? QString() : tr("Немає джерел у релізі"));
+    setStatus(tabs_->count() > 0 ? QString() : tr("No sources in this release"));
     fitEpisodeSection();
 }
 
@@ -1047,9 +1049,9 @@ QPushButton* TitlePage::buildEpisodeButton(EpisodeEntry* entry, QWidget* grid) {
     auto* button = new QPushButton(entry->number, grid);
     button->setObjectName(QStringLiteral("episodeButton"));
     button->setFixedSize(theme::kEpisodeButtonWidth, theme::kEpisodeButtonHeight);
-    entry->label = tr("Серія %1").arg(entry->number);
+    entry->label = tr("Episode %1").arg(entry->number);
     entry->button = button;
-    button->setToolTip(tr("%1 — дивитися").arg(entry->label));
+    button->setToolTip(tr("%1 — watch").arg(entry->label));
     button->setContextMenuPolicy(Qt::CustomContextMenu);
     if (qualityCache_.isNoSource(entry->embedUrl)) {
         markNoSource(entry);
@@ -1229,7 +1231,7 @@ void TitlePage::ensureQualities(
     }
     const QString embed = entry->embedUrl;
     if (embed.isEmpty() || qualityCache_.isNoSource(embed)) {
-        flashStatus(tr("У цього плеєра немає відео для цієї серії"));
+        flashStatus(tr("This player has no video for this episode"));
         return;
     }
     const QMap<int, QString> cached = qualityCache_.qualities(embed);
@@ -1243,7 +1245,7 @@ void TitlePage::ensureQualities(
         return;
     }
     if (waiters.isEmpty()) {
-        flashStatus(tr("Завантаження якостей…"));
+        flashStatus(tr("Loading quality options…"));
         // The stream pool, not the bulk one: this probe's result is what the
         // reader is waiting on to start playback, so it should not queue behind
         // the discovery page's own fan-out.
@@ -1283,14 +1285,14 @@ void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qual
                     }
                 }
             }
-            flashStatus(tr("У цього плеєра немає відео для цієї серії"));
+            flashStatus(tr("This player has no video for this episode"));
         } else {
-            flashStatus(tr("Не вдалося завантажити якості серії"));
+            flashStatus(tr("Failed to load episode qualities"));
         }
         return;
     }
     if (qualities.isEmpty()) {
-        flashStatus(tr("Не вдалося знайти потік для серії"));
+        flashStatus(tr("Could not find a stream for this episode"));
         return;
     }
     qualityCache_.remember(embed, qualities);
@@ -1307,7 +1309,7 @@ void TitlePage::markNoSource(EpisodeEntry* entry) {
         return;
     }
     entry->button->setEnabled(false);
-    entry->button->setToolTip(tr("У цього плеєра немає відео для цієї серії"));
+    entry->button->setToolTip(tr("This player has no video for this episode"));
 }
 
 void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos) {
@@ -1316,19 +1318,17 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     // extraction fires here, on the press, and the rows fill in as it lands -
     // one flight per embed, the same one an episode open uses, so opening a
     // menu never costs a second extraction of a stream already resolved.
-    QMenu* copyMenu = menu.addMenu(tr("Копіювати в буфер обміну"));
-    QAction* copyUrl = copyMenu->addAction(tr("URL сторінки"));
-    copyUrl->setToolTip(tr("Скопіювати посилання на сторінку серії"));
+    QMenu* copyMenu = menu.addMenu(tr("Copy to clipboard"));
+    QAction* copyUrl = copyMenu->addAction(tr("Page URL"));
+    copyUrl->setToolTip(tr("Copy the episode page URL"));
     connect(copyUrl, &QAction::triggered, this, [this, entry] { copyEpisode(entry); });
     copyMenu->addSeparator();
-    // A provider with no video never calls back, so it gets a row that says so
-    // instead of one that spins forever.
     const bool noSource = qualityCache_.isNoSource(entry->embedUrl);
-    QAction* loading = copyMenu->addAction(
-        noSource ? tr("Відео відсутнє") : tr("Завантаження якостей…"));
+    QAction* loading = copyMenu->addAction(noSource ? tr("No video available")
+                                                   : tr("Loading quality options…"));
     loading->setEnabled(false);
-    loading->setToolTip(noSource ? tr("У цього плеєра немає відео для цієї серії")
-                                   : tr("Отримання посилань на відео"));
+    loading->setToolTip(noSource ? tr("This player has no video for this episode")
+                                 : tr("Fetching direct video links"));
 
     // Fill the submenu in place: an extraction started now usually lands
     // while the menu is still open, and a menu rebuilt under the pointer
@@ -1357,36 +1357,36 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
         fillRows(qualities);
     });
 
-    QAction* external = menu.addAction(tr("Відкрити у зовнішньому плеєрі"));
-    external->setToolTip(tr("Відкрити найкращу якість у mpv або VLC"));
+    QAction* external = menu.addAction(tr("Open in external player"));
+    external->setToolTip(tr("Open the best quality in mpv or VLC"));
     external->setEnabled(!qualityCache_.isNoSource(entry->embedUrl));
     connect(external, &QAction::triggered, this, [this, entry] { openExternalPlayer(entry); });
-    QAction* browser = menu.addAction(tr("Відкрити в браузері"));
-    browser->setToolTip(tr("Відкрити сторінку серії"));
+    QAction* browser = menu.addAction(tr("Open in browser"));
+    browser->setToolTip(tr("Open the episode page"));
     connect(browser, &QAction::triggered, this, [this, entry] { openEmbedInBrowser(entry); });
     menu.exec(globalPos);
 }
 
 void TitlePage::copyStreamUrl(const QString& url, int height) {
     if (!copyText(url)) {
-        flashStatus(tr("Не вдалося скопіювати посилання"));
+        flashStatus(tr("Failed to copy link"));
         return;
     }
-    flashStatus(tr("Скопійовано пряме посилання (%1p)").arg(height));
+    flashStatus(tr("Direct link copied (%1p)").arg(height));
 }
 void TitlePage::copyEpisode(EpisodeEntry* entry) {
     if (!copyText(entry->embedUrl)) {
-        flashStatus(tr("Не вдалося скопіювати URL серії"));
+        flashStatus(tr("Failed to copy episode URL"));
         return;
     }
     flashStatus(qualityCache_.isNoSource(entry->embedUrl)
-                    ? tr("URL скопійовано (відео відсутнє у цього плеєра)")
-                    : tr("URL скопійовано"));
+                    ? tr("URL copied (no video available for this player)")
+                    : tr("URL copied"));
 }
 
 void TitlePage::openEmbedInBrowser(EpisodeEntry* entry) {
     QDesktopServices::openUrl(QUrl(entry->embedUrl));
-    flashStatus(tr("Відкрито в браузері"));
+    flashStatus(tr("Opened in browser"));
 }
 
 void TitlePage::openExternalPlayer(EpisodeEntry* entry) {
@@ -1398,7 +1398,7 @@ void TitlePage::openExternalPlayer(EpisodeEntry* entry) {
 void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>& qualities) {
     const int height = maxQuality(qualities);
     if (height <= 0) {
-        flashStatus(tr("Не знайдено доступної якості відео"));
+        flashStatus(tr("No available video quality found"));
         return;
     }
     QString program;
@@ -1412,7 +1412,7 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
         }
     }
     if (program.isEmpty()) {
-        flashStatus(tr("Зовнішній плеєр не знайдено — встановіть mpv або VLC"));
+        flashStatus(tr("External player not found — install mpv or VLC"));
         return;
     }
     const QString streamUrl = qualities.value(height);
@@ -1421,9 +1421,9 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
             ? QStringList{streamUrl}
             : QStringList{QStringLiteral("--play-and-exit"), streamUrl};
     if (QProcess::startDetached(program, arguments)) {
-        flashStatus(tr("Відкрито у %1 · %2p").arg(name).arg(height));
+        flashStatus(tr("Opened in %1 · %2p").arg(name).arg(height));
     } else {
-        flashStatus(tr("Не вдалося запустити %1").arg(name));
+        flashStatus(tr("Failed to launch %1").arg(name));
     }
 }
 
@@ -1443,8 +1443,8 @@ void TitlePage::copyAllUrls() {
     }
     const QString original = copyAll_->text();
     copyAll_->setText(copyText(urls.join(QLatin1Char('\n')))
-                          ? tr("Скопійовано (%1)").arg(urls.size())
-                          : tr("Не вдалося скопіювати"));
+                          ? tr("Copied (%1)").arg(urls.size())
+                          : tr("Failed to copy"));
     QTimer::singleShot(kFlashMs, this, [this, original] { copyAll_->setText(original); });
 }
 
@@ -1575,7 +1575,7 @@ QVector<QVariantMap> TitlePage::tabPlaylist(int stateIndex, const QString& numbe
 void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualities) {
     const int height = maxQuality(qualities);
     if (height <= 0) {
-        flashStatus(tr("Не вдалося знайти потік для серії"));
+        flashStatus(tr("Could not find a stream for this episode"));
         return;
     }
     auto* session = new PlayerSession;
@@ -1627,7 +1627,7 @@ void TitlePage::recoverStream(PlayerSession* session) {
     // The cached URL is the one that just failed; keeping it would replay the
     // same dead link on the next click instead of extracting again.
     qualityCache_.forget(embed);
-    flashStatus(tr("Потік застарів — оновлюю посилання…"));
+    flashStatus(tr("Stream expired — refreshing URL…"));
     const QPointer<TitlePage> self(this);
     runner_.runStream(
         [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
@@ -1710,7 +1710,7 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
         return;
     }
     const QString label = item.value(QStringLiteral("label")).toString();
-    static const QString prefix = QStringLiteral("Серія ");
+    static const QString prefix = QStringLiteral("Episode ");
     const QString number = label.startsWith(prefix) ? label.mid(prefix.size()) : label;
     auto* entry = new EpisodeEntry;
     entry->number = number;
@@ -1741,7 +1741,7 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
                 coverPixmap_ = pixmap;
                 coverUrl_ = url;
                 cover_->setZoomable(true);
-                cover_->setToolTip(tr("Натисніть, щоб відкрити обкладинку"));
+                cover_->setToolTip(tr("Click to open the cover"));
                 cover_->setText(QString());
                 cover_->setPixmap(pixmap.scaled(cover_->size(), Qt::KeepAspectRatio,
                                                 Qt::SmoothTransformation));
@@ -1755,19 +1755,19 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
                 loadCover(posterHint_, false);
             } else {
                 cover_->setZoomable(false);
-                cover_->setText(tr("Без обкладинки"));
+                cover_->setText(tr("No cover"));
             }
         });
 }
 
 void TitlePage::coverContextMenu(const QPoint& globalPos) {
     QMenu menu(this);
-    QAction* copyUrl = menu.addAction(tr("Копіювати URL обкладинки"));
-    copyUrl->setToolTip(tr("Скопіювати адресу зображення"));
+    QAction* copyUrl = menu.addAction(tr("Copy cover URL"));
+    copyUrl->setToolTip(tr("Copy image address"));
     copyUrl->setEnabled(!coverUrl_.isEmpty());
     connect(copyUrl, &QAction::triggered, this, [this] { copyCoverUrl(); });
-    QAction* saveAction = menu.addAction(tr("Зберегти обкладинку…"));
-    saveAction->setToolTip(tr("Зберегти зображення у файл"));
+    QAction* saveAction = menu.addAction(tr("Save cover…"));
+    saveAction->setToolTip(tr("Save image to file"));
     saveAction->setEnabled(!coverPixmap_.isNull());
     connect(saveAction, &QAction::triggered, this, [this] { saveCover(); });
     menu.exec(globalPos);
@@ -1778,10 +1778,10 @@ void TitlePage::copyCoverUrl() {
         return;
     }
     if (!copyText(coverUrl_)) {
-        flashStatus(tr("Не вдалося скопіювати URL обкладинки"));
+        flashStatus(tr("Failed to copy cover URL"));
         return;
     }
-    flashStatus(tr("URL обкладинки скопійовано"));
+    flashStatus(tr("Cover URL copied"));
 }
 
 void TitlePage::saveCover() {
@@ -1792,15 +1792,15 @@ void TitlePage::saveCover() {
         coverUrl_.endsWith(QStringLiteral(".webp"), Qt::CaseInsensitive) ? QStringLiteral("webp")
                                                                           : QStringLiteral("png");
     const QString path = QFileDialog::getSaveFileName(
-        this, tr("Зберегти обкладинку"), tr("cover.%1").arg(suffix),
-        tr("Зображення (*.png *.jpg *.webp)"));
+        this, tr("Save cover"), tr("cover.%1").arg(suffix),
+        tr("Images (*.png *.jpg *.webp)"));
     if (path.isEmpty()) {
         return;
     }
     if (coverPixmap_.save(path)) {
-        flashStatus(tr("Обкладинку збережено: %1").arg(path));
+        flashStatus(tr("Cover saved: %1").arg(path));
     } else {
-        flashStatus(tr("Не вдалося зберегти обкладинку"));
+        flashStatus(tr("Failed to save cover"));
     }
 }
 

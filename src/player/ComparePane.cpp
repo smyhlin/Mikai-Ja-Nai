@@ -202,8 +202,8 @@ void ComparePane::refreshBadge() {
     }
     badge_->setText(shown);
     badge_->adjustSize();
-    badge_->setToolTip(QStringLiteral("Select comparison"));
-    badge_->setAccessibleName(QStringLiteral("Select %1").arg(shown));
+    badge_->setToolTip(tr("Select comparison"));
+    badge_->setAccessibleName(tr("Select %1").arg(shown));
     anchorBadge();
 }
 

@@ -1,5 +1,9 @@
 #include "workers/Runner.hpp"
 
+#include "I18n.hpp"
+
+#include <QCoreApplication>
+#include <QDebug>
 #include <QElapsedTimer>
 #include <QMetaObject>
 #include <QRunnable>
@@ -62,10 +66,12 @@ public:
                 result = work_();
             }
         } catch (const backend::MikaiApiError& error) {
-            // The stable error code is the branch point everywhere else, but a
-            // task only reports the human message.
             ok = false;
-            message = error.message.isEmpty() ? error.code : error.message;
+            qWarning().noquote() << "Mikai API error:" << error.code << error.message;
+            message = localizedApiError(error.code);
+            if (message.isEmpty()) {
+                message = error.message.isEmpty() ? error.code : error.message;
+            }
         } catch (const backend::NoSourceError& error) {
             // Tagged so the title page can tell "this provider has no video"
             // apart from "the extraction failed".
@@ -75,8 +81,10 @@ public:
             ok = false;
             message = QString::fromUtf8(error.what());
         } catch (...) {
+            // The one message this file generates rather than forwarding from
+            // the backend, so it is the one message it owns end to end.
             ok = false;
-            message = QStringLiteral("Невідома помилка");
+            message = QCoreApplication::translate("Runner", "Unknown error");
         }
         // A queued call on the dispatcher: the pool thread hands the result
         // over and returns immediately, and the slot runs on the GUI thread.

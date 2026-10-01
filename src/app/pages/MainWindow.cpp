@@ -65,8 +65,9 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 
 void MainWindow::chooseMediaFile() {
     const QString file = QFileDialog::getOpenFileName(
-        this, tr("Відкрити відеофайл"), {},
-        tr("Відео (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg);;Усі файли (*)"));
+        this, tr("Open video file"), {},
+        tr("Videos (*.mkv *.mp4 *.webm *.avi *.mov *.m4v *.ts *.m2ts *.mpeg *.mpg);;"
+           "All files (*)"));
     if (!file.isEmpty()) {
         openMedia(file);
     }
@@ -75,8 +76,8 @@ void MainWindow::chooseMediaFile() {
 void MainWindow::chooseMediaUrl() {
     bool accepted = false;
     const QString source = QInputDialog::getText(
-        this, tr("Відкрити відео за посиланням"), tr("Посилання на відео або потік:"),
-        QLineEdit::Normal, {}, &accepted).trimmed();
+        this, tr("Open video by URL"), tr("Video or stream URL:"), QLineEdit::Normal, {},
+        &accepted).trimmed();
     if (accepted && !source.isEmpty()) {
         openMedia(source);
     }
@@ -87,7 +88,7 @@ void MainWindow::openMedia(const QString& source) {
     const QString media = url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded);
     QString caption = url.fileName();
     if (caption.isEmpty()) {
-        caption = url.host().isEmpty() ? tr("Відео") : url.host();
+        caption = url.host().isEmpty() ? tr("Video") : url.host();
     }
     closeMedia();
     mediaPlayer_ = new mplayer::shell::PlayerDialog(caption, media, this);

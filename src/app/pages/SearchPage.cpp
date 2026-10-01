@@ -127,15 +127,15 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
     topRow->addStretch();
-    auto* mediaButton = new QPushButton(tr("Відкрити відео"), this);
+    auto* mediaButton = new QPushButton(tr("Open video"), this);
     mediaButton->setObjectName(QStringLiteral("secondary"));
-    mediaButton->setAccessibleName(tr("Відкрити відео"));
+    mediaButton->setAccessibleName(tr("Open video"));
     auto* mediaMenu = new QMenu(mediaButton);
     mediaMenu->setObjectName(QStringLiteral("openMediaMenu"));
-    auto* fileAction = mediaMenu->addAction(tr("Відеофайл…"));
+    auto* fileAction = mediaMenu->addAction(tr("Video file…"));
     fileAction->setObjectName(QStringLiteral("openVideoFile"));
     connect(fileAction, &QAction::triggered, this, &SearchPage::mediaFileRequested);
-    auto* urlAction = mediaMenu->addAction(tr("Посилання на відео…"));
+    auto* urlAction = mediaMenu->addAction(tr("Video URL…"));
     urlAction->setObjectName(QStringLiteral("openVideoUrl"));
     connect(urlAction, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
     mediaButton->setMenu(mediaMenu);
@@ -147,7 +147,8 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     keysButton->setObjectName(QStringLiteral("settingsChip"));
     keysButton->setIcon(theme::keyboardIcon());
     keysButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    keysButton->setToolTip(tr("Гарячі клавіші (?)"));
+    keysButton->setToolTip(tr("Keyboard shortcuts (?)"));
+    keysButton->setAccessibleName(tr("Keyboard shortcuts"));
     connect(keysButton, &QPushButton::clicked, this, [this, keysButton] {
         if (keyHints_ == nullptr) {
             keyHints_ = new mplayer::shell::KeyHints(this);
@@ -160,16 +161,17 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     settingsButton->setObjectName(QStringLiteral("settingsChip"));
     settingsButton->setIcon(theme::gearIcon());
     settingsButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton->setToolTip(tr("Налаштування токена API"));
+    settingsButton->setToolTip(tr("API token settings"));
+    settingsButton->setAccessibleName(tr("API token settings"));
     connect(settingsButton, &QPushButton::clicked, this, &SearchPage::settingsRequested);
     topRow->addWidget(settingsButton);
     root->addLayout(topRow);
 
     auto* searchRow = new QHBoxLayout();
     query_ = new QLineEdit(this);
-    query_->setPlaceholderText(tr("Пошук за назвою — Enter або кнопка"));
+    query_->setPlaceholderText(tr("Search by title — Enter or the button"));
     query_->setClearButtonEnabled(true);
-    auto* searchButton = new QPushButton(tr("Пошук"), this);
+    auto* searchButton = new QPushButton(tr("Search"), this);
     searchButton->setObjectName(QStringLiteral("primary"));
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton, &QPushButton::clicked, this, &SearchPage::search);
@@ -182,7 +184,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     searchRow->addWidget(searchButton);
     root->addLayout(searchRow);
 
-    resultsHeading_ = new QLabel(tr("Зараз виходять · оновлені найсвіжішими серіями"), this);
+    resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
     resultsHeading_->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(resultsHeading_);
 
@@ -194,11 +196,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     auto* discoveryLayout = new QVBoxLayout(discovery);
     discoveryLayout->setContentsMargins(0, 0, 0, 0);
     discoveryLayout->setSpacing(theme::kSpacingMedium);
-    CarouselSection* recent = buildCarousel(tr("Нещодавно відкриті"), kRecentKey);
-    CarouselSection* ongoing = buildCarousel(tr("Зараз виходять"), QStringLiteral("ongoing"));
-    CarouselSection* popular = buildCarousel(tr("Популярні на Mikai"), QStringLiteral("popular"));
-    FeedSection* updates = buildFeedSection(tr("Останні оновлення"), QStringLiteral("updates"));
-    FeedSection* schedule = buildFeedSection(tr("Розклад виходу"), QStringLiteral("schedule"));
+    CarouselSection* recent = buildCarousel(tr("Recently opened"), kRecentKey);
+    CarouselSection* ongoing = buildCarousel(tr("Currently airing"), QStringLiteral("ongoing"));
+    CarouselSection* popular = buildCarousel(tr("Popular on Mikai"), QStringLiteral("popular"));
+    FeedSection* updates = buildFeedSection(tr("Latest updates"), QStringLiteral("updates"));
+    FeedSection* schedule = buildFeedSection(tr("Release schedule"), QStringLiteral("schedule"));
     discoveryLayout->addWidget(recent->section);
     discoveryLayout->addWidget(ongoing->section);
     discoveryLayout->addWidget(popular->section);
@@ -291,10 +293,10 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     layout->addLayout(header);
 
     auto* stateRow = new QHBoxLayout();
-    section->state = new QLabel(tr("Добірка ще не завантажена"), section->section);
+    section->state = new QLabel(tr("Collection not loaded yet"), section->section);
     section->state->setObjectName(QStringLiteral("muted"));
     section->state->setWordWrap(true);
-    section->retry = new QPushButton(tr("Повторити"), section->section);
+    section->retry = new QPushButton(tr("Retry"), section->section);
     section->retry->hide();
     connect(section->retry, &QPushButton::clicked, this,
             [this, key] { requestRecommendation(key); });
@@ -319,8 +321,8 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     QScrollBar* bar = section->scroll->horizontalScrollBar();
     QPushButton* previous = section->previous;
     QPushButton* next = section->next;
-    previous->setToolTip(tr("Попередня сторінка (або Alt + коліщатко)"));
-    next->setToolTip(tr("Наступна сторінка (або Alt + коліщатко)"));
+    previous->setToolTip(tr("Previous page (or Alt + mouse wheel)"));
+    next->setToolTip(tr("Next page (or Alt + mouse wheel)"));
     connect(previous, &QPushButton::clicked, this,
             [this, bar] { smoothScrollCarousel(bar, -theme::kHomeCarouselScrollStep); });
     connect(next, &QPushButton::clicked, this,
@@ -407,7 +409,7 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
     title->setObjectName(QStringLiteral("sectionHeading"));
     header->addWidget(title);
     header->addStretch();
-    section->retry = new QPushButton(tr("Оновити"), section->section);
+    section->retry = new QPushButton(tr("Refresh"), section->section);
     section->retry->setObjectName(QStringLiteral("textAction"));
     connect(section->retry, &QPushButton::clicked, this, [this, key] {
         if (key == QLatin1String("updates")) {
@@ -419,7 +421,7 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
     header->addWidget(section->retry);
     layout->addLayout(header);
 
-    section->state = new QLabel(tr("Завантаження…"), section->section);
+    section->state = new QLabel(tr("Loading…"), section->section);
     section->state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(section->state);
 
@@ -534,11 +536,11 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
     }
     carouselEntries_.insert(key, shown);
     if (shown.isEmpty()) {
-        section->state->setText(tr("Наразі немає тайтлів у цій добірці."));
+        section->state->setText(tr("No titles in this collection yet."));
         section->scroll->hide();
         return;
     }
-    section->state->setText(tr("%1 тайтлів").arg(shown.size()));
+    section->state->setText(tr("%n title(s)", nullptr, static_cast<int>(shown.size())));
 
     while (section->cards->count() > 0) {
         QLayoutItem* item = section->cards->takeAt(0);
@@ -743,8 +745,9 @@ void SearchPage::loadOngoing() {
     entries_.clear();
     results_->clear();
     pager_->hide();
-    resultsHeading_->setText(tr("Рекомендації"));
-    status_->setText(tr("Натисніть картку, щоб відкрити тайтл · пошук за назвою доступний вище"));
+    resultsHeading_->setText(tr("Recommendations"));
+    status_->setText(
+        tr("Click a card to open a title · search by title is available above"));
     for (const QString& key : feeds::all()) {
         loadFeed(key);
     }
@@ -760,7 +763,7 @@ void SearchPage::requestRecommendation(const QString& key) {
     if (!enabledFeeds_.contains(key)) {
         return;
     }
-    section->state->setText(tr("Завантаження добірки…"));
+    section->state->setText(tr("Loading collection…"));
     section->retry->hide();
     if (carouselEntries_.value(key).isEmpty()) {
         section->scroll->hide();
@@ -784,7 +787,7 @@ void SearchPage::requestRecommendation(const QString& key) {
             }
             rateLabel_->refresh();
             CarouselSection* current = carouselSection(key);
-            current->state->setText(tr("Не вдалося завантажити: %1").arg(message));
+            current->state->setText(tr("Failed to load: %1").arg(message));
             current->retry->show();
         });
 }
@@ -796,7 +799,7 @@ void SearchPage::loadUpdates() {
     FeedSection* section = feedSection(QStringLiteral("updates"));
     feedSeq_[QStringLiteral("updates")] += 1;
     const int seq = feedSeq_[QStringLiteral("updates")];
-    section->state->setText(tr("Завантаження нових серій…"));
+    section->state->setText(tr("Loading new episodes…"));
     section->retry->setEnabled(false);
     runner_.run(
         [this] { return QVariant::fromValue(client_.getUpdates(1, 12)); },
@@ -827,12 +830,12 @@ void SearchPage::loadUpdates() {
                 }
                 const QString releaseKind =
                     update.kind == QLatin1String("voice")
-                        ? tr("озвучення")
-                        : (update.kind == QLatin1String("sub") ? tr("субтитри") : update.kind);
+                        ? tr("dub")
+                        : (update.kind == QLatin1String("sub") ? tr("subs") : update.kind);
                 const QString episode = labels::variant(update.episode);
                 QStringList parts;
-                parts << (episode.isEmpty() ? tr("Нова серія")
-                                           : tr("Серія %1").arg(episode));
+                parts << (episode.isEmpty() ? tr("New episode")
+                                           : tr("Episode %1").arg(episode));
                 if (!team.isEmpty()) {
                     parts << team;
                 }
@@ -851,8 +854,9 @@ void SearchPage::loadUpdates() {
                 rows.append({update.anime, parts.join(QStringLiteral(" · "))});
             }
             showFeedRows(QStringLiteral("updates"), rows,
-                         rows.isEmpty() ? tr("Нових оновлень поки немає.")
-                                        : tr("%1 останніх оновлень").arg(rows.size()));
+                         rows.isEmpty()
+                             ? tr("No updates yet.")
+                             : tr("%n recent update(s)", nullptr, static_cast<int>(rows.size())));
         },
         [this, seq](const QString& message) {
             if (seq != feedSeq_[QStringLiteral("updates")]) {
@@ -861,7 +865,7 @@ void SearchPage::loadUpdates() {
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
-            current->state->setText(tr("Не вдалося завантажити оновлення: %1").arg(message));
+            current->state->setText(tr("Failed to load updates: %1").arg(message));
             current->rowsHost->hide();
         });
 }
@@ -873,7 +877,7 @@ void SearchPage::loadSchedule() {
     FeedSection* section = feedSection(QStringLiteral("schedule"));
     feedSeq_[QStringLiteral("schedule")] += 1;
     const int seq = feedSeq_[QStringLiteral("schedule")];
-    section->state->setText(tr("Завантаження розкладу…"));
+    section->state->setText(tr("Loading schedule…"));
     section->retry->setEnabled(false);
     runner_.run(
         [this] { return QVariant::fromValue(client_.getSchedule()); },
@@ -888,7 +892,8 @@ void SearchPage::loadSchedule() {
             // schedule is only useful if it starts with what airs next.
             static const char* kDayKeys[] = {"monday", "tuesday", "wednesday", "thursday",
                                              "friday",  "saturday", "sunday"};
-            static const char* kDayLabels[] = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"};
+            const QStringList kDayLabels = {tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"),
+                                             tr("Fri"), tr("Sat"), tr("Sun")};
             const int today = QDate::currentDate().dayOfWeek() - 1;
             const backend::ScheduleResult schedule = result.value<backend::ScheduleResult>();
             QList<QPair<backend::AnimeSummary, QString>> rows;
@@ -904,14 +909,14 @@ void SearchPage::loadSchedule() {
                         continue;
                     }
                     QStringList parts;
-                    parts << QString::fromUtf8(kDayLabels[day]);
+                    parts << kDayLabels.at(day);
                     const QString when = formatFeedTime(entry.airing, true);
                     if (!when.isEmpty()) {
                         parts << when;
                     }
                     const QString episode = labels::variant(entry.episode);
                     if (!episode.isEmpty()) {
-                        parts << tr("Серія %1").arg(episode);
+                        parts << tr("Episode %1").arg(episode);
                     }
                     rows.append({entry.anime, parts.join(QStringLiteral(" · "))});
                     if (rows.size() >= theme::kHomeFeedMaxRows) {
@@ -920,8 +925,10 @@ void SearchPage::loadSchedule() {
                 }
             }
             showFeedRows(QStringLiteral("schedule"), rows,
-                         rows.isEmpty() ? tr("У розкладі поки немає виходів.")
-                                        : tr("%1 найближчих виходів").arg(rows.size()));
+                         rows.isEmpty()
+                             ? tr("No airings in the schedule yet.")
+                             : tr("%n upcoming airing(s)", nullptr,
+                                  static_cast<int>(rows.size())));
         },
         [this, seq](const QString& message) {
             if (seq != feedSeq_[QStringLiteral("schedule")]) {
@@ -930,7 +937,7 @@ void SearchPage::loadSchedule() {
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("schedule"));
             current->retry->setEnabled(true);
-            current->state->setText(tr("Не вдалося завантажити розклад: %1").arg(message));
+            current->state->setText(tr("Failed to load schedule: %1").arg(message));
             current->rowsHost->hide();
         });
 }
@@ -1002,7 +1009,7 @@ void SearchPage::showFeedRows(
 }
 
 void SearchPage::fetchPage(int page) {
-    status_->setText(browseMode_ ? tr("Завантаження добірки…") : tr("Пошук…"));
+    status_->setText(browseMode_ ? tr("Loading collection…") : tr("Searching…"));
     runResultsRequest(page);
 }
 
@@ -1044,7 +1051,7 @@ void SearchPage::search() {
     entries_.clear();
     results_->clear();
     pager_->hide();
-    resultsHeading_->setText(tr("Результати пошуку"));
+    resultsHeading_->setText(tr("Search results"));
     showSearchResults();
     fetchPage(1);
 }
@@ -1074,8 +1081,8 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
     // The server counts pages at its own page size, so the count is ours to
     // make: asked for 55, it answers pages:15 for a 132-title result set.
     pages_ = qMax(1, (total_ + pageSize_ - 1) / pageSize_);
-    status_->setText(entries_.isEmpty() ? tr("Нічого не знайдено")
-                                        : tr("Знайдено: %1").arg(total_));
+    status_->setText(entries_.isEmpty() ? tr("Nothing found")
+                                        : tr("Found: %1").arg(total_));
     rebuildFormatBar();
     populateRows();
     updatePager();
@@ -1102,7 +1109,7 @@ void SearchPage::rebuildFormatBar() {
         formatBar_->removeTab(0);
     }
     if (present.size() >= 2) {
-        formatBar_->addTab(tr("Усі (%1)").arg(entries_.size()));
+        formatBar_->addTab(tr("All (%1)").arg(entries_.size()));
         formatBar_->setTabData(0, QStringLiteral("all"));
         for (const QString& format : present) {
             formatBar_->addTab(QStringLiteral("%1 (%2)").arg(format.toUpper()).arg(counts[format]));
@@ -1147,7 +1154,7 @@ void SearchPage::populateRows() {
             parts << statusText;
         }
         if (entry.episodes.has_value() && *entry.episodes > 0) {
-            parts << tr("%1 серій").arg(*entry.episodes);
+            parts << tr("%n episode(s)", nullptr, *entry.episodes);
         }
         const QString label = parts.join(QStringLiteral(" · "));
         auto* item = new QListWidgetItem(label, results_);
@@ -1209,31 +1216,31 @@ void SearchPage::resultsContextMenu(const QPoint& position) {
         return;
     }
     QMenu menu(this);
-    QAction* open = menu.addAction(tr("Відкрити"));
-    open->setToolTip(tr("Відкрити сторінку тайтла"));
+    QAction* open = menu.addAction(tr("Open"));
+    open->setToolTip(tr("Open the title page"));
     connect(open, &QAction::triggered, this, [this, item] { openItem(item); });
-    QAction* copyLink = menu.addAction(tr("Копіювати посилання"));
-    copyLink->setToolTip(tr("Скопіювати адресу сторінки на mikai.me"));
+    QAction* copyLink = menu.addAction(tr("Copy link"));
+    copyLink->setToolTip(tr("Copy the page address on mikai.me"));
     connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
-    QAction* copyRef = menu.addAction(tr("Копіювати ID"));
-    copyRef->setToolTip(tr("Скопіювати ідентифікатор тайтла"));
+    QAction* copyRef = menu.addAction(tr("Copy ID"));
+    copyRef->setToolTip(tr("Copy the title identifier"));
     connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
     menu.exec(results_->mapToGlobal(position));
 }
 
 void SearchPage::animeCardMenu(const QString& ref, const QPoint& globalPos) {
     QMenu menu(this);
-    QAction* open = menu.addAction(tr("Відкрити"));
-    open->setToolTip(tr("Відкрити сторінку тайтла"));
+    QAction* open = menu.addAction(tr("Open"));
+    open->setToolTip(tr("Open the title page"));
     connect(open, &QAction::triggered, this, [this, ref] { openByRef(ref); });
-    QAction* copyLink = menu.addAction(tr("Копіювати посилання"));
-    copyLink->setToolTip(tr("Скопіювати адресу сторінки на mikai.me"));
+    QAction* copyLink = menu.addAction(tr("Copy link"));
+    copyLink->setToolTip(tr("Copy the page address on mikai.me"));
     connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
-    QAction* copyRef = menu.addAction(tr("Копіювати ID"));
-    copyRef->setToolTip(tr("Скопіювати ідентифікатор тайтла"));
+    QAction* copyRef = menu.addAction(tr("Copy ID"));
+    copyRef->setToolTip(tr("Copy the title identifier"));
     connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
-    QAction* browser = menu.addAction(tr("Відкрити в браузері"));
-    browser->setToolTip(tr("Відкрити сторінку на mikai.me"));
+    QAction* browser = menu.addAction(tr("Open in browser"));
+    browser->setToolTip(tr("Open the page on mikai.me"));
     connect(browser, &QAction::triggered, this,
             [this, ref] { QDesktopServices::openUrl(QUrl(pageUrlFor(ref))); });
     menu.exec(globalPos);

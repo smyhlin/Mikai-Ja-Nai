@@ -172,7 +172,7 @@ MenuPopup::MenuPopup(const QString& title, QWidget* parent) : QFrame(parent) {
     hint->setStyleSheet(captionQss(10));
     outer->addWidget(hint);
 
-    setToolTip(QStringLiteral("Керування: ↑ ↓ — вибір, Enter — підтвердити, Esc — закрити"));
+    setToolTip(tr("Controls: ↑ ↓ — select, Enter — confirm, Esc — close"));
 }
 
 int MenuPopup::rowCount() const {
@@ -428,7 +428,7 @@ SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     outer->setContentsMargins(kSpacingXs, kSpacingXs, kSpacingXs, kSpacingXs);
     outer->setSpacing(kSpacingXs);
 
-    auto* caption = new QLabel(QStringLiteral("СЕРІЇ"), this);
+    auto* caption = new QLabel(tr("SERIES"), this);
     caption->setObjectName(QStringLiteral("playerSeriesCaption"));
     caption->setStyleSheet(captionQss(11));
     outer->addWidget(caption);

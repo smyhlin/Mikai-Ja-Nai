@@ -23,7 +23,7 @@ enum class Mode {
     HqAA,        // Mode A+A (HQ) - Perceptual quality restoration
     HqBB,        // Mode B+B (HQ) - Denoise + Deblur
     HqCA,        // Mode C+A (HQ) - Highest fidelity
-    // Experiments: one fixed chain each, offered under Експериментальні.
+    // Experiments: one fixed chain each, offered under Experimental.
     Exp3dGraphics,
     ExpOldFilm,
     ExpDeblurStrong,
@@ -146,7 +146,7 @@ struct MenuRow {
 };
 
 /// The rows of menu level `parent`: its preset leaves first, then the
-/// categories under it. Empty `parent` is the Покращення root. A category row
+/// categories under it. Empty `parent` is the Enhancement root. A category row
 /// only drills down and a placeholder row is disabled, so neither selects.
 QVector<MenuRow> menuRows(const QString& parent);
 

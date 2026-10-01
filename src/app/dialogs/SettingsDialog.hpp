@@ -7,6 +7,7 @@
 #include <QVector>
 
 class QCheckBox;
+class QComboBox;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
@@ -60,6 +61,7 @@ private:
     backend::MikaiClient& client_;
     Runner& runner_;
     QLineEdit* token_ = nullptr;
+    QComboBox* language_ = nullptr;
     QLabel* quota_ = nullptr;
     QLabel* status_ = nullptr;
     QPushButton* testButton_ = nullptr;

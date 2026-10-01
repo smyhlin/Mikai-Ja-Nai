@@ -49,7 +49,7 @@ void VideoSurface::ensureEngine() {
         if (event->event_id != MPV_EVENT_END_FILE || event->data == nullptr) return;
         const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
         if (ended->reason != MPV_END_FILE_REASON_ERROR) return;
-        emit errorOccurred(QStringLiteral("Не вдалося відтворити відео (mpv: %1)").arg(ended->error));
+        emit errorOccurred(tr("Could not play the video (mpv: %1)").arg(ended->error));
     });
     // The applied id, not the mode: a chain with no Mode is only recorded until
     // the engine exists, so reading the mode here would drop it before the
@@ -61,7 +61,7 @@ void VideoSurface::ensureEngine() {
         try {
             mpv_->setString("glsl-shaders", shaders.toStdString());
         } catch (const MpvError& err) {
-            emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+            emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
         }
     }
 }
@@ -81,7 +81,7 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
         mpv_->setString("glsl-shaders",
                         anime4k::shaderStringForCandidate(candidateId).toStdString());
     } catch (const MpvError& err) {
-        emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+        emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
     }
     // vo=libmpv rebuilds the filter chain on the next rendered frame, and a
     // paused video produces none, so without this the change would appear to
@@ -108,7 +108,7 @@ void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
         mpv_->setString("glsl-shaders",
                         anime4k::shaderStringForCandidate(anime4kChainId_).toStdString());
     } catch (const MpvError& err) {
-        emit errorOccurred(QStringLiteral("Anime4K: %1").arg(QString::fromStdString(err.what())));
+        emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
     }
     // vo=libmpv only rebuilds the filter chain when a new frame is rendered,
     // and a paused video produces none, so the mode would appear to have no

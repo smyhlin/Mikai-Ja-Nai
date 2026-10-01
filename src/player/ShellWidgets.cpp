@@ -1,5 +1,6 @@
 #include "ShellWidgets.hpp"
 
+#include <QCoreApplication>
 #include <QEnterEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -40,9 +41,9 @@ struct SpeedPreset {
 
 // SPEED_PRESETS — order matters, the selected row is picked by proximity.
 const SpeedPreset kSpeedPresets[] = {
-    {0.5, "Повільна"},        {1.0, "Звичайна"},
-    {1.2, "Пришвидшена"},  {1.5, "Швидка"},
-    {1.7, "Дуже швидка"},  {2.0, "Подвійна"},
+    {0.5, "Slow"},          {1.0, "Normal"},
+    {1.2, "Slightly faster"},  {1.5, "Fast"},
+    {1.7, "Very fast"},     {2.0, "Double speed"},
 };
 
 inline constexpr int kHudRows = 7;
@@ -50,7 +51,8 @@ inline constexpr int kHudRows = 7;
 /// Label for the preset at `index`. Rows are appended in `kSpeedPresets` order,
 /// so the index is the whole lookup — `refresh` runs on every slider-drag frame.
 QString presetLabel(int index) {
-    return QString::fromUtf8(kSpeedPresets[index].label);
+    return QCoreApplication::translate("mplayer::shell::SettingsFlyout",
+                                       kSpeedPresets[index].label);
 }
 
 }  // namespace
@@ -147,7 +149,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->setSpacing(5);
 
     auto* head = new QHBoxLayout();
-    auto* cap = new QLabel(QStringLiteral("ШВИДКІСТЬ"));
+    auto* cap = new QLabel(tr("SPEED"));
     cap->setFont(monoFont(8));
     cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     head->addWidget(cap);
@@ -196,7 +198,7 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     qlay->setSpacing(5);
 
     auto* qrow = new QHBoxLayout();
-    auto* ql = new QLabel(QStringLiteral("ЯКІСТЬ"));
+    auto* ql = new QLabel(tr("QUALITY"));
     ql->setFont(monoFont(8));
     ql->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     qrow->addWidget(ql);
@@ -424,12 +426,12 @@ StateHUD::StateHUD(QWidget* parent) : Panel(blackSoft(), 9.0, w15(), parent) {
     lay->setSpacing(1);
 
     auto* head = new QHBoxLayout();
-    auto* h1 = new QLabel(QStringLiteral("state"));
+    auto* h1 = new QLabel(tr("State"));
     h1->setFont(monoFont(8));
     h1->setStyleSheet(QStringLiteral("color:#7289ff;"));
     head->addWidget(h1);
     head->addStretch();
-    auto* h2 = new QLabel(QStringLiteral("live"));
+    auto* h2 = new QLabel(tr("Live"));
     h2->setFont(monoFont(8));
     h2->setStyleSheet(QStringLiteral("color:%1;").arg(green().name()));
     head->addWidget(h2);
@@ -457,7 +459,7 @@ StateHUD::StateHUD(QWidget* parent) : Panel(blackSoft(), 9.0, w15(), parent) {
         rows_.append(qMakePair(k, v));
     }
 
-    auto* foot = new QLabel(QStringLiteral("D — hide · manifest v2.0.0"));
+    auto* foot = new QLabel(tr("D — hide · manifest v2.0.0"));
     foot->setFont(monoFont(7));
     foot->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(70))));
     lay->addSpacing(3);
@@ -557,7 +559,7 @@ void CenterGlyph::paintEvent(QPaintEvent*) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 PillButton::PillButton(QWidget* parent)
-    : QWidget(parent), text_(QStringLiteral("Original File")), font_(uiFont(10)) {
+    : QWidget(parent), text_(tr("Original File")), font_(uiFont(10)) {
     setCursor(Qt::PointingHandCursor);
     setFixedSize(textWidth(font_, text_) + 26, 22);
 }
@@ -628,16 +630,16 @@ void Toast::flash(const QString& text, int ms) {
 
 QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
     return {
-        {QStringLiteral("Пробіл"), QStringLiteral("Пауза / Відтворення")},
-        {QStringLiteral("F"), QStringLiteral("Повний екран / вікно")},
-        {QStringLiteral("M"), QStringLiteral("Вимкнути / увімкнути звук")},
-        {QStringLiteral("S"), QStringLiteral("Список серій")},
-        {QStringLiteral("T"), QStringLiteral("Вибір озвучення")},
-        {QStringLiteral("C"), QStringLiteral("Вибір субтитрів")},
-        {QStringLiteral("Q"), QStringLiteral("Якість та швидкість")},
-        {QStringLiteral("←  →"), QStringLiteral("Перемотування ∓5с")},
-        {QStringLiteral("↑  ↓"), QStringLiteral("Гучність ±10 %")},
-        {QStringLiteral("Esc"), QStringLiteral("Закрити панель / вікно")},
+        {QStringLiteral("Space"), tr("Pause / play")},
+        {QStringLiteral("F"), tr("Fullscreen / windowed")},
+        {QStringLiteral("M"), tr("Mute / unmute audio")},
+        {QStringLiteral("S"), tr("Episode list")},
+        {QStringLiteral("T"), tr("Choose audio track")},
+        {QStringLiteral("C"), tr("Choose subtitle track")},
+        {QStringLiteral("Q"), tr("Quality and speed")},
+        {QStringLiteral("←  →"), tr("Seek ∓5s")},
+        {QStringLiteral("↑  ↓"), tr("Volume ±10%")},
+        {QStringLiteral("Esc"), tr("Close panel / window")},
     };
 }
 
@@ -651,7 +653,7 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(12, 10, 12, 10);
     lay->setSpacing(4);
-    auto* cap = new QLabel(QStringLiteral("ГАРЯЧІ КЛАВІШІ"));
+    auto* cap = new QLabel(tr("KEYBOARD SHORTCUTS"));
     cap->setFont(monoFont(8));
     cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent; letter-spacing: 0.5px;"));
     lay->addWidget(cap);

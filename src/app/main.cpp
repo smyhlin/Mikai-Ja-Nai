@@ -1,4 +1,5 @@
 #include "CrashLog.hpp"
+#include "I18n.hpp"
 #include "pages/MainWindow.hpp"
 #include "theme/Theme.hpp"
 
@@ -7,6 +8,9 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QLibraryInfo>
+#include <QLocale>
+#include <QTranslator>
 
 namespace {
 
@@ -41,6 +45,27 @@ int main(int argc, char** argv) {
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
     app.setOrganizationName(QStringLiteral("Mikai"));
+
+    const QLocale locale(mikai::app::resolvedLanguageCode());
+    QLocale::setDefault(locale);
+    QTranslator qtTranslator;
+    QTranslator appTranslator;
+    if (locale.language() == QLocale::Ukrainian) {
+        const QString translationsPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
+        if (qtTranslator.load(locale, QStringLiteral("qtbase"), QStringLiteral("_"),
+                              translationsPath)) {
+            app.installTranslator(&qtTranslator);
+        } else {
+            qWarning("mikai: Ukrainian Qt platform translations were not found");
+        }
+
+        if (appTranslator.load(QStringLiteral(":/i18n/mikai_uk.qm"))) {
+            app.installTranslator(&appTranslator);
+        } else {
+            qWarning("mikai: embedded Ukrainian application translations were not found");
+        }
+    }
+
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
 

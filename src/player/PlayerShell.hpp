@@ -264,7 +264,7 @@ private:
     IconButton* btnSettings_ = nullptr;
     SettingsFlyout* flyout_ = nullptr;
     /// The enhancement tree: one panel per level, side by side. The first is
-    /// ПОКРАЩЕННЯ, and every later one is the submenu of a row in the panel
+    /// ENHANCEMENT, and every later one is the submenu of a row in the panel
     /// before it, so the tree is the prefix of this vector that is on screen.
     /// The panels are pooled and hidden rather than destroyed, because a level
     /// is reopened every time the pointer crosses the row that leads to it.
