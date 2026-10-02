@@ -2,9 +2,13 @@
 #include <QTimer>
 #include <cstdio>
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 static void say(const char* s){ std::printf("%s\n", s); std::fflush(stdout); }
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
     say("1: app created");
     mplayer::VideoSurface surface;
     surface.resize(640, 360);
@@ -17,7 +21,9 @@ int main(int argc, char** argv) {
     QObject::connect(&surface, &mplayer::VideoSurface::durationChanged, [](double d){
         std::printf("durationChanged: %.1f\n", d); std::fflush(stdout); });
     say("3: signals wired");
-    if (!surface.open("av://lavfi:testsrc=size=640x360:rate=25")) { say("4: open FAILED"); return 1; }
+    const QString target = argc > 1 ? QString::fromLocal8Bit(argv[1])
+                                    : QStringLiteral("av://lavfi:testsrc=size=640x360:rate=25");
+    if (!surface.open(target)) { say("4: open FAILED"); return 1; }
     say("4: open() ok");
     QTimer::singleShot(5000, &app, [&]{
         say("5: quit now");

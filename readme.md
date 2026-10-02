@@ -4,9 +4,12 @@ A C++/Qt6 desktop client for the [Mikai public API](https://api.mikai.me/public/
 
 ## Build
 
-Needs MinGW-w64 g++, Qt 6.8.x with LinguistTools, and the mpv runtime
-directory (headers and `libmpv-2.dll`). `MPV_RUNTIME_DIR` has no default and
-CMake hard-fails without it. The toolchain paths have to be passed explicitly — a bare
+Needs MinGW-w64 g++, Qt 6.8.x with LinguistTools, and an mpv header directory
+holding `mpv/client.h` and `mpv/render_gl.h`. Pass it as
+`-DMPV_INCLUDE_DIR=<mpv>/include` (CMake caches the resolved path as
+`MIKAI_MPV_HEADERS`); it has no default and CMake hard-fails without it. The headers are build-only: the app never links libmpv, so no
+import library and no `libmpv-2.dll` are needed to compile, and an ordinary Qt
+build needs no native SDK. The toolchain paths have to be passed explicitly — a bare
 `-G "MinGW Makefiles"` fails with `CMAKE_MAKE_PROGRAM is not set` when the
 toolchain is not on `PATH`.
 
@@ -15,11 +18,16 @@ cmake -S . -B build-cmake -G "MinGW Makefiles" \
   -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe \
   -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
   -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
-  -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
+  -DMPV_INCLUDE_DIR=<mpv>/include
 cmake --build build-cmake --target mikai --parallel
 ```
 
-Then run `build-cmake\mikai.exe`.
+Then run `build-cmake\mikai.exe`. Mikai selects its mpv core at runtime and
+loads it explicitly, so the DLL is not a load-time import: discovery looks
+beside the executable and in `%LOCALAPPDATA%/MPVBackend/runtime`, and a probe
+or test that must pin one DLL names it with `MIKAI_MPV_MODULE`. The selected
+module is pinned for the life of the process — main playback and the PiP float
+share it — and changing the runtime takes effect only after a restart.
 
 ## Interface languages
 
@@ -64,8 +72,8 @@ tar -xf 6.8.0-*.7z            # bsdtar reads 7z
 cp 6.8.0/mingw_64/plugins/imageformats/qwebp.dll <qt>/6.8.3/mingw_64/plugins/imageformats/
 ```
 
-`TestModels::webpIsDecodable` fails the build if the plugin is missing, so a
-missing one is a red test rather than a screen of blank placeholders.
+The suite fails if the plugin is missing, so a missing one is a red test rather
+than a screen of blank placeholders.
 
 ## Deploy
 
@@ -76,8 +84,9 @@ missing one is a red test rather than a screen of blank placeholders.
 windeployqt --translations uk build-cmake/mikai.exe
 ```
 
-`windeployqt` does not copy `libmpv-2.dll` — it lives in `MPV_RUNTIME_DIR` and
-has to be copied in by hand alongside the Qt DLLs. `--translations uk` deploys
+`windeployqt` does not copy an mpv runtime. Mikai resolves one at runtime
+(beside the exe or in `%LOCALAPPDATA%/MPVBackend/runtime`), so copy the
+runtime tree into either place when the deployed folder has to play on its own. `--translations uk` deploys
 Qt's Ukrainian catalogs, and the `mikai` build copies `qtbase_uk.qm` from the
 configured Qt installation into the executable's `translations` directory.
 The resulting folder is self-contained and is what you hand to someone else.
@@ -101,6 +110,27 @@ video rendering, Compare, Anime4K menu, standalone control visibility, error rec
 and close/reopen/shutdown. Run it with a 320×180 clip longer than 10 seconds and
 its HTTP URL. The HTTP fixture must also serve `/retry.mp4`: return 404 for its
 first request, then return the same clip.
+
+`mikai_tests` also carries the runtime-loader and native-contract suites
+(`TestRuntimeSelection`, `TestMpvAsync`, `TestNative*`); they run hermetically,
+exercising a real core only when `MIKAI_MPV_MODULE` names one and skipping
+otherwise. Adding `-DMIKAI_WITH_MODEL_INSPECTION=ON -DORT_INCLUDE_DIR=<onnxruntime>/include`
+builds a CPU-only ONNX model inspector and its `TestNativeCatalog` suite; it is
+not a GPU/DirectML/TensorRT path, and the default build has no ONNX Runtime
+dependency. These probes and the suite are hand-run checks, not a CI pipeline.
+
+The window-driving probes need the interactive desktop session attached: with
+the session detached there is no GL context and no video output, so every
+pixel-counting proof reports a black frame (`hasVideo=0`). `interaction_probe`
+passes 149/149 and `hls_recovery_probe` passes 23/23 with the session
+attached; `native_settings_probe`, `rife_settings_probe` (both languages),
+`native_menu_probe`, `native_status_probe`, `runtime_selection_probe`,
+`spatial_assets_probe` and the ORT-backed `native_assets_probe`
+(`MIKAI_ORT_RUNTIME_DIR` naming the runtime directory) pass either way. The
+`compare_probe` accepts an optional media file argument. A failed direct-media
+stream shows its error with a Retry chip that survives chrome auto-hide;
+replacing the player deletes the old dialog synchronously, so no parked core
+decodes behind the new stream.
 
 `mikai_tests` is hermetic except the live oracle, which runs only with both set:
 
@@ -208,4 +238,12 @@ The **RPM** indicator beside Settings shows the server-reported requests used in
 
 ## Layout
 
-`src/backend/` is the domain — `MikaiClient` (rate-limited Qt Network calls), models, HLS extraction (`ashdi`/`moon`/`tortuga`), libmpv discovery — and `src/app/` is the Qt Widgets frontend (`MainWindow`, `SearchPage`, `TitlePage`, dialogs, theme tokens), with the player (`src/player/`: `PlayerDialog` → `PlayerShell` → mpv-backed `VideoSurface`) driven in-process through a `PlayerHost` bridge, and `shaders/` holding the Anime4K `.glsl` presets that CMake copies next to the executable. `docs.md` is the authoritative API contract and `AGENTS.md` the map for contributors: architecture, conventions, build commands and the testing setup. Run the checks with `ctest --test-dir build-cmake -R mikai_tests`.
+`src/backend/` is the domain — `MikaiClient` (rate-limited Qt Network calls), models, HLS extraction (`ashdi`/`moon`/`tortuga`) and stock mpv discovery/provisioning — and `src/app/` is the Qt Widgets frontend (`MainWindow`, `SearchPage`, `TitlePage`, dialogs, theme tokens), with the player (`src/player/`: `PlayerDialog` → `PlayerShell` → mpv-backed `VideoSurface`, over the once-pinned `MpvApi` dynamic module loader) driven in-process through a `PlayerHost` bridge, and `shaders/` holding the Anime4K `.glsl` presets that CMake copies next to the executable. `docs.md` is the authoritative API contract and `AGENTS.md` the map for contributors: architecture, conventions, build commands and the testing setup. Run the checks with `ctest --test-dir build-cmake -R mikai_tests`.
+
+`native/README.md` covers the optional native (AnimeJaNai) track — source pins,
+acquisition records and the rights position. It is not on this build path, no
+native SDK is needed to build the app, and no native bundle is built or shipped.
+
+The `mikai_tests` target and shader-using probes deploy `shaders/` beside their
+executables during their own builds; building only the test target in a fresh
+directory no longer requires building `mikai` first to supply those assets.

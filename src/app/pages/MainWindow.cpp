@@ -7,12 +7,14 @@
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <native/NativeRuntimeSelection.hpp>
 
 #include <PlayerDialog.hpp>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QUrl>
+#include <QVariant>
 #include <QCloseEvent>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -91,16 +93,91 @@ void MainWindow::openMedia(const QString& source) {
         caption = url.host().isEmpty() ? tr("Video") : url.host();
     }
     closeMedia();
+    // closeMedia() deleted the replaced player synchronously: with mpv a
+    // closed dialog's core would otherwise keep its failed end-file event and
+    // its retry chip alive until the deferred delete, and any later lookup
+    // reads the old window's state instead of the new stream's.
     mediaPlayer_ = new mplayer::shell::PlayerDialog(caption, media, this);
+    // The dialog is the only place an mpv failure surfaces, so the connect
+    // precedes startPlayer(): "runtimeRequested" means the core could not be
+    // created at all, and the host provisions and retries for real.
+    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::runtimeRequested, this,
+            [this] { requestMediaRuntime(); });
     mediaPlayer_->show();
     mediaPlayer_->startPlayer();
 }
 
 void MainWindow::closeMedia() {
     if (mediaPlayer_) {
-        mediaPlayer_->close();
+        // A runtime reply for this dialog must not reach the next one: bump the
+        // sequence and drop the pending flag so the replacement can ask anew.
+        ++runtimeSeq_;
+        runtimePending_ = false;
+        // Deleted, not merely closed: the dialog carries WA_DeleteOnClose, so
+        // close() only hides it, and a hidden window still answers
+        // findChildren and still holds its mpv core. The next open must find
+        // no player at all, and a failed stream's parked core must not decode
+        // behind the stream that replaced it.
+        delete mediaPlayer_.data();
         mediaPlayer_.clear();
     }
+}
+
+void MainWindow::requestMediaRuntime() {
+    if (!mediaPlayer_) {
+        return;
+    }
+    auto* dialog = mediaPlayer_.data();
+    dialog->show();
+    if (mplayer::native::runtimeSelected()) {
+        // A module is already pinned, so startPlayer() is the only thing that
+        // may run again. It emits `runtimeRequested` synchronously when the
+        // core still cannot be created, so the second entry from inside it is
+        // dropped rather than retried for ever.
+        if (runtimeRetrying_) {
+            return;
+        }
+        runtimeRetrying_ = true;
+        dialog->startPlayer();
+        runtimeRetrying_ = false;
+        return;
+    }
+    if (runtimePending_ || !mplayer::native::beginRecovery()) {
+        return;
+    }
+    runtimePending_ = true;
+    const int seq = ++runtimeSeq_;
+    const QPointer<MainWindow> self(this);
+    const QPointer<mplayer::shell::PlayerDialog> target(dialog);
+    // Resolution may download, so it runs on the pool; the load happens back on
+    // the GUI thread, where a core is about to be created.
+    runner_->run(
+        [] {
+            return QVariant::fromValue(
+                mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
+        },
+        [self, target, seq](const QVariant& result) {
+            mplayer::native::endRecovery();
+            if (self.isNull() || seq != self->runtimeSeq_ || target.isNull()) {
+                return;
+            }
+            self->runtimePending_ = false;
+            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
+                result.value<mplayer::native::RuntimeSelection>());
+            if (!selection.loaded) {
+                target->showError(mplayer::native::runtimeUnavailablePlaybackText(selection.reason));
+                return;
+            }
+            target->startPlayer();
+        },
+        [self, target, seq](const QString& reason) {
+            mplayer::native::endRecovery();
+            if (self.isNull() || seq != self->runtimeSeq_ || target.isNull()) {
+                return;
+            }
+            self->runtimePending_ = false;
+            target->showError(mplayer::native::runtimeUnavailablePlaybackText(reason));
+        });
 }
 
 void MainWindow::openSettings() {

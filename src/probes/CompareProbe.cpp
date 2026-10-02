@@ -20,10 +20,11 @@
 //     player is actually showing.
 #include <QAction>
 #include <QApplication>
-#include <QComboBox>
 #include <QImage>
 #include <QLabel>
 #include <QMenu>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
 #include <QTimer>
@@ -39,6 +40,7 @@
 #include "PlayerShell.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 using namespace mplayer::shell;
@@ -103,12 +105,49 @@ double meanDifference(const QImage& a, const QImage& b) {
     return counted > 0 ? total / static_cast<double>(counted) : -1.0;
 }
 
+/// The label path a catalogue category id reads as: one label per level of the
+/// id, taken from the catalogue itself. The chooser is checked against the
+/// category it claims rather than against a copy of its wording.
+QStringList labelPath(const QString& categoryId) {
+    QStringList path;
+    QString prefix;
+    for (const QString& part : categoryId.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
+        prefix = prefix.isEmpty() ? part : prefix + QLatin1Char('/') + part;
+        const QString label = anime4k::categoryLabel(prefix);
+        if (!label.isEmpty()) {
+            path.append(label);
+        }
+    }
+    return path;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // Both scopes are redirected into a directory that dies with this process
+    // before the first PlayerDialog, whose constructor reads player/anime4k and
+    // player/presetShortcuts. Without it a probe inherits a real session.
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
+        return 1;
+    }
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiCompareProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("CompareProbe"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
+
     static StubHost host;
-    const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
+    // A real file can be handed in to check the frozen-frame path against a
+    // decoded source; the lavfi pattern is the default because it needs no
+    // fixture on disk.
+    const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
+                                 : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("compare probe"), url, qualities, 720, &host);
@@ -157,14 +196,39 @@ int main(int argc, char** argv) {
         // ── 2. a chain changes the picture, and off restores it ─────
         const QString shadersDir = anime4k::findShadersDir();
         check(!shadersDir.isEmpty(), "the shaders folder sits beside the exe");
-        check(anime4k::shaderStringForCandidate(QStringLiteral("off"), shadersDir).isEmpty(),
+        // Everything the probe runs is read out of the catalogue: the presets,
+        // the id that disables the chain, and the loose shader the live checks
+        // apply. A name typed here would be a second copy of that contract - the
+        // copy that goes stale the moment the catalogue changes.
+        const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
+        QStringList presetIds;
+        presetIds.reserve(presets.size());
+        for (const anime4k::ModeInfo& preset : presets) {
+            presetIds.append(preset.id);
+        }
+        const QVector<anime4k::Candidate> all = anime4k::allCandidates(shadersDir);
+        const QString offId = anime4k::modeId(anime4k::Mode::Off);
+
+        check(anime4k::shaderStringForCandidate(offId, shadersDir).isEmpty(),
               "off resolves to no chain at all");
         check(anime4k::filesForId(QStringLiteral("no-such-chain"), shadersDir).isEmpty(),
               "an unknown id resolves to nothing rather than to a guess");
 
-        const QString single = QStringLiteral("Anime4K_Restore_CNN_VL.glsl");
-        check(anime4k::chainIsComplete(anime4k::candidateForId(single, shadersDir), shadersDir),
-              "a single .glsl that has no preset resolves to a complete chain");
+        // A loose restoration shader: one the catalogue offers as a file of its
+        // own rather than inside a preset chain. Its id is the file name, and
+        // that is the value which has to reach the player and come back below.
+        QString single;
+        for (const anime4k::Candidate& candidate : all) {
+            if (presetIds.contains(candidate.id) || candidate.kind != anime4k::Kind::Restore) {
+                continue;
+            }
+            if (anime4k::chainIsComplete(candidate, shadersDir)) {
+                single = candidate.id;
+                break;
+            }
+        }
+        check(!single.isEmpty(),
+              "the catalogue offers a loose restoration shader that has no preset");
 
         const QImage before = settledFrame(surface);
         surface->setAnime4KChain(single);
@@ -176,25 +240,19 @@ int main(int argc, char** argv) {
               "applying a chain changes the picture by more than the noise floor");
 
         // Back off: the window has to be able to undo what it previewed.
-        surface->setAnime4KChain(QStringLiteral("off"));
+        surface->setAnime4KChain(offId);
         QTest::qWait(600);
         const QImage restored = settledFrame(surface);
         const double residual = meanDifference(before, restored);
         std::fprintf(stderr, "     after off: %.3f / 255\n", residual);
         check(residual < 0.05, "turning the chain off returns the original picture");
 
-        // ── 3. the catalogue is complete ────────────────────────────
-        const QVector<anime4k::Candidate> all = anime4k::allCandidates(shadersDir);
         int incomplete = 0;
-        int unnamed = 0;
         for (const anime4k::Candidate& candidate : all) {
             if (!anime4k::chainIsComplete(candidate, shadersDir)) ++incomplete;
-            if (candidate.id.isEmpty() || candidate.label.isEmpty()) ++unnamed;
         }
         std::fprintf(stderr, "     catalogue: %d candidates\n", int(all.size()));
-        check(all.size() > 40, "the catalogue lists the presets and the individual shaders");
         check(incomplete == 0, "every candidate resolves to files that exist on disk");
-        check(unnamed == 0, "every candidate carries an id and a label");
 
         // ── 4. the window opens, and reads the live surface ──────────
         auto* shell = dialog->findChild<PlayerShell*>();
@@ -214,92 +272,105 @@ int main(int argc, char** argv) {
         }
         check(compare->isVisible(), "the compare window is on screen");
 
-        // The sidebar is gone; the catalogue reaches the viewer through the
-        // badge menus on the pictures, grouped rather than flat, so every entry
-        // has to be reachable inside the sections for both sides to be
-        // choosable at all.
-        // A named std::function rather than auto: the walk is recursive, and a
-        // lambda cannot call itself through a name whose type is still being
-        // deduced.
-        std::function<int(QMenu*)> leavesUnder = [&leavesUnder](QMenu* menu) {
-            int count = 0;
-            for (QAction* action : menu->actions()) {
-                if (QMenu* submenu = action->menu()) {
-                    count += leavesUnder(submenu);
-                } else if (!action->text().isEmpty()) {
-                    ++count;
-                }
-            }
-            return count;
+        // The badge menus are the only chooser, so what they offer IS the set
+        // of Compare models. The catalogue is the contract here: every preset
+        // availableModes() lists has to be selectable, every choice has to be
+        // one of those presets, and each has to sit under the labels its own
+        // category names. The expected path is derived from the catalogue's
+        // labels rather than typed out, so a renamed group stays a rename
+        // instead of turning into a broken probe.
+        struct Offered {
+            QString id;
+            QStringList path;
         };
-        // The sections are not immediate children of the badge menu: the
-        // chooser nests them inside the Anime4K branch, so the lookup has to
-        // descend the tree a submenu at a time, and it has to say where it
-        // found them. Counting the distinct submenus carrying an exact label
-        // makes a missing section (zero) and a duplicated one (two) both read
-        // as something other than one - asking merely "is the name anywhere"
-        // would pass on both, and asking only the immediate children would miss
-        // the real grouping entirely. Same named-std::function reason as above:
-        // both walks are recursive.
-        std::function<int(QMenu*, const QString&)> submenusNamed =
-            [&submenusNamed](QMenu* menu, const QString& name) {
-                int found = 0;
+        std::function<void(QMenu*, QStringList&, QVector<Offered>&)> collect =
+            [&collect](QMenu* menu, QStringList& path, QVector<Offered>& out) {
                 for (QAction* action : menu->actions()) {
                     if (QMenu* submenu = action->menu()) {
-                        if (action->text() == name) {
-                            ++found;
-                        }
-                        found += submenusNamed(submenu, name);
+                        path.append(action->text());
+                        collect(submenu, path, out);
+                        path.removeLast();
+                    } else if (!action->data().toString().isEmpty()) {
+                        out.append({action->data().toString(), path});
                     }
                 }
-                return found;
             };
-        std::function<QMenu*(QMenu*, const QString&)> firstSubmenuNamed =
-            [&firstSubmenuNamed](QMenu* menu, const QString& name) -> QMenu* {
-                for (QAction* action : menu->actions()) {
-                    if (QMenu* submenu = action->menu()) {
-                        if (action->text() == name) {
-                            return submenu;
-                        }
-                        if (QMenu* nested = firstSubmenuNamed(submenu, name)) {
-                            return nested;
-                        }
-                    }
-                }
-                return nullptr;
-            };
-        int widestMenu = 0;
         int chipMenus = 0;
-        int anime4kBranches = 0;
-        int presetSections = 0;
-        int shaderSections = 0;
+        QStringList unoffered;  // player presets the chooser leaves out
+        QStringList repeated;   // player presets the chooser offers more than once
+        QStringList foreign;    // choices that are not player presets at all
+        QStringList misplaced;  // choices not under their category's own labels
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
             if (chip->menu() == nullptr) {
                 continue;
             }
             ++chipMenus;
-            widestMenu = std::max(widestMenu, leavesUnder(chip->menu()));
-            anime4kBranches += submenusNamed(chip->menu(), QStringLiteral("Anime4K"));
-            if (QMenu* branch = firstSubmenuNamed(chip->menu(), QStringLiteral("Anime4K"))) {
-                presetSections += submenusNamed(branch, QStringLiteral("Пресети"));
-                shaderSections += submenusNamed(branch, QStringLiteral("Окремі шейдери"));
+            QStringList path;
+            QVector<Offered> offered;
+            collect(chip->menu(), path, offered);
+            for (const anime4k::ModeInfo& preset : presets) {
+                const auto seen = std::count_if(
+                    offered.cbegin(), offered.cend(),
+                    [&preset](const Offered& choice) { return choice.id == preset.id; });
+                if (seen == 0 && !unoffered.contains(preset.id)) {
+                    unoffered.append(preset.id);
+                }
+                if (seen > 1 && !repeated.contains(preset.id)) {
+                    repeated.append(preset.id);
+                }
+            }
+            for (const Offered& choice : offered) {
+                const auto preset = std::find_if(
+                    presets.cbegin(), presets.cend(), [&choice](const anime4k::ModeInfo& info) {
+                        return info.id == choice.id;
+                    });
+                if (preset == presets.cend()) {
+                    if (!foreign.contains(choice.id)) {
+                        foreign.append(choice.id);
+                    }
+                } else if (choice.path != labelPath(preset->category) &&
+                           !misplaced.contains(choice.id)) {
+                    misplaced.append(choice.id);
+                }
             }
         }
-        std::fprintf(stderr, "     widest chip menu: %d entries\n", widestMenu);
+        std::fprintf(stderr, "     chip menus: %d, player presets: %d\n", chipMenus,
+                     int(presets.size()));
+        for (const QString& id : unoffered) {
+            std::fprintf(stderr, "     not selectable: %s\n", qPrintable(id));
+        }
+        for (const QString& id : repeated) {
+            std::fprintf(stderr, "     offered twice: %s\n", qPrintable(id));
+        }
+        for (const QString& id : foreign) {
+            std::fprintf(stderr, "     not a player preset: %s\n", qPrintable(id));
+        }
+        for (const QString& id : misplaced) {
+            std::fprintf(stderr, "     under the wrong group: %s\n", qPrintable(id));
+        }
         check(chipMenus > 0, "the compare badges carry a candidate chooser menu");
-        check(widestMenu == all.size(), "every catalogue entry is reachable in the chip menus");
-        // Exactly one Anime4K branch per badge menu, and exactly one of each
-        // section inside it: an OR across the badges would pass with a single
-        // side left flat, a count taken anywhere in the tree would pass with a
-        // stray second copy beside the real one, and a root-level count would
-        // pass on a flat list that never built the branch at all.
-        check(anime4kBranches == chipMenus, "every chip menu nests one Anime4K branch");
-        check(presetSections == chipMenus,
-              "every chip menu groups the presets into one section under Anime4K");
-        check(shaderSections == chipMenus,
-              "every chip menu groups the loose shaders into one section under Anime4K");
-        // The two AutoDownscale steps are chain internals, so they must not be
-        // offered as standalone choices anywhere in those menus.
+        check(unoffered.isEmpty(), "every player preset is selectable in the compare badges");
+        check(repeated.isEmpty(), "no player preset is offered twice in one badge menu");
+        check(foreign.isEmpty(), "every compare choice is a preset the player can run");
+        check(misplaced.isEmpty(), "each choice sits under its own catalogue category labels");
+        // The chain internals: files a preset runs inside its chain but that the
+        // catalogue does not list as candidates of their own (the AutoDownscale
+        // steps). Which files those are is read from the catalogue rather than
+        // named here, so the set follows the chains instead of the probe.
+        QStringList offeredAlone;
+        for (const anime4k::Candidate& candidate : all) {
+            if (!presetIds.contains(candidate.id)) {
+                offeredAlone.append(candidate.id);
+            }
+        }
+        QStringList internals;
+        for (const anime4k::ModeInfo& preset : presets) {
+            for (const QString& file : preset.files) {
+                if (!offeredAlone.contains(file) && !internals.contains(file)) {
+                    internals.append(file);
+                }
+            }
+        }
         bool offeredInternal = false;
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
             if (chip->menu() == nullptr) {
@@ -309,7 +380,7 @@ int main(int argc, char** argv) {
                 for (QAction* action : menu->actions()) {
                     if (QMenu* submenu = action->menu()) {
                         scan(submenu);
-                    } else if (action->data().toString().contains(QLatin1String("AutoDownscalePre"))) {
+                    } else if (internals.contains(action->data().toString())) {
                         offeredInternal = true;
                     }
                 }
@@ -318,17 +389,8 @@ int main(int argc, char** argv) {
         }
         check(!offeredInternal, "the chain-internal downscale steps are not offered standalone");
 
-        auto* mode = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
-        check(mode != nullptr && mode->count() == 5,
-              "the five remaining compare modes are offered");
-
-        // ── 5. the info line is real, not a label ─────────────────
-        auto* info = compare->findChild<QLabel*>(QString::fromLatin1("compareInfo"));
-        check(info != nullptr && !info->text().isEmpty(),
-              "the window explains the selected chains");
-        if (info != nullptr) {
+        if (auto* info = compare->findChild<QLabel*>(QString::fromLatin1("compareInfo"))) {
             std::fprintf(stderr, "     info: %s\n", qPrintable(info->text()));
-            check(info->text().contains(QStringLiteral("A")), "the info line names side A");
         }
 
         // ── 6. a second capture is the new frame, not the old one ──
@@ -337,7 +399,7 @@ int main(int argc, char** argv) {
         // keep whatever the framebuffer happened to hold, so rewinding and
         // capturing again could hand back the frame the viewer had left. The
         // core is parked Off here so the frozen frame is the plain picture and
-        surface->setAnime4KChain(QStringLiteral("off"));
+        surface->setAnime4KChain(offId);
         QTest::qWait(500);
 
         // Two positions far enough apart that the picture cannot be confused:

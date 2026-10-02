@@ -29,6 +29,7 @@ class QWidget;
 QT_END_NAMESPACE
 
 #include "Anime4K.hpp"
+#include "native/NativeMenu.hpp"
 
 namespace mplayer {
 class VideoSurface;
@@ -208,6 +209,23 @@ public:
     /// Badges one track with the quality a probe found for it.
     void setTrackQuality(const QString& embed, int quality);
     void showError(const QString& message);
+    /// One path a native request change takes, whatever raised it: a menu row,
+    /// a settings control, or the toggle shortcut. The action is typed rather
+    /// than spelled, so the three callers share one vocabulary. The request is
+    /// persisted even when it cannot be applied, the effective value is
+    /// re-derived from the filter's snapshot, and nothing here touches the URL,
+    /// the stream, the quality cache or the Anime4K chain.
+    void applyNativeRequest(native::menu::Action action, const QString& value);
+    /// A native preparation or engine failure. It is separated from a media
+    /// failure on purpose: it shows its own reason, offers no stream retry, and
+    /// never re-extracts a signed URL or re-probes a quality.
+    void reportNativeProcessingFailure(const QString& reason);
+    /// Re-reads the stored request, the producer availability and the selected
+    /// runtime, takes the filter's own status from the surface's reader, and
+    /// pushes the four at the shell as one input set. The host calls this after
+    /// the settings dialog is accepted; a status change arrives through
+    /// `VideoSurface::nativeStatusChanged` instead.
+    void refreshNativeInputs();
     /// Opens the first stream; the engine exists from the shell's surface.
     void startPlayer();
 
@@ -262,6 +280,10 @@ private:
     void syncPipBar();
     void flashStatus(const QString& message);
     void showErrorStatus(const QString& message);
+    /// A processing status: a named reason with no retry chip and no host
+    /// callback. Used for a native refusal and for a native failure, never for a
+    /// media load failure.
+    void showProcessingStatus(const QString& reason);
     void retryPlayback();
     void watchPanels();
     void placeWindowed();
@@ -284,6 +306,22 @@ private:
     void openCompareWindow();
     void onShellStateChanged(const QString& state);
     void onShellFullscreenChanged(bool fullscreen);
+    /// A native row was chosen in the enhancement tree. One handler serves the
+    /// menu, the settings dialog and the toggle, so the three cannot disagree
+    /// about what was asked for.
+    void onNativeActionRequested(native::menu::Action action, const QString& value);
+    /// The filter's own status changed. The held inputs and the HUD follow it,
+    /// and nothing here re-arms a poll the surface has already stopped.
+    void onNativeStatusChanged(const native::NativeStatusView& status);
+    /// Pushes the polling demand at the surface: the request is on and a core
+    /// exists to read from. A demand, not a timer - the surface issues at most
+    /// one outstanding request and halts itself after a terminal state or an
+    /// absent filter.
+    void syncNativeStatusPolling(bool requested);
+    /// Installs the native-processing toggle from the stored binding. Nothing
+    /// is installed unless the shared collision check accepts the key.
+    void loadNativeShortcuts();
+    void toggleNativeProcessing();
     void onEngineError(const QString& message);
     void onEngineDuration(double seconds);
     void onEnginePosition(double seconds);
@@ -291,9 +329,11 @@ private:
     void onEngineVideoSize(int width, int height);
     /// Loads `url` and restores the position, pause, volume and speed the
     /// surface was carrying, so a stream swap continues instead of restarting.
-    /// Returns false when the engine itself could not be created, which is the
-    /// host's cue to provision the mpv runtime.
-    bool openStream(const QString& url, const QString& quality, bool resume = true);
+    /// `height` is the stream's height in pixels, 0 when the caller has none:
+    /// the label shown to the viewer is derived from it, never parsed back out
+    /// of a "1080p" string. Returns false when the engine itself could not be
+    /// created, which is the host's cue to provision the mpv runtime.
+    bool openStream(const QString& url, int height, bool resume = true);
     /// Applies the saved resume point once the new stream reports a timeline.
     void restoreResumePoint();
     void goToEpisode(int position, bool closeList = false);
@@ -309,6 +349,9 @@ private:
     QPoint settingsAnchor() const;
     void enterPip();
     void leavePip(bool closing = false);
+    /// Destroys the pooled float, whichever state PiP is in. The float is
+    /// parentless, so the dialog is the only thing that can release it.
+    void releasePipPool();
 
     PlayerShell* shell_ = nullptr;
     VideoSurface* surface_ = nullptr;
@@ -324,6 +367,9 @@ private:
     QLabel* statusLabel_ = nullptr;
     QPushButton* retryButton_ = nullptr;
     QTimer* statusTimer_ = nullptr;
+    /// The float on screen, or null when PiP is down. While PiP is up it names
+    /// the same object as pipPool_; releasePipPool() is the one place either is
+    /// destroyed, and it goes through the pool.
     PipFloat* pip_ = nullptr;
 
     QString caption_;
@@ -354,10 +400,11 @@ private:
     bool closed_ = false;
     bool forwardingKey_ = false;
     bool pipWasFullscreen_ = false;
-    // The float is kept, not destroyed. Each one owns a QOpenGLWidget with a
-    // live mpv render context, and building or tearing one down while the
-    // other is on screen faults the display driver. Re-entering PiP reuses
-    // this one instead of paying that cost again.
+    // The float is kept across a PiP session, not destroyed by leavePip(). Each
+    // one owns a QOpenGLWidget with a live mpv render context, and building or
+    // tearing one down while the other is on screen faults the display driver.
+    // Re-entering PiP reuses this one; the dialog's destructor is what finally
+    // releases it. While PiP is up this and pip_ name the same object.
     PipFloat* pipPool_ = nullptr;
     // What the main core was doing when PiP took over, so leaving PiP restores
     // the state rather than guessing it from a toggle.

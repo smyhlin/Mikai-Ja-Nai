@@ -45,6 +45,10 @@ private:
     void chooseMediaUrl();
     void openMedia(const QString& source);
     void closeMedia();
+    /// The standalone player's version of the title page's runtime request: it
+    /// provisions the mpv runtime when the core could not be created, then
+    /// starts the player again.
+    void requestMediaRuntime();
     void openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
     void openRelated(const QString& ref, const QString& poster);
     void goSearch();
@@ -57,6 +61,12 @@ private:
     SearchPage* search_ = nullptr;
     TitlePage* title_ = nullptr;
     QPointer<mplayer::shell::PlayerDialog> mediaPlayer_;
+    /// One runtime request at a time for the standalone player. `runtimeSeq_`
+    /// is bumped whenever that dialog goes away, so a completion belonging to a
+    /// superseded dialog is dropped instead of starting the new one.
+    int runtimeSeq_ = 0;
+    bool runtimePending_ = false;
+    bool runtimeRetrying_ = false;
     QString titleRef_;
     QString titlePoster_;
     QList<QPair<QString, QString>> titleHistory_;

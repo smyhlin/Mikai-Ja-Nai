@@ -1,13 +1,14 @@
 #include "VideoSurface.hpp"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QElapsedTimer>
 #include <QMetaObject>
 #include <QOpenGLContext>
-#include <QOpenGLFunctions>
-#include <QPointer>
 #include <QThread>
 #include <QTimer>
+
+#include <algorithm>
 #include <cmath>
 
 #include "MpvHandle.hpp"
@@ -45,12 +46,18 @@ void VideoSurface::ensureEngine() {
         {"osc", "no"},
     };
     mpv_ = std::make_unique<MpvHandle>(options);
+    // The reader borrows this core, and is (re)bound here because this is the
+    // one place a core is created. It publishes an Unavailable (unread) view
+    // until the first poll answers; polling itself stays off until the parent
+    // asks for it.
+    nativeStatus_.attach(mpv_.get());
     mpv_->setEventSink([this](mpv_event* event) {
         if (event->event_id != MPV_EVENT_END_FILE || event->data == nullptr) return;
         const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
         if (ended->reason != MPV_END_FILE_REASON_ERROR) return;
         emit errorOccurred(tr("Could not play the video (mpv: %1)").arg(ended->error));
     });
+    observePlaybackState();
     // The applied id, not the mode: a chain with no Mode is only recorded until
     // the engine exists, so reading the mode here would drop it before the
     // first frame.
@@ -60,6 +67,7 @@ void VideoSurface::ensureEngine() {
     if (!shaders.isEmpty()) {
         try {
             mpv_->setString("glsl-shaders", shaders.toStdString());
+            applyShaderChain(shaders);
         } catch (const MpvError& err) {
             emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
         }
@@ -77,9 +85,10 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     if (!mpv_) {
         return;
     }
+    const QString shaders = anime4k::shaderStringForCandidate(candidateId);
     try {
-        mpv_->setString("glsl-shaders",
-                        anime4k::shaderStringForCandidate(candidateId).toStdString());
+        mpv_->setString("glsl-shaders", shaders.toStdString());
+        applyShaderChain(shaders);
     } catch (const MpvError& err) {
         emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
     }
@@ -102,11 +111,12 @@ void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
     // setting, and whichever came last must be what a restart restores.
     anime4kChainId_ = id;
     if (!mpv_) return;
+    // The id is resolved, so a mode and a chain go through one path - and only
+    // one of the two can name a chain that is not on disk.
+    const QString shaders = anime4k::shaderStringForCandidate(anime4kChainId_);
     try {
-        // The id is resolved, so a mode and a chain go through one path - and
-        // only one of the two can name a chain that is not on disk.
-        mpv_->setString("glsl-shaders",
-                        anime4k::shaderStringForCandidate(anime4kChainId_).toStdString());
+        mpv_->setString("glsl-shaders", shaders.toStdString());
+        applyShaderChain(shaders);
     } catch (const MpvError& err) {
         emit errorOccurred(tr("Anime4K: %1").arg(QString::fromStdString(err.what())));
     }
@@ -121,11 +131,16 @@ void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
 
 QString VideoSurface::effectiveShaderChain() const {
     if (!mpv_) return QString();
-    try {
-        return QString::fromStdString(mpv_->getString("glsl-shaders"));
-    } catch (const MpvError&) {
-        return QString();
-    }
+    // mpv only echoes this back - it does not validate a shader path list - so
+    // no answer separates a working chain from a preset naming a deleted file.
+    return shaderChain_;
+}
+
+void VideoSurface::applyShaderChain(const QString& shaders) {
+    // Recorded on success so a caller reading straight after the write sees the
+    // chain mpv was just given; the observer keeps it equal to what mpv holds
+    // when anything else changes it.
+    shaderChain_ = shaders;
 }
 
 bool VideoSurface::waitForContext(int timeoutMs) {
@@ -145,6 +160,32 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // Without this the widget is composited as a separate texture and mpv's
     // frame would be blended against a stale backing store.
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    nativeStatusClock_.start();
+    // Installed once, before any core exists. The reader calls this from
+    // drainEvents on this thread, and the callback only forwards the published
+    // view: nothing here can take the core lock or reach into mpv, so no
+    // repaint or teardown can run it against a borrowed handle.
+    nativeStatus_.setChangeCallback([this](const native::NativeStatusView& view) {
+        // The property read answered with an mpv error, which on this core
+        // means no `mikai_native` filter is attached. Repeating the request
+        // every 500 ms would only repeat the refusal, so the poll stops until
+        // the request state changes or another source is opened. The
+        // Unavailable view is still forwarded: the surface never invents an
+        // Active status.
+        const bool filterAbsent =
+            view.availability.value == native::Availability::Unavailable &&
+            view.availability.reasonKey == QStringLiteral("native.status.missing");
+        if (filterAbsent) {
+            nativeStatusHalted_ = true;
+        } else if (view.snapshot.has_value() &&
+                   !native::nativeStateNeedsPolling(view.snapshot->state)) {
+            // The first response named a state no poll can advance (Off,
+            // Suspended, Failed, ...): stop after it and wait for a new
+            // request, rather than reading the same terminal state forever.
+            nativeStatusHalted_ = true;
+        }
+        emit nativeStatusChanged(view);
+    });
 }
 
 VideoSurface::~VideoSurface() {
@@ -155,16 +196,26 @@ VideoSurface::~VideoSurface() {
     // handle. Gating the render reset on the GL context being current used to
     // skip it precisely at process exit, where the context is already gone.
     if (render_) {
-        // Freeing the render context releases GL objects, so a current context is
-        // not optional. At teardown there usually is none: the widget is being
-        // deleted, not painted, and the crash is an access violation inside the
-        // driver rather than anything mpv can report.
-        const bool borrowed = QOpenGLContext::currentContext() == nullptr
-                              && context_ != nullptr;
+        // Freeing the render context releases GL objects, so OUR context has to
+        // be current - not merely some context, and not none. At teardown there
+        // usually is none: the widget is being deleted, not painted, and a
+        // missing context is an access violation inside the driver rather than
+        // anything mpv can report.
+        const bool borrowed = context_ != nullptr && QOpenGLContext::currentContext() != context_;
         if (borrowed) QOpenGLWidget::makeCurrent();
         render_.reset();
         if (borrowed) QOpenGLWidget::doneCurrent();
     }
+    if (mpv_) {
+        // Unobserve for real before the core goes, so mpv is not still
+        // formatting changes for a widget that is being destroyed.
+        for (const uint64_t id : observers_) mpv_->unobserve(id);
+        observers_.clear();
+    }
+    // The native-status reader borrows the same core: release the binding and
+    // cancel any in-flight request before the core is reset, so no callback can
+    // run against a widget that is going away.
+    resetNativeStatusReader(false);
     mpv_.reset();
 }
 
@@ -175,6 +226,11 @@ bool VideoSurface::open(const QString& url) {
     statsClock_.restart();
     emit streamStatsChanged(0.0, 0.0);
     ensureEngine();
+    // A new source: the previous filter's snapshot says nothing about this one,
+    // so the reader is rebound (which clears the published view) and a halt
+    // recorded for the old source does not outlive it.
+    resetNativeStatusReader(true);
+    nativeStatusHalted_ = false;
     // The load waits for the GL context. With vo=libmpv the video output
     // attaches to the render context, and mpv will not start a VO that has
     // nowhere to draw: loading first leaves the core with no video and a black
@@ -211,6 +267,11 @@ bool VideoSurface::startPendingUrl() {
 
 void VideoSurface::close() {
     if (!mpv_) return;
+    // Nothing is loaded after this: drop the reader before the source ends so
+    // no request in flight can describe a file that is gone, and clear the halt
+    // that belonged to the old source.
+    resetNativeStatusReader(false);
+    nativeStatusHalted_ = false;
     try {
         mpv_->stop();
     } catch (const MpvError&) {
@@ -228,6 +289,15 @@ void VideoSurface::close() {
     videoWidth_ = videoHeight_ = 0;
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
+    // The core keeps reporting while nothing is loaded, and the next open must
+    // not start from the previous file's numbers.
+    observedDuration_ = 0.0;
+    observedPosition_ = 0.0;
+    observedVideoWidth_ = 0.0;
+    observedVideoHeight_ = 0.0;
+    observedCacheSpeed_ = 0.0;
+    observedEstimatedFps_ = 0.0;
+    observedContainerFps_ = 0.0;
     emit streamStatsChanged(0.0, 0.0);
     handleState();
 }
@@ -235,7 +305,10 @@ void VideoSurface::close() {
 void VideoSurface::togglePause() {
     if (!mpv_) return;
     try {
-        const bool paused = mpv_->getFlag("pause");
+        // The observed pause state, not a synchronous read: this is a control
+        // the user is waiting on, and a slow native operation must not hold the
+        // HUD behind the core lock.
+        const bool paused = observedPaused_;
         mpv_->setPaused(!paused);
         setPlaying(!paused);
     } catch (const MpvError& e) {
@@ -315,9 +388,9 @@ void VideoSurface::initializeGL() {
     QOpenGLWidget::initializeGL();
     context_ = QOpenGLContext::currentContext();
     try {
-        auto gl = std::make_shared<GlApi>(loadGlApi());
+        const GlApi gl = loadGlApi();
         ensureEngine();
-        render_ = std::make_unique<MpvRenderContext>(*mpv_, *gl);
+        render_ = std::make_unique<MpvRenderContext>(*mpv_, gl);
         // mpv draws with the origin at the bottom-left; Qt composites the
         // QOpenGLWidget's framebuffer from the top-left. Without this the picture
         // is upside down - which a non-black pixel check happily passes.
@@ -365,21 +438,17 @@ void VideoSurface::paintGL() {
     if (!contextReady_ || !render_) {
         return;
     }
-    // No state pump here, deliberately. paintGL runs once per decoded frame,
-    // and pumpEvents costs six synchronous property round-trips through the
-    // mpv core lock each time, competing with mpv's own render thread. The
-    // 50 ms statePump_ timer covers the case the pump existed for - a paused
-    // core producing no frames - at 20 Hz instead of at frame rate.
+    // The state pump belongs on the 50 ms timer, not here: paintGL runs only
+    // when there is a frame, so a paused core - which produces none - would
+    // otherwise freeze the clock and every HUD value with the last picture.
     //
     // update() flags a redraw only when the decoder actually produced a frame,
     // so it doubles as the frame-available check and the keep-going signal.
     const uint64_t generation = render_->update();
-    // The framebuffer identity is part of the test. Qt hands the widget a
-    // different one on a resize, and may hand it a different one again when a
-    // hidden surface comes back, so a name change is proof that what is in the
-    // buffer is not the picture that belongs there - and grabFramebuffer(),
-    // which reads that buffer directly rather than repainting, would hand back
-    // whatever the old one held.
+    // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
+    // re-show wipes the picture, and with a paused core no new frame is coming,
+    // so grabFramebuffer() - which reads that buffer instead of repainting -
+    // would otherwise read a buffer nothing has drawn into.
     const bool haveFrame = framePending_ || generation != lastGeneration_ || forceRender_;
     lastGeneration_ = generation;
 
@@ -406,6 +475,64 @@ void VideoSurface::paintGL() {
 
 // ── state pump ────────────────────────────────────────────────────────────
 
+void VideoSurface::observePlaybackState() {
+    if (!mpv_) return;
+    if (!observers_.empty()) return;
+    // The registered format is what mpv delivers, so each observer reads
+    // exactly what it wrote.
+    const auto watch = [this](const char* name, mpv_format format, auto&& apply) {
+        // A property this core does not have costs the HUD that one number, not
+        // playback, so a refusal is reported and stepped over.
+        try {
+            const uint64_t id = mpv_->observe(
+                name, format, [apply = std::forward<decltype(apply)>(apply)](const Property& p) {
+                    apply(p);
+                });
+            if (id != 0) observers_.push_back(id);
+        } catch (const MpvError& error) {
+            qWarning("mpv: cannot observe %s (%s)", name, error.what());
+        }
+    };
+    watch("duration", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedDuration_ = p.isNumber() ? p.number : 0.0; });
+    watch("time-pos", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedPosition_ = p.isNumber() ? p.number : 0.0; });
+    watch("pause", MPV_FORMAT_FLAG,
+          [this](const Property& p) { observedPaused_ = p.isFlag() && p.flag; });
+    watch("video-params/w", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedVideoWidth_ = p.isNumber() ? p.number : 0.0; });
+    watch("video-params/h", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedVideoHeight_ = p.isNumber() ? p.number : 0.0; });
+    watch("cache-speed", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedCacheSpeed_ = p.isNumber() ? p.number : 0.0; });
+    watch("estimated-vf-fps", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedEstimatedFps_ = p.isNumber() ? p.number : 0.0; });
+    watch("container-fps", MPV_FORMAT_DOUBLE,
+          [this](const Property& p) { observedContainerFps_ = p.isNumber() ? p.number : 0.0; });
+    watch("glsl-shaders", MPV_FORMAT_STRING,
+          [this](const Property& p) { shaderChain_ = QString::fromStdString(p.text); });
+}
+
+void VideoSurface::publishObservedState() {
+    if (observedDuration_ > 0 && observedDuration_ != duration_) {
+        duration_ = observedDuration_;
+        emit durationChanged(duration_);
+    }
+    // 10 ms is finer than any display, so this cannot look stepped.
+    if (std::abs(observedPosition_ - position_) > 0.01) {
+        position_ = observedPosition_;
+        emit positionChanged(position_);
+    }
+    // Compare like with like: the property is "pause", the cached state is
+    // "playing". Guarding on `paused != playing_` means a playing video
+    // (false vs false) never updates, so isPlaying() stays false forever.
+    const bool playing = !observedPaused_;
+    if (playing != playing_) {
+        playing_ = playing;
+        emit playingChanged(playing_);
+    }
+}
+
 void VideoSurface::pumpEvents() {
     if (!mpv_) return;
     try {
@@ -413,31 +540,13 @@ void VideoSurface::pumpEvents() {
     } catch (const MpvError&) {
         return;
     }
-    try {
-        const double dur = mpv_->getNumber("duration");
-        if (dur > 0 && dur != duration_) {
-            duration_ = dur;
-            emit durationChanged(dur);
-        }
-        const double pos = mpv_->getNumber("time-pos");
-        // 10 ms is finer than any display, so this cannot look stepped.
-        if (std::abs(pos - position_) > 0.01) {
-            position_ = pos;
-            emit positionChanged(pos);
-        }
-        // Compare like with like: the property is "pause", the cached state is
-        // "playing". Guarding on `paused != playing_` means a playing video
-        // (false vs false) never updates, so isPlaying() stays false forever.
-        const bool playing = !mpv_->getFlag("pause");
-        if (playing != playing_) {
-            playing_ = playing;
-            emit playingChanged(playing_);
-        }
-    } catch (const MpvError&) {
-        // Properties are unavailable before a file loads; that is not an error.
-    }
+    publishObservedState();
     handleState();
     updateStreamStats();
+    // The last thing the pump does: a request issued here is answered by the
+    // next pump's drainEvents, so a reply is never delivered re-entrantly from
+    // inside the tick that issued it.
+    pollNativeStatus();
 }
 
 void VideoSurface::updateStreamStats() {
@@ -450,24 +559,11 @@ void VideoSurface::updateStreamStats() {
     }
     statsClock_.restart();
 
-    double bytesPerSecond = 0.0;
-    double framesPerSecond = 0.0;
-    try {
-        bytesPerSecond = mpv_->getNumber("cache-speed");
-    } catch (const MpvError&) {
-    }
-    try {
-        framesPerSecond = mpv_->getNumber("estimated-vf-fps");
-    } catch (const MpvError&) {
-    }
-    if (framesPerSecond <= 0.0) {
-        try {
-            framesPerSecond = mpv_->getNumber("container-fps");
-        } catch (const MpvError&) {
-        }
-    }
-
-    bytesPerSecond = std::max(0.0, bytesPerSecond);
+    // Observed, not read: these two belong to a HUD label and must not wait on
+    // the core lock.
+    double bytesPerSecond = std::max(0.0, observedCacheSpeed_);
+    double framesPerSecond = observedEstimatedFps_;
+    if (framesPerSecond <= 0.0) framesPerSecond = observedContainerFps_;
     framesPerSecond = std::max(0.0, framesPerSecond);
     if (std::abs(bytesPerSecond - networkBytesPerSecond_) < 1024.0 &&
         std::abs(framesPerSecond - streamFramesPerSecond_) < 0.01) {
@@ -480,22 +576,54 @@ void VideoSurface::updateStreamStats() {
 
 void VideoSurface::handleState() {
     if (!mpv_) return;
-    try {
-        // One read, two answers. The width decides both whether there is a
-        // video at all and how wide it is, and every mpv_get_property takes
-        // the core lock against mpv's own render thread.
-        const int w = static_cast<int>(mpv_->getNumber("video-params/w"));
-        const bool vid = w > 0;
-        if (vid != hasVideo_) hasVideo_ = vid;
-        if (hasVideo_) {
-            const int h = static_cast<int>(mpv_->getNumber("video-params/h"));
-            if (w != videoWidth_ || h != videoHeight_) {
-                videoWidth_ = w;
-                videoHeight_ = h;
-                emit videoSizeChanged(w, h);
-            }
+    // One value, two answers. The width decides both whether there is a video at
+    // all and how wide it is, and it was observed rather than read, so this costs
+    // no trip through the core lock against mpv's own render thread.
+    const int w = static_cast<int>(observedVideoWidth_);
+    const bool vid = w > 0;
+    if (vid != hasVideo_) hasVideo_ = vid;
+    if (hasVideo_) {
+        const int h = static_cast<int>(observedVideoHeight_);
+        if (w != videoWidth_ || h != videoHeight_) {
+            videoWidth_ = w;
+            videoHeight_ = h;
+            emit videoSizeChanged(w, h);
         }
-    } catch (const MpvError&) {}
+    }
+}
+
+// ── native status ─────────────────────────────────────────────────────────
+
+void VideoSurface::setNativeStatusPolling(bool enabled) {
+    // A call here is a request-state change: it re-arms a poll that a terminal
+    // state or an absent filter had stopped. Nothing is read synchronously -
+    // the next pump step is what issues the request, so a caller on the GUI
+    // thread never waits on the core lock.
+    if (enabled) nativeStatusHalted_ = false;
+    nativeStatusPolling_ = enabled;
+}
+
+bool VideoSurface::nativeStatusShouldPoll() const {
+    return nativeStatusPolling_ && !nativeStatusHalted_;
+}
+
+void VideoSurface::pollNativeStatus() {
+    if (!mpv_) return;
+    // The reader is ticked even when it will not issue a request: the tick
+    // still abandons a timed-out one and keeps the current source epoch in
+    // view. `sourceEpoch()` is bumped by load and stop, so a reply for a
+    // superseded source is dropped by the reader rather than published.
+    nativeStatus_.tick(nativeStatusClock_.elapsed(), mpv_->sourceEpoch(),
+                       nativeStatusShouldPoll());
+}
+
+void VideoSurface::resetNativeStatusReader(bool reattach) {
+    // Cancels any in-flight request and clears the published view, so a plan
+    // from the old source cannot keep reading as current. detach() is safe on a
+    // reader that was never attached, which is what a close() before open()
+    // looks like.
+    nativeStatus_.detach();
+    if (reattach && mpv_) nativeStatus_.attach(mpv_.get());
 }
 
 }  // namespace mplayer

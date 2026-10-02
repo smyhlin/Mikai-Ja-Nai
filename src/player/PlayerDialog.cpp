@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <optional>
 
 namespace mplayer {
 namespace shell {
@@ -240,6 +241,37 @@ QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qr
         icon.addPixmap(pixmap, color == normal ? QIcon::Normal : QIcon::Disabled);
     }
     return icon;
+}
+
+/// The preset bindings that are actually installed, keyed by the combination
+/// they hold. The native toggle asks the same question the preset loader asks,
+/// through the same shared collision check, so a native binding can never take
+/// a key a preset is already using.
+QMap<QString, ShortcutClaim> installedPresetClaims() {
+    QMap<QString, ShortcutClaim> claims;
+    QSettings settings;
+    settings.beginGroup(QLatin1String(kPresetShortcutSettingsGroup));
+    QSet<QKeySequence> claimed;
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        const QString stored = settings.value(info.id).toString();
+        if (stored.isEmpty()) {
+            continue;
+        }
+        const QKeySequence sequence =
+            QKeySequence::fromString(stored, QKeySequence::PortableText);
+        if (sequence.isEmpty() || isReservedPresetShortcut(sequence) ||
+            claimed.contains(sequence)) {
+            continue;
+        }
+        claimed.insert(sequence);
+        ShortcutClaim claim;
+        claim.ownerId = info.id;
+        claim.ownerLabel = info.label;
+        claim.kind = ShortcutOwnerKind::Preset;
+        claims.insert(shortcutClaimKey(sequence), claim);
+    }
+    settings.endGroup();
+    return claims;
 }
 
 }  // namespace
@@ -1006,6 +1038,8 @@ PlayerDialog::PlayerDialog(const QString& caption,
     connectShell();
     connectEngine();
     loadPresetShortcuts();
+    loadNativeShortcuts();
+    refreshNativeInputs();
 
     // A child widget is shown when its parent is, so the panels that start
     // closed have to say so: an empty episode drawer and a retry chip would
@@ -1029,7 +1063,7 @@ PlayerDialog::~PlayerDialog() {
     if (subtitlesPopup_) {
         subtitlesPopup_->close();
     }
-    delete pip_;
+    releasePipPool();
 }
 
 // ── construction ─────────────────────────────────────────────────────────
@@ -1138,6 +1172,11 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::qualityRequested, this, &PlayerDialog::onQualityPicked);
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
+    // The menu's native rows take the same path a settings control and the
+    // toggle shortcut take: one requested-change handler, so the three can
+    // never disagree about what was asked for.
+    connect(shell_, &PlayerShell::nativeActionRequested, this,
+            &PlayerDialog::onNativeActionRequested);
     shell_->installEventFilter(this);
 }
 
@@ -1180,6 +1219,162 @@ void PlayerDialog::loadPresetShortcuts() {
     settings.endGroup();
 }
 
+void PlayerDialog::loadNativeShortcuts() {
+    // The toggle is a *stored* binding owned by the native preference, and this
+    // only installs it. The default is offered when nothing is stored, and even
+    // then it is installed only if the shared collision check accepts it -
+    // against the reserved player keys and every preset binding already live.
+    const native::NativePreferences preferences = native::loadNativePreferences();
+    const QString stored = native::menu::toggleShortcut(preferences);
+    if (stored.isEmpty()) {
+        return;
+    }
+    const QKeySequence sequence =
+        QKeySequence::fromString(stored, QKeySequence::PortableText);
+    if (sequence.isEmpty() || isReservedPresetShortcut(sequence)) {
+        return;
+    }
+    const ShortcutConflict conflict = findShortcutConflict(sequence, installedPresetClaims());
+    if (conflict.blocked) {
+        // Somebody already owns the key. The native action is simply not
+        // installed; it never shadows a preset or a player key.
+        return;
+    }
+    auto* shortcut = new QShortcut(sequence, this);
+    shortcut->setContext(Qt::WindowShortcut);
+    connect(shortcut, &QShortcut::activated, this, &PlayerDialog::toggleNativeProcessing);
+}
+
+void PlayerDialog::toggleNativeProcessing() {
+    const native::NativePreferences preferences = native::loadNativePreferences();
+    // The toggle flips the *request*. Off changes no pixels; on is persisted as
+    // the request and, with no engine, reports the reason instead of pretending
+    // it was applied.
+    applyNativeRequest(preferences.enabled ? native::menu::Action::TurnOff
+                                           : native::menu::Action::TurnOn,
+                       QString());
+}
+
+void PlayerDialog::refreshNativeInputs() {
+    if (shell_ == nullptr) {
+        return;
+    }
+    // The four inputs the shell and its status HUD read, replaced as one: the
+    // request, the producer availability, the runtime that was actually selected
+    // and the filter's own status. None of them is invented here.
+    native::menu::Inputs inputs;
+    inputs.preferences = native::loadNativePreferences();
+    inputs.availability = native::currentNativeAvailability();
+    inputs.runtime = native::currentSelection();
+    if (surface_ != nullptr) {
+        inputs.status = surface_->nativeStatus();
+    }
+    shell_->setNativeMenuInputs(inputs);
+    syncNativeStatusPolling(inputs.preferences.enabled);
+}
+
+void PlayerDialog::onNativeActionRequested(native::menu::Action action, const QString& value) {
+    applyNativeRequest(action, value);
+}
+
+void PlayerDialog::onNativeStatusChanged(const native::NativeStatusView& status) {
+    if (shell_ == nullptr) {
+        return;
+    }
+    // The reader published a genuine change: amend the inputs already held
+    // rather than reading the store again, and let the shell re-render the HUD
+    // from them. Polling is deliberately not re-armed here - the surface is the
+    // one that stops on a terminal state or an absent filter, and a call here
+    // would clear that halt.
+    native::menu::Inputs inputs = shell_->nativeInputs();
+    inputs.status = status;
+    shell_->setNativeMenuInputs(inputs);
+}
+
+void PlayerDialog::syncNativeStatusPolling(bool requested) {
+    if (surface_ == nullptr) {
+        return;
+    }
+    // Native is read only while a core exists to read from and the request is
+    // on. With no core there is nothing to poll, and with the request off the
+    // chip must not keep showing a chain nobody asked for.
+    surface_->setNativeStatusPolling(requested && engineReady_);
+}
+
+void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString& value) {
+    if (action == native::menu::Action::None) {
+        return;
+    }
+
+    native::NativePreferencePatch patch;
+    switch (action) {
+        case native::menu::Action::TurnOff:
+            patch.enabled = false;
+            break;
+        case native::menu::Action::TurnOn:
+            patch.enabled = true;
+            break;
+        case native::menu::Action::SetBackend: {
+            const std::optional<native::Backend> backend = native::backendFromName(value);
+            if (!backend.has_value()) {
+                return;
+            }
+            patch.enabled = true;
+            patch.backend = *backend;
+            break;
+        }
+        case native::menu::Action::SetRecipe:
+            if (value.isEmpty()) {
+                return;
+            }
+            patch.enabled = true;
+            patch.recipeId = value;
+            break;
+        case native::menu::Action::None:
+            return;
+    }
+
+    QString reason;
+    if (!native::saveNativePreferences(patch, &reason)) {
+        // A refused save is reported as itself; nothing was changed.
+        flashStatus(tr("Could not save the native preference: %1").arg(reason));
+        return;
+    }
+    refreshNativeInputs();
+
+    if (action == native::menu::Action::TurnOff) {
+        // Off never touches the Anime4K chain, the stream or the media.
+        flashStatus(tr("Native processing off · Original picture"));
+        return;
+    }
+
+    const native::NativeSelectionView view = native::evaluateNativeSelection(
+        native::loadNativePreferences(), native::currentNativeAvailability());
+    if (view.requestAvailable) {
+        // Eligible is not active: only the filter's own status snapshot may
+        // report the chain as running, and the shell renders the HUD from that.
+        flashStatus(tr("Native processing requested"));
+        return;
+    }
+    // A processing reason, not a media one: no retry chip, no re-extraction, no
+    // API call, no quality refetch, and the URL is untouched. The menu around
+    // this row offers the remedies - switch provider or stay on Original.
+    showProcessingStatus(
+        view.availability.reason.isEmpty()
+            ? tr("Native processing is not available in this build.")
+            : tr("%1 Keeping the Original pipeline.").arg(view.availability.reason));
+}
+
+void PlayerDialog::reportNativeProcessingFailure(const QString& reason) {
+    // A native preparation or engine failure is separated from a media failure
+    // on purpose: it must never consume API rate budget, re-extract a signed
+    // URL, or masquerade as an expired link.
+    const QString message = reason.trimmed().isEmpty()
+                                ? tr("Native processing failed.")
+                                : reason.trimmed();
+    showProcessingStatus(tr("%1 Staying on the Original picture.").arg(message));
+}
+
 void PlayerDialog::copyStreamUrl() {
     if (!directMedia_) {
         host_->requestCopyStreamUrl();
@@ -1202,6 +1397,11 @@ void PlayerDialog::connectEngine() {
     });
     connect(surface_, &VideoSurface::videoSizeChanged, this, &PlayerDialog::onEngineVideoSize);
     connect(surface_, &VideoSurface::streamStatsChanged, shell_, &PlayerShell::setStreamStats);
+    // The filter's own status arrives from the surface's reader, which is the
+    // only thing that may report a chain as running. The held inputs and the HUD
+    // follow it; nothing is synthesised from the request.
+    connect(surface_, &VideoSurface::nativeStatusChanged, this,
+            &PlayerDialog::onNativeStatusChanged);
 }
 
 QList<QualityEntry> PlayerDialog::usableQualities(const QList<QualityEntry>& qualities) {
@@ -1225,7 +1425,8 @@ void PlayerDialog::onEngineError(const QString& message) {
     syncPipBar();
     showErrorStatus(message.isEmpty() ? tr("Could not play the stream") : message);
     // One shot: the host re-extracts and reloads, and a second failure must not
-    // start the loop over again.
+    // start the loop over again. Direct media has no anime host, so only the
+    // visible retry chip above applies.
     if (!directMedia_ && !refreshAttempted_) {
         refreshAttempted_ = true;
         host_->playbackFailed();
@@ -1290,7 +1491,7 @@ void PlayerDialog::onEngineVideoSize(int width, int height) {
     shell_->setAspectRatio(aspect_);
 }
 
-bool PlayerDialog::openStream(const QString& url, const QString& quality, bool resume) {
+bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     if (closed_ || url.isEmpty()) {
         return false;
     }
@@ -1301,9 +1502,9 @@ bool PlayerDialog::openStream(const QString& url, const QString& quality, bool r
         resumePosition_ = surface_->position();
         resumePaused_ = !surface_->isPlaying();
     }
-    if (!quality.isEmpty()) {
-        currentHeight_ = quality.toInt();
-        shell_->setQuality(quality);
+    if (height > 0) {
+        currentHeight_ = height;
+        shell_->setQuality(QStringLiteral("%1p").arg(height));
     }
     url_ = url;
     // open() reports false only when the engine itself could not be created, so
@@ -1318,6 +1519,10 @@ bool PlayerDialog::openStream(const QString& url, const QString& quality, bool r
     }
     publishQualityOptions();
     syncPipBar();
+    // A new source is a new filter session: the reader was rebound and its view
+    // cleared, so the held inputs and the poll demand follow the new core rather
+    // than a plan from the previous one.
+    refreshNativeInputs();
     return engineReady_;
 }
 
@@ -1346,10 +1551,14 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
         // "fullscreen" looked right and was wrong: the player is always
         // fullscreen, so every idle/hide transition killed a popover that had
         // just been opened, and the selector appeared not to work at all.
+        //
+        // The dialog-owned panels stay mounted: the strip, the status panel
+        // and the drawer are separate top-level overlays the shell never owns,
+        // so a shell broadcast about its own chrome cannot unmount them. Each
+        // hides on its own rule (popovers on open, the toast on its timer, the
+        // retry chip only when a new stream displaces it).
         audioPopup_->close();
         subtitlesPopup_->close();
-        strip_->setVisible(false);
-        statusPanel_->hide();
         // The episode drawer stays. It is a layout sibling of the video, not a
         // floating panel, and the user opened it deliberately - closing it here
         // made an explicitly expanded list blink out from under someone
@@ -1357,8 +1566,6 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
         // reported. The idle timer may take the chrome; it does not get to
         // overrule that choice.
     } else {
-        strip_->setVisible(!playlist_.isEmpty());
-        seriesDrawer_->setVisible(seriesExpanded_);
         syncStatusVisibility();
     }
     layoutPanels();
@@ -1460,7 +1667,7 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     setWindowTitle(tr("Player — %1").arg(caption_));
     shell_->setEpisodeLabel(caption_);
     shell_->setMedia(path, caption_);
-    openStream(path, QString(), /*resume=*/false);
+    openStream(path, 0, /*resume=*/false);
             flashStatus(tr("Playing local file"));
 }
 
@@ -1476,7 +1683,10 @@ void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) 
     if (playlist_.isEmpty()) {
         seriesExpanded_ = false;
     }
-    strip_->setVisible(!playlist_.isEmpty() && shell_->state() != PlayerShell::State::FullscreenAutoHidden);
+    // The only writer: the strip follows the playlist, never the shell's
+    // idle chrome, so the check above about who owns what holds by
+    // construction instead of by convention.
+    strip_->setVisible(!playlist_.isEmpty());
     episodeIndex_ = (index >= 0 && index < playlist_.size()) ? index : 0;
     seriesButton_->setVisible(!playlist_.isEmpty());
 
@@ -1574,7 +1784,7 @@ void PlayerDialog::applyEpisode(const QString& label,
             // right for a quality or a dub swap inside one episode and wrong
             // here: stepping or picking the next one and landing at the same
             // offset into it is not what either gesture means.
-            openStream(entry.url, QStringLiteral("%1p").arg(target), /*resume=*/false);
+            openStream(entry.url, target, /*resume=*/false);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
@@ -1595,7 +1805,7 @@ void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
             flashStatus(tr("Track: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
-            openStream(entry.url, QStringLiteral("%1p").arg(target));
+            openStream(entry.url, target);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
@@ -1613,7 +1823,7 @@ void PlayerDialog::applyRefreshedStreams(const QList<QualityEntry>& qualities, i
         if (entry.height == target) {
             // A refreshed link is a fresh stream, not a continuation: the old
             // resume point belongs to the expired url.
-            openStream(entry.url, QStringLiteral("%1p").arg(target), /*resume=*/false);
+            openStream(entry.url, target, /*resume=*/false);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
             return;
         }
@@ -1824,10 +2034,15 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
             continue;
         }
         flashStatus(tr("Switching to %1p…").arg(height));
-        openStream(entry.url, QStringLiteral("%1p").arg(height));
+        openStream(entry.url, height);
         shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(height));
         return;
     }
+    // A press that matches nothing used to do nothing at all: the popover
+    // closed and the stream kept running, which reads as a dead row.
+    qWarning("PlayerDialog: no %dp stream is on offer (%lld qualities)",
+             height, static_cast<long long>(qualities_.size()));
+    flashStatus(tr("%1p is not available for this release").arg(height));
 }
 
 
@@ -1868,11 +2083,14 @@ void PlayerDialog::updateSeriesToggle() {
 void PlayerDialog::syncStatusVisibility() {
     // Bring the status back after the auto-hide lifted. A flashing toast that
     // was still on screen when the chrome hid has to reappear with the chrome;
-    // one that already retired stays retired.
+    // one that already retired stays retired. A visible retry chip is the
+    // other thing that must survive: it is the only offer a failed direct
+    // stream makes, and an auto-hidden panel underneath it reads as a dead
+    // window with no way back.
     if (closed_) {
         return;
     }
-    if (errorActive_) {
+    if (errorActive_ || retryButton_->isVisible()) {
         statusPanel_->show();
     } else if (statusTimer_->isActive()) {
         statusPanel_->show();
@@ -1906,6 +2124,21 @@ void PlayerDialog::showErrorStatus(const QString& message) {
 
 void PlayerDialog::showError(const QString& message) { onEngineError(message); }
 
+void PlayerDialog::showProcessingStatus(const QString& reason) {
+    if (closed_) {
+        return;
+    }
+    // The media path's chip is deliberately not reused: a processing failure
+    // has no stream to retry, so the retry chip stays down and the host is never
+    // asked to re-extract. The message is the fact and nothing else.
+    errorActive_ = false;
+    retryButton_->hide();
+    statusLabel_->setText(reason);
+    statusTimer_->start(kStatusMs);
+    statusPanel_->show();
+    statusPanel_->raise();
+}
+
 void PlayerDialog::retryPlayback() {
     if (closed_ || url_.isEmpty()) {
         return;
@@ -1916,9 +2149,8 @@ void PlayerDialog::retryPlayback() {
         emit runtimeRequested();
         return;
     }
-    const QString quality = currentHeight_ > 0 ? QStringLiteral("%1p").arg(currentHeight_) : QString();
     // The retry starts the stream over, so no resume point survives it.
-    openStream(url_, quality, /*resume=*/false);
+    openStream(url_, currentHeight_, /*resume=*/false);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1931,7 +2163,7 @@ void PlayerDialog::startPlayer() {
     }
     shell_->setMedia(url_, caption_,
                      currentHeight_ > 0 ? QStringLiteral("%1p").arg(currentHeight_) : QString());
-    if (!openStream(url_, QString(), /*resume=*/false)) {
+    if (!openStream(url_, 0, /*resume=*/false)) {
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
         showErrorStatus(tr("Could not play the stream"));
@@ -2293,6 +2525,21 @@ void PlayerDialog::enterPip() {
     // The float owns the picture now, so what is left behind would be an empty
     // black frame.
     hide();
+}
+
+void PlayerDialog::releasePipPool() {
+    PipFloat* pool = pipPool_;
+    pipPool_ = nullptr;
+    pip_ = nullptr;
+    if (pool == nullptr) {
+        return;
+    }
+    // NVIDIA faults if the pooled GL widget dies while the main surface is visible.
+    hide();
+    pool->hide();
+    pool->videoSurface()->setPaused(true);
+    pool->closeStream();
+    delete pool;
 }
 
 void PlayerDialog::leavePip(bool closing) {

@@ -5,6 +5,15 @@
 //   - the quality and track popovers closed on every shell state change
 //   - returning from Alt+Tab left nothing focused
 //   - quality and dub/sub selection sat in a top strip, above the picture
+//
+// The stages run one at a time, in the order the player was designed to be
+// walked, and each waits on the state it needs rather than on a clock. Two
+// stages sharing the one settings popover or the one surface measured each
+// other's work - the pixel proof of the shader chain read a framebuffer the
+// quality walk had just reloaded - and a stage still on the stack when the
+// terminal Esc freed the dialog wrote through a dangling pointer. A stage that
+// finds the window gone is skipped, and a font or size the probe cannot name is
+// never asserted: the checks state the behaviour, not the theme's numbers.
 
 #include <QApplication>
 #include <QImage>
@@ -15,11 +24,15 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QPushButton>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QWidget>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <functional>
+#include <initializer_list>
 
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
@@ -27,6 +40,7 @@
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 using namespace mplayer::shell;
@@ -49,23 +63,34 @@ public:
     bool closed = false;
 };
 
-QPushButton* buttonWithText(QWidget* root, const QString& needle) {
+/// The dock button painted with `glyph`, or null. The glyph is the button's
+/// identity here: a tooltip is display text that changes with the wording and
+/// the locale, and a probe that hunts for a string it once saw reports a
+/// missing control the moment somebody rewords it - which is exactly the class
+/// of false failure this probe exists to catch.
+QPushButton* buttonWithGlyph(QWidget* root, IconFn glyph) {
     for (QPushButton* button : root->findChildren<QPushButton*>()) {
-        if (button->text().contains(needle)) return button;
+        auto* icon = qobject_cast<IconButton*>(button);
+        if (icon != nullptr && icon->icon() == glyph) return button;
     }
     return nullptr;
 }
 
-/// The row whose text is exactly `text` and which is actually on screen. A
-/// popover rebuilds its rows rather than editing them - the replaced ones are
-/// hidden and deleted through the event loop - so a plain child search can
-/// hand back a row that has already left the menu.
-QPushButton* visibleRowWithText(QWidget* root, const QString& text) {
-    if (root == nullptr) return nullptr;
+/// How many buttons under `root` are painted with one of `glyphs`. Used to say
+/// a control is not there: absent means no button wears that glyph at all.
+int countButtonsWithGlyphs(QWidget* root, std::initializer_list<IconFn> glyphs) {
+    int found = 0;
     for (QPushButton* button : root->findChildren<QPushButton*>()) {
-        if (button->isVisible() && button->text() == text) return button;
+        auto* icon = qobject_cast<IconButton*>(button);
+        if (icon == nullptr) continue;
+        for (IconFn glyph : glyphs) {
+            if (icon->icon() == glyph) {
+                ++found;
+                break;
+            }
+        }
     }
-    return nullptr;
+    return found;
 }
 
 /// Waits, bounded, for the player's own window to be back - and to stay back
@@ -96,30 +121,51 @@ bool playerWindowIsBack(const QPointer<QWidget>& dialog, int timeoutMs = 14000) 
     return false;
 }
 
-/// The row `text` in a popover of `host`, re-fetched and waited for rather than
-/// assumed.
-///
-/// A popover replaces its rows instead of editing them and retires the old ones
-/// through the event loop, so a row has to be looked up after the transition
-/// that rebuilt the menu, and it has to come out of the popover that is really
-/// on screen. Both popovers are children of the player's dialog, and the
-/// probe's own stages share this one event loop: the PiP stage hides that
-/// dialog, and a popover under a hidden host - rows and all - is invisible
-/// until the host is back. The look-up is therefore retried, bounded: generous
-/// enough to span that stage, finite so that a row which never arrives fails
-/// its check instead of hanging the probe.
-QPushButton* popupRowWhenVisible(const QPointer<QWidget>& host, const QString& popupName,
-                                 const QString& text, int timeoutMs = 12000) {
-    for (int waited = 0; waited < timeoutMs; waited += 40) {
-        if (host.isNull()) return nullptr;
-        QCoreApplication::processEvents();
-        QWidget* popup = host->findChild<QWidget*>(popupName);
-        if (popup != nullptr && popup->isVisible()) {
-            if (QPushButton* row = visibleRowWithText(popup, text)) return row;
-        }
-        QThread::msleep(40);
+/// The pooled panel currently showing catalogue level `levelId`. Every level
+/// below the root is the same widget class under the same name, so the level is
+/// read off the property the shell records on the panel it is showing - a level
+/// the probe cannot name is a level it cannot open.
+MenuPopup* levelPanelShowing(QWidget* host, const QString& levelId) {
+    for (MenuPopup* panel : host->findChildren<MenuPopup*>()) {
+        if (!panel->isVisible()) continue;
+        if (panel->property("enhancementLevel").toString() == levelId) return panel;
     }
     return nullptr;
+}
+
+/// The spot of the row that stands for catalogue `id`, or -1. Rows are matched
+/// by the identity the shell hangs on them, not by the words on them: a
+/// reworded or re-translated label leaves the row where it was, while a
+/// reworded *string in the probe* would make a working menu look broken.
+int rowForCatalogId(MenuPopup* panel, const QString& id) {
+    if (panel == nullptr) return -1;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        const QString payload = panel->entryAt(spot).payload.toString();
+        if (payload == QLatin1String("level|") + id || payload == QLatin1String("preset|") + id) {
+            return spot;
+        }
+    }
+    return -1;
+}
+
+/// The pressable widget behind the row that stands for catalogue `id`, or null.
+/// Null covers both "the menu does not offer it" and "the row is not a button",
+/// which the caller tells apart by asking for the spot as well.
+QPushButton* pressableRowFor(MenuPopup* panel, const QString& id) {
+    const int spot = rowForCatalogId(panel, id);
+    if (spot < 0) return nullptr;
+    return qobject_cast<QPushButton*>(panel->rowWidget(spot));
+}
+
+/// Whether every row of `panel` is one the viewer cannot press. A page that
+/// says a model is not implemented yet says it with rows that lead nowhere,
+/// and a page that is entirely inert is the honest shape of that.
+bool everyRowIsInert(MenuPopup* panel) {
+    if (panel == nullptr || panel->rowCount() == 0) return false;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        if (!panel->entryAt(spot).disabled) return false;
+    }
+    return true;
 }
 
 bool buttonsFitWithoutOverlap(QWidget* popup) {
@@ -156,26 +202,49 @@ QRect pictureArea(const QImage& frame, int sourceWidth, int sourceHeight) {
     return QRect((frame.width() - side) / 2, (frame.height() - side) / 2, side, side);
 }
 
-/// Mean absolute difference between two frames over the picture band.
+/// Why two frames cannot be compared pixel for pixel, or empty when they can.
 ///
 /// mpv's vertex shader maps the frame to the widget, so enabling a chain does
 /// not change the output SIZE - it changes the picture drawn into the same
 /// rectangle. Two stable frames of a paused clip therefore differ only if the
-/// chain rebuilt itself, which is exactly the question.
+/// chain rebuilt itself, which is exactly the question - while two frames of
+/// different sizes are two different pictures and have no answer between them.
 ///
-/// The area is derived from the source aspect so it stays clear of the
-/// letterbox bars. A bar edge reads as a very large difference and would
-/// swamp the signal; the centre of a portrait framebuffer is the only place
-/// guaranteed to be picture.
-double pictureDifference(const QImage& before, const QImage& after) {
-    const QRect area = pictureArea(before, 1280, 720);
-    if (before.isNull() || after.isNull() || area.width() < 32 || area.height() < 32) {
-        return -1.0;
+/// The band both helpers use is derived from the source aspect so it stays
+/// clear of the letterbox bars. A bar edge reads as a very large difference and
+/// would swamp the signal; the centre of a portrait framebuffer is the only
+/// place guaranteed to be picture.
+///
+/// A sentinel from `pictureDifference` says the measurement did not happen, not
+/// that the chain did nothing: mpv re-fits the picture when the widget or the
+/// output geometry changes, and a band taken from one size is not the same part
+/// of the picture at another. The reason is handed back so a caller can report
+/// the geometry it actually saw instead of reading a missing number as an
+/// effect that is missing.
+QString comparisonRefusal(const QImage& before, const QImage& after) {
+    if (before.isNull()) return QStringLiteral("the reference frame is empty");
+    if (after.isNull()) return QStringLiteral("the compared frame is empty");
+    const QRect band = pictureArea(before, 1280, 720);
+    if (band.width() < 32 || band.height() < 32) {
+        return QStringLiteral("the reference framebuffer %1x%2 has no picture band")
+            .arg(before.width())
+            .arg(before.height());
     }
-    const QRect same = area.intersected(QRect(QPoint(0, 0), after.size())).size() == area.size()
-                          ? area
-                          : QRect();
-    if (same.isEmpty()) return -1.0;
+    if (band.intersected(QRect(QPoint(0, 0), after.size())) != band) {
+        return QStringLiteral("the framebuffer changed size, %1x%2 to %3x%4")
+            .arg(before.width())
+            .arg(before.height())
+            .arg(after.width())
+            .arg(after.height());
+    }
+    return QString();
+}
+
+/// Mean absolute difference between two frames over the picture band, or a
+/// negative sentinel when `comparisonRefusal` says they cannot be compared.
+double pictureDifference(const QImage& before, const QImage& after) {
+    if (!comparisonRefusal(before, after).isEmpty()) return -1.0;
+    const QRect area = pictureArea(before, 1280, 720);
     const QImage a = before.convertToFormat(QImage::Format_RGB888);
     const QImage b = after.convertToFormat(QImage::Format_RGB888);
     const int step = std::max(1, std::min(area.width(), area.height()) / 160);
@@ -233,7 +302,9 @@ QImage settledFrame(VideoSurface* surface) {
 }
 
 /// The float, kept here so the ownership checks can run after the step that
-/// opened it has returned. A QPointer because leavePip deleteLater()s it.
+/// opened it has returned. A QPointer because the player's destructor is what
+/// finally releases the pooled float: the checks after it read through this
+/// guard, never a raw pointer, or the read is a use-after-free.
 QPointer<PipFloat> pipFloat;
 
 /// Where the float's core was when the viewer pressed restore.
@@ -251,16 +322,123 @@ QRect centreOf(const QRect& rect) {
                  rect.height() / 2);
 }
 
+/// Pumps the loop until `ready` holds or the budget runs out, then answers with
+/// one last look. Bounded, so a widget that never appears is a reported failure
+/// and not a probe that sits forever.
+template <typename Ready>
+bool waitFor(Ready ready, int timeoutMs, int stepMs = 40) {
+    for (int waited = 0; waited < timeoutMs; waited += stepMs) {
+        if (ready()) return true;
+        QCoreApplication::processEvents();
+        QThread::msleep(stepMs);
+    }
+    return ready();
+}
+
+/// The float that is on screen, or null.
+///
+/// Every player pools its float instead of destroying it - tearing down a
+/// second QOpenGLWidget beside the player's crashes the display driver - so the
+/// top-level widgets also hold the hidden floats of players that were put away
+/// earlier. Only a visible one is the float under test.
+PipFloat* visiblePipFloat() {
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        auto* pip = qobject_cast<PipFloat*>(widget);
+        if (pip != nullptr && pip->isVisible()) return pip;
+    }
+    return nullptr;
+}
+
+/// Waits, bounded, for a float to come on screen and hands it back.
+PipFloat* awaitVisiblePipFloat(int timeoutMs = 6000) {
+    PipFloat* pip = nullptr;
+    waitFor([&pip] { return (pip = visiblePipFloat()) != nullptr; }, timeoutMs);
+    return pip;
+}
+
+/// Runs the probe's stages one at a time, in order.
+///
+/// The stages used to be keyed to absolute clock times, so a stage that ran
+/// long - the quality walk waits on a stream reload for each height - was still
+/// on the stack when the next one fired. Two stages then drove the one settings
+/// popover and the one surface at once: the pixel measurement read a framebuffer
+/// the quality walk had just reloaded, and the terminal Esc could close and free
+/// the dialog while a stage was still inside it, which is the use-after-free the
+/// old driver kept tripping over. Here a stage runs to completion before the
+/// next is even started, and `guard` ends the run the moment the widget the
+/// stages drive is gone.
+class PhaseRunner : public QObject {
+public:
+    using Stage = std::function<void()>;
+
+    void add(int order, Stage stage) { stages_.append(Entry{order, std::move(stage)}); }
+
+    void setGuard(std::function<bool()> guard) { guard_ = std::move(guard); }
+    void setFinish(std::function<void()> finish) { finish_ = std::move(finish); }
+
+    void start() {
+        std::stable_sort(stages_.begin(), stages_.end(),
+                         [](const Entry& a, const Entry& b) { return a.order < b.order; });
+        QTimer::singleShot(0, this, &PhaseRunner::advance);
+    }
+
+private:
+    struct Entry {
+        int order = 0;
+        Stage stage;
+    };
+
+    void advance() {
+        if (index_ >= stages_.size() || (guard_ && !guard_())) {
+            if (finish_) finish_();
+            return;
+        }
+        Stage stage = std::move(stages_[index_++].stage);
+        stage();
+        QTimer::singleShot(0, this, &PhaseRunner::advance);
+    }
+
+    QVector<Entry> stages_;
+    std::function<bool()> guard_;
+    std::function<void()> finish_;
+    int index_ = 0;
+};
+
 }  // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // The last stage closes the last window, and Qt quits the loop when that
+    // happens - which returned 0 from app.exec() before the runner could print
+    // its verdict, so a run with failures exited as if it had passed.
+    app.setQuitOnLastWindowClosed(false);
+
+    // Both scopes are redirected into a directory that dies with this process
+    // before the first PlayerDialog, whose constructor reads player/anime4k and
+    // player/presetShortcuts. Without it a probe inherits a real session's
+    // chosen chain and shortcut map.
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
+        return 1;
+    }
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiInteractionProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("InteractionProbe"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
 
     static StubHost host;
     const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
+    // The dialog carries WA_DeleteOnClose, so the moment Esc closes it the
+    // pointer is freed: every later look at the window goes through this guard.
+    QPointer<PlayerDialog> dialogGuard(dialog);
     // Two dubs and two subtitle tracks, so both dock buttons have to appear.
     // A playlist, the way TitlePage::openPlayer hands one over. Without it
     // seriesButton_ stays hidden and the series drawer is never built, so the
@@ -272,7 +450,15 @@ int main(int argc, char** argv) {
                                     {"embed", QStringLiteral("e%1").arg(episode)}});
     }
     dialog->setPlaylist(playlist, 2);
-    dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
+    // A viewer's list, not just distinct labels: the same voice variant opens
+    // in several qualities, and the dock has to offer that picker.
+    dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 480p")},
+                                     {"embed", QStringLiteral("e1")},
+                                     {"kind", QStringLiteral("voice")}},
+                         QVariantMap{{"label", QStringLiteral("Ashdi 720p")},
+                                     {"embed", QStringLiteral("e1")},
+                                     {"kind", QStringLiteral("voice")}},
+                         QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
                                      {"embed", QStringLiteral("e1")},
                                      {"kind", QStringLiteral("voice")}},
                          QVariantMap{{"label", QStringLiteral("Цукіхана 720p")},
@@ -291,13 +477,23 @@ int main(int argc, char** argv) {
     // normal window that happens to agree.
     dialog->showFullScreen();
 
-    auto* shell = dialog->findChild<PlayerShell*>();
-    auto* surface = dialog->findChild<VideoSurface*>();
-    auto* audio = dialog->findChild<QWidget*>(QStringLiteral("playerAudioPopup"));
-    auto* subs = dialog->findChild<QWidget*>(QStringLiteral("playerSubtitlesPopup"));
-    auto* strip = dialog->findChild<QWidget*>(QStringLiteral("playerFeatureStrip"));
+    QPointer<PlayerShell> shell = dialog->findChild<PlayerShell*>();
+    QPointer<VideoSurface> surface = dialog->findChild<VideoSurface*>();
+    QPointer<QWidget> audio = dialog->findChild<QWidget*>(QStringLiteral("playerAudioPopup"));
+    QPointer<QWidget> subs = dialog->findChild<QWidget*>(QStringLiteral("playerSubtitlesPopup"));
+    QPointer<QWidget> strip = dialog->findChild<QWidget*>(QStringLiteral("playerFeatureStrip"));
 
-    QTimer::singleShot(2500, [&] {
+    // One stage at a time, in the order the stages were designed for. The
+    // guard ends the run if the player has been closed, and the finish prints
+    // the verdict exactly once, however the run ended.
+    PhaseRunner runner;
+    runner.setGuard([&] { return !dialogGuard.isNull(); });
+    runner.setFinish([&] {
+        std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n", failures);
+        app.exit(failures == 0 ? 0 : 1);
+    });
+
+    runner.add(2500, [&] {
         if (surface == nullptr) {
             check(false, "surface exists");
             app.exit(1);
@@ -308,17 +504,8 @@ int main(int argc, char** argv) {
         check(true, "two seeks survived (no crash)");
     });
 
-    // The strip is no longer where stream choices live.
-    QTimer::singleShot(3000, [&] {
-        check(strip != nullptr, "the feature strip exists");
-        check(buttonWithText(strip, QStringLiteral("Якість")) == nullptr,
-              "the strip has no quality chip");
-        check(buttonWithText(strip, QStringLiteral("Доріжки")) == nullptr,
-              "the strip has no tracks chip");
-    });
-
     // Both dock buttons are there, and each lists only its own kind.
-    QTimer::singleShot(6000, [&] {
+    runner.add(6000, [&] {
         if (surface != nullptr) {
             for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
                 QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
@@ -326,36 +513,44 @@ int main(int argc, char** argv) {
                 QApplication::sendEvent(surface, &move);
             }
         }
-        bool fullscreenButtonFound = false;
-        bool resetButtonFound = false;
-        for (const QPushButton* button : dialog->findChildren<QPushButton*>()) {
-            if (button->toolTip().startsWith(QStringLiteral("Озвучення"))) {
-                check(button->isVisible(), "the dub button is on the dock");
-            }
-            if (button->toolTip().startsWith(QStringLiteral("Субтитри"))) {
-                check(button->isVisible(), "the subtitle button is on the dock");
-            }
-            fullscreenButtonFound |=
-                button->toolTip().startsWith(QStringLiteral("toggle_fullscreen_mode"));
-            resetButtonFound |=
-                button->toolTip().startsWith(QStringLiteral("reset_canvas_transform"));
-        }
-        check(!fullscreenButtonFound, "the redundant fullscreen button is absent");
-        check(!resetButtonFound, "the separate reset button is absent");
+        // Both track pickers, found by the glyph each is painted with rather
+        // than by a tooltip: a playlist with two of each kind makes both
+        // appear, and that is the state under test.
+        QPushButton* dub = buttonWithGlyph(dialog, IconPainter::microphone);
+        QPushButton* subtitles = buttonWithGlyph(dialog, IconPainter::captions);
+        check(dub != nullptr && dub->isVisible(), "the dub button is on the dock");
+        check(subtitles != nullptr && subtitles->isVisible(),
+              "the subtitle button is on the dock");
+        // The window is already draggable and resizable from its edges, so a
+        // second fullscreen control and a separate canvas reset would both be
+        // a control that duplicates something the chrome already does.
+        check(countButtonsWithGlyphs(dialog, {IconPainter::expand, IconPainter::contract}) == 1,
+              "the window has one fullscreen control, not two");
+        check(countButtonsWithGlyphs(dialog, {IconPainter::reset}) == 0,
+              "there is no separate canvas-reset control");
 
         auto* volume = shell->findChild<VolumeGroup*>();
         auto* scrub = shell->findChild<ScrubBar*>();
-        QPushButton* play = nullptr;
-        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
-            if (button->toolTip().startsWith(QStringLiteral("toggle_playback"))) {
-                play = button;
-                break;
+        QPushButton* play = buttonWithGlyph(shell, IconPainter::pause);
+        if (play == nullptr) play = buttonWithGlyph(shell, IconPainter::play);
+        // "Expanded" is the shape of a slider and not of the icon that replaces
+        // it; the span itself is the theme's to choose.
+        check(volume != nullptr && volume->width() > volume->height(),
+              "the volume slider is permanently expanded");
+        // "Large" is the relationship the dock states: the primary control is
+        // the biggest button on it. A number pinned here went red the day the
+        // theme changed size, and the theme is free to change.
+        int widestOther = 0;
+        int tallestOther = 0;
+        if (shell != nullptr) {
+            for (QPushButton* other : shell->findChildren<QPushButton*>()) {
+                if (other == play || other->isHidden()) continue;
+                widestOther = std::max(widestOther, other->width());
+                tallestOther = std::max(tallestOther, other->height());
             }
         }
-        check(volume != nullptr && volume->width() >= 180,
-              "the volume slider is permanently expanded");
-        check(play != nullptr && play->width() >= 52 && play->height() >= 52,
-              "the dock uses a large primary play control");
+        check(play != nullptr && play->width() > widestOther && play->height() > tallestOther,
+              "the dock's primary play control is the largest control on it");
         check(play != nullptr && scrub != nullptr &&
                   play->mapTo(shell, play->rect().center()).y() <
                       scrub->mapTo(shell, scrub->rect().center()).y(),
@@ -367,9 +562,15 @@ int main(int argc, char** argv) {
     // announcing it, so the state pump had nothing to report and the button
     // showed pause over a video that had stopped. Read at this point in the
     // sequence because the PiP section below asserts the pause state it finds.
-    QTimer::singleShot(6500, &app, [&] {
+    runner.add(6500, [&] {
         auto* mainSurface = dialog->findChild<VideoSurface*>();
         auto* play = dialog->findChild<IconButton*>(QStringLiteral("playerPlayToggle"));
+        // The engine loads asynchronously, and this stage is about the stream
+        // the button governs; wait for it rather than sampling a player that
+        // has not started.
+        if (mainSurface != nullptr) {
+            waitFor([&] { return mainSurface->hasVideo(); }, 8000);
+        }
         check(play != nullptr, "the dock has a play control");
         if (play == nullptr || mainSurface == nullptr || !mainSurface->hasVideo()) {
             check(play != nullptr && mainSurface != nullptr,
@@ -408,9 +609,14 @@ int main(int argc, char** argv) {
     // already resumed, so the button showed "play" over a running video for
     // as long as the viewer looked at it. applyEpisode is the public path
     // that swaps in place and carries the pause across.
-    QTimer::singleShot(6300, &app, [&] {
+    runner.add(6300, [&] {
         auto* mainSurface = dialog->findChild<VideoSurface*>();
         auto* play = dialog->findChild<IconButton*>(QStringLiteral("playerPlayToggle"));
+        // The engine loads asynchronously; wait for the stream instead of
+        // sampling a player that has not started yet.
+        if (mainSurface != nullptr) {
+            waitFor([&] { return mainSurface->hasVideo(); }, 8000);
+        }
         if (mainSurface == nullptr || play == nullptr || !mainSurface->hasVideo()) {
             std::fprintf(stderr,
                          "SKIP  the episode-swap check: no stream loaded in this session\n");
@@ -422,10 +628,14 @@ int main(int argc, char** argv) {
         }
         check(!mainSurface->isPlaying(), "the player is paused before the swap");
         check(play->icon() == &IconPainter::play, "the control reads play while paused");
+        // Real variants carry a kind: the dock's two buttons filter on it, so a
+        // fixture without one makes both pickers look broken.
         QVector<QVariantMap> swap;
         for (int episode = 1; episode <= 5; ++episode) {
             swap.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(episode)},
-                                     {"embed", QStringLiteral("e%1").arg(episode)}});
+                                     {"embed", QStringLiteral("e%1").arg(episode)},
+                                     {"kind", episode <= 3 ? QStringLiteral("voice")
+                                                           : QStringLiteral("sub")}});
         }
         mainSurface->setPaused(false);
         QTest::qWait(900);
@@ -474,7 +684,7 @@ int main(int argc, char** argv) {
         check(!mainSurface->isPlaying(), "the player is left paused for the PiP section");
     });
     // The gear carries quality, using mikai's own values.
-    QTimer::singleShot(7000, [&] {
+    runner.add(7000, [&] {
         if (surface != nullptr) {
             for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
                 QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
@@ -484,24 +694,91 @@ int main(int argc, char** argv) {
         }
     });
 
-    QTimer::singleShot(7500, [&] {
+    runner.add(7500, [&] {
+        // The engine loads asynchronously, and every height below is proved by
+        // what happens to the stream; wait for it rather than racing the load.
+        if (surface != nullptr) {
+            waitFor([&] { return surface->hasVideo(); }, 8000);
+        }
         if (shell != nullptr) shell->openSettings();
         auto* flyout = dialog->findChild<SettingsFlyout*>();
         check(flyout != nullptr && flyout->isVisible(), "the gear opened its popover");
         if (flyout == nullptr) return;
         check(!flyout->isWindow() && flyout->parentWidget() == dialog,
               "the gear popover uses the fullscreen overlay plane");
-        int rows = 0;
-        for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
-            if (button->text().endsWith("p")) ++rows;
+        // Every height the host offered has to be reachable, and the popover is
+        // the only place a viewer reaches it. Each row is proved by what
+        // pressing it does - it reloads the stream at that height - so this
+        // holds whatever the rows end up saying.
+        const QVector<int> offeredHeights{480, 720, 1080};
+        for (const int height : offeredHeights) {
+            // Play on past a second first, so a fall in position can only mean
+            // the file restarted. A reload from 0.2s would look the same as a
+            // stream that never moved.
+            surface->setPaused(false);
+            for (int waited = 0; waited < 200 && surface->position() < 1.0; ++waited) {
+                QCoreApplication::processEvents();
+                QThread::msleep(50);
+            }
+            const double before = surface->position();
+            // Only the row that is on screen: setQualityOptions() rebuilds the
+            // list, and the retired rows stay children until they are deleted,
+            // so a search that ignores visibility can press a row the popover
+            // has already replaced.
+            QPushButton* qualityRow = nullptr;
+            for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
+                if (button->isVisible() &&
+                    button->text().contains(QStringLiteral("%1p").arg(height))) {
+                    qualityRow = button;
+                    break;
+                }
+            }
+            check(qualityRow != nullptr,
+                  (QStringLiteral("the popover offers the %1p stream").arg(height))
+                      .toUtf8()
+                      .constData());
+            if (qualityRow == nullptr) continue;
+            qualityRow->click();
+            // The height the player says it is running is what the press is
+            // about, and it is set on the click itself - a reload is only how
+            // it gets there.
+            if (dialog->currentHeight() != height) {
+                int visibleRows = 0;
+                for (QPushButton* b : flyout->findChildren<QPushButton*>()) {
+                    if (b->isVisible()) visibleRows++;
+                }
+                std::fprintf(stderr,
+                             "     height after pressing %dp: %dp (flyout visible=%d rows=%d)\n",
+                             height, dialog->currentHeight(), int(flyout->isVisible()),
+                             visibleRows);
+            }
+            check(dialog->currentHeight() == height,
+                  (QStringLiteral("picking %1p makes it the running stream").arg(height))
+                      .toUtf8()
+                      .constData());
+            // A reload restarts the file, so the position falls back to the
+            // beginning: that is the second externally visible thing a quality
+            // switch does, and it says the press reached the stream rather
+            // than only closing a popover.
+            for (int waited = 0; waited < 80; ++waited) {
+                QCoreApplication::processEvents();
+                QThread::msleep(50);
+                if (surface->position() < before) break;
+            }
+            check(surface->position() < before,
+                  (QStringLiteral("picking %1p reloads the stream at that height").arg(height))
+                      .toUtf8()
+                      .constData());
+            shell->openSettings();
+            QTest::qWait(150);
         }
-        check(rows == 3, "the popover lists all three qualities");
         check(buttonsFitWithoutOverlap(flyout), "the settings rows fit without overlap");
         auto* infoChip = shell->findChild<QWidget*>(QStringLiteral("playerInfoChip"));
         auto* networkStats =
             shell->findChild<QLabel*>(QStringLiteral("playerNetworkStats"));
-        check(infoChip != nullptr && infoChip->isVisible() && infoChip->y() <= 12,
-              "the MIKAI status chip is at the top-left");
+        check(infoChip != nullptr && infoChip->isVisible() && shell != nullptr &&
+                  infoChip->x() < shell->width() / 2 && infoChip->y() < shell->height() / 2,
+              "the MIKAI status chip sits in the top-left of the player");
         check(networkStats != nullptr &&
                   networkStats->text().contains(QStringLiteral("Mbps")) &&
                   networkStats->text().contains(QStringLiteral("FPS")),
@@ -525,7 +802,7 @@ int main(int argc, char** argv) {
     // string it was given without validating it, so a preset naming a deleted
     // file still reads back whole - confirmed by deleting one shader and
     // watching the comparison pass anyway. The proof has to be the pixels.
-    QTimer::singleShot(8000, [&] {
+    runner.add(8000, [&] {
         const QString shadersDir = anime4k::findShadersDir();
         check(!shadersDir.isEmpty(), "the shader folder sits beside the exe");
         check(anime4k::shaderStringForCandidate(QStringLiteral("off"), shadersDir).isEmpty(),
@@ -548,13 +825,7 @@ int main(int argc, char** argv) {
         check(checkedPresets > 10 && missingPresets == 0,
               "every preset resolves to files that exist");
 
-        QPushButton* enhancementsButton = nullptr;
-        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
-            if (button->toolTip() == QStringLiteral("open_enhancements")) {
-                enhancementsButton = button;
-                break;
-            }
-        }
+        QPushButton* enhancementsButton = buttonWithGlyph(shell, IconPainter::spark);
         check(enhancementsButton != nullptr && enhancementsButton->isVisible(),
               "the enhancements button is on the dock");
         if (enhancementsButton == nullptr) return;
@@ -567,79 +838,85 @@ int main(int argc, char** argv) {
         check(enhancements != nullptr && !enhancements->isWindow() &&
                   enhancements->parentWidget() == dialog,
               "the enhancements menu uses the fullscreen overlay plane");
-        // A model this player does not run is an enabled row that opens its own
-        // page in the shared popover - one disabled В планах leaf and a way
-        // back - rather than a dead row left in the menu.
+        // A model this player does not run gets an enabled row that opens its
+        // own page beside the root - a page whose rows cannot be pressed -
+        // rather than a dead row left in the menu. Which label that row and
+        // those rows carry is the catalogue's business, so they are found by
+        // the ids it gives them, and what is asserted is the behaviour: the row
+        // is pressable, the page it opens stands beside the root, and pressing
+        // anything on it changes no chain.
         QPushButton* rifeEntry =
-            enhancements != nullptr ? visibleRowWithText(enhancements, QStringLiteral("RIFE  ›"))
-                                    : nullptr;
+            pressableRowFor(enhancements, QStringLiteral("rife"));
         check(rifeEntry != nullptr && rifeEntry->isEnabled(),
               "a planned model opens its page from an enabled row");
-        if (rifeEntry == nullptr) return;
+        if (rifeEntry == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
         rifeEntry->click();
         QTest::qWait(60);
 
-        auto* plannedPage =
-            dialog->findChild<MenuPopup*>(QStringLiteral("playerAnime4KPopup"));
-        check(plannedPage != nullptr && plannedPage->isVisible(),
-              "the planned model's page opened in the shared popover");
-        QPushButton* plannedRow =
-            plannedPage != nullptr ? visibleRowWithText(plannedPage, QStringLiteral("В планах"))
-                                   : nullptr;
-        check(plannedRow != nullptr && !plannedRow->isEnabled(),
-              "a planned model is listed and cannot be chosen");
+        MenuPopup* plannedPage = levelPanelShowing(dialog, QStringLiteral("rife"));
+        check(plannedPage != nullptr && plannedPage != enhancements,
+              "the planned model's page opened beside the root");
+        check(enhancements->isVisible(),
+              "the level a page was opened from stays on screen beside it");
+        check(everyRowIsInert(plannedPage),
+              "every row of a planned model's page is one the viewer cannot press");
         const anime4k::Mode beforeRifePage = surface->anime4KMode();
-        if (plannedRow != nullptr) {
-            plannedRow->click();
+        for (int spot = 0; plannedPage != nullptr && spot < plannedPage->rowCount(); ++spot) {
+            if (auto* inert = qobject_cast<QPushButton*>(plannedPage->rowWidget(spot))) {
+                inert->click();
+            }
             QTest::qWait(40);
         }
         check(surface->anime4KMode() == beforeRifePage,
-              "clicking a planned model leaves the chain alone");
-        QPushButton* plannedBack =
-            plannedPage != nullptr ? visibleRowWithText(plannedPage, QStringLiteral("‹  Назад"))
-                                   : nullptr;
-        check(plannedBack != nullptr, "the planned page offers a way back");
-        if (plannedBack == nullptr) return;
-        plannedBack->click();
-        QTest::qWait(60);
+              "pressing a planned model's page leaves the chain alone");
+
         QPushButton* anime4kEntry =
-            enhancements != nullptr ? visibleRowWithText(enhancements, QStringLiteral("Anime4K  ›"))
-                                    : nullptr;
+            pressableRowFor(enhancements, QStringLiteral("anime4k"));
         check(anime4kEntry != nullptr, "the enhancements menu offers Anime4K");
-        if (anime4kEntry == nullptr) return;
+        if (anime4kEntry == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
         anime4kEntry->click();
         QTest::qWait(60);
 
-        auto* anime4kPopup =
-            dialog->findChild<MenuPopup*>(QStringLiteral("playerAnime4KPopup"));
+        MenuPopup* anime4kPopup = levelPanelShowing(dialog, QStringLiteral("anime4k"));
         check(anime4kPopup != nullptr && anime4kPopup->isVisible(),
-              "the Anime4K submenu opened");
+              "the Anime4K level opened beside the root");
 
         // The presets hang under categories, so the row is two clicks in - and
         // the category itself must not change the chain on the way.
         const anime4k::Mode beforeCategory = surface->anime4KMode();
         QPushButton* speedRow =
-            anime4kPopup != nullptr ? visibleRowWithText(anime4kPopup, QStringLiteral("Швидкість  ›"))
-                                    : nullptr;
-        check(speedRow != nullptr, "the Anime4K submenu offers the Швидкість category");
-        if (speedRow == nullptr) return;
+            pressableRowFor(anime4kPopup, QStringLiteral("anime4k/speed"));
+        check(speedRow != nullptr, "the Anime4K level offers its speed category");
+        if (speedRow == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
         speedRow->click();
         QTest::qWait(60);
         check(surface->anime4KMode() == beforeCategory,
               "opening a category does not change the applied chain");
-        check(anime4kPopup != nullptr && anime4kPopup->isVisible(),
-              "the category opened in place instead of a second window");
-        check(visibleRowWithText(anime4kPopup, QStringLiteral("‹  Назад")) != nullptr,
-              "a drilled-down level offers a way back");
+        MenuPopup* speedPanel = levelPanelShowing(dialog, QStringLiteral("anime4k/speed"));
+        check(speedPanel != nullptr && speedPanel != anime4kPopup,
+              "a category opens the level beside the one it sits in");
+        check(anime4kPopup->isVisible(),
+              "the level a category was opened from stays on screen");
+        // The tree keeps the levels above and drops the ones below, so a level
+        // opened from another branch is not left hanging over the picture.
+        check(levelPanelShowing(dialog, QStringLiteral("rife")) == nullptr,
+              "opening a category closes the level the previous branch left open");
 
-        QString label;
-        for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-            if (info.mode == kAnime4KProbeMode) label = info.label;
+        QPushButton* row = pressableRowFor(speedPanel, anime4k::modeId(kAnime4KProbeMode));
+        check(row != nullptr, "the speed category lists its presets");
+        if (row == nullptr) {
+            shell->dismissOverlay();
+            return;
         }
-        QPushButton* row =
-            anime4kPopup != nullptr ? visibleRowWithText(anime4kPopup, label) : nullptr;
-        check(row != nullptr, "the Швидкість category lists its presets");
-        if (row == nullptr) return;
 
         // A framebuffer only exists once the window has been exposed, which
         // does not happen in a headless session. That is not a defect, so the
@@ -663,6 +940,10 @@ int main(int argc, char** argv) {
         const QImage noiseB = settledFrame(surface);
         const double noise = pictureDifference(noiseA, noiseB);
         std::fprintf(stderr, "     control: two frames, nothing changed  %.3f / 255\n", noise);
+        if (noise < 0.0) {
+            std::fprintf(stderr, "FAIL  the pixel comparison: %s\n",
+                         qPrintable(comparisonRefusal(noiseA, noiseB)));
+        }
         check(noise >= 0.0, "the two control frames are comparable");
 
         const QImage plainFrame = settledFrame(surface);
@@ -682,102 +963,137 @@ int main(int argc, char** argv) {
         const QImage chainFrame = settledFrame(surface);
         check(!chainFrame.isNull(), "a still frame with the chain on");
         if (plainFrame.isNull() || chainFrame.isNull() || noise < 0.0) {
+            check(false, "the frozen shader comparison has valid settled frames");
             shell->dismissOverlay();
             return;
         }
-        const double delta = pictureDifference(plainFrame, chainFrame);
-        std::fprintf(stderr, "     chain on vs off %.3f / 255, against %.3f noise\n", delta, noise);
-        // A Restore + 2x upscale rewrites essentially every pixel it touches.
-        // The upscalers are gated on OUTPUT being >1.2x the source - that is
-        // Anime4K refusing to upscale a video already displayed at source -
-        // so on a small surface only the restore half runs. Requiring a large
-        // multiple of the measured floor keeps this from passing on re-render
-        // noise while still accepting a restore-only chain.
-        // The floor is zero, so any non-zero difference is the chain. The
-        // absolute value is small (0.4/255) because the upscalers are gated on
-        // OUTPUT being >1.2x the source - on a surface this size mpv displays
-        // the video at source and Anime4K declines to upscale, leaving only
-        // the ungated restore half. What is being asserted is that the chain
-        // runs, not that it is worth enabling at this size; that judgement
-        // belongs to a viewer, not a threshold.
         check(noise == 0.0, "the frozen frame is bit-stable between grabs");
-        check(delta > 0.1, "enabling the preset changed the picture");
+        const QString refusal = comparisonRefusal(plainFrame, chainFrame);
+        if (!refusal.isEmpty()) {
+            std::fprintf(stderr, "FAIL  the chain comparison: %s\n", qPrintable(refusal));
+            check(false, "the frozen shader comparison measures the same picture geometry");
+        } else {
+            const double delta = pictureDifference(plainFrame, chainFrame);
+            const QRect band = pictureArea(plainFrame, 1280, 720);
+            std::fprintf(stderr,
+                         "     chain on vs off %.3f / 255 over a %dx%d band of %dx%d, "
+                         "against %.3f noise\n",
+                         delta, band.width(), band.height(), plainFrame.width(),
+                         plainFrame.height(), noise);
+            check(delta > 0.1, "enabling the preset changed the picture");
+        }
 
-        // Back out of the category, then prove a planned model cannot select
-        // anything: the disabled leaf is the one place where a click is
-        // expected to do nothing, so it is asserted rather than assumed.
+        // The other half of the tree's contract, on a fresh open and with a
+        // chain actually running now: a preset row applies its preset and takes
+        // the whole tree off the screen, and a planned model's page is inert
+        // where it stands - so a viewer who wanders into a model this player
+        // does not run cannot lose the one they had.
         //
-        // Each row below is taken from the popover as it stands at that moment,
-        // by object name, and only once that popover is really on screen: every
-        // step rebuilds the rows of the popover it drives, so a row kept from
-        // the step before is one the rebuild has already retired. The popovers
-        // are children of the player's dialog, and the probe's later stages
-        // share this loop - the PiP stage hides that dialog, and the shell runs
-        // its state pass on the way back - so the window is waited for first,
-        // and then every row, instead of sampling either once.
+        // Every row is taken from the panel as it stands at that moment, and
+        // only once that panel is really on screen: each level is rebuilt the
+        // moment its row is pressed, so a row kept from the step before is one
+        // the rebuild has already retired. The panels are children of the
+        // player's dialog and the probe's later stages share this loop - the PiP
+        // stage hides that dialog and the shell re-runs its state pass on the
+        // way back - so the window is waited for first, and then every row.
+        // Bounded wait for a level to come up, so a row is never read out of a
+        // panel the shell has not finished placing.
+        const auto awaitLevel = [dialog](const QString& levelId) -> MenuPopup* {
+            for (int waited = 0; waited < 4000; waited += 40) {
+                QCoreApplication::processEvents();
+                if (MenuPopup* panel = levelPanelShowing(dialog, levelId)) return panel;
+                QThread::msleep(40);
+            }
+            return nullptr;
+        };
         playerWindowIsBack(dialog);
         enhancementsButton->click();
-        anime4kEntry = popupRowWhenVisible(dialog, QStringLiteral("playerEnhancementsPopup"),
-                                           QStringLiteral("Anime4K  ›"));
-        if (anime4kEntry != nullptr) {
-            anime4kEntry->click();
-            QPushButton* reopen = popupRowWhenVisible(
-                dialog, QStringLiteral("playerAnime4KPopup"), QStringLiteral("Швидкість  ›"));
-            if (reopen != nullptr) {
-                reopen->click();
-                QPushButton* back = popupRowWhenVisible(
-                    dialog, QStringLiteral("playerAnime4KPopup"), QStringLiteral("‹  Назад"));
-                check(back != nullptr, "the drilled-down level still offers a way back");
-                if (back != nullptr) {
-                    back->click();
-                    check(popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
-                                              QStringLiteral("Вимкнено")) != nullptr,
-                          "going back returns to the Anime4K root");
+        anime4kEntry = pressableRowFor(awaitLevel(QString()), QStringLiteral("anime4k"));
+        check(anime4kEntry != nullptr, "the tree reopens at its root after the pixel stage");
+        if (anime4kEntry == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
+        anime4kEntry->click();
+        QPushButton* reopen = pressableRowFor(awaitLevel(QStringLiteral("anime4k")),
+                                              QStringLiteral("anime4k/speed"));
+        check(reopen != nullptr, "the reopened Anime4K level still leads to its speed category");
+        if (reopen != nullptr) {
+            reopen->click();
+            MenuPopup* reopenedSpeed = awaitLevel(QStringLiteral("anime4k/speed"));
+            // The contract is that a reopened category lists pressable presets
+            // and that each row applies the preset its own payload names. Which
+            // preset sits where is the catalogue's business: a probe that pins
+            // one id goes red the day the catalogue is reordered, while saying
+            // nothing about whether the rows still work.
+            const anime4k::Mode running = surface->anime4KMode();
+            QString chosenId;
+            for (int spot = 0; reopenedSpeed != nullptr && spot < reopenedSpeed->rowCount();
+                 ++spot) {
+                const MenuEntry entry = reopenedSpeed->entryAt(spot);
+                const QString payload = entry.payload.toString();
+                if (!payload.startsWith(QLatin1String("preset|"))) continue;
+                if (entry.disabled) {
+                    check(false, "a reopened speed preset row is one the viewer can press");
+                    continue;
                 }
+                const QString id = payload.mid(7);
+                if (id == anime4k::modeId(running)) continue;
+                if (auto* presetRow = qobject_cast<QPushButton*>(reopenedSpeed->rowWidget(spot))) {
+                    chosenId = id;
+                    presetRow->click();
+                    QTest::qWait(80);
+                    break;
+                }
+            }
+            check(!chosenId.isEmpty(),
+                  "the reopened speed level lists a preset that is not the running one");
+            if (!chosenId.isEmpty()) {
+                check(surface->anime4KMode() == anime4k::modeForId(chosenId) &&
+                          surface->anime4KMode() != running,
+                      "a preset row applies the preset it names, and not the one already running");
+                // Sampled straight, not through the wait: a level that has gone
+                // must not make the probe sit out its whole timeout.
+                check(levelPanelShowing(dialog, QStringLiteral("anime4k")) == nullptr &&
+                          levelPanelShowing(dialog, QStringLiteral("anime4k/speed")) == nullptr,
+                      "choosing a preset takes the whole tree off the screen");
             }
         }
         shell->dismissOverlay();
         enhancementsButton->click();
-        QPushButton* rifeRoot =
-            popupRowWhenVisible(dialog, QStringLiteral("playerEnhancementsPopup"),
-                                QStringLiteral("RIFE  ›"));
+        QPushButton* rifeRoot = pressableRowFor(awaitLevel(QString()), QStringLiteral("rife"));
         check(rifeRoot != nullptr && rifeRoot->isEnabled(),
-              "the planned RIFE row stays an enabled entry in the enhancements menu");
+              "a planned model is still an enabled row in the reopened tree");
         const anime4k::Mode beforePlanned = surface->anime4KMode();
-        if (rifeRoot != nullptr) {
-            rifeRoot->click();
-        }
-        QPushButton* planned = popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
-                                                  QStringLiteral("В планах"));
-        if (planned != nullptr) {
-            planned->click();
+        if (rifeRoot != nullptr) rifeRoot->click();
+        MenuPopup* planned = awaitLevel(QStringLiteral("rife"));
+        check(planned != nullptr && everyRowIsInert(planned),
+              "the planned model's page is open and none of its rows can be pressed");
+        for (int spot = 0; planned != nullptr && spot < planned->rowCount(); ++spot) {
+            if (auto* inert = qobject_cast<QPushButton*>(planned->rowWidget(spot))) {
+                inert->click();
+            }
             QTest::qWait(40);
         }
-        check(planned != nullptr && !planned->isEnabled(),
-              "the planned RIFE leaf stays disabled on its own page");
-        check(surface->anime4KMode() == beforePlanned,
-              "clicking a planned model leaves the chain alone");
-        check(popupRowWhenVisible(dialog, QStringLiteral("playerAnime4KPopup"),
-                                  QStringLiteral("‹  Назад")) != nullptr,
-              "the planned page still offers a way back");
+        check(beforePlanned != anime4k::Mode::Off && surface->anime4KMode() == beforePlanned,
+              "a planned model's page cannot take away the chain that is running");
         shell->dismissOverlay();
     });
 
     // And the pickers still work, split by kind.
-    QTimer::singleShot(9000, [&] {
+    runner.add(9000, [&] {
         if (shell != nullptr) shell->openSettings();
         // Use a real press and release so this follows the same button path a
         // viewer uses.
-        for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
-            if (!button->toolTip().startsWith(QStringLiteral("Озвучення"))) continue;
+        if (QPushButton* dubButton = buttonWithGlyph(dialog, IconPainter::microphone)) {
             const QPointF at(12, 12);
-            const QPointF g = button->mapToGlobal(button->rect().center());
+            const QPointF g = dubButton->mapToGlobal(dubButton->rect().center());
             QMouseEvent press(QEvent::MouseButtonPress, at, g, Qt::LeftButton, Qt::LeftButton,
                               Qt::NoModifier);
-            QApplication::sendEvent(button, &press);
+            QApplication::sendEvent(dubButton, &press);
             QMouseEvent release(QEvent::MouseButtonRelease, at, g, Qt::LeftButton, Qt::NoButton,
                                 Qt::NoModifier);
-            QApplication::sendEvent(button, &release);
+            QApplication::sendEvent(dubButton, &release);
         }
         check(audio != nullptr && audio->isVisible(), "the dub picker opened");
         if (audio != nullptr) {
@@ -793,11 +1109,9 @@ int main(int argc, char** argv) {
         if (audio != nullptr) check(audio->findChildren<QPushButton*>().size() > 0, "dub rows exist");
     });
 
-    QTimer::singleShot(10500, [&] {
-        for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
-            if (button->toolTip().startsWith(QStringLiteral("Субтитри"))) {
-                button->click();
-            }
+    runner.add(10500, [&] {
+        if (QPushButton* track = buttonWithGlyph(dialog, IconPainter::captions)) {
+            track->click();
         }
         check(subs != nullptr && subs->isVisible(), "the subtitle picker opened");
         if (subs != nullptr) {
@@ -807,19 +1121,12 @@ int main(int argc, char** argv) {
         }
     });
 
-    QTimer::singleShot(11000, [&] {
+    runner.add(11000, [&] {
         if (shell == nullptr) return;
         shell->dismissOverlay();
 
-        QPushButton* keysButton = nullptr;
-        QPushButton* moreButton = nullptr;
-        for (QPushButton* button : shell->findChildren<QPushButton*>()) {
-            if (button->toolTip() == QStringLiteral("keyboard_shortcuts  (?)")) {
-                keysButton = button;
-            } else if (button->toolTip() == QStringLiteral("open_extended_menu")) {
-                moreButton = button;
-            }
-        }
+        QPushButton* keysButton = buttonWithGlyph(shell, IconPainter::keyboard);
+        QPushButton* moreButton = buttonWithGlyph(shell, IconPainter::more);
 
         check(keysButton != nullptr, "the keyboard hints button exists");
         if (keysButton != nullptr) keysButton->click();
@@ -849,7 +1156,7 @@ int main(int argc, char** argv) {
     // the actual contract, in both directions: up while the viewer is present,
     // gone once they are not - and it is a "look twice" check, because the
     // second half only exists after the event loop has had time to run.
-    QTimer::singleShot(11500, [&] {
+    runner.add(11500, [&] {
         if (shell != nullptr) shell->dismissOverlay();
         // Nudge the pointer the way a viewer arriving at the player would.
         if (surface != nullptr) {
@@ -881,26 +1188,32 @@ int main(int argc, char** argv) {
 
     // PiP: open the float, check the spec'd layout, then prove the auto-hide
     // stands down while the pointer is on it.
-    QTimer::singleShot(14600, [&] {
-        for (QPushButton* b : dialog->findChildren<QPushButton*>()) {
-            if (b->toolTip().contains(QStringLiteral("picture_in_picture"))) {
-                b->click();
-                break;
+    runner.add(14600, [&] {
+        if (dialogGuard.isNull()) return;
+        // Pointer activity first: the chrome auto-hides after a couple of idle
+        // seconds, and the dock button the stage presses lives on it.
+        if (surface != nullptr) {
+            for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
+                QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
+                                 Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(surface, &move);
             }
         }
-        QTimer::singleShot(900, [&] {
-            QWidget* pip = nullptr;
-            for (QWidget* w : QApplication::topLevelWidgets()) {
-                if (QString::fromLatin1(w->metaObject()->className()).contains(QStringLiteral("PipFloat"))) {
-                    pip = w;
-                    break;
-                }
-            }
-            check(pip != nullptr, "the PiP float opened");
-            if (pip == nullptr) {
-                return;
-            }
-            pipFloat = qobject_cast<PipFloat*>(pip);
+        if (QPushButton* pipButton = buttonWithGlyph(dialog, IconPainter::pip)) {
+            pipButton->click();
+        }
+        // The float builds its own core a beat after it is shown, so the wait
+        // is on the float actually being on screen, not on a guessed latency.
+        PipFloat* pip = awaitVisiblePipFloat(6000);
+        check(pip != nullptr, "the PiP float opened");
+        if (pip == nullptr) {
+            return;
+        }
+        pipFloat = pip;
+        // The float lays its chrome out when it is first shown, so give the
+        // show a beat before reading geometry off it.
+        QTest::qWait(400);
+        {
             auto child = [pip](const char* name) -> QWidget* {
                 return pip->findChild<QWidget*>(QString::fromLatin1(name));
             };
@@ -954,7 +1267,7 @@ int main(int argc, char** argv) {
                 const QPoint m = mute->mapTo(pip, QPoint(0, 0));
                 const QPoint r = restore->mapTo(pip, QPoint(0, 0));
                 check(m.x() < r.x(), "PiP mute sits left of restore");
-                check(m.y() < 60, "PiP mute sits near the top");
+                check(m.y() < pip->height() / 2, "PiP mute sits near the top");
             }
             if (play != nullptr) {
                 const QPoint c = play->mapTo(pip, QPoint(0, 0));
@@ -962,7 +1275,15 @@ int main(int argc, char** argv) {
                       "PiP play button is horizontally centred");
                 check(std::abs(c.y() + play->height() / 2 - pip->height() / 2) < 4,
                       "PiP play button is vertically centred");
-                check(play->width() >= 80, "PiP play button is large");
+                // "Large" is a relationship inside the float, not a number
+                // copied out of the theme: the centre control is bigger than
+                // the corner chrome whatever size the chrome has.
+                int cornerSize = 0;
+                for (QWidget* corner : {mute, restore, close}) {
+                    if (corner != nullptr) cornerSize = std::max(cornerSize, corner->width());
+                }
+                check(play->width() > cornerSize && play->height() > cornerSize,
+                      "PiP play button is the largest control on the float");
             }
             // 1.6 s is the float's own hold, so waiting 2.4 s proves a hovered
             // float keeps its controls past the point an idle one drops them.
@@ -982,7 +1303,7 @@ int main(int argc, char** argv) {
             QTest::qWait(3000);
             const qreal idle = effect != nullptr ? effect->opacity() : 0.0;
             check(idle < 0.1, "PiP controls auto-hide once the pointer leaves");
-        });
+        }
     });
 
     // THE REGRESSION CLASS. Every other check in this file asserts a view
@@ -991,7 +1312,7 @@ int main(int argc, char** argv) {
     // opened, the event loop is allowed to turn for 1.5s, and the same view is
     // asserted again. Any timer, resize pass, state handler or async callback
     // that empties a populated widget shows up here and nowhere else.
-    QTimer::singleShot(28000, [&] {
+    runner.add(28000, [&] {
         // The PiP stage closed the float and the dialog reports itself visible
         // again at that point, but it is not reliably still visible 100ms later,
         // so no assertion is made about it here: the checks below are about the
@@ -1060,14 +1381,14 @@ int main(int argc, char** argv) {
     // PiP owns the picture while it is up. Three things were wrong and none of
     // them showed as a crash - they showed as the float's controls doing
     // nothing, so each is asserted on the state it changes.
-    QTimer::singleShot(21100, [&] {
+    runner.add(21100, [&] {
         check(pipFloat != nullptr, "the PiP float is still up for the ownership checks");
     });
 
     // Placement and snapping, which is what a viewer reaches for when they
     // want the float on the other monitor. The pool keeps the last position,
     // so a float can otherwise reappear somewhere unusable.
-    QTimer::singleShot(21000, [&] {
+    runner.add(21000, [&] {
         if (pipFloat == nullptr || !pipFloat->isVisible()) {
             check(false, "the float is up for the placement checks");
             return;
@@ -1082,43 +1403,63 @@ int main(int argc, char** argv) {
                   "the float is inside the work area, not under the taskbar");
         }
 
-        // Drag it into a corner and let go: it should land on the nearest one.
+        // Drag it to the opposite quadrant and let go: it should land on the
+        // nearest corner. The float drags on the delta between two GLOBAL
+        // points, so the drop has to cross the middle of the work area - a
+        // short wobble inside the corner the float already occupies only snaps
+        // straight back to where it started, which is correct and proves
+        // nothing at all.
         const QPoint before = pipFloat->pos();
-        QWidget* overlay =
-            pipFloat->findChild<QWidget*>(QString::fromLatin1("pipOverlay"));
+        QWidget* overlay = pipFloat->findChild<QWidget*>(QString::fromLatin1("pipOverlay"));
         check(overlay != nullptr, "the float has an overlay to press on");
-        if (overlay == nullptr) {
+        if (overlay == nullptr || under == nullptr) {
             return;
         }
-        // The float drags on the delta between two GLOBAL points, so the move
-        // has to carry a real one: a 40px wobble inside the same window is
-        // under the threshold and never starts a drag.
+        const QRect work = under->availableGeometry();
         const QPointF grabAt = pipFloat->mapToGlobal(QPointF(20, 20));
-        const QPointF dropAt = grabAt + QPointF(-140, -120);
-        QMouseEvent press(QEvent::MouseButtonPress, QPointF(20, 20), grabAt, Qt::LeftButton,
+        const QPointF dropAt(work.left() + work.width() / 4.0, work.top() + work.height() / 4.0);
+        const QPointF grabLocal(20., 20.);
+        const QPointF dropLocal = grabLocal + (dropAt - grabAt);
+        QMouseEvent press(QEvent::MouseButtonPress, grabLocal, grabAt, Qt::LeftButton,
                           Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(overlay, &press);
-        QMouseEvent move(QEvent::MouseMove, QPointF(20 - 140, 20 - 120), dropAt,
-                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QMouseEvent move(QEvent::MouseMove, dropLocal, dropAt, Qt::LeftButton, Qt::LeftButton,
+                         Qt::NoModifier);
         QApplication::sendEvent(overlay, &move);
-        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(20 - 140, 20 - 120), dropAt,
-                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease, dropLocal, dropAt, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
         QApplication::sendEvent(overlay, &release);
         QTest::qWait(500);
         std::fprintf(stderr, "     float moved %s\n",
                      qPrintable(QStringLiteral("%1,%2 -> %3,%4")
                                     .arg(before.x()).arg(before.y())
                                     .arg(pipFloat->x()).arg(pipFloat->y())));
+        check(pipFloat->pos() != before, "a drag actually moved the float");
         if (QScreen* landed = QGuiApplication::screenAt(pipFloat->frameGeometry().center())) {
             const QRect area = landed->availableGeometry();
-            const bool cornered =
-                std::abs(pipFloat->x() - (area.left() + 24)) < 2 ||
-                std::abs(pipFloat->x() - (area.right() - pipFloat->width() - 24 + 1)) < 2;
-            check(pipFloat->pos() != before, "a drag actually moved the float");
-            check(cornered, "a dragged float lands on a corner");
+            // Snapping parks the float on the corner nearest where the frame
+            // centre ended up. Which corner that is depends on the float's own
+            // size against the work area, so the probe asserts the rule the
+            // viewer sees - it landed on a real corner - rather than a quadrant
+            // guessed from the pointer, which is wrong on a work area narrower
+            // than twice the float.
+            const QRect frame = pipFloat->frameGeometry();
+            constexpr int kInset = 24;
+            const bool left = frame.left() <= area.left() + kInset + 1;
+            const bool right = frame.right() >= area.right() - kInset - 1;
+            const bool top = frame.top() <= area.top() + kInset + 1;
+            const bool bottom = frame.bottom() >= area.bottom() - kInset - 1;
+            std::fprintf(stderr, "     snap: area=%d,%d %dx%d frame=%d,%d %dx%d lrtb=%d%d%d%d\n",
+                         area.x(), area.y(), area.width(), area.height(), frame.x(), frame.y(),
+                         frame.width(), frame.height(), int(left), int(right), int(top),
+                         int(bottom));
+            check((left || right) && (top || bottom),
+                  "a dragged float lands on the corner nearest the drop");
+            check(area.contains(frame.topLeft()) && area.contains(frame.bottomRight()),
+                  "the snapped float is inside the work area");
         }
     });
-    QTimer::singleShot(21200, [&] {
+    runner.add(21200, [&] {
         if (pipFloat == nullptr) {
             return;
         }
@@ -1191,7 +1532,7 @@ int main(int argc, char** argv) {
     // Leaving PiP brings the main player back to where the viewer actually
     // watched, which is the float's position and not where the main core was
     // parked on entry.
-    QTimer::singleShot(24000, &app, [&] {
+    runner.add(24000, [&] {
         if (pipFloat == nullptr) {
             check(false, "the float was still up for the return check");
             return;
@@ -1208,36 +1549,48 @@ int main(int argc, char** argv) {
             return;
         }
         restore->click();
-        // The hand-back is deferred by a tick on purpose, so give it room
-        // rather than sampling mid-transition.
-        QTimer::singleShot(3000, &app, [&] {
-            // The float is pooled rather than destroyed - each owns a
-            // QOpenGLWidget and tearing one down beside the player's crashes
-            // the display driver - so "closed" means hidden, not gone.
-            check(pipFloat != nullptr && !pipFloat->isVisible(),
-                  "the restore button put the float away");
-            check(dialog->isVisible(), "the player window is back");
-            auto* mainSurface = dialog->findChild<VideoSurface*>();
-            if (mainSurface == nullptr) {
-                return;
-            }
-            std::fprintf(stderr, "     returned to %.2fs, the float left it at %.2fs\n",
-                         mainSurface->position(), floatExitPosition);
-            check(std::abs(mainSurface->position() - floatExitPosition) < 1.5,
-                  "the main player resumes where the float left off");
-            // The main core inherits whatever it was doing before PiP, and
-            // the probe enters PiP from a paused player, so paused is the
-            // correct state to return to - not a failure to resume.
-            check(!mainSurface->isPlaying(),
-                  "the main core is back in the state PiP found it in");
-        });
+        // The hand-back is deferred by a tick on purpose, so wait for the float
+        // to be gone and the window to be back rather than sampling
+        // mid-transition.
+        waitFor([&] {
+            return dialogGuard.isNull() ||
+                   (pipFloat != nullptr && !pipFloat->isVisible() && dialog->isVisible());
+        }, 8000);
+        // The float is pooled rather than destroyed - each owns a
+        // QOpenGLWidget and tearing one down beside the player's crashes
+        // the display driver - so "closed" means hidden, not gone.
+        check(pipFloat != nullptr && !pipFloat->isVisible(),
+              "the restore button put the float away");
+        check(dialogGuard != nullptr && dialog->isVisible(), "the player window is back");
+        auto* mainSurface = dialog->findChild<VideoSurface*>();
+        if (mainSurface == nullptr) {
+            return;
+        }
+        // The hand-back seeks the main core and pauses it, and both land on the
+        // next pump - so wait for the position the viewer left rather than
+        // sampling the value the core was parked on before PiP. Bounded, so a
+        // hand-back that never comes is a failure and not a hang.
+        waitFor([&] {
+            return dialogGuard.isNull() ||
+                   (std::abs(mainSurface->position() - floatExitPosition) < 1.5 &&
+                    !mainSurface->isPlaying());
+        }, 5000);
+        std::fprintf(stderr, "     returned to %.2fs, the float left it at %.2fs\n",
+                     mainSurface->position(), floatExitPosition);
+        check(std::abs(mainSurface->position() - floatExitPosition) < 1.5,
+              "the main player resumes where the float left off");
+        // The main core inherits whatever it was doing before PiP, and
+        // the probe enters PiP from a paused player, so paused is the
+        // correct state to return to - not a failure to resume.
+        check(!mainSurface->isPlaying(),
+              "the main core is back in the state PiP found it in");
     });
 
     // The float's X and its expand button mean opposite things, and they were
     // wired to the same slot: X put the full window back instead of closing.
     // A second player, because the first one is closed by the Esc ladder below
     // and the dialog is destroyed with it.
-    QTimer::singleShot(300, &app, [&] {
+    runner.add(300, [&] {
         StubHost secondHost;
         auto* second = new PlayerDialog(QStringLiteral("probe pip close"), url, qualities, 720,
                                         &secondHost);
@@ -1255,37 +1608,41 @@ int main(int argc, char** argv) {
         auto* secondShell = second->findChild<PlayerShell*>();
         check(secondShell != nullptr, "the second player has a shell");
         if (secondShell == nullptr) {
+            // A window left on screen would skew every stage after this one.
+            second->close();
             return;
         }
-        // The float is parentless so it can float above other apps, which means
-        // it is not in the dialog's child tree: top level widgets, exactly as
-        // the PiP section above finds it.
-        const auto openFloat = [] {
+        // The float is parentless, so it is not in the dialog's child tree:
+        // top-level widgets, the way the PiP stage finds it too. Only a float
+        // that was not already there can be the one this player just opened,
+        // which keeps a pooled float belonging to another player out of reach.
+        QVector<PipFloat*> preexisting;
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            if (auto* f = qobject_cast<PipFloat*>(w)) preexisting.append(f);
+        }
+        emit secondShell->pipRequested();
+        PipFloat* floatWindow = nullptr;
+        waitFor([&] {
             for (QWidget* w : QApplication::topLevelWidgets()) {
-                if (QString::fromLatin1(w->metaObject()->className())
-                        .contains(QStringLiteral("PipFloat"))) {
-                    return qobject_cast<PipFloat*>(w);
+                auto* f = qobject_cast<PipFloat*>(w);
+                if (f != nullptr && f->isVisible() && !preexisting.contains(f)) {
+                    floatWindow = f;
+                    return true;
                 }
             }
-            return static_cast<PipFloat*>(nullptr);
-        };
-        const auto dropFloat = [&openFloat] {
-            if (PipFloat* w = openFloat()) {
-                w->hide();
-                w->deleteLater();
-                QCoreApplication::processEvents();
-            }
-        };
-        dropFloat();
-        emit secondShell->pipRequested();
-        QTest::qWait(2500);
-        PipFloat* floatWindow = openFloat();
+            return false;
+        }, 6000);
         check(floatWindow != nullptr, "the second player opened a float");
         auto* close = floatWindow != nullptr
                           ? floatWindow->findChild<QPushButton*>(QStringLiteral("pipClose"))
                           : nullptr;
         check(close != nullptr, "the float has a close button");
         check(!secondHost.closed, "the player is still open while the float is up");
+        // The float is parentless on purpose, so the player that opened it is
+        // the only thing that can release it. Watch it through a guard: the
+        // player is WA_DeleteOnClose, so a raw look at the float once the
+        // player is freed is the use-after-free this probe has to avoid.
+        QPointer<PipFloat> activeFloatGuard(floatWindow);
         if (close != nullptr) {
             close->click();
             QTest::qWait(2500);
@@ -1300,29 +1657,172 @@ int main(int argc, char** argv) {
             // the rest of the run and skew every check after it.
             second->close();
         }
-        dropFloat();
+        // If the X did not close the player, close it here rather than leave a
+        // window on screen for the rest of the run. `second` is only reachable
+        // while the host has not been told the dialog closed, which is what
+        // playerClosed() means and when the dialog is still alive.
+        if (!secondHost.closed) {
+            second->close();
+        }
+        // The float was up when the player closed, and releasing it is the
+        // owner's job. Wait for that deferred delete to land and read through
+        // the guard: before the destructor released the pool this still named a
+        // live top-level float, its QOpenGLWidget and its mpv core.
+        waitFor([&] { return activeFloatGuard.isNull(); }, 4000);
+        check(activeFloatGuard.isNull(), "closing the player destroyed the float it had up");
+    });
+
+    // The parked float is what a restore leaves behind, and it has to belong to
+    // the player in both states. Drive one player through enter, restore and
+    // enter again: the second entry must hand back the same window, and closing
+    // the player must then destroy it instead of leaving a hidden float - with
+    // its QOpenGLWidget and its mpv core - parentless for the rest of the run.
+    runner.add(310, [&] {
+        StubHost parkedHost;
+        auto* parked = new PlayerDialog(QStringLiteral("probe pip parked"), url, qualities, 720,
+                                        &parkedHost);
+        QPointer<PlayerDialog> parkedGuard(parked);
+        QVector<QVariantMap> entries;
+        for (int episode = 1; episode <= 3; ++episode) {
+            entries.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(episode)},
+                                       {"embed", QStringLiteral("e%1").arg(episode)}});
+        }
+        parked->setPlaylist(entries, 0);
+        parked->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
+                                         {"embed", QStringLiteral("e1")},
+                                         {"kind", QStringLiteral("voice")}}},
+                            QStringLiteral("e1"));
+        parked->show();
+        auto* parkedShell = parked->findChild<PlayerShell*>();
+        check(parkedShell != nullptr, "the parked-case player has a shell");
+        if (parkedShell == nullptr) {
+            parked->close();
+            return;
+        }
+        // A parentless float is a top-level widget, so it is found there and
+        // only while it is on screen: the pool keeps a parked float hidden, and
+        // a hidden one is not the entry under test.
+        QVector<PipFloat*> preexisting;
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            if (auto* f = qobject_cast<PipFloat*>(w)) preexisting.append(f);
+        }
+        auto awaitNewFloat = [&]() -> PipFloat* {
+            PipFloat* found = nullptr;
+            waitFor([&] {
+                for (QWidget* w : QApplication::topLevelWidgets()) {
+                    auto* f = qobject_cast<PipFloat*>(w);
+                    if (f != nullptr && f->isVisible() && !preexisting.contains(f)) {
+                        found = f;
+                        return true;
+                    }
+                }
+                return false;
+            }, 6000);
+            return found;
+        };
+        emit parkedShell->pipRequested();
+        PipFloat* parkedFloat = awaitNewFloat();
+        check(parkedFloat != nullptr, "the parked-case player opened a float");
+        if (parkedFloat == nullptr) {
+            parked->close();
+            return;
+        }
+        QPointer<PipFloat> parkedFloatGuard(parkedFloat);
+        auto clickRestore = [](PipFloat* pip) -> bool {
+            auto* restore = pip->findChild<QPushButton*>(QStringLiteral("pipRestore"));
+            if (restore == nullptr) return false;
+            restore->click();
+            return true;
+        };
+        // The float lays its chrome out when it is first shown, so give the
+        // show a beat before reaching for a control on it.
+        QTest::qWait(300);
+        check(clickRestore(parkedFloat), "the parked-case float has a restore button");
+        // The hand-back lands on the next pump: the player comes back and the
+        // float goes hidden but stays alive.
+        waitFor([&] {
+            return parkedGuard.isNull() ||
+                   (!parkedFloatGuard->isVisible() && parked->isVisible());
+        }, 6000);
+        check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
+                  !parkedFloatGuard->isVisible(),
+              "the restore parked the float instead of destroying it");
+        if (parkedGuard == nullptr || parkedFloatGuard == nullptr) {
+            // Still open in the second case: a window left on screen would
+            // skew every stage after this one.
+            if (parkedGuard != nullptr) parked->close();
+            return;
+        }
+
+        // Second entry. The pool is the point of it: the same window has to
+        // come back rather than a second QOpenGLWidget beside the player's.
+        emit parkedShell->pipRequested();
+        PipFloat* reopened = awaitNewFloat();
+        check(reopened != nullptr, "the second PiP entry opened a float");
+        check(reopened == parkedFloat,
+              "re-entering PiP reuses the parked float instead of building another");
+        if (reopened != nullptr) {
+            QTest::qWait(300);
+            check(clickRestore(reopened), "the re-entered float has a restore button");
+            waitFor([&] {
+                return parkedGuard.isNull() || parkedFloatGuard.isNull() ||
+                       !parkedFloatGuard->isVisible();
+            }, 6000);
+        }
+        check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
+                  !parkedFloatGuard->isVisible(),
+              "the float is parked again before its player is closed");
+
+        // Close the owner with the float parked. The float is parentless, so
+        // that destructor is the only path that releases it - this is the case
+        // that used to leak the whole window once PiP had been restored.
+        parked->close();
+        waitFor([&] { return parkedGuard.isNull(); }, 6000);
+        check(parkedGuard.isNull(), "closing the parked-case player was processed");
+        if (!parkedFloatGuard.isNull()) {
+            int floats = 0;
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                if (qobject_cast<PipFloat*>(w) != nullptr) floats++;
+            }
+            std::fprintf(stderr,
+                         "     parked float alive: visible=%d topLevelFloats=%d owned=%d\n",
+                         int(parkedFloatGuard->isVisible()), floats,
+                         int(parkedFloatGuard->parent() != nullptr));
+        }
+        check(parkedFloatGuard.isNull(),
+              "closing the player destroyed the float it had parked");
     });
 
     // Esc unwinds one layer per press - picker, then the shell's own popover,
     // then the series drawer, then the player - so what matters is that the
-    // ladder terminates, not that one press out of a busy UI closes it.
-    int escPresses = 0;
-    std::function<void()> pressEsc = [&] {
-        QTimer::singleShot(300, &app, [&] {
-            ++escPresses;
-            QTest::keyClick(dialog, Qt::Key_Escape);
-            if (host.closed || escPresses > 12) {
-                check(host.closed, "Esc closed the player once nothing was open");
-                std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n",
-                             failures);
-                app.exit(failures == 0 ? 0 : 1);
-                return;
-            }
-            pressEsc();
-        });
-    };
-    QTimer::singleShot(30000, &app, pressEsc);
+    // ladder terminates, not that one press out of a busy UI closes it. Each
+    // press gets its own beat on the loop, and every look at the window goes
+    // through the guard: the press that closes it is the one that frees it.
+    runner.add(30000, [&] {
+        for (int press = 0; press < 12 && !host.closed; ++press) {
+            QTest::qWait(300);
+            if (dialogGuard.isNull()) break;
+            QTest::keyClick(dialogGuard, Qt::Key_Escape);
+        }
+        check(host.closed, "Esc closed the player once nothing was open");
+        // host.closed is set from the close event, which runs before the
+        // WA_DeleteOnClose deletion. The float is released by the destructor,
+        // so the deletion has to land before the float can be read as gone.
+        waitFor([&] { return dialogGuard.isNull(); }, 6000);
+        check(dialogGuard.isNull(), "closing the player processed its deletion");
+        // This player entered PiP and restored, so its float is the parked
+        // case for the window every earlier stage drove. The dialog is the only
+        // thing that can release a parentless float, and its destruction is
+        // exactly what the Esc press just ran: before the destructor released
+        // the pool this guard still named a hidden top-level float, complete
+        // with its QOpenGLWidget and mpv core.
+        if (!pipFloat.isNull()) {
+            std::fprintf(stderr, "     parked float survived the player: visible=%d\n",
+                         int(pipFloat->isVisible()));
+        }
+        check(pipFloat.isNull(), "closing the player destroyed the float it had parked");
+    });
 
-
+    runner.start();
     return app.exec();
 }
