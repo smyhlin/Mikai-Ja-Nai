@@ -23,6 +23,7 @@
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 using namespace mplayer::shell;
@@ -68,6 +69,9 @@ public:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
     static Host host;
     const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};

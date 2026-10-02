@@ -2,6 +2,7 @@
 
 #include "PlayerPopups.hpp"
 
+#include <QCoreApplication>
 #include <QCursor>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -37,11 +38,37 @@ QString stateName(PlayerShell::State state) {
 /// category, an experiment family, and the deepest one a preset hangs in.
 constexpr int kEnhancementTreeDepth = 5;
 
-/// The rows of one catalogue level of the enhancement tree. A category row
-/// carries the level it opens, so the panel beside it is built from the row
-/// alone; a disabled row carries nothing, because it leads nowhere.
-QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId) {
+/// The rows of one level of the enhancement tree. The catalogue levels come
+/// from `anime4k::menuRows`; the native branch and the RIFE capability page are
+/// built by `native::menu`, which reads the requested preference, the runtime
+/// and the filter's status rather than inventing a capability. The root also
+/// gains the native branch row.
+///
+/// A category row carries the level it opens, so the panel beside it is built
+/// from the row alone; a disabled row carries nothing, because it leads nowhere.
+QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
+                                      const native::menu::Inputs& native) {
     QVector<MenuEntry> entries;
+    if (native::menu::ownsLevel(levelId)) {
+        for (const native::menu::Row& row : native::menu::levelRows(levelId, native)) {
+            MenuEntry entry;
+            entry.text = row.label;
+            entry.tooltip = row.tooltip;
+            entry.disabled = row.disabled;
+            entry.submenu = row.submenu;
+            entry.current = row.current;
+            if (row.action != native::menu::Action::None) {
+                // The action and its value are spelled into the payload, never
+                // taken from the row index: a reordered branch must resolve to
+                // the same request.
+                entry.payload = QStringLiteral("native|") +
+                                native::menu::actionName(row.action) + QLatin1Char('|') +
+                                row.value;
+            }
+            entries.append(entry);
+        }
+        return entries;
+    }
     for (const anime4k::MenuRow& row : anime4k::menuRows(levelId)) {
         MenuEntry entry;
         entry.text = row.label;
@@ -66,6 +93,27 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
                 entry.disabled = true;
                 break;
         }
+        // The RIFE page and the native page are ours. The catalogue row stays
+        // where it is, but a disabled row's tooltip has to be the fact this
+        // build can stand behind, not the catalogue's older wording.
+        if (row.role != anime4k::MenuRow::Role::Preset) {
+            const QString override = native::menu::categoryTooltip(row.id, native);
+            if (!override.isEmpty()) {
+                entry.tooltip = override;
+            }
+        }
+        entries.append(entry);
+    }
+    if (levelId.isEmpty()) {
+        // The native branch lives inside the existing tree: no seventh dock
+        // button, no new top-level window.
+        MenuEntry entry;
+        entry.text = QCoreApplication::translate("PlayerShell", "Native processing") +
+                     QStringLiteral("  ›");
+        entry.tooltip = native::menu::categoryTooltip(native::menu::kNativeLevelId, native);
+        entry.submenu = true;
+        entry.current = native.preferences.enabled;
+        entry.payload = QStringLiteral("level|native");
         entries.append(entry);
     }
     return entries;
@@ -93,6 +141,13 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     setAcceptDrops(true);
     setMouseTracking(true);
     setAutoFillBackground(false);
+
+    // The native branch is built before anyone pushes real inputs at it, so its
+    // starting state has to be the truth of this build: no engine, and no
+    // status snapshot read yet. Nothing here claims a capability.
+    nativeInputs_.availability = native::currentNativeAvailability();
+    nativeInputs_.status.availability = native::unavailableAvailability(
+        QStringLiteral("native.statusAbsent"), tr("No native status has been read."));
 
     frameless_ = frameless && parent == nullptr;
     if (frameless_) {
@@ -393,6 +448,18 @@ void PlayerShell::buildFooter() {
         QStringLiteral("background: transparent; color: #79dcf2;"));
     lblEnhancement_->hide();
     info->addWidget(lblEnhancement_);
+
+    // The native status chip. It is a sibling of the Anime4K chip rather than a
+    // replacement: the shader chain and the native pipeline are separate, and
+    // one must never be read as the other. It stays hidden until native
+    // processing is requested or the filter reports a state of its own.
+    lblNative_ = new QLabel(footerLeft_);
+    lblNative_->setObjectName(QStringLiteral("playerNativeStatus"));
+    lblNative_->setFont(monoFont(8));
+    lblNative_->setStyleSheet(
+        QStringLiteral("background: transparent; color: #ffcf7a;"));
+    lblNative_->hide();
+    info->addWidget(lblNative_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
 
     footerRight_ = new Panel(blackSoft(), 8.0, w15(), this);
@@ -938,6 +1005,12 @@ void PlayerShell::setAnime4KMode(anime4k::Mode mode) {
     updateInfoChip();
 }
 
+void PlayerShell::setNativeMenuInputs(const native::menu::Inputs& inputs) {
+    nativeInputs_ = inputs;
+    updateNativeHud();
+    refreshEnhancementTree();
+}
+
 void PlayerShell::setStreamStats(double bytesPerSecond, double framesPerSecond) {
     networkBytesPerSecond_ = std::max(0.0, bytesPerSecond);
     streamFramesPerSecond_ = std::max(0.0, framesPerSecond);
@@ -986,7 +1059,8 @@ void PlayerShell::refreshEnhancementTree() {
         if (!panel->isVisible()) {
             continue;
         }
-        panel->setEntries(enhancementEntries(enhancementLevels_.at(depth), currentId));
+        panel->setEntries(
+            enhancementEntries(enhancementLevels_.at(depth), currentId, nativeInputs_));
         watchEnhancementRows(panel);
     }
 }
@@ -1014,9 +1088,14 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
         return;
     }
     MenuPopup* panel = enhancementPanels_.at(depth);
-    const QString label = anime4k::categoryLabel(levelId);
-    panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
-    panel->setEntries(enhancementEntries(levelId, anime4k::modeId(anime4kMode_)));
+    if (levelId == QLatin1String(native::menu::kNativeLevelId)) {
+        panel->setTitle(tr("NATIVE PROCESSING"));
+    } else {
+        const QString label = anime4k::categoryLabel(levelId);
+        panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
+    }
+    panel->setEntries(
+        enhancementEntries(levelId, anime4k::modeId(anime4kMode_), nativeInputs_));
     enhancementLevels_[depth] = levelId;
     panel->setProperty("enhancementLevel", levelId);
     watchEnhancementRows(panel);
@@ -1052,12 +1131,29 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
         showEnhancementLevel(depth + 1, entry.payload.toString().mid(6), panel->rowWidget(spot));
         return;
     }
-    // A preset row: the levels below it are no longer about anything.
+    // A terminal row: the levels below it are no longer about anything.
     collapseEnhancementTree(depth);
     if (!activated) {
         return;
     }
-    onAnime4KPreset(entry.payload.toString().mid(7));
+    const QString payload = entry.payload.toString();
+    if (payload.startsWith(QLatin1String("native|"))) {
+        // native|<action>|<value>. The value keeps any '|' it carries, so a
+        // recipe id is never truncated into a different id. A row that names no
+        // action emits nothing - and a native payload never reaches the shader
+        // chain, so it can never set a shader id.
+        const QStringList parts = payload.split(QLatin1Char('|'));
+        const native::menu::Action action =
+            native::menu::actionFromName(parts.size() > 1 ? parts.at(1) : QString());
+        if (action == native::menu::Action::None) {
+            return;
+        }
+        const QString value =
+            parts.size() > 2 ? parts.mid(2).join(QLatin1Char('|')) : QString();
+        emit nativeActionRequested(action, value);
+        return;
+    }
+    onAnime4KPreset(payload.mid(7));
     dismissOverlay();
 }
 
@@ -1090,6 +1186,28 @@ void PlayerShell::updateInfoChip() {
                 .arg(outputHeight_));
         lblEnhancement_->show();
     }
+    // The native chip is a separate line of truth, and it is re-derived with
+    // the shader chip so the two can never disagree about what is running.
+    updateNativeHud();
+    footerLeft_->adjustSize();
+}
+
+void PlayerShell::updateNativeHud() {
+    if (lblNative_ == nullptr) {
+        return;
+    }
+    const native::menu::StatusLines lines = native::menu::statusLines(nativeInputs_);
+    if (!lines.visible || lines.headline.isEmpty()) {
+        // Default Off is not clutter: the plain chip stays plain.
+        lblNative_->hide();
+    } else {
+        lblNative_->setText(QStringLiteral("│ ") + lines.headline);
+        // The tooltip and the accessible name carry the fact, not a claim: a
+        // requested-but-not-applied selection reads as exactly that.
+        lblNative_->setToolTip(lines.reason.isEmpty() ? lines.headline : lines.reason);
+        lblNative_->setAccessibleName(lines.headline);
+        lblNative_->show();
+    }
     footerLeft_->adjustSize();
 }
 
@@ -1101,7 +1219,8 @@ void PlayerShell::openEnhancements() {
     collapseEnhancementTree(0);
     MenuPopup* root = enhancementPanels_.first();
     root->setTitle(tr("ENHANCEMENTS"));
-    root->setEntries(enhancementEntries(QString(), anime4k::modeId(anime4kMode_)));
+    root->setEntries(
+        enhancementEntries(QString(), anime4k::modeId(anime4kMode_), nativeInputs_));
     root->setProperty("enhancementLevel", QString());
     watchEnhancementRows(root);
     root->popupNear(btnEnhance_->mapToGlobal(QPoint(btnEnhance_->width(), 0)));

@@ -10,12 +10,13 @@
 namespace mplayer {
 namespace {
 
-// wglGetProcAddress returns NULL for anything that lives inside opengl32.dll
-// itself, which is most of the 1.x entry points, so those need GetProcAddress.
-// Getting this wrong yields a NULL function pointer that only crashes once a
-// frame actually needs it, so every load is checked.
+// wglGetProcAddress returns NULL for anything inside opengl32.dll, which is
+// most of the 1.x entry points, so those need GetProcAddress. A miss only
+// crashes once a frame needs it, so every load is checked.
 void* resolve(const char* name) {
-    static HMODULE opengl = LoadLibraryA("opengl32.dll");
+    // System32 only: the OpenGL driver stack is a Windows dependency, and a
+    // bare name would let whatever sits in the current directory answer for it.
+    static HMODULE opengl = LoadLibraryExW(L"opengl32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     using WglGetProcAddressFn = void* (*)(const char*);
     static auto wglGetProcAddress =
         opengl ? reinterpret_cast<WglGetProcAddressFn>(
@@ -30,10 +31,8 @@ void* resolve(const char* name) {
     return nullptr;
 }
 
-// A function-pointer type used as a template argument needs the (*): spelled
-// `void (int)` it is a function type, and the compiler then refuses to return
-// it by value. The macro sidesteps both the parenthesisation and the fact that
-// a comma inside the signature would otherwise split the argument list.
+// The macro sidesteps both the parenthesisation a function type needs and the
+// commas inside a signature, which would otherwise split the argument list.
 #define LOAD_GL(field, sig, name) (field) = reinterpret_cast<sig>(resolve(name))
 
 }  // namespace
@@ -46,10 +45,9 @@ GlApi loadGlApi() {
     LOAD_GL(api.GetProcAddress, GetProcFn, "wglGetProcAddress");
     if (api.GetProcAddress == nullptr)
         throw MpvError("OpenGL: wglGetProcAddress unavailable - no current GL context");
-    // Hand mpv the FULL resolver, not the raw wgl entry point. wglGetProcAddress
-    // returns NULL for core GL 1.1 symbols (glGetTexLevelParameteriv and
-    // friends) because they live inside opengl32.dll; mpv then fails the whole
-    // context as "not supported" instead of naming the missing symbol.
+    // Hand mpv the FULL resolver, not the raw wgl entry point: wglGetProcAddress
+    // returns NULL for core GL 1.1 symbols inside opengl32.dll, and mpv then
+    // fails the whole context as "not supported" instead of naming the symbol.
     api.GetProcAddress = &resolve;
 
     LOAD_GL(api.genTextures, void (*)(GLsizei, GLuint*), "glGenTextures");
@@ -88,12 +86,15 @@ GlApi loadGlApi() {
 
 // ── MpvRenderContext ──────────────────────────────────────────────────────
 
-MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(&gl), mpv_(&mpv) {
-    auto getProc = [](void* ctx, const char* name) -> void* {
-        auto* self = static_cast<MpvRenderContext*>(ctx);
-        return self->gl_->GetProcAddress(name);
-    };
-    mpv_opengl_init_params init{getProc, this};
+MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(gl) {
+    MpvApi& api = MpvApi::instance();
+    if (!api.loaded()) {
+        throw MpvError("no mpv runtime is selected: a render context cannot be created before "
+                       "MpvApi::load has succeeded");
+    }
+    api_ = &api.functions();
+
+    mpv_opengl_init_params init{&MpvRenderContext::sGetProc, this};
 
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
@@ -101,27 +102,28 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(&gl), 
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 
-    int rc = mpv_render_context_create(&ctx_, mpv.get(), params);
+    const int rc = api_->renderContextCreate(&ctx_, mpv.raw(), params);
     if (rc < 0) {
         ctx_ = nullptr;
-        throw MpvError(std::string("mpv_render_context_create: ") + mpv_error_string(rc));
+        throw MpvError(std::string("mpv_render_context_create: ") + api_->errorString(rc));
     }
     // A frame is always wanted first; after that the update callback drives us.
-    mpv_render_context_set_update_callback(ctx_, &MpvRenderContext::sUpdate, this);
+    api_->renderContextSetUpdateCallback(ctx_, &MpvRenderContext::sUpdate, this);
 }
 
 MpvRenderContext::~MpvRenderContext() {
-    if (ctx_ != nullptr) {
+    if (ctx_ != nullptr && api_ != nullptr) {
         // Detach before the mpv handle goes: the callback would otherwise fire
         // against a freed context during teardown.
-        mpv_render_context_set_update_callback(ctx_, nullptr, nullptr);
-        mpv_render_context_free(ctx_);
+        api_->renderContextSetUpdateCallback(ctx_, nullptr, nullptr);
+        api_->renderContextFree(ctx_);
+        ctx_ = nullptr;
     }
 }
 
 void* MpvRenderContext::sGetProc(void* ctx, const char* name) {
     auto* self = static_cast<MpvRenderContext*>(ctx);
-    return self->gl_->GetProcAddress(name);
+    return self->gl_.GetProcAddress(name);
 }
 
 void MpvRenderContext::sUpdate(void* ctx) {
@@ -131,29 +133,28 @@ void MpvRenderContext::sUpdate(void* ctx) {
 
 void MpvRenderContext::setUpdateCallback(std::function<void()> fn) {
     onUpdate_ = std::move(fn);
-    // Fire once now so a surface that is already showing a frame gets painted
-    // without waiting for the next one mpv decides to produce.
+    // Fire once now so a surface already showing a frame gets painted without
+    // waiting for the next one mpv decides to produce.
     if (onUpdate_) onUpdate_();
 }
 
 void MpvRenderContext::setFlipY(bool flip) {
-    // MPV_RENDER_PARAM_FLIP_Y is an int, not the "yes"/"no" string it reads like.
-    // Passing a char* here left mpv reading a pointer as a flag, and the flip
-    // silently never applied.
+    // MPV_RENDER_PARAM_FLIP_Y is an int, not the "yes"/"no" string it reads like;
+    // passing a char* made mpv read a pointer as a flag and the flip never applied.
     flipY_ = flip ? 1 : 0;
 }
 
 uint64_t MpvRenderContext::update() {
-    if (ctx_ == nullptr) return 0;
-    return mpv_render_context_update(ctx_);
+    if (ctx_ == nullptr || api_ == nullptr) return 0;
+    return api_->renderContextUpdate(ctx_);
 }
 
 void MpvRenderContext::reportSwap() {
-    if (ctx_ != nullptr) mpv_render_context_report_swap(ctx_);
+    if (ctx_ != nullptr && api_ != nullptr) api_->renderContextReportSwap(ctx_);
 }
 
 int MpvRenderContext::render(int fbo, int width, int height, int internalFormat) {
-    if (ctx_ == nullptr || width <= 0 || height <= 0) return 0;
+    if (ctx_ == nullptr || api_ == nullptr || width <= 0 || height <= 0) return 0;
 
     mpv_opengl_fbo target{};
     target.fbo = fbo;
@@ -161,15 +162,14 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat)
     target.h = height;
     target.internal_format = internalFormat;
 
-    mpv_opengl_fbo* fbos[2] = {&target, nullptr};
     // The requested value, not get_info(): reading it back returns whatever mpv
     // currently holds and discards what the caller asked for.
     mpv_render_param params[] = {
-        {MPV_RENDER_PARAM_OPENGL_FBO, fbos[0]},
+        {MPV_RENDER_PARAM_OPENGL_FBO, &target},
         {MPV_RENDER_PARAM_FLIP_Y, &flipY_},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
-    return mpv_render_context_render(ctx_, params);
+    return api_->renderContextRender(ctx_, params);
 }
 
 }  // namespace mplayer

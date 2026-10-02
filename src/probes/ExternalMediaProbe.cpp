@@ -126,14 +126,12 @@ struct FileDialogOutcome {
     bool forcedClose = false;
 };
 
-// Creation order is the only stable identity: findChildren lists children
-// oldest first, the newest child is the stream the probe just asked for, and
-// the probe takes it regardless of visibility - a dialog that was never shown
-// is still the newest request, and a failed window outlives the stream that
-// replaced it until its deferred delete lands.
-PlayerDialog* activePlayer(QWidget* window) {
-    const auto players = window->findChildren<PlayerDialog*>();
-    return players.isEmpty() ? nullptr : players.constLast();
+// The home page owns exactly one current player: the dialog its mediaPlayer_
+// points at after each open. Creation order cannot identify it - a failed
+// first request keeps its dialog alive while the retry runs on the same one,
+// and a replaced stream must never be read through the old window.
+PlayerDialog* activePlayer(mikai::app::MainWindow* window) {
+    return window != nullptr ? window->currentMediaPlayer() : nullptr;
 }
 
 void answerInput(const QString& input, bool accept) {

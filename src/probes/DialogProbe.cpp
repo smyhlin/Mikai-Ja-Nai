@@ -5,12 +5,16 @@
 #include <QApplication>
 #include <QImage>
 #include <QPixmap>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QWidget>
+#include <cstdio>
 
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer::shell;
 
@@ -39,6 +43,24 @@ int visibleChildren(const QWidget* root) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+
+    // The dialog reads its player/anime4k and player/presetShortcuts settings
+    // inside its constructor, so both scopes are redirected into a directory
+    // that dies with this process before the first one is built. Without it a
+    // probe inherits whatever a real session left behind.
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
+        return 1;
+    }
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiDialogProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("DialogProbe"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
 
     static StubHost host;
     // A real URL can be handed in to check the mpv HTTP options against a live

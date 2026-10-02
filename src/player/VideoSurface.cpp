@@ -166,16 +166,15 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // view: nothing here can take the core lock or reach into mpv, so no
     // repaint or teardown can run it against a borrowed handle.
     nativeStatus_.setChangeCallback([this](const native::NativeStatusView& view) {
-        // The property read answered with an mpv error, which on this core
-        // means no `mikai_native` filter is attached. Repeating the request
-        // every 500 ms would only repeat the refusal, so the poll stops until
-        // the request state changes or another source is opened. The
-        // Unavailable view is still forwarded: the surface never invents an
-        // Active status.
-        const bool filterAbsent =
-            view.availability.value == native::Availability::Unavailable &&
-            view.availability.reasonKey == QStringLiteral("native.status.missing");
-        if (filterAbsent) {
+        // A refusal the reader will keep giving back - no filter attached, a
+        // read the core would not take, or a filter document that has drifted
+        // from this build's schema/protocol/tags - repeats identically for the
+        // life of the source. Repeating the request every 500 ms would only
+        // repeat the refusal, so the poll stops until the request state changes
+        // or another source is opened. The Unavailable view is still forwarded:
+        // the surface never invents an Active status.
+        if (view.availability.value == native::Availability::Unavailable &&
+            native::statusRefusalHaltsPolling(view.availability.reasonKey)) {
             nativeStatusHalted_ = true;
         } else if (view.snapshot.has_value() &&
                    !native::nativeStateNeedsPolling(view.snapshot->state)) {

@@ -1,32 +1,18 @@
-// mpv render-API bridge.
+// mpv render-API bridge: mpv renders into an FBO we blit inside a normal Qt
+// widget, so there is no second HWND and native z-order stops mattering.
 //
-// This is the whole point of the C++ player. The Python player embedded mpv by
-// handing it a native HWND (mpv calls winId()), and a native child window on
-// Windows ALWAYS composites above non-native siblings regardless of raise().
-// That is the entire reason the dock kept disappearing behind the video, the
-// chrome had to be "promoted native" and re-raised in three places, and the
-// float needed a native overlay hack.
-//
-// The render API removes that class of bug outright: mpv renders into a
-// framebuffer object and we blit that texture ourselves inside a normal Qt
-// widget. There is no second HWND, so z-order stops being a concern.
-//
-// Threading: mpv_render_context_set_update_callback fires on an arbitrary mpv
-// thread. The callback is forwarded as a plain std::function; the Qt layer is
-// responsible for marshalling it onto the GUI thread. Nothing here touches Qt,
-// so this file stays buildable and testable without a window system.
+// The update callback fires on an arbitrary mpv thread and is forwarded as a
+// plain std::function; the Qt layer marshals it onto the GUI thread.
 
 #pragma once
 
-// mpv/render_gl.h uses the GL scalar types but does not include the GL
-// headers itself, so they have to come first.
+// gl.h must come first: GlApi is spelled in plain GL scalar types, and glext.h
+// is not shipped by the Windows SDK so it is not included.
 #include <windows.h>
 
 #include <GL/gl.h>
-#include <GL/glext.h>
 
-#include <mpv/client.h>
-#include <mpv/render_gl.h>
+#include "MpvApi.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -35,13 +21,11 @@ namespace mplayer {
 
 class MpvHandle;
 
-// GL entry points mpv needs. mpv calls back through get_proc_address, so the
-// loader must resolve more than the surface itself needs.
+// mpv calls back through get_proc_address, so it needs more than the surface.
 struct GlApi {
-    // Must be the full resolver (wglGetProcAddress PLUS a GetProcAddress on
-    // opengl32.dll), not raw wglGetProcAddress: the latter returns NULL for every
-    // core GL 1.1 entry point, and mpv then rejects the context as
-    // "not supported" rather than telling us which symbol went missing.
+    // Must be the full resolver (wglGetProcAddress plus GetProcAddress on
+    // opengl32.dll): raw wglGetProcAddress returns NULL for core GL 1.1 entry
+    // points, and mpv then rejects the context as "not supported".
     void* (*GetProcAddress)(const char* name) = nullptr;
     void (*genTextures)(GLsizei n, GLuint* t) = nullptr;
     void (*deleteTextures)(GLsizei n, const GLuint* t) = nullptr;
@@ -67,8 +51,7 @@ struct GlApi {
                        void* pixels) = nullptr;
 };
 
-// Resolves the subset above through wglGetProcAddress with a GetProcAddress
-// fallback, which is what core-profile drivers need on Windows.
+// wglGetProcAddress with a GetProcAddress fallback, as core-profile drivers need.
 GlApi loadGlApi();
 
 class MpvRenderContext {
@@ -83,16 +66,15 @@ public:
     mpv_render_context* get() const noexcept { return ctx_; }
     explicit operator bool() const noexcept { return ctx_ != nullptr; }
 
-    // Renders one frame into `fbo` sized width x height. Caller must have the
-    // FBO bound and mpv's update() called since the last swap.
+    // Caller must have the FBO bound and mpv's update() called since the last
+    // swap. Returns mpv's render error code (0 on success).
     int render(int fbo, int width, int height, int internalFormat);
-    // Returns mpv's render error code (0 on success).
 
     // Tells mpv a frame was presented, so it can schedule the next.
     void reportSwap();
 
-    // Asks mpv whether a new frame is ready; cheap, call once per paint.
-    // Returns mpv's frame-generation counter; zero means no frame yet.
+    // Cheap, call once per paint. Returns mpv's frame-generation counter, zero
+    // if no frame yet.
     uint64_t update();
 
     // Fires (on an mpv thread) when a new frame may be available.
@@ -102,15 +84,18 @@ public:
     void setFlipY(bool flip);
 
 private:
-    /// 1 to flip, 0 not. Always passed per-render; never read back from mpv.
+    // 1 to flip, 0 not. Always passed per-render; never read back from mpv.
     int flipY_ = 1;
 
     static void* sGetProc(void* ctx, const char* name);
     static void sUpdate(void* ctx);
 
     mpv_render_context* ctx_ = nullptr;
-    const GlApi* gl_ = nullptr;
-    MpvHandle* mpv_ = nullptr;
+    // Held by value: mpv calls get_proc_address for the whole life of the
+    // context, so this cannot be a caller's local.
+    GlApi gl_;
+    // Cached from the process-wide selection so render never looks the module up.
+    const MpvApiInstance* api_ = nullptr;
     std::function<void()> onUpdate_;
 };
 

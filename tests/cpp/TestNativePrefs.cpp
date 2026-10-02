@@ -1,0 +1,570 @@
+#include "TestNativePrefs.hpp"
+
+#include "native/NativePaths.hpp"
+#include "native/NativePrefs.hpp"
+#include "native/NativeRuntimeSelection.hpp"
+#include "player/PresetShortcuts.hpp"
+
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QSet>
+#include <QtCore/QSettings>
+#include <QtCore/QTemporaryDir>
+
+using namespace mplayer::native;
+
+namespace {
+
+/// Keys that belong to other settings owners. A native save must leave every one
+/// of them exactly as it found it.
+constexpr const char* kForeignKeys[] = {"player/presetShortcuts/hd2x", "ui/language",
+                                        "quality/cache", "feeds"};
+
+void clearForeignKeys() {
+  QSettings settings;
+  for (const char* key : kForeignKeys) {
+    settings.remove(QString::fromLatin1(key));
+  }
+  settings.sync();
+}
+
+mplayer::shell::ShortcutClaim claim(const QString& id, const QString& label,
+                                    mplayer::shell::ShortcutOwnerKind kind) {
+  mplayer::shell::ShortcutClaim result;
+  result.ownerId = id;
+  result.ownerLabel = label;
+  result.kind = kind;
+  return result;
+}
+
+}  // namespace
+
+void TestNativePrefs::init() {
+  clearNativePreferences();
+  clearForeignKeys();
+  QSettings settings;
+  settings.remove(QStringLiteral("player/native/runtimeChoice"));
+  settings.sync();
+}
+
+void TestNativePrefs::cleanup() { init(); }
+
+void TestNativePrefs::aNativeRequestRoundTripsThroughItsGroup() {
+  NativePreferencePatch patch;
+  patch.enabled = true;
+  patch.backend = Backend::DirectML;
+  patch.recipeId = QStringLiteral("janai.spatial.hd2b.v1");
+  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
+  QString reason;
+  QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.schemaRecognised);
+  QCOMPARE(loaded.storedSchema, kNativePreferencesSchema);
+  QVERIFY(loaded.enabled);
+  QVERIFY(loaded.backend == Backend::DirectML);
+  QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2b.v1"));
+  QCOMPARE(loaded.toggleProcessingShortcut, QStringLiteral("Ctrl+Shift+J"));
+  QVERIFY(loaded.issues.isEmpty());
+  QVERIFY(!loaded.isDefault());
+}
+
+void TestNativePrefs::theSavedBlockCarriesTheSchemaThisBuildWrites() {
+  NativePreferencePatch patch;
+  patch.enabled = false;
+  QString reason;
+  QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
+
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  QCOMPARE(settings.value(QLatin1String(kNativeSchemaKey)).toInt(), kNativePreferencesSchema);
+  settings.endGroup();
+}
+
+void TestNativePrefs::loadingAnEmptyGroupWritesNothingAndReadsDefaults() {
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.isDefault());
+  QVERIFY(loaded.schemaRecognised);
+  QCOMPARE(loaded.storedSchema, 0);
+  QVERIFY(loaded.issues.isEmpty());
+
+  // A read is not a write: no key of ours exists after loading an empty group.
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  QVERIFY(!settings.contains(QLatin1String(kNativeSchemaKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeEnabledKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeBackendKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeRecipeKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeCustomModelsDirKey)));
+  settings.endGroup();
+  settings.beginGroup(nativeShortcutsSettingsGroup());
+  QVERIFY(!settings.contains(QLatin1String(kNativeToggleProcessingKey)));
+  settings.endGroup();
+}
+
+void TestNativePrefs::eachCorruptKeyFallsBackAloneAndReportsTheReason() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeEnabledKey), QStringLiteral("maybe"));
+  settings.setValue(QLatin1String(kNativeBackendKey), QStringLiteral("tensorrt-ultra"));
+  // A recipe id is not parsed against a catalogue here, so an unknown one is
+  // kept, not treated as corruption.
+  settings.setValue(QLatin1String(kNativeRecipeKey), QStringLiteral("janai.unknown.v9"));
+  settings.setValue(QLatin1String(kNativeCustomModelsDirKey),
+                    QStringLiteral("Z:/mikai/definitely-not-here"));
+  settings.endGroup();
+  settings.beginGroup(nativeShortcutsSettingsGroup());
+  settings.setValue(QLatin1String(kNativeToggleProcessingKey), QStringLiteral("banana"));
+  settings.endGroup();
+  settings.sync();
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(!loaded.enabled);
+  QVERIFY(loaded.backend == Backend::TensorRT);
+  QCOMPARE(loaded.recipeId, QStringLiteral("janai.unknown.v9"));
+  QVERIFY(loaded.customModelsDir.isEmpty());
+  QVERIFY(loaded.toggleProcessingShortcut.isEmpty());
+  // Stored but unusable is still "set": a default must not be re-offered.
+  QVERIFY(loaded.toggleProcessingShortcutStored);
+
+  QSet<QString> reasonKeys;
+  for (const NativePreferenceIssue& issue : loaded.issues) {
+    reasonKeys.insert(issue.reasonKey);
+    QVERIFY(!issue.reason.isEmpty());
+    QVERIFY(!issue.key.isEmpty());
+  }
+  QVERIFY(reasonKeys.contains(QStringLiteral("native.enabledInvalid")));
+  QVERIFY(reasonKeys.contains(QStringLiteral("native.backendUnknown")));
+  QVERIFY(reasonKeys.contains(QStringLiteral("native.modelsDirInvalid")));
+  QVERIFY(reasonKeys.contains(QStringLiteral("native.shortcutInvalid")));
+}
+
+void TestNativePrefs::anUnknownSchemaReadsAsOffAndLeavesTheStoredBlockAlone() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeSchemaKey), 2);
+  settings.setValue(QLatin1String(kNativeEnabledKey), true);
+  settings.setValue(QLatin1String(kNativeRecipeKey), QStringLiteral("future.recipe"));
+  settings.endGroup();
+  settings.sync();
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(!loaded.schemaRecognised);
+  QCOMPARE(loaded.storedSchema, 2);
+  QVERIFY(!loaded.enabled);
+  QVERIFY(loaded.recipeId.isEmpty());
+  QCOMPARE(static_cast<int>(loaded.issues.size()), 1);
+  QCOMPARE(loaded.issues.first().reasonKey, QStringLiteral("native.schemaUnknown"));
+
+  // The newer document survives being looked at.
+  QSettings check;
+  check.beginGroup(nativeSettingsGroup());
+  QCOMPARE(check.value(QLatin1String(kNativeSchemaKey)).toInt(), 2);
+  QCOMPARE(check.value(QLatin1String(kNativeEnabledKey)).toBool(), true);
+  QCOMPARE(check.value(QLatin1String(kNativeRecipeKey)).toString(),
+           QStringLiteral("future.recipe"));
+  check.endGroup();
+}
+
+void TestNativePrefs::aSaveRefusesToOverwriteAnUnknownSchema() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeSchemaKey), 2);
+  settings.setValue(QLatin1String(kNativeEnabledKey), true);
+  settings.endGroup();
+  settings.sync();
+
+  NativePreferencePatch patch;
+  patch.enabled = false;
+  QString reason;
+  QVERIFY(!saveNativePreferences(patch, &reason));
+  QVERIFY(!reason.isEmpty());
+
+  QSettings check;
+  check.beginGroup(nativeSettingsGroup());
+  QCOMPARE(check.value(QLatin1String(kNativeSchemaKey)).toInt(), 2);
+  QCOMPARE(check.value(QLatin1String(kNativeEnabledKey)).toBool(), true);
+  check.endGroup();
+}
+
+void TestNativePrefs::anEmptyPatchSaveWritesNothing() {
+  NativePreferencePatch patch;
+  QVERIFY(patch.isEmpty());
+
+  QString reason = QStringLiteral("stale");
+  QVERIFY(saveNativePreferences(patch, &reason));
+  QVERIFY(reason.isEmpty());
+
+  // Not even the schema is written: a General save names no native field and
+  // must leave native storage alone.
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  QVERIFY(!settings.contains(QLatin1String(kNativeSchemaKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeEnabledKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeBackendKey)));
+  QVERIFY(!settings.contains(QLatin1String(kNativeRecipeKey)));
+  settings.endGroup();
+  settings.beginGroup(nativeShortcutsSettingsGroup());
+  QVERIFY(!settings.contains(QLatin1String(kNativeToggleProcessingKey)));
+  settings.endGroup();
+}
+
+void TestNativePrefs::anUntouchedUnknownSchemaSurvivesAGeneralSave() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeSchemaKey), 2);
+  settings.setValue(QLatin1String(kNativeEnabledKey), true);
+  settings.setValue(QLatin1String(kNativeBackendKey), QStringLiteral("future-backend"));
+  settings.setValue(QLatin1String(kNativeRecipeKey), QStringLiteral("future.recipe"));
+  settings.endGroup();
+  settings.sync();
+
+  // What a General save does when only the language, the token, the feeds or the
+  // presets changed: no native field is named.
+  const NativePreferencePatch untouched;
+  QString reason;
+  QVERIFY2(saveNativePreferences(untouched, &reason), qPrintable(reason));
+  QVERIFY(reason.isEmpty());
+
+  QSettings check;
+  check.beginGroup(nativeSettingsGroup());
+  QCOMPARE(check.value(QLatin1String(kNativeSchemaKey)).toInt(), 2);
+  QCOMPARE(check.value(QLatin1String(kNativeEnabledKey)).toBool(), true);
+  QCOMPARE(check.value(QLatin1String(kNativeBackendKey)).toString(),
+           QStringLiteral("future-backend"));
+  QCOMPARE(check.value(QLatin1String(kNativeRecipeKey)).toString(),
+           QStringLiteral("future.recipe"));
+  check.endGroup();
+  check.beginGroup(nativeShortcutsSettingsGroup());
+  QVERIFY(!check.contains(QLatin1String(kNativeToggleProcessingKey)));
+  check.endGroup();
+
+  // And the untouched block still reads exactly as it did: off, unrecognised,
+  // with the fact reported rather than applied.
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(!loaded.schemaRecognised);
+  QCOMPARE(loaded.storedSchema, 2);
+  QVERIFY(!loaded.enabled);
+  QCOMPARE(static_cast<int>(loaded.issues.size()), 1);
+  QCOMPARE(loaded.issues.first().reasonKey, QStringLiteral("native.schemaUnknown"));
+}
+
+void TestNativePrefs::anUnknownRecipeIsKeptAndReportedUnavailable() {
+  NativeAvailability available;
+  available.engineAvailable = true;
+  available.backends = allBackends();
+
+  NativePreferences request;
+  request.enabled = true;
+  request.recipeId = QStringLiteral("janai.unknown.v9");
+
+  const NativeSelectionView view = evaluateNativeSelection(request, available);
+  QVERIFY(!view.requestAvailable);
+  QCOMPARE(view.recipeId, QStringLiteral("janai.unknown.v9"));
+  QVERIFY(view.availability.value == Availability::Unavailable);
+  QCOMPARE(view.availability.reasonKey, QStringLiteral("native.recipeUnknown"));
+  QVERIFY(view.availability.reason.contains(QStringLiteral("janai.unknown.v9")));
+}
+
+void TestNativePrefs::anOfferedRecipeOnAnUnavailableBackendStaysRequested() {
+  NativeAvailability available;
+  available.engineAvailable = true;
+  available.backends = {Backend::TensorRT};
+  available.recipes.append(
+      {QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"), readyAvailability()});
+
+  NativePreferences request;
+  request.enabled = true;
+  request.backend = Backend::DirectML;
+  request.recipeId = QStringLiteral("janai.spatial.hd2x.v1");
+
+  const NativeSelectionView view = evaluateNativeSelection(request, available);
+  QVERIFY(!view.requestAvailable);
+  QVERIFY(view.backend == Backend::DirectML);
+  QVERIFY(view.availability.value == Availability::Unavailable);
+  QCOMPARE(view.availability.reasonKey, QStringLiteral("native.backendUnsupported"));
+}
+
+void TestNativePrefs::anAvailableRecipeOnItsBackendIsRequestedButNeverActive() {
+  NativeAvailability available;
+  available.engineAvailable = true;
+  available.backends = allBackends();
+  available.recipes.append(
+      {QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"), readyAvailability()});
+
+  NativePreferences request;
+  request.enabled = true;
+  request.backend = Backend::TensorRT;
+  request.recipeId = QStringLiteral("janai.spatial.hd2x.v1");
+
+  const NativeSelectionView view = evaluateNativeSelection(request, available);
+  QVERIFY(view.requestAvailable);
+  QVERIFY(view.availability.value == Availability::Ready);
+  QVERIFY(view.availability.isUsable());
+}
+
+void TestNativePrefs::aRequestedTickPersistsWhileUnavailableAndKeepsTheRuntimeChoice() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QStringLiteral("runtimeChoice"), QStringLiteral("native"));
+  settings.endGroup();
+  settings.sync();
+
+  // A tick for a recipe this build cannot offer is the *request*: it is written,
+  // never refused or reset for being unavailable.
+  NativePreferencePatch patch;
+  patch.enabled = true;
+  patch.backend = Backend::DirectML;
+  patch.recipeId = QStringLiteral("janai.spatial.hd2b.v1");
+  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
+  QString reason;
+  QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.enabled);
+  QVERIFY(loaded.backend == Backend::DirectML);
+  QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2b.v1"));
+
+  // No engine is produced in this build, so the tick stays requested: nothing is
+  // invented to make it look applied.
+  const NativeAvailability available = currentNativeAvailability();
+  QVERIFY(!available.engineAvailable);
+  QVERIFY(!available.engineReasonKey.isEmpty());
+  QVERIFY(!available.engineReason.isEmpty());
+  const NativeSelectionView view = evaluateNativeSelection(loaded, available);
+  QVERIFY(view.requestedEnabled);
+  QVERIFY(!view.requestAvailable);
+  QVERIFY(view.availability.value == Availability::Unavailable);
+  QVERIFY(!view.availability.reason.isEmpty());
+
+  // The runtime choice shares the group and is not this module's to touch.
+  QSettings check;
+  check.beginGroup(nativeSettingsGroup());
+  QCOMPARE(check.value(QStringLiteral("runtimeChoice")).toString(), QStringLiteral("native"));
+  check.endGroup();
+}
+
+void TestNativePrefs::aClearedToggleIsStoredAsExplicitlyUnbound() {
+  QString reason;
+  NativePreferencePatch set;
+  set.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
+  QVERIFY2(saveNativePreferences(set, &reason), qPrintable(reason));
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.toggleProcessingShortcutStored);
+  QCOMPARE(loaded.toggleProcessingShortcut, QStringLiteral("Ctrl+Shift+J"));
+
+  // Clearing it keeps the key present, so "the user unbound this" stays
+  // distinguishable from "no binding was ever written" - the only case a
+  // documented default may still be offered.
+  NativePreferencePatch cleared;
+  cleared.toggleProcessingShortcut = QString();
+  QVERIFY2(saveNativePreferences(cleared, &reason), qPrintable(reason));
+
+  const NativePreferences afterClear = loadNativePreferences();
+  QVERIFY(afterClear.toggleProcessingShortcutStored);
+  QVERIFY(afterClear.toggleProcessingShortcut.isEmpty());
+  QVERIFY(afterClear.issues.isEmpty());
+  QSettings check;
+  check.beginGroup(nativeShortcutsSettingsGroup());
+  QVERIFY(check.contains(QLatin1String(kNativeToggleProcessingKey)));
+  check.endGroup();
+
+  // Removing the whole block is what goes back to "never written".
+  clearNativePreferences();
+  const NativePreferences fresh = loadNativePreferences();
+  QVERIFY(!fresh.toggleProcessingShortcutStored);
+  QVERIFY(fresh.toggleProcessingShortcut.isEmpty());
+}
+
+void TestNativePrefs::aNativeSaveLeavesForeignKeysAlone() {
+  QSettings settings;
+  settings.setValue(QStringLiteral("player/presetShortcuts/hd2x"), QStringLiteral("Ctrl+1"));
+  settings.setValue(QStringLiteral("ui/language"), QStringLiteral("uk"));
+  settings.setValue(QStringLiteral("quality/cache"), QStringLiteral("cache-body"));
+  settings.setValue(QStringLiteral("feeds"), QStringLiteral("home,updates"));
+  settings.sync();
+
+  NativePreferencePatch patch;
+  patch.enabled = true;
+  patch.backend = Backend::DirectML;
+  patch.recipeId = QStringLiteral("janai.spatial.hd2x.v1");
+  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
+  QString reason;
+  QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
+
+  QSettings check;
+  QCOMPARE(check.value(QStringLiteral("player/presetShortcuts/hd2x")).toString(),
+           QStringLiteral("Ctrl+1"));
+  QCOMPARE(check.value(QStringLiteral("ui/language")).toString(), QStringLiteral("uk"));
+  QCOMPARE(check.value(QStringLiteral("quality/cache")).toString(), QStringLiteral("cache-body"));
+  QCOMPARE(check.value(QStringLiteral("feeds")).toString(), QStringLiteral("home,updates"));
+}
+
+void TestNativePrefs::clearingNativePreferencesLeavesTheRuntimeChoiceAlone() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QStringLiteral("runtimeChoice"), QStringLiteral("native"));
+  settings.setValue(QLatin1String(kNativeEnabledKey), true);
+  settings.endGroup();
+  settings.sync();
+
+  clearNativePreferences();
+
+  QSettings check;
+  check.beginGroup(nativeSettingsGroup());
+  QCOMPARE(check.value(QStringLiteral("runtimeChoice")).toString(), QStringLiteral("native"));
+  QVERIFY(!check.contains(QLatin1String(kNativeEnabledKey)));
+  check.endGroup();
+}
+
+void TestNativePrefs::theModelsDirectoryIsValidatedAndCanonicalised() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString path = QDir::cleanPath(directory.path());
+
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeCustomModelsDirKey), path);
+  settings.endGroup();
+  settings.sync();
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.issues.isEmpty());
+  QVERIFY(!loaded.customModelsDir.isEmpty());
+  QCOMPARE(loaded.customModelsDir, canonicalPath(path));
+  QVERIFY(QFileInfo(loaded.customModelsDir).isDir());
+}
+
+void TestNativePrefs::anUnknownStoredModelsDirectoryIsIgnoredAndReported() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeCustomModelsDirKey),
+                    QStringLiteral("Z:/mikai/definitely-not-here"));
+  settings.endGroup();
+  settings.sync();
+
+  const NativePreferences loaded = loadNativePreferences();
+  QVERIFY(loaded.customModelsDir.isEmpty());
+  QCOMPARE(static_cast<int>(loaded.issues.size()), 1);
+  QCOMPARE(loaded.issues.first().reasonKey, QStringLiteral("native.modelsDirInvalid"));
+}
+
+void TestNativePrefs::aMissingNativeRuntimeNamesTheRuntimeGap() {
+  // Nothing selected at all, and a Standard module that was selected: both are
+  // "no native runtime", named rather than guessed.
+  const RuntimeSelection none;
+  const NativeAvailability missing = nativeAvailabilityFor(none);
+  QVERIFY(!missing.engineAvailable);
+  QCOMPARE(missing.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
+  QVERIFY(!missing.engineReason.isEmpty());
+  QVERIFY(missing.backends.isEmpty());
+
+  RuntimeSelection standard;
+  standard.loaded = true;
+  standard.kind = BundleKind::Standard;
+  const NativeAvailability fromStandard = nativeAvailabilityFor(standard);
+  QVERIFY(!fromStandard.engineAvailable);
+  QCOMPARE(fromStandard.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
+  QVERIFY(!fromStandard.engineReason.isEmpty());
+}
+
+void TestNativePrefs::aLoadedNativeRuntimeWithoutConfirmedCapabilitiesNamesThatGap() {
+  RuntimeSelection native;
+  native.loaded = true;
+  native.kind = BundleKind::Native;
+  native.requested = RuntimeChoice::Native;
+  native.version = QStringLiteral("9.9.9");
+
+  const NativeAvailability available = nativeAvailabilityFor(native);
+  // The descriptor's own label is not a capability, so the answer is unchanged
+  // by it - and nothing is fabricated to fill the gap.
+  QVERIFY(!available.engineAvailable);
+  QCOMPARE(available.engineReasonKey, QStringLiteral("native.capabilitiesUnconfirmed"));
+  QVERIFY(!available.engineReason.isEmpty());
+  QVERIFY(available.backends.isEmpty());
+  for (const NativeRecipeOption& option : available.recipes) {
+    QVERIFY(option.availability.value == Availability::Unavailable);
+    QCOMPARE(option.availability.reasonKey, available.engineReasonKey);
+    QCOMPARE(option.availability.reason, available.engineReason);
+  }
+}
+
+void TestNativePrefs::aRefusedNativeRequestKeepsItsNamedReason() {
+  RuntimeSelection refused;
+  refused.requested = RuntimeChoice::Native;
+  refused.kind = BundleKind::Standard;
+  refused.nativeNotApplied = true;
+  refused.runtimeUnavailable = true;
+  refused.reason = QStringLiteral("No native runtime bundle is installed.");
+
+  const NativeAvailability available = nativeAvailabilityFor(refused);
+  QVERIFY(!available.engineAvailable);
+  QCOMPARE(available.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
+  // The selection's own fact is what is reported, not a re-worded invention.
+  QCOMPARE(available.engineReason, refused.reason);
+}
+
+void TestNativePrefs::theAvailabilityProducerNeverClaimsAnEngine() {
+  const NativeAvailability available = currentNativeAvailability();
+  QVERIFY(!available.engineAvailable);
+  QVERIFY(!available.engineReasonKey.isEmpty());
+  QVERIFY(!available.engineReason.isEmpty());
+}
+
+void TestNativePrefs::theSharedCheckRefusesReservedKeysInEveryForm() {
+  using namespace mplayer::shell;
+  const QMap<QString, ShortcutClaim> claims;
+
+  // The player's handlers act on the key alone, so a modifier does not make it
+  // assignable.
+  for (const QKeySequence& sequence :
+       {QKeySequence(Qt::Key_Space), QKeySequence(Qt::CTRL | Qt::Key_S),
+        QKeySequence(Qt::Key_Escape)}) {
+    const ShortcutConflict conflict = findShortcutConflict(sequence, claims);
+    QVERIFY(conflict.blocked);
+    QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Reserved);
+    QVERIFY(conflict.reasonKey == QLatin1String(kShortcutReservedReasonKey));
+  }
+}
+
+void TestNativePrefs::theSharedCheckRefusesADuplicateAndNamesTheOwner() {
+  using namespace mplayer::shell;
+  const QKeySequence sequence(Qt::CTRL | Qt::Key_J);
+  QMap<QString, ShortcutClaim> claims;
+  claims.insert(shortcutClaimKey(sequence), claim(QStringLiteral("preset.a"),
+                                                  QStringLiteral("Preset A"),
+                                                  ShortcutOwnerKind::Preset));
+
+  const ShortcutConflict conflict = findShortcutConflict(sequence, claims);
+  QVERIFY(conflict.blocked);
+  QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Preset);
+  QCOMPARE(conflict.ownerId, QStringLiteral("preset.a"));
+  QCOMPARE(conflict.ownerLabel, QStringLiteral("Preset A"));
+  QVERIFY(conflict.reasonKey == QLatin1String(kShortcutDuplicateReasonKey));
+}
+
+void TestNativePrefs::aNativeClaimBlocksAPresetAndNamesTheNativeOwner() {
+  using namespace mplayer::shell;
+  const QKeySequence sequence(Qt::CTRL | Qt::Key_J);
+  QMap<QString, ShortcutClaim> claims;
+  // The preset side validates with the native claim already in the map, which is
+  // what makes a preset take the native combination get refused.
+  claims.insert(shortcutClaimKey(sequence), claim(QStringLiteral("toggleProcessing"),
+                                                  QStringLiteral("Processing toggle"),
+                                                  ShortcutOwnerKind::Native));
+
+  const ShortcutConflict conflict = findShortcutConflict(sequence, claims);
+  QVERIFY(conflict.blocked);
+  QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Native);
+  QCOMPARE(conflict.ownerId, QStringLiteral("toggleProcessing"));
+  QVERIFY(conflict.reasonKey == QLatin1String(kShortcutDuplicateReasonKey));
+}
+
+void TestNativePrefs::anEmptySequenceIsRefusedAsReserved() {
+  using namespace mplayer::shell;
+  const QMap<QString, ShortcutClaim> claims;
+  const ShortcutConflict conflict = findShortcutConflict(QKeySequence(), claims);
+  QVERIFY(conflict.blocked);
+  QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Reserved);
+}

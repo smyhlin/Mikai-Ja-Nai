@@ -24,6 +24,7 @@
 
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 
@@ -49,6 +50,9 @@ int main(int argc, char** argv) {
     QSurfaceFormat::setDefaultFormat(format);
 
     QGuiApplication app(argc, argv);
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
 
     note(QStringLiteral("platform: %1").arg(QGuiApplication::platformName()));
 

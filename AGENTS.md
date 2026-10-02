@@ -148,11 +148,18 @@ Layering is strict and enforced by tests:
   - `Releases.hpp/cpp` — `playableEpisodeCount`, `sortReleases`.
   - `Errors.hpp` — only `MikaiApiError{code, message, status}`.
   - `Streams.hpp/cpp` — HLS extraction per site; `NoSourceError`.
-  - `Runtime.hpp/cpp` — libmpv discovery (`%LOCALAPPDATA%/MPVBackend/runtime`).
+  - `Runtime.hpp/cpp` — stock mpv discovery at runtime (`findRuntime`) and the
+    auto-download provisioning (`ensureRuntime`) the recovery path may run
+    (`%LOCALAPPDATA%/MPVBackend/runtime`). It finds a DLL; it never loads one.
 - `src/app/` — the Qt Widgets frontend, namespace `mikai::app`:
-  - `main.cpp` — entrypoint (Fusion style, one `setStyleSheet`,
-    `provisionMpvRuntime()` puts the mpv dir on `PATH` before the first
-    `QApplication`, then `MainWindow` over a `MikaiClient`).
+  - `main.cpp` — entrypoint (application/organization names, locale translators,
+    Fusion style and one `setStyleSheet`, then `selectPlayerRuntime()` and
+    `MainWindow` over a `MikaiClient`). `selectPlayerRuntime()` calls
+    `mplayer::native::selectStartupRuntime()`, which resolves the stored
+    Standard/Native choice and loads the chosen module through `MpvApi`; a
+    missing or refused runtime is one log line, and playback reports the same
+    named reason. There is no load-time libmpv import and no `PATH` edit to
+    provision one.
   - `pages/` — `MainWindow`, `SearchPage` (home discovery, async poster
     thumbs, format bar, 55-per-page search pager, per-card detail fan-out),
     `TitlePage` (per-release tabs, 140-episode grid, fetch-on-open qualities,
@@ -160,21 +167,24 @@ Layering is strict and enforced by tests:
     external-player hand-off via `QProcess::startDetached(mpv|vlc)`).
   - `widgets/` — `TitleCard` (360×140 home card), `RangePager`,
     `RateLimitLabel` (RPM indicator).
-  - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles),
+  - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles, preset
+    shortcuts, and the Standard/Native **Runtime module** choice),
     `CoverViewer` (chromeless full-screen cover with zoom/pan).
   - `state/` — `Feeds` (home-block toggles), `QualityCache`.
   - `workers/` — `Runner` (pools 4/3/12).
   - `theme/` — `Colors.hpp`, `Metrics.hpp`, `Theme.hpp/cpp`
     (`buildStylesheet()`), `Icons.hpp/cpp` (painted glyphs, never emoji).
   - `Clipboard.hpp`, `Labels.hpp/cpp` (status labels).
-- `src/player/` — the player: `MpvHandle` (only place calling `mpv_*`) →
+- `src/player/` — the player: `MpvApi` (the one dynamic module loader and its
+  function table; `MpvHandle` is the only place calling `mpv_*`) →
   `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
   `ShellSliders`; `PlayerShell` (chrome, display states, input; the picture is
   always fitted, there is no zoom or pan);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
   `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
   Picture-in-picture has three rules that each cost a real bug, and all three
-  are asserted in `InteractionProbe`:
+  are exercised in `InteractionProbe` (a description, not a green run — see the
+  probe note below):
   - **The float owns its playback.** Every control - the scrubber, the play
     button, click-to-pause, the arrow keys - acts on the float's own
     `VideoSurface`. They used to emit signals the host forwarded to the main
@@ -231,18 +241,37 @@ Layering is strict and enforced by tests:
     the viewer already made.
   The window is non-blocking on purpose, and the float is barred from
   opening it: the float owns a second mpv core, and the window swaps the
-  chain on whichever surface it is given.- `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
-  by a POST_BUILD rule on `mikai`. `Anime4K::findShadersDir` looks beside the
+  chain on whichever surface it is given.
+- `src/player/native/` — runtime selection and the native vocabulary:
+  `selectStartupRuntime()`/`resolveRuntime()`/`commitRuntime()` pick and pin
+  one module per process (a later choice is refused in place with a restart
+  reason), `NativeBundle`/`NativePaths`/`NativePeImage` validate a bundle
+  before any load, and `NativeManifest`/`NativeRecipe`/`NativeStatus`/
+  `NativePrefs`/`NativeMenu` carry the profile and recipe model. Compiled into
+  the app unconditionally; `MIKAI_WITH_MODEL_INSPECTION` only adds the optional
+  CPU inspector.
+- `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
+  by POST_BUILD rules on `mikai`, `mikai_tests` and shader-using probes.
+  `Anime4K::findShadersDir` looks beside the
   exe and in the cwd; when it finds nothing the SHADERS section hides itself
   rather than offering rows that cannot work.
-- `src/probes/` — hand-run probes, including three that need the network and
-  a key: `title_page_probe` (the real `TitlePage` against the real API, and the
-  cover open/close loop that pins the use-after-free), `crash_probe`
-  (installs the app's logging then faults on purpose, to prove a report is
-  actually written) (`mpv_surface_smoke`, `shell_probe`,
-  `dialog_probe`, `widget_pixel_probe`, `headless_pixel_probe`,
-  `InteractionProbe`) that build a real window and check pixels. CMake
-  targets, not tests; nothing in `tests/` runs them. `InteractionProbe`
+- `src/probes/` — hand-run CMake targets (`EXCLUDE_FROM_ALL`; nothing in
+  `tests/` runs them). The GUI ones build a real window and check pixels:
+  `mpv_surface_smoke`, `headless_pixel_probe`, `widget_pixel_probe`,
+  `shell_probe`, `dialog_probe`, `InteractionProbe`, `anime4k_menu_probe`,
+  `compare_probe`, `compare_shot_probe`, `external_media_probe`,
+  `hls_recovery_probe`. The loader,
+  selection and native-panel ones are `mpv_loader_probe`,
+  `runtime_selection_probe`, `resolver_probe`, `native_status_probe`,
+  `native_menu_probe`, `native_settings_probe`, `rife_settings_probe`,
+  `spatial_assets_probe` and, only under `MIKAI_WITH_MODEL_INSPECTION`,
+  `native_assets_probe`. The loader/selection probes take `MIKAI_MPV_MODULE`
+  when they need a specific DLL. Networked runs:
+  `title_page_probe` drives the real `TitlePage` against the real API (its
+  cover open/close loop pins the use-after-free) and `external_media_probe`
+  needs a 320×180 clip plus its HTTP fixture; `crash_probe` installs the app's
+  logging then faults on purpose, to prove a report is actually written.
+  `InteractionProbe`
   measures Anime4K by freezing the clip on one timestamp, taking a control pair
   of frames with nothing touched, then enabling the preset and measuring the
   picture difference. Three things about that measurement are load-bearing and
@@ -262,20 +291,38 @@ Layering is strict and enforced by tests:
   `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...` and decline to upscale a video mpv
   is already displaying at source; on a small surface only the ungated restore
   half runs. The check asserts the chain runs, not that it is worth enabling.
+
+  **A description is not a pass.** These paragraphs say what each probe
+  *measures*; describe the behaviour a probe checks, never a specific string,
+  theme number or default it happens to pin: those pin the implementation
+  instead of the user-visible result. The desktop runs that are green are the
+  ones with an observed `RESULT: PASS` line on a current-tree binary —
+  `interaction_probe` 149/149 with the session attached, `hls_recovery_probe`
+  23/23 — and pixel proofs additionally need the session attached (detached:
+  every count reads black with `hasVideo=0`).
 - `tests/cpp/` — `mikai_tests` (one exe, one ctest entry; `main.cpp` drives
-  each suite and prints a per-suite PASS/FAIL line): `TestModels`,
-  `TestReleases`, `TestStreams`, `TestPagers`, `TestQualityCache`,
-  `TestRateLimiter`, `TestLayering`, `TestClipboard`, `TestLiveOracle`
-  (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`: BLACK TORCH → ref `7428`, 7
-  releases with 4 dubs / 3 subs, one dub carrying episodes 1–12, and a 480 /
-  720 / 1080 ladder).
+  each suite and prints a per-suite PASS/FAIL/SKIP line). Domain and UI suites:
+  `TestModels`, `TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`,
+  `TestPagers`, `TestQualityCache`, `TestRateLimiter`, `TestLayering`,
+  `TestClipboard`. Runtime and native-contract suites: `TestRuntimeSelection`,
+  `TestMpvAsync`, `TestNativeTypes`, `TestNativeRecipe`, `TestNativeProfiles`,
+  `TestNativeRife`, `TestNativeBundle`, `TestNativePrepPlan`,
+  `TestNativeManifest`, `TestNativeStatus`, `TestNativePrefs`,
+  `TestNativeMenu`, `TestNativeUserRecipes`, `TestNativeAssets`, plus
+  `TestNativeCatalog` only when `MIKAI_WITH_MODEL_INSPECTION=ON`. The live
+  oracle `TestLiveOracle` is gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`
+  (BLACK TORCH → ref `7428`, 7 releases with 4 dubs / 3 subs, one dub carrying
+  episodes 1–12, and a 480 / 720 / 1080 ladder) and is a deliberate skip, not a
+  pass, when the key is absent.
 - `skills/design-ui/` — `SKILL.md` + `references/`.
 
 ## Development Commands
 
 Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`), Qt 6.8.x
-(`C:/temp/qt6/6.8.3/mingw_64`), mpv runtime dir (headers + `libmpv-2.dll`;
-`MPV_RUNTIME_DIR` has no default and CMake hard-fails without it). This Qt
+(`C:/temp/qt6/6.8.3/mingw_64`), and an mpv header directory holding
+`mpv/client.h` and `mpv/render_gl.h` (`MPV_INCLUDE_DIR`, cached as `MIKAI_MPV_HEADERS`; no
+default, and CMake hard-fails without it). The headers are build-only — the app never links libmpv
+— and the optional native SDK is not needed for an ordinary build. This Qt
 build needs `QT_PLUGIN_PATH=<qt>/plugins` in the environment or TLS reports 0
 and every HTTPS call fails.
 
@@ -284,18 +331,20 @@ cmake -S . -B build-cmake -G "MinGW Makefiles" \
   -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe \
   -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
   -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
-  -DMPV_RUNTIME_DIR="%LOCALAPPDATA%/MPVBackend/runtime"
+  -DMPV_INCLUDE_DIR=<mpv>/include
 cmake --build build-cmake --target mikai --parallel
 build-cmake/mikai.exe       # run directly; no launcher script needed
 ctest --test-dir build-cmake -R mikai_tests   # hermetic + live oracle when keyed
 curl "https://api.mikai.me/public/v1/meta"   # API sanity check
 ```
 
-`mikai.exe` links Qt dynamically, so the runtime has to sit beside it or be on
-`PATH`: `build-cmake/` already carries a `windeployqt` drop plus
-`libmpv-2.dll`; for a fresh tree run `windeployqt build-cmake/mikai.exe` and
-copy `libmpv-2.dll` in from `MPV_RUNTIME_DIR`. `mikai.exe` is
-`WIN32_EXECUTABLE` (no console); diagnostics go to the debugger output.
+`mikai.exe` links Qt dynamically, so the Qt runtime has to sit beside it or be
+on `PATH`; a fresh tree needs `windeployqt build-cmake/mikai.exe`. The mpv DLL
+is not a load-time import: the app resolves a stock runtime by discovery
+(beside the exe or in `%LOCALAPPDATA%/MPVBackend/runtime`), so copy a runtime
+tree into one of those places for playback. `mikai.exe` is `WIN32_EXECUTABLE`
+(no console); diagnostics go to `mikai.log` beside the exe (see the crash-log
+note above).
 
 `mikai_tests` runs every suite in one process; `mikai_tests <SuiteName>` runs
 one. The `MIKAI_LIVE=1` + `MIKAI_API_KEY=mk_...` oracle hits the real API.
@@ -352,12 +401,17 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - `src/app/pages/TitlePage.cpp` — the largest module: release selector,
   per-release tabs, 140-per-page episode grid, fetch-on-open qualities,
   in-process player wiring, episode context menu, external-player hand-off.
-- `src/app/main.cpp` — entrypoint; `provisionMpvRuntime()` runs before the
-  first `QApplication` because libmpv links at load time.
+- `src/app/main.cpp` — entrypoint; `selectPlayerRuntime()` runs after
+  `QApplication`, application identity, translators and theme setup, before any
+  widget can reach an mpv core. It resolves the stored runtime choice and loads
+  the module through `MpvApi` — no load-time libmpv import, no `PATH` edit.
 - `src/backend/MikaiClient.hpp` — `RateLimiter` + `MikaiClient`; header
   documents the Cloudflare notes (lowercased headers, mandatory User-Agent).
-- `CMakeLists.txt` — targets `mikai_player` (STATIC), `mikai_backend`
-  (STATIC), `mikai_app` (STATIC), `mikai` (WIN32 exe), `mikai_tests` + probes.
+- `CMakeLists.txt` — targets `mikai_native_support` (STATIC, always),
+  `mikai_player` (STATIC), `mikai_backend` (STATIC), `mikai_app` (STATIC),
+  `mikai` (WIN32 exe), `mikai_tests` + probes, and — only under
+  `MIKAI_WITH_MODEL_INSPECTION=ON` with `ORT_INCLUDE_DIR` — the
+  `mikai_model_inspection` library, `native_inspect` and `TestNativeCatalog`.
 - `docs.md` — authoritative API contract (Ukrainian); `.env` — single
   `X-API-Key: mk_…` line, never commit.
 
@@ -369,10 +423,13 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - The API key is optional and only raises limits. Resolution order in
   `MikaiClient`: explicit argument → `MIKAI_API_KEY` env var → repo-root
   `.env`. `setApiKey` writes the `X-API-Key:` line back to `.env`.
-- Windows-first: `%LOCALAPPDATA%/MPVBackend/runtime` is where the mpv runtime
-  lands; non-Windows hosts rely on a system mpv. The app links `libmpv-2.dll`
-  at load time, so the runtime dir must be on `PATH` before `main()` runs —
-  `provisionMpvRuntime()` handles that.
+- Windows-first: `%LOCALAPPDATA%/MPVBackend/runtime` is where a provisioned
+  stock mpv runtime lands, and discovery also looks beside the exe; a probe or
+  test can name one DLL with `MIKAI_MPV_MODULE`. The app does not link libmpv:
+  `selectStartupRuntime()` resolves the module and `MpvApi` loads it
+  explicitly, once, and pins it for the process. Many core handles (main plus
+  the PiP float) share that one module; swapping to a different runtime is
+  refused in place and needs a restart. Non-Windows hosts rely on a system mpv.
 - The repo is a git repository. The root `.gitignore` covers `.env`,
   `__pycache__/` (leftover bytecode only, untracked), `.venv/` (removed),
   `*.png`, and `build-cmake/` / `build-dbg/`; there is no CI pipeline, no
@@ -385,11 +442,11 @@ ctest --test-dir build-cmake -R mikai_tests
 ```
 
 - `tests/cpp/main.cpp` drives every suite in turn, prints one
-  `[mikai_tests] <Suite>: PASS/FAIL (rc=…)` line per suite to stderr (QTest
+  `[mikai_tests] <Suite>: PASS/FAIL/SKIP (rc=…)` line per suite to stderr (QTest
   itself stays silent on success), and accepts a suite name to run just one:
   `build-cmake/mikai_tests.exe TestStreams`. `MIKAI_SOURCE_DIR` lets the
   layer guards read the sources they police instead of passing vacuously.
-- Hermetic suites: `TestModels` (53 parse fixtures: ref fallback
+- Hermetic suites: `TestModels` (parse fixtures: ref fallback
   `mikai/mal/al/hikka/slug:`, `displayName`, thumb/poster/cover order,
   `externalLinks`, episode int/double/string/null), `TestReleases`
   (playable count, voice→sub sort), `TestStreams` (`detectSite`, variant
@@ -408,4 +465,38 @@ ctest --test-dir build-cmake -R mikai_tests
   value; playback broken for all tortuga episodes) and `finishCall` comparing
   the stored `remaining_` with itself (quota froze at the first value).
 - Live oracle cost: a handful of API calls plus one stream extraction; the
-  hermetic run needs no network and finishes in ~4 s.
+  hermetic run needs no network and finishes in ~15 s.
+
+### Observed acceptance state
+
+These are observed results, not a claim that everything is green:
+
+- A fresh inspection-off build (the default, `MIKAI_WITH_MODEL_INSPECTION=OFF`)
+  passed, and its `ctest -R mikai_tests` run passed in **14.55 s**. The
+  inspection-on isolated matrix passed in **25.48 s**.
+- `dumpbin /imports` on the `mikai.exe` from both builds shows **no**
+  `libmpv-2.dll`, ONNX Runtime, CUDA, TensorRT or DirectML import: the shipped
+  app carries neither the mpv DLL nor the native GPU stack.
+- A fresh Qt/OpenGL smoke lit a real **640×360** frame through the explicitly
+  loaded module — the loader works end to end, not just at link time.
+- With the session attached, the desktop probes pass on current-tree binaries:
+  `interaction_probe` 149/149 (`RESULT: PASS`, four consecutive runs),
+  `hls_recovery_probe` 23/23 (`RESULT: PASS`), `external_media_probe` 21/21
+  (`RESULT: PASS`, real picker accept plus retry recovery), and `compare_probe`
+  30/30 (`RESULT: PASS`, frozen-frame proof). Pixel proofs additionally need
+  the session attached (detached: every count reads black with `hasVideo=0`).
+
+### Native track: rights-blocked, not shipped
+
+The guide is `native/README.md`; acquisition records are
+`native/sdk-acquisition.md`, `native/rife-acquisition.md`,
+`native/spatial-acquisition.md` and `native/videojanai-acquisition.md`, with the
+unsent grant request in `native/permission-request.md`. Digests, pins and
+licence reasoning live in those files and in `native/manifest/` — do not copy
+hash tables into this file.
+
+The inference shim still has no licence grant, the RIFE v4.14 assets the whole
+graph needs are still unavailable, and building the native path from source is
+blocked with them. **No native bundle is built, bundled or distributed**, and
+nothing in the native track is on the Qt/MinGW build path: the Standard build
+and the optional CPU-only model inspector do not depend on any of it.

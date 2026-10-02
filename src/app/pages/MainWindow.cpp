@@ -54,6 +54,10 @@ MainWindow::~MainWindow() {
     qualityCache_->flushNow();
 }
 
+mplayer::shell::PlayerDialog* MainWindow::currentMediaPlayer() const {
+    return mediaPlayer_.data();
+}
+
 void MainWindow::closeEvent(QCloseEvent* event) {
     closeMedia();
     disposeTitle();
@@ -118,6 +122,16 @@ void MainWindow::closeMedia() {
         // findChildren and still holds its mpv core. The next open must find
         // no player at all, and a failed stream's parked core must not decode
         // behind the stream that replaced it.
+        //
+        // Taken through its own close path first, though: closeEvent stops the
+        // core and hides the GL surface, so the widget is deleted hidden.
+        // Deleting a still-visible QOpenGLWidget destroys its context while the
+        // driver is presenting it - the DrvPresentBuffers fault the PiP pool
+        // already guards against - and a poisoned context can leave the next
+        // dialog's render context uncreated, which reads as a second player
+        // that never plays. The explicit delete still runs, so no hidden window
+        // or parked core survives it.
+        mediaPlayer_->close();
         delete mediaPlayer_.data();
         mediaPlayer_.clear();
     }

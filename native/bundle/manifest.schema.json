@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mikai.local/schemas/mikai.native.bundle/1.json",
+  "title": "mikai native runtime bundle manifest",
+  "description": "Strict manifest for one coherent runtime bundle: exactly one mpv module plus its self-contained dependency closure, with every declared file identified by size and SHA-256. This schema describes a bundle's contents only. It carries no runtime claim: a manifest that validates says nothing about whether a module loads or whether a native filter registers mikai_native, which is settled by the loader with the module in hand.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "version",
+    "module",
+    "mpvApiVersion",
+    "protocolVersion",
+    "engineSchemaVersion",
+    "deps",
+    "files"
+  ],
+
+  "properties": {
+    "schema": {
+      "const": "mikai.native.bundle/1",
+      "description": "Exact schema identity. Any other value is refused, never interpreted."
+    },
+
+    "kind": {
+      "enum": ["standard", "native"],
+      "description": "Which core this bundle carries. Standard is a stock mpv module; Native is an mpv fork with the native filter compiled in. The two are never mixed inside one bundle."
+    },
+
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$",
+      "description": "Bundle version. Also the published directory name, so the pattern doubles as a filesystem-safety rule."
+    },
+
+    "module": {
+      "$ref": "#/$defs/relativePath",
+      "description": "Root-relative path of the single mpv module. Must also appear in 'files'."
+    },
+
+    "mpvApiVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "mpv client API version of the core, encoded as (major << 16) | minor. 0 means 'learned from the loaded module', which only a Standard bundle may declare. A Native bundle must state the version its fork was built against.",
+      "examples": [131077]
+    },
+
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Native filter protocol version. Exactly 0 for a Standard bundle; the supported value for a Native bundle."
+    },
+
+    "engineSchemaVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Prepared-artifact engine manifest schema version. Exactly 0 for a Standard bundle; the supported value for a Native bundle."
+    },
+
+    "deps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependencyDirectory" },
+      "description": "Dependency directories inside the bundle, each holding at least one declared file. These become the loader's explicit search directories. Windows system modules are not listed here: they are the only external dependency exception and are recognised by an explicit list, not by being absent from this array."
+    },
+
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The complete inventory. Anything present in the bundle root and not listed here is a file nothing verified, so it makes the bundle invalid.",
+      "items": { "$ref": "#/$defs/fileRecord" }
+    }
+  },
+
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!/)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[^<>:\"|?*\\\\\\x00-\\x1f]+$",
+      "description": "Root-relative path with forward slashes. Absolute paths, drive letters, backslashes, '.' and '..' segments, wildcards and control characters are refused because each of them names something other than the one file the record describes."
+    },
+
+    "dependencyDirectory": {
+      "$ref": "#/$defs/relativePath",
+      "pattern": "^[^/]+$",
+      "description": "A single directory segment inside the bundle root, relative and normalized by the same rules as a file path."
+    },
+
+    "fileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact size in bytes. Recorded so a truncated file is refused by name instead of by a digest mismatch alone."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lower-case hex SHA-256 of the file's contents."
+        }
+      }
+    }
+  }
+}

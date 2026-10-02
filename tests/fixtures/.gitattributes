@@ -1,0 +1,7 @@
+# The generated media under this directory is binary. The repository-level
+# .gitattributes has `* text=auto eol=lf`, which would otherwise let git try to
+# normalise line endings inside MP4 and MPEG-TS payloads and corrupt them.
+*.mp4 binary
+*.ts binary
+*.m3u8 text eol=lf
+*.cmd text eol=crlf

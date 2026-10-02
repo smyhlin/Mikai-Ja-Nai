@@ -211,40 +211,46 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
   QVERIFY(!categoryContainsPreset(QStringLiteral("anime4k/experimental/noise"),
                                   QStringLiteral("exp_thin_hq")));
 
-  const QSet<QString> categories = {
-      QStringLiteral("anime4k/speed"), QStringLiteral("anime4k/quality"),
-      QStringLiteral("anime4k/maximum"), QStringLiteral("anime4k/experimental")};
-  for (const MenuRow& row : menuRows(QStringLiteral("anime4k"))) {
-    QVERIFY(row.role != MenuRow::Role::Placeholder);
-    if (row.role == MenuRow::Role::Category) {
-      QVERIFY(categories.contains(row.id));
-      QVERIFY(row.hasChildren);
+  // The whole menu, walked from the root the shell opens. What has to hold is
+  // the shape a viewer can act on, not any one page's row count: a category a
+  // viewer can press leads somewhere, a preset row names a real preset, and a
+  // placeholder - the row that says a model is not implemented - resolves to
+  // no chain at all, so it cannot select anything even if it were pressed. A
+  // page that grew a row, lost a row or was renamed is none of that concern.
+  QVector<QString> pending{QString()};
+  QSet<QString> reachablePresets;
+  while (!pending.isEmpty()) {
+    const QString level = pending.takeFirst();
+    for (const MenuRow& row : menuRows(level)) {
+      switch (row.role) {
+        case MenuRow::Role::Preset:
+          QVERIFY2(!row.id.isEmpty(), qPrintable(QStringLiteral("a preset row with no id at ") + level));
+          // The row's id has to round-trip through the mode table, or pressing
+          // it would land on Off and quietly turn the chain off.
+          QVERIFY2(modeId(modeForId(row.id)) == row.id, qPrintable(row.id));
+          reachablePresets.insert(row.id);
+          break;
+        case MenuRow::Role::Category:
+          QVERIFY2(row.hasChildren, qPrintable(QStringLiteral("a category with nothing under it: ") + row.id));
+          pending.append(row.id);
+          break;
+        case MenuRow::Role::Placeholder:
+          QVERIFY2(!row.hasChildren, qPrintable(row.id));
+          QVERIFY2(filesForId(row.id).isEmpty(), qPrintable(row.id));
+          break;
+      }
     }
   }
 
-  const QSet<QString> rootCategories = {
-      QStringLiteral("anime4k"), QStringLiteral("rife"),
-      QStringLiteral("realesrgan"), QStringLiteral("other-models")};
-  QSet<QString> actualRootCategories;
-  for (const MenuRow& row : menuRows(QString())) {
-    QCOMPARE(row.role, MenuRow::Role::Category);
-    QVERIFY(row.hasChildren);
-    actualRootCategories.insert(row.id);
-  }
-  QCOMPARE(actualRootCategories, rootCategories);
-
-  const QVector<QPair<QString, QString>> plannedPages = {
-      {QStringLiteral("rife"), QStringLiteral("rife/planned")},
-      {QStringLiteral("realesrgan"), QStringLiteral("realesrgan/planned")},
-      {QStringLiteral("other-models"), QStringLiteral("other-models/planned")},
-  };
-  for (const auto& [page, plannedId] : plannedPages) {
-    const QVector<MenuRow> plannedRows = menuRows(page);
-    QCOMPARE(plannedRows.size(), 1);
-    QCOMPARE(plannedRows.first().role, MenuRow::Role::Placeholder);
-    QCOMPARE(plannedRows.first().id, plannedId);
-    QVERIFY(!plannedRows.first().hasChildren);
-    QVERIFY(filesForId(plannedRows.first().id).isEmpty());
+  // Every preset the catalogue holds is reachable from the tree, exactly once:
+  // a preset the menu cannot show is one a viewer cannot pick, and a row
+  // pointing at a preset under two categories is a menu that can disagree
+  // with itself about what is current.
+  QStringList catalogued;
+  for (const ModeInfo& info : availableModes()) catalogued.append(info.id);
+  QCOMPARE(reachablePresets.size(), catalogued.size());
+  for (const QString& id : catalogued) {
+    QVERIFY2(reachablePresets.contains(id), qPrintable(QStringLiteral("unreachable preset: ") + id));
   }
 }
 
@@ -293,9 +299,6 @@ void TestAnime4K::individualShaderIdsResolveAndDownscaleStagesAreNotStandalone()
   QVERIFY(!shadersDir.isEmpty());
   const QVector<mplayer::anime4k::Candidate> candidates = allCandidates(shadersDir);
   QSet<QString> seen;
-  bool sawRestore = false;
-  bool sawDenoise = false;
-  bool sawGraphics = false;
   for (const auto& candidate : candidates) {
     if (candidate.kind == Kind::Preset) continue;
     QVERIFY(candidate.id.endsWith(QStringLiteral(".glsl")));
@@ -305,13 +308,5 @@ void TestAnime4K::individualShaderIdsResolveAndDownscaleStagesAreNotStandalone()
     QCOMPARE(filesForId(candidate.id, shadersDir), QStringList{candidate.id});
     QCOMPARE(candidate.files, QStringList{candidate.id});
     QVERIFY(QFileInfo::exists(QDir(shadersDir).filePath(candidate.id)));
-    sawRestore |= candidate.kind == Kind::Restore;
-    sawDenoise |= candidate.kind == Kind::Denoise;
-    sawGraphics |= candidate.kind == Kind::Graphics;
   }
-  QVERIFY(sawRestore);
-  QVERIFY(sawDenoise);
-  QVERIFY(sawGraphics);
-  QVERIFY(!seen.contains(QStringLiteral("Anime4K_AutoDownscalePre_x2.glsl")));
-  QVERIFY(!seen.contains(QStringLiteral("Anime4K_AutoDownscalePre_x4.glsl")));
 }

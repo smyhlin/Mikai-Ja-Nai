@@ -36,6 +36,11 @@ public:
     explicit MainWindow(backend::MikaiClient& client, QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    /// The standalone video player the page currently owns, or nullptr. The
+    /// media probes address the stream they just opened through this rather
+    /// than guessing it from child order.
+    mplayer::shell::PlayerDialog* currentMediaPlayer() const;
+
 protected:
     void closeEvent(QCloseEvent* event) override;
 

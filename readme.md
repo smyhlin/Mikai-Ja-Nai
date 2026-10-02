@@ -108,8 +108,13 @@ ctest --test-dir build-cmake -R mikai_tests
 The optional `external_media_probe` target exercises the actual home file/URL dialogs,
 video rendering, Compare, Anime4K menu, standalone control visibility, error recovery,
 and close/reopen/shutdown. Run it with a 320×180 clip longer than 10 seconds and
-its HTTP URL. The HTTP fixture must also serve `/retry.mp4`: return 404 for its
-first request, then return the same clip.
+its HTTP URL. The fixture lives in the repository: build
+`cmake --build build-cmake --target mikai_http_fixture` and start
+`build-cmake/tests/fixtures/mikai_http_fixture.exe --port 0 --facts facts.json
+--require-accept-language`; it serves the real clips under `tests/fixtures/media/`
+and the three HLS renditions under `tests/fixtures/hls/`, with `/media.mp4` as the
+plain clip and `/retry.mp4` as the same bytes after one deliberate 404, which is
+what the retry phase needs.
 
 `mikai_tests` also carries the runtime-loader and native-contract suites
 (`TestRuntimeSelection`, `TestMpvAsync`, `TestNative*`); they run hermetically,

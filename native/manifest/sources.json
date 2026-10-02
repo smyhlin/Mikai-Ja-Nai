@@ -1,0 +1,627 @@
+{
+  "schema": "mikai.native.sources/1",
+  "generated": "2026-10-01",
+  "owner": "M03",
+  "purpose": "Pinned source identities and acquisition points for every native component this repository may build, vendor or redistribute. This file records identity and licence *evidence*. It is not itself a legal clearance: per-component clearance decisions live in components.json.",
+
+  "conventions": {
+    "hashAlgorithm": "sha256",
+    "pinKinds": {
+      "releasePin": "Identity fixed to a named upstream revision or published asset digest. Re-verifiable by anyone from the cited URL.",
+      "referencePin": "Identity fixed to a documented upstream reference (a URL, a version string, a commit) where the artefact itself is not present here and no digest has been computed.",
+      "observation": "A hash or state measured on this machine from a file that was NOT produced by this repository's build. Descriptive research evidence only. Never a release pin, never a substitute for a reproduction."
+    },
+    "observationRule": "Any entry with pinKind=observation lives under an `observations` key and MUST NOT be referenced as a pin by a build, a bundle manifest or a download."
+  },
+
+  "sources": [
+    {
+      "id": "mpv-fork",
+      "role": "mpv core with the native AnimeJaNai video filter compiled in",
+      "pinKind": "releasePin",
+      "url": "https://github.com/the-database/mpv",
+      "ref": {
+        "type": "gitCommit",
+        "sha": "63d127174d8f70336c82a22408929e2bc301edcb",
+        "commitDate": "2026-09-17T12:09:13Z",
+        "commitSubject": "Merge pull request #60 from 422415/fix/3.6.2-subtitle-toggle",
+        "signedByGitHub": true,
+        "tree": "5e68e27afefea4a79ac4736853b5db9a32601581",
+        "parents": [
+          "de455c94dab0fd4ee421a7d8edc23901980b97f2",
+          "f43d9612f7a7a00b4c616f398bb49ff0aaa5436a"
+        ]
+      },
+      "mpvVersionFile": {
+        "path": "MPV_VERSION",
+        "content": "0.41.0-UNKNOWN",
+        "note": "The fork does not bump MPV_VERSION; the observed core reports the git describe string instead (see observations)."
+      },
+      "upstreamFilesThisWorkTouches": [
+        { "path": "video/filter/vf_animejanai.c", "existsAtPin": true, "role": "the native filter itself; added to `sources` in meson.build only when cuda-hwaccel is enabled" },
+        { "path": "video/filter/aji.h", "existsAtPin": true, "role": "ABI mirror; `AJI_API_VERSION 8` at line 42; must agree with the inference repo header" },
+        { "path": "filters/filter.h", "existsAtPin": true, "role": "filter registration surface" },
+        { "path": "player/command.c", "existsAtPin": true, "role": "runtime command surface" },
+        { "path": "filters/f_lavfi.c", "existsAtPin": true, "role": "libavfilter bridge" },
+        { "path": "video/out/hwdec/hwdec_cuda_gl.c", "existsAtPin": true, "role": "CUDA/GL interop; added when cuda-interop and gl are both enabled" },
+        { "path": "video/out/hwdec/hwdec_cuda.c", "existsAtPin": true, "role": "CUDA hwdec; added with cuda-hwaccel" },
+        { "path": "meson.build", "existsAtPin": true, "role": "build wiring; lines 1422-1444 gate the two CUDA blocks" }
+      ],
+      "requiredBuildConfiguration": {
+        "cuda-hwaccel": "enabled",
+        "cuda-interop": "enabled",
+        "gl": "enabled",
+        "evidence": "meson.build:1422-1444 at the pin; `cuda_interop` additionally requires `features['gl']` or `features['vulkan']`."
+      },
+      "licence": {
+        "spdx": null,
+        "wholeProject": "GPL-2.0-or-later by default; LGPL-2.1-or-later only when built with -Dgpl=false and without the GPL-only files",
+        "filterFileHeader": "video/filter/vf_animejanai.c carries the standard mpv LGPL-2.1-or-later header ('This file is part of mpv ... version 2.1 of the License, or (at your option) any later version')",
+        "evidence": [
+          "https://raw.githubusercontent.com/the-database/mpv/63d127174d8f70336c82a22408929e2bc301edcb/Copyright",
+          "https://raw.githubusercontent.com/the-database/mpv/63d127174d8f70336c82a22408929e2bc301edcb/video/filter/vf_animejanai.c",
+          "https://raw.githubusercontent.com/mpv-player/mpv/master/Copyright"
+        ],
+        "note": "The fork ships LICENSE.GPL and LICENSE.LGPL but no single LICENSE file. Whether a given build is GPL or LGPL depends on its meson options, which is not derivable from a binary."
+      }
+    },
+
+    {
+      "id": "mpv-upstream-stock-build",
+      "role": "the Standard (non-native) mpv core the Qt application already provisions",
+      "pinKind": "referencePin",
+      "url": "https://github.com/shinchiro/mpv-winbuild-cmake",
+      "acquisition": {
+        "mechanism": "GitHub Releases API, latest release, asset matching mpv-dev-x86_64-*.7z",
+        "apiUrl": "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest",
+        "resolvedBy": "src/backend/Runtime.cpp (releasesApi(), findRuntime(), ensureRuntime())",
+        "latestTagAtGeneration": "20261001",
+        "scope": "PRE-EXISTING and explicitly out of scope for this native work; not modified, not vendored, not re-hosted by this repository."
+      },
+      "licence": {
+        "spdx": "GPL-2.0-or-later",
+        "basis": "upstream mpv default; this winbuild recipe does not pass -Dgpl=false",
+        "evidence": [
+          "https://raw.githubusercontent.com/mpv-player/mpv/master/Copyright",
+          "https://raw.githubusercontent.com/shinchiro/mpv-winbuild-cmake/master/README.md"
+        ]
+      }
+    },
+
+    {
+      "id": "animejanai-inference",
+      "role": "the C ABI-8 inference shim: aji.dll (dispatcher), aji_trt.dll (TensorRT), aji_dml.dll (DirectML)",
+      "pinKind": "releasePin",
+      "url": "https://github.com/the-database/animejanai-inference",
+      "ref": {
+        "type": "gitCommit",
+        "sha": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
+        "branch": "main",
+        "commitDate": "2026-09-14T01:04:33Z",
+        "pinRationale": "Pinned to a commit, not to the moving `main` ref. Established by byte-comparison: all nine files below hash identically between the local read-only copy and raw.githubusercontent at this exact commit.",
+        "verifiedBy": "sha256sum of each local file compared against the same path fetched from raw.githubusercontent.com/the-database/animejanai-inference/738ce3b3020b3950c48ce3122a08f32af531d4fa"
+      },
+      "latestRelease": {
+        "tag": "v0.9.0",
+        "publishedAt": "2026-09-14T00:58:33Z",
+        "assets": [
+          { "name": "aji-windows-x64.zip", "bytes": 657798, "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586" },
+          { "name": "aji-linux-x64.tar.zst", "bytes": 242674, "sha256": "02dc66fb49a49c757bc3edb6153321150627a26b059fe92da6e063b31ee6bdf9" }
+        ]
+      },
+      "windowsBuildRecord": {
+        "file": "docs/BUILD-WINDOWS.md",
+        "statement": "\"There is no Windows CI for this repo ... the aji-windows-x64.zip release asset ... is built and uploaded by hand from this workstation\"",
+        "ciPresent": [".github/workflows/build-linux.yml"],
+        "consequence": "The Windows binaries have no reproducible upstream build record. Any reproduction here is this repository's own build, not an upstream attestation."
+      },
+      "localReferenceCopy": {
+        "path": "C:/Users/myhli/Downloads/janai/animejanai-inference-main",
+        "role": "read-only reference input; never modified, never a runtime dependency",
+        "vcsMetadata": "no .git directory present; identity established instead by per-file digest comparison against the pinned commit",
+        "matchesPinnedCommit": true
+      },
+      "sourceDigestsMeasuredLocally": [
+        { "file": "include/aji.h", "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe" },
+        { "file": "CMakeLists.txt", "sha256": "1a347512539e0068b65236b4930046deb6be3822611af4fcd4cc87300b6a441b" },
+        { "file": "src/aji_dispatch.cpp", "sha256": "a6bd6ca4f05116c093567c5efe5f15932dc349c3b82635aade29958008f6b1dd" },
+        { "file": "src/aji_conf.cpp", "sha256": "43628eaa8d22b9f47d12338dd0f63c2149ce501839ffbfa101ccc82f2670ce8c" },
+        { "file": "src/aji_conf.h", "sha256": "7780fd07e87dc1624d6efba494bfe86cfc5679acdede4e4b30aab7c98fe3063b" },
+        { "file": "src/aji_trt.cpp", "sha256": "72c0d53110379af2e6ec0f36f8390cb71ecd0febb7249e489ac3defb2e5c8bde" },
+        { "file": "src/aji_dml.cpp", "sha256": "a6f9d15da2c580bc9f93b7b1501a4822841b4fd900cb543ddf208ab4c2c000fb" },
+        { "file": "src/kernels.cu", "sha256": "ab62264a87ca725cf52c3d2197f31646721cdb64cfab5a9f902dba1b3579e1a2" },
+        { "file": "src/kernels.h", "sha256": "32f6270f78c9a32c576ac524b3e71f39af56965db1b757ac2aa731d23c0eeacc" }
+      ],
+      "pinnedFileDigestNote": "Each digest was computed twice - once on the local copy, once on the upstream file at the pinned commit - and matched. This is what makes the commit a verified pin rather than a claim.",
+      "licence": {
+        "spdx": null,
+        "declaredLicenseFile": null,
+        "githubLicenseField": null,
+        "finding": "NO LICENCE. The repository has no LICENSE/COPYING file (the local copy has none either), no per-file licence headers, and the GitHub API reports license=null. Absent a grant, copyright defaults to all-rights-reserved.",
+        "evidence": [
+          "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
+          "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
+        ]
+      }
+    },
+
+    {
+      "id": "tensorrt-11.3-sdk",
+      "role": "TensorRT headers, import libraries, runtime DLLs, per-SM builder resources and trtexec for the aji_trt build",
+      "pinKind": "referencePin",
+      "version": "11.3.0.99",
+      "acquisitionVerified": {
+        "date": "2026-10-01",
+        "method": "Official archive downloaded, SHA-256 measured, extracted into an isolated owned SDK tree; subsequent MSVC/CUDA smoke configured, compiled, linked and ran a real SM120 kernel",
+        "result": "302 to https://developer.download.nvidia.com/compute/machine-learning/tensorrt/11.3.0/zip/TensorRT-Enterprise-11.3.0.99-Windows-amd64-cuda-13.4-Release-external.zip, then 200 OK",
+        "contentType": "application/zip",
+        "contentLength": 1985279435,
+        "authentication": "none required - the redirect chain is anonymous, consistent with the '-external' suffix marking the publicly redistributable build",
+        "conclusion": "Development SDK acquired and configured without installers, administrator rights, driver replacement or modification of existing runtimes. No inference implementation was built or executed.",
+        "record": "native/sdk-acquisition.md",
+        "ownedRoot": "F:/ZKS/mikai-native-sdks/tensorrt-11.3.0.99/TensorRT-11.3.0.99",
+        "archiveSha256": "8ffd112d7bab97bc81eed818358b85df8c317bcdfc3cd3c731c220df7ca737eb",
+        "digestEvidence": "Self-measured acquisition baseline, not a separately published NVIDIA digest"
+      },
+      "cudaFlavour": {
+        "value": "13.4",
+        "rule": "The CUDA flavour is part of the artefact name and is NOT derivable from the TensorRT version. It must be stated explicitly. NVIDIA's observed pairings wander (11.0->13.2, 11.1->13.3, 11.2->13.3, 11.3->13.4).",
+        "evidence": "animejanai-inference .github/workflows/build-linux.yml pins TRT_VERSION 11.3.0.99 with TRT_CUDA '13.4'"
+      },
+      "acquisition": {
+        "primary": {
+          "url": "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.3.0/zip/TensorRT-Enterprise-11.3.0.99-Windows-amd64-cuda-13.4-Release-external.zip",
+          "suffixMeaning": "'-external' marks the publicly redistributable build; no account required",
+          "note": "The fully qualified asset was downloaded into the independently owned SDK tree; see acquisitionVerified and native/sdk-acquisition.md. The URL directory index is not an acquisition endpoint."
+        },
+        "fallbacks": [
+          "pypi.nvidia.com/tensorrt-cu13-libs/ - every version with sha256 in the index, but no trtexec",
+          "CUDA apt repo, including libnvinfer-bin for trtexec"
+        ],
+        "requiredLayout": {
+          "include": "<root>/include  (NvInfer*.h)",
+          "libs": "<root>/*.lib (nvinfer_11.lib, nvonnxparser_11.lib, nvinfer_plugin_11.lib and the lean/dispatch/vc variants)",
+          "binaries": "<root>/nvinfer_11.dll, nvinfer_plugin_11.dll, nvonnxparser_11.dll, nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll, trtexec.exe",
+          "versionCheck": "<root>/include/NvInferVersion.h must define TRT_MAJOR/MINOR/PATCH/BUILD_ENTERPRISE = 11/3/0/99"
+        },
+        "consumption": "CMake option -DAJI_TRT_ROOT=<root>; the project reads headers from <root>/include and links from <root> itself on Windows."
+      },
+      "licence": {
+        "sdkTerms": "NVIDIA TensorRT Software License Agreement (v. May 24, 2021) plus the TensorRT Supplement (v. February 25, 2021)",
+        "distributablePortion": "Supplement section 2: \"The following portions of the SDK are distributable under the Agreement: the runtime files .so and .dll.\"",
+        "conditions": [
+          "1.2.1.1 the application must have material additional functionality beyond the included SDK portions",
+          "1.2.1.2 the distributable portions shall only be accessed by the application",
+          "1.2.1.3 the notice \"This software contains source code provided by NVIDIA Corporation.\" must be included in modifications and derivative works of sample source code distributed",
+          "1.2.1.4 unless a developer tool is identified as distributable it is internal-use only",
+          "1.2.1.5 the application's own distribution terms must be consistent with the Agreement",
+          "1.2.5 the SDK may not be used in any manner that would cause it to become subject to an open source software licence"
+        ],
+        "acknowledgementFile": "the SDK ships doc/Acknowledgements.txt; the reference package ships the same content as animejanai/inference/TensorRT_Acknowledgements.txt (327505 bytes, 5717 lines, SPDX-License-Identifier: LicenseRef-NvidiaProprietary for NVIDIA's own portions, third-party components under their own licences)",
+        "evidence": [
+          "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html",
+          "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/inference/THIRD_PARTY_NOTICES.txt",
+          "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/inference/TensorRT_Acknowledgements.txt"
+        ]
+      }
+    },
+
+    {
+      "id": "cuda-toolkit",
+      "role": "nvcc, CUDA headers/libraries and the redistributable CUDA runtime DLLs the bundle needs at run time",
+      "pinKind": "referencePin",
+      "requirement": "CUDA toolkit whose nvcc supports the target arch list; aji_trt's kernels.cu is compiled by nvcc",
+      "acquisition": {
+        "windowsNetworkInstaller": "cuda_13.3.0_windows_network.exe (the version the upstream Windows release build used; 13.2 and 13.3 are both in circulation)",
+        "knownHostCompilerCaveat": "CUDA 13.x nvcc does not recognise recent MSVC toolsets as supported host compilers; -DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler was required upstream",
+        "runtimeOnly": "cudart64_*.dll comes from the CUDA redistributable, not necessarily from a full toolkit install"
+      },
+      "licence": {
+        "sdkTerms": "NVIDIA Software License Agreement and CUDA Supplement to Software License Agreement (last updated October 8, 2021)",
+        "distributablePortion": "Supplement section 2.6 Attachment A enumerates the redistributable components; the CUDA Runtime entry for Windows lists cudart.dll, cudart_static.lib, cudadevrt.lib, and explicitly allows \"certain variations of these files that have version number or architecture specific information embedded in the file name\" (e.g. cudart64_90.dll).",
+        "conditions": [
+          "the same 1.2.1.x distribution requirements as TensorRT",
+          "1.2.5 the SDK may not cause the application to become subject to an open source software licence",
+          "1.1.6 the CUDA agreement expressly permits using the SDK to develop and test applications released under OSI-approved open source licences"
+        ],
+        "evidence": [
+          "https://docs.nvidia.com/cuda/archive/12.2.1/eula/index.html (section 2.6 Attachment A)",
+          "https://docs.nvidia.com/cuda/eula/index.html"
+        ]
+      }
+    },
+
+    {
+      "id": "onnxruntime-directml",
+      "role": "onnxruntime.dll + onnxruntime_providers_shared.dll, loaded at run time by aji_dml.dll (never import-linked)",
+      "pinKind": "releasePin",
+      "distribution": "nuget",
+      "package": "Microsoft.ML.OnnxRuntime.DirectML",
+      "version": "1.24.4",
+      "url": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4",
+      "flatContainer": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.nuspec",
+      "upstreamCommit": {
+        "branch": "refs/heads/rel-1.24.4",
+        "sha": "2d924974ef147392ced8409d36bd6d2e7fcc8a74",
+        "fromNuspec": true
+      },
+      "declaredDependency": "Microsoft.AI.DirectML 1.15.4",
+      "requiredLayout": {
+        "include": "build/native/include/ (onnxruntime_c_api.h, ORT_API_VERSION 24)",
+        "native": "runtimes/win-x64/native/ (onnxruntime.dll, onnxruntime.dll.lib, onnxruntime_providers_shared.dll)"
+      },
+      "consumption": "CMake option -DAJI_ORT_ROOT=<package root>",
+      "ceiling": "1.24.x is the last DirectML-flavoured ONNX Runtime release; Microsoft moved DirectML to sustained engineering pending a WinML migration.",
+      "licence": {
+        "spdx": "MIT",
+        "copyright": "Copyright (c) Microsoft Corporation",
+        "nuspecLicense": "type=file LICENSE",
+        "evidence": [
+          "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.24.4/LICENSE",
+          "https://raw.githubusercontent.com/microsoft/onnxruntime/main/LICENSE"
+        ]
+      }
+    },
+
+    {
+      "id": "directml",
+      "role": "DirectML.dll, loaded at run time by aji_dml.dll",
+      "pinKind": "releasePin",
+      "distribution": "nuget",
+      "package": "Microsoft.AI.DirectML",
+      "version": "1.15.4",
+      "url": "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4",
+      "description": "DirectML Redistributable Package",
+      "requiredLayout": {
+        "include": "include/ (DirectML.h, DirectMLConfig.h)",
+        "native": "bin/x64-win/ (DirectML.dll, DirectML.dll.lib)"
+      },
+      "consumption": "CMake option -DAJI_DML_ROOT=<package root>",
+      "licence": {
+        "spdx": null,
+        "status": "RESOLVED - the package carries two licence files, and the earlier apparent conflict was a naming artefact, not a licence conflict",
+        "obtainedBy": "downloaded https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4 (202292617 bytes, sha256 4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9) and extracted the licence files",
+        "filesInPackage": [
+          { "name": "LICENSE.txt", "bytes": 10439, "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d", "content": "MICROSOFT SOFTWARE LICENSE TERMS - MICROSOFT DIRECTX MACHINE LEARNING (DIRECTML)" },
+          { "name": "LICENSE-CODE.txt", "bytes": 1093, "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c", "content": "MIT License, Copyright (c) Microsoft Corporation" }
+        ],
+        "resolution": "LICENSE.txt governs the binary DirectML.dll and is a MICROSOFT SOFTWARE LICENSE TERMS agreement, not an open source licence. It grants at section 1(a): \"You may copy and distribute the software (i.e. make available for third parties) in applications and services you develop in the build with Machine Learning tools and frameworks, and/or games that run on Windows and Xbox.\" That is an express redistribution grant, conditioned on Windows/Xbox use and on the software being embedded in an application rather than distributed standalone (section 3(e)). LICENSE-CODE.txt separately covers the code under MIT. The nuspec's <license type=\"file\">LICENSE.txt</license> points at the binary terms, which is the correct one for a DLL. The reference package's notice calling the file DirectML_LICENSE.txt is a naming inconsistency on that side, not a different licence.",
+        "obligations": [
+          "use and distribution are solely for Windows and Xbox (section 1(a))",
+          "must not be shared, published or distributed except as expressly stated in section 1, and must not be provided as a stand-alone offering (section 3(e))",
+          "Microsoft notices must not be removed or modified (section 3(c))",
+          "third party components in the package are governed by their own terms (section 1(c))",
+          "export restrictions apply (section 4)"
+        ],
+        "evidence": [
+          "LICENSE.txt and LICENSE-CODE.txt extracted from the 1.15.4 nupkg at the digests above",
+          "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.nuspec",
+          "https://raw.githubusercontent.com/microsoft/DirectML/master/LICENSE"
+        ]
+      },
+      "binaryIdentity": {
+        "note": "The DirectML.dll inside this package is byte-identical to the one in the read-only reference package - same size (18527776) and same sha256. The reference package's DirectML binary is therefore this NuGet artefact, which is now a verified release pin rather than an unattributed blob.",
+        "file": "bin/x64-win/DirectML.dll",
+        "bytes": 18527776,
+        "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+      }
+    },
+
+    {
+      "id": "animejanai-onnx-models",
+      "role": "the five spatial upscaler ONNX graphs the reference package ships",
+      "pinKind": "releasePin",
+      "upstream": {
+        "url": "https://github.com/the-database/mpv-AnimeJaNai",
+        "onNxPathInRepo": "BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx/",
+        "packageVersion": "3.6.3"
+      },
+      "models": [
+        { "file": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c", "slotDefault": "Built-in slot 1002/1003 Balanced" },
+        { "file": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716", "slotDefault": "Built-in slot 1003 Performance" },
+        { "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f", "slotDefault": "HD Balanced selected by quality/balanced/performance_preset=sharp" },
+        { "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4", "slotDefault": "HD Performance, sharp preset" },
+        { "file": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx", "bytes": 1212903, "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5", "slotDefault": "SD chain, stacked under HD below 1280x720" }
+      ],
+      "licence": {
+        "spdx": null,
+        "named": "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)",
+        "source": "the upstream repository's LICENSE file",
+        "evidence": "https://raw.githubusercontent.com/the-database/mpv-AnimeJaNai/main/LICENSE",
+        "consequences": [
+          "NonCommercial: redistribution is permitted only for non-commercial purposes.",
+          "ShareAlike: adapted material must carry the same licence elements, this version or later.",
+          "Attribution: creator identification, copyright notice, licence notice, warranty-disclaimer notice and a link must be retained.",
+          "Section 2(b)(2): patent and trademark rights are NOT licensed.",
+          "Section 2(b)(3): the licensor reserves the right to collect royalties for uses other than NonCommercial."
+        ],
+        "note": "The model *files* carry no embedded licence header; the repository-level LICENSE is the only licence evidence located."
+      },
+      "compatibilityFinding": "CC BY-NC-SA 4.0 is a non-commercial, share-alike licence. The rights owner of this project must decide whether the product is non-commercial within the meaning of that licence before these weights are redistributed. Separately, the TensorRT SLA 1.2.5 and CUDA SLA 1.2.5 each contain a clause forbidding use of the SDK in a manner that would cause it to become subject to an open source licence; whether a given distribution arrangement triggers that clause is a question for the rights owner, not a determination made here. This is a documented decision to be taken, not a technical blocker."
+    },
+
+    {
+      "id": "rife-v4.14-assets",
+      "role": "RIFE interpolation weights for M12: v4.14 full/lite, each with and without ensemble",
+      "pinKind": "referencePin",
+      "requiredFileNames": {
+        "derivation": "rife_model_name() in src/aji_trt.cpp:934-946 and src/aji_dml.cpp:1311-1323: code '414' -> \"rife_v4.14\"; a four-digit code ending in '1' -> \"rife_v4.14_lite\"; ensemble appends \"_ensemble\". The consumer appends \".onnx\". The two suffix branches are independent axes (_lite keys on the code, _ensemble on a separate boolean) and compose, so all four combinations below are reached and required.",
+        "resolved": [
+          "rife_v4.14.onnx",
+          "rife_v4.14_lite.onnx",
+          "rife_v4.14_ensemble.onnx",
+          "rife_v4.14_lite_ensemble.onnx"
+        ],
+        "crossReference": "the same enumeration exists upstream in AmusementClub/vs-mlrt scripts/vsmlrt.py (RIFEModel v4_14=414, v4_14_lite=4141; version string v{major}.{minor}{lite|heavy}{_ensemble}); files land under models/rife/rife_<version>.onnx (implementation 1) or models/rife_v2/ (implementation 2)"
+      },
+      "provenanceChain": [
+        {
+          "layer": "original weights",
+          "project": "hzwer/Practical-RIFE",
+          "pinnedCommit": "de9a989bb7b8a71d94f058297e603633aaa43ad6",
+          "note": "\"The content of these links is under the same MIT license as this project. 'lite' means using similar training framework, but lower computational cost model.\"  The author README and LICENSE are read at the pinned commit above.",
+          "assets": {
+            "v4.14": { "googleDrive": "https://drive.google.com/file/d/1BjuEY7CHZv1wzmwXSQP9ZTj0mLWu_4xy/view?usp=share_link", "baidu": "https://pan.baidu.com/s/1d-W64lRsJTqNsgWoXYiaWQ?pwd=xawa" },
+            "v4.14.lite": { "googleDrive": "https://drive.google.com/file/d/1eULia_onOtRXHMAW9VeDL8N2_7z8J1ba/view?usp=share_link" }
+          },
+          "licence": {
+            "spdx": "MIT",
+            "evidence": [
+              "https://raw.githubusercontent.com/hzwer/Practical-RIFE/de9a989bb7b8a71d94f058297e603633aaa43ad6/LICENSE",
+              "https://raw.githubusercontent.com/hzwer/Practical-RIFE/de9a989bb7b8a71d94f058297e603633aaa43ad6/README.md"
+            ],
+            "scopeLimit": "The MIT text grants rights in \"this software and associated documentation files\". The author's README sentence - \"The content of these links is under the same MIT license as this project\" - is an affirmative, specific grant by the copyright holder that the linked model weights are MIT, and is accepted here as licence evidence for the weights themselves. No per-file licence text accompanies the weights, so the grant is a project-level statement rather than an embedded notice. Both v4.14 and v4.14.lite checkpoints were acquired into original-checkpoints/ and compared tensor-by-tensor against the four graphs; every stored weight matched (native/rife-acquisition.md §5.1). No ensemble weight artefact is published in Practical-RIFE's links: each ensemble graph's initializer set is byte-identical to its base graph's."
+          }
+        },
+        {
+          "layer": "research origin",
+          "project": "hzwer/ECCV2022-RIFE",
+          "licence": { "spdx": "MIT", "copyright": "Copyright (c) Megvii Inc.", "evidence": ["https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/LICENSE", "https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/README.md"] },
+          "note": "The paper project. Provides HD model archives on Google Drive/Baidu; no ensemble artefact and no per-version permissibility statement."
+        },
+        {
+          "layer": "ONNX export used as the conversion input",
+          "project": "AmusementClub/vs-mlrt",
+          "note": "the shim's conversion tool converts \"the vsmlrt RIFE v1 (video_player) ONNX models\"; vsmlrt resolves them from models/rife/rife_<version>.onnx",
+          "acquisition": {
+            "releaseTag": "external-models",
+            "assets": [
+              { "name": "rife_v2_v4.7z", "bytes": 198341384, "publishedDigest": null, "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_v2_v4.7z" },
+              { "name": "rife_ensemble_v1.7z", "bytes": 115874982, "publishedDigest": null, "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_ensemble_v1.7z" }
+            ],
+            "digestGap": "GitHub reports digest: null for both assets, so no sha256 is pinned upstream. Any copy taken must be hashed locally and the hash recorded here before use."
+          },
+          "licence": {
+            "spdx": "GPL-3.0-only",
+            "evidence": ["https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/LICENSE", "https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/README.md"],
+            "scopeNote": "This licence covers vs-mlrt's own code. No vs-mlrt code is shipped here; only the ONNX *output* of its export is consumed. Whether the GPL-3.0 code licence extends to the exported model files is a legal question that is not settled by the licence text alone and is not asserted either way here."
+          }
+        },
+        {
+          "layer": "the exact fp16 graphs the shim consumes",
+          "project": "the-database/animejanai-inference",
+          "releaseTag": "models-rife-fp16-1",
+          "asset": {
+            "name": "rife-fp16-1.7z",
+            "bytes": 322142263,
+            "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9",
+            "url": "https://github.com/the-database/animejanai-inference/releases/download/models-rife-fp16-1/rife-fp16-1.7z"
+          },
+          "releaseNote": "\"vsmlrt v1 (video_player) RIFE models converted to fp16 with the GridSample sampling-grid math kept in an fp32 island (tools/convert_rife_fp16.py).\" 47 models (rife 4.7-4.26 incl. lite/heavy/ensemble variants), 1011 MB -> 507 MB on disk. The package manifest's deps.rife = \"models-rife-fp16-1\".",
+          "provenanceLinkage": {
+            "declared": "The release note states the conversion input was the vsmlrt v1 (video_player) RIFE models, and the shim's own conversion tool states it converts exactly those. That is a documented chain naming vsmlrt as the immediate input.",
+            "weightDataClosed": "CLOSED by direct comparison, with no execution. The author's own v4.14 / v4.14.lite checkpoints were acquired into original-checkpoints/ and compared tensor-by-tensor against ModelProto.graph.initializer of all four graphs: 128/128 names and shapes matched with FP32->FP16 round-to-nearest-even bytes identical across four comparisons (base->rife_v4.14 and base->rife_v4.14_ensemble, lite->rife_v4.14_lite and lite->rife_v4.14_lite_ensemble; base and ensemble initializer sets identical). The stored weight bytes are therefore the author's MIT v4.14 / v4.14.lite weights.",
+            "stillOpen": "Exporter identity and the non-weight graph material. The comparison reads initializers only, so it proves nothing about which exporter produced the graph structure - the fp16 GridSample fp32 island, the Transpose-built grids, the cast placement, the ensemble merge math or the fp16 conversion path. No upstream statement names the exporter of these specific files, the publishing repository declares no licence of its own, and the release assets carry no per-file notice. This is a provenance/rights gap for the file as an artefact, not a weight-data gap.",
+            "evidenceDoc": "native/rife-acquisition.md §5.1-§5.2",
+            "machineReadable": "original-checkpoints/weight-comparison.json (schemaVersion 1), produced by original-checkpoints/compare-weights.mjs (exit 0; it records licenseReady: false by design, because it compares stored weight bytes only)"
+          },
+          "licence": {
+            "spdx": null,
+            "finding": "The publishing repository declares no licence for its own source. That absence governs the repository's code and does not by itself determine the rights in the converted weight files it publishes - a converted graph does not automatically inherit the publisher's code status. The weight data now traces to the author's MIT checkpoints (see provenanceLinkage.weightDataClosed), but the files as artefacts additionally carry exporter-produced material with no per-file notice, so the rights basis for redistributing the graph files is not established.",
+            "notAsserted": "No permission and no prohibition on redistribution is asserted here. Weight-data provenance is established; whole-artefact redistribution rights are recorded as open."
+          }
+        }
+      ],
+      "localAvailability": {
+        "ownedAcquisition": "All four graphs are present and digest-verified under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and outside every tracked source tree, so nothing can be committed or accidentally vendored. native/rife-acquisition.md records the archive pin, extraction, structural check and the tensor-by-tensor weight comparison; native/videojanai-acquisition.md records the byte-identical comparison against component-rife.7z. No other local copy is referenced.",
+        "namesPresent": [
+          "rife_v4.14.onnx",
+          "rife_v4.14_lite.onnx",
+          "rife_v4.14_ensemble.onnx",
+          "rife_v4.14_lite_ensemble.onnx"
+        ],
+        "evidenceDoc": "native/rife-acquisition.md",
+        "notClaimed": "Acquisition and weight-data provenance are not a readiness claim: nothing was executed, built into an engine, bundled or exposed as Ready."
+      },
+      "acquisitionRoutes": [
+        { "route": "A", "action": "take the already-converted fp16 graphs from the-database/animejanai-inference release asset above (digest pinned)", "consequence": "TAKEN: the archive's published SHA-256 reproduced exactly, all four graphs were extracted and structurally verified, and every stored weight tensor matches the author's MIT v4.14 / v4.14.lite checkpoints after fp16 rounding. Residual open items are exporter identity, the non-weight graph material and rights to redistribute the file as an artefact - not a prohibition and not a weight-data gap." },
+        { "route": "B", "action": "obtain the v4.14 / v4.14.lite weights from hzwer/Practical-RIFE, whose author affirmatively states the weights are MIT, and convert to the fp16-typed ONNX shape the shim requires (11-channel fp16 input, fp32 GridSample island)", "consequence": "not taken; remains the route that makes the graph construction this project's own act, if route A's residual rights question must be avoided" },
+        { "route": "C", "action": "obtain the vsmlrt ONNX exports (release tag external-models) and convert as in route B", "consequence": "not taken; would carry the additional question of what licence governs the vsmlrt-exported graphs themselves, and no upstream digest is published for those archives" }
+      ],
+      "ensembleNote": "The ensemble axis is independent of the lite axis - _lite keys on the model code, _ensemble on a separate boolean - so the four names above are all original supported combinations, not a substitute for a missing asset. No ensemble weight artefact is published in Practical-RIFE's links; each ensemble graph's initializer set is byte-identical to its base graph's and its stored tensors match the same MIT checkpoint. That does not by itself settle the graph-operator derivation.",
+      "unresolved": "The weight-data hop is closed (provenanceLinkage.weightDataClosed). The open points are exporter identity and the non-weight graph material (provenanceLinkage.stillOpen), and a rights-owner decision on redistributing the graph files as artefacts - distinct from both private development use and the now-established weight-data lineage. Which route to use is recorded here, not decided here."
+    },
+
+    {
+      "id": "msvc-toolchain",
+      "role": "MSVC host compiler for the optional native build (M04)",
+      "pinKind": "referencePin",
+      "required": "the toolset the project builds against, with a Windows SDK able to supply kernel32.lib and friends",
+      "licence": "Microsoft Visual Studio licence; not redistributable, build-time only"
+    },
+
+    {
+      "id": "ffmpeg-dev",
+      "role": "optional: only for aji_encode.exe, which is a research/offline CLI and is not adopted",
+      "pinKind": "referencePin",
+      "note": "Any shared ffmpeg dev tree with include/ and lib/ satisfies it; upstream marked its own provenance as unverified. aji_encode is out of scope, so this is recorded only so nobody re-derives it."
+    }
+  ],
+
+  "abi": {
+    "version": 8,
+    "macro": "AJI_API_VERSION",
+    "headerPair": [
+      { "path": "animejanai-inference/include/aji.h", "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe" },
+      { "path": "mpv-fork video/filter/aji.h at 63d127174d8f70336c82a22408929e2bc301edcb", "sha256": null, "note": "not computed; not present locally. Both headers were read and both declare 8." }
+    ],
+    "invariant": "the two headers must agree; an ABI change requires updating both, rebuilding both, and bumping the engine and mpv versions together",
+    "exports": [
+      { "symbol": "aji_create", "signature": "aji_ctx *aji_create(const aji_create_params *params)" },
+      { "symbol": "aji_set_slot", "signature": "int aji_set_slot(aji_ctx *c, int slot)" },
+      { "symbol": "aji_configure", "signature": "int aji_configure(aji_ctx *c, int w, int h, double fps, int *out_w, int *out_h)" },
+      { "symbol": "aji_infer", "signature": "int aji_infer(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)" },
+      { "symbol": "aji_flush", "signature": "uint64_t aji_flush(aji_ctx *c, void *cu_stream)" },
+      { "symbol": "aji_done", "signature": "int aji_done(aji_ctx *c, uint64_t ticket)" },
+      { "symbol": "aji_wait", "signature": "int aji_wait(aji_ctx *c, uint64_t ticket)" },
+      { "symbol": "aji_current_log", "signature": "const char *aji_current_log(aji_ctx *c)" },
+      { "symbol": "aji_scale_factor", "signature": "int aji_scale_factor(aji_ctx *c)" },
+      { "symbol": "aji_rife_factor", "signature": "int aji_rife_factor(aji_ctx *c, int *num, int *den)" },
+      { "symbol": "aji_rife_before_upscale", "signature": "int aji_rife_before_upscale(aji_ctx *c)" },
+      { "symbol": "aji_pre_resize", "signature": "int aji_pre_resize(aji_ctx *c, int *work_w, int *work_h)" },
+      { "symbol": "aji_resize", "signature": "int aji_resize(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)" },
+      { "symbol": "aji_poll", "signature": "int aji_poll(aji_ctx *c)" },
+      { "symbol": "aji_infer_rife", "signature": "int aji_infer_rife(aji_ctx *c, const aji_frame *a, const aji_frame *b, double t, const aji_frame *out, void *cu_stream)" },
+      { "symbol": "aji_last_error", "signature": "const char *aji_last_error(aji_ctx *c)" },
+      { "symbol": "aji_destroy", "signature": "void aji_destroy(aji_ctx **c)" }
+    ],
+    "exportCount": 17,
+    "optionalForOlderCallers": ["aji_rife_before_upscale", "aji_pre_resize", "aji_resize"],
+    "optionalNote": "The three ordering/resize calls were added without an API_VERSION bump; the filter treats them as nullable so a caller built against an older header simply never queries them.",
+    "enums": {
+      "aji_format": { "AJI_FMT_NV12": 1, "AJI_FMT_P010": 2, "AJI_FMT_YUV444P16": 3, "AJI_FMT_RGB10A2": 4 },
+      "aji_matrix": { "AJI_MATRIX_BT601": 1, "AJI_MATRIX_BT709": 2, "AJI_MATRIX_BT2020": 3 },
+      "aji_range": { "AJI_RANGE_LIMITED": 1, "AJI_RANGE_FULL": 2 },
+      "aji_siting": { "AJI_SITING_LEFT": 1, "AJI_SITING_CENTER": 2, "AJI_SITING_TOPLEFT": 3 },
+      "aji_status": { "AJI_OK": 0, "AJI_SCENE": 1, "AJI_ERR": -1, "AJI_ERR_SHAPE": -2, "AJI_ERR_FORMAT": -3, "AJI_ERR_CUDA": -4, "AJI_ERR_ENGINE": -5, "AJI_ERR_CONF": -6 }
+    }
+  },
+
+  "buildConfigurationPins": {
+    "AJI_NVINFER": {
+      "upstreamDefaultOnWindows": "nvinfer_10",
+      "valueUsedHere": "nvinfer_11",
+      "rule": "TensorRT 11 is the target and TensorRT 10 is not a dependency. The default must be overridden explicitly; relying on it produces a link error for a library that is not present.",
+      "evidence": "animejanai-inference CMakeLists.txt:27-29 and CLAUDE.md \"AJI_NVINFER defaults to nvinfer_10 but the project now builds against TensorRT 11\""
+    },
+    "CMAKE_CUDA_ARCHITECTURES": {
+      "value": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual",
+      "rationale": "kernel images for every supported generation Turing..Blackwell plus PTX so future architectures JIT-compile. Building only for the build machine's GPU produces a binary that dies on every other architecture.",
+      "trap": "The CMakeLists fallback is guarded by if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES) and CMake pre-defines the variable during project(), so the fallback never fires. Omitting the flag yields a single default arch. The list must always be passed explicitly.",
+      "evidence": "animejanai-inference CMakeLists.txt:9-17"
+    },
+    "cudaMinorDerivation": {
+      "rule": "never infer the CUDA minor from the TensorRT version",
+      "targetPairing": { "tensorrt": "11.3.0.99", "cudaFlavourOfArtefact": "13.4" }
+    },
+    "hostCompilerFlag": {
+      "value": "-DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler",
+      "reason": "CUDA 13.x nvcc does not recognise recent MSVC toolsets as a supported host compiler"
+    },
+    "standard": { "c": 11, "cxx": 17, "cuda": "required language; find_package(CUDAToolkit REQUIRED)" },
+    "cmakeMinimum": "3.24",
+    "targets": [
+      { "name": "aji", "kind": "SHARED", "links": "dl only; no CUDA/TensorRT/ORT", "role": "dispatcher loaded by the mpv filter" },
+      { "name": "aji_trt", "kind": "SHARED", "links": "AJI_NVINFER, CUDA::cuda_driver, CUDA::cudart", "role": "TensorRT backend" },
+      { "name": "aji_dml", "kind": "SHARED", "links": "d3d12 d3d11 dxgi d3dcompiler", "role": "DirectML backend, WIN32 only; ORT/DirectML resolved at run time" },
+      { "name": "aji_harness", "kind": "EXE", "role": "research harness; not adopted" },
+      { "name": "aji_harness_dml", "kind": "EXE", "role": "research harness; not adopted" },
+      { "name": "aji_encode", "kind": "EXE", "role": "offline CLI, conditionally built; not adopted" },
+      { "name": "aji_kernel_test", "kind": "EXE", "role": "kernel unit tests" }
+    ]
+  },
+
+  "patchSeries": {
+    "baseCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
+    "targetDir": "native/patches/",
+    "identity": "not yet established",
+    "status": "PENDING - owned by M04",
+    "plannedFirstPatches": [
+      "filter-local GET_META (route per M19)",
+      "a preparedOnly refusal",
+      "a strong content-addressed engine cache replacing aji_trt.cpp's weak key, and deletion of clean_stale_engines' habit of removing foreign files from model_dir",
+      "native plan suspend/resume"
+    ],
+    "constraint": "No neural architecture is rewritten. The read-only reference trees are never edited in place."
+  },
+
+  "observations": {
+    "disclaimer": "Descriptive measurements of pre-existing files on this machine. NOT produced by this repository's build, NOT cryptographically reproduced from any source, and NOT usable as release pins. They become pins only when this repository builds the artefact itself and the reproduction is recorded.",
+    "referencePackage": {
+      "root": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3",
+      "role": "read-only input; explicitly not adopted as a distribution vehicle",
+      "packageVersion": "3.6.3",
+      "platform": "win-x64",
+      "deps": { "mpvnet": "v7.1.2.0", "mpvfork": "2026-09-17-63d127174d-63d127174d", "inference_runtime": "trt-11.3.0.99", "ort_dml": "1.24.4+1.15.4", "sevenzip": "2602", "rife": "models-rife-fp16-1" },
+      "explicitlyNotAdopted": ["mpvnet.exe/mpvnet.dll and the .NET manager binaries", "AnimeJaNaiManager.exe", "AnimeJaNaiUpdater.exe", "7za.exe", "yt-dlp.exe", "portable_config/scripts/*.lua", "mpv-animejanai.conf", "input-animejanai.conf"],
+      "core": {
+        "file": "libmpv-2.dll",
+        "bytes": 121249280,
+        "sha256": "69ac64912b73b5639aeafa108d3d9af6bbd064d8f694bdaf275af5bf160a436e",
+        "versionStringFoundInBinary": "0.41.0-dev-g63d127174",
+        "mpvApiVersion": "libmpv-2 (ABI 2)"
+      },
+      "inferenceDir": [
+        { "file": "animejanai/inference/aji.dll", "bytes": 94208, "sha256": "5184e162f61b262c9c50a43ecec233d6797e7a2e0434e1d41c83e8d5065f2164" },
+        { "file": "animejanai/inference/aji_trt.dll", "bytes": 1113600, "sha256": "0340fa0b5b83b98ada8c351beea20f5ef68fcce31b5b263a3b1bdb8e404f27ea" },
+        { "file": "animejanai/inference/aji_dml.dll", "bytes": 201216, "sha256": "ece31c721cf92fbdd571fcc8d89b9378de362e99e18f8146cbf403863b919ed2" },
+        { "file": "animejanai/inference/onnxruntime.dll", "bytes": 17328152, "sha256": "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40" },
+        { "file": "animejanai/inference/DirectML.dll", "bytes": 18527776, "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1" },
+        { "file": "animejanai/inference/THIRD_PARTY_NOTICES.txt", "bytes": 1253, "sha256": null },
+        { "file": "animejanai/inference/TensorRT_Acknowledgements.txt", "bytes": 327505, "sha256": null }
+      ],
+      "researchExecutablesNotAdopted": [
+        { "file": "animejanai/inference/aji_harness.exe", "sha256": "39dbccfaa2291451caef6373879a547b9beca985493e2d5a25c354dabd1a6053" },
+        { "file": "animejanai/inference/aji_harness_dml.exe", "sha256": "9457b84f99f96286a46585f08308e6b2683d8cbece867cdc0767df8b95dfb2b6" },
+        { "file": "animejanai/inference/aji_kernel_test.exe", "sha256": "4fef27654d251ba42300c60b894bde570a0c0a4c483c6b870107b3435ee91202" },
+        { "file": "animejanai/inference/aji_encode.exe", "sha256": "6bef2d76fab65bee71ccad67d393ab9b4dc22e39f64486151c3d4547493eb963" }
+      ],
+      "missingFromPackage": "no nvinfer_*, nvonnxparser_*, trtexec.exe or cudart64_* anywhere under this package root, despite the notice file listing them. The runtime dependency closure was resolved from outside this package at run time during the earlier research, which is exactly the condition the production bundle must eliminate."
+    },
+    "stockCore": {
+      "file": "%LOCALAPPDATA%/MPVBackend/runtime/libmpv-2.dll",
+      "bytes": 120797184,
+      "sha256": "d2d081547efea8a1530f4ba0bf58a0d72069b25c40d8b2a7071cea5aa82381c6",
+      "versionStringFoundInBinary": "mpv v0.41.0-1072-g2a4eb8067",
+      "siblingImportLibrary": "libmpv.dll.a, 53308 bytes",
+      "role": "the Standard core the Qt app already provisions; untouched by this work"
+    },
+    "hostEnvironment": {
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "driver": "616.92",
+      "os": "Windows 11 build 10.0.26200",
+      "cudaToolkitDirectoryPresent": {
+        "path": "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2",
+        "state": "directory skeleton only - bin/x64 and lib/x64 exist but are empty; no nvcc.exe, no include/, no lib content",
+        "meaning": "a stub, not a usable toolkit"
+      },
+      "nvcc": "NOT FOUND on this machine",
+      "nvInferHeaders": "NOT FOUND on this machine (no NvInferRuntimeBase.h anywhere searched)",
+      "tensorRtSdk": "NOT PRESENT as an SDK (no include/, no .lib, no trtexec.exe)",
+      "msvc": {
+        "installation": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools",
+        "toolset": "14.44.35207",
+        "compiler": "VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe (present)",
+        "redist": "VC/Redist/MSVC/14.44.35112",
+        "cmake": "VS-bundled at Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
+        "windowsSdk": {
+          "state": "NOT INSTALLED in usable form",
+          "detail": "C:/Program Files/Windows Kits/10 contains only Catalogs; C:/Program Files (x86)/Windows Kits/10 contains only Catalogs, Redist/ucrt/DLLs and UnionMetadata/Facade. There is no Include/ and no Lib/ (hence no kernel32.lib), which is what an MSVC link needs.",
+          "vcpkgInstalledTree": "absent"
+        },
+        "divergenceFromUpstreamRecord": "animejanai-inference docs/BUILD-WINDOWS.md records Visual Studio 18 Community with toolset 14.51.36231 and CUDA 13.3. This machine has VS 2022 BuildTools with 14.44.35207 and a non-functional CUDA 13.2 stub. Those are different machines; the doc is a record, not this environment."
+      },
+      "ambientTensorRtRuntime": {
+        "note": "present in a Conda environment. It is research residue and is EXPLICITLY NOT an acceptable dependency: production must ship a self-contained closure and must never rely on Conda, Torch, Python or an ambient install.",
+        "path": "C:/Users/myhli/miniconda3/envs/animeinterp314/Lib/site-packages/tensorrt_libs",
+        "declaredVersion": "11.3.0.99 (tensorrt_cu13_libs-11.3.0.99.dist-info, License: Proprietary)",
+        "files": [
+          { "file": "nvinfer_11.dll", "bytes": 401707120, "sha256": "f8af3a6d0ebffe3a2e1d7a3f68a23d49ee1087085f30e15107c15242285e3580" },
+          { "file": "nvinfer_plugin_11.dll", "bytes": 45631600, "sha256": "2fbe3bb8329e0de581a7b72c63d7afbbc915a643d93ecbf14af16cc21af08e2b" },
+          { "file": "nvonnxparser_11.dll", "bytes": 2290288, "sha256": "150c082c091da388502b15adf6301025f20552008cc82da1d58646f47115e029" }
+        ],
+        "missing": "no headers, no import libraries, no trtexec, no per-SM builder resources in that tree"
+      }
+    }
+  }
+}

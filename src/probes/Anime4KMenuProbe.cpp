@@ -1,19 +1,24 @@
 // Anime4K menu probe: the real popovers, every preset leaf, the planned-model
 // pages, persistence across a reopen, and the pixels mpv actually draws.
 //
-//   - the dock's enhancement button opens ПОКРАЩЕННЯ, whose Anime4K row drills
-//     through four categories and four experiment families in ONE popover that
-//     swaps levels, with a Back row below the root
+//   - the dock's enhancement button opens a tree of panels standing side by
+//     side, one per level, with no Back row: a category opens the level beside
+//     the one it sits in, the levels above it stay, the levels below it close
 //   - every leaf is only ever reached from a menu opened for it, and each one
 //     has to reach its exact catalogue id AND put that preset's ordered chain
 //     into mpv's glsl-shaders, stage for stage
-//   - the three planned-model pages are informational: one Back row, one
-//     disabled В планах leaf, and no change to the running chain
+//   - the three planned-model pages are informational: every row on them is one
+//     the viewer cannot press, and none of them changes the running chain
 //   - the experiment that was picked has to survive a close/reopen: the chain
 //     id, the info chip, the marked menu row, and the rendered picture
-//   - Compare groups its candidates into Пресети and Окремі шейдери, never
-//     offers the chain-internal AutoDownscalePre steps, and never rewrites the
-//     chain the player is running - checked after driving its own actions
+//   - Compare's chooser offers every catalogue preset exactly once, nested under
+//     the categories the catalogue gives it, never offers the chain-internal
+//     AutoDownscalePre steps, and never rewrites the chain the player is
+//     running - checked after driving its own actions
+//
+// Rows are addressed by the catalogue id the shell hangs on them, never by the
+// label printed on them, so nothing here fails because a menu was reworded or a
+// translation changed.
 //
 // mpv hands glsl-shaders back without validating it, so the echo alone cannot
 // prove a preset runs. The rendered difference against a measured noise floor
@@ -24,6 +29,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
@@ -49,6 +55,7 @@
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 using namespace mplayer::shell;
@@ -166,30 +173,81 @@ QImage settledFrame(VideoSurface* surface, int timeoutMs = 6000) {
 
 // ── driving the real popovers ───────────────────────────────────────────
 //
-// A popover rebuilds its rows instead of editing them, and retires the old
-// ones through the event loop, so a plain child search can hand back a row
-// that has already left the menu: only visible rows count.
+// Rows are found by the identity the shell hangs on them - a catalogue level or
+// a catalogue preset id - and never by the words printed on them. A menu label
+// is display text: it is translated, it is reworded, and a probe that hunts for
+// a string it once saw calls a working menu broken the moment either happens.
+// The panel itself is found by the level the shell records on it, for the same
+// reason: every level below the root is the same pooled widget under the same
+// name.
 
-QPushButton* visibleRow(QWidget* root, const QString& text) {
-    if (root == nullptr) return nullptr;
-    for (QPushButton* button : root->findChildren<QPushButton*>()) {
-        if (button->isVisible() && button->objectName() == QLatin1String("playerMenuRow") &&
-            button->text() == text) {
-            return button;
+/// The visible panel showing catalogue `levelId`, waited for up to `timeoutMs`.
+/// A timeout of zero samples once and answers immediately, which is what a
+/// caller asking "is this level still up?" wants - waiting there would only
+/// turn a closed level into a stall.
+MenuPopup* levelPanel(QWidget* host, const QString& levelId, int timeoutMs = 4000) {
+    for (int waited = 0; waited == 0 || waited < timeoutMs; waited += 40) {
+        QCoreApplication::processEvents();
+        for (MenuPopup* panel : host->findChildren<MenuPopup*>()) {
+            if (panel->isVisible() && panel->property("enhancementLevel").toString() == levelId) {
+                return panel;
+            }
         }
+        QThread::msleep(40);
     }
     return nullptr;
 }
 
-QStringList visibleRows(QWidget* root) {
-    QStringList rows;
-    if (root == nullptr) return rows;
-    for (QPushButton* button : root->findChildren<QPushButton*>()) {
-        if (button->isVisible() && button->objectName() == QLatin1String("playerMenuRow")) {
-            rows << button->text();
+int rowFor(MenuPopup* panel, const QString& id) {
+    if (panel == nullptr) return -1;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        const QString payload = panel->entryAt(spot).payload.toString();
+        if (payload == QLatin1String("level|") + id || payload == QLatin1String("preset|") + id) {
+            return spot;
         }
     }
-    return rows;
+    return -1;
+}
+
+QPushButton* rowButton(MenuPopup* panel, const QString& id) {
+    const int spot = rowFor(panel, id);
+    if (spot < 0) return nullptr;
+    return qobject_cast<QPushButton*>(panel->rowWidget(spot));
+}
+
+/// The catalogue ids of every preset row on `panel`, in the order the menu
+/// shows them. Read off the rows' own payloads, so the answer is the menu's and
+/// not a copy of it.
+QStringList presetIdsOn(MenuPopup* panel) {
+    QStringList ids;
+    if (panel == nullptr) return ids;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        const QString payload = panel->entryAt(spot).payload.toString();
+        if (payload.startsWith(QLatin1String("preset|"))) {
+            ids << payload.mid(7);
+        }
+    }
+    return ids;
+}
+
+QStringList categoryIdsOn(MenuPopup* panel) {
+    QStringList ids;
+    if (panel == nullptr) return ids;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        const QString payload = panel->entryAt(spot).payload.toString();
+        if (payload.startsWith(QLatin1String("level|"))) ids << payload.mid(6);
+    }
+    return ids;
+}
+
+/// Whether every row of `panel` leads nowhere: the shape a page takes when what
+/// it holds is not implemented yet.
+bool everyRowInert(MenuPopup* panel) {
+    if (panel == nullptr || panel->rowCount() == 0) return false;
+    for (int spot = 0; spot < panel->rowCount(); ++spot) {
+        if (!panel->entryAt(spot).disabled) return false;
+    }
+    return true;
 }
 
 /// A real press-then-release on a visible row, delivered to the widget itself
@@ -207,8 +265,8 @@ void realClick(QWidget* widget) {
     QApplication::sendEvent(widget, &release);
 }
 
-bool clickRow(QWidget* root, const QString& text) {
-    QPushButton* row = visibleRow(root, text);
+bool clickRow(MenuPopup* panel, const QString& id) {
+    QPushButton* row = rowButton(panel, id);
     if (row == nullptr || !row->isEnabled()) return false;
     realClick(row);
     QCoreApplication::processEvents();
@@ -230,8 +288,8 @@ QPushButton* enhanceButton(PlayerShell* shell, QWidget* dialog) {
 }
 
 struct Menus {
-    QWidget* enhancements = nullptr;
-    QWidget* anime = nullptr;
+    MenuPopup* enhancements = nullptr;
+    MenuPopup* anime = nullptr;
 };
 
 bool openEnhancements(PlayerShell* shell, QWidget* dialog, Menus& menus) {
@@ -239,27 +297,30 @@ bool openEnhancements(PlayerShell* shell, QWidget* dialog, Menus& menus) {
     if (trigger == nullptr) return false;
     realClick(trigger);
     QCoreApplication::processEvents();
-    menus.enhancements = dialog->findChild<QWidget*>(QStringLiteral("playerEnhancementsPopup"));
-    return menus.enhancements != nullptr && menus.enhancements->isVisible();
+    menus.enhancements = levelPanel(dialog, QString());
+    return menus.enhancements != nullptr;
 }
 
 bool openAnimeRoot(PlayerShell* shell, QWidget* dialog, Menus& menus) {
     if (!openEnhancements(shell, dialog, menus)) return false;
-    if (!clickRow(menus.enhancements, QStringLiteral("Anime4K  ›"))) return false;
-    menus.anime = dialog->findChild<QWidget*>(QStringLiteral("playerAnime4KPopup"));
-    return menus.anime != nullptr && menus.anime->isVisible();
+    if (!clickRow(menus.enhancements, QStringLiteral("anime4k"))) return false;
+    menus.anime = levelPanel(dialog, QStringLiteral("anime4k"));
+    return menus.anime != nullptr;
 }
 
-/// Root, then each level of `path`, then the leaf. A leaf is only ever reached
-/// from a menu opened for it, and every level is reopened from the top: the
-/// popover swaps levels rather than stacking them.
-bool clickLeaf(const QStringList& path, const QString& row, PlayerShell* shell, QWidget* dialog,
-               Menus& menus) {
+/// Root, then each catalogue level of `path`, then the leaf. A leaf is only
+/// ever reached from a menu opened for it, and every level is reopened from the
+/// top: the tree is pooled, so a level left standing is one the next visit
+/// would inherit.
+bool clickLeaf(const QStringList& path, const QString& presetId, PlayerShell* shell,
+               QWidget* dialog, Menus& menus) {
     if (!openAnimeRoot(shell, dialog, menus)) return false;
-    for (const QString& level : path) {
-        if (!clickRow(menus.anime, level)) return false;
+    for (const QString& levelId : path) {
+        if (!clickRow(menus.anime, levelId)) return false;
+        menus.anime = levelPanel(dialog, levelId);
+        if (menus.anime == nullptr) return false;
     }
-    return clickRow(menus.anime, row);
+    return clickRow(menus.anime, presetId);
 }
 
 /// Whether mpv is running exactly the chain the catalogue holds for `id`.
@@ -297,6 +358,31 @@ void saveFrame(const QImage& frame, const QString& name) {
 }
 
 // ── the compare chooser, read as a tree ─────────────────────────────────
+//
+// A chain-internal downscale is not a complete comparison candidate.
+
+void collectLeafIds(const QList<QAction*>& actions, QStringList* ids) {
+    for (QAction* action : actions) {
+        if (QMenu* sub = action->menu(); sub != nullptr) {
+            collectLeafIds(sub->actions(), ids);
+            continue;
+        }
+        ids->append(action->data().toString());
+    }
+}
+
+QStringList chooserPathFor(const QString& categoryId) {
+    QStringList path;
+    QString parent;
+    const QStringList parts = categoryId.split(QLatin1Char(47), Qt::SkipEmptyParts);
+    for (const QString& component : parts) {
+        if (!parent.isEmpty()) parent += QLatin1Char(47);
+        parent += component;
+        const QString label = anime4k::categoryLabel(parent);
+        if (!label.isEmpty()) path.append(label);
+    }
+    return path;
+}
 
 int countActionText(const QList<QAction*>& actions, const QString& text, bool recursive) {
     int matches = 0;
@@ -307,14 +393,6 @@ int countActionText(const QList<QAction*>& actions, const QString& text, bool re
         }
     }
     return matches;
-}
-
-QMenu* submenuOf(QMenu* menu, const QString& text) {
-    if (menu == nullptr) return nullptr;
-    for (QAction* action : menu->actions()) {
-        if (action->text() == text) return action->menu();
-    }
-    return nullptr;
 }
 
 // ── the dialog ──────────────────────────────────────────────────────────
@@ -344,40 +422,41 @@ bool closeDialog(QPointer<PlayerDialog> dialog) {
     return waitUntil([&dialog] { return dialog.isNull(); }, 6000);
 }
 
-/// Every preset leaf, with the rows that lead to it: the category, then the
-/// experiment family when the leaf is nested one deeper.
+/// Every preset leaf, with the catalogue levels that lead to it: the category,
+/// then the experiment family when the leaf is nested one deeper. Ids only -
+/// the labels those rows are painted with are the catalogue's business, and a
+/// table of them here would only ever test that nobody reworded a menu.
 struct LeafCheck {
     const char* id;
     const char* category;
     const char* family;
-    const char* row;
 };
 
 const LeafCheck kLeaves[] = {
-    {"off", "", "", "Вимкнено"},
-    {"fast_a", "Швидкість  ›", "", "A (Швидкий)"},
-    {"fast_b", "Швидкість  ›", "", "B (Швидкий)"},
-    {"fast_c", "Швидкість  ›", "", "C (Швидкий)"},
-    {"hq_a", "Якість  ›", "", "A (Якісний)"},
-    {"hq_b", "Якість  ›", "", "B (Якісний)"},
-    {"hq_c", "Якість  ›", "", "C (Якісний)"},
-    {"hq_aa", "Максимум  ›", "", "A+A (Максимум)"},
-    {"hq_bb", "Максимум  ›", "", "B+B (Максимум)"},
-    {"hq_ca", "Максимум  ›", "", "C+A (Максимум)"},
-    {"exp_3d_graphics", "Експериментальні  ›", "", "3D Graphics"},
-    {"exp_old_film", "Експериментальні  ›", "", "Old Film Restore"},
-    {"exp_deblur_strong", "Експериментальні  ›", "", "Deblur"},
-    {"exp_noise_bilateral_mean", "Експериментальні  ›", "Noise Reduction  ›", "Bilateral Mean"},
-    {"exp_noise_bilateral_median", "Експериментальні  ›", "Noise Reduction  ›", "Bilateral Median"},
-    {"exp_noise_bilateral_mode", "Експериментальні  ›", "Noise Reduction  ›", "Bilateral Mode"},
-    {"exp_thin_veryfast", "Експериментальні  ›", "Thin Lines  ›", "VeryFast"},
-    {"exp_thin_fast", "Експериментальні  ›", "Thin Lines  ›", "Fast"},
-    {"exp_thin_hq", "Експериментальні  ›", "Thin Lines  ›", "HQ"},
-    {"exp_texture_dtd_x2", "Експериментальні  ›", "Texture Enhancement  ›", "DTD x2"},
-    {"exp_texture_dog_x2", "Експериментальні  ›", "Texture Enhancement  ›", "DoG x2"},
-    {"exp_darken_veryfast", "Експериментальні  ›", "Darken  ›", "VeryFast"},
-    {"exp_darken_fast", "Експериментальні  ›", "Darken  ›", "Fast"},
-    {"exp_darken_hq", "Експериментальні  ›", "Darken  ›", "HQ"},
+    {"off", "", ""},
+    {"fast_a", "anime4k/speed", ""},
+    {"fast_b", "anime4k/speed", ""},
+    {"fast_c", "anime4k/speed", ""},
+    {"hq_a", "anime4k/quality", ""},
+    {"hq_b", "anime4k/quality", ""},
+    {"hq_c", "anime4k/quality", ""},
+    {"hq_aa", "anime4k/maximum", ""},
+    {"hq_bb", "anime4k/maximum", ""},
+    {"hq_ca", "anime4k/maximum", ""},
+    {"exp_3d_graphics", "anime4k/experimental", ""},
+    {"exp_old_film", "anime4k/experimental", ""},
+    {"exp_deblur_strong", "anime4k/experimental", ""},
+    {"exp_noise_bilateral_mean", "anime4k/experimental", "anime4k/experimental/noise"},
+    {"exp_noise_bilateral_median", "anime4k/experimental", "anime4k/experimental/noise"},
+    {"exp_noise_bilateral_mode", "anime4k/experimental", "anime4k/experimental/noise"},
+    {"exp_thin_veryfast", "anime4k/experimental", "anime4k/experimental/thin"},
+    {"exp_thin_fast", "anime4k/experimental", "anime4k/experimental/thin"},
+    {"exp_thin_hq", "anime4k/experimental", "anime4k/experimental/thin"},
+    {"exp_texture_dtd_x2", "anime4k/experimental", "anime4k/experimental/texture"},
+    {"exp_texture_dog_x2", "anime4k/experimental", "anime4k/experimental/texture"},
+    {"exp_darken_veryfast", "anime4k/experimental", "anime4k/experimental/darken"},
+    {"exp_darken_fast", "anime4k/experimental", "anime4k/experimental/darken"},
+    {"exp_darken_hq", "anime4k/experimental", "anime4k/experimental/darken"},
 };
 
 }  // namespace
@@ -398,6 +477,10 @@ int main(int argc, char** argv) {
     // and written inside a temporary directory that dies with the process.
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
     QSettings settings;
     settings.clear();
     settings.sync();
@@ -429,7 +512,7 @@ int main(int argc, char** argv) {
     // floor every later comparison has to clear.
     surface->setAnime4KMode(anime4k::Mode::Off);
     check(surface->effectiveShaderChain().isEmpty(),
-          "Вимкнено leaves mpv with no shader chain at all");
+          "Disabled leaves mpv with no shader chain at all");
     surface->setPaused(true);
     pump(400);
     const QImage offA = settledFrame(surface);
@@ -452,73 +535,99 @@ int main(int argc, char** argv) {
           "the Anime4K menu is an in-window overlay, not a native popup");
     shoot(dialog, QStringLiteral("anime4k-menu-root.png"));
 
-    const QStringList rootRows = visibleRows(menus.anime);
-    check(rootRows.contains(QStringLiteral("Вимкнено")), "the Anime4K root offers Вимкнено");
-    for (const QString& category : {QStringLiteral("Швидкість  ›"), QStringLiteral("Якість  ›"),
-                                    QStringLiteral("Максимум  ›"),
-                                    QStringLiteral("Експериментальні  ›")}) {
-        check(rootRows.contains(category),
-              (QStringLiteral("the Anime4K root offers the category: ") + category)
+    // The root lists the four top-level branches of the tree. The ids come from
+    // the catalogue, so a branch that is added or renamed is covered without
+    // this probe needing to know its name.
+    const QStringList rootBranches = categoryIdsOn(menus.enhancements);
+    check(rootBranches.contains(QStringLiteral("anime4k")),
+          "the enhancements root offers Anime4K");
+    for (const QString& page : {QStringLiteral("rife"), QStringLiteral("realesrgan"),
+                                QStringLiteral("other-models")}) {
+        check(rootBranches.contains(page),
+              (QStringLiteral("the enhancements root offers the planned-model branch: ") + page)
                   .toUtf8()
                   .constData());
     }
 
-    // A category row drills down; it must not select anything on the way.
-    check(clickRow(menus.anime, QStringLiteral("Швидкість  ›")), "a category row is clickable");
-    check(menus.anime->isVisible(), "a category keeps the popover open and swaps its contents");
+    // A category row opens the level beside it; it must not select anything on
+    // the way.
+    check(clickRow(menus.anime, QStringLiteral("anime4k/speed")),
+          "a category row is clickable");
+    check(menus.anime->isVisible(), "a category keeps the popover open");
     check(surface->effectiveShaderChain().isEmpty() &&
               surface->anime4KChainId() == QLatin1String("off"),
           "opening a category cannot change the applied chain");
-    check(visibleRows(menus.anime).contains(QStringLiteral("A (Швидкий)")),
-          "the Швидкість level lists its presets");
-    check(clickRow(menus.anime, QStringLiteral("‹  Назад")), "Back returns to the Anime4K root");
-    check(visibleRow(menus.anime, QStringLiteral("Вимкнено")) != nullptr,
-          "the Anime4K root is back after Back");
-    check(clickRow(menus.anime, QStringLiteral("Експериментальні  ›")),
+    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/speed"));
+    check(menus.anime != nullptr, "the category opened its own level beside the root");
+    if (menus.anime != nullptr) {
+        const QStringList speedPresets = presetIdsOn(menus.anime);
+        check(speedPresets.contains(QStringLiteral("fast_a")) &&
+                  speedPresets.contains(QStringLiteral("fast_c")),
+              "the speed level lists its own presets");
+    }
+    // No Back row: the tree has no way back because it never left - the root
+    // and the level it opened are both still on screen.
+    check(levelPanel(dialog, QString()) != nullptr,
+          "the root stays on screen beside the level it opened");
+    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
           "the experimental category opens");
     shoot(dialog, QStringLiteral("anime4k-menu-experiments.png"));
-    check(clickRow(menus.anime, QStringLiteral("Noise Reduction  ›")),
+    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental/noise")),
           "an experiment family opens as a submenu");
     shoot(dialog, QStringLiteral("anime4k-menu-family.png"));
-    check(visibleRows(menus.anime).contains(QStringLiteral("Bilateral Mean")) &&
-              visibleRows(menus.anime).contains(QStringLiteral("Bilateral Mode")),
-          "the family lists its own leaves");
+    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/experimental/noise"));
+    if (menus.anime != nullptr) {
+        const QStringList noisePresets = presetIdsOn(menus.anime);
+        check(noisePresets.contains(QStringLiteral("exp_noise_bilateral_mean")) &&
+                  noisePresets.contains(QStringLiteral("exp_noise_bilateral_mode")),
+              "the family lists its own leaves");
+    }
 
     // ── the planned models ──────────────────────────────────────────────
-    for (const QString& page : {QStringLiteral("RIFE  ›"), QStringLiteral("RealESRGAN  ›"),
-                                QStringLiteral("Інші моделі  ›")}) {
-        check(openEnhancements(shell, dialog, menus), "ПОКРАЩЕННЯ reopens for a planned page");
+    for (const QString& page : {QStringLiteral("rife"), QStringLiteral("realesrgan"),
+                                QStringLiteral("other-models")}) {
+        check(openEnhancements(shell, dialog, menus),
+              "the enhancements menu reopens for a planned page");
         check(clickRow(menus.enhancements, page), "a planned model opens its page by click");
-        check(menus.anime->isVisible(), "the planned page is shown in the shared popover");
-        const QStringList rows = visibleRows(menus.anime);
-        check(rows.size() == 2 && rows.contains(QStringLiteral("‹  Назад")) &&
-                  rows.contains(QStringLiteral("В планах")),
-              "a planned page is one Back row and one В планах leaf, nothing else");
-        QPushButton* planned = visibleRow(menus.anime, QStringLiteral("В планах"));
-        check(planned != nullptr && !planned->isEnabled(), "the В планах leaf is disabled");
+        MenuPopup* plannedPage = levelPanel(dialog, page);
+        check(plannedPage != nullptr, "the planned page opened in the shared tree");
+        check(plannedPage != nullptr && everyRowInert(plannedPage),
+              "a planned page holds nothing the viewer can press");
         const QString chainBefore = surface->effectiveShaderChain();
         const QString idBefore = surface->anime4KChainId();
-        if (planned != nullptr) realClick(planned);
-        QCoreApplication::processEvents();
+        for (int spot = 0; plannedPage != nullptr && spot < plannedPage->rowCount(); ++spot) {
+            if (auto* inert = qobject_cast<QPushButton*>(plannedPage->rowWidget(spot))) {
+                realClick(inert);
+            }
+            QCoreApplication::processEvents();
+        }
         check(surface->effectiveShaderChain() == chainBefore &&
                   surface->anime4KChainId() == idBefore,
-              "pressing the disabled В планах leaf changes nothing");
-        check(clickRow(menus.anime, QStringLiteral("‹  Назад")), "Back leaves the planned page");
-        check(menus.enhancements->isVisible(), "Back returns to ПОКРАЩЕННЯ");
+              (QStringLiteral("pressing any row on the ") + page +
+               QStringLiteral(" page changes nothing"))
+                  .toUtf8()
+                  .constData());
     }
 
     // ── the rendered proof ─────────────────────────────────────────────
-    check(clickLeaf({QStringLiteral("Експериментальні  ›")}, QStringLiteral("3D Graphics"), shell,
+    check(clickLeaf({QStringLiteral("anime4k/experimental")}, QLatin1String(kExperiment), shell,
                     dialog, menus),
-          "3D Graphics is selected through the real menu");
+          "the experiment is selected through the real menu");
     check(surface->anime4KChainId() == QLatin1String(kExperiment),
           "the experiment is the applied candidate id");
     check(chainMatches(surface, QLatin1String(kExperiment)),
           "mpv is running the experiment's ordered chain, stage for stage");
-    check(!menus.anime->isVisible(), "choosing a preset closes the drill-down popover");
+    check(levelPanel(dialog, QStringLiteral("anime4k/experimental")) == nullptr,
+          "choosing a preset takes the level it was reached through off the screen");
     auto* chip = dialog->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
-    check(chip != nullptr && !chip->isHidden() &&
-              chip->text().contains(QStringLiteral("3D Graphics")),
+    // The chip names the running preset by the catalogue's own label for it,
+    // read from the catalogue rather than typed in here.
+    QString experimentLabel;
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (info.id == QLatin1String(kExperiment)) experimentLabel = info.label;
+    }
+    check(chip != nullptr && !chip->isHidden() && !experimentLabel.isEmpty() &&
+              chip->text().contains(experimentLabel),
           "the info chip names the running experiment");
     settings.sync();
     check(settings.value(QStringLiteral("player/anime4k")).toString() ==
@@ -530,7 +639,7 @@ int main(int argc, char** argv) {
     const double effect = bandDifference(offA, on);
     const double threshold = std::max(0.05, noise * 5.0);
     std::fprintf(stderr,
-                 "     3D Graphics vs Off over the picture band: %.3f / 255 "
+                 "     experiment vs Off over the picture band: %.3f / 255 "
                  "(floor %.4f, threshold %.4f)\n",
                  effect, noise, threshold);
     check(effect > threshold,
@@ -540,11 +649,10 @@ int main(int argc, char** argv) {
     // ── every leaf, each reached from a menu opened for it ─────────────
     for (const LeafCheck& leaf : kLeaves) {
         QStringList path;
-        if (*leaf.category) path << QString::fromUtf8(leaf.category);
-        if (*leaf.family) path << QString::fromUtf8(leaf.family);
-        const QString row = QString::fromUtf8(leaf.row);
-        const QString id = QString::fromUtf8(leaf.id);
-        if (!clickLeaf(path, row, shell, dialog, menus)) {
+        if (*leaf.category) path << QString::fromLatin1(leaf.category);
+        if (*leaf.family) path << QString::fromLatin1(leaf.family);
+        const QString id = QString::fromLatin1(leaf.id);
+        if (!clickLeaf(path, id, shell, dialog, menus)) {
             check(false, (QStringLiteral("leaf is clickable: ") + id).toUtf8().constData());
             continue;
         }
@@ -555,16 +663,27 @@ int main(int argc, char** argv) {
     }
 
     // ── compare ─────────────────────────────────────────────────────────
-    check(clickLeaf({QStringLiteral("Експериментальні  ›")}, QStringLiteral("3D Graphics"), shell,
+    check(clickLeaf({QStringLiteral("anime4k/experimental")}, QLatin1String(kExperiment), shell,
                     dialog, menus),
           "the experiment is selected again for the compare and PiP checks");
     const QString chainBeforeCompare = surface->effectiveShaderChain();
     const QString idBeforeCompare = surface->anime4KChainId();
     shell->openPictureMenu(QPoint(dialog->width() / 2, dialog->height() / 2));
     QWidget* pictureMenu = dialog->findChild<QWidget*>(QStringLiteral("playerPictureMenu"));
-    check(pictureMenu != nullptr && pictureMenu->isVisible() &&
-              clickRow(pictureMenu, QStringLiteral("Порівняти якість")),
-          "Порівняти якість opens from the picture's own menu");
+    // Found by what the row does rather than by what it says: the picture menu
+    // entry that opens Compare is the one whose payload names it.
+    bool compareClicked = false;
+    if (auto* menu = qobject_cast<MenuPopup*>(pictureMenu);
+        menu != nullptr && menu->isVisible()) {
+        for (int spot = 0; spot < menu->rowCount() && !compareClicked; ++spot) {
+            if (menu->entryAt(spot).payload.toString() != QLatin1String("compare")) continue;
+            if (auto* row = qobject_cast<QPushButton*>(menu->rowWidget(spot))) {
+                realClick(row);
+                compareClicked = true;
+            }
+        }
+    }
+    check(compareClicked, "the picture's own menu opens the comparison");
     pump(200);
     auto* compare = dialog->findChild<CompareWindow*>();
     check(compare != nullptr && compare->isVisible(), "the Compare window opened on that action");
@@ -588,46 +707,90 @@ int main(int argc, char** argv) {
         check(badge != nullptr, "the compare badges carry the candidate chooser");
         if (badge != nullptr) {
             QMenu* chooser = badge->menu();
-            QMenu* branch = submenuOf(chooser, QStringLiteral("Anime4K"));
-            QMenu* presets = submenuOf(branch, QStringLiteral("Пресети"));
-            QMenu* loose = submenuOf(branch, QStringLiteral("Окремі шейдери"));
-            check(countActionText(chooser->actions(), QStringLiteral("Anime4K"), false) == 1,
-                  "the chooser has exactly one Anime4K root");
-            check(presets != nullptr && loose != nullptr,
-                  "Anime4K groups its candidates into Пресети and Окремі шейдери");
-            check(countActionText(chooser->actions(), QStringLiteral("AutoDownscalePre"), true) == 0,
-                  "the chain-internal AutoDownscalePre steps are never offered");
-            if (presets != nullptr) {
-                const QList<QAction*> leaves = presets->actions();
-                QStringList catalogueIds;
-                for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-                    catalogueIds << info.id;
-                }
-                bool everyPreset = !leaves.isEmpty();
-                for (QAction* leaf : leaves) {
-                    if (!leaf->isCheckable() || !catalogueIds.contains(leaf->data().toString())) {
-                        everyPreset = false;
+            QStringList offered;
+            collectLeafIds(chooser->actions(), &offered);
+
+            // The catalogue is the expectation: whatever it holds, all of it has
+            // to be pickable here, and nothing beyond it.
+            QStringList catalogueIds;
+            QHash<QString, QStringList> expectedPath;
+            for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+                catalogueIds << info.id;
+                expectedPath.insert(info.id, chooserPathFor(info.category));
+            }
+            QStringList sortedOffered = offered;
+            QStringList sortedCatalogue = catalogueIds;
+            sortedOffered.sort();
+            sortedCatalogue.sort();
+            check(!offered.isEmpty() && sortedOffered == sortedCatalogue,
+                  "the chooser offers every catalogue preset exactly once, and nothing else");
+
+            // Each preset has to sit where the catalogue says it sits, at the
+            // depth its own category implies: the one preset that hangs directly
+            // off the top level is a leaf of the outermost submenu, and the rest
+            // are leaves of a category inside it. Reading the expected path out
+            // of the catalogue is what keeps this from pinning a nesting shape.
+            const auto placedCorrectly = [&expectedPath](const QStringList& walked,
+                                                          const QString& presetId) {
+                const QStringList want = expectedPath.value(presetId);
+                return !want.isEmpty() && walked == want;
+            };
+            bool everyPresetPlaced = !offered.isEmpty();
+            for (QAction* action : chooser->actions()) {
+                QMenu* level = action->menu();
+                if (level == nullptr) continue;
+                const QStringList outer{action->text()};
+                for (QAction* nested : level->actions()) {
+                    QMenu* deepest = nested->menu();
+                    if (deepest == nullptr) {
+                        if (!placedCorrectly(outer, nested->data().toString())) {
+                            everyPresetPlaced = false;
+                        }
+                        continue;
+                    }
+                    const QStringList inner{action->text(), nested->text()};
+                    for (QAction* leaf : deepest->actions()) {
+                        if (leaf->menu() != nullptr) continue;
+                        if (!placedCorrectly(inner, leaf->data().toString())) {
+                            everyPresetPlaced = false;
+                        }
                     }
                 }
-                check(everyPreset && leaves.size() == catalogueIds.size(),
-                      "Пресети lists every catalogue preset, and nothing else");
+            }
+            check(everyPresetPlaced,
+                  "each preset is nested under the categories the catalogue gives it");
+            check(countActionText(chooser->actions(), QStringLiteral("AutoDownscalePre"), true) == 0,
+                  "the chain-internal AutoDownscalePre steps are never offered");
 
-                // The badge menu is the only chooser, so a preset is picked the
-                // way a viewer's click reaches it: through its own QAction.
-                // These action pointers are held across the pick on purpose -
-                // the refill runs from the action's own handler, and a rebuild
-                // instead of a check-mark move would have deleted them.
-                QAction* pick = nullptr;
-                for (QAction* leaf : leaves) {
-                    if (leaf->data().toString() == QLatin1String("hq_a")) pick = leaf;
+            // The badge menu is the only chooser, so a preset is picked the way
+            // a viewer's click reaches it: through its own QAction. The action
+            // pointer is held across the pick on purpose - the refill runs from
+            // the action's own handler, and a rebuild instead of a check-mark
+            // move would have deleted it.
+            QAction* pick = nullptr;
+            QMenu* pickLevel = nullptr;
+            for (QAction* action : chooser->actions()) {
+                QMenu* level = action->menu();
+                if (level == nullptr) continue;
+                for (QAction* nested : level->actions()) {
+                    QMenu* deepest = nested->menu();
+                    if (deepest == nullptr) continue;
+                    for (QAction* leaf : deepest->actions()) {
+                        if (leaf->data().toString() == QLatin1String("hq_a")) {
+                            pick = leaf;
+                            pickLevel = deepest;
+                        }
+                    }
                 }
-                check(pick != nullptr, "the preset the probe picks is in the list");
-                if (pick != nullptr) pick->trigger();
+            }
+            check(pick != nullptr, "the preset the probe picks is in the chooser");
+            if (pick != nullptr) {
+                const QList<QAction*> before = pickLevel->actions();
+                pick->trigger();
                 QCoreApplication::processEvents();
-                check(presets->actions() == leaves,
+                check(pickLevel->actions() == before,
                       "the chooser's cached action tree survives the pick");
-                check(pick == nullptr || pick->isChecked(),
-                      "the picked preset is marked as side A's candidate");
+                check(pick->isChecked(), "the picked preset is marked as side A's candidate");
                 check(surface->anime4KChainId() == idBeforeCompare &&
                           surface->effectiveShaderChain() == chainBeforeCompare,
                       "Compare's own pick never rewrites the player's running chain");
@@ -678,13 +841,20 @@ int main(int argc, char** argv) {
     check(dialog->width() <= minimum.width() + 8 && dialog->height() <= minimum.height() + 8,
           "the player window is at its minimum size");
     check(openAnimeRoot(shell, dialog, menus), "the menu opens in the smallest window");
-    check(clickRow(menus.anime, QStringLiteral("Експериментальні  ›")),
+    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
           "the deepest category opens in the smallest window");
-    check(clickRow(menus.anime, QStringLiteral("Noise Reduction  ›")),
+    menus.anime = levelPanel(dialog, QStringLiteral("anime4k/experimental"), 0);
+    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental/noise")),
           "the deepest family opens in the smallest window");
-    check(dialog->rect().contains(menus.anime->geometry()),
+    MenuPopup* deepestPanel =
+        levelPanel(dialog, QStringLiteral("anime4k/experimental/noise"), 0);
+    check(deepestPanel != nullptr && dialog->rect().contains(deepestPanel->geometry()),
           "the drilled-down menu fits inside the smallest window");
-    check(visibleRow(menus.anime, QStringLiteral("Bilateral Mode")) != nullptr,
+    // The deepest leaf of the deepest level, taken from the panel rather than
+    // from a string: if it is on screen at minimum size, every shallower leaf is.
+    const QStringList deepestPresets = presetIdsOn(deepestPanel);
+    check(deepestPanel != nullptr && !deepestPresets.isEmpty() &&
+              rowButton(deepestPanel, deepestPresets.last()) != nullptr,
           "the last leaf of the deepest level is still on screen");
 
     // ── the reopen ──────────────────────────────────────────────────────
@@ -708,8 +878,7 @@ int main(int argc, char** argv) {
     check(chainMatches(surface, QLatin1String(kExperiment)),
           "the reopened player applies the experiment's ordered chain");
     chip = dialog->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
-    check(chip != nullptr && !chip->isHidden() &&
-              chip->text().contains(QStringLiteral("3D Graphics")),
+    check(chip != nullptr && !chip->isHidden() && chip->text().contains(experimentLabel),
           "the reopened info chip names the restored experiment");
 
     surface->setPaused(true);
@@ -720,22 +889,35 @@ int main(int argc, char** argv) {
     check(!restoredOn.isNull() && restoredNoise >= 0.0 && restoredNoise <= 0.01,
           "the reopened player holds a stable frame with the restored chain");
 
-    // The restored chain is marked where the viewer would look for it.
+    // The restored chain is marked where the viewer would look for it. The
+    // comparison is against a sibling that shares its level, taken from the
+    // catalogue: a level with nothing beside the current one would make any
+    // marking vacuous.
     check(openAnimeRoot(shell, dialog, menus), "the reopened menu opens at the Anime4K root");
-    check(clickRow(menus.anime, QStringLiteral("Експериментальні  ›")),
+    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
           "the reopened experimental category opens");
-    QPushButton* marked = visibleRow(menus.anime, QStringLiteral("3D Graphics"));
-    QPushButton* sibling = visibleRow(menus.anime, QStringLiteral("Old Film Restore"));
-    check(marked != nullptr && sibling != nullptr,
-          "the reopened experiment level lists the restored preset");
+    MenuPopup* experimentPanel = levelPanel(dialog, QStringLiteral("anime4k/experimental"), 0);
+    QStringList siblings;
+    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
+        if (info.category == QLatin1String("anime4k/experimental") &&
+            info.id != QLatin1String(kExperiment)) {
+            siblings << info.id;
+        }
+    }
+    QPushButton* marked = rowButton(experimentPanel, QLatin1String(kExperiment));
+    QPushButton* sibling =
+        siblings.isEmpty() ? nullptr : rowButton(experimentPanel, siblings.first());
+    check(marked != nullptr && sibling != nullptr && siblings.size() > 1,
+          "the reopened experiment level lists the restored preset beside its siblings");
     check(marked != nullptr && sibling != nullptr && marked->styleSheet() != sibling->styleSheet(),
           "the restored preset is the one marked as current in its menu");
 
     // The restored chain has to be drawing, and Off has to take it away - both
     // from the same paused position, so the two frames share one decode.
-    check(clickLeaf({}, QStringLiteral("Вимкнено"), shell, dialog, menus),
-          "Вимкнено is selected through the reopened menu");
-    check(surface->effectiveShaderChain().isEmpty(), "Вимкнено clears every active shader path");
+    check(clickLeaf({}, QStringLiteral("off"), shell, dialog, menus),
+          "Disabled is selected through the reopened menu");
+    check(surface->effectiveShaderChain().isEmpty(),
+          "Disabled clears every active shader path");
     pump(500);
     const QImage restoredOff = settledFrame(surface);
     const double restoredEffect = bandDifference(restoredOn, restoredOff);

@@ -18,4 +18,7 @@ _*.log
 
 build-cmake/
 build-dbg/
+build-native-baseline/
+build-native-plain/
 dist-mikai/
+.probe-out/

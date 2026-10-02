@@ -28,6 +28,7 @@
 #include "pages/TitlePage.hpp"
 #include "player/PlayerDialog.hpp"
 #include "player/PlayerShell.hpp"
+#include "ProbeRuntime.hpp"
 #include "state/QualityCache.hpp"
 #include "workers/Runner.hpp"
 
@@ -46,6 +47,9 @@ QPushButton* playerSeriesToggle(QWidget* root) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
     const bool disposeEarly = app.arguments().contains(QStringLiteral("--dispose-early"));
     const QString ref = argc > 1 && !disposeEarly ? QString::fromLocal8Bit(argv[1])
                                                  : QStringLiteral("7428");

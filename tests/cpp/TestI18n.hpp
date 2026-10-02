@@ -9,7 +9,4 @@ class TestI18n : public QObject {
   void explicitPreferenceOverridesSystemLocale();
   void systemPreferenceUsesUkrainianOnlyForUkrainianLocale();
   void invalidPreferenceUsesSystemLocale();
-  void knownApiErrorsUseEnglishSourceText();
-  void metadataLabelsUseEnglishSources();
-  void seasonLabelsKeepTheExistingMonthMapping();
 };

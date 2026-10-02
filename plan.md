@@ -313,11 +313,26 @@ Current-source configure/build succeeded for `mikai`, `mikai_tests`,
 and `mikai_manifest_check`.
 
 With `MIKAI_LIVE` and `MIKAI_API_KEY` unset, `QT_QPA_PLATFORM=offscreen`,
-the explicit Qt plugin directory and standard runtime on the process PATH,
-`ctest --test-dir build-native-baseline -R mikai_tests -V --output-on-failure`
-exited 0 in 4.45 s. Per-suite evidence:
+the explicit Qt plugin directory, the standard runtime on the process PATH and
+the licensed ORT runtime named, `build-native-baseline/mikai_tests.exe` exited
+0 in ~15 s. Per-suite evidence (26 PASS, LiveOracle SKIP by design):
 
 ```text
+[mikai_tests] TestRuntimeSelection: PASS (rc=0)
+[mikai_tests] TestNativeTypes: PASS (rc=0)
+[mikai_tests] TestNativeRecipe: PASS (rc=0)
+[mikai_tests] TestNativeProfiles: PASS (rc=0)
+[mikai_tests] TestNativeRife: PASS (rc=0)
+[mikai_tests] TestNativeBundle: PASS (rc=0)
+[mikai_tests] TestNativePrepPlan: PASS (rc=0)
+[mikai_tests] TestNativeManifest: PASS (rc=0)
+[mikai_tests] TestNativeStatus: PASS (rc=0)
+[mikai_tests] TestNativePrefs: PASS (rc=0)
+[mikai_tests] TestNativeMenu: PASS (rc=0)
+[mikai_tests] TestNativeUserRecipes: PASS (rc=0)
+[mikai_tests] TestNativeAssets: PASS (rc=0)
+[mikai_tests] TestMpvAsync: PASS (rc=0)
+[mikai_tests] TestNativeCatalog: PASS (rc=0)
 [mikai_tests] TestModels: PASS (rc=0)
 [mikai_tests] TestReleases: PASS (rc=0)
 [mikai_tests] TestAnime4K: PASS (rc=0)
@@ -331,11 +346,10 @@ exited 0 in 4.45 s. Per-suite evidence:
 [mikai_tests] TestLiveOracle: SKIP (rc=0)
 ```
 
-`build-native-baseline/mikai_tests.exe TestAnime4K` also exited 0 and reported
-`[mikai_tests] TestAnime4K: PASS (rc=0)`. The initial test runner used its
-separate `Mikai/mikai_tests` settings namespace, not the application's saved
-settings. It now redirects both settings scopes into a temporary INI directory;
-that newer harness still requires its post-change run.
+The runner redirects both settings scopes into a temporary INI directory.
+`native_inspect` on the same tree proves the five original package graphs:
+four HD graphs declare N=-1 with a real 64×64 → 128×128 N=1/C=3 FP16 run
+(scale 2), and the SD graph declares N=1 with a 48×48 → 96×96 run (scale 2).
 
 The current HTTP fixture started on loopback port 18796. A ranged HEAD
 request observed `206 Partial Content`, `Content-Length: 315182` and

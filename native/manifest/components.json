@@ -1,0 +1,460 @@
+{
+  "schema": "mikai.native.components/1",
+  "generated": "2026-10-01",
+  "owner": "M03",
+  "scope": "Every artefact that would exist in a shipped native runtime bundle (Standard and Native), plus the build-time-only and deliberately-not-adopted items that M03 must account for.",
+
+  "useScope": {
+    "intendedUse": "private, local, non-commercial",
+    "recordedBy": "this project's rights owner",
+    "meaning": "Development and personal playback on the owner's own machine. No distribution of any artefact to any third party is authorized or contemplated.",
+    "whatItIsNot": "This is a statement of intent, not a licence. It changes nothing about what a licence permits, and it cannot substitute for a grant that does not exist.",
+    "effect": [
+      "CC BY-NC-SA 4.0 components (models.animejanai-onnx): USE IS PERMITTED for this purpose. Section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only', and section 1(k) defines NonCommercial as 'not primarily intended for or directed towards commercial advantage or monetary compensation'. Running the weights locally is inside that grant and engages no ShareAlike condition, because nothing is shared. REDISTRIBUTION IS NOT PERMITTED: placing the graphs in a shipped bundle would be a Share, engaging the section 3(a) attribution and section 3(b) share-alike conditions, and it is outside the recorded scope in any case.",
+      "Components with no grant at all (engine.aji-dispatcher, engine.aji-trt, engine.aji-dml): the use scope changes nothing. There is no licence text whose limits a non-commercial use could stay within. Private local use, modification, building and redistribution are equally without basis. See native/permission-request.md."
+    ]
+  },
+
+  "blockerTaskBindings": {
+    "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in tasks.md is a planning fact and is not a rights question.",
+    "ESC-1": {
+      "binds": ["M04", "M05", "M15", "M16", "M17", "M18", "M19", "M20", "M21", "M22", "M23", "M24", "M25", "M26", "M27", "M28", "M29", "M30", "M31", "M32", "M43", "M44", "M45", "M48", "M49"],
+      "bindsBecause": "these tasks build, ship or execute the ABI-8 inference shim",
+      "doesNotBind": ["M06", "M07", "M08", "M09", "M10", "M11", "M13", "M14", "M33", "M34", "M35", "M36", "M37", "M38", "M39", "M40", "M41", "M42"],
+      "doesNotBindBecause": "the stock mpv loader and discovery path, the typed vocabulary and contract work, the import of user-supplied models under their own terms, and the presentation and trust-boundary layers need no inference binary and redistribute nothing"
+    },
+    "ESC-2": {
+      "binds": ["M05"],
+      "bindsBecause": "the bundle would carry the five spatial graphs, which is redistribution, not the permitted local use",
+      "doesNotBind": ["M11", "M13"],
+      "doesNotBindBecause": "both handle user-supplied models under the terms those models carry"
+    },
+    "ESC-3": {
+      "binds": ["M05"],
+      "bindsBecause": "whole-graph provenance and redistribution only: a bundle that would carry the four RIFE graphs redistributes files whose exporter is unnamed and which carry no per-file notice",
+      "doesNotBind": ["M12", "M24", "M44"],
+      "doesNotBindBecause": "the graphs are acquired and pinned, so M12's capability surface is buildable and unit-testable against fixture inputs; M24/M44 still need engine-build and runtime proof, but that is a capability gate (and ESC-1), not this rights item. No other task redistributes the graphs."
+    },
+    "ESC-5": {
+      "binds": [],
+      "bindsBecause": "nothing, by design: engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience that no task needs to ship"
+    },
+    "downstreamNote": "M50 and M52 are not independently rights-blocked. M50's acceptance covers a licensed Native bundle that cannot exist while ESC-1 stands, and M52 walks that same acceptance list. Both are gated on M04 and M05, which is a consequence, not a separate finding."
+  },
+
+  "redistributionSemantics": {
+    "cleared": "The licence as located grants redistribution inside a shipped bundle, and the conditions are recorded. 'Cleared' means the located text permits it; it is not legal advice and does not mean the conditions are already satisfied.",
+    "blocked": "Redistribution inside a shipped bundle is NOT permitted on the evidence located, or a required grant is absent. A blocked component makes M50 and M52 unachievable as written and must be escalated, not worked around.",
+    "external": "The component is consumed from outside the bundle: installed separately, downloaded from its own vendor, or built locally from source that is not redistributed as a binary. No third-party binary is vendored into the repository or the bundle."
+  },
+
+  "escalations": [
+    {
+      "id": "ESC-1",
+      "severity": "blocking",
+      "component": "animejanai-inference",
+      "finding": "The inference shim source - aji.dll, aji_trt.dll, aji_dml.dll - has NO LICENCE of any kind. No LICENSE file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+      "consequence": "Absent a grant, copyright defaults to all-rights-reserved. There is currently NO legal basis to vendor, redistribute or ship these binaries, and equally no basis to rely on them as a runtime dependency of a shipped application. The reference package redistributes them; that is the upstream author's act, not a precedent or a permission for this project.",
+      "missingEvidence": "a written licence or a per-file licence header from the copyright holder (the-database), or an explicit grant covering adoption, modification, build, linked use and redistribution of the built DLLs. A draft request is prepared at native/permission-request.md; it has NOT been sent, and nothing here should be read as if it were.",
+      "resolutionPaths": [
+        "obtain an explicit licence from the copyright holder - the only path that yields a cleared component",
+        "ship with no native inference backend at all - the application remains fully functional on the Standard core, and every native capability surface reports Unavailable with a named reason"
+      ],
+      "rejectedPath": {
+        "option": "reimplement the ABI-8 shim independently from its published C header, against TensorRT/ORT public APIs, with no copy of the unlicensed source",
+        "decision": "NOT ADOPTED",
+        "reason": "This project is built around this specific inference implementation. Substituting a different implementation changes the product, not just its provenance, and would silently alter the behaviour every downstream task is specified against. It is recorded here only so that it is visibly closed off rather than quietly available as a workaround."
+      },
+      "scopeNote": "The recorded private, local, non-commercial use does NOT mitigate this blocker. There is no licence text whose limits a non-commercial use could stay within, and no grant to fall inside. Use, modification, build and redistribution are all equally without basis.",
+      "note": "This is recorded as a blocker, not resolved. Do not interpret the presence of these DLLs in a read-only package on this machine as clearance."
+    },
+    {
+      "id": "ESC-2",
+      "severity": "blocking",
+      "component": "animejanai-onnx-models",
+      "finding": "The five spatial upscaler ONNX graphs are published by their upstream repository under Creative Commons Attribution-NonCommercial-ShareAlike 4.0. CC BY-NC-SA is not an OSI-approved licence.",
+      "consequence": "The grant and the condition must not be conflated. Section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only'. Section 1(k) defines NonCommercial as 'not primarily intended for or directed towards commercial advantage or monetary compensation'. The recorded intended use of this project is private, local and non-commercial, so USING these weights on the owner's own machine is within the located grant, and it engages no ShareAlike condition because nothing is shared. REDISTRIBUTION is a separate act: placing the graphs in a shipped bundle is a Share, which triggers section 3(a) attribution, section 3(b) share-alike and the section 2(b)(3) royalty reservation, and it falls outside the recorded scope regardless of its non-commercial character. Separately, the TensorRT SLA and CUDA SLA each contain a clause (1.2.5) forbidding use of the SDK in a manner that would cause it to become subject to an open source software licence; whether a given arrangement of model weights and NVIDIA redistributables in one bundle engages that clause is likewise a question for the rights owner. CC BY-NC-SA 4.0 is not by itself a licence on the NVIDIA SDK - the two instruments govern different components - so no incompatibility is asserted.",
+      "missingEvidence": "if redistribution is ever contemplated, a recorded decision by this project's rights owner on (a) whether the product remains NonCommercial at the moment of distribution, and (b) how the Attribution, ShareAlike and warranty-disclaimer obligations are discharged in the shipped notices. Neither question arises for the private local use that is actually in scope today.",
+      "citationCorrection": "An earlier revision of this file cited the NonCommercial definition as section 1(j). In the located text of CC BY-NC-SA 4.0, section 1(j) defines 'Licensor'; NonCommercial is defined in section 1(k). Corrected here and in THIRD_PARTY_NOTICES.md.",
+      "note": "This blocks redistribution of these five files, and only redistribution. It does not block local non-commercial use of the weights, and it does not block the M11/M13 model-import and planning work, which handles user-supplied models under their own terms."
+    },
+    {
+      "id": "ESC-3",
+      "severity": "blocking",
+      "component": "rife-v4.14-assets",
+      "finding": "All four graphs M12's combination space reaches - rife_v4.14.onnx, rife_v4.14_lite.onnx, rife_v4.14_ensemble.onnx, rife_v4.14_lite_ensemble.onnx - are acquired, pinned and structurally verified outside the repository, and every stored weight tensor matches the author's MIT v4.14 / v4.14.lite checkpoints after fp16 rounding. What is unresolved is the file as an artefact: exporter identity, the non-weight graph material, and the rights basis for redistributing the graphs, which carry no per-file notice. The weights' licence position itself is favourable - the upstream author affirmatively states MIT.",
+      "consequence": "This is no longer an asset-availability item. The four graphs exist, their weight data traces to the MIT author, and their structure was verified; the residual is whole-graph provenance and a rights-owner decision on redistribution. No Ready capability, runtime bundle or native processing is claimed. The capability surface can still be built and unit-tested against fixture inputs.",
+      "missingEvidence": "an upstream statement naming the exporter of these specific files (or route B, which makes the graph construction this project's own act), plus a recorded rights-owner decision on redistributing the graph files. Routes B/C also need a locally computed digest per produced ONNX file. See sources.json#sources[id=rife-v4.14-assets].provenanceLinkage.",
+      "perVariantPosition": {
+        "rife_v4.14": "hzwer/Practical-RIFE's README at pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 states the content of its linked model files is under the same MIT licence as the project - an affirmative grant by the copyright holder, accepted as licence evidence for the weights. The acquired graph's stored tensors match that checkpoint (native/rife-acquisition.md §5.1); the file carries no per-file notice, so whole-artefact redistribution is not established.",
+        "rife_v4.14_lite": "same position as rife_v4.14; the lite checkpoint is a separately published MIT link, and the acquired graph's stored tensors match it.",
+        "rife_v4.14_ensemble": "no ensemble weight artefact is published in Practical-RIFE's links. The acquired ensemble graph's initializer set is byte-identical to its base graph's and matches the same base MIT checkpoint; this does not settle the graph-operator derivation or whole-artefact redistribution.",
+        "rife_v4.14_lite_ensemble": "the independent-axis combination of the lite checkpoint under the ensemble merge ops; its initializer set matches the lite MIT checkpoint. Same residual as the other ensemble graph."
+      }
+    },
+    {
+      "id": "ESC-4",
+      "severity": "RESOLVED",
+      "component": "directml",
+      "finding": "RESOLVED by obtaining the package. Microsoft.AI.DirectML 1.15.4 (nupkg sha256 4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9) carries two distinct licence files: LICENSE.txt (Microsoft Software License Terms, governing the binary) and LICENSE-CODE.txt (MIT, governing the code). The nuspec points at LICENSE.txt, which is the correct one for a DLL. There was never a licence conflict - only a filename mismatch between the reference package's notice (DirectML_LICENSE.txt) and the actual package (LICENSE.txt).",
+      "grant": "LICENSE.txt section 1(a) expressly permits copying and distributing the software in applications developed with Machine Learning tools and frameworks that run on Windows and Xbox.",
+      "componentDecision": "runtime.directml is now cleared; see components[id=runtime.directml].",
+      "residualCondition": "Windows/Xbox use only, not a stand-alone offering, Microsoft notices retained. These are conditions on use, not unresolved questions."
+    },
+    {
+      "id": "ESC-5",
+      "severity": "non-blocking-but-must-be-resolved-before-vendoring",
+      "component": "trtexec.exe",
+      "finding": "The TensorRT Supplement makes the runtime .so/.dll files distributable. trtexec.exe is a developer tool, and SLA 1.2.1.4 states that unless a developer tool is identified in the Agreement as distributable it is delivered for internal use only. The Agreement text located does not identify trtexec.exe as distributable.",
+      "consequence": "The reference package ships trtexec.exe and its notice file claims the TensorRT redistributables come from NVIDIA's redistributable downloads under the same terms. That is the upstream author's reading, not a verified grant. Shipping trtexec.exe inside our bundle on the strength of that notice alone would be assuming a permission that has not been shown.",
+      "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or a bundle design that does not ship it.",
+      "designNote": "trtexec is only needed to build a TensorRT engine from an ONNX graph. The planned design builds engines in-process through the TensorRT builder API with an out-of-band preparation helper CLI. If that design holds, trtexec.exe is a build-time convenience and can stay out of the shipped bundle entirely - which resolves this by architecture rather than by permission. That is a design consequence to carry into M04/M15, not a legal finding."
+    },
+    {
+      "id": "ESC-6",
+      "severity": "advisory",
+      "component": "mpv-fork",
+      "finding": "mpv is GPL-2.0-or-later by default and LGPL-2.1-or-later only when built with -Dgpl=false and without the GPL-only files. The filter file itself carries an LGPL-2.1-or-later header. The build options used for any given binary are not derivable from the binary, and the fork's bundled FFmpeg and other dependencies have their own terms that decide the combined result.",
+      "consequence": "A Native bundle that ships a fork core is a GPL-family redistribution with real obligations: complete corresponding source, licence texts, and the ability to relink. A Standard bundle from mpv-winbuild-cmake is likewise GPL-family.",
+      "missingEvidence": "the meson option set actually used for the fork build, and the licence status of every statically or dynamically linked dependency in the specific binary to be shipped.",
+      "note": "This does not block M03. It is recorded because the fork core must be built BY this repository from the pinned commit, which is what makes the build options knowable and the corresponding source reproducible. That is already the planned design."
+    }
+  ],
+
+  "bundles": [
+    {
+      "id": "standard",
+      "kind": "standard",
+      "purpose": "Plain mpv playback and the Anime4K GLSL chain. No inference, no CUDA filter.",
+      "shippingDecision": "external",
+      "rationale": "The application already provisions this core at run time from shinchiro/mpv-winbuild-cmake's release API into %LOCALAPPDATA%/MPVBackend/runtime. M03 does not vendor it and does not modify that discovery path. Nothing new is redistributed by this work.",
+      "components": ["core.stock-mpv"],
+      "outOfScopeNote": "The repository's 49 vendored Anime4K GLSL shaders are not listed here. They are not native-bundle components, they are already vendored in the repository's own shaders/ directory, and their licence fact is recorded in THIRD_PARTY_NOTICES.md section 9."
+    },
+    {
+      "id": "native",
+      "kind": "native",
+      "purpose": "mpv with vf_animejanai compiled in, plus the ABI-8 shim and its dependency closure.",
+      "shippingDecision": "blocked pending ESC-1",
+      "rationale": "Every component is identified below, but the inference shim's absent licence (ESC-1) means the bundle cannot ship as specified. This is escalated rather than engineered around.",
+      "scopeNote": "The Native bundle is a distribution act, so the recorded private, local, non-commercial use scope does not change this decision: a bundle exists to be handed to third parties. It does, separately, mean that the CC BY-NC-SA spatial graphs (ESC-2) are usable locally without any of the ShareAlike conditions attaching - the blocker on those five files is redistribution, not use.",
+      "components": [
+        "core.fork-mpv",
+        "engine.aji-dispatcher",
+        "engine.aji-trt",
+        "engine.aji-dml",
+        "runtime.tensorrt",
+        "runtime.tensorrt-resources",
+        "runtime.cuda-cudart",
+        "runtime.onnxruntime-directml",
+        "runtime.directml",
+        "tool.trtexec",
+        "models.animejanai-onnx",
+        "models.rife-v4.14"
+      ]
+    }
+  ],
+
+  "components": [
+    {
+      "id": "core.stock-mpv",
+      "bundle": "standard",
+      "name": "libmpv-2.dll",
+      "sourceIdentity": {
+        "sourceId": "mpv-upstream-stock-build",
+        "buildRecipe": "shinchiro/mpv-winbuild-cmake",
+        "pinKind": "referencePin",
+        "provenanceWeakness": "the recipe tracks mpv master, not a tag; the resolved version is whatever the latest release was at download time. The app resolves it at run time and does not record the resolved tag today."
+      },
+      "licence": { "spdx": "GPL-2.0-or-later", "obligations": "complete corresponding source for the binary, licence texts, relinkability" },
+      "redistribution": "external",
+      "inBundle": false,
+      "notes": "Not vendored. Provisioned by pre-existing stock discovery/download logic, which this work leaves untouched."
+    },
+    {
+      "id": "core.fork-mpv",
+      "bundle": "native",
+      "name": "libmpv-2.dll",
+      "sourceIdentity": {
+        "sourceId": "mpv-fork",
+        "pinKind": "releasePin",
+        "commit": "63d127174d8f70336c82a22408929e2bc301edcb",
+        "buildConfiguration": { "cuda-hwaccel": "enabled", "cuda-interop": "enabled", "gl": "enabled" },
+        "buildRequirement": "must be built by this repository from the pinned commit under M04, not taken from the reference package",
+        "why": "the reference package's core was built by a third party with undocumented options; only a self-built core makes the licence status, the corresponding source and the patch series knowable",
+        "knownGoodBehaviour": "the package's core reports 0.41.0-dev-g63d127174 in-binary; that is an observation about a pre-existing file, not a reproduction target"
+      },
+      "licence": { "spdx": "GPL-2.0-or-later OR LGPL-2.1-or-later", "determinedBy": "meson options and the licences of the linked dependency closure; see ESC-6" },
+      "redistribution": "cleared",
+      "inBundle": true,
+      "conditions": [
+        "ship the complete corresponding source for the shipped core, including this repository's patch series",
+        "ship LICENSE.GPL and LICENSE.LGPL and the Copyright file",
+        "preserve the ability for a recipient to relink a modified library version"
+      ]
+    },
+    {
+      "id": "engine.aji-dispatcher",
+      "bundle": "native",
+      "name": "aji.dll",
+      "sourceIdentity": {
+        "sourceId": "animejanai-inference",
+        "pinKind": "releasePin",
+        "abi": 8,
+        "exports": 17,
+        "buildsFrom": ["src/aji_dispatch.cpp", "src/aji_conf.cpp"],
+        "dependencies": "none of its own - no CUDA, no TensorRT, no ORT"
+      },
+      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-1",
+      "blockScope": "all use, not only redistribution",
+      "usePermitted": false,
+      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md."
+    },
+    {
+      "id": "engine.aji-trt",
+      "bundle": "native",
+      "name": "aji_trt.dll",
+      "sourceIdentity": {
+        "sourceId": "animejanai-inference",
+        "pinKind": "releasePin",
+        "abi": 8,
+        "buildsFrom": ["src/aji_trt.cpp", "src/aji_conf.cpp", "src/kernels.cu"],
+        "links": "nvinfer_11, CUDA::cuda_driver, CUDA::cudart",
+        "cudaArchitectures": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual"
+      },
+      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-1",
+      "blockScope": "all use, not only redistribution",
+      "usePermitted": false,
+      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md."
+    },
+    {
+      "id": "engine.aji-dml",
+      "bundle": "native",
+      "name": "aji_dml.dll",
+      "sourceIdentity": {
+        "sourceId": "animejanai-inference",
+        "pinKind": "releasePin",
+        "abi": 8,
+        "buildsFrom": ["src/aji_dml.cpp", "src/aji_conf.cpp"],
+        "links": "d3d12 d3d11 dxgi d3dcompiler (ORT and DirectML resolved at run time from its own directory)",
+        "platform": "WIN32 only"
+      },
+      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-1",
+      "blockScope": "all use, not only redistribution",
+      "usePermitted": false,
+      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md.",
+      "note": "Whether aji_dml is offered at all is a separate product decision. The plan's DirectML interop proof is itself outstanding, so this component may never be shipped."
+    },
+    {
+      "id": "runtime.tensorrt",
+      "bundle": "native",
+      "name": "nvinfer_11.dll, nvinfer_plugin_11.dll, nvonnxparser_11.dll",
+      "sourceIdentity": {
+        "sourceId": "tensorrt-11.3-sdk",
+        "version": "11.3.0.99",
+        "cudaFlavour": "13.4",
+        "pinKind": "referencePin",
+        "acquisitionUrl": "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.3.0/zip/TensorRT-Enterprise-11.3.0.99-Windows-amd64-cuda-13.4-Release-external.zip",
+        "acquisitionNote": "the '-external' suffix marks the publicly redistributable build"
+      },
+      "licence": {
+        "name": "NVIDIA TensorRT Software License Agreement + TensorRT Supplement",
+        "distributablePortion": "runtime .so and .dll",
+        "requiredNotice": "This software contains source code provided by NVIDIA Corporation.",
+        "obligations": ["material additional functionality in the application", "the redistributable portions are accessed only by the application", "the notice above accompanies the distribution", "the application's own terms stay consistent with the Agreement", "the SDK is not thereby made subject to an open source licence"]
+      },
+      "redistribution": "external",
+      "inBundle": true,
+      "acquisitionModel": "downloaded from NVIDIA's own redistributable at bundle-assembly time and bundled under the Agreement's terms; nothing is vendored into this repository",
+      "digestRequirement": "each DLL's sha256 must be computed at acquisition and recorded in the bundle manifest (M05). No upstream digest was located for these Windows DLLs."
+    },
+    {
+      "id": "runtime.tensorrt-resources",
+      "bundle": "native",
+      "name": "nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll",
+      "sourceIdentity": {
+        "sourceId": "tensorrt-11.3-sdk",
+        "version": "11.3.0.99",
+        "pinKind": "referencePin",
+        "necessity": "one per SM the engine builder may need; the set matches the CUDA architecture list exactly"
+      },
+      "licence": { "name": "NVIDIA TensorRT SLA + Supplement", "distributablePortion": "runtime .dll" },
+      "redistribution": "external",
+      "inBundle": true,
+      "note": "Shipping every per-SM resource is what makes the closure self-contained on any supported GPU rather than only the build machine's."
+    },
+    {
+      "id": "runtime.cuda-cudart",
+      "bundle": "native",
+      "name": "cudart64_*.dll",
+      "sourceIdentity": {
+        "sourceId": "cuda-toolkit",
+        "pinKind": "referencePin",
+        "source": "CUDA redistributable component; version and architecture suffix vary by CUDA release"
+      },
+      "licence": {
+        "name": "NVIDIA Software License Agreement + CUDA Supplement",
+        "distributablePortion": "CUDA EULA section 2.6 Attachment A, CUDA Runtime: cudart.dll and version/architecture-specific variations thereof",
+        "obligations": ["same distribution requirements as TensorRT", "the SDK is not thereby made subject to an open source licence"]
+      },
+      "redistribution": "external",
+      "inBundle": true,
+      "note": "cudnn and cuBLAS are NOT required: the RIFE/spatial engine build explicitly disables them (--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT) and the kernels use only cudaMalloc/cudaMemcpy and the driver API. The plan's mention of cudnn/cublas in the bundle layout is broader than the observed need."
+    },
+    {
+      "id": "runtime.onnxruntime-directml",
+      "bundle": "native",
+      "name": "onnxruntime.dll, onnxruntime_providers_shared.dll",
+      "sourceIdentity": {
+        "sourceId": "onnxruntime-directml",
+        "pinKind": "releasePin",
+        "package": "Microsoft.ML.OnnxRuntime.DirectML 1.24.4",
+        "upstreamCommit": "2d924974ef147392ced8409d36bd6d2e7fcc8a74",
+        "acquisitionUrl": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4"
+      },
+      "licence": { "spdx": "MIT", "copyright": "Copyright (c) Microsoft Corporation", "obligations": "retain the copyright notice and permission text in copies or substantial portions" },
+      "redistribution": "cleared",
+      "inBundle": true,
+      "scopeNote": "DirectML track only. Not part of a TensorRT-only bundle."
+    },
+    {
+      "id": "runtime.directml",
+      "bundle": "native",
+      "name": "DirectML.dll",
+      "sourceIdentity": {
+        "sourceId": "directml",
+        "pinKind": "releasePin",
+        "package": "Microsoft.AI.DirectML 1.15.4",
+        "acquisitionUrl": "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4",
+        "nupkgSha256": "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9",
+        "nupkgBytes": 202292617,
+        "files": [
+          { "name": "bin/x64-win/DirectML.dll", "bytes": 18527776, "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1" },
+          { "name": "include/DirectML.h", "sha256": "3daeed73aa64905c07b6f5394c7b45eabf0ac17bbca54b1584c871e03e4f54ad" },
+          { "name": "include/DirectMLConfig.h", "sha256": "2363f2f6cf6b4a8fbebd266d295e09ba43d6d4722c981afe7454917d1e927d7a" },
+          { "name": "LICENSE.txt", "bytes": 10439, "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d" },
+          { "name": "LICENSE-CODE.txt", "bytes": 1093, "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c" }
+        ],
+        "note": "Digests computed from the downloaded 1.15.4 nupkg. DirectML.dll is byte-identical to the copy in the read-only reference package."
+      },
+      "licence": {
+        "spdx": null,
+        "name": "Microsoft Software License Terms - Microsoft DirectX Machine Learning (DirectML), for the binary; MIT (LICENSE-CODE.txt) for the code",
+        "redistributionGrant": "LICENSE.txt section 1(a): \"You may copy and distribute the software (i.e. make available for third parties) in applications and services you develop in the build with Machine Learning tools and frameworks, and/or games that run on Windows and Xbox.\"",
+        "obligations": ["Windows/Xbox use only (section 1(a))", "not a stand-alone offering; must be embedded in an application (section 3(e))", "Microsoft notices must not be removed or modified (section 3(c))", "export restrictions apply (section 4)"]
+      },
+      "redistribution": "cleared",
+      "inBundle": true,
+      "note": "Cleared on the licence text actually present in the pinned package. The earlier apparent MIT-vs-Microsoft conflict was a filename mismatch between the reference notice and the nuspec, not two licences competing for the same binary."
+    },
+    {
+      "id": "tool.trtexec",
+      "bundle": "native",
+      "name": "trtexec.exe",
+      "sourceIdentity": {
+        "sourceId": "tensorrt-11.3-sdk",
+        "pinKind": "referencePin",
+        "role": "builds a TensorRT engine from an ONNX graph"
+      },
+      "licence": {
+        "name": "NVIDIA TensorRT SLA + Supplement",
+        "status": "UNRESOLVED - see ESC-5",
+        "issue": "the Supplement's distributable portion is the runtime .so/.dll; a developer tool is internal-use only unless the Agreement identifies it as distributable, and the located Agreement text does not"
+      },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-5",
+      "architecturePath": "the planned design builds engines in-process via the TensorRT builder API in an out-of-band preparation helper. On that design trtexec.exe is a convenience, not a runtime dependency, and can be omitted from the shipped bundle without weakening the product."
+    },
+    {
+      "id": "models.animejanai-onnx",
+      "bundle": "native",
+      "name": "2x_AnimeJaNai_*.onnx (5 files)",
+      "sourceIdentity": {
+        "sourceId": "animejanai-onnx-models",
+        "pinKind": "releasePin",
+        "upstream": "the-database/mpv-AnimeJaNai",
+        "files": [
+          { "name": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c" },
+          { "name": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716" },
+          { "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f" },
+          { "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4" },
+          { "name": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx", "bytes": 1212903, "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5" }
+        ],
+        "note": "these digests were measured on the read-only reference package; they are identity evidence for the pinned upstream files, not a build product of this repository"
+      },
+      "licence": {
+        "spdx": null,
+        "name": "CC BY-NC-SA 4.0",
+        "obligations": ["attribution", "share-alike", "non-commercial only", "patent and trademark rights not licensed"]
+      },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-2",
+      "blockScope": "redistribution only",
+      "usePermitted": true,
+      "useScopeNote": "Local non-commercial use of these five graphs is within the located CC BY-NC-SA 4.0 grant and is permitted for this project's recorded private, local, non-commercial scope. What is not permitted is their inclusion in a shipped bundle, which is a Share and triggers the section 3(a) attribution and section 3(b) share-alike conditions. See components.useScope and escalations[ESC-2].",
+      "note": "The M11/M13 catalog must still carry a per-model termsNote so that a user-supplied model is handled under its own terms."
+    },
+    {
+      "id": "models.rife-v4.14",
+      "bundle": "native",
+      "name": "rife_v4.14.onnx, rife_v4.14_lite.onnx, rife_v4.14_ensemble.onnx, rife_v4.14_lite_ensemble.onnx",
+      "sourceIdentity": {
+        "sourceId": "rife-v4.14-assets",
+        "pinKind": "referencePin",
+        "requiredNamesVerified": true,
+        "nameDerivation": "rife_model_name() maps code 414 -> rife_v4.14, a four-digit code ending in 1 -> _lite, and ensemble -> _ensemble on an independent boolean; the consumer appends .onnx, so the full {Full, Lite} x {ensemble off, on} space is four names",
+        "localPresence": "all four names present under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and every tracked tree. native/rife-acquisition.md records the archive pin, extraction, structural check and weight comparison; native/videojanai-acquisition.md records the byte-identical comparison against component-rife.7z.",
+        "acquiredArchivePin": { "asset": "rife-fp16-1.7z", "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9", "bytes": 322142263, "publishedDigestReproducedExactly": true, "butLicence": "the publishing repository declares no licence of its own and the asset carries no per-file notice" }
+      },
+      "licence": {
+        "spdx": "MIT",
+        "status": "WEIGHT DATA ESTABLISHED - whole-graph redistribution unresolved; see ESC-3",
+        "grant": "hzwer/Practical-RIFE states in its README at pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 that the content of its linked trained model files is under the same MIT licence as the project - an affirmative grant by the copyright holder covering the v4.14 and v4.14.lite weights.",
+        "residual": "Every stored weight tensor in all four acquired graphs matches those MIT checkpoints after fp16 rounding (native/rife-acquisition.md §5.1), so the weight bytes trace to the author. Still open: exporter identity, the non-weight graph material, and the rights basis for redistributing the files as artefacts, which carry no per-file notice. Not asserted either way here."
+      },
+      "redistribution": "blocked",
+      "inBundle": false,
+      "blockerRef": "ESC-3",
+      "blockReason": "Whole-graph provenance and redistribution rights, not asset availability. The four graphs are acquired and their weight data traces to the MIT author, but exporter identity and the non-weight graph material are unresolved and no grant covers redistributing the files as artefacts."
+    }
+  ],
+
+  "buildTimeOnly": [
+    { "id": "toolchain.msvc", "name": "MSVC 14.44.35207 + Windows SDK", "redistribution": "external", "note": "never shipped" },
+    { "id": "toolchain.cuda-toolkit", "name": "CUDA toolkit (nvcc, headers, libs)", "redistribution": "external", "note": "never shipped; only cudart redistributables are shipped, and those are listed above" },
+    { "id": "toolchain.tensorrt-sdk", "name": "TensorRT SDK include/ and *.lib", "redistribution": "external", "note": "never shipped; link-time only" },
+    { "id": "toolchain.onnxruntime-headers", "name": "onnxruntime_c_api.h from the ORT DirectML package", "redistribution": "external", "note": "never shipped" },
+    { "id": "toolchain.directml-headers", "name": "DirectML.h, DirectMLConfig.h from the DirectML package", "redistribution": "external", "note": "never shipped" },
+    { "id": "sdk.7zr", "name": "7zr.exe", "redistribution": "external", "note": "pre-existing stock-runtime extraction dependency; not a native-bundle component" }
+  ],
+
+  "explicitlyNotAdopted": [
+    { "item": "mpvnet.exe / mpvnet.dll / mpvnet.com / .NET manager binaries", "reason": "out of scope by plan section 1" },
+    { "item": "AnimeJaNaiManager.exe", "reason": "out of scope" },
+    { "item": "AnimeJaNaiUpdater.exe", "reason": "out of scope" },
+    { "item": "7za.exe, yt-dlp.exe, yt-dlp dependencies", "reason": "out of scope" },
+    { "item": "portable_config/scripts/*.lua, mpv-animejanai.conf, input-animejanai.conf", "reason": "out of scope" },
+    { "item": "D3DCompiler_47_cor3.dll, MediaInfo.dll, PenImc_cor3.dll, PresentationNative_cor3.dll, wpfgfx_cor3.dll, vcruntime140_cor3.dll, NGettext.Wpf.pdb, libHarfBuzzSharp.dll, libSkiaSharp.dll, av_libglesv2.dll", "reason": ".NET/WPF and manager payload, not native-bundle runtime" },
+    { "item": "animejanai/benchmarks/*.mp4 and benchmark.ps1", "reason": "research fixtures; M02 owns hermetic fixtures for this repository" },
+    { "item": "AnimeInterp (any tree)", "reason": "explicitly excluded from this project; not a source, not an asset, not a dependency" },
+    { "item": "the ambient Conda TensorRT 11.3 runtime on this machine", "reason": "research residue; production must never depend on Conda, Torch, Python or any ambient install" }
+  ],
+
+  "provenanceRecord": {
+    "coreSha": { "sourceCommit": "63d127174d8f70336c82a22408929e2bc301edcb", "patchSeriesIdentity": "PENDING (M04)", "buildToolchain": "PENDING (M04)" },
+    "inferenceSourceSha": { "source": "animejanai-inference", "licenceStatus": "absent - ESC-1" },
+    "fileHashes": "see sources.json#observations for measured hashes of pre-existing files; the release-pin hashes are those this repository's own build produces and records in the M05 bundle manifest",
+    "status": "INCOMPLETE by construction: an inference-source pin and a toolchain record cannot exist until M04 has a build, and the inference source has no licence to pin under."
+  }
+}

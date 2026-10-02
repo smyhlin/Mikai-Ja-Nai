@@ -17,6 +17,7 @@
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
 #include <backend/Streams.hpp>
+#include <native/NativeRuntimeSelection.hpp>
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -188,6 +189,13 @@ struct TitlePage::PlayerSession {
     /// The episode the player is on right now, for stream recovery. A dub/sub
     /// switch replaces it, so recovery must not rewind to the opening episode.
     EpisodeEntry* entry = nullptr;
+    /// True while this player's runtime request is in flight, so a second
+    /// request from the same dialog does not start another one.
+    bool runtimePending = false;
+    /// True while startPlayer() runs again after the module was pinned.
+    /// startPlayer() asks for the runtime again when the core still cannot be
+    /// created, so this is what keeps that from retrying forever.
+    bool runtimeRetrying = false;
     QVector<QVariantMap> playlist;
 };
 
@@ -1590,8 +1598,10 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
         toQualities(qualities), height, session->host, this);
     // The dialog is the only place an mpv failure surfaces, so show it either
     // way and let it report whatever it actually hits.
+    // `runtimeRequested` means the core could not be created at all: the page
+    // provisions the runtime and then retries playback for real.
     connect(session->dialog, &mplayer::shell::PlayerDialog::runtimeRequested, this,
-            [session] { session->dialog->show(); });
+            [this, session] { requestRuntime(session); });
     session->dialog->setPlaylist(session->playlist, currentIndex);
     session->dialog->setVariants(episodeVariants(entry->number), entry->embedUrl);
     session->dialog->show();
@@ -1611,6 +1621,69 @@ void TitlePage::closeSession(PlayerSession* session) {
     if (dialog != nullptr) {
         dialog->deleteLater();
     }
+}
+
+void TitlePage::requestRuntime(PlayerSession* session) {
+    if (closed_ || session == nullptr || session->dialog == nullptr ||
+        !sessions_.contains(session)) {
+        return;
+    }
+    auto* dialog = session->dialog;
+    dialog->show();
+    if (mplayer::native::runtimeSelected()) {
+        // A module is already pinned: this is a playback retry, not a
+        // reselection, and startPlayer() is the only thing that may run again.
+        // startPlayer() emits `runtimeRequested` synchronously when the core
+        // still cannot be created, so the second entry from inside it is
+        // dropped rather than retried for ever.
+        if (session->runtimeRetrying) {
+            return;
+        }
+        session->runtimeRetrying = true;
+        dialog->startPlayer();
+        session->runtimeRetrying = false;
+        return;
+    }
+    if (session->runtimePending || !mplayer::native::beginRecovery()) {
+        return;
+    }
+    session->runtimePending = true;
+    const int seq = ++runtimeSeq_;
+    const QPointer<TitlePage> self(this);
+    // Resolution may download, so it runs on the pool; the load happens back on
+    // the GUI thread, where a core is about to be created.
+    runner_.run(
+        [] {
+            return QVariant::fromValue(
+                mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
+        },
+        [self, session, seq](const QVariant& result) {
+            mplayer::native::endRecovery();
+            if (self.isNull() || self->closed_ || seq != self->runtimeSeq_ ||
+                !self->sessions_.contains(session) || session->dialog == nullptr) {
+                return;
+            }
+            session->runtimePending = false;
+            const mplayer::native::RuntimeSelection resolved =
+                result.value<mplayer::native::RuntimeSelection>();
+            const mplayer::native::RuntimeSelection selection =
+                mplayer::native::commitRuntime(resolved);
+            if (!selection.loaded) {
+                session->dialog->showError(
+                    mplayer::native::runtimeUnavailablePlaybackText(selection.reason));
+                return;
+            }
+            session->dialog->startPlayer();
+        },
+        [self, session, seq](const QString& reason) {
+            mplayer::native::endRecovery();
+            if (self.isNull() || self->closed_ || seq != self->runtimeSeq_ ||
+                !self->sessions_.contains(session) || session->dialog == nullptr) {
+                return;
+            }
+            session->runtimePending = false;
+            session->dialog->showError(mplayer::native::runtimeUnavailablePlaybackText(reason));
+        });
 }
 
 void TitlePage::recoverStream(PlayerSession* session) {

@@ -4,34 +4,32 @@
 #include "theme/Theme.hpp"
 
 #include <backend/MikaiClient.hpp>
-#include <backend/Runtime.hpp>
+#include <native/NativeRuntimeSelection.hpp>
 
 #include <QApplication>
-#include <QDir>
+#include <QDebug>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QTranslator>
 
 namespace {
 
-/// Put the directory holding libmpv on PATH before the first QApplication.
+/// Chooses and pins the mpv module for this process, once.
 ///
-/// The player is in-process here, so the loader resolves libmpv when the
-/// process starts rather than when an episode opens. Doing it up front means a
-/// missing runtime is one clear log line instead of a dialog on first play.
-void provisionMpvRuntime() {
-    const QDir runtime = mikai::backend::ensureRuntime();
-    if (runtime.path().isEmpty()) {
-        qWarning("mikai: no mpv runtime found; playback will not start");
+/// The player is in-process, so the module has to be resolved before the first
+/// core rather than when an episode opens. A missing or refused runtime is one
+/// clear log line here: home, search and the settings dialog all work without
+/// it, and the player reports the same named reason when it is asked to play.
+void selectPlayerRuntime() {
+    const mplayer::native::RuntimeSelection selection = mplayer::native::selectStartupRuntime();
+    if (selection.loaded) {
+        qInfo().noquote() << "mikai: player runtime" << mplayer::native::runtimeStatusText();
+        if (selection.nativeNotApplied) {
+            qWarning().noquote() << "mikai: native runtime not applied:" << selection.reason;
+        }
         return;
     }
-    QDir::addSearchPath(QStringLiteral("mpv"), runtime.path());
-    const QByteArray current = qgetenv("PATH");
-    QByteArray path = runtime.path().toLocal8Bit();
-    if (!current.isEmpty()) {
-        path += QByteArrayLiteral(";") + current;
-    }
-    qputenv("PATH", path);
+    qWarning().noquote() << "mikai: mpv runtime unavailable:" << selection.reason;
 }
 
 }  // namespace
@@ -69,7 +67,11 @@ int main(int argc, char** argv) {
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
 
-    provisionMpvRuntime();
+    // After the application identity and the translators, and before any
+    // widget can reach an mpv core: the selection reads QSettings, which needs
+    // the organization name, and its strings reach the log through the same
+    // translators.
+    selectPlayerRuntime();
 
     mikai::backend::MikaiClient client;
     mikai::app::MainWindow window(client);

@@ -41,6 +41,7 @@
 #include "Anime4K.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
+#include "native/NativeMenu.hpp"
 
 namespace mplayer {
 class VideoSurface;
@@ -86,6 +87,21 @@ public:
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
     void setAnime4KMode(anime4k::Mode mode);
+
+    // ── native processing (the enhancement tree's native branch) ────
+    /// The four inputs the native branch and its status line read, replaced as
+    /// one. They are read-only here: the shell never writes a preference and
+    /// never claims a capability the producer has not reported. This refreshes
+    /// the open branch and the status HUD, so a change made in the settings
+    /// dialog or a status reply from the filter is visible without reopening.
+    void setNativeMenuInputs(const native::menu::Inputs& inputs);
+    /// The inputs as currently held, for a caller that wants to read or amend
+    /// one of them without reading the store again.
+    const native::menu::Inputs& nativeInputs() const { return nativeInputs_; }
+    /// Re-renders the native status HUD from the inputs as currently held.
+    /// Public because a caller that already holds the inputs can refresh the
+    /// chip without publishing them a second time.
+    void updateNativeHud();
     /// Applies the catalogue preset `presetId` through the same path an
     /// enhancement-menu row takes, so a hotkey, the menu and the tree cannot
     /// drift: one toast, one mode change, one saved chain. The id is
@@ -170,6 +186,10 @@ signals:
     void compareRequested();
     void copyLinkRequested();
     void stateChanged(const QString& state);
+    /// A native row was chosen. The action is typed rather than spelled, and
+    /// the value is the backend stable name or the recipe id, empty for
+    /// Off/On. One handler serves the menu, the settings dialog and the toggle.
+    void nativeActionRequested(native::menu::Action action, const QString& value);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -284,6 +304,13 @@ private:
     QLabel* lblEpisode_ = nullptr;
     QLabel* lblNetworkStats_ = nullptr;
     QLabel* lblEnhancement_ = nullptr;
+    /// The native status chip. Hidden until native processing is requested or
+    /// the filter reports a state of its own, so a default Off machine keeps
+    /// the plain chip.
+    QLabel* lblNative_ = nullptr;
+    /// The native branch's inputs. Default-constructed to the truth of this
+    /// build: nothing requested, no engine available.
+    native::menu::Inputs nativeInputs_;
     Panel* footerRight_ = nullptr;
     IconButton* btnKeys_ = nullptr;
     IconButton* btnMore_ = nullptr;

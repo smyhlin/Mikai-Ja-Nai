@@ -17,7 +17,15 @@ inline constexpr int kPrimaryControlSize = 44;
 inline constexpr int kSecondaryControlSize = 36;
 inline constexpr int kSettingsControlSize = 36;
 inline constexpr int kSettingsDialogMinWidth = 560;
+inline constexpr int kSettingsDialogMinHeight = 600;
+inline constexpr int kSettingsDialogDefaultWidth = 760;
+inline constexpr int kSettingsDialogDefaultHeight = 780;
 inline constexpr int kSettingsPresetListMaxHeight = 440;
+// Characters a settings combo reserves for its widest entry, so a long stored
+// identifier cannot widen the page; the popup still shows the entry in full.
+inline constexpr int kSettingsChoiceLengthChars = 30;
+inline constexpr int kNativeAssetsTableMaxHeight = 160;
+inline constexpr int kNativeDimensionFieldWidth = 72;
 inline constexpr int kIconSize = 18;
 inline constexpr int kMenuItemMinHeight = 34;
 

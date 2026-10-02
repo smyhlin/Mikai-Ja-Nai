@@ -1469,12 +1469,19 @@ void PlayerDialog::onEnginePlaying(bool playing) {
         restoreResumePoint();
     }
     shell_->setPlaying(playing);
+    applyPendingPause();
     // The shell drops its own mute when a volume arrives, so the mute state is
     // pushed after it or the two would fight.
     shell_->setVolume(volume_);
     shell_->setMuted(muted_);
     shell_->setRate(std::clamp(speed_, kShellRateMin, kShellRateMax));
-    if (errorActive_) {
+    // Dismissed only by a stream that really plays. This callback also fires
+    // for the first pause observation, which a failed open still reports as
+    // "not paused"; dismissing on that hid the retry chip the failure had just
+    // raised, in the same pump tick that drained the end-file error. Real video
+    // is the surface's own evidence that a stream is up, so the chip survives
+    // until one exists.
+    if (errorActive_ && surface_->hasVideo()) {
         errorActive_ = false;
         statusTimer_->stop();
         statusPanel_->hide();
@@ -1495,12 +1502,30 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     if (closed_ || url.isEmpty()) {
         return false;
     }
+    // A new source supersedes the failed one, so the chip it left is retired
+    // here rather than lingering over the reload. Every recovery path runs
+    // through openStream - a retry click, a refreshed link, an episode or
+    // variant swap - so this is the one place that knows a stream is being
+    // replaced. If THIS stream fails too, onEngineError raises a fresh chip.
+    if (errorActive_) {
+        errorActive_ = false;
+        statusTimer_->stop();
+        retryButton_->hide();
+        statusPanel_->hide();
+    }
     // A swap carries the position, the pause and the rate across so playback
     // continues where it was instead of restarting.
     resumePending_ = resume && surface_->hasVideo();
     if (resumePending_) {
         resumePosition_ = surface_->position();
         resumePaused_ = !surface_->isPlaying();
+    } else {
+        // A restart resets the position but not the viewer's intent: mpv
+        // always brings a fresh file up playing, so a swap away from a paused
+        // player would start the next episode loudly. Recorded here and applied
+        // when the new stream reports itself - a core with no file loaded
+        // cannot hold a pause for it.
+        pauseAfterLoad_ = surface_->hasVideo() && !surface_->isPlaying();
     }
     if (height > 0) {
         currentHeight_ = height;
@@ -1537,6 +1562,15 @@ void PlayerDialog::restoreResumePoint() {
     } else {
         shell_->setPlaying(true);
     }
+}
+
+void PlayerDialog::applyPendingPause() {
+    if (!pauseAfterLoad_) {
+        return;
+    }
+    pauseAfterLoad_ = false;
+    surface_->setPaused(true);
+    shell_->setPlaying(false);
 }
 
 void PlayerDialog::onShellStateChanged(const QString& state) {

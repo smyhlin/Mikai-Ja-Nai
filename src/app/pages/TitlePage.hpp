@@ -184,6 +184,7 @@ private:
 
     void openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualities);
     void closeSession(PlayerSession* session);
+    void requestRuntime(PlayerSession* session);
     void recoverStream(PlayerSession* session);
     void switchPlayerVariant(PlayerSession* session, const QString& embed, const QString& label);
     void probeTrackQuality(PlayerSession* session, const QString& embed);
@@ -252,6 +253,10 @@ protected:
     bool descriptionExpanded_ = false;
     QString baseStatus_;
 
+    /// Bumped by every runtime request, so a completion belonging to a
+    /// superseded attempt is dropped instead of starting a player the user has
+    /// already moved on from.
+    int runtimeSeq_ = 0;
     int releaseProbeSeq_ = 0;
     QMap<int, int> releaseQuality_;
     QSet<int> releaseProbed_;

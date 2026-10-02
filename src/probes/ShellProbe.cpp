@@ -13,6 +13,7 @@
 
 #include "PlayerShell.hpp"
 #include "VideoSurface.hpp"
+#include "ProbeRuntime.hpp"
 
 using namespace mplayer;
 
@@ -41,6 +42,9 @@ int visibleChrome(const mplayer::shell::PlayerShell* shell) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!mplayer::probes::selectStandardRuntime()) {
+        return 2;
+    }
 
     auto* shell = new shell::PlayerShell(nullptr, /*frameless=*/false);
     shell->resize(1280, 760);

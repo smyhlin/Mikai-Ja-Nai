@@ -336,6 +336,7 @@ private:
     bool openStream(const QString& url, int height, bool resume = true);
     /// Applies the saved resume point once the new stream reports a timeline.
     void restoreResumePoint();
+    void applyPendingPause();
     void goToEpisode(int position, bool closeList = false);
     void setQualities(const QList<QualityEntry>& qualities);
     /// Picks a height: the requested one when it is on offer, else the best.
@@ -415,6 +416,10 @@ private:
     bool resumePending_ = false;
     double resumePosition_ = 0.0;
     bool resumePaused_ = false;
+    // A position-reset swap - a new episode - still owes the viewer the pause
+    // they set. A freshly loaded stream always comes up playing, so the pause
+    // is re-asserted once the load lands rather than carried as a resume point.
+    bool pauseAfterLoad_ = false;
     // False while the surface has no mpv core at all: a retry then asks the
     // host to provision the runtime instead of reloading a dead url.
     bool engineReady_ = false;

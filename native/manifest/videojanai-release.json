@@ -1,0 +1,147 @@
+{
+  "evidenceOnly": true,
+  "release": "https://github.com/the-database/VideoJaNai/releases/tag/2.1.0",
+  "releaseId": 341143839,
+  "tagCommit": "68f6060c3971dfc0f2423b5702f2d259013eca60",
+  "immutable": false,
+  "assetInventory": {
+    "source": "https://api.github.com/repos/the-database/VideoJaNai/releases/341143839/assets?per_page=100",
+    "clarification": "The release page displays “Assets 16”; the API has 14 uploaded asset objects below. GitHub's two automatically generated source-code archives account for the other two displayed entries; the release API supplies their archive URLs but no publisher size or digest.",
+    "items": [
+      {
+        "name": "component-rife.7z",
+        "size": 462444035,
+        "sha256": "3bca5476a36038904f283b40f20a0c0eb9fe464f551b5dd680da4a07750decd9",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-rife.7z"
+      },
+      {
+        "name": "component-trt-ptx.7z",
+        "size": 207044239,
+        "sha256": "32e0c8e162de6c786e49b2cc709a4cfa855f83f1633f7dc4d8b5da6b8b501b55",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-ptx.7z"
+      },
+      {
+        "name": "component-trt-runtime.7z",
+        "size": 180144212,
+        "sha256": "c7dfcb3f3bc35285dcf62381f58ba30f882083778e28930bbd0a1fcc7a01df0b",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-runtime.7z"
+      },
+      {
+        "name": "component-trt-sm100.7z",
+        "size": 246009875,
+        "sha256": "a1c65960d7bd796605da3066a7deb39461a9db97ed8761fce451d6ad92b1e35f",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm100.7z"
+      },
+      {
+        "name": "component-trt-sm120.7z",
+        "size": 225025865,
+        "sha256": "e419ff91f643a2445ddd48408f84aa0451767d074a45f261085460ee327ee4ac",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm120.7z"
+      },
+      {
+        "name": "component-trt-sm75.7z",
+        "size": 88271136,
+        "sha256": "c1627d6eef59bc0be998fbd495c07c76eac1ef2fe91aa8cade38e301b6c01737",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm75.7z"
+      },
+      {
+        "name": "component-trt-sm80.7z",
+        "size": 157238373,
+        "sha256": "4466a68ceba2a91f229baa853c7c3f2df92e3234709551ca0ed7cd8f32bba34a",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm80.7z"
+      },
+      {
+        "name": "component-trt-sm86.7z",
+        "size": 146777689,
+        "sha256": "8a451058520abe446f664573e381ac7d4eb62b596f3ee527520b7ab81151f242",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm86.7z"
+      },
+      {
+        "name": "component-trt-sm89.7z",
+        "size": 155450827,
+        "sha256": "d40ac33da0d8a93c6e6c72a2e8dd6159c806c4b705423b8efb5392b5dec1bf23",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm89.7z"
+      },
+      {
+        "name": "component-trt-sm90.7z",
+        "size": 414006178,
+        "sha256": "a02b0adb3d780205f35c660d059c1c9564f6a274b9a489569ffcdfb4edc0deb5",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/component-trt-sm90.7z"
+      },
+      {
+        "name": "manifest.json",
+        "size": 355,
+        "sha256": "e512ed44080a603e17dfe1ad3dbf268565a9891f96b7992f0dae48d20078bf5f",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/manifest.json"
+      },
+      {
+        "name": "packs.json",
+        "size": 4536,
+        "sha256": "a707cc740de288bdd71cc8b82e783c826c65e3dc9001ad933b7b6b0251fefad9",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/packs.json"
+      },
+      {
+        "name": "VideoJaNai-full-package-2.1.0.7z.001",
+        "size": 129206050,
+        "sha256": "2950d0d546336a4c55be30087d937a8d532fbb8ae6a9568b89bd76705e773d9e",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/VideoJaNai-full-package-2.1.0.7z.001"
+      },
+      {
+        "name": "VideoJaNai-Setup-2.1.0.exe",
+        "size": 162118380,
+        "sha256": "391394927a8cd1c2692a46fab8ac4cfc62d13579a865ddb5c4ea004ef81ff776",
+        "url": "https://github.com/the-database/VideoJaNai/releases/download/2.1.0/VideoJaNai-Setup-2.1.0.exe"
+      },
+      {
+        "name": "Source code (zip)",
+        "size": null,
+        "sha256": null,
+        "url": "https://api.github.com/repos/the-database/VideoJaNai/zipball/2.1.0"
+      },
+      {
+        "name": "Source code (tar.gz)",
+        "size": null,
+        "sha256": null,
+        "url": "https://api.github.com/repos/the-database/VideoJaNai/tarball/2.1.0"
+      }
+    ]
+  },
+  "measuredDownloads": [
+    {
+      "name": "component-trt-runtime.7z",
+      "bytes": 180144212,
+      "sha256": "c7dfcb3f3bc35285dcf62381f58ba30f882083778e28930bbd0a1fcc7a01df0b"
+    },
+    {
+      "name": "component-trt-sm120.7z",
+      "bytes": 225025865,
+      "sha256": "e419ff91f643a2445ddd48408f84aa0451767d074a45f261085460ee327ee4ac"
+    },
+    {
+      "name": "component-trt-ptx.7z",
+      "bytes": 207044239,
+      "sha256": "32e0c8e162de6c786e49b2cc709a4cfa855f83f1633f7dc4d8b5da6b8b501b55"
+    },
+    {
+      "name": "component-rife.7z",
+      "bytes": 462444035,
+      "sha256": "3bca5476a36038904f283b40f20a0c0eb9fe464f551b5dd680da4a07750decd9"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 355,
+      "sha256": "e512ed44080a603e17dfe1ad3dbf268565a9891f96b7992f0dae48d20078bf5f"
+    },
+    {
+      "name": "packs.json",
+      "bytes": 4536,
+      "sha256": "a707cc740de288bdd71cc8b82e783c826c65e3dc9001ad933b7b6b0251fefad9"
+    }
+  ],
+  "runtimeUse": false,
+  "packRuntimeLine": "TensorRT 11.0 / CUDA 13.2",
+  "ownedSdkLine": "TensorRT 11.3.0.99 / CUDA 13.4.92",
+  "compatibility": "Not verified; do not mix these closures.",
+  "rifeComparison": "All four exact v4.14 graphs match existing owned bytes; original-weight lineage remains unresolved.",
+  "aji": "v0.6.0 declares ABI 7; explicit source/binary grant absent; existing ABI-8 pin unchanged."
+}
