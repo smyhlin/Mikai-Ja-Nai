@@ -1339,33 +1339,40 @@ void SearchPage::flushThumbs() {
     if (pendingThumbs_.isEmpty()) {
         return;
     }
-    QHash<QString, QByteArray> pending;
-    pending.swap(pendingThumbs_);
-    for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
-        if (icons_.contains(it.key())) {
-            continue;
-        }
-        const QPixmap pixmap = pixmapFrom(it.value(), kThumbDecodeSize);
-        if (pixmap.isNull()) {
-            continue;
-        }
-        icons_.insert(it.key(), pixmap);
-        // Bytes served their purpose: the decoded icon is what every consumer
-        // reads from here on, so holding both doubles poster memory per feed.
-        thumbCache_.remove(it.key());
-        // A poster URL is shared by several cards; the index turns that into a
-        // lookup instead of a scan of every card on the page. The rounded
-        // variant is painted once per URL, not once per card.
-        const QPixmap ready = TitleCard::rounded(
-            pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
-        rounded_.insert(it.key(), ready);
-        const QList<TitleCard*> cards = cardsByImageKey_.value(it.key());
-        for (TitleCard* card : cards) {
-            card->applyPixmap(ready);
+    // One poster per event-loop turn, never the whole queue: a JPEG decode
+    // plus two smooth scales costs milliseconds each, and decoding a full feed
+    // in one timer tick froze every menu, click and hover until the queue
+    // drained. The timer re-arms while work remains, so posters trickle in and
+    // the UI stays responsive between decodes.
+    auto it = pendingThumbs_.constBegin();
+    const QString key = it.key();
+    const QByteArray data = it.value();
+    pendingThumbs_.erase(pendingThumbs_.find(key));
+    if (!icons_.contains(key)) {
+        const QPixmap pixmap = pixmapFrom(data, kThumbDecodeSize);
+        if (!pixmap.isNull()) {
+            icons_.insert(key, pixmap);
+            // Bytes served their purpose: the decoded icon is what every
+            // consumer reads from here on, so holding both doubles poster
+            // memory per feed.
+            thumbCache_.remove(key);
+            // A poster URL is shared by several cards; the index turns that
+            // into a lookup instead of a scan of every card on the page. The
+            // rounded variant is painted once per URL, not once per card.
+            const QPixmap ready = TitleCard::rounded(
+                pixmap, QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+            rounded_.insert(key, ready);
+            const QList<TitleCard*> cards = cardsByImageKey_.value(key);
+            for (TitleCard* card : cards) {
+                card->applyPixmap(ready);
+            }
         }
     }
     applyThumbs();
     applyFeedPosters();
+    if (!pendingThumbs_.isEmpty()) {
+        thumbTimer_->start();
+    }
 }
 
 void SearchPage::applyThumbs() {
