@@ -3,7 +3,6 @@
   "generated": "2026-10-01",
   "owner": "M03",
   "purpose": "Pinned source identities and acquisition points for every native component this repository may build, vendor or redistribute. This file records identity and licence *evidence*. It is not itself a legal clearance: per-component clearance decisions live in components.json.",
-
   "conventions": {
     "hashAlgorithm": "sha256",
     "pinKinds": {
@@ -11,15 +10,32 @@
       "referencePin": "Identity fixed to a documented upstream reference (a URL, a version string, a commit) where the artefact itself is not present here and no digest has been computed.",
       "observation": "A hash or state measured on this machine from a file that was NOT produced by this repository's build. Descriptive research evidence only. Never a release pin, never a substitute for a reproduction."
     },
-    "observationRule": "Any entry with pinKind=observation lives under an `observations` key and MUST NOT be referenced as a pin by a build, a bundle manifest or a download."
+    "observationRule": "Any entry with pinKind=observation lives under an `observations` key and MUST NOT be referenced as a pin by a build, a bundle manifest or a download. observations.observedBinaries is the canonical four-entry record (stock core, fork core, aji.dll, aji_trt.dll) and is transcribed from plan.md section 3.2; the per-directory detail elsewhere in the same block is supporting context, not a second set of pins.",
+    "fileIntegrity": {
+      "digestInventory": "The source carries a per-file SHA-256 inventory on this record ('sourceDigestsMeasuredLocally', 'models', 'files' or 'releaseAssets'). mikai_manifest_check recomputes every listed digest against the matching --source-root and fails on any mismatch. This is the only mode that makes a source's bytes checkable today.",
+      "commitIdentity": "The source is pinned by revision, not by per-file digest: its artefact is either not present locally or is a whole archive too large to inventory file by file. Identity is the commit SHA, the git tree SHA and, where available, an archive digest. mikai_manifest_check requires the revision fields to be present and well-formed; it does not claim byte-level integrity it cannot compute.",
+      "documentationOnly": "A build-time toolchain or an out-of-scope research input. Identity is a version string. Nothing is shipped and nothing is redistributed, so no digest is required. 'not adopted' items and non-redistributable toolchains land here."
+    },
+    "digestPolicy": {
+      "shape": "Every digest this repository records is lowercase hex SHA-256 and is written as exactly 64 characters. mikai_manifest_check rejects any other form, so a truncated or upper-cased digest fails instead of silently mismatching later.",
+      "twoIndependentComputations": "A digest recorded as a pin is computed twice - once from the artefact in hand, once from the same artefact at the cited upstream revision - and both must agree. A single local measurement is recorded only under observations, never as a pin.",
+      "missingMeansNull": "A digest that was not computed is written as null, never as a placeholder string and never omitted. null means 'not computed', and it is never read as 'no digest required' by a build.",
+      "observationDigestsAreNeverVerified": "Observation digests are recorded but deliberately NOT recomputed by mikai_manifest_check. They describe files this repository did not build; re-hashing them would imply an integrity claim that does not hold. They are format-checked only."
+    }
   },
-
   "sources": [
     {
       "id": "mpv-fork",
       "role": "mpv core with the native AnimeJaNai video filter compiled in",
       "pinKind": "releasePin",
       "url": "https://github.com/the-database/mpv",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "The pinned artefact is a git revision, not a directory of files this repository holds. Identity is the commit SHA plus the git tree SHA, both recorded below. M04 builds the core from this exact commit under native/patches/, and that build's per-file digests become the release pins in the M05 bundle manifest.",
+      "fileDigestAtPin": {
+        "computed": false,
+        "reason": "Per-file digests are not recorded for this revision. The tree SHA already fixes every blob it contains, so a per-file SHA-256 would be a second spelling of the same identity and would have to be re-maintained against every patch application.",
+        "howToVerify": "git -C <checkout> rev-parse HEAD^{tree} must equal 5e68e27afefea4a79ac4736853b5db9a32601581 and git -C <checkout> rev-parse HEAD must equal 63d127174d8f70336c82a22408929e2bc301edcb."
+      },
       "ref": {
         "type": "gitCommit",
         "sha": "63d127174d8f70336c82a22408929e2bc301edcb",
@@ -38,14 +54,46 @@
         "note": "The fork does not bump MPV_VERSION; the observed core reports the git describe string instead (see observations)."
       },
       "upstreamFilesThisWorkTouches": [
-        { "path": "video/filter/vf_animejanai.c", "existsAtPin": true, "role": "the native filter itself; added to `sources` in meson.build only when cuda-hwaccel is enabled" },
-        { "path": "video/filter/aji.h", "existsAtPin": true, "role": "ABI mirror; `AJI_API_VERSION 8` at line 42; must agree with the inference repo header" },
-        { "path": "filters/filter.h", "existsAtPin": true, "role": "filter registration surface" },
-        { "path": "player/command.c", "existsAtPin": true, "role": "runtime command surface" },
-        { "path": "filters/f_lavfi.c", "existsAtPin": true, "role": "libavfilter bridge" },
-        { "path": "video/out/hwdec/hwdec_cuda_gl.c", "existsAtPin": true, "role": "CUDA/GL interop; added when cuda-interop and gl are both enabled" },
-        { "path": "video/out/hwdec/hwdec_cuda.c", "existsAtPin": true, "role": "CUDA hwdec; added with cuda-hwaccel" },
-        { "path": "meson.build", "existsAtPin": true, "role": "build wiring; lines 1422-1444 gate the two CUDA blocks" }
+        {
+          "path": "video/filter/vf_animejanai.c",
+          "existsAtPin": true,
+          "role": "the native filter itself; added to `sources` in meson.build only when cuda-hwaccel is enabled"
+        },
+        {
+          "path": "video/filter/aji.h",
+          "existsAtPin": true,
+          "role": "ABI mirror; `AJI_API_VERSION 8` at line 42; must agree with the inference repo header"
+        },
+        {
+          "path": "filters/filter.h",
+          "existsAtPin": true,
+          "role": "filter registration surface"
+        },
+        {
+          "path": "player/command.c",
+          "existsAtPin": true,
+          "role": "runtime command surface"
+        },
+        {
+          "path": "filters/f_lavfi.c",
+          "existsAtPin": true,
+          "role": "libavfilter bridge"
+        },
+        {
+          "path": "video/out/hwdec/hwdec_cuda_gl.c",
+          "existsAtPin": true,
+          "role": "CUDA/GL interop; added when cuda-interop and gl are both enabled"
+        },
+        {
+          "path": "video/out/hwdec/hwdec_cuda.c",
+          "existsAtPin": true,
+          "role": "CUDA hwdec; added with cuda-hwaccel"
+        },
+        {
+          "path": "meson.build",
+          "existsAtPin": true,
+          "role": "build wiring; lines 1422-1444 gate the two CUDA blocks"
+        }
       ],
       "requiredBuildConfiguration": {
         "cuda-hwaccel": "enabled",
@@ -65,11 +113,62 @@
         "note": "The fork ships LICENSE.GPL and LICENSE.LGPL but no single LICENSE file. Whether a given build is GPL or LGPL depends on its meson options, which is not derivable from a binary."
       }
     },
-
+    {
+      "id": "mpv-author-winbuild",
+      "role": "User-selected author mpv and custom libass runtime baseline; not a prepared native processing bundle",
+      "pinKind": "releasePin",
+      "fileIntegrity": "digestInventory",
+      "fileIntegrityReason": "Both exact release archives were downloaded into an owned directory and their measured SHA-256 digests match the publisher digests in the GitHub Releases API. The files inventory verifies these archives, not native inference or redistribution readiness.",
+      "url": "https://github.com/the-database/mpv-winbuild",
+      "ref": {
+        "type": "gitCommit",
+        "sha": "e44cfd8af3eb0aa41b3740f66be4e5a1fcf4171e",
+        "role": "Workflow source used by release build run 35219559230"
+      },
+      "release": {
+        "tag": "2026-09-17-63d127174d",
+        "tagCommit": "ef7f285b0173d65bfe42f040c4ebf8cd064347f1",
+        "page": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-09-17-63d127174d",
+        "api": "https://api.github.com/repos/the-database/mpv-winbuild/releases/tags/2026-09-17-63d127174d",
+        "buildRun": "https://github.com/the-database/mpv-winbuild/actions/runs/35219559230"
+      },
+      "mpvSource": {
+        "url": "https://github.com/the-database/mpv",
+        "commit": "63d127174d8f70336c82a22408929e2bc301edcb"
+      },
+      "libassSource": {
+        "url": "https://github.com/the-database/libass",
+        "commit": null,
+        "boundary": "The workflow resolves this fork independently and enables threads. The exact resolved libass commit has not been established here; native subtitle options were observed in the executable."
+      },
+      "files": [
+        {
+          "file": "mpv-x86_64-20260917-git-63d127174d.7z",
+          "bytes": 32956357,
+          "sha256": "f29f16885f1765f724b9643c6af7eb77e1b01401fa2f7bccfaffee486327a1e6",
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-09-17-63d127174d/mpv-x86_64-20260917-git-63d127174d.7z"
+        },
+        {
+          "file": "mpv-dev-x86_64-20260917-git-63d127174d.7z",
+          "bytes": 32160075,
+          "sha256": "aa0985be68e02d9a38e6ea3280d836e792311e9b5a8aa00c63f137983d477db8",
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-09-17-63d127174d/mpv-dev-x86_64-20260917-git-63d127174d.7z"
+        }
+      ],
+      "acquisition": {
+        "ownedRoot": "F:/ZKS/mikai-native-sdks/mpv-author-2026-09-17",
+        "scope": "Independent immutable acquisition, never another application's installation, settings, models or cache",
+        "executableUse": "Standalone smoke only; Mikai remains an in-process Qt/OpenGL libmpv player"
+      },
+      "integrationBoundary": "The original release includes the author animejanai filter and custom libass, but not this project's native status protocol or prepared-only patch. Native processing activation and complete corresponding-source/licence obligations remain separate gates. Standard playback defaults are unchanged."
+    },
     {
       "id": "mpv-upstream-stock-build",
       "role": "the Standard (non-native) mpv core the Qt application already provisions",
       "pinKind": "referencePin",
+      "fileIntegrity": "documentationOnly",
+      "fileIntegrityReason": "Pre-existing and out of scope for this work: the application resolves and downloads this core at run time, and this repository neither vendors nor modifies it. No digest is recorded because this repository never holds the artefact at a known version - the resolved version is whatever the release API returns on the day.",
+      "knownGap": "Because that download is not digest-verified, the provisioned core's exact mpv revision is recorded nowhere. observations.stockCore.versionStringFoundInBinary shows what this machine ran (v0.41.0-1072-g2a4eb8067), but that is a measurement of one install, not a pin.",
       "url": "https://github.com/shinchiro/mpv-winbuild-cmake",
       "acquisition": {
         "mechanism": "GitHub Releases API, latest release, asset matching mpv-dev-x86_64-*.7z",
@@ -87,11 +186,14 @@
         ]
       }
     },
-
     {
       "id": "animejanai-inference",
       "role": "the C ABI-8 inference shim: aji.dll (dispatcher), aji_trt.dll (TensorRT), aji_dml.dll (DirectML)",
       "pinKind": "releasePin",
+      "fileIntegrity": "digestInventory",
+      "fileIntegrityReason": "The only source in this manifest whose tracked files are individually digest-checkable today. The nine files below are hashed from the local read-only copy AND from the same path at the pinned commit on raw.githubusercontent; both agree. Pass --source-root animejanai-inference=<path> to mikai_manifest_check to recompute all nine.",
+      "inventoryCoverage": "The nine files below are every file that feeds the three shipped DLLs. The repository holds additional material this inventory deliberately excludes: docs/, .github/, sanity/, parity/, tools/, the *.md files and the conf fixture. Those are documentation, CI definitions and research scaffolding; none is compiled into aji.dll, aji_trt.dll or aji_dml.dll, so they cannot change a built artefact's identity.",
+      "coverageRule": "A file may be omitted from sourceDigestsMeasuredLocally only if it is not an input to any of the three shipped DLLs. That is a positive test, not a blanket exemption: adding a file to src/, include/ or any CMake-referenced path leaves the inventory incomplete until its digest is added here.",
       "url": "https://github.com/the-database/animejanai-inference",
       "ref": {
         "type": "gitCommit",
@@ -105,14 +207,24 @@
         "tag": "v0.9.0",
         "publishedAt": "2026-09-14T00:58:33Z",
         "assets": [
-          { "name": "aji-windows-x64.zip", "bytes": 657798, "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586" },
-          { "name": "aji-linux-x64.tar.zst", "bytes": 242674, "sha256": "02dc66fb49a49c757bc3edb6153321150627a26b059fe92da6e063b31ee6bdf9" }
+          {
+            "name": "aji-windows-x64.zip",
+            "bytes": 657798,
+            "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586"
+          },
+          {
+            "name": "aji-linux-x64.tar.zst",
+            "bytes": 242674,
+            "sha256": "02dc66fb49a49c757bc3edb6153321150627a26b059fe92da6e063b31ee6bdf9"
+          }
         ]
       },
       "windowsBuildRecord": {
         "file": "docs/BUILD-WINDOWS.md",
         "statement": "\"There is no Windows CI for this repo ... the aji-windows-x64.zip release asset ... is built and uploaded by hand from this workstation\"",
-        "ciPresent": [".github/workflows/build-linux.yml"],
+        "ciPresent": [
+          ".github/workflows/build-linux.yml"
+        ],
         "consequence": "The Windows binaries have no reproducible upstream build record. Any reproduction here is this repository's own build, not an upstream attestation."
       },
       "localReferenceCopy": {
@@ -122,15 +234,42 @@
         "matchesPinnedCommit": true
       },
       "sourceDigestsMeasuredLocally": [
-        { "file": "include/aji.h", "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe" },
-        { "file": "CMakeLists.txt", "sha256": "1a347512539e0068b65236b4930046deb6be3822611af4fcd4cc87300b6a441b" },
-        { "file": "src/aji_dispatch.cpp", "sha256": "a6bd6ca4f05116c093567c5efe5f15932dc349c3b82635aade29958008f6b1dd" },
-        { "file": "src/aji_conf.cpp", "sha256": "43628eaa8d22b9f47d12338dd0f63c2149ce501839ffbfa101ccc82f2670ce8c" },
-        { "file": "src/aji_conf.h", "sha256": "7780fd07e87dc1624d6efba494bfe86cfc5679acdede4e4b30aab7c98fe3063b" },
-        { "file": "src/aji_trt.cpp", "sha256": "72c0d53110379af2e6ec0f36f8390cb71ecd0febb7249e489ac3defb2e5c8bde" },
-        { "file": "src/aji_dml.cpp", "sha256": "a6f9d15da2c580bc9f93b7b1501a4822841b4fd900cb543ddf208ab4c2c000fb" },
-        { "file": "src/kernels.cu", "sha256": "ab62264a87ca725cf52c3d2197f31646721cdb64cfab5a9f902dba1b3579e1a2" },
-        { "file": "src/kernels.h", "sha256": "32f6270f78c9a32c576ac524b3e71f39af56965db1b757ac2aa731d23c0eeacc" }
+        {
+          "file": "include/aji.h",
+          "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe"
+        },
+        {
+          "file": "CMakeLists.txt",
+          "sha256": "1a347512539e0068b65236b4930046deb6be3822611af4fcd4cc87300b6a441b"
+        },
+        {
+          "file": "src/aji_dispatch.cpp",
+          "sha256": "a6bd6ca4f05116c093567c5efe5f15932dc349c3b82635aade29958008f6b1dd"
+        },
+        {
+          "file": "src/aji_conf.cpp",
+          "sha256": "43628eaa8d22b9f47d12338dd0f63c2149ce501839ffbfa101ccc82f2670ce8c"
+        },
+        {
+          "file": "src/aji_conf.h",
+          "sha256": "7780fd07e87dc1624d6efba494bfe86cfc5679acdede4e4b30aab7c98fe3063b"
+        },
+        {
+          "file": "src/aji_trt.cpp",
+          "sha256": "72c0d53110379af2e6ec0f36f8390cb71ecd0febb7249e489ac3defb2e5c8bde"
+        },
+        {
+          "file": "src/aji_dml.cpp",
+          "sha256": "a6f9d15da2c580bc9f93b7b1501a4822841b4fd900cb543ddf208ab4c2c000fb"
+        },
+        {
+          "file": "src/kernels.cu",
+          "sha256": "ab62264a87ca725cf52c3d2197f31646721cdb64cfab5a9f902dba1b3579e1a2"
+        },
+        {
+          "file": "src/kernels.h",
+          "sha256": "32f6270f78c9a32c576ac524b3e71f39af56965db1b757ac2aa731d23c0eeacc"
+        }
       ],
       "pinnedFileDigestNote": "Each digest was computed twice - once on the local copy, once on the upstream file at the pinned commit - and matched. This is what makes the commit a verified pin rather than a claim.",
       "licence": {
@@ -144,11 +283,13 @@
         ]
       }
     },
-
     {
       "id": "tensorrt-11.3-sdk",
       "role": "TensorRT headers, import libraries, runtime DLLs, per-SM builder resources and trtexec for the aji_trt build",
       "pinKind": "referencePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Pinned at the whole-archive level rather than per file. The SDK is a 1.98 GB zip of which only include/, *.lib and a handful of *.dll are consumed, and it is not redistributed in this repository. archiveSha256 below is the acquisition baseline for the single artefact that was actually downloaded; NVIDIA publishes no per-file digest for these Windows binaries.",
+      "notPinned": "The runtime DLLs that WILL ship (nvinfer_11.dll, nvonnxparser_11.dll, the per-SM builder resources) have no digest recorded here because none was computed against an official NVIDIA value. Per components.json#runtime.tensorrt.digestRequirement, each must be hashed at bundle-assembly time and recorded in the M05 bundle manifest. Until that happens, no TensorRT runtime file in a shipped bundle has a verified digest, and that is recorded rather than papered over.",
       "version": "11.3.0.99",
       "acquisitionVerified": {
         "date": "2026-10-01",
@@ -205,11 +346,14 @@
         ]
       }
     },
-
     {
       "id": "cuda-toolkit",
       "role": "nvcc, CUDA headers/libraries and the redistributable CUDA runtime DLLs the bundle needs at run time",
       "pinKind": "referencePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Pinned by CUDA release version, not by digest. NVIDIA publishes no per-file digest for the CUDA redistributable Windows binaries, and the toolchain is build-time only. The one runtime artefact that ships, cudart64_*.dll, must be hashed at bundle-assembly time like the TensorRT runtime.",
+      "deliberateOmission": "No cuDNN and no cuBLAS. The RIFE and spatial engine build passes --tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT, and the pinned kernels use only cudaMalloc/cudaMemcpy plus the driver API. Shipping either would add hundreds of megabytes for no reachable code path. This omission is recorded so a later reader does not read the absence as an oversight.",
+      "deliberateOmissionCaveat": "Suppressing those tactic sources changes which TensorRT tactics are available, which changes the numbers in a generated engine and therefore the engine's digest. Engine digests are consequently NOT portable across a change to this list; an engine built with cudnn tactics enabled is not interchangeable with one built without them. See components.json#runtime.cuda-cudart.",
       "requirement": "CUDA toolkit whose nvcc supports the target arch list; aji_trt's kernels.cu is compiled by nvcc",
       "acquisition": {
         "windowsNetworkInstaller": "cuda_13.3.0_windows_network.exe (the version the upstream Windows release build used; 13.2 and 13.3 are both in circulation)",
@@ -230,7 +374,6 @@
         ]
       }
     },
-
     {
       "id": "onnxruntime-directml",
       "role": "onnxruntime.dll + onnxruntime_providers_shared.dll, loaded at run time by aji_dml.dll (never import-linked)",
@@ -238,6 +381,8 @@
       "distribution": "nuget",
       "package": "Microsoft.ML.OnnxRuntime.DirectML",
       "version": "1.24.4",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "NuGet publishes a SHA-512 content hash for every package version, and the nuspec records the source commit. Identity is fixed at version 1.24.4 and upstream commit 2d924974ef147392ced8409d36bd6d2e7fcc8a74; no per-file digest is recorded because the package was consumed as an extracted tree, not archived. sdk-acquisition.md records the acquisition and the fact that both packages ship .lib rather than the .dll.lib the requiredLayout field names.",
       "url": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4",
       "flatContainer": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.nuspec",
       "upstreamCommit": {
@@ -262,7 +407,6 @@
         ]
       }
     },
-
     {
       "id": "directml",
       "role": "DirectML.dll, loaded at run time by aji_dml.dll",
@@ -270,6 +414,8 @@
       "distribution": "nuget",
       "package": "Microsoft.AI.DirectML",
       "version": "1.15.4",
+      "fileIntegrity": "digestInventory",
+      "fileIntegrityReason": "The package was downloaded as a single nupkg and hashed (nupkgSha256 below), then five files were extracted and each hashed individually in licence.filesInPackage and binaryIdentity. Those five per-file digests are the strongest artefact identity in this manifest: they cover the shipping DLL, both headers and both licence texts, so a substituted binary or a substituted licence cannot pass unnoticed.",
       "url": "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4",
       "description": "DirectML Redistributable Package",
       "requiredLayout": {
@@ -282,8 +428,18 @@
         "status": "RESOLVED - the package carries two licence files, and the earlier apparent conflict was a naming artefact, not a licence conflict",
         "obtainedBy": "downloaded https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4 (202292617 bytes, sha256 4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9) and extracted the licence files",
         "filesInPackage": [
-          { "name": "LICENSE.txt", "bytes": 10439, "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d", "content": "MICROSOFT SOFTWARE LICENSE TERMS - MICROSOFT DIRECTX MACHINE LEARNING (DIRECTML)" },
-          { "name": "LICENSE-CODE.txt", "bytes": 1093, "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c", "content": "MIT License, Copyright (c) Microsoft Corporation" }
+          {
+            "name": "LICENSE.txt",
+            "bytes": 10439,
+            "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d",
+            "content": "MICROSOFT SOFTWARE LICENSE TERMS - MICROSOFT DIRECTX MACHINE LEARNING (DIRECTML)"
+          },
+          {
+            "name": "LICENSE-CODE.txt",
+            "bytes": 1093,
+            "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c",
+            "content": "MIT License, Copyright (c) Microsoft Corporation"
+          }
         ],
         "resolution": "LICENSE.txt governs the binary DirectML.dll and is a MICROSOFT SOFTWARE LICENSE TERMS agreement, not an open source licence. It grants at section 1(a): \"You may copy and distribute the software (i.e. make available for third parties) in applications and services you develop in the build with Machine Learning tools and frameworks, and/or games that run on Windows and Xbox.\" That is an express redistribution grant, conditioned on Windows/Xbox use and on the software being embedded in an application rather than distributed standalone (section 3(e)). LICENSE-CODE.txt separately covers the code under MIT. The nuspec's <license type=\"file\">LICENSE.txt</license> points at the binary terms, which is the correct one for a DLL. The reference package's notice calling the file DirectML_LICENSE.txt is a naming inconsistency on that side, not a different licence.",
         "obligations": [
@@ -306,22 +462,51 @@
         "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
       }
     },
-
     {
       "id": "animejanai-onnx-models",
       "role": "the five spatial upscaler ONNX graphs the reference package ships",
       "pinKind": "releasePin",
+      "fileIntegrity": "digestInventory",
+      "fileIntegrityReason": "All five graphs are individually digest-pinned below and mikai_manifest_check recomputes each one against --source-root animejanai-onnx-models=<dir>. The digests are measured on the read-only reference package and were independently reproduced from a fresh upstream download (spatial-acquisition.md §2), so this is a cross-checked pin rather than a single local measurement.",
+      "verifiedRootExample": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/onnx - all five digests and byte counts reproduced here on 2026-10-03.",
+      "rootPathCaveat": "The upstream.onNxPathInRepo path is the location INSIDE the repository; the extracted reference package places these at <packageRoot>/animejanai/onnx, without the BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai prefix. Point --source-root at the directory that directly contains the five files; mikai_manifest_check resolves each entry relative to the supplied root and will report a missing file rather than searching.",
+      "inventoryCoverage": "5 of 5. These are the complete set the bundle's spatial chain needs; the upstream repository ships further variants that this project does not use.",
       "upstream": {
         "url": "https://github.com/the-database/mpv-AnimeJaNai",
         "onNxPathInRepo": "BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx/",
         "packageVersion": "3.6.3"
       },
       "models": [
-        { "file": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c", "slotDefault": "Built-in slot 1002/1003 Balanced" },
-        { "file": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716", "slotDefault": "Built-in slot 1003 Performance" },
-        { "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f", "slotDefault": "HD Balanced selected by quality/balanced/performance_preset=sharp" },
-        { "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4", "slotDefault": "HD Performance, sharp preset" },
-        { "file": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx", "bytes": 1212903, "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5", "slotDefault": "SD chain, stacked under HD below 1280x720" }
+        {
+          "file": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+          "bytes": 1971970,
+          "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c",
+          "slotDefault": "Built-in slot 1002/1003 Balanced"
+        },
+        {
+          "file": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+          "bytes": 740318,
+          "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716",
+          "slotDefault": "Built-in slot 1003 Performance"
+        },
+        {
+          "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+          "bytes": 1971970,
+          "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f",
+          "slotDefault": "HD Balanced selected by quality/balanced/performance_preset=sharp"
+        },
+        {
+          "file": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+          "bytes": 740318,
+          "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4",
+          "slotDefault": "HD Performance, sharp preset"
+        },
+        {
+          "file": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx",
+          "bytes": 1212903,
+          "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5",
+          "slotDefault": "SD chain, stacked under HD below 1280x720"
+        }
       ],
       "licence": {
         "spdx": null,
@@ -339,11 +524,18 @@
       },
       "compatibilityFinding": "CC BY-NC-SA 4.0 is a non-commercial, share-alike licence. The rights owner of this project must decide whether the product is non-commercial within the meaning of that licence before these weights are redistributed. Separately, the TensorRT SLA 1.2.5 and CUDA SLA 1.2.5 each contain a clause forbidding use of the SDK in a manner that would cause it to become subject to an open source licence; whether a given distribution arrangement triggers that clause is a question for the rights owner, not a determination made here. This is a documented decision to be taken, not a technical blocker."
     },
-
     {
       "id": "rife-v4.14-assets",
       "role": "RIFE interpolation weights for M12: v4.14 full/lite, each with and without ensemble",
       "pinKind": "referencePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "The four graphs are pinned by their acquired archive SHA-256 (3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9), which was published in the GitHub release note and reproduced exactly on extraction. Individual per-graph digests are not recorded here; they are computed and compared at acquisition time and recorded in native/rife-acquisition.md.",
+      "archivePin": {
+        "asset": "rife-fp16-1.7z",
+        "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9",
+        "bytes": 322142263,
+        "publishedDigestReproducedExactly": true
+      },
       "requiredFileNames": {
         "derivation": "rife_model_name() in src/aji_trt.cpp:934-946 and src/aji_dml.cpp:1311-1323: code '414' -> \"rife_v4.14\"; a four-digit code ending in '1' -> \"rife_v4.14_lite\"; ensemble appends \"_ensemble\". The consumer appends \".onnx\". The two suffix branches are independent axes (_lite keys on the code, _ensemble on a separate boolean) and compose, so all four combinations below are reached and required.",
         "resolved": [
@@ -361,8 +553,13 @@
           "pinnedCommit": "de9a989bb7b8a71d94f058297e603633aaa43ad6",
           "note": "\"The content of these links is under the same MIT license as this project. 'lite' means using similar training framework, but lower computational cost model.\"  The author README and LICENSE are read at the pinned commit above.",
           "assets": {
-            "v4.14": { "googleDrive": "https://drive.google.com/file/d/1BjuEY7CHZv1wzmwXSQP9ZTj0mLWu_4xy/view?usp=share_link", "baidu": "https://pan.baidu.com/s/1d-W64lRsJTqNsgWoXYiaWQ?pwd=xawa" },
-            "v4.14.lite": { "googleDrive": "https://drive.google.com/file/d/1eULia_onOtRXHMAW9VeDL8N2_7z8J1ba/view?usp=share_link" }
+            "v4.14": {
+              "googleDrive": "https://drive.google.com/file/d/1BjuEY7CHZv1wzmwXSQP9ZTj0mLWu_4xy/view?usp=share_link",
+              "baidu": "https://pan.baidu.com/s/1d-W64lRsJTqNsgWoXYiaWQ?pwd=xawa"
+            },
+            "v4.14.lite": {
+              "googleDrive": "https://drive.google.com/file/d/1eULia_onOtRXHMAW9VeDL8N2_7z8J1ba/view?usp=share_link"
+            }
           },
           "licence": {
             "spdx": "MIT",
@@ -376,7 +573,14 @@
         {
           "layer": "research origin",
           "project": "hzwer/ECCV2022-RIFE",
-          "licence": { "spdx": "MIT", "copyright": "Copyright (c) Megvii Inc.", "evidence": ["https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/LICENSE", "https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/README.md"] },
+          "licence": {
+            "spdx": "MIT",
+            "copyright": "Copyright (c) Megvii Inc.",
+            "evidence": [
+              "https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/LICENSE",
+              "https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/README.md"
+            ]
+          },
           "note": "The paper project. Provides HD model archives on Google Drive/Baidu; no ensemble artefact and no per-version permissibility statement."
         },
         {
@@ -386,14 +590,27 @@
           "acquisition": {
             "releaseTag": "external-models",
             "assets": [
-              { "name": "rife_v2_v4.7z", "bytes": 198341384, "publishedDigest": null, "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_v2_v4.7z" },
-              { "name": "rife_ensemble_v1.7z", "bytes": 115874982, "publishedDigest": null, "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_ensemble_v1.7z" }
+              {
+                "name": "rife_v2_v4.7z",
+                "bytes": 198341384,
+                "publishedDigest": null,
+                "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_v2_v4.7z"
+              },
+              {
+                "name": "rife_ensemble_v1.7z",
+                "bytes": 115874982,
+                "publishedDigest": null,
+                "url": "https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_ensemble_v1.7z"
+              }
             ],
             "digestGap": "GitHub reports digest: null for both assets, so no sha256 is pinned upstream. Any copy taken must be hashed locally and the hash recorded here before use."
           },
           "licence": {
             "spdx": "GPL-3.0-only",
-            "evidence": ["https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/LICENSE", "https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/README.md"],
+            "evidence": [
+              "https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/LICENSE",
+              "https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/README.md"
+            ],
             "scopeNote": "This licence covers vs-mlrt's own code. No vs-mlrt code is shipped here; only the ONNX *output* of its export is consumed. Whether the GPL-3.0 code licence extends to the exported model files is a legal question that is not settled by the licence text alone and is not asserted either way here."
           }
         },
@@ -434,126 +651,686 @@
         "notClaimed": "Acquisition and weight-data provenance are not a readiness claim: nothing was executed, built into an engine, bundled or exposed as Ready."
       },
       "acquisitionRoutes": [
-        { "route": "A", "action": "take the already-converted fp16 graphs from the-database/animejanai-inference release asset above (digest pinned)", "consequence": "TAKEN: the archive's published SHA-256 reproduced exactly, all four graphs were extracted and structurally verified, and every stored weight tensor matches the author's MIT v4.14 / v4.14.lite checkpoints after fp16 rounding. Residual open items are exporter identity, the non-weight graph material and rights to redistribute the file as an artefact - not a prohibition and not a weight-data gap." },
-        { "route": "B", "action": "obtain the v4.14 / v4.14.lite weights from hzwer/Practical-RIFE, whose author affirmatively states the weights are MIT, and convert to the fp16-typed ONNX shape the shim requires (11-channel fp16 input, fp32 GridSample island)", "consequence": "not taken; remains the route that makes the graph construction this project's own act, if route A's residual rights question must be avoided" },
-        { "route": "C", "action": "obtain the vsmlrt ONNX exports (release tag external-models) and convert as in route B", "consequence": "not taken; would carry the additional question of what licence governs the vsmlrt-exported graphs themselves, and no upstream digest is published for those archives" }
+        {
+          "route": "A",
+          "action": "take the already-converted fp16 graphs from the-database/animejanai-inference release asset above (digest pinned)",
+          "consequence": "TAKEN: the archive's published SHA-256 reproduced exactly, all four graphs were extracted and structurally verified, and every stored weight tensor matches the author's MIT v4.14 / v4.14.lite checkpoints after fp16 rounding. Residual open items are exporter identity, the non-weight graph material and rights to redistribute the file as an artefact - not a prohibition and not a weight-data gap."
+        },
+        {
+          "route": "B",
+          "action": "obtain the v4.14 / v4.14.lite weights from hzwer/Practical-RIFE, whose author affirmatively states the weights are MIT, and convert to the fp16-typed ONNX shape the shim requires (11-channel fp16 input, fp32 GridSample island)",
+          "consequence": "not taken; remains the route that makes the graph construction this project's own act, if route A's residual rights question must be avoided"
+        },
+        {
+          "route": "C",
+          "action": "obtain the vsmlrt ONNX exports (release tag external-models) and convert as in route B",
+          "consequence": "not taken; would carry the additional question of what licence governs the vsmlrt-exported graphs themselves, and no upstream digest is published for those archives"
+        }
       ],
       "ensembleNote": "The ensemble axis is independent of the lite axis - _lite keys on the model code, _ensemble on a separate boolean - so the four names above are all original supported combinations, not a substitute for a missing asset. No ensemble weight artefact is published in Practical-RIFE's links; each ensemble graph's initializer set is byte-identical to its base graph's and its stored tensors match the same MIT checkpoint. That does not by itself settle the graph-operator derivation.",
       "unresolved": "The weight-data hop is closed (provenanceLinkage.weightDataClosed). The open points are exporter identity and the non-weight graph material (provenanceLinkage.stillOpen), and a rights-owner decision on redistributing the graph files as artefacts - distinct from both private development use and the now-established weight-data lineage. Which route to use is recorded here, not decided here."
     },
-
     {
       "id": "msvc-toolchain",
       "role": "MSVC host compiler for the optional native build (M04)",
       "pinKind": "referencePin",
+      "fileIntegrity": "documentationOnly",
+      "fileIntegrityReason": "A non-redistributable, build-time-only toolchain. It never enters the bundle and nothing about the shipped artefact's identity depends on it, so it is pinned by toolset version rather than by digest. native/sdk-acquisition.md records the exact environment acquired: VS 2022 BuildTools toolset 14.44.35207, Windows SDK 10.0.26100.8249 obtained installer-free.",
       "required": "the toolset the project builds against, with a Windows SDK able to supply kernel32.lib and friends",
-      "licence": "Microsoft Visual Studio licence; not redistributable, build-time only"
+      "licence": "Microsoft Visual Studio licence; not redistributable, build-time only",
+      "mustNotShip": "No MSVC runtime, CRT redistributable or Windows SDK component may enter a shipped bundle through this source. If a build turns out to need a CRT redistributable, that is a new component needing its own licence row, not an extension of this one."
     },
-
+    {
+      "id": "msys2-mingw64-closure",
+      "role": "MSYS2 mingw64 binary prefix the shipped mpv-deps cohort is drawn from: 36 DLLs verbatim, 13 rebuilt from the same packages' static archives with the compiler runtime embedded",
+      "pinKind": "releasePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Pinned by the package-database revision and per-package archive digests, not per-file: the prefix is a 132-package development closure, and 13 shipped DLLs are rebuilt from its static archives so their bytes match no upstream binary. Shipped-byte digests live only in the bundle manifest as descriptive measurements, never as source pins.",
+      "url": "https://repo.msys2.org/mingw/mingw64/",
+      "database": {
+        "url": "https://repo.msys2.org/mingw/mingw64/mingw64.db",
+        "sha256": "8c6b10db6564e84c2e104e062ec5dab5a7938c9b5d6cad1d4bd7c47867ea319c",
+        "fileListUrl": "https://repo.msys2.org/mingw/mingw64/mingw64.files.tar.zst",
+        "fileListSha256": "0f9db1f2834d8cdde9f7d80e51da5e3309d16836f25655df4702de6dd4b25761"
+      },
+      "ownedPrefix": "F:/ZKS/mikai-native-sdks/mpv-mingw64/mingw64",
+      "closureRoots": [
+        "mingw-w64-x86_64-ffmpeg",
+        "mingw-w64-x86_64-libplacebo",
+        "mingw-w64-x86_64-libass",
+        "mingw-w64-x86_64-ffnvcodec-headers",
+        "mingw-w64-x86_64-pkgconf",
+        "mingw-w64-x86_64-vulkan-headers",
+        "mingw-w64-x86_64-luajit"
+      ],
+      "acquiredPackages": {
+        "total": 132,
+        "verified": 132,
+        "failed": 0
+      },
+      "verbatimVsRebuilt": "36 of the shipped mpv-deps DLLs are byte-identical to the prefix and attributed by digest; 13 (libcairo-2, libcairo-gobject-2, libfontconfig-1, libfreetype-6, libgdk_pixbuf-2.0-0, libgraphite2, libharfbuzz-0, libhwy, libpango-1.0-0, libpangocairo-1.0-0, libpangoft2-1.0-0, libpangowin32-1.0-0, librsvg-2-2) are rebuilt from the same packages' static archives so the native closure imports no Qt-cohort GNU runtime DLL. ggml-0, ggml-base-0 and libwhisper-1 are NOT from this prefix; see ggml-whisper-build.",
+      "licence": {
+        "spdx": null,
+        "note": "Mixed per-package SPDX recorded in the acquisition record (permissive, LGPL and GPL families, including GPL-3.0-or-later ffmpeg). No single licence covers the cohort; each DLL keeps its owning package's terms."
+      },
+      "rebuildRecipe": {
+        "script": "native-static-cohort/rebuild-clean-dlls.sh",
+        "purpose": "re-link the DLLs that import the GNU runtime into DLLs with the compiler and winpthread runtime embedded, so the native closure needs no libstdc++-6 / libgcc_s_seh-1 / libwinpthread-1 and cannot collide with the Qt cohort",
+        "compiler": "C:/temp/w64dev/w64devkit/bin/gcc.exe -shared -static-libgcc -static-libstdc++",
+        "linkFlags": [
+          "-Wl,--allow-multiple-definition"
+        ],
+        "exportReproduction": "the exact export list of the shipped prefix DLL is read with objdump -p and written to a .def, so the linker pulls only the objects the original exported",
+        "additionalRuntimeLinked": [
+          "native-static-cohort/sdk/lib/libwinpthread.a",
+          "libpthread.a",
+          "libcrtextra.a"
+        ],
+        "verifiedOutcome": "measured 2026-10-04: all 13 rebuilt DLLs export exactly the same name sets as the prefix originals (cairo 415, cairo-gobject 35, fontconfig 246, freetype 220, gdk_pixbuf 136, graphite2 70, harfbuzz 1415, hwy 35, pango 514, pangocairo 35, pangoft2 96, pangowin32 35, rsvg 55 - zero missing, zero extra), and none of the 13 imports any of the three GNU runtime DLLs while the prefix copies of cairo, graphite2, harfbuzz and hwy do.",
+        "honestLimit": "an identical export set plus a byte-verified DLL is not a behavioural proof. The rebuild uses --allow-multiple-definition and statically links a private winpthread, which is a documented risk of silent symbol interposition rather than of a build failure; the consequence is that these 13 DLLs must still be exercised at run time before any claim about identical rendering behaviour is made. No run-time equivalence test is recorded here."
+      }
+    },
+    {
+      "id": "ggml-whisper-build",
+      "role": "Self-built ggml CPU backends and whisper library: the 14 root ggml-cpu-*.dll plus mpv-deps ggml-0, ggml-base-0 and libwhisper-1",
+      "pinKind": "releasePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Pinned by the input archive digests and the recorded build configuration, not per-file: the outputs are this project's own build products whose shipped-byte digests live only in the bundle manifest as descriptive measurements.",
+      "inputArchives": [
+        {
+          "file": "ggml-v0.25.3.tar.gz",
+          "bytes": 4103121,
+          "sha256": "cd9b92d5652f5e4abb41603bf59e269f8fec1b2d05ce22fded981064dd25fb89"
+        },
+        {
+          "file": "whisper-d09f61a70.tar.gz",
+          "bytes": 9519792,
+          "sha256": "750655899a32d5bb5b04bbde9afa430f851d46718f53812a4ec086537fee3ef8"
+        }
+      ],
+      "shippedOutputs": "ggml-0.dll, ggml-base-0.dll, ggml-cpu-{alderlake,cannonlake,cascadelake,cooperlake,haswell,icelake,ivybridge,piledriver,sandybridge,sapphirerapids,skylakex,sse42,x64,zen4}.dll, libwhisper-1.dll",
+      "buildConfiguration": "GGML_BACKEND_DL=ON with GGML_CPU_ALL_VARIANTS=ON, shared libraries; outputs under native-static-cohort/sdk/bin",
+      "buildConfigurationEvidence": "CMakeCache.txt of the ggml shared build (native-static-cohort/build/ggml-shared): CMAKE_BUILD_TYPE=Release, CMAKE_C_COMPILER=C:/temp/w64dev/w64devkit/bin/gcc.exe, GGML_BACKEND_DL=ON, GGML_CPU=ON, GGML_CPU_ALL_VARIANTS=ON, GGML_CPU_REPACK=ON, GGML_NATIVE=OFF, GGML_CUDA=OFF, GGML_VULKAN=OFF, GGML_METAL=OFF, GGML_OPENCL=OFF, GGML_HIP=OFF, GGML_SYCL=OFF, GGML_RPC=OFF, GGML_BLAS=OFF, GGML_AMX_*=OFF, GGML_OPENMP=ON. GGML_AVAILABLE_BACKENDS lists exactly the 14 shipped variant names, in the shipped order.",
+      "buildConfigurationConsequence": "GGML_NATIVE=OFF together with GGML_CPU_ALL_VARIANTS=ON is what produces one DLL per microarchitecture instead of one build-machine-specific DLL. GGML_CUDA=OFF and GGML_VULKAN=OFF mean this cohort has no GPU backend of its own: it is CPU-only, and any CUDA path in the product goes through TensorRT rather than through these binaries.",
+      "prefixCorroboration": "The MSYS2 prefix ships same-version ggml 0.25.3-1 binaries with different bytes; the shipped bytes come from this build, not the prefix.",
+      "licence": {
+        "spdx": "MIT",
+        "copyright": "Copyright (c) 2023-2026 The ggml authors",
+        "licenceDigest": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+        "obligations": "retain the copyright notice and permission text",
+        "verifiedOnDisk": "The MIT LICENSE file of the pinned ggml 0.25.3 tree and of the pinned whisper.cpp tree d09f61a708f3487afa956ff578e60eae5e7a233c both hash to 94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d, which is the recorded licenceDigest."
+      },
+      "whisperLicenceScope": "whisper.cpp is MIT and its LICENSE carries the same digest, so libwhisper-1.dll is covered by the same retain-the-notice obligation. The MSYS2 attribution record labels the package mingw-w64-x86_64-whisper.cpp with spdx:MIT as well; that is corroboration, not the basis."
+    },
+    {
+      "id": "msvc-crt-redist",
+      "role": "Microsoft Visual C++ runtime payload the shims and helpers import by name: msvcp140, msvcp140_1, vcruntime140, vcruntime140_1",
+      "pinKind": "referencePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Pinned by the installer download digest and the payload directory version, not per-file: the payload is a vendor redistributable consumed at bundle-assembly time, and no upstream per-file digest was located.",
+      "installer": {
+        "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+        "bytes": 25635768,
+        "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+        "installerExecuted": false,
+        "digestEvidence": "Self-measured acquisition baseline, not a separately published vendor digest"
+      },
+      "payloadRoot": "VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT",
+      "licence": {
+        "name": "Microsoft Visual C++ Redistributable terms",
+        "missingEvidence": "The EULA text shipped with the redistributable (EULA.TXT) is not present in the owned tree; only a documentation page was retained. Obtain the licence text before distributing.",
+        "status": "terms located by acquisition route; licence text NOT recovered and NOT shipped here",
+        "extractionAttempt": {
+          "method": "the vc_redist.x64.exe payload was located as two cabinet containers (container-0.cab 195988 bytes, container-1.cab 24939223 bytes) next to the pinned installer under F:/ZKS/mikai-native-sdks/_compile-smoke/m05-msvc-eula/",
+          "result": "the EULA text was NOT recovered. Neither cabinet contains the string 'EULA', 'Microsoft Visual C++' or 'MSVCP140', so the licence text is compressed or stored inside the executable payload rather than as plain cabinet members.",
+          "installerNotRun": "the installer was deliberately not executed; the extraction switch produced no output in this environment and no 7-Zip is available to unpack the cabinet.",
+          "conclusion": "the CRT licence TEXT remains unlocated. That is recorded as missing evidence, not as a grant."
+        },
+        "redistributionDecision": "external - shipped only alongside a bundle that Microsoft permits; this project's own integration grant does not clear it"
+      },
+      "payloadObservation": "measured 2026-10-04: the four shipped CRT DLLs (msvcp140, msvcp140_1, vcruntime140, vcruntime140_1) are byte-identical to the copies staged under native-bundle-candidate/crt/, and that staging came from the VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT payload of the pinned installer. This is an observation of identity across two local trees, not a reproduction from upstream.",
+      "importersInBundle": "aji.dll, aji_trt.dll, ort/onnxruntime.dll, ort/onnxruntime_providers_shared.dll and tools/mikai_native_prep.exe / mikai_native_verify.exe import msvcp140/vcruntime140 by name. They are required by the bundle, not optional."
+    },
+    {
+      "id": "native-tools-build",
+      "role": "This project's own out-of-band helper executables: mikai_native_prep, mikai_native_verify, native_inspect",
+      "pinKind": "referencePin",
+      "fileIntegrity": "commitIdentity",
+      "fileIntegrityReason": "Project-owned code built by this repository's own toolchains; identity is the code paths plus the build record below. Shipped-byte digests live only in the bundle manifest as descriptive measurements, never as source pins.",
+      "codePaths": [
+        "native/tools/mikai_native_prep.cpp",
+        "native/tools/mikai_native_verify.cpp",
+        "native/tools/native_inspect.cpp"
+      ],
+      "builtBy": "native/CMakeLists.txt under MSVC+nvcc (strict patch policy) for prep/verify; root CMake (MinGW/Qt) for native_inspect",
+      "licence": {
+        "name": "Project-owned under The Unlicense (owner grant 2026-10-04, see projectIntegrationGrant in components.json)",
+        "note": "The helpers link TensorRT/CUDA at build time and carry no third-party binary."
+      }
+    },
     {
       "id": "ffmpeg-dev",
       "role": "optional: only for aji_encode.exe, which is a research/offline CLI and is not adopted",
       "pinKind": "referencePin",
+      "fileIntegrity": "documentationOnly",
+      "fileIntegrityReason": "Not adopted, not built and not shipped. Recorded only so that nobody re-derives it when aji_encode fails to configure: satisfying it changes nothing about any shipped artefact.",
       "note": "Any shared ffmpeg dev tree with include/ and lib/ satisfies it; upstream marked its own provenance as unverified. aji_encode is out of scope, so this is recorded only so nobody re-derives it."
     }
   ],
-
   "abi": {
     "version": 8,
     "macro": "AJI_API_VERSION",
     "headerPair": [
-      { "path": "animejanai-inference/include/aji.h", "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe" },
-      { "path": "mpv-fork video/filter/aji.h at 63d127174d8f70336c82a22408929e2bc301edcb", "sha256": null, "note": "not computed; not present locally. Both headers were read and both declare 8." }
+      {
+        "path": "animejanai-inference/include/aji.h",
+        "sha256": "1aad7c6a86ee5e0262de484273296d834d2f6dc9c58c3cf028899e8b0e882ffe",
+        "declaredVersion": 8,
+        "declaredFunctions": 17,
+        "role": "the authoritative ABI definition; the shim is built from it"
+      },
+      {
+        "path": "mpv-fork video/filter/aji.h at 63d127174d8f70336c82a22408929e2bc301edcb",
+        "sha256": "da754cb322a134bb1b4a1ba9ba245ae424ea942dc914c117e9b1f5e36f53e2e8",
+        "declaredVersion": 8,
+        "declaredFunctions": 16,
+        "role": "the consumer's mirror of the ABI; AJI_API_VERSION is at line 42"
+      }
     ],
+    "headerPairFinding": "Both headers declare AJI_API_VERSION 8, but they are NOT byte-identical and do NOT declare the same symbol set. The inference header declares 17 functions; the fork's mirror declares 16. The single difference is aji_rife_before_upscale, which the fork's header does not declare at all. The two files also differ in comment text (the fork's AJI_FMT_RGB10A2 comment omits the 'output is 4:2:0' clause, and it lacks the aji_infer output-format paragraph). Measured 2026-10-03: the two files differ at lines 53-56, 151 and 180-196. This is benign but must be recorded rather than assumed away - see exports[].declaredIn.",
     "invariant": "the two headers must agree; an ABI change requires updating both, rebuilding both, and bumping the engine and mpv versions together",
     "exports": [
-      { "symbol": "aji_create", "signature": "aji_ctx *aji_create(const aji_create_params *params)" },
-      { "symbol": "aji_set_slot", "signature": "int aji_set_slot(aji_ctx *c, int slot)" },
-      { "symbol": "aji_configure", "signature": "int aji_configure(aji_ctx *c, int w, int h, double fps, int *out_w, int *out_h)" },
-      { "symbol": "aji_infer", "signature": "int aji_infer(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)" },
-      { "symbol": "aji_flush", "signature": "uint64_t aji_flush(aji_ctx *c, void *cu_stream)" },
-      { "symbol": "aji_done", "signature": "int aji_done(aji_ctx *c, uint64_t ticket)" },
-      { "symbol": "aji_wait", "signature": "int aji_wait(aji_ctx *c, uint64_t ticket)" },
-      { "symbol": "aji_current_log", "signature": "const char *aji_current_log(aji_ctx *c)" },
-      { "symbol": "aji_scale_factor", "signature": "int aji_scale_factor(aji_ctx *c)" },
-      { "symbol": "aji_rife_factor", "signature": "int aji_rife_factor(aji_ctx *c, int *num, int *den)" },
-      { "symbol": "aji_rife_before_upscale", "signature": "int aji_rife_before_upscale(aji_ctx *c)" },
-      { "symbol": "aji_pre_resize", "signature": "int aji_pre_resize(aji_ctx *c, int *work_w, int *work_h)" },
-      { "symbol": "aji_resize", "signature": "int aji_resize(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)" },
-      { "symbol": "aji_poll", "signature": "int aji_poll(aji_ctx *c)" },
-      { "symbol": "aji_infer_rife", "signature": "int aji_infer_rife(aji_ctx *c, const aji_frame *a, const aji_frame *b, double t, const aji_frame *out, void *cu_stream)" },
-      { "symbol": "aji_last_error", "signature": "const char *aji_last_error(aji_ctx *c)" },
-      { "symbol": "aji_destroy", "signature": "void aji_destroy(aji_ctx **c)" }
+      {
+        "symbol": "aji_create",
+        "signature": "aji_ctx *aji_create(const aji_create_params *params)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1904
+      },
+      {
+        "symbol": "aji_set_slot",
+        "signature": "int aji_set_slot(aji_ctx *c, int slot)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1905
+      },
+      {
+        "symbol": "aji_configure",
+        "signature": "int aji_configure(aji_ctx *c, int w, int h, double fps, int *out_w, int *out_h)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1906
+      },
+      {
+        "symbol": "aji_infer",
+        "signature": "int aji_infer(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1907
+      },
+      {
+        "symbol": "aji_flush",
+        "signature": "uint64_t aji_flush(aji_ctx *c, void *cu_stream)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1908
+      },
+      {
+        "symbol": "aji_done",
+        "signature": "int aji_done(aji_ctx *c, uint64_t ticket)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1909
+      },
+      {
+        "symbol": "aji_wait",
+        "signature": "int aji_wait(aji_ctx *c, uint64_t ticket)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1910
+      },
+      {
+        "symbol": "aji_rife_factor",
+        "signature": "int aji_rife_factor(aji_ctx *c, int *num, int *den)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1911
+      },
+      {
+        "symbol": "aji_infer_rife",
+        "signature": "int aji_infer_rife(aji_ctx *c, const aji_frame *a, const aji_frame *b, double t, const aji_frame *out, void *cu_stream)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1921
+      },
+      {
+        "symbol": "aji_poll",
+        "signature": "int aji_poll(aji_ctx *c)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1922
+      },
+      {
+        "symbol": "aji_current_log",
+        "signature": "const char *aji_current_log(aji_ctx *c)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1923
+      },
+      {
+        "symbol": "aji_last_error",
+        "signature": "const char *aji_last_error(aji_ctx *c)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1924
+      },
+      {
+        "symbol": "aji_destroy",
+        "signature": "void aji_destroy(aji_ctx **c)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1925
+      },
+      {
+        "symbol": "aji_scale_factor",
+        "signature": "int aji_scale_factor(aji_ctx *c)",
+        "declaredIn": "both",
+        "required": true,
+        "filterLine": 1912,
+        "note": "resolved and non-null-checked by the same gate, but not listed in the filter's explicit !p->api.* null condition; it is a direct-mode-only query"
+      },
+      {
+        "symbol": "aji_rife_before_upscale",
+        "signature": "int aji_rife_before_upscale(aji_ctx *c)",
+        "declaredIn": "inferenceOnly",
+        "required": false,
+        "filterLine": 1915,
+        "resolution": "resolved by name at vf_animejanai.c:1915-1916 and accepted as NULL. The fork's own aji.h mirror does NOT declare this function, which is why declaredIn is inferenceOnly."
+      },
+      {
+        "symbol": "aji_pre_resize",
+        "signature": "int aji_pre_resize(aji_ctx *c, int *work_w, int *work_h)",
+        "declaredIn": "both",
+        "required": false,
+        "filterLine": 1919,
+        "resolution": "resolved by name at vf_animejanai.c:1919 and accepted as NULL"
+      },
+      {
+        "symbol": "aji_resize",
+        "signature": "int aji_resize(aji_ctx *c, const aji_frame *in, const aji_frame *out, void *cu_stream)",
+        "declaredIn": "both",
+        "required": false,
+        "filterLine": 1920,
+        "resolution": "resolved by name at vf_animejanai.c:1920 and accepted as NULL"
+      }
     ],
     "exportCount": 17,
-    "optionalForOlderCallers": ["aji_rife_before_upscale", "aji_pre_resize", "aji_resize"],
-    "optionalNote": "The three ordering/resize calls were added without an API_VERSION bump; the filter treats them as nullable so a caller built against an older header simply never queries them.",
+    "exportCountBasis": "17 is the authoritative ABI surface: the inference header declares exactly these 17 functions, and they are exactly the 17 names the fork's filter asks the shim for by name at vf_animejanai.c:1904-1925. The filter performs 17 dlsym lookups; 14 are in the non-null load gate, 3 are optional and may be NULL.",
+    "loadGateCount": 14,
+    "optionalCount": 3,
+    "resolutionMechanism": "The filter never links the shim. It opens the DLL and resolves every symbol by name with dlsym (vf_animejanai.c:113 defines the lookup helper; 1904-1925 performs the lookups), then refuses to open at all if any of the 14 gated names is NULL, logging 'missing aji_* symbols (ABI version mismatch?)'. Optional names may be NULL and the filter degrades to a documented default: without aji_rife_before_upscale it runs upscale-then-RIFE; without aji_pre_resize and aji_resize it runs RIFE at source resolution.",
+    "optionalForOlderCallers": [
+      "aji_rife_before_upscale",
+      "aji_pre_resize",
+      "aji_resize"
+    ],
+    "optionalNote": "The three ordering/resize calls were added without an AJI_API_VERSION bump, which is exactly why the filter treats them as nullable: a caller built against an older header never queries them. Consequence for this manifest: the version macro alone does NOT describe the ABI surface, because the surface changed while the number stayed at 8. exports[] is the authoritative list; the macro is a compatibility label, not a contract.",
+    "mismatchRule": "Adding a symbol requires updating both headers, vf_animejanai.c and this list together, and does not require a version bump. REMOVING or changing the meaning of a symbol REQUIRES bumping AJI_API_VERSION, because a removed name cannot be distinguished from a load-time mismatch by the null gate alone - it would simply resolve to NULL and be treated as an optional degradation.",
+    "engineVersionCoupling": "The TensorRT engine cache is keyed on model identity, not on ABI version. A change to aji_frame's layout or to the meaning of a status code therefore invalidates cached engines as well as callers, and an engine built against the old meaning must be regenerated. Bumping AJI_API_VERSION without invalidating the cache produces a silent wrong-result failure rather than a load failure.",
     "enums": {
-      "aji_format": { "AJI_FMT_NV12": 1, "AJI_FMT_P010": 2, "AJI_FMT_YUV444P16": 3, "AJI_FMT_RGB10A2": 4 },
-      "aji_matrix": { "AJI_MATRIX_BT601": 1, "AJI_MATRIX_BT709": 2, "AJI_MATRIX_BT2020": 3 },
-      "aji_range": { "AJI_RANGE_LIMITED": 1, "AJI_RANGE_FULL": 2 },
-      "aji_siting": { "AJI_SITING_LEFT": 1, "AJI_SITING_CENTER": 2, "AJI_SITING_TOPLEFT": 3 },
-      "aji_status": { "AJI_OK": 0, "AJI_SCENE": 1, "AJI_ERR": -1, "AJI_ERR_SHAPE": -2, "AJI_ERR_FORMAT": -3, "AJI_ERR_CUDA": -4, "AJI_ERR_ENGINE": -5, "AJI_ERR_CONF": -6 }
+      "aji_format": {
+        "AJI_FMT_NV12": 1,
+        "AJI_FMT_P010": 2,
+        "AJI_FMT_YUV444P16": 3,
+        "AJI_FMT_RGB10A2": 4
+      },
+      "aji_matrix": {
+        "AJI_MATRIX_BT601": 1,
+        "AJI_MATRIX_BT709": 2,
+        "AJI_MATRIX_BT2020": 3
+      },
+      "aji_range": {
+        "AJI_RANGE_LIMITED": 1,
+        "AJI_RANGE_FULL": 2
+      },
+      "aji_siting": {
+        "AJI_SITING_LEFT": 1,
+        "AJI_SITING_CENTER": 2,
+        "AJI_SITING_TOPLEFT": 3
+      },
+      "aji_status": {
+        "AJI_OK": 0,
+        "AJI_SCENE": 1,
+        "AJI_ERR": -1,
+        "AJI_ERR_SHAPE": -2,
+        "AJI_ERR_FORMAT": -3,
+        "AJI_ERR_CUDA": -4,
+        "AJI_ERR_ENGINE": -5,
+        "AJI_ERR_CONF": -6
+      }
     }
   },
-
   "buildConfigurationPins": {
     "AJI_NVINFER": {
       "upstreamDefaultOnWindows": "nvinfer_10",
       "valueUsedHere": "nvinfer_11",
+      "cmakeArgument": "-DAJI_NVINFER=nvinfer_11",
+      "resolvesTo": "the import library nvinfer_11.lib in AJI_TRT_ROOT, and at run time the nvinfer_11.dll that must sit beside the shipped aji_trt.dll",
+      "wrongValueFailureMode": "leaving the default in place makes aji_trt fail to LINK with an unresolved nvinfer_10 symbol. That is a link-time failure rather than a silent runtime one, so it cannot yield a subtly wrong binary - but it also cannot be detected by inspecting a built DLL, so the pin must be carried on the build command line and never left to the default.",
       "rule": "TensorRT 11 is the target and TensorRT 10 is not a dependency. The default must be overridden explicitly; relying on it produces a link error for a library that is not present.",
       "evidence": "animejanai-inference CMakeLists.txt:27-29 and CLAUDE.md \"AJI_NVINFER defaults to nvinfer_10 but the project now builds against TensorRT 11\""
     },
     "CMAKE_CUDA_ARCHITECTURES": {
       "value": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual",
+      "asList": [
+        "75-real",
+        "80-real",
+        "86-real",
+        "89-real",
+        "90-real",
+        "100-real",
+        "120-real",
+        "120-virtual"
+      ],
+      "cmakeArgument": "-DCMAKE_CUDA_ARCHITECTURES=\"75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual\"",
+      "realArchitectures": [
+        "sm75",
+        "sm80",
+        "sm86",
+        "sm89",
+        "sm90",
+        "sm100",
+        "sm120"
+      ],
+      "virtualArchitectures": [
+        "compute_120"
+      ],
+      "coverage": "Turing (75), Ampere (80 and 86), Ada (89), Hopper (90), Blackwell consumer (100) and Blackwell datacenter (120), plus PTX for compute_120 so a future architecture JIT-compiles instead of dying with 'no kernel image is available for execution on the device'.",
+      "builderResourceCoupling": "The seven real architectures correspond one-to-one with the TensorRT per-SM builder resource DLLs nvinfer_builder_resource_sm{75,80,86,89,90,100,120}_11.dll plus the ptx resource. This list and components.json#runtime.tensorrt-resources MUST stay in step: a kernel arch with no matching builder resource, or a resource with no matching kernel arch, is a closure defect that surfaces only at engine-build time on the affected GPU.",
+      "binariesAffected": "aji_trt.dll only. aji.dll contains no device code and aji_dml.dll is a D3D11/D3D12 backend that never invokes nvcc, so neither is affected by this list.",
+      "evidence": "animejanai-inference CMakeLists.txt:9-17",
       "rationale": "kernel images for every supported generation Turing..Blackwell plus PTX so future architectures JIT-compile. Building only for the build machine's GPU produces a binary that dies on every other architecture.",
-      "trap": "The CMakeLists fallback is guarded by if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES) and CMake pre-defines the variable during project(), so the fallback never fires. Omitting the flag yields a single default arch. The list must always be passed explicitly.",
-      "evidence": "animejanai-inference CMakeLists.txt:9-17"
+      "trap": "The CMakeLists fallback is guarded by if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES) and CMake pre-defines the variable during project(), so the fallback never fires. Omitting the flag yields a single default arch. The list must always be passed explicitly."
     },
     "cudaMinorDerivation": {
       "rule": "never infer the CUDA minor from the TensorRT version",
-      "targetPairing": { "tensorrt": "11.3.0.99", "cudaFlavourOfArtefact": "13.4" }
+      "targetPairing": {
+        "tensorrt": "11.3.0.99",
+        "cudaFlavourOfArtefact": "13.4"
+      },
+      "reason": "The CUDA flavour is encoded in NVIDIA's own artefact filename and is not derivable from the TensorRT version. NVIDIA's observed pairings wander - 11.0 pairs with 13.2, 11.1 with 13.3, 11.2 with 13.3, 11.3 with 13.4 - so any rule of the form 'TensorRT 11 implies CUDA 13.x' is a guess that has been wrong before and would be wrong again.",
+      "evidence": "the acquisition record for TensorRT-Enterprise-11.3.0.99-Windows-amd64-cuda-13.4-Release-external.zip, and animejanai-inference .github/workflows/build-linux.yml which pins TRT_VERSION 11.3.0.99 alongside TRT_CUDA '13.4'",
+      "binariesAffected": "the shipped cudart64_*.dll suffix, and which CUDA redistributable is fetched at bundle-assembly time"
     },
     "hostCompilerFlag": {
       "value": "-DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler",
-      "reason": "CUDA 13.x nvcc does not recognise recent MSVC toolsets as a supported host compiler"
+      "reason": "CUDA 13.x nvcc does not recognise recent MSVC toolsets as a supported host compiler",
+      "scope": "affects aji_trt.dll's device compilation only; the flag is not linked into aji.dll or aji_dml.dll",
+      "statusNote": "native/sdk-acquisition.md records that on this machine the flag was carried into the generated build rules without being needed. It stays pinned here until the parent re-evaluates it: carrying an unnecessary flag is harmless, dropping a necessary one is not.",
+      "openItem": "M04 must record whether the flag is required for the pinned toolchain (MSVC 14.44.35207) and update this field. The upstream record was written on a different machine (VS 18 / 14.51.36231), so it is not evidence about this environment."
     },
-    "standard": { "c": 11, "cxx": 17, "cuda": "required language; find_package(CUDAToolkit REQUIRED)" },
+    "standard": {
+      "c": 11,
+      "cxx": 17,
+      "cuda": "required language; find_package(CUDAToolkit REQUIRED)",
+      "verified": "CMakeLists.txt:4-6 at the pinned commit sets CMAKE_C_STANDARD 11 and CMAKE_CXX_STANDARD 17"
+    },
     "cmakeMinimum": "3.24",
+    "sdkRoots": {
+      "AJI_TRT_ROOT": "directory holding include/ and the nvinfer_11.lib family",
+      "AJI_ORT_ROOT": "extracted Microsoft.ML.OnnxRuntime.DirectML 1.24.4 package root",
+      "AJI_DML_ROOT": "extracted Microsoft.AI.DirectML 1.15.4 package root",
+      "layoutCorrection": "sdk-acquisition.md measured that both NuGet packages ship .lib, not the .dll.lib that sources.json#onnxruntime-directml.requiredLayout and #directml.requiredLayout name. Pointing CMake at the recorded filenames will not find them; use the .lib names."
+    },
+    "engineBuild": {
+      "builderResources": "nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll, resolved by the TensorRT builder next to aji_trt.dll",
+      "tacticSuppression": "--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT",
+      "tacticSuppressionEffect": "changes which tactics the builder may select, so it changes the numerics inside a generated engine and therefore the engine's digest. An engine is interchangeable only with another built under the same tactic set; this is why components.json#runtime.cuda-cudart records cuDNN and cuBLAS as deliberately absent.",
+      "noTrtexec": "engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience and is never a run-time dependency. That is what resolves ESC-5 by architecture rather than by permission."
+    },
+    "shippedBinaries": [
+      "aji.dll",
+      "aji_trt.dll",
+      "aji_dml.dll"
+    ],
+    "notShipped": [
+      "aji_harness.exe",
+      "aji_harness_dml.exe",
+      "aji_encode.exe",
+      "aji_kernel_test.exe"
+    ],
+    "shippedRule": "Only the three SHARED library targets enter a bundle. Every EXE is a build-time or research tool, and components.json#buildTimeOnly and #explicitlyNotAdopted account for each one. A harness executable must never be added to a bundle manifest.",
     "targets": [
-      { "name": "aji", "kind": "SHARED", "links": "dl only; no CUDA/TensorRT/ORT", "role": "dispatcher loaded by the mpv filter" },
-      { "name": "aji_trt", "kind": "SHARED", "links": "AJI_NVINFER, CUDA::cuda_driver, CUDA::cudart", "role": "TensorRT backend" },
-      { "name": "aji_dml", "kind": "SHARED", "links": "d3d12 d3d11 dxgi d3dcompiler", "role": "DirectML backend, WIN32 only; ORT/DirectML resolved at run time" },
-      { "name": "aji_harness", "kind": "EXE", "role": "research harness; not adopted" },
-      { "name": "aji_harness_dml", "kind": "EXE", "role": "research harness; not adopted" },
-      { "name": "aji_encode", "kind": "EXE", "role": "offline CLI, conditionally built; not adopted" },
-      { "name": "aji_kernel_test", "kind": "EXE", "role": "kernel unit tests" }
+      {
+        "name": "aji",
+        "kind": "SHARED",
+        "links": "dl only; no CUDA/TensorRT/ORT",
+        "role": "dispatcher loaded by the mpv filter"
+      },
+      {
+        "name": "aji_trt",
+        "kind": "SHARED",
+        "links": "AJI_NVINFER, CUDA::cuda_driver, CUDA::cudart",
+        "role": "TensorRT backend"
+      },
+      {
+        "name": "aji_dml",
+        "kind": "SHARED",
+        "links": "d3d12 d3d11 dxgi d3dcompiler",
+        "role": "DirectML backend, WIN32 only; ORT/DirectML resolved at run time"
+      },
+      {
+        "name": "aji_harness",
+        "kind": "EXE",
+        "role": "research harness; not adopted"
+      },
+      {
+        "name": "aji_harness_dml",
+        "kind": "EXE",
+        "role": "research harness; not adopted"
+      },
+      {
+        "name": "aji_encode",
+        "kind": "EXE",
+        "role": "offline CLI, conditionally built; not adopted"
+      },
+      {
+        "name": "aji_kernel_test",
+        "kind": "EXE",
+        "role": "kernel unit tests"
+      }
     ]
   },
-
   "patchSeries": {
     "baseCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
     "targetDir": "native/patches/",
-    "identity": "not yet established",
-    "status": "PENDING - owned by M04",
-    "plannedFirstPatches": [
-      "filter-local GET_META (route per M19)",
-      "a preparedOnly refusal",
-      "a strong content-addressed engine cache replacing aji_trt.cpp's weak key, and deletion of clean_stale_engines' habit of removing foreign files from model_dir",
-      "native plan suspend/resume"
+    "identity": "sha256 of the per-file list below, in the order native/CMakeLists.txt globs and sorts native/patches/*.patch",
+    "identityRule": "The series identity is the sha256 of the concatenated 'name=sha256' lines the build itself writes to its .mikai-patched stamp (native/CMakeLists.txt, _identity accumulation over the sorted glob), so the recorded value is exactly what the build compares. A recipient who applies this exact series to this exact base commit obtains the tree that was built.",
+    "status": "MEASURED 2026-10-04 from the current working tree",
+    "identitySha256": "6c95b14e97c76ae24076331559974dd8894030e265cb705ed88134627fcce4c4",
+    "identityComposition": "sha256 of the utf-8 encoding of the three lines below joined by '\\n', each terminated by '\\n'",
+    "seriesFiles": [
+      {
+        "name": "0001-content-addressed-cache-and-prepared-only.patch",
+        "sha256": "daa03ac69c41ec56022c8629d84d1be0f37024c7e9bc1b24d916dcd8316af61a",
+        "targets": [
+          "src/aji_trt.cpp"
+        ],
+        "summary": "content-addressed engine cache, clean_stale_engines no longer deletes foreign files in model_dir, AJI_PREPARED_ONLY refuses a live trtexec build, AJI_ENGINE_CACHE redirects writes out of the model root"
+      },
+      {
+        "name": "0002-native-snapshot-and-control.patch",
+        "sha256": "3ee0917e58abac6f72701aa193740aed375494a8566b167588ce17ace90a4bf2",
+        "targets": [
+          "src/aji_dispatch.cpp"
+        ],
+        "summary": "negotiated snapshots and acknowledged lifecycle controls; the dispatcher exports the CAPI snapshot/schema v2 pair, distinct from the Qt status wire's protocol 1 / schema 1"
+      },
+      {
+        "name": "0003-managed-prepared-plan.patch",
+        "sha256": "34aaaec6be5d130f4f437190a222663a673f518212507e2fefb173034a68f5df",
+        "targets": [
+          "src/aji_dispatch.cpp"
+        ],
+        "summary": "managed prepared-plan admission (aji_native_create_prepared / aji_native_apply_prepared / aji_native_control_on_stream) and the factory capability query; digests compared before any deserialize, no trtexec, no live build, no file deletion"
+      }
     ],
+    "identityScopeNote": "This identity covers the shim series under native/patches/ that native/CMakeLists.txt applies to the staged inference tree. It does NOT cover native/patches/mpv/, which is a separate directory applied to a separate base (the fork) and is not a shim build input; its per-file digests are recorded under mpvForkPatchSeries.",
+    "mpvForkPatchSeries": {
+      "baseCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
+      "targetDir": "native/patches/mpv/",
+      "appliedToTheShippedCore": true,
+      "appliedEvidence": "the staged fork tree at F:/ZKS/mikai-native-sdks/_compile-smoke/mpv-fork/video/filter/aji_native_bridge.h is present (sha256 20df4cf7ce0a9fb956832967b51e949e5924db551ba2844dd060fabeeb34e7eb) and vf_animejanai.c references it, carries build_status_document and the strings mikai.native.status/1, mikai.native.admission/1 and mikai.native.control/1. The shipped libmpv-2.dll itself contains mikai.native.status/1, admission/1 and control/1 and no /2 string, which is the wire envelope the installed bundle manifest declares (protocolVersion 1, engineSchemaVersion 1). The managed patch is present and compiled; there is no missing-patch and no version mismatch.",
+      "files": [
+        {
+          "name": "0001-get-meta-mikai-native.patch",
+          "sha256": "0931308e704a320bb19d9194829b97bdd355f8a366d95fc89e5bb18103422bbb",
+          "targets": [
+            "video/filter/vf_animejanai.c"
+          ],
+          "summary": "typed cached status snapshots, actual hardware-context device facts, lifecycle epochs; the schema/protocol-1 status producer"
+        },
+        {
+          "name": "0002-independent-native-filter-build.patch",
+          "sha256": "26a9c7c111f8071f1a105561b9a440e568017982ba0fdcc685345c924417080c",
+          "targets": [
+            "filters/user_filters.c"
+          ],
+          "summary": "registers vf_animejanai under HAVE_ANIMEJANAI rather than HAVE_CUDA_HWACCEL"
+        },
+        {
+          "name": "0002-managed-native-admission.patch",
+          "sha256": "2d48d1eb0fdf3b4b97e2a0ebfa47795dec2a0e1060773eb1af8b1471f731caf2",
+          "targets": [
+            "video/filter/aji_native_bridge.h",
+            "video/filter/vf_animejanai.c"
+          ],
+          "summary": "the native status/control bridge and managed admission path; plain C, AJI ABI-8 unchanged"
+        }
+      ],
+      "orderingNote": "The two 0002-prefixed files sort in the order listed (independent-native-filter-build before managed-native-admission) because the series is applied by sorted filename, as native/CMakeLists.txt does for the shim. Both carry the same numeric prefix deliberately; the sort is lexicographic on the whole name, so 'independent' precedes 'managed'."
+    },
+    "readOnlyInputs": [
+      "animejanai-inference at 738ce3b3020b3950c48ce3122a08f32af531d4fa",
+      "the read-only reference package F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3"
+    ],
+    "readOnlyRule": "Both reference trees are inputs only. They are never edited in place; every change this project makes reaches them as a patch file under native/patches/, applied to a fresh checkout at the base commit.",
+    "patchSeriesEntries": [
+      {
+        "id": "P01-filter-local-get-meta",
+        "summary": "filter-local GET_META (route per M19)",
+        "upstreamFiles": [
+          "video/filter/vf_animejanai.c"
+        ],
+        "why": "exports the structured additive snapshot from the filter the project already owns, rather than adding a new player/command.c or m_property extension",
+        "noNewUpstreamApi": true
+      },
+      {
+        "id": "P02-prepared-only-refusal",
+        "summary": "a preparedOnly refusal",
+        "upstreamFiles": [
+          "video/filter/vf_animejanai.c"
+        ],
+        "why": "when the plan says the engine is prepared but no prepared engine exists, refuse explicitly rather than silently building or silently passthrough-ing"
+      },
+      {
+        "id": "P03-strong-engine-cache",
+        "summary": "a strong content-addressed engine cache replacing aji_trt.cpp's weak key, and deletion of clean_stale_engines' habit of removing foreign files from model_dir",
+        "upstreamFiles": [
+          "src/aji_trt.cpp"
+        ],
+        "why": "the existing cache key is weakly derived, so two different models can collide onto one cached engine and produce wrong output; and clean_stale_engines deletes files in a directory this project does not own",
+        "safetyNote": "the second half is a data-loss fix, not an optimisation: deleting foreign files from a user-supplied model_dir is unacceptable behaviour to inherit"
+      },
+      {
+        "id": "P04-native-plan-suspend-resume",
+        "summary": "native plan suspend/resume",
+        "upstreamFiles": [
+          "video/filter/vf_animejanai.c"
+        ],
+        "why": "lets a long native operation be interrupted and resumed without losing the prepared state"
+      }
+    ],
+    "patchListNote": "This is the planned series, not the applied one. It records scope and intent so M04 can be reviewed against it. The identity above stays unset until the patches actually exist on disk; a plan is not a pin.",
+    "orderingConstraint": "P01 must precede anything that reads the exported metadata, and P03 must precede P04 because suspend/resume stores state keyed through the engine cache.",
     "constraint": "No neural architecture is rewritten. The read-only reference trees are never edited in place."
   },
-
   "observations": {
     "disclaimer": "Descriptive measurements of pre-existing files on this machine. NOT produced by this repository's build, NOT cryptographically reproduced from any source, and NOT usable as release pins. They become pins only when this repository builds the artefact itself and the reproduction is recorded.",
+    "observedBinaries": {
+      "what": "The four package binaries whose SHA-256 this project measured on this machine, transcribed from plan.md section 3.2. These are the descriptive research observations the plan records. They are NOT release pins: none of the four was produced by this repository's build, and no source-to-binary reproduction has been proved. They may never be referenced by a build, a bundle manifest or a download.",
+      "recordedFrom": "plan.md section 3.2, 'Binary hashes (descriptive - not release pins)'",
+      "pinKind": "observation",
+      "verifiedBy": "sha256sum on the files in place on 2026-10-01; the sizes are the byte counts reported alongside each digest in the same table",
+      "entries": [
+        {
+          "label": "stock core",
+          "artifact": "libmpv-2.dll",
+          "origin": "%LOCALAPPDATA%/MPVBackend/runtime",
+          "versionStringFoundInBinary": "mpv v0.41.0-1072-g2a4eb8067",
+          "bytes": 120797184,
+          "sha256": "d2d081547efea8a1530f4ba0bf58a0d72069b25c40d8b2a7071cea5aa82381c6",
+          "producedByThisRepository": false,
+          "role": "the Standard core the Qt application provisions at run time; untouched by the native work",
+          "note": "this is the download the app resolves at run time from the shinchiro release API, not an artefact of any pinned build"
+        },
+        {
+          "label": "native fork core",
+          "artifact": "libmpv-2.dll",
+          "origin": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3 (animejanai/)",
+          "versionStringFoundInBinary": "0.41.0-dev-g63d127174",
+          "bytes": 121249280,
+          "sha256": "69ac64912b73b5639aeafa108d3d9af6bbd064d8f694bdaf275af5bf160a436e",
+          "producedByThisRepository": false,
+          "role": "the reference package's core, built by a third party from the pinned commit with undocumented options",
+          "note": "the in-binary describe string matches the pinned commit, which is evidence of provenance only. The build options are unknown, so the licence status of this specific binary is not derivable - which is why the shipped core must be rebuilt by this repository (M04) rather than adopted from here"
+        },
+        {
+          "label": "aji dispatcher",
+          "artifact": "aji.dll",
+          "origin": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/inference/aji.dll",
+          "bytes": 94208,
+          "sha256": "5184e162f61b262c9c50a43ecec233d6797e7a2e0434e1d41c83e8d5065f2164",
+          "producedByThisRepository": false,
+          "role": "the ABI-8 dispatcher in the reference package",
+          "note": "the upstream release asset aji-windows-x64.zip (sha256 22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586) is a DIFFERENT artefact and does not carry this digest; this DLL was hand-built on the author's workstation, so its build inputs are unrecorded"
+        },
+        {
+          "label": "aji TensorRT backend",
+          "artifact": "aji_trt.dll",
+          "origin": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/inference/aji_trt.dll",
+          "bytes": 1113600,
+          "sha256": "0340fa0b5b83b98ada8c351beea20f5ef68fcce31b5b263a3b1bdb8e404f27ea",
+          "producedByThisRepository": false,
+          "role": "the TensorRT backend in the reference package",
+          "note": "same hand-built status as aji.dll. Its build options - notably AJI_NVINFER and CMAKE_CUDA_ARCHITECTURES, which change both the import table and the embedded kernel images - are not recorded anywhere, so nothing about its binary can be inferred from these pins"
+        }
+      ],
+      "promotionRule": "An entry here becomes a release pin only when this repository builds the same artefact itself from a recorded source revision with recorded build options, and the resulting bytes match a digest recorded in the M05 bundle manifest. Until then the digest stays an observation, and M04/M05 own the promotion.",
+      "notAVerification": "Re-hashing these four files would not verify anything about this project's build; mikai_manifest_check therefore format-checks these digests but never recomputes them (see conventions.digestPolicy.observationDigestsAreNeverVerified)."
+    },
     "referencePackage": {
       "root": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3",
       "role": "read-only input; explicitly not adopted as a distribution vehicle",
       "packageVersion": "3.6.3",
       "platform": "win-x64",
-      "deps": { "mpvnet": "v7.1.2.0", "mpvfork": "2026-09-17-63d127174d-63d127174d", "inference_runtime": "trt-11.3.0.99", "ort_dml": "1.24.4+1.15.4", "sevenzip": "2602", "rife": "models-rife-fp16-1" },
-      "explicitlyNotAdopted": ["mpvnet.exe/mpvnet.dll and the .NET manager binaries", "AnimeJaNaiManager.exe", "AnimeJaNaiUpdater.exe", "7za.exe", "yt-dlp.exe", "portable_config/scripts/*.lua", "mpv-animejanai.conf", "input-animejanai.conf"],
+      "deps": {
+        "mpvnet": "v7.1.2.0",
+        "mpvfork": "2026-09-17-63d127174d-63d127174d",
+        "inference_runtime": "trt-11.3.0.99",
+        "ort_dml": "1.24.4+1.15.4",
+        "sevenzip": "2602",
+        "rife": "models-rife-fp16-1"
+      },
+      "explicitlyNotAdopted": [
+        "mpvnet.exe/mpvnet.dll and the .NET manager binaries",
+        "AnimeJaNaiManager.exe",
+        "AnimeJaNaiUpdater.exe",
+        "7za.exe",
+        "yt-dlp.exe",
+        "portable_config/scripts/*.lua",
+        "mpv-animejanai.conf",
+        "input-animejanai.conf"
+      ],
       "core": {
         "file": "libmpv-2.dll",
         "bytes": 121249280,
@@ -562,19 +1339,59 @@
         "mpvApiVersion": "libmpv-2 (ABI 2)"
       },
       "inferenceDir": [
-        { "file": "animejanai/inference/aji.dll", "bytes": 94208, "sha256": "5184e162f61b262c9c50a43ecec233d6797e7a2e0434e1d41c83e8d5065f2164" },
-        { "file": "animejanai/inference/aji_trt.dll", "bytes": 1113600, "sha256": "0340fa0b5b83b98ada8c351beea20f5ef68fcce31b5b263a3b1bdb8e404f27ea" },
-        { "file": "animejanai/inference/aji_dml.dll", "bytes": 201216, "sha256": "ece31c721cf92fbdd571fcc8d89b9378de362e99e18f8146cbf403863b919ed2" },
-        { "file": "animejanai/inference/onnxruntime.dll", "bytes": 17328152, "sha256": "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40" },
-        { "file": "animejanai/inference/DirectML.dll", "bytes": 18527776, "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1" },
-        { "file": "animejanai/inference/THIRD_PARTY_NOTICES.txt", "bytes": 1253, "sha256": null },
-        { "file": "animejanai/inference/TensorRT_Acknowledgements.txt", "bytes": 327505, "sha256": null }
+        {
+          "file": "animejanai/inference/aji.dll",
+          "bytes": 94208,
+          "sha256": "5184e162f61b262c9c50a43ecec233d6797e7a2e0434e1d41c83e8d5065f2164"
+        },
+        {
+          "file": "animejanai/inference/aji_trt.dll",
+          "bytes": 1113600,
+          "sha256": "0340fa0b5b83b98ada8c351beea20f5ef68fcce31b5b263a3b1bdb8e404f27ea"
+        },
+        {
+          "file": "animejanai/inference/aji_dml.dll",
+          "bytes": 201216,
+          "sha256": "ece31c721cf92fbdd571fcc8d89b9378de362e99e18f8146cbf403863b919ed2"
+        },
+        {
+          "file": "animejanai/inference/onnxruntime.dll",
+          "bytes": 17328152,
+          "sha256": "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40"
+        },
+        {
+          "file": "animejanai/inference/DirectML.dll",
+          "bytes": 18527776,
+          "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+        },
+        {
+          "file": "animejanai/inference/THIRD_PARTY_NOTICES.txt",
+          "bytes": 1253,
+          "sha256": null
+        },
+        {
+          "file": "animejanai/inference/TensorRT_Acknowledgements.txt",
+          "bytes": 327505,
+          "sha256": null
+        }
       ],
       "researchExecutablesNotAdopted": [
-        { "file": "animejanai/inference/aji_harness.exe", "sha256": "39dbccfaa2291451caef6373879a547b9beca985493e2d5a25c354dabd1a6053" },
-        { "file": "animejanai/inference/aji_harness_dml.exe", "sha256": "9457b84f99f96286a46585f08308e6b2683d8cbece867cdc0767df8b95dfb2b6" },
-        { "file": "animejanai/inference/aji_kernel_test.exe", "sha256": "4fef27654d251ba42300c60b894bde570a0c0a4c483c6b870107b3435ee91202" },
-        { "file": "animejanai/inference/aji_encode.exe", "sha256": "6bef2d76fab65bee71ccad67d393ab9b4dc22e39f64486151c3d4547493eb963" }
+        {
+          "file": "animejanai/inference/aji_harness.exe",
+          "sha256": "39dbccfaa2291451caef6373879a547b9beca985493e2d5a25c354dabd1a6053"
+        },
+        {
+          "file": "animejanai/inference/aji_harness_dml.exe",
+          "sha256": "9457b84f99f96286a46585f08308e6b2683d8cbece867cdc0767df8b95dfb2b6"
+        },
+        {
+          "file": "animejanai/inference/aji_kernel_test.exe",
+          "sha256": "4fef27654d251ba42300c60b894bde570a0c0a4c483c6b870107b3435ee91202"
+        },
+        {
+          "file": "animejanai/inference/aji_encode.exe",
+          "sha256": "6bef2d76fab65bee71ccad67d393ab9b4dc22e39f64486151c3d4547493eb963"
+        }
       ],
       "missingFromPackage": "no nvinfer_*, nvonnxparser_*, trtexec.exe or cudart64_* anywhere under this package root, despite the notice file listing them. The runtime dependency closure was resolved from outside this package at run time during the earlier research, which is exactly the condition the production bundle must eliminate."
     },
@@ -616,9 +1433,21 @@
         "path": "C:/Users/myhli/miniconda3/envs/animeinterp314/Lib/site-packages/tensorrt_libs",
         "declaredVersion": "11.3.0.99 (tensorrt_cu13_libs-11.3.0.99.dist-info, License: Proprietary)",
         "files": [
-          { "file": "nvinfer_11.dll", "bytes": 401707120, "sha256": "f8af3a6d0ebffe3a2e1d7a3f68a23d49ee1087085f30e15107c15242285e3580" },
-          { "file": "nvinfer_plugin_11.dll", "bytes": 45631600, "sha256": "2fbe3bb8329e0de581a7b72c63d7afbbc915a643d93ecbf14af16cc21af08e2b" },
-          { "file": "nvonnxparser_11.dll", "bytes": 2290288, "sha256": "150c082c091da388502b15adf6301025f20552008cc82da1d58646f47115e029" }
+          {
+            "file": "nvinfer_11.dll",
+            "bytes": 401707120,
+            "sha256": "f8af3a6d0ebffe3a2e1d7a3f68a23d49ee1087085f30e15107c15242285e3580"
+          },
+          {
+            "file": "nvinfer_plugin_11.dll",
+            "bytes": 45631600,
+            "sha256": "2fbe3bb8329e0de581a7b72c63d7afbbc915a643d93ecbf14af16cc21af08e2b"
+          },
+          {
+            "file": "nvonnxparser_11.dll",
+            "bytes": 2290288,
+            "sha256": "150c082c091da388502b15adf6301025f20552008cc82da1d58646f47115e029"
+          }
         ],
         "missing": "no headers, no import libraries, no trtexec, no per-SM builder resources in that tree"
       }

@@ -8,18 +8,23 @@ Python**. Machine-readable companions live in
 **Nothing here is on the Qt/MinGW build path.** A machine without this directory
 configures and builds the application unchanged.
 
-> **Scope of this record — these are ACQUIRED, NOT CONFIGURED.** It documents
-> what was fetched, from which authoritative URL, at what size and digest, and
-> what was extracted where. Every SDK here is **acquired**: present on disk,
-> digest-verified, and laid out as its consumers expect. **None is configured.**
-> Nothing was configured or compiled **as part of this acquisition task**.
+> **Scope of this record — these are ACQUIRED.** It documents what was
+> fetched, from which authoritative URL, at what size and digest, and what was
+> extracted where. Every SDK here is **acquired**: present on disk,
+> digest-verified, and laid out as its consumers expect.
 >
-> One caveat to that boundary, recorded honestly: the integration parent has
-> since run a **standalone CMake CXX+CUDA smoke consumer** under this same root
-> — see [§4b](#4b-observed-configuration-record-integration-parent-2026-10-01).
-> That proves SDK configure, compile, link and a CUDA device round-trip, and
-> **nothing about the native project**: no `kernels.cu`, no `aji_trt`, no
-> `aji_dml`, no ONNX inference, no engine build. See
+> The boundary this record draws is *acquisition versus use*, not *acquisition
+> versus configuration*. The SDKs have since been compiled against: the
+> integration parent built the native project's own tools (`mikai_native_prep`
+> and `mikai_native_verify`, Release) and produced real TensorRT plans on a
+> GPU (spatial and all four RIFE graphs), and the pinned mpv fork core builds —
+> its isolated core now **loads** (exit `0`) once the stage closure matches the
+> Qt/GNU cohort, the original `Win127` missing symbol being unresolved. Two RIFE
+> engines (lite and lite ensemble) verify numerically against the CPU reference,
+> while the spatial HD Performance engine and RIFE full and ensemble are
+> **rejected** on `maxAbsoluteError`; a verify pass is still `prepared: false`,
+> so nothing is `Ready` or `Active`, and no native bundle is validated,
+> installed or shipped. See
 > [§6 What is still not established](#6-what-is-still-not-established).
 
 ## 1. Location
@@ -27,6 +32,8 @@ configures and builds the application unchanged.
 Root: **`F:\ZKS\mikai-native-sdks\`** — outside the repository, outside every
 tracked source tree, so nothing here can be committed or accidentally vendored.
 `F:` had 616 651 403 264 bytes (≈574 GiB) free at acquisition time.
+
+**Licence position (2026-10-04):** The project's own integration is covered by the owner's unrestricted grant (recorded at `../LICENSE`, The Unlicense). NVIDIA SDK components (TensorRT/CUDA) are third-party and remain governed by NVIDIA's own licence terms; no relicensing is implied. The same holds for every other third-party component, including the upstream AnimeJaNai inference source, whose terms remain not verified (`manifest/components.json`). This record preserves all original digests, pins and provenance tables unchanged.
 
 ```
 F:\ZKS\mikai-native-sdks\
@@ -492,15 +499,20 @@ Stated plainly, because a download is not a configuration:
 - **No driver or runtime was installed or replaced.** The CUDA *driver*
   requirement for TensorRT 11.3 on this GPU is unexamined.
 - **The inference-source copyright grant is still outstanding.** Nothing here
-  touches it: these are build-time tools, and the two blockers in
-  `native/README.md` are unaffected. `sources.json#patchSeries` is still
-  `PENDING`.
+  touches it: these are build-time tools. The upstream repository still declares
+  no licence and its licence field is still `null`, no upstream grant has been
+  obtained, and ESC-1 remains **open**; `manifest/components.json` records the
+  upstream terms as "upstream terms not verified". The owner's 2026-10-04 grant
+  covers this project's own integration code only and does not supply the
+  upstream grant. `sources.json#patchSeries` is still `PENDING`.
 - **Redistribution positions are unchanged.** TensorRT/CUDA remain `external`,
-  `trtexec.exe` remains `ESC-5`. The CC BY-NC-SA spatial graphs (`ESC-2`) are
-  **usable for the private, local, non-commercial use the owner has selected** —
-  with nothing distributed, no ShareAlike condition attaches — but redistribution
-  of those five files remains **unauthorized** and would require a recorded
-  rights-owner decision plus discharge of the Attribution/ShareAlike obligations.
+  and `trtexec.exe` is not shipped (the helper now builds in-process and never
+  invokes it, so `ESC-5` is resolved by architecture rather than by permission).
+  The CC BY-NC-SA spatial graphs (`ESC-2`) are usable locally without any
+  ShareAlike condition attaching, but redistribution of those five files is
+  **not cleared** under the recorded scope: the §3 Attribution/ShareAlike
+  conditions remain, and no rights-owner decision on a shipped bundle's
+  NonCommercial status is recorded.
 
 ### If a canonical installed SDK is wanted instead
 

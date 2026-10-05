@@ -7,13 +7,24 @@ for those specific bytes.
 
 > **This is not a readiness claim.** All four graphs this combination space
 > reaches are on disk, pinned, and their internal structure verified — and
-> their stored weight tensors now match the author's own v4.14 / v4.14.lite
+> their stored weight tensors match the author's own v4.14 / v4.14.lite
 > checkpoints byte-for-byte after fp16 rounding ([§5](#5-lineage--weight-data-traced-exporter-not)).
-> They were **not executed, not built into an engine, and not exposed to the app
-> as Ready**. The inference shim source itself still has no located licence and
-> no grant, nothing here runs natively, and no bundle is assembled. What remains
-> open is exporter identity, the non-weight graph material, and redistribution
-> rights.
+> All four graphs have since run a **real CPU reference** (one genuine 64×64 PPM
+> pair, 5 451 differing samples, the source 11-channel packing and `t = 0.5`) and
+> all four were **serialized through the real TensorRT builder API**, outside any
+> playback path. `mikai_native_verify` splits the matrix against the unchanged
+> `0.02`/`0.005` bounds, with no overrides: **lite passes** (`maxAbsoluteError`
+> `0.0122070312`, RMSE `0.000512728931`) and **lite ensemble passes**
+> (`0.00341796875`, `0.000227462237`), while **full is rejected**
+> (`maxAbsoluteError` `0.0561523438`, RMSE `0.00198529105`) and **ensemble is
+> rejected** (exit `9`; `maxAbsoluteError` `0.0358886719`, RMSE `0.00104451097`).
+> A pass covers raw engine bytes, bindings and numerics only —
+> `manifestVerified: false`, `prepared: false` — so **no model is `Ready` or
+> `Active`** and no bundle is assembled. M12 is **partially satisfied, not done**.
+> What remains open as a provenance question is exporter identity and the
+> non-weight graph material — those residuals are unchanged.
+>
+> **Licence basis (2026-10-04, in-session).** The project owner granted unrestricted use of the project's own native integration (recorded at `../LICENSE`, The Unlicense). For third-party artefacts: upstream licence status remains as located. The inference shim source had no located upstream licence - that fact remains recorded; the owner determination is the basis for the project's use/recording of its own integration work as documented in `manifest/components.json` (ESC-1, ESC-3). Third-party models/graphs keep their own upstream terms; no relicensing is implied. This record preserves all original digests, pins, provenance tables and weight-comparison evidence unchanged.
 
 ## 1. Location
 
@@ -244,18 +255,18 @@ exporter/whole-graph rights limits.
 |---|---|
 | Documented grant on the **original** v4.14 weights | **MIT**, `Copyright (c) 2021 hzwer`, granted by the author's README statement + repository LICENSE |
 | Whether that grant reaches **these converted graphs** | **Weight data: established (§5.1). Graph artefacts: not.** Every stored weight tensor in all four graphs matches the author's own MIT-licensed v4.14 / v4.14.lite checkpoints after fp16 rounding, so those weight bytes are the author's MIT weights. The files *as artefacts* additionally carry exporter-produced structure with no per-file notice, and §5.2's exporter hop is unclosed, so the grant cannot be asserted over the file as a whole |
-| Redistribution approval | **Not needed for private, non-commercial development.** Keeping the assets outside the repo and outside any shipped bundle is what removes that question — not any clearance obtained here |
-| Redistribution of *these converted graphs* | **Not established.** The weight data now traces to the author (§5.1), but the files as artefacts carry exporter-produced material and no per-file notice, so redistribution still requires the rights owner's decision |
+| Redistribution approval | **Cleared per owner determination** (ESC-3, `components.json#components[id=models.rife-v4.14].clearanceBasis`): on the weight-data provenance already established, the rights owner has determined the residual whole-graph questions are acceptable for this project. The residuals below are accepted, not answered. |
+| Redistribution of *these converted graphs* | **Owner-determined as acceptable.** The weight data traces to the author (§5.1); the files as artefacts still carry exporter-produced material with no per-file notice, and the owner has accepted that residual for this project. No upstream grant covers the file as a whole, and none is claimed. |
 | Ensemble specifically | No ensemble weight artefact exists in Practical-RIFE's published links. Each ensemble graph's initializer set is byte-identical to its base graph's and matches the same checkpoint (§5.1); this does not establish its graph-operator derivation or a separately published checkpoint |
 
 Private scope and provenance are separate axes and the first does not settle the
-second: staying private removes the *redistribution approval* question for
-development, but it supplies **no** missing artifact lineage. The weight-data
-hop is now closed by direct comparison (§5.1) — those weight bytes are the
-author's MIT weights — but the files as whole artefacts still carry
-exporter-produced material whose upstream chain is unnamed, and no grant covers
-redistributing them. Provenance of the weight bytes is established; the rights
-basis for redistributing the graph files is not.
+second. The weight-data hop is closed by direct comparison (§5.1) — those
+weight bytes are the author's MIT weights — but the files as whole artefacts
+still carry exporter-produced material whose upstream chain is unnamed, and no
+upstream grant covers redistributing them. Provenance of the weight bytes is
+established; the residual whole-graph facts remain unknown, and the project
+owner's determination (ESC-3) is what supplies the basis for this project rather
+than any located upstream grant.
 
 Verbatim licence texts are preserved in `_meta/terms/` with their own digests
 (`Practical-RIFE-LICENSE.txt`, `Practical-RIFE-README-model-grant.txt`,
@@ -275,14 +286,16 @@ To move these assets from *acquired* to *Ready*, in order:
    statement naming the exporter of these specific v4.14 graphs, or manifest
    route B (convert the author's own checkpoints with this project's toolchain),
    which would make the graph's construction this project's own act.
-2. **A rights-owner decision on redistribution of the graph files**, distinct
-   from both private development use and the now-established weight-data
-   lineage.
-3. **Engine-build and runtime proof**, which is M24/M44's work, not this
-   record's. A weight comparison is not an execution: no inference ran, nothing
-   is `Ready`, and no bundle is assembled. The inference shim source itself
-   still has no located licence and no grant, so even a proven engine path
-   remains blocked by ESC-1.
+2. **Engine-build and runtime proof**, which is M24/M44's work, not this
+   record's. A weight comparison is not an execution. What has since run: all
+   four graphs on a **real CPU reference** (one genuine 64×64 PPM pair, the source
+   11-channel packing, `t = 0.5`), and all four **serialized through the real
+   TensorRT builder API** outside any playback path. Two of those engines — RIFE
+   lite and lite ensemble — **verify numerically** against the reference; the full
+   and ensemble engines are **rejected** on `maxAbsoluteError`. A verification is
+   still not readiness: each passing engine reports `manifestVerified: false`
+   and `prepared: false`, so no model is `Ready` or `Active` and no bundle is
+   assembled.
 
 ## 8. Reproduction
 

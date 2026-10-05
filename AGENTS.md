@@ -89,6 +89,13 @@ Layering is strict and enforced by tests:
   later cannot silently repoint an existing selection. PiP copies the mode and
   the applied id into the float's own core, and entering the float never
   inherits the previous session's chain.
+  **`VideoSurface` owns the GL state it hands mpv.** mpv leaves **framebuffer 0**
+  bound after it paints, so Qt then invalidated the wrong FBO; the contract is
+  that after every render/`reportSwap` `VideoSurface` restores the known Qt
+  widget FBO. That mismatch produced **54 `ErrorType` messages and a sticky
+  `0x0500`** before the fix, and the run reads `ErrorType 0` / `glGetError 0`
+  after it. Perf-warning messages remain, so a clean run is still not a
+  warning-free run.
   The bottom chrome is one opaque two-row dock: permanent volume + a large
   centred play control + episode/track/enhancement/settings actions above the
   full-width timeline. Anime4K lives under the sparkle button's
@@ -264,13 +271,28 @@ Layering is strict and enforced by tests:
   selection and native-panel ones are `mpv_loader_probe`,
   `runtime_selection_probe`, `resolver_probe`, `native_status_probe`,
   `native_menu_probe`, `native_settings_probe`, `rife_settings_probe`,
-  `spatial_assets_probe` and, only under `MIKAI_WITH_MODEL_INSPECTION`,
-  `native_assets_probe`. The loader/selection probes take `MIKAI_MPV_MODULE`
-  when they need a specific DLL. Networked runs:
+  `spatial_assets_probe`, `native_prep_probe` and, only under
+  `MIKAI_WITH_MODEL_INSPECTION`,
+  `native_assets_probe`. `native_prep_probe` links only `Qt6::Core` and takes
+  `<helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>`, driving the
+  native preparation helper against a real CUDA device; it is Windows-only and
+  needs no interactive session. The
+  loader/selection probes take `MIKAI_MPV_MODULE` when they need a specific
+  DLL. Networked runs:
   `title_page_probe` drives the real `TitlePage` against the real API (its
   cover open/close loop pins the use-after-free) and `external_media_probe`
   needs a 320×180 clip plus its HTTP fixture; `crash_probe` installs the app's
   logging then faults on purpose, to prove a report is actually written.
+  `widget_pixel_probe` takes a PNG path argument and otherwise runs one fixed
+  lavfi source, so it does not exercise alternate-media or dialog flows; its
+  only observed failure mode is a refused PNG save (FAIL, exit code 1).
+  `shell_probe` and `dialog_probe` are the probes that observed the
+  missing-input FAIL (exit code 1), the static/black inconclusive SKIP (exit
+  code 77), the moving-portrait and the 1 s-EOF cases. `mpv_surface_smoke`
+  also requires inter-frame motion: the static near-black source is SKIP
+  (exit code 77), not PASS. `headless_pixel_probe` proves lit pixels and a
+  real render without a motion requirement; static near-black can pass there,
+  while all-black is inconclusive.
   `InteractionProbe`
   measures Anime4K by freezing the clip on one timestamp, taking a control pair
   of frames with nothing touched, then enabling the preset and measuring the
@@ -297,9 +319,9 @@ Layering is strict and enforced by tests:
   theme number or default it happens to pin: those pin the implementation
   instead of the user-visible result. The desktop runs that are green are the
   ones with an observed `RESULT: PASS` line on a current-tree binary —
-  `interaction_probe` 149/149 with the session attached, `hls_recovery_probe`
-  23/23 — and pixel proofs additionally need the session attached (detached:
-  every count reads black with `hasVideo=0`).
+  `interaction_probe` 149/149, `compare_probe` 30/30, and `hls_recovery_probe`
+  and `external_media_probe` — and pixel proofs additionally need the session
+  attached (detached: every count reads black with `hasVideo=0`).
 - `tests/cpp/` — `mikai_tests` (one exe, one ctest entry; `main.cpp` drives
   each suite and prints a per-suite PASS/FAIL/SKIP line). Domain and UI suites:
   `TestModels`, `TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`,
@@ -471,32 +493,133 @@ ctest --test-dir build-cmake -R mikai_tests
 
 These are observed results, not a claim that everything is green:
 
-- A fresh inspection-off build (the default, `MIKAI_WITH_MODEL_INSPECTION=OFF`)
-  passed, and its `ctest -R mikai_tests` run passed in **14.55 s**. The
-  inspection-on isolated matrix passed in **25.48 s**.
-- `dumpbin /imports` on the `mikai.exe` from both builds shows **no**
-  `libmpv-2.dll`, ONNX Runtime, CUDA, TensorRT or DirectML import: the shipped
-  app carries neither the mpv DLL nor the native GPU stack.
-- A fresh Qt/OpenGL smoke lit a real **640×360** frame through the explicitly
-  loaded module — the loader works end to end, not just at link time.
+- A fresh isolated inspection-off build (the default,
+  `MIKAI_WITH_MODEL_INSPECTION=OFF`) built `mikai` and `mikai_tests` (exit 0),
+  and `ctest --test-dir build-cmake -R mikai_tests` passed in **14.82 s**
+  (14.83 s wall; one ctest entry, 24 suites PASS + `LiveOracle` SKIP). The
+  isolated inspection-on matrix built the app, tests and the listed
+  probes/helpers, and its ctest run passed in **15.17 s** (25 suites PASS +
+  `LiveOracle` SKIP). Compiler GNU 16.2, Qt 6.8.3; no linter is configured.
+- `objdump -p` on the current-tree `mikai.exe` from both the default/OFF and
+  review/ON builds lists imports of exactly `Qt6Core`, `Qt6Gui`, `Qt6Network`,
+  `Qt6OpenGLWidgets`, `Qt6Widgets`, `KERNEL32`, `msvcrt` and `SHELL32` — **no**
+  `libmpv-2.dll`, ONNX Runtime, CUDA, TensorRT or DirectML import. The app
+  carries neither the mpv DLL nor the native GPU stack; this supersedes the
+  earlier `dumpbin /imports` observation.
+- A real **640×360** colored moving frame (`testsrc2` + motion) rendered through
+  the explicitly loaded module with the GL debug logger active: **32 messages,
+  no `ErrorType` message, `glGetError` 0**. Perf-warning messages remain — this
+  is not a warning-free run. The GL-state invariant behind it is the
+  `VideoSurface` note above. The widget probe built on this scene passed 11
+  requirements on a fresh binary at 640×360 with `dpr=2` and 29.60% motion.
+- **The M42 metric gate is not closed — a probe-observability gap, not a
+  missing player-chip feature.** The widget probe cannot observe raw
+  `estimated-vf-fps` / drop counters through `VideoSurface`, so it prints them
+  as unavailable; reported stream FPS can fall back to container FPS, and only
+  the headless-owned `MpvHandle` reads the raw properties.
+- The optional MSVC native build produced an out-of-band preparation helper that
+  builds a plan **in-process** through the TensorRT builder API — no `--trtexec`,
+  no child process — and links `nvinfer_11`/`nvonnxparser_11`/`cudart` rather
+  than the shim. `native_prep_probe` against the real helper reports
+  `RESULT: PASS` on six behaviours: existing output refused and unchanged, a
+  corrupt graph exiting `5` with no engine-shaped file, an absent GPU UUID
+  refused instead of falling back, `build-started` emitted before the build
+  proceeds, cancelling mid-build publishing nothing, and unchanged prior
+  artifacts and source bytes. A real 64x64 build on the selected RTX 5090 exited
+  `0` and wrote **1 380 548 bytes** of raw plan. `mikai_native_verify` then
+  **rejects** that engine: bindings and the real GPU enqueue succeed and RMSE
+  `0.00215017827` passes, but `maxAbsoluteError` `0.02734375` exceeds the `0.02`
+  FP16 tolerance. The RIFE matrix splits: all four graphs run a real CPU
+  reference and all four serialize on GPU; **lite** (`maxAbs` `0.0122070312`)
+  and **lite ensemble** (`maxAbs` `0.00341796875`) verify numerically, **full**
+  (`maxAbs` `0.0561523438`) and **ensemble** (`maxAbs` `0.0358886719`, exit `9`)
+  are rejected. A verify pass covers raw engine bytes, bindings and numerics only
+  (`manifestVerified: false`, `prepared: false`), so **nothing is `Ready` or
+  `Active`**. The rejection diagnosis is unresolved and the bounds are not to be
+  widened. The pinned mpv fork now builds
+  (273 steps, Release) and its isolated core loads in the matching stage closure
+  (exit `0`, client/header API `131077`, mpv `v0.41.0-UNKNOWN`, all swap /
+  transport / correlation cases `RESULT: PASS`); the original `Win127` missing
+  symbol is **unresolved**. Bundle candidate verification currently **aborts on
+  a `GGML` initializer** after the load/unload-all-helpers sweep (fix in flight,
+  no PASS yet, no M05 completion). A **Lua-enabled candidate** (LuaJIT
+  `2.1.1788460057-2`, 248-step `-Dlua=luajit` core build) does now **pass** an
+  actual Native-off GUI surface after full candidate hash validation: the
+  Native-kind candidate is explicitly selected as `0.41.0-native.1`, a real
+  320×180 HEVC 24 fps video plays with `contextReady` true, position
+  `0.542 → 2.542` over 12 s, **921600/921600** non-black samples,
+  **290264/921600** motion, **0** decoder and **0** VO drops, **0** live `vf`
+  chain entries, and the inspected `mpv_surface_smoke.png` (1280×720) is a
+  visibly colored motion test pattern. `widget_pixel_probe` on the same candidate
+  also passes **21/21** with 0 skips and exit `0` (colored 640×360 PNG, GL 4.6,
+  32 GL-logger messages, 0 `ErrorType`, `glGetError` 0, 30.44% motion); late
+  events after close remain unknown and the 256×144 15 fps reopen refreshes
+  metrics and the `vf`-absence check. That is **real Qt/OpenGL through the owned
+  native runtime with Native off** — **not** the native filter, **not** CUDA
+  interop, **not** active inference and **not** task completion — so it does not
+  install a bundle and nothing is `Ready`. With Ninja this build must be configured
+  `-DCMAKE_BUILD_TYPE=Release`; `--config Release` alone leaves a Debug cache and
+  the helper fails with `0xC0000135`.
 - With the session attached, the desktop probes pass on current-tree binaries:
-  `interaction_probe` 149/149 (`RESULT: PASS`, four consecutive runs),
-  `hls_recovery_probe` 23/23 (`RESULT: PASS`), `external_media_probe` 21/21
-  (`RESULT: PASS`, real picker accept plus retry recovery), and `compare_probe`
-  30/30 (`RESULT: PASS`, frozen-frame proof). Pixel proofs additionally need
-  the session attached (detached: every count reads black with `hasVideo=0`).
+  `interaction_probe` 149/149 (`RESULT: PASS`), `hls_recovery_probe`
+  (`RESULT: PASS`, real expired-signature recovery), `external_media_probe`
+  (`RESULT: PASS`, real picker, HTTP, same-URL retry and file-URL paths), and
+  `compare_probe` 30/30 (`RESULT: PASS`, frozen-frame proof, 0.000/255 noise
+  floor). `anime4k_menu_probe` was rebuilt on semantic locators (no
+  `objectName`/tooltip selectors) and reran as full PASS with 0 failures: all
+  24 preset leaves selectable, effect 1.027/255 against a 0.0000 floor, and a
+  reopen restore of 0.999/255. Pixel proofs additionally need the session
+  attached (detached: every count reads black with `hasVideo=0`).
 
-### Native track: rights-blocked, not shipped
+### Native track: owner grant for project-owned integration (2026-10-04); third-party terms not verified; built locally, not shipped
+
+The project owner granted unrestricted use of this project's own native integration, with no restrictions (2026-10-04, in-session), recorded at `LICENSE` (The Unlicense). The grant covers this project's own integration code, its patch series and its recorded decisions only, and is recorded in `native/manifest/components.json#projectIntegrationGrant`. It does not relicense or verify any third-party component: Qt, mpv, FFmpeg, NVIDIA CUDA/TensorRT/cuDART, ONNX Runtime, DirectML and the upstream AnimeJaNai inference sources/models keep their own upstream terms, recorded per component in `native/manifest/` and the acquisition records. In particular the third-party inference shim's upstream terms are **not verified** — no `LICENSE` located, the GitHub licence field is `null`, and no upstream grant has been obtained — and the draft request in `native/permission-request.md` remains unsent.
 
 The guide is `native/README.md`; acquisition records are
 `native/sdk-acquisition.md`, `native/rife-acquisition.md`,
-`native/spatial-acquisition.md` and `native/videojanai-acquisition.md`, with the
-unsent grant request in `native/permission-request.md`. Digests, pins and
-licence reasoning live in those files and in `native/manifest/` — do not copy
-hash tables into this file.
+`native/spatial-acquisition.md` and `native/videojanai-acquisition.md`. Digests,
+pins and licence reasoning live in those files and in `native/manifest/` — do
+not copy hash tables into this file. Components with no verified upstream licence must be recorded as "upstream terms not verified" (not "OpenSource", not "blocked").
 
-The inference shim still has no licence grant, the RIFE v4.14 assets the whole
-graph needs are still unavailable, and building the native path from source is
-blocked with them. **No native bundle is built, bundled or distributed**, and
-nothing in the native track is on the Qt/MinGW build path: the Standard build
-and the optional CPU-only model inspector do not depend on any of it.
+The findings live in
+`native/manifest/components.json`; read its `escalations` there rather than a
+summary. ESC-1, ESC-2 and ESC-3 remain **open/`blocking`** and leave the Native
+bundle redistribution `blocked`: the upstream inference repository still
+declares no licence and its GitHub licence field is still `null`, the CC
+BY-NC-SA spatial graphs are not cleared for redistribution under the recorded
+scope, and the RIFE whole-graph artefact rights are unresolved. The owner's
+2026-10-04 grant clears this project's own integration code only and must never
+be presented as an upstream licence. The RIFE v4.14 graphs *are* acquired and
+their stored weights match the author's MIT checkpoints after fp16 rounding,
+but that does not settle redistributing the graph files. ESC-4 is resolved by
+obtaining the DirectML package. ESC-5 (`trtexec.exe`) is resolved by
+architecture: the preparation helper builds a plan **in-process** through the
+TensorRT builder API and never invokes `trtexec` at all — it is neither a
+build-time input nor a run-time dependency — and that resolution would lapse if
+the design ever shelled out to `trtexec` at run time.
+
+A grant is not a capability, and local work is not a shipment. **No
+redistributable native bundle is shipped, installed, published or distributed**,
+and no engine is `Ready` or `Active`. That is a shipping/clearance boundary, not
+a claim that nothing is built: the optional MSVC `native/` project is under
+active **private, local** development and its own tools build Release from the
+pinned, patched source, and it has produced raw TensorRT plans on a real GPU,
+while private bundle factory/staging work continues locally. None of that
+redistributes the shim or any third-party component. Two RIFE engines (lite and lite ensemble) verify
+numerically against the CPU reference; the spatial HD Performance engine and RIFE
+full and ensemble are rejected on `maxAbsoluteError`. Nothing is published and no
+complete prepared recipe exists. The pinned mpv fork core now builds (273 steps,
+Release) and its isolated core loads in the matching stage closure (exit `0`);
+the original `Win127` missing symbol is unresolved. Bundle candidate verification
+still **aborts on a `GGML` initializer** after the load/unload-all-helpers sweep
+(fix in flight, no PASS yet, no M05 completion). A Lua-enabled candidate
+(LuaJIT `2.1.1788460057-2`) does pass a real **Native-off GUI surface** after
+full candidate hash validation — a 320×180 HEVC video playing through the owned
+runtime with 0 decoder/VO drops and an inspected colored motion PNG — but that
+is the **runtime surface with Native off**, not the native filter, CUDA interop
+or active inference. No native frame is rendered, no validated bundle is
+installed, and nothing is `Ready`. The **RIFE / RealESRGAN / Інші моделі**
+menu panels remain placeholders and no model in them executes, so the app
+performs no native processing. Nothing in the native track is on the Qt/MinGW
+build path: the Standard build and the optional CPU-only model inspector do not
+depend on any of it.

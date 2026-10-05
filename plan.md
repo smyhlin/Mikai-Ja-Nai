@@ -1,11 +1,13 @@
 # Mikai Janai — native AnimeJaNai integration plan
 
-Companion document: **[tasks.md](./tasks.md)** carries the 52 implementation work
-packages `M01`–`M52` with dependencies, per-task acceptance and verification
-method. Every work package named below links to its task. Baseline retirement,
-media fixtures and provenance records are being implemented; no task acceptance
-is complete. **PROPOSED** sections retain the intended contracts; the statuses
-in `tasks.md` distinguish existing files from pending native functionality.
+Companion document: **[tasks.md](./tasks.md)** is the sole execution, status and
+acceptance record. It carries the eight cohesive workstreams, the next runnable
+batches, the critical path, the 52 implementation packages `M01`–`M52` with
+per-task acceptance, and the full acceptance catalog (M/C/R/N). This plan carries
+the durable architecture, contracts, decisions and source evidence. **PROPOSED**
+sections retain the intended contracts, and every work package named here links
+to its task. The independent baseline and media fixtures are verified; native
+delivery remains gated by rights, preparation and producer prerequisites.
 
 ---
 
@@ -32,7 +34,7 @@ Four rules are non-negotiable and are restated at every gate:
    manifests.
 2. **The OpenGL render path is retained.** The player already renders mpv into a
    Qt `QOpenGLWidget` framebuffer (`VideoSurface` → `MpvRenderContext`) and the
-   research proof in §3.5 shows CUDA frames reach the Qt framebuffer through it
+   research proof in §3.3 shows CUDA frames reach the Qt framebuffer through it
    as a GPU-resident result with no decoder or render-path rewrite and no
    Vulkan and no HWND. The pixels are **not** unchanged — inference and scaling
    alter them by design — and no fidelity claim is made. No renderer rewrite.
@@ -55,45 +57,35 @@ Mikai API client contract in `docs.md`.
 
 ## 2. Evidence-first baseline of this repository
 
-Everything in this section is read out of the current sources, not assumed.
+§2.1 describes the landed loader. §2.2–§2.6 preserve the pre-cutover source
+snapshot that motivated the requirements, not current implementation claims.
+§2.7 records assertion retirement and §2.8 inventories independent verification.
+The observed audit ledger is [tasks.md §1.6](./tasks.md#status); task acceptance
+is tracked in `tasks.md`.
 
-### 2.1 Load-time libmpv dependency (the thing being removed)
+### 2.1 Explicit libmpv module selection (landed)
 
-`CMakeLists.txt` links `mplayer::MpvHandle` and `mplayer::MpvRenderContext`
-against a MinGW import library resolved at configure time:
+The load-time libmpv import and startup `PATH` mutation are removed.
+`CMakeLists.txt` requires only `MPV_INCLUDE_DIR` for build-time headers;
+`MpvApi` loads and pins one selected module explicitly. `MpvHandle` and
+`MpvRenderContext` use that table, including the multiple handles needed for PiP.
+The isolated OFF/ON executable import lists recorded in
+[tasks.md §1.6](./tasks.md#status) contain no libmpv import.
 
-```cmake
-set(MPV_RUNTIME_DIR "" CACHE PATH "Directory containing mpv headers and libmpv-2.dll")
-if(NOT MPV_RUNTIME_DIR)
-  message(FATAL_ERROR "Set -DMPV_RUNTIME_DIR=<path with include/ and libmpv-2.dll>")
-endif()
-find_library(MPV_LIBRARY NAMES libmpv.dll.a libmpv-2.dll.a libmpv
-             PATHS ${MPV_RUNTIME_DIR} NO_DEFAULT_PATH REQUIRED)
-target_link_libraries(mikai_player PUBLIC ${MPV_LIBRARY})
-```
+Startup order is `installCrashLog()` → `QApplication` → application/organization
+identity → locale/theme setup → `selectPlayerRuntime()` /
+`selectStartupRuntime()` → `MikaiClient` → `MainWindow`. Selection therefore
+runs after the identity required by `QSettings`/`QStandardPaths`, and before any
+`VideoSurface::ensureEngine()`. Missing or refused runtimes are named rather
+than treated as a successful load.
 
-`MPV_RUNTIME_DIR` is `PUBLIC`, so every downstream target inherits both the
-include path and the import library, and the *executable* carries a static
-import to `libmpv-2.dll`. `src/app/main.cpp` compensates with
-`provisionMpvRuntime()`, which calls `mikai::backend::ensureRuntime()`,
-prepends the runtime directory to `PATH`. On an empty discovery result it logs
-`"mikai: no mpv runtime found; playback will not start"` via `qWarning()` and
-returns; but `ensureRuntime()` is declared to **throw** `std::runtime_error`
-when nothing is found and auto-download cannot satisfy it, and
-`provisionMpvRuntime()` has no try/catch, so that exception propagates out of
-`main()`.
-
-**Documented-order discrepancy (actual, not inferred):** `AGENTS.md`
-("Important Files") and the `main.cpp` header comment both state that
-`provisionMpvRuntime()` runs *before* the first `QApplication`. It does not. The
-real order in `main.cpp` is: `installCrashLog()` → `QApplication` →
-`setApplicationName/Version/OrganizationName` → locale resolution → both
-translators → `setStyle(Fusion)` → `setStyleSheet(buildStylesheet())` →
-`provisionMpvRuntime()` → `MikaiClient` → `MainWindow`. This matters directly
-for the new loader: `QStandardPaths::AppLocalDataLocation()` depends on the
-organization/application names, so **the runtime selection point must be after
-those names are set** and after the theme stylesheet, but **before** the first
-`VideoSurface` can run `ensureEngine()`. See §8.1.
+This is Standard playback delivery, not Native inference delivery.
+`VideoSurface::paintGL()` still renders libmpv directly into Qt's framebuffer.
+`nativeAvailabilityFor()` in `NativePrefs.cpp` reports `engineAvailable=false`;
+requested native choices and status consumers do not install an `animejanai`
+inference chain. M03–M05's producer/bundle prerequisites and M08's remaining
+recovery acceptance are not discharged by the loader proof. See §8.1 and
+[tasks.md §1.6](./tasks.md#status).
 
 ### 2.2 Ownership, state and thread map of the playback core
 
@@ -119,7 +111,7 @@ caller registers one today (see §7.8). Any native status consumer must respect
 these facts: it may only touch widgets from the drain, and it must never poll
 from `paintGL`.
 
-### 2.3 ABI surface currently used
+### 2.3 ABI surface in the pre-cutover snapshot
 
 * `mpv_handle`: `create`, `set_option_string`, `initialize`, `request_log_messages`,
   `terminate_destroy`, `command` (`loadfile`/`seek`/`stop`), `get_property`
@@ -169,7 +161,7 @@ MoonAnime's CDN answers 400 without it. Native work may **override `hwdec` per
 session** (§7.3) but must never drop the user agent, the language header, or the
 input-binding options.
 
-### 2.5 PiP lifetime, as it stands
+### 2.5 PiP lifetime in the pre-cutover snapshot
 
 * `PlayerDialog::togglePip()` (public) delegates to the private
   `enterPip()`, which takes `pipPool_` when it exists and otherwise news a
@@ -192,7 +184,7 @@ core carries the native filter, the parked instance also pins a CUDA context, an
 execution context, TensorRT/DirectML engine bindings and intermediate device
 allocations. That is a resource-lifetime obligation this integration must
 discharge deliberately (§7.6), and it must be *proved* by a new native close
-probe (§12, `M45`). No crash or leak is claimed here.
+probe ([M45](./tasks.md#m45)). No crash or leak is claimed here.
 
 ### 2.6 Compare, HUD, settings, menu and shortcuts — what must not move
 
@@ -257,118 +249,43 @@ to M38.
 ### 2.8 Test and probe inventory (current)
 
 `tests/cpp/main.cpp` drives one `mikai_tests` executable, one ctest entry, with
-suites `TestModels`, `TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`,
-`TestPagers`, `TestQualityCache`, `TestRateLimiter`, `TestLayering`,
-`TestClipboard`, `TestLiveOracle` (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`).
+suites `TestRuntimeSelection`, `TestNativeTypes`, `TestNativeRecipe`,
+`TestNativeProfiles`, `TestNativeRife`, `TestNativeBundle`,
+`TestNativePrepPlan`, `TestNativeManifest`, `TestNativeBuilder`,
+`TestNativeStatus`, `TestPlaybackDiagnostics`, `TestNativePrefs`,
+`TestNativeMenu`, `TestNativeUserRecipes`, `TestNativeAssets`, `TestMpvAsync`,
+`TestNativeCatalog` (only with `MIKAI_WITH_MODEL_INSPECTION=ON`), `TestModels`,
+`TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`, `TestPagers`,
+`TestQualityCache`, `TestRateLimiter`, `TestLayering`, `TestClipboard`, and
+`TestLiveOracle` (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`); current run
+status is in [tasks.md §1.6](./tasks.md#status).
 `MIKAI_SOURCE_DIR` lets the layering guards read the sources they police.
 Probes (CMake targets, `EXCLUDE_FROM_ALL`, not tests): `mpv_surface_smoke`,
 `headless_pixel_probe`, `widget_pixel_probe`, `shell_probe`, `dialog_probe`,
 `interaction_probe`, `compare_shot_probe`, `compare_probe`,
 `anime4k_menu_probe`, `resolver_probe`, `title_page_probe`, `crash_probe`,
-`external_media_probe`. There is no linter, no type checker, no coverage tool
+`external_media_probe`, `hls_recovery_probe`, `mpv_loader_probe`,
+`runtime_selection_probe`, `native_menu_probe`, `native_settings_probe`,
+`rife_settings_probe`, `native_status_probe`, `native_assets_probe`,
+`spatial_assets_probe`, `native_prep_probe`, `native_verification_probe`,
+`native_dml_interop_probe` and `native_abi_probe`, plus the native CLIs
+`mikai_native_prep`/`mikai_native_verify`/`native_inspect` and the bundle tools
+`mikai_bundle`/`mikai_manifest_check`. There is no linter, no type checker, no
+coverage tool
 and no CI. CPU-only tests plus real-desktop probes are the available proof
 channel; **no offscreen-GPU proof exists**.
 
----
+### Baseline status
 
-### Current implementation baseline
-
-The untouched current source configured and built successfully in
-`build-native-baseline/` with GNU 16.2.0, Qt 6.8.3 and the standard
-`%LOCALAPPDATA%/MPVBackend/runtime` import library:
-
-```sh
-cmake -S . -B build-native-baseline -G "MinGW Makefiles" \
-  -DCMAKE_MAKE_PROGRAM=C:/temp/w64dev/w64devkit/bin/make.exe \
-  -DCMAKE_CXX_COMPILER=C:/temp/w64dev/w64devkit/bin/g++.exe \
-  -DCMAKE_PREFIX_PATH=C:/temp/qt6/6.8.3/mingw_64 \
-  -DMPV_RUNTIME_DIR=C:/Users/myhli/AppData/Local/MPVBackend/runtime
-cmake --build build-native-baseline --target mikai --parallel
-```
-
-Observed: `Built target mikai`; 445 finished Ukrainian translations, none
-unfinished. Vulkan headers were not found; LTO was reported unsupported.
-This establishes compilation only. No current-run suite, desktop, GPU or
-native-processing acceptance is claimed. M01 remains incomplete until its
-required execution evidence is collected.
-
-After prerequisite edits, direct target builds also succeeded for
-`mikai_tests`, `interaction_probe`, `anime4k_menu_probe`, `resolver_probe`,
-`mikai_http_fixture` and `mikai_manifest_check` in the same fresh build tree.
-The first `anime4k_menu_probe` compile exposed a `QAction*`/`QMenu*` mismatch in
-the new chooser traversal; it was corrected and that target rebuilt successfully.
-At that stage no runner, probe or manifest-check executable was invoked by the
-integration owner. Those were compilation results, not acceptance passes.
-
-#### Feature continuation: observed current-source baseline
-
-The user confirmed this is full feature work and authorized isolated
-verification. The misfiring OMP rule `hotfix-skip-verification` was disabled
-through `ttsr.disabledRules` for this session only with explicit approval;
-no persistent settings were changed.
-
-Current-source configure/build succeeded for `mikai`, `mikai_tests`,
-`widget_pixel_probe`, `interaction_probe`, `anime4k_menu_probe`, `compare_probe`,
-`external_media_probe`, `dialog_probe`, `shell_probe`, `mikai_http_fixture`
-and `mikai_manifest_check`.
-
-With `MIKAI_LIVE` and `MIKAI_API_KEY` unset, `QT_QPA_PLATFORM=offscreen`,
-the explicit Qt plugin directory, the standard runtime on the process PATH and
-the licensed ORT runtime named, `build-native-baseline/mikai_tests.exe` exited
-0 in ~15 s. Per-suite evidence (26 PASS, LiveOracle SKIP by design):
-
-```text
-[mikai_tests] TestRuntimeSelection: PASS (rc=0)
-[mikai_tests] TestNativeTypes: PASS (rc=0)
-[mikai_tests] TestNativeRecipe: PASS (rc=0)
-[mikai_tests] TestNativeProfiles: PASS (rc=0)
-[mikai_tests] TestNativeRife: PASS (rc=0)
-[mikai_tests] TestNativeBundle: PASS (rc=0)
-[mikai_tests] TestNativePrepPlan: PASS (rc=0)
-[mikai_tests] TestNativeManifest: PASS (rc=0)
-[mikai_tests] TestNativeStatus: PASS (rc=0)
-[mikai_tests] TestNativePrefs: PASS (rc=0)
-[mikai_tests] TestNativeMenu: PASS (rc=0)
-[mikai_tests] TestNativeUserRecipes: PASS (rc=0)
-[mikai_tests] TestNativeAssets: PASS (rc=0)
-[mikai_tests] TestMpvAsync: PASS (rc=0)
-[mikai_tests] TestNativeCatalog: PASS (rc=0)
-[mikai_tests] TestModels: PASS (rc=0)
-[mikai_tests] TestReleases: PASS (rc=0)
-[mikai_tests] TestAnime4K: PASS (rc=0)
-[mikai_tests] TestI18n: PASS (rc=0)
-[mikai_tests] TestStreams: PASS (rc=0)
-[mikai_tests] TestPagers: PASS (rc=0)
-[mikai_tests] TestQualityCache: PASS (rc=0)
-[mikai_tests] TestRateLimiter: PASS (rc=0)
-[mikai_tests] TestLayering: PASS (rc=0)
-[mikai_tests] TestClipboard: PASS (rc=0)
-[mikai_tests] TestLiveOracle: SKIP (rc=0)
-```
-
-The runner redirects both settings scopes into a temporary INI directory.
-`native_inspect` on the same tree proves the five original package graphs:
-four HD graphs declare N=-1 with a real 64×64 → 128×128 N=1/C=3 FP16 run
-(scale 2), and the SD graph declares N=1 with a 48×48 → 96×96 run (scale 2).
-
-The current HTTP fixture started on loopback port 18796. A ranged HEAD
-request observed `206 Partial Content`, `Content-Length: 315182` and
-`Content-Range: bytes 100-315281/315282`. The default HLS master returned
-three relative rendition URLs, including the expired 360p signature. These
-are protocol observations, not playback or recovery acceptance.
-
-The first external-media desktop invocation supplied a relative local path
-and timed out inside the file-picker sequence after its first three checks.
-An absolute-path invocation is in progress; no passing playback claim is made.
-
-The manifest checker inspected the two explicit read-only reference roots,
-reported 14 matching file digests and exited 3 for recorded blocked
-redistribution components. Missing inventories remain named separately.
-This is limited source-integrity evidence, not a native runtime/bundle pass.
+Current build/run status, the isolated suite ledgers and the observed native
+probes are tracked in **[tasks.md §1.6](./tasks.md#status)** and in each task's
+`Status` line. This plan records only the durable source evidence (§4) and the
+stated proof limits (§3.3). Configure commands live in `readme.md`; after the
+loader cutover the build uses `MPV_INCLUDE_DIR` (headers only).
 
 ---
 
-## 3. Machine and runtime proof matrix
+## 3. Proof environment, evidence and limits
 
 The observations below are the only things actually executed. Everything else
 in this plan is unverified.
@@ -383,41 +300,55 @@ in this plan is unverified.
 | Qt | 6.8.x MinGW (`<qt>/6.8.3/mingw_64`) |
 | Host toolchain | MinGW-w64 g++ (`<w64devkit>/bin/g++.exe`) |
 
-### 3.2 Binary hashes (descriptive — **not** release pins)
+### 3.2 Artifact identity
 
-| Artifact | SHA-256 | Bytes |
-|---|---|---|
-| stock `libmpv-2.dll` (`%LOCALAPPDATA%/MPVBackend/runtime`, `v0.41.0-1072-g2a4eb8067`) | `d2d081547efea8a1530f4ba0bf58a0d72069b25c40d8b2a7071cea5aa82381c6` | 120 797 184 |
-| native fork `libmpv-2.dll` (`v0.41.0-dev-g63d127174`) | `69ac64912b73b5639aeafa108d3d9af6bbd064d8f694bdaf275af5bf160a436e` | 121 249 280 |
-| `aji.dll` | `5184e162f61b262c9c50a43ecec233d6797e7a2e0434e1d41c83e8d5065f2164` | 94 208 |
-| `aji_trt.dll` | `0340fa0b5b83b98ada8c351beea20f5ef68fcce31b5b263a3b1bdb8e404f27ea` | 1 113 600 |
-
-These are **research observations only**. They become pins only after the
-provenance and rights gate (`M03`) and the bundle gate (`M05`) close. No
-cryptographic source→binary reproduction was proved; the package was confirmed
-by the user to be built from
+Observed binary hashes for the research package are recorded, as **descriptive
+research observations, not release pins**, in
+[`native/manifest/sources.json`](./native/manifest/sources.json). They become
+pins only after the provenance/rights gate (M03) and the bundle gate (M05)
+close. No cryptographic source→binary reproduction was proved; the package was
+confirmed by the user to be built from
 `C:/Users/myhli/Downloads/janai/animejanai-inference-main`, but a rebuild from
 that tree has **not** been reproduced and byte-matched.
 
-### 3.3 Observation ledger
+### 3.3 Observed research evidence
 
-| # | What was run | Result | What it proves | What it does **not** prove |
-|---|---|---|---|---|
-| 1 | `build-cmake/widget_pixel_probe.exe` on a real desktop | exit 0, `hasVideo=1`, `playing=1`, `pos=3.48`, `dur=4.52`, `vw=320 vh=180`, `contextReady=1`, non-black `6420/6420` (100 %) | a Qt/OpenGL surface can be driven and read on this machine | **The binary's stdout differs from the current `src/probes/WidgetPixelProbe.cpp`.** Treat as a stale binary; it is not a fresh-source gate. Re-run after rebuild (`M42`). |
-| 2 | Temp Qt harness compiled from **current** `MpvHandle.cpp` + `MpvRenderContext.cpp`, custom minimal `QOpenGLWidget`, no app code changed; stock module; HEVC 10-bit 1920×1080 @24 full-range BT.1886; `nvdec` → CUDA/P010 → `vo=libmpv` | real Qt frame 604×360, mean 114.723, variance 4672.205, PNG saved and visually inspected, `time-pos=2.458333`, estimated vf-fps 23.6, drop counts 0 | the current render bridge works unmodified against a stock core | performance, fidelity certification, long-run stability |
-| 3 | **Same** Qt bridge + Janai package core `v0.41.0-dev-g63d127174` + compatible Cyte FP16 cached engine + `aji.dll`; `hwdec=nvdec`, `queue-depth=1`, `output-444=yes`, `passthrough=no` | `LOG backend TensorRT aji_trt`; loaded 4 MiB engine; contexts GPU 269 MiB, scratch 277 864 448 B; configured slot 1, 1920×1080 → 3840×2160; CUDA graph captured; decoder CUDA/P010 → vf CUDA/YUV444P16 3840×2160 → Qt FBO 604×360; exit 0, `time-pos=2.458333`, fps 23.6, decoder/VO drops 0, mean 114.821, variance 4685.251, image visually inspected | **CUDA decoder → CUDA native filter → Qt OpenGL framebuffer works with no Vulkan and no HWND.** This is the load-bearing fact behind "keep OpenGL" | temporal interpolation, prepared-cache correctness, PiP+Compare with native, HLS native, DirectML, standalone deployment, any fidelity or quality claim |
-| 4 | Stock core, exact native `vf` request, current `MpvHandle` | `MpvHandle` fails `mpv_set_option_string vf` with *error setting option*, exit 2 | the native filter is **only** in the fork core; dropping `aji.dll` beside a stock core cannot register anything | — |
-| 5 | Temp wrapper from **current** `src/probes/DialogProbe.cpp` linked against the **existing compiled** `mikai_player.a`, Janai fork core **without** the native vf, temp INI under `org=MikaiJanaiResearch` | exit 0, dialog 640×480, 48 visible children, non-black 69 333, shell 720×480, surface 720×480, framebuffer 720×480 from a 1920×1080 source, `playing=1`, lit 71 720/86 400; whole-UI PNG visually inspected (drawer/dock overlay over motion) | the existing `PlayerDialog` composition renders against a fork core | a **fresh** build of the current `PlayerDialog` sources — superseded as composition evidence by observation 6; no native control, status row or menu |
-| 6 | **Fresh** build of all three current project C++ libraries plus the full original QTest-case sources, compiled in a temp Debug tree; INI-isolated runner including the original `tests/cpp/main.cpp`, no filters, `MIKAI_LIVE` unset and API key empty; **existing `shaders/` properly deployed next to the runner**; fresh `DialogProbe.cpp` wrapper linked against the **freshly built** `mikai_player.a` and a real clip, run on **both** the stock core and the Janai fork core with the native vf **off** | Unit run: **175 pass / 0 fail / 1 skip** (`TestLiveOracle` off by design), exit 0. Probe, both cores: exit 0, dialog 600×1300, shell and surface 720×1300, source 1920×1080, `playing=1`, 48 visible children; native-core framebuffer lit 71 732/234 000, stock 71 109/234 000; native full-widget PNG visually inspected. Tall geometry is **identical on both cores** — the probe runs no main window, so it has no Fusion stylesheet or normal placement, which is a probe property, not a core defect. No linter is configured anywhere in the tree. | the **current** sources compile clean; the full original hermetic suite passes from a fresh build once the shaders folder is present; the freshly built `PlayerDialog` composition runs identically on a stock core and on the Janai fork core with native **off** | anything about native **on**: the NN filter has **not** yet been run inside the full `PlayerDialog` (it is proven only through the current core/render bridge, observation 3). No PiP, Compare, HLS or RIFE-with-native evidence exists. |
-| 7 | First isolated runner attempt at observation 6 | 171 pass / 4 fail / 1 skip, exit 4; **all four failures were `TestAnime4K`** cases failing because `findShadersDir()` was empty in the temp output | why the shaders deployment step matters | nothing about application behaviour — this was a verification-harness prerequisite, not a regression |
+The load-bearing observations, and what they do and do not prove:
+
+* **The current render bridge works unmodified against a stock core** — a temp
+  Qt harness compiled from the current `MpvHandle.cpp` + `MpvRenderContext.cpp`
+  rendered a real Qt frame (604×360, mean 114.723, variance 4672.205, PNG
+  inspected, drop counts 0). It proves no performance, fidelity or long-run
+  stability.
+* **CUDA decoder → CUDA native filter → Qt OpenGL framebuffer works with no
+  Vulkan and no HWND** — the same bridge plus the Janai package core
+  (`v0.41.0-dev-g63d127174`) + a compatible Cyte FP16 cached engine + `aji.dll`
+  loaded a 4 MiB TensorRT engine, configured slot 1 (1920×1080 → 3840×2160),
+  captured a CUDA graph, and produced decoder CUDA/P010 → vf CUDA/YUV444P16
+  3840×2160 → Qt FBO 604×360 (mean 114.821, variance 4685.251, PNG inspected).
+  This is the load-bearing fact behind "keep OpenGL". It proves no temporal
+  interpolation, prepared-cache correctness, PiP/Compare/HLS with native,
+  DirectML, deployment or fidelity claim.
+* **The native filter is only in the fork core** — a stock core rejects the
+  exact native `vf` request with *error setting option*; dropping `aji.dll`
+  beside a stock core cannot register anything.
+* A fresh build of the current libraries plus the full original QTest sources
+  passed the hermetic suite once `shaders/` was deployed beside the runner (the
+  earlier `TestAnime4K` failures were a scratch prerequisite, not a defect), and
+  a fresh `PlayerDialog` wrapper rendered identically on the stock core and the
+  fork core with native **off** — it says nothing about native **on**.
+
+Historical run logs live under `.probe-out/`; the current canonical status is
+[tasks.md §1.6](./tasks.md#status).
 
 ### 3.4 Stated limits of the proof
 
-* A **debug OpenGL `INVALID_ENUM`** appeared after texture creation in the
-  native run, and whether the stock baseline emits it too was **not** resolved.
-  It is not characterized as warning-free. A fresh full-`VideoSurface` probe
-  with `QOpenGLDebugLogger` attached is required (`M42`, `M43`) and the result —
-  including "still reproduces" — is recorded honestly.
+* The historical native research run emitted a debug `INVALID_ENUM`. The
+  current stock-widget audit also reproduced real attachment errors before the
+  Qt FBO restoration fix; the current widget audit records zero ErrorType /
+  `glGetError` errors
+  after the fix. Performance warnings remain. A native-on current-tree run is
+  still unverified (`M43`); neither run is described as warning-free.
 * The evidence used a **borrowed read-only fixture and a borrowed read-only
   cached engine**. No cross-project import or call was made, and none is planned.
 * The native run used `AddDllDirectory` on an existing TensorRT / Torch-Runtime
@@ -440,12 +371,13 @@ that tree has **not** been reproduced and byte-matched.
   `M42`-`M49` is blocked while the session is disconnected; the CPU suites,
   loader selection and the pure contract tests are not.
 * The native filter has **not** been run inside the full current `PlayerDialog`.
-  Observation 3 proves it through the current core and render bridge; observation
-  6 proves the fresh `PlayerDialog` composition only with native **off**. There is
-  **no** PiP, Compare, HLS or RIFE-with-native evidence of any kind.
-* Observation 6's tall 600×1300 dialog geometry is a property of the probe, which
-  runs no main window and therefore no Fusion stylesheet or normal placement. It
-  is **identical on both cores** and is not evidence of a native-core layout
+  The compact evidence above proves it through the current core and render
+  bridge; the fresh `PlayerDialog` composition is proven only with native
+  **off**. There is **no** PiP, Compare, HLS or RIFE-with-native evidence of any
+  kind.
+* The tall 600×1300 dialog geometry is a property of the probe, which runs no
+  main window and therefore no Fusion stylesheet or normal placement. It is
+  **identical on both cores** and is not evidence of a native-core layout
   difference.
 * The unit baseline is hermetic only: the run set `MIKAI_LIVE=0` and supplied
   no API key, so `TestLiveOracle` is skipped by design and the 175/0/1 result
@@ -453,7 +385,7 @@ that tree has **not** been reproduced and byte-matched.
 * "The current sources compile clean" means the build **succeeded** — not that it
   is warning-free. No linter or type checker is configured, and no warning audit
   was performed.
-* The 600×1300 dialog height in observation 6 is **[INFERENCE]** attributable to
+* The 600×1300 dialog height is **[INFERENCE]** attributable to
   the probe running no main window and therefore no Fusion stylesheet and no
   normal placement: the omission is directly observed and the geometry is
   identical on both cores, but the specific source of the height was not
@@ -641,7 +573,8 @@ and the harness binaries. The tree also contains `portable_config/scripts/*.lua`
 
 **D1 — Keep the OpenGL render path.** Rejected: Vulkan / `gpu-next` (the package
 ships `gpu-api=vulkan,auto`, but `meson.build` also gates `hwdec_cuda_gl.c` on
-`cuda-interop` + `gl`, and observation 3 proved the GL path works end to end);
+`cuda-interop` + `gl`, and the research evidence (§3.3) proved the GL path
+works end to end);
 a native child HWND (the documented reason the old design died — a native child
 window composites above non-native siblings, which is why the dock kept
 disappearing behind the video); a Qt Quick / `QQuickFramebufferObject` rewrite
@@ -921,6 +854,20 @@ Two distinct identifiers, computed at two distinct times:
 * **`engineSha256` (post-serialization integrity).** The SHA-256 of the
   serialized engine bytes, computed **after** `trtexec` writes the engine. It is
   stored in the manifest alongside `buildKey`.
+
+**Observed producer boundary (M15):** the Release in-process helper builds a plan
+through the TensorRT builder API (no `--trtexec`, no child process) on an
+explicitly named CUDA UUID. The actual-builder probe passes **seven** behaviours
+— existing-output preservation, corrupt-graph failure, absent-device refusal,
+`build-started` before the build, the TF32-off/strongly-typed precision gate,
+mid-build cancellation publishing nothing, and unchanged prior
+artifacts/source bytes; its preserved pre-change predecessor fails only the
+precision gate. The seven checks and the raw serialization log are recorded
+under M15 in `tasks.md` and in `.probe-out/prep-flags-contract-probe.log`
+(PASS) versus `.probe-out/prep-flags-contract-before.log` (6 ok, 1 FAIL). These
+bytes remain unverified scratch: no numerical/binding verification,
+artifact-manifest publication, complete preparation or Native activation is
+claimed by this result.
 
 There is no circularity: `buildKey` identifies the *request*, `engineSha256`
 verifies the *product*. A manifest is written only once both exist, and
@@ -1236,7 +1183,7 @@ The native ABI carries `matrix` (BT601/BT709/BT2020), `range` (limited/full) and
 `siting` (left/center/topleft). These are taken from what libmpv reports for the
 stream and passed through unchanged; nothing here reinterprets them, and
 `output-444` handling is left to the fork's existing behaviour (enabled for the
-CUDA path, per observation 3).
+CUDA path, per §3.3).
 
 ### 7.5 Temporal correctness, PTS and cadence
 
@@ -1308,7 +1255,7 @@ core lock against mpv's own render thread."* A native first configure, engine
 deserialization or GPU drain can hold that lock for a long time **even though
 none of that work runs on the Qt thread**. Leaving the new native commands and
 status reads synchronous would therefore block the GUI timer behind GPU work and
-invalidate every responsiveness claim in §12.
+invalidate every responsiveness claim in the [M49](./tasks.md#m49) gate.
 
 **The rule.** Nothing native is applied or read synchronously from the GUI
 thread. Specifically:
@@ -1563,39 +1510,36 @@ vendored or shipped:
 Until that record exists, the §3.2 hashes stay descriptive research
 observations and are **not** release pins.
 
+The records live beside the code, not in this plan:
+
+* [`native/manifest/sources.json`](./native/manifest/sources.json),
+  [`native/manifest/components.json`](./native/manifest/components.json) and
+  [`native/manifest/THIRD_PARTY_NOTICES.md`](./native/manifest/THIRD_PARTY_NOTICES.md)
+  — pins, per-component licence/redistribution decisions and notices.
+* [`native/sdk-acquisition.md`](./native/sdk-acquisition.md) — the isolated SDK
+  compile/link/kernel proof (MSVC 19.44, CUDA 13.4.92, TensorRT 11.3.0.99).
+* [`native/rife-acquisition.md`](./native/rife-acquisition.md),
+  [`native/spatial-acquisition.md`](./native/spatial-acquisition.md) and
+  [`native/videojanai-acquisition.md`](./native/videojanai-acquisition.md) —
+  asset identity, the 128/128 weight-lineage match and the observed package
+  digests.
+* [`native/permission-request.md`](./native/permission-request.md) — the
+  unsent third-party request; no permission is granted.
+* [`native/README.md`](./native/README.md) — the component decisions and the
+  build/packaging entry points.
+
 ---
 
-## 10. No-regression table: edge cases and verification gates
+## 10. Verification strategy
 
-Every row is a gate. "Existing probe" means a probe that exists today;
-"proposed probe" names the target `M02`/`M51` adds.
-
-| # | Behaviour that must not break | Edge case exercised | Verification |
-|---|---|---|---|
-| R1 | Qt/OpenGL playback with a stock core | offscreen Mesa vs real desktop; null framebuffer path | existing `widget_pixel_probe`, `mpv_surface_smoke`, `headless_pixel_probe` — rebuilt fresh, stale binary (§3.3 obs.1) |
-| R2 | `PlayerDialog` composition | hostless (direct media) vs episode session; 640×480 and 720×480 layouts | existing `dialog_probe`, `shell_probe`, `external_media_probe` |
-| R3 | Anime4K preset identity and chain order | preset ids stable, `Off` resolves nothing, deleted shader → `chainIsComplete` false | existing `TestAnime4K` minus the retired wording/placeholder assertions (`M01`) |
-| R4 | Anime4K menu interaction | category row opens beside, preset applies and closes, placeholder disabled | existing `anime4k_menu_probe` with the Back-row/wording assertions removed (`M01`) |
-| R5 | Compare freeze and noise floor | paused frozen frame; two settled grabs; side-by-side, divide, difference; gain > 1 | existing `compare_probe`, `interaction_probe` — **must pass unchanged**, including the frozen-frame floor, which must not be weakened |
-| R6 | Compare leaves the player as found | chain read before both sides, restored after, on every path including capture failure | `compare_probe` + a new assertion that the live chain id is unchanged after close |
-| R7 | PiP semantics | one core plays; float owns its controls; volume/mute carry; position hand-back | existing `InteractionProbe` PiP cases |
-| R8 | HTTP header requirement | `Accept-Language: uk-UA` present and comma-free | new hermetic `QTcpServer` fixture asserting the received headers (`M02`, `M46`) |
-| R9 | Signed-URL expiry recovery | 403/expired once, then success; quality cache `forget()` path | `M02` fixture + `TestQualityCache` |
-| R10 | HLS master/adaptive | `ashdiMaster`, `moonMaster`, `tortugaMaster`, `tortugaDecode`, `parseVariants`, `qualityUrl` ladders | existing `TestStreams` + new local HLS fixture (`M02`) |
-| R11 | Quality cache invariants | TTL 30 min, 240 entries oldest-first, `no_source` page lifetime | existing `TestQualityCache` — unchanged |
-| R12 | Anime/media session transitions | title page → episode → player → next episode; refreshed streams; release tabs isolated | existing `title_page_probe`, `TestPagers`, `TestReleases` |
-| R13 | Rate limiting | 429 parked on `Retry-After`, reset expiry, queued callers | existing `TestRateLimiter` — unchanged |
-| R14 | Layering guards | domain has no Qt GUI headers, no app-layer names | existing `TestLayering` — unchanged, plus a new guard that `src/player/native/` stays QtCore-only |
-| R15 | Language | explicit en/uk override, system mapping, catalog loading | existing `TestI18n` + new explicit catalog-load coverage (`M38`) |
-| R16 | Settings persistence | API key, quota, feed toggles, preset shortcuts survive; native group is additive | existing `anime4k_menu_probe` settings survival + new native round-trip (`M34`) |
-| R17 | Crash logging | a deliberate fault writes a real report | existing `crash_probe` |
-| R18 | Failure separation | media failure → retry same URL / refresh stream; **processing** failure → retry processing, never a URL retry loop | new negative matrix (`M39`, `M47`) |
-| R19 | Startup robustness | missing runtime, missing native bundle, corrupt prefs | `M06`, `M08`, `M50` |
-| R20 | Deployment | clean machine, no Python, no Conda, offline baseline | `M50` |
-| R21 | GUI responsiveness under native | UI input latency sampled while a recipe is Active, during a first configure, during a preparation job holding the lease, and during a PiP park/unpark — no synchronous native call on the GUI thread and no `vf-metadata` query in a repaint | measured in the `M49` gate; async apply, async status and correlation per §7.8 |
-| R22 | Native teardown ordering | pause → drain/suspend/cancel acknowledged **while core and render context are still alive** → detach callbacks → free the render context with GL current → terminate core; close-after-leave of the parked `pipPool_` float releases the native resources; no widget or worker destroyed from a native callback | `M30` plus the close probe in `M45` |
-
-Native-specific non-regression rows are N1–N10 in §12's acceptance checklist.
+Every no-regression row (R1–R22) and every native acceptance row (N1–N10,
+including N3b) is canonical in **[tasks.md §4](./tasks.md#catalog)** — the R rows
+at [§4.3](./tasks.md#catalog-r) and the N rows at
+[§4.4](./tasks.md#catalog-n). This plan keeps only the *strategy*: correctness,
+GPU, lifecycle and release gates are **measurements on real frames with saved
+artefacts**, never exit codes or mock echoes; the CPU matrix is the hermetic
+regression channel; desktop/GPU acceptance requires an attached session; and no
+offscreen-GPU proof exists on this machine.
 
 ---
 
@@ -1641,282 +1585,87 @@ untouched throughout.
 
 ---
 
-## 12. Work packages: scope groups
+## 12. Workstreams (navigation)
 
-Each row links to the matching section of **[tasks.md](./tasks.md)**. These are
-**thematic scope groups**, not an execution schedule. Row order and group
-numbers imply neither dependencies nor parallelism. The `Depends` edges in
-tasks.md govern sequencing both within and across groups; its generated waves
-define the runnable order.
+The 52 packages are grouped into eight cohesive workstreams, defined canonically
+in **[tasks.md §1.1](./tasks.md#workstreams)**. This is a navigation aid only —
+the `Depends` lines and the critical path in [tasks.md §1](./tasks.md#dag) are
+authoritative, and no matrix or arrow is restated here.
 
-**The authoritative DAG is [tasks.md §1](./tasks.md#dag)** — its wave matrix is
-[§1.2](./tasks.md#dag-waves), generated from the per-task `Depends` lines where a
-task's wave number is its longest path from a root, and the authoritative
-critical path is [§1.3](./tasks.md#dag-critical-path). No matrix, no critical
-path and no dependency arrow is restated or duplicated here, so the two documents
-cannot drift. The groups below are a navigation aid only; the
-agreed interface names are authoritative in
-[tasks.md §1.1](./tasks.md#dag-interfaces).
+| WS | Theme | Tasks |
+| --- | --- | --- |
+| A | Runtime packaging and ABI | [M01](./tasks.md#m01)–[M10](./tasks.md#m10) |
+| B | Models, ordered preparation and cache | [M11](./tasks.md#m11)–[M18](./tasks.md#m18) |
+| C | Inference, metadata and filters | [M19](./tasks.md#m19)–[M25](./tasks.md#m25) |
+| D | Activation, source, PiP and lifetime | [M26](./tasks.md#m26)–[M30](./tasks.md#m30) |
+| E | Player UI, shaders and settings | [M31](./tasks.md#m31)–[M38](./tasks.md#m38) |
+| F | Media recovery and trust | [M39](./tasks.md#m39)–[M40](./tasks.md#m40) |
+| G | End-to-end correctness, fidelity and performance | [M41](./tasks.md#m41)–[M49](./tasks.md#m49) |
+| H | Distribution, docs and release | [M50](./tasks.md#m50)–[M52](./tasks.md#m52) |
 
-| Group | Theme | Scope context | Tasks |
-|---|---|---|---|
-| P0 | Fresh baseline + hermetic fixtures | none | [M01](./tasks.md#m01), [M02](./tasks.md#m02) |
-| P1 | Provenance, SDK, bundle, contracts | source + bundle manifests in `native/` | [M03](./tasks.md#m03), [M04](./tasks.md#m04), [M05](./tasks.md#m05), [M10](./tasks.md#m10) |
-| P2 | Loader slice | `MpvApi` / `MpvBundle` | [M06](./tasks.md#m06), [M07](./tasks.md#m07), [M08](./tasks.md#m08) |
-| P3 | ABI, model, cache slice | `NativeCatalog`, `NativeRecipe`, manifests | [M09](./tasks.md#m09), [M11](./tasks.md#m11), [M12](./tasks.md#m12), [M14](./tasks.md#m14) |
-| P4 | Preparation slice | `PreparationPlan`, `NativeBuilder` | [M13](./tasks.md#m13), [M15](./tasks.md#m15), [M16](./tasks.md#m16), [M17](./tasks.md#m17) |
-| P5 | Filter/ABI wiring | snapshot schema, epochs | [M19](./tasks.md#m19), [M20](./tasks.md#m20), [M21](./tasks.md#m21), [M22](./tasks.md#m22) |
-| P6 | Execution paths | effective plan | [M18](./tasks.md#m18), [M23](./tasks.md#m23), [M24](./tasks.md#m24), [M25](./tasks.md#m25) |
-| P7 | Activation, source changes, state preservation | `NativeController` | [M26](./tasks.md#m26), [M27](./tasks.md#m27), [M28](./tasks.md#m28) |
-| P8 | PiP lifetime, Compare, shader composition | suspension + plan lock | [M29](./tasks.md#m29), [M30](./tasks.md#m30), [M31](./tasks.md#m31), [M32](./tasks.md#m32) |
-| P9 | UI: menu, settings, cache controls, shortcuts, HUD, i18n | `Strings` + capability owners | [M33](./tasks.md#m33), [M34](./tasks.md#m34), [M35](./tasks.md#m35), [M36](./tasks.md#m36), [M37](./tasks.md#m37), [M38](./tasks.md#m38) |
-| P10 | Robustness: failure separation, trust boundaries, CPU tests | — | [M39](./tasks.md#m39), [M40](./tasks.md#m40), [M41](./tasks.md#m41) |
-| P11 | Desktop + native proof, then packaging | all prior verification gates | [M42](./tasks.md#m42) … [M50](./tasks.md#m50) |
-| P12 | Documentation, then terminal acceptance | P11 complete | [M51](./tasks.md#m51), [M52](./tasks.md#m52) |
-
-Dependency points worth calling out, matching tasks.md's `Depends` edges:
-`M07` waits on [M06](./tasks.md#m06) and the fresh baseline [M01](./tasks.md#m01);
-[M35](./tasks.md#m35) also waits on [M11](./tasks.md#m11) and
-[M15](./tasks.md#m15); [M41](./tasks.md#m41) waits on
-[M40](./tasks.md#m40), [M38](./tasks.md#m38), [M39](./tasks.md#m39) and
-[M37](./tasks.md#m37); [M43](./tasks.md#m43) also waits
-on the shader-composition gate [M32](./tasks.md#m32);
-[M45](./tasks.md#m45) also waits on [M32](./tasks.md#m32);
-[M46](./tasks.md#m46) also waits on the hermetic fixtures [M02](./tasks.md#m02)
-and on [M28](./tasks.md#m28); [M47](./tasks.md#m47) waits on
-[M14](./tasks.md#m14), [M15](./tasks.md#m15), [M18](./tasks.md#m18),
-[M28](./tasks.md#m28) and [M35](./tasks.md#m35); [M48](./tasks.md#m48) waits on
-[M25](./tasks.md#m25) and [M43](./tasks.md#m43).
-
-[M49](./tasks.md#m49) (sustained processing and resource stability) depends on
-**every prior verification gate**, not just the desktop regressions.
-[M51](./tasks.md#m51) does **not** depend on `M52`; [M52](./tasks.md#m52) is the
-terminal task. The full edge list and the single-leaf structure are read from
-[tasks.md §1](./tasks.md#dag) rather than restated here, so no arrow in this
-document can go stale against the generated DAG.
-
-On re-probing: a context, device or cadence change handled by
-[M27](./tasks.md#m27) invalidates the plan and re-probes for the new epoch
-through the filter paths owned by [M19](./tasks.md#m19) and
-[M22](./tasks.md#m22); a PiP handoff that changes those properties forces the
-same re-probe under [M45](./tasks.md#m45).
+The next runnable batches are [tasks.md §1.2](./tasks.md#batches).
 
 ### Proof work packages, one link each
 
 | Task | What it must prove | Key constraint |
-|---|---|---|
+| --- | --- | --- |
 | [M42](./tasks.md#m42) | fresh plain-player and native-off desktop regressions | rebuilds `widget_pixel_probe`; re-tests the `INVALID_ENUM` observation |
-| [M43](./tasks.md#m43) | CUDA inference reaches the actual Qt framebuffer; paused Prepare reports the real device UUID/LUID for a seekable source or a valid cached frame | pixels from `grabFramebuffer()`; stock-core control; no exit-code-only proof; non-seekable source without a frame stays Unknown + Original, without unpausing or guessing a device |
+| [M43](./tasks.md#m43) | CUDA inference reaches the actual Qt framebuffer; paused Prepare reports the real device UUID/LUID for a seekable source or a valid cached frame | pixels from `grabFramebuffer()`; stock-core control; no exit-code-only proof; a non-seekable source without a frame stays Unknown + Original, without unpausing or guessing a device |
 | [M44](./tasks.md#m44) | RIFE timing, cuts, padding, seeks, end-of-stream | real video; rational output counts; A/V sync across a cut |
 | [M45](./tasks.md#m45) | native PiP, Compare, close and resource lifetimes | two cores, 100 cycles, GPU/engine resource counters, close-after-leave |
 | [M46](./tasks.md#m46) | native local/HTTP/HLS and anime session transitions | hermetic `QTcpServer`; session prefs preserved; no live CDN required |
 | [M47](./tasks.md#m47) | preparation and artifact failure recovery | cold cache, corrupt artifact, cancel, build failure, missing model |
 | [M48](./tasks.md#m48) | DirectML provider identity and GPU rendering where offered | real proof or a visible-disabled row with a factual reason |
-| [M49](./tasks.md#m49) | sustained processing, responsiveness and resource stability | measured warm-up, cadence, latency, memory high-water mark |
+| [M49](./tasks.md#m49) | sustained processing, responsiveness and resource stability | matched standalone Janai/mpv throughput/latency, warm-up, cadence, memory, full-frame transfers and synchronization traces |
 | [M50](./tasks.md#m50) | independent clean install, upgrade and rollback | no Python, no Conda, offline baseline |
 
-### Native acceptance rows (N1–N10)
-
-* **N1** CUDA inference reaches the actual Qt framebuffer: pixels captured from
-  `grabFramebuffer()` after the native chain, with the decoded source and the
-  post-native output both identified; a stock-core control run for comparison.
-  Separately, the paused **Prepare** path must be exercised end to end. A real
-  device UUID (never device 0) plus the geometry and CSP is **required** for a
-  seekable fixture, or for a source that already has a valid cached frame; the
-  output state after Prepare is `NeedsPreparation` or `Preparing`, never
-  `Active` while still probing. A **non-seekable source with no frame at all**
-  is the honest exception and must land on `Unknown` + **Original**, without
-  unpausing and without guessing an identity — the same rule as §6.11. A real
-  UUID is not promised unconditionally.
-* **N2** Native-off and plain-player desktop regressions are freshly built and
-  pass; the debug `INVALID_ENUM` observation is re-tested and reported as found
-  or not found.
-* **N3** RIFE timing, scene cuts, padding, seeks, EOF and rational output counts
-  on real video, including A/V sync across a cut.
-* **N3b** Source-change re-probe: when [M27](./tasks.md#m27) handles a context,
-  device or cadence change, the plan is invalidated and the probe re-runs for the
-  new epoch through the filter paths owned by
-  [M19](./tasks.md#m19)/[M22](./tasks.md#m22), and a PiP handoff that changes
-  those properties forces the same re-probe in [M45](./tasks.md#m45).
-* **N4** Native PiP: 100 enter/leave cycles across two cores with resource
-  counters for GPU memory and engine objects, plus Compare open/close inside the
-  same cycle, and a close-after-leave path. A handoff that changes the reported
-  device, context or cadence must force a re-probe for the new epoch before any
-  activation.
-* **N5** Local file, HTTP and HLS playback with native, plus anime session
-  transitions (episode → next, refresh, release/episode context preserved).
-* **N6** Preparation and artifact failure matrix: cold cache, corrupt artifact,
-  cancelled build, build failure, missing model — each landing on Original with
-  a specific visible reason and a working recovery.
-* **N7** DirectML: where offered, provider identity and real GPU rendering are
-  proved on pixels; where not, the row is disabled with the factual reason and
-  no RIFE-on-DirectML claim is made.
-* **N8** Sustained processing: warm-up, steady-state frame cadence, playback
-  responsiveness while a recipe is active, memory high-water mark and leak
-  checks — all measured, none invented.
-* **N9** Clean-machine install, upgrade and rollback with no Python and no Conda,
-  plus offline baseline playback with native disabled.
-* **N10** Fidelity and engine checks use **real frames and saturated frames**,
-  never random noise; no bare "non-empty output" or "filter echoed the
-  property" assertions anywhere.
+The native acceptance rows N1–N10 (including N3b) are canonical in
+[tasks.md §4.4](./tasks.md#catalog-n).
 
 ---
 
-## 13. Unresolved prerequisites (honestly named)
+## 13. Status and unresolved prerequisites
 
-These block specific tasks and are **not** worked around anywhere in the plan.
-
-1. **Rights and redistribution clearance** for the mpv fork, the filter code, the
-   shipped ONNX models, TensorRT, ONNX Runtime and DirectML. Without it no
-   binary is vendored or shipped. Blocks `M03` → `M05` → `M50`.
-2. **A reproducible native SDK build**: a working MSVC + nvcc + TensorRT 11.3
-   environment with `nvinfer_11`, and the exact CUDA/driver versions recorded.
-   No rebuild from the reference tree has been reproduced and byte-matched yet.
-   Blocks `M04`, and therefore `M05`, `M15` and every runtime gate.
-3. **A self-contained dependency closure** for the native bundle. The research
-   relied on `AddDllDirectory` into an existing TensorRT/torch-runtime directory;
-   production must ship its own. Blocks `M05`.
-4. **A DirectML proof on the target machine**: WGL↔D3D11 interop and provider
-   identity are unproven. The CUDA proof implies nothing about them. Until `M48`
-   passes, DirectML stays visible-disabled.
-5. **The debug `INVALID_ENUM` observation** is unresolved and unreproduced
-   against a fresh full-`VideoSurface` build. Blocks a "warning-free" claim;
-   `M42`/`M43` must settle it either way.
-6. **Long-run performance is entirely unmeasured.** No baseline numbers exist for
-   sustained cadence, load latency or memory. `M49` produces them; none are
-   pre-declared here.
-7. **Exact sub-second timing of engine builds on the target hardware** is unknown
-   and depends on (2). The UI shows progress without a fabricated estimate.
-8. **The unit-test shaders fixture**: the current CMake copies `shaders/` only
-   next to the `mikai` executable, not the test target, so a fresh test build
-   tree has no shader folder and the shader-dependent `TestAnime4K` cases cannot
-   resolve. A clean-temp build of all three libraries and the full original test
-   set compiled successfully; the first isolated run reported 171 pass / 4 fail /
-   1 skip, and **all four failures were `TestAnime4K` cases failing because
-   `findShadersDir()` was empty in that output folder**. That is a verification
-   harness prerequisite, not an application regression, and the baseline is
-   neither declared passing nor failing until the corrected fixture run is
-   observed. `M02` resolves it as part of hermetic fixtures.
-9. **The stock-binary staleness**: `build-cmake/widget_pixel_probe.exe` does not
-   match its current source, so observation 1 is not a fresh-source gate. `M42`
-   rebuilds it.
+Status is per task, not a blanket claim. The canonical status summary, the three
+current root blockers (initial native snapshot, curated RIFE pin→content
+mapping, RIFE full/ensemble numerics) and the current evidence live in
+**[tasks.md §1.6](./tasks.md#status)** and in each task's `Status` line. This
+plan does not keep a second progress ledger.
 
 ---
 
-### Current execution blockers
+## 14. Standing constraints
 
-- **M01:** current-source hermetic and focused Anime4K runs pass; final
-  temporary-settings harness and desktop baseline execution remain in progress.
-  The misfiring no-QA rule has been disabled for this session with approval.
-- **M02:** generated media and a loopback Qt HTTP/HLS fixture server exist.
-  Consumer playback and visible expired-stream recovery remain unexecuted.
-- **M03:** `native/manifest/` pins the inference source to
-  `738ce3b3020b3950c48ce3122a08f32af531d4fa` and records rights evidence.
-  No license grant was located for that implementation; a copyright-holder
-  grant permitting the required source adoption and DLL redistribution is
-  missing. `mikai_manifest_check` executed: 14 recorded digests matched and
-  exit 3 reported the recorded blocked redistribution components. Private,
-  local, non-commercial development is authorized, but is not a grant to
-  adopt the inference source. The unsent request is `native/permission-request.md`.
-- **M04:** MSVC exists, but a usable Windows SDK, CUDA compiler and TensorRT 11.3
-  development SDK are not installed. The TensorRT archive is anonymously
-  accessible; absence on disk is an installation gap, not an unavailable
-  download. Official isolated SDK acquisition/configuration is authorized and
-  in progress; no driver, ambient runtime or unrelated installation is replaced.
-  The inference-source grant still blocks adopting/building that implementation.
-- **M12:** the exact FP16 RIFE release asset is identified upstream, but no
-  required model has been acquired into this project's owned inventory and its
-  conversion-to-original-weight provenance remains unresolved.
+These are durable and checked at every task; the full acceptance catalog is in
+[tasks.md §4](./tasks.md#catalog).
 
-The DirectML 1.15.4 packaged license has been read and its redistribution grant
-recorded. This closes that license question, not the D3D11/WGL rendering gate.
-Detailed primary-source citations and bounded machine searches are in
-`native/README.md` and `native/manifest/THIRD_PARTY_NOTICES.md`.
-No native bundle is assembled or shipped, no alternate model is substituted,
-and every Native runtime/delivery gate remains intact. The updated DAG in
-`tasks.md` explicitly separates independent Standard loader, typed contracts,
-planning and cache-ownership work from native-source builds and GPU acceptance.
-
----
-
-## 14. Acceptance checklist
-
-Nothing ships until every box is checked with evidence. `M52` is the terminal
-task that walks this list.
-
-**Baseline and fixtures**
-- [ ] Fresh independent baseline recorded, obsolete incidental assertions deleted, no re-pinning [M01](./tasks.md#m01)
-- [ ] Hermetic real-media and local HTTP/HLS fixtures in place, shader folder resolved for tests [M02](./tasks.md#m02)
-
-**Runtime and loader**
-- [ ] Sources pinned with provenance and rights recorded [M03](./tasks.md#m03)
-- [ ] Reproducible optional native SDK build [M04](./tasks.md#m04)
-- [ ] Coherent versioned bundles with per-file hashes [M05](./tasks.md#m05)
-- [ ] Validated discovery and atomic install [M06](./tasks.md#m06)
-- [ ] **Every** client/render caller on the explicit loader; `MPV_LIBRARY` and `MPV_RUNTIME_DIR` gone [M07](./tasks.md#m07)
-- [ ] Startup selection, recovery and restart preference [M08](./tasks.md#m08)
-
-**ABI, models, preparation**
-- [ ] ABI/protocol/capability negotiation [M09](./tasks.md#m09)
-- [ ] Model, recipe, preference and availability contracts [M10](./tasks.md#m10)
-- [ ] Generic ONNX import and independent inventory, no architecture whitelist [M11](./tasks.md#m11)
-- [ ] Original RIFE variants and capabilities provisioned [M12](./tasks.md#m12)
-- [ ] Source-aware plans and geometry [M13](./tasks.md#m13)
-- [ ] Content-addressed manifests and ownership boundaries [M14](./tasks.md#m14)
-- [ ] Explicit cancellable preparation [M15](./tasks.md#m15)
-- [ ] Engine inspection: exact bindings and numerical behaviour [M16](./tasks.md#m16)
-- [ ] Complete ordered spatial and temporal recipes [M17](./tasks.md#m17)
-- [ ] Weak cache and playback-triggered builds replaced [M18](./tasks.md#m18)
-
-**Runtime wiring**
-- [ ] Filter-local structured metadata snapshot [M19](./tasks.md#m19)
-- [ ] Versioned status consumed through the selected `MpvApi` [M20](./tasks.md#m20)
-- [ ] Acknowledged epochs, drain, suspend, resume [M21](./tasks.md#m21)
-- [ ] Named filter integration with decoder and source compatibility [M22](./tasks.md#m22)
-- [ ] Generic spatial-only chains run [M23](./tasks.md#m23)
-- [ ] RIFE-only and combined recipes run [M24](./tasks.md#m24)
-- [ ] DirectML integrated and capability-gated [M25](./tasks.md#m25)
-
-**Activation, lifetime, presentation**
-- [ ] Transactional requested→effective activation [M26](./tasks.md#m26)
-- [ ] Source, geometry, cadence and discontinuity changes [M27](./tasks.md#m27)
-- [ ] Playback state preserved across activation and media replacement [M28](./tasks.md#m28)
-- [ ] Native processing preserved through pooled PiP handoffs [M29](./tasks.md#m29)
-- [ ] Parked resources released on close and ordered shutdown [M30](./tasks.md#m30)
-- [ ] Exact-frame shader Compare with native plan locking [M31](./tasks.md#m31)
-- [ ] Native + Anime4K composition proven, shader identities unchanged [M32](./tasks.md#m32)
-- [ ] Native choices in the existing enhancement tree [M33](./tasks.md#m33)
-- [ ] Compact processing settings and versioned preferences [M34](./tasks.md#m34)
-- [ ] Model import, preparation and safe cache controls [M35](./tasks.md#m35)
-- [ ] Native shortcuts with shared collision checks [M36](./tasks.md#m36)
-- [ ] Truthful HUD status and cadence [M37](./tasks.md#m37)
-- [ ] English/Ukrainian, accessibility and geometry coverage [M38](./tasks.md#m38)
-
-**Robustness and proof**
-- [ ] Processing failures separated from media retry and URL recovery [M39](./tasks.md#m39)
-- [ ] Runtime, model, artifact, path and diagnostic trust boundaries [M40](./tasks.md#m40)
-- [ ] Focused consumer-visible CPU regression coverage [M41](./tasks.md#m41)
-- [ ] Fresh plain-player and native-off desktop regressions [M42](./tasks.md#m42)
-- [ ] CUDA inference reaches the actual Qt framebuffer [M43](./tasks.md#m43)
-- [ ] RIFE timing, cuts, padding, seeks, EOS [M44](./tasks.md#m44)
-- [ ] Native PiP, Compare, close and resource stress [M45](./tasks.md#m45)
-- [ ] Native local/HTTP/HLS and session transitions [M46](./tasks.md#m46)
-- [ ] Preparation and artifact failure recovery [M47](./tasks.md#m47)
-- [ ] DirectML provider identity and GPU rendering where offered [M48](./tasks.md#m48)
-- [ ] Sustained processing, responsiveness and resource stability [M49](./tasks.md#m49)
-- [ ] Independent clean install, upgrade and rollback [M50](./tasks.md#m50)
-- [ ] User and maintainer documentation updated [M51](./tasks.md#m51)
-- [ ] Full no-regression release acceptance matrix completed [M52](./tasks.md#m52)
-
-**Standing constraints, checked at every task**
-- [ ] No dependency on another application's installation or mutable state — not on `F:/ZKS/Interp/AnimeInterp`, not on Python, not on the Janai package's config, cache or assets; pinned owned third-party SDKs remain permitted
-- [ ] No application code changed outside the files a task names
-- [ ] No claimed-but-unmeasured number; every measurement cites how it was taken
-- [ ] Every failure path lands on Original with a visible, specific reason — never a silent substitution and never a media retry loop
-- [ ] The RIFE placeholder becomes a real capability subtree; the RealESRGAN and other-models placeholders stay untouched
-- [ ] No test asserts wording, enum ordinals, incidental defaults, mock echoes or bare non-emptiness
-- [ ] Nothing native is applied or read synchronously on the GUI thread; no `vf-metadata` query from `paintGL`; a command reply alone never means `Active` (§7.8)
-- [ ] Teardown runs pause → drain/suspend/cancel ack (core and render context still alive) → detach callbacks → free the render context with GL current → terminate core; the render context is never freed before the GPU drain; no Qt-side GPU wait and no widget or worker destroyed from a native callback thread
-- [ ] Native status and observed source/control properties live in one state bank; async replies are correlated by handle, source and request epoch and stale ones are dropped
-- [ ] Device identity for `buildKey` comes only from the probe-only passthrough snapshot (§6.11) — never guessed, never defaulted to device 0; probe state is never `Active`; no CUDA call or hardware-context pointer crosses the Qt thread
-- [ ] Every native storage path resolves to the single `AppLocalDataLocation()/native/{runtime,models,artifacts,scratch,logs}` hierarchy (§6.6)
+- [ ] No dependency on another application's installation or mutable state — not
+  on `F:/ZKS/Interp/AnimeInterp`, not on Python, not on the Janai package's
+  config, cache or assets; pinned owned third-party SDKs remain permitted.
+- [ ] No application code changed outside the files a task names.
+- [ ] No claimed-but-unmeasured number; every measurement cites how it was taken.
+- [ ] Every failure path lands on Original with a visible, specific reason —
+  never a silent substitution and never a media retry loop.
+- [ ] The RIFE placeholder becomes a real capability subtree; the RealESRGAN and
+  other-models placeholders stay untouched.
+- [ ] No test asserts wording, enum ordinals, incidental defaults, mock echoes
+  or bare non-emptiness.
+- [ ] Nothing native is applied or read synchronously on the GUI thread; no
+  `vf-metadata` query from `paintGL`; a command reply alone never means `Active`
+  (§7.8).
+- [ ] Teardown runs pause → drain/suspend/cancel ack (core and render context
+  still alive) → detach callbacks → free the render context with GL current →
+  terminate core; the render context is never freed before the GPU drain; no
+  Qt-side GPU wait and no widget or worker destroyed from a native callback
+  thread.
+- [ ] Native status and observed source/control properties live in one state
+  bank; async replies are correlated by handle, source and request epoch and
+  stale ones are dropped.
+- [ ] Device identity for `buildKey` comes only from the probe-only passthrough
+  snapshot (§6.11) — never guessed, never defaulted to device 0; probe state is
+  never `Active`; no CUDA call or hardware-context pointer crosses the Qt thread.
+- [ ] Every native storage path resolves to the single
+  `AppLocalDataLocation()/native/{runtime,models,artifacts,scratch,logs}`
+  hierarchy (§6.6).
+- [ ] No feature is deferred, narrowed or renamed; DirectML ships
+  disabled-with-reason when unproven, never as a claim.

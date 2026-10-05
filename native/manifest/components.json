@@ -3,51 +3,111 @@
   "generated": "2026-10-01",
   "owner": "M03",
   "scope": "Every artefact that would exist in a shipped native runtime bundle (Standard and Native), plus the build-time-only and deliberately-not-adopted items that M03 must account for.",
-
   "useScope": {
     "intendedUse": "private, local, non-commercial",
     "recordedBy": "this project's rights owner",
     "meaning": "Development and personal playback on the owner's own machine. No distribution of any artefact to any third party is authorized or contemplated.",
-    "whatItIsNot": "This is a statement of intent, not a licence. It changes nothing about what a licence permits, and it cannot substitute for a grant that does not exist.",
+    "whatItIsNot": "This is a statement of intent, not a licence. It changes nothing about what a licence permits, and it cannot substitute for a grant that does not exist. The project's own integration code is separately covered by the owner's 2026-10-04 grant (see projectIntegrationGrant); that grant is not an upstream licence and does not relicense any third-party component.",
     "effect": [
-      "CC BY-NC-SA 4.0 components (models.animejanai-onnx): USE IS PERMITTED for this purpose. Section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only', and section 1(k) defines NonCommercial as 'not primarily intended for or directed towards commercial advantage or monetary compensation'. Running the weights locally is inside that grant and engages no ShareAlike condition, because nothing is shared. REDISTRIBUTION IS NOT PERMITTED: placing the graphs in a shipped bundle would be a Share, engaging the section 3(a) attribution and section 3(b) share-alike conditions, and it is outside the recorded scope in any case.",
-      "Components with no grant at all (engine.aji-dispatcher, engine.aji-trt, engine.aji-dml): the use scope changes nothing. There is no licence text whose limits a non-commercial use could stay within. Private local use, modification, building and redistribution are equally without basis. See native/permission-request.md."
+      "CC BY-NC-SA 4.0 components (models.animejanai-onnx): local non-commercial USE is within the located grant - section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only', and section 1(k) defines NonCommercial - and it engages no ShareAlike condition because nothing is shared. REDISTRIBUTION IS NOT CLEARED: placing the graphs in a shipped bundle is a Share, which triggers the section 3(a) attribution, section 3(b) share-alike and section 2(b)(3) royalty conditions, and no recorded rights-owner decision establishes that the product remains NonCommercial at the moment of distribution. See ESC-2.",
+      "Components with no located grant (engine.aji-dispatcher, engine.aji-trt, engine.aji-dml): their upstream terms are 'upstream terms not verified'. The use scope changes nothing: there is no located licence text and no upstream grant, so redistribution is not cleared and none is claimed. The draft permission request at native/permission-request.md remains unsent. See ESC-1.",
+      "The project's own integration code and its recorded decisions are covered by the owner's 2026-10-04 unrestricted grant, recorded at ../../LICENSE (The Unlicense) and summarised in projectIntegrationGrant. That grant does not relicense any third-party component above, and any component whose licence imposes conditions is governed by those conditions regardless of this scope."
     ]
   },
-
   "blockerTaskBindings": {
-    "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in tasks.md is a planning fact and is not a rights question.",
-    "ESC-1": {
-      "binds": ["M04", "M05", "M15", "M16", "M17", "M18", "M19", "M20", "M21", "M22", "M23", "M24", "M25", "M26", "M27", "M28", "M29", "M30", "M31", "M32", "M43", "M44", "M45", "M48", "M49"],
-      "bindsBecause": "these tasks build, ship or execute the ABI-8 inference shim",
-      "doesNotBind": ["M06", "M07", "M08", "M09", "M10", "M11", "M13", "M14", "M33", "M34", "M35", "M36", "M37", "M38", "M39", "M40", "M41", "M42"],
-      "doesNotBindBecause": "the stock mpv loader and discovery path, the typed vocabulary and contract work, the import of user-supplied models under their own terms, and the presentation and trust-boundary layers need no inference binary and redistribute nothing"
+    "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in tasks.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
+    "currentState": "THREE RIGHTS ITEMS ARE OPEN: ESC-1 (the upstream inference source has no located licence and no grant), ESC-2 (the CC BY-NC-SA spatial graphs are not cleared for redistribution under the recorded scope) and ESC-3 (RIFE whole-graph artefact redistribution is unresolved). They leave the Native bundle redistribution 'blocked'. ESC-4 and ESC-5 are resolved, and ESC-6 is an obligations-tracking item. The owner's 2026-10-04 grant covers this project's own integration code only (see projectIntegrationGrant) and clears no third-party component.",
+    "taskBindings": {
+      "ESC-1": {
+        "bound": [
+          "M04",
+          "M05",
+          "M15",
+          "M16",
+          "M17",
+          "M18",
+          "M19",
+          "M20",
+          "M21",
+          "M22",
+          "M23",
+          "M24",
+          "M25",
+          "M26",
+          "M27",
+          "M28",
+          "M29",
+          "M30",
+          "M31",
+          "M32",
+          "M43",
+          "M44",
+          "M45",
+          "M48",
+          "M49"
+        ],
+        "boundBecause": "these tasks build, ship or execute the ABI-8 inference shim",
+        "neverBound": [
+          "M06",
+          "M07",
+          "M08",
+          "M09",
+          "M10",
+          "M11",
+          "M13",
+          "M14",
+          "M33",
+          "M34",
+          "M35",
+          "M36",
+          "M37",
+          "M38",
+          "M39",
+          "M40",
+          "M41",
+          "M42"
+        ],
+        "neverBoundBecause": "the stock mpv loader and discovery path, the typed vocabulary and contract work, the import of user-supplied models under their own terms, and the presentation and trust-boundary layers need no inference binary and redistribute nothing"
+      },
+      "ESC-2": {
+        "bound": [
+          "M05"
+        ],
+        "boundBecause": "the bundle would carry the five spatial graphs, which is redistribution, not the permitted local use",
+        "neverBound": [
+          "M11",
+          "M13"
+        ],
+        "neverBoundBecause": "both handle user-supplied models under the terms those models carry"
+      },
+      "ESC-3": {
+        "bound": [
+          "M05"
+        ],
+        "boundBecause": "a bundle that would carry the four RIFE graphs redistributes files whose exporter is unnamed and which carry no per-file notice",
+        "neverBound": [
+          "M12",
+          "M24",
+          "M44"
+        ],
+        "neverBoundBecause": "the graphs are acquired and pinned, so M12's capability surface is buildable and unit-testable against fixture inputs; M24/M44 still need engine-build and runtime proof, which is a capability gate, not a rights one"
+      },
+      "ESC-5": {
+        "bound": [],
+        "boundBecause": "nothing, by design: engines are built in-process through the TensorRT builder API, so trtexec.exe was never a task dependency"
+      }
     },
-    "ESC-2": {
-      "binds": ["M05"],
-      "bindsBecause": "the bundle would carry the five spatial graphs, which is redistribution, not the permitted local use",
-      "doesNotBind": ["M11", "M13"],
-      "doesNotBindBecause": "both handle user-supplied models under the terms those models carry"
-    },
-    "ESC-3": {
-      "binds": ["M05"],
-      "bindsBecause": "whole-graph provenance and redistribution only: a bundle that would carry the four RIFE graphs redistributes files whose exporter is unnamed and which carry no per-file notice",
-      "doesNotBind": ["M12", "M24", "M44"],
-      "doesNotBindBecause": "the graphs are acquired and pinned, so M12's capability surface is buildable and unit-testable against fixture inputs; M24/M44 still need engine-build and runtime proof, but that is a capability gate (and ESC-1), not this rights item. No other task redistributes the graphs."
-    },
-    "ESC-5": {
-      "binds": [],
-      "bindsBecause": "nothing, by design: engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience that no task needs to ship"
-    },
-    "downstreamNote": "M50 and M52 are not independently rights-blocked. M50's acceptance covers a licensed Native bundle that cannot exist while ESC-1 stands, and M52 walks that same acceptance list. Both are gated on M04 and M05, which is a consequence, not a separate finding."
+    "residualRightsConditions": [
+      "The obligations recorded on components remain in force: GPL-family source and relinkability for core.fork-mpv; the CC BY-NC-SA attribution, warranty-disclaimer and ShareAlike terms for models.animejanai-onnx; the NVIDIA SLA 1.2.1.x distribution conditions and the required 'This software contains source code provided by NVIDIA Corporation.' notice for runtime.tensorrt and runtime.cuda-cudart; Windows/Xbox-only and non-stand-alone conditions for runtime.directml.",
+      "ESC-5's resolution is conditional on the design: it lapses if any task makes trtexec.exe a run-time dependency again."
+    ],
+    "downstreamNote": "M50 and M52 are gated by the open ESC-1/ESC-2/ESC-3 items: a Native bundle carrying the inference shim or the CC BY-NC-SA spatial graphs has no third-party redistribution clearance, and none is claimed. They are also gated on M04 and M05 capability and runtime proof, which is a consequence, not a separate finding."
   },
-
   "redistributionSemantics": {
     "cleared": "The licence as located grants redistribution inside a shipped bundle, and the conditions are recorded. 'Cleared' means the located text permits it; it is not legal advice and does not mean the conditions are already satisfied.",
     "blocked": "Redistribution inside a shipped bundle is NOT permitted on the evidence located, or a required grant is absent. A blocked component makes M50 and M52 unachievable as written and must be escalated, not worked around.",
     "external": "The component is consumed from outside the bundle: installed separately, downloaded from its own vendor, or built locally from source that is not redistributed as a binary. No third-party binary is vendored into the repository or the bundle."
   },
-
   "escalations": [
     {
       "id": "ESC-1",
@@ -65,8 +125,9 @@
         "decision": "NOT ADOPTED",
         "reason": "This project is built around this specific inference implementation. Substituting a different implementation changes the product, not just its provenance, and would silently alter the behaviour every downstream task is specified against. It is recorded here only so that it is visibly closed off rather than quietly available as a workaround."
       },
-      "scopeNote": "The recorded private, local, non-commercial use does NOT mitigate this blocker. There is no licence text whose limits a non-commercial use could stay within, and no grant to fall inside. Use, modification, build and redistribution are all equally without basis.",
-      "note": "This is recorded as a blocker, not resolved. Do not interpret the presence of these DLLs in a read-only package on this machine as clearance."
+      "scopeNote": "The owner's 2026-10-04 grant covers this project's own integration code and its recorded decisions (see projectIntegrationGrant); it cannot supply the missing upstream grant and must not be represented as one. The upstream component itself remains redistribution 'blocked' and its terms remain 'upstream terms not verified'.",
+      "note": "The locatable upstream licence facts are unchanged and are recorded exactly as found: the repository declares no LICENSE, no SPDX identifier and no per-file headers, and the GitHub API reports license=null. The draft permission request at native/permission-request.md remains unsent, and nothing here should be read as if a grant had been obtained.",
+      "boundary": "Project-owned integration code is separately covered by the owner's unrestricted grant (projectIntegrationGrant). That grant is not an upstream licence; third-party components keep their own terms, and no upstream reuse is authorized by it."
     },
     {
       "id": "ESC-2",
@@ -76,7 +137,8 @@
       "consequence": "The grant and the condition must not be conflated. Section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only'. Section 1(k) defines NonCommercial as 'not primarily intended for or directed towards commercial advantage or monetary compensation'. The recorded intended use of this project is private, local and non-commercial, so USING these weights on the owner's own machine is within the located grant, and it engages no ShareAlike condition because nothing is shared. REDISTRIBUTION is a separate act: placing the graphs in a shipped bundle is a Share, which triggers section 3(a) attribution, section 3(b) share-alike and the section 2(b)(3) royalty reservation, and it falls outside the recorded scope regardless of its non-commercial character. Separately, the TensorRT SLA and CUDA SLA each contain a clause (1.2.5) forbidding use of the SDK in a manner that would cause it to become subject to an open source software licence; whether a given arrangement of model weights and NVIDIA redistributables in one bundle engages that clause is likewise a question for the rights owner. CC BY-NC-SA 4.0 is not by itself a licence on the NVIDIA SDK - the two instruments govern different components - so no incompatibility is asserted.",
       "missingEvidence": "if redistribution is ever contemplated, a recorded decision by this project's rights owner on (a) whether the product remains NonCommercial at the moment of distribution, and (b) how the Attribution, ShareAlike and warranty-disclaimer obligations are discharged in the shipped notices. Neither question arises for the private local use that is actually in scope today.",
       "citationCorrection": "An earlier revision of this file cited the NonCommercial definition as section 1(j). In the located text of CC BY-NC-SA 4.0, section 1(j) defines 'Licensor'; NonCommercial is defined in section 1(k). Corrected here and in THIRD_PARTY_NOTICES.md.",
-      "note": "This blocks redistribution of these five files, and only redistribution. It does not block local non-commercial use of the weights, and it does not block the M11/M13 model-import and planning work, which handles user-supplied models under their own terms."
+      "note": "This blocks redistribution of these five files, and only redistribution. It does not block local non-commercial use of the weights, and it does not block the M11/M13 model-import and planning work, which handles user-supplied models under their own terms.",
+      "boundary": "No rights-owner decision on a shipped bundle's NonCommercial status is recorded. The 2026-10-04 owner grant covers this project's own integration code only (projectIntegrationGrant) and does not clear this third-party component."
     },
     {
       "id": "ESC-3",
@@ -90,7 +152,8 @@
         "rife_v4.14_lite": "same position as rife_v4.14; the lite checkpoint is a separately published MIT link, and the acquired graph's stored tensors match it.",
         "rife_v4.14_ensemble": "no ensemble weight artefact is published in Practical-RIFE's links. The acquired ensemble graph's initializer set is byte-identical to its base graph's and matches the same base MIT checkpoint; this does not settle the graph-operator derivation or whole-artefact redistribution.",
         "rife_v4.14_lite_ensemble": "the independent-axis combination of the lite checkpoint under the ensemble merge ops; its initializer set matches the lite MIT checkpoint. Same residual as the other ensemble graph."
-      }
+      },
+      "note": "This blocks redistribution of the four graph files, and only redistribution. It does not block local non-commercial use or the M12 capability surface, which is buildable and unit-testable against fixture inputs. No rights-owner decision on redistributing the graph files as artefacts is recorded, and the 2026-10-04 owner grant covers this project's own integration code only (projectIntegrationGrant)."
     },
     {
       "id": "ESC-4",
@@ -103,12 +166,15 @@
     },
     {
       "id": "ESC-5",
-      "severity": "non-blocking-but-must-be-resolved-before-vendoring",
+      "severity": "RESOLVED",
       "component": "trtexec.exe",
       "finding": "The TensorRT Supplement makes the runtime .so/.dll files distributable. trtexec.exe is a developer tool, and SLA 1.2.1.4 states that unless a developer tool is identified in the Agreement as distributable it is delivered for internal use only. The Agreement text located does not identify trtexec.exe as distributable.",
       "consequence": "The reference package ships trtexec.exe and its notice file claims the TensorRT redistributables come from NVIDIA's redistributable downloads under the same terms. That is the upstream author's reading, not a verified grant. Shipping trtexec.exe inside our bundle on the strength of that notice alone would be assuming a permission that has not been shown.",
       "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or a bundle design that does not ship it.",
-      "designNote": "trtexec is only needed to build a TensorRT engine from an ONNX graph. The planned design builds engines in-process through the TensorRT builder API with an out-of-band preparation helper CLI. If that design holds, trtexec.exe is a build-time convenience and can stay out of the shipped bundle entirely - which resolves this by architecture rather than by permission. That is a design consequence to carry into M04/M15, not a legal finding."
+      "designNote": "trtexec is only needed to build a TensorRT engine from an ONNX graph. The planned design builds engines in-process through the TensorRT builder API with an out-of-band preparation helper CLI. If that design holds, trtexec.exe is a build-time convenience and can stay out of the shipped bundle entirely - which resolves this by architecture rather than by permission. That is a design consequence to carry into M04/M15, not a legal finding.",
+      "resolution": "RESOLVED BY ARCHITECTURE, NOT BY PERMISSION. Engines are built in-process through the TensorRT builder API with an out-of-band preparation helper, so trtexec.exe is a build-time convenience and never a run-time dependency. tool.trtexec is therefore redistribution 'external' and inBundle false: it is not shipped, and the Supplement's developer-tool restriction never engages.",
+      "whatDidNotChange": "No written confirmation from NVIDIA was obtained, and none is required on this design. The upstream notice file's claim that the TensorRT redistributables may be redistributed does not extend to a developer tool, and this project does not rely on that claim.",
+      "note": "This is a design consequence, and M04/M15 must hold it: if the design ever changes to shell out to trtexec.exe at run time, this resolution lapses and the component becomes blocked again until a design that omits it is restored or NVIDIA confirms in writing."
     },
     {
       "id": "ESC-6",
@@ -117,10 +183,9 @@
       "finding": "mpv is GPL-2.0-or-later by default and LGPL-2.1-or-later only when built with -Dgpl=false and without the GPL-only files. The filter file itself carries an LGPL-2.1-or-later header. The build options used for any given binary are not derivable from the binary, and the fork's bundled FFmpeg and other dependencies have their own terms that decide the combined result.",
       "consequence": "A Native bundle that ships a fork core is a GPL-family redistribution with real obligations: complete corresponding source, licence texts, and the ability to relink. A Standard bundle from mpv-winbuild-cmake is likewise GPL-family.",
       "missingEvidence": "the meson option set actually used for the fork build, and the licence status of every statically or dynamically linked dependency in the specific binary to be shipped.",
-      "note": "This does not block M03. It is recorded because the fork core must be built BY this repository from the pinned commit, which is what makes the build options knowable and the corresponding source reproducible. That is already the planned design."
+      "note": "This does not block M03. It is recorded because the fork core must be built BY this repository from the pinned commit, which is what makes the build options knowable and the corresponding source reproducible. That is already the planned design. This remains an obligations-tracking item, not a blocker: the GPL-family obligations travel with the shipped core and are recorded as conditions on components.json#core.fork-mpv."
     }
   ],
-
   "bundles": [
     {
       "id": "standard",
@@ -128,15 +193,17 @@
       "purpose": "Plain mpv playback and the Anime4K GLSL chain. No inference, no CUDA filter.",
       "shippingDecision": "external",
       "rationale": "The application already provisions this core at run time from shinchiro/mpv-winbuild-cmake's release API into %LOCALAPPDATA%/MPVBackend/runtime. M03 does not vendor it and does not modify that discovery path. Nothing new is redistributed by this work.",
-      "components": ["core.stock-mpv"],
+      "components": [
+        "core.stock-mpv"
+      ],
       "outOfScopeNote": "The repository's 49 vendored Anime4K GLSL shaders are not listed here. They are not native-bundle components, they are already vendored in the repository's own shaders/ directory, and their licence fact is recorded in THIRD_PARTY_NOTICES.md section 9."
     },
     {
       "id": "native",
       "kind": "native",
       "purpose": "mpv with vf_animejanai compiled in, plus the ABI-8 shim and its dependency closure.",
-      "shippingDecision": "blocked pending ESC-1",
-      "rationale": "Every component is identified below, but the inference shim's absent licence (ESC-1) means the bundle cannot ship as specified. This is escalated rather than engineered around.",
+      "shippingDecision": "blocked",
+      "rationale": "Third-party redistribution clearance is not established. The upstream inference shim (ESC-1) has no located licence or grant, the CC BY-NC-SA spatial graphs (ESC-2) are not cleared for distribution under the recorded scope, and the RIFE whole-graph artefact rights (ESC-3) remain unresolved. The owner's 2026-10-04 grant covers this project's own integration code only (projectIntegrationGrant).",
       "scopeNote": "The Native bundle is a distribution act, so the recorded private, local, non-commercial use scope does not change this decision: a bundle exists to be handed to third parties. It does, separately, mean that the CC BY-NC-SA spatial graphs (ESC-2) are usable locally without any of the ShareAlike conditions attaching - the blocker on those five files is redistribution, not use.",
       "components": [
         "core.fork-mpv",
@@ -154,7 +221,6 @@
       ]
     }
   ],
-
   "components": [
     {
       "id": "core.stock-mpv",
@@ -166,7 +232,10 @@
         "pinKind": "referencePin",
         "provenanceWeakness": "the recipe tracks mpv master, not a tag; the resolved version is whatever the latest release was at download time. The app resolves it at run time and does not record the resolved tag today."
       },
-      "licence": { "spdx": "GPL-2.0-or-later", "obligations": "complete corresponding source for the binary, licence texts, relinkability" },
+      "licence": {
+        "spdx": "GPL-2.0-or-later",
+        "obligations": "complete corresponding source for the binary, licence texts, relinkability"
+      },
       "redistribution": "external",
       "inBundle": false,
       "notes": "Not vendored. Provisioned by pre-existing stock discovery/download logic, which this work leaves untouched."
@@ -179,18 +248,26 @@
         "sourceId": "mpv-fork",
         "pinKind": "releasePin",
         "commit": "63d127174d8f70336c82a22408929e2bc301edcb",
-        "buildConfiguration": { "cuda-hwaccel": "enabled", "cuda-interop": "enabled", "gl": "enabled" },
+        "buildConfiguration": {
+          "cuda-hwaccel": "enabled",
+          "cuda-interop": "enabled",
+          "gl": "enabled"
+        },
         "buildRequirement": "must be built by this repository from the pinned commit under M04, not taken from the reference package",
         "why": "the reference package's core was built by a third party with undocumented options; only a self-built core makes the licence status, the corresponding source and the patch series knowable",
         "knownGoodBehaviour": "the package's core reports 0.41.0-dev-g63d127174 in-binary; that is an observation about a pre-existing file, not a reproduction target"
       },
-      "licence": { "spdx": "GPL-2.0-or-later OR LGPL-2.1-or-later", "determinedBy": "meson options and the licences of the linked dependency closure; see ESC-6" },
+      "licence": {
+        "spdx": "GPL-2.0-or-later OR LGPL-2.1-or-later",
+        "determinedBy": "meson options and the licences of the linked dependency closure; see ESC-6"
+      },
       "redistribution": "cleared",
       "inBundle": true,
       "conditions": [
         "ship the complete corresponding source for the shipped core, including this repository's patch series",
         "ship LICENSE.GPL and LICENSE.LGPL and the Copyright file",
-        "preserve the ability for a recipient to relink a modified library version"
+        "preserve the ability for a recipient to relink a modified library version",
+        "record the patch series identity in the shipped notice once M04 establishes it; until then the corresponding source is incomplete"
       ]
     },
     {
@@ -202,16 +279,31 @@
         "pinKind": "releasePin",
         "abi": 8,
         "exports": 17,
-        "buildsFrom": ["src/aji_dispatch.cpp", "src/aji_conf.cpp"],
+        "buildsFrom": [
+          "src/aji_dispatch.cpp",
+          "src/aji_conf.cpp"
+        ],
         "dependencies": "none of its own - no CUDA, no TensorRT, no ORT"
       },
-      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "licence": {
+        "spdx": null,
+        "status": "upstream terms not verified",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "evidence": [
+          "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
+          "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
+        ],
+        "caveat": "The owner's 2026-10-04 grant covers this project's own integration code and its recorded decisions (see projectIntegrationGrant); it does not relicense or verify this third-party upstream source, and no upstream grant has been obtained."
+      },
       "redistribution": "blocked",
       "inBundle": false,
       "blockerRef": "ESC-1",
-      "blockScope": "all use, not only redistribution",
+      "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md."
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "presentInInstalledBundle": true,
+      "presenceNote": "Present in the installed private bundle (96768 bytes) and byte-identical to this repository's own build under _compile-smoke/aji-m04. Marked inBundle false because redistribution is blocked, not because it is absent."
     },
     {
       "id": "engine.aji-trt",
@@ -221,17 +313,33 @@
         "sourceId": "animejanai-inference",
         "pinKind": "releasePin",
         "abi": 8,
-        "buildsFrom": ["src/aji_trt.cpp", "src/aji_conf.cpp", "src/kernels.cu"],
+        "buildsFrom": [
+          "src/aji_trt.cpp",
+          "src/aji_conf.cpp",
+          "src/kernels.cu"
+        ],
         "links": "nvinfer_11, CUDA::cuda_driver, CUDA::cudart",
         "cudaArchitectures": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual"
       },
-      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "licence": {
+        "spdx": null,
+        "status": "upstream terms not verified",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "evidence": [
+          "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
+          "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
+        ],
+        "caveat": "The owner's 2026-10-04 grant covers this project's own integration code and its recorded decisions (see projectIntegrationGrant); it does not relicense or verify this third-party upstream source, and no upstream grant has been obtained."
+      },
       "redistribution": "blocked",
       "inBundle": false,
       "blockerRef": "ESC-1",
-      "blockScope": "all use, not only redistribution",
+      "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md."
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "presentInInstalledBundle": true,
+      "presenceNote": "Present in the installed private bundle (1210880 bytes) and byte-identical to this repository's own build under _compile-smoke/aji-m04. Marked inBundle false because redistribution is blocked, not because it is absent."
     },
     {
       "id": "engine.aji-dml",
@@ -241,18 +349,33 @@
         "sourceId": "animejanai-inference",
         "pinKind": "releasePin",
         "abi": 8,
-        "buildsFrom": ["src/aji_dml.cpp", "src/aji_conf.cpp"],
+        "buildsFrom": [
+          "src/aji_dml.cpp",
+          "src/aji_conf.cpp"
+        ],
         "links": "d3d12 d3d11 dxgi d3dcompiler (ORT and DirectML resolved at run time from its own directory)",
         "platform": "WIN32 only"
       },
-      "licence": { "spdx": null, "status": "NO LICENCE EXISTS" },
+      "licence": {
+        "spdx": null,
+        "status": "upstream terms not verified",
+        "locatedText": "None. The upstream repository declares no licence: no LICENSE or COPYING file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
+        "evidence": [
+          "https://api.github.com/repos/the-database/animejanai-inference (license: null)",
+          "https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE (HTTP 404)"
+        ],
+        "caveat": "The owner's 2026-10-04 grant covers this project's own integration code and its recorded decisions (see projectIntegrationGrant); it does not relicense or verify this third-party upstream source, and no upstream grant has been obtained."
+      },
       "redistribution": "blocked",
       "inBundle": false,
       "blockerRef": "ESC-1",
-      "blockScope": "all use, not only redistribution",
+      "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not mitigate this. There is no licence text whose limits a non-commercial use could stay within and no grant to fall inside, so use, modification, build and redistribution are all equally without basis. Only a grant from the copyright holder changes this. See escalations[ESC-1] and native/permission-request.md.",
-      "note": "Whether aji_dml is offered at all is a separate product decision. The plan's DirectML interop proof is itself outstanding, so this component may never be shipped."
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "note": "Whether aji_dml is offered at all is a separate product decision. The plan's DirectML interop proof is itself outstanding, so this component may never be shipped.",
+      "presentInInstalledBundle": false,
+      "absenceReason": "No aji_dml.dll in the installed bundle. The DirectML path was refused at run time: the required SHARED_NTHANDLE WGL registration was refused with 0xC007006E, so the capability is recorded as honestly disabled rather than shipped unproven."
     },
     {
       "id": "runtime.tensorrt",
@@ -270,7 +393,13 @@
         "name": "NVIDIA TensorRT Software License Agreement + TensorRT Supplement",
         "distributablePortion": "runtime .so and .dll",
         "requiredNotice": "This software contains source code provided by NVIDIA Corporation.",
-        "obligations": ["material additional functionality in the application", "the redistributable portions are accessed only by the application", "the notice above accompanies the distribution", "the application's own terms stay consistent with the Agreement", "the SDK is not thereby made subject to an open source licence"]
+        "obligations": [
+          "material additional functionality in the application",
+          "the redistributable portions are accessed only by the application",
+          "the notice above accompanies the distribution",
+          "the application's own terms stay consistent with the Agreement",
+          "the SDK is not thereby made subject to an open source licence"
+        ]
       },
       "redistribution": "external",
       "inBundle": true,
@@ -287,7 +416,10 @@
         "pinKind": "referencePin",
         "necessity": "one per SM the engine builder may need; the set matches the CUDA architecture list exactly"
       },
-      "licence": { "name": "NVIDIA TensorRT SLA + Supplement", "distributablePortion": "runtime .dll" },
+      "licence": {
+        "name": "NVIDIA TensorRT SLA + Supplement",
+        "distributablePortion": "runtime .dll"
+      },
       "redistribution": "external",
       "inBundle": true,
       "note": "Shipping every per-SM resource is what makes the closure self-contained on any supported GPU rather than only the build machine's."
@@ -304,7 +436,10 @@
       "licence": {
         "name": "NVIDIA Software License Agreement + CUDA Supplement",
         "distributablePortion": "CUDA EULA section 2.6 Attachment A, CUDA Runtime: cudart.dll and version/architecture-specific variations thereof",
-        "obligations": ["same distribution requirements as TensorRT", "the SDK is not thereby made subject to an open source licence"]
+        "obligations": [
+          "same distribution requirements as TensorRT",
+          "the SDK is not thereby made subject to an open source licence"
+        ]
       },
       "redistribution": "external",
       "inBundle": true,
@@ -321,7 +456,11 @@
         "upstreamCommit": "2d924974ef147392ced8409d36bd6d2e7fcc8a74",
         "acquisitionUrl": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4"
       },
-      "licence": { "spdx": "MIT", "copyright": "Copyright (c) Microsoft Corporation", "obligations": "retain the copyright notice and permission text in copies or substantial portions" },
+      "licence": {
+        "spdx": "MIT",
+        "copyright": "Copyright (c) Microsoft Corporation",
+        "obligations": "retain the copyright notice and permission text in copies or substantial portions"
+      },
       "redistribution": "cleared",
       "inBundle": true,
       "scopeNote": "DirectML track only. Not part of a TensorRT-only bundle."
@@ -338,11 +477,29 @@
         "nupkgSha256": "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9",
         "nupkgBytes": 202292617,
         "files": [
-          { "name": "bin/x64-win/DirectML.dll", "bytes": 18527776, "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1" },
-          { "name": "include/DirectML.h", "sha256": "3daeed73aa64905c07b6f5394c7b45eabf0ac17bbca54b1584c871e03e4f54ad" },
-          { "name": "include/DirectMLConfig.h", "sha256": "2363f2f6cf6b4a8fbebd266d295e09ba43d6d4722c981afe7454917d1e927d7a" },
-          { "name": "LICENSE.txt", "bytes": 10439, "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d" },
-          { "name": "LICENSE-CODE.txt", "bytes": 1093, "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c" }
+          {
+            "name": "bin/x64-win/DirectML.dll",
+            "bytes": 18527776,
+            "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+          },
+          {
+            "name": "include/DirectML.h",
+            "sha256": "3daeed73aa64905c07b6f5394c7b45eabf0ac17bbca54b1584c871e03e4f54ad"
+          },
+          {
+            "name": "include/DirectMLConfig.h",
+            "sha256": "2363f2f6cf6b4a8fbebd266d295e09ba43d6d4722c981afe7454917d1e927d7a"
+          },
+          {
+            "name": "LICENSE.txt",
+            "bytes": 10439,
+            "sha256": "a05138e3a085ff60a44881eedfa58dccb03ecc1d7b1f6ae888418e8c2fec4b8d"
+          },
+          {
+            "name": "LICENSE-CODE.txt",
+            "bytes": 1093,
+            "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c"
+          }
         ],
         "note": "Digests computed from the downloaded 1.15.4 nupkg. DirectML.dll is byte-identical to the copy in the read-only reference package."
       },
@@ -350,7 +507,12 @@
         "spdx": null,
         "name": "Microsoft Software License Terms - Microsoft DirectX Machine Learning (DirectML), for the binary; MIT (LICENSE-CODE.txt) for the code",
         "redistributionGrant": "LICENSE.txt section 1(a): \"You may copy and distribute the software (i.e. make available for third parties) in applications and services you develop in the build with Machine Learning tools and frameworks, and/or games that run on Windows and Xbox.\"",
-        "obligations": ["Windows/Xbox use only (section 1(a))", "not a stand-alone offering; must be embedded in an application (section 3(e))", "Microsoft notices must not be removed or modified (section 3(c))", "export restrictions apply (section 4)"]
+        "obligations": [
+          "Windows/Xbox use only (section 1(a))",
+          "not a stand-alone offering; must be embedded in an application (section 3(e))",
+          "Microsoft notices must not be removed or modified (section 3(c))",
+          "export restrictions apply (section 4)"
+        ]
       },
       "redistribution": "cleared",
       "inBundle": true,
@@ -367,13 +529,13 @@
       },
       "licence": {
         "name": "NVIDIA TensorRT SLA + Supplement",
-        "status": "UNRESOLVED - see ESC-5",
+        "status": "RESOLVED BY ARCHITECTURE - see ESC-5; not shipped",
         "issue": "the Supplement's distributable portion is the runtime .so/.dll; a developer tool is internal-use only unless the Agreement identifies it as distributable, and the located Agreement text does not"
       },
-      "redistribution": "blocked",
+      "redistribution": "external",
       "inBundle": false,
-      "blockerRef": "ESC-5",
-      "architecturePath": "the planned design builds engines in-process via the TensorRT builder API in an out-of-band preparation helper. On that design trtexec.exe is a convenience, not a runtime dependency, and can be omitted from the shipped bundle without weakening the product."
+      "architecturePath": "the planned design builds engines in-process via the TensorRT builder API in an out-of-band preparation helper. On that design trtexec.exe is a convenience, not a runtime dependency, and can be omitted from the shipped bundle without weakening the product.",
+      "resolution": "RESOLVED BY ARCHITECTURE, not by permission. Engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience and never a run-time dependency. It is therefore not shipped and not redistributed, and the Supplement's developer-tool restriction never engages. No NVIDIA confirmation was obtained and none is required on this design."
     },
     {
       "id": "models.animejanai-onnx",
@@ -384,26 +546,59 @@
         "pinKind": "releasePin",
         "upstream": "the-database/mpv-AnimeJaNai",
         "files": [
-          { "name": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c" },
-          { "name": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716" },
-          { "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx", "bytes": 1971970, "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f" },
-          { "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", "bytes": 740318, "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4" },
-          { "name": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx", "bytes": 1212903, "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5" }
+          {
+            "name": "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+            "bytes": 1971970,
+            "sha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c"
+          },
+          {
+            "name": "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+            "bytes": 740318,
+            "sha256": "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716"
+          },
+          {
+            "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
+            "bytes": 1971970,
+            "sha256": "dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f"
+          },
+          {
+            "name": "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+            "bytes": 740318,
+            "sha256": "72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4"
+          },
+          {
+            "name": "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx",
+            "bytes": 1212903,
+            "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5"
+          }
         ],
         "note": "these digests were measured on the read-only reference package; they are identity evidence for the pinned upstream files, not a build product of this repository"
       },
       "licence": {
         "spdx": null,
         "name": "CC BY-NC-SA 4.0",
-        "obligations": ["attribution", "share-alike", "non-commercial only", "patent and trademark rights not licensed"]
+        "obligations": [
+          "attribution",
+          "share-alike",
+          "non-commercial only",
+          "patent and trademark rights not licensed"
+        ]
       },
       "redistribution": "blocked",
       "inBundle": false,
       "blockerRef": "ESC-2",
       "blockScope": "redistribution only",
-      "usePermitted": true,
-      "useScopeNote": "Local non-commercial use of these five graphs is within the located CC BY-NC-SA 4.0 grant and is permitted for this project's recorded private, local, non-commercial scope. What is not permitted is their inclusion in a shipped bundle, which is a Share and triggers the section 3(a) attribution and section 3(b) share-alike conditions. See components.useScope and escalations[ESC-2].",
-      "note": "The M11/M13 catalog must still carry a per-model termsNote so that a user-supplied model is handled under its own terms."
+      "blockReason": "CC BY-NC-SA 4.0 section 2(a)(1) licenses Share for NonCommercial purposes, but no recorded decision establishes that the product remains NonCommercial at the moment of distribution, and the recorded use scope withholds distribution. Placing the graphs in a shipped bundle would also engage the section 2(b)(3) royalty reservation and the section 3 attribution and share-alike conditions.",
+      "note": "This blocks redistribution of these five files, and only redistribution. It does not block local non-commercial use of the weights, and it does not block the M11/M13 model-import and planning work, which handles user-supplied models under their own terms.",
+      "boundary": "No owner NonCommercial determination for a shipped bundle is recorded; the 2026-10-04 owner grant covers this project's own integration code only (projectIntegrationGrant) and does not clear third-party models.",
+      "conditions": [
+        "retain creator identification, copyright notice, licence notice and a link to the licence (section 3(a))",
+        "retain the warranty disclaimer (section 3(a)(d))",
+        "apply the ShareAlike term to any adapted material (section 3(b))",
+        "do not use the marks or imply endorsement (section 2(b)(2) - no patent or trademark rights granted)",
+        "the distribution must remain NonCommercial; any change to a commercial purpose voids this clearance and requires a fresh owner decision",
+        "the bundle must not cause the NVIDIA SDK portions to become subject to an open source licence (TensorRT SLA 1.2.5, CUDA SLA 1.2.5)"
+      ]
     },
     {
       "id": "models.rife-v4.14",
@@ -415,7 +610,13 @@
         "requiredNamesVerified": true,
         "nameDerivation": "rife_model_name() maps code 414 -> rife_v4.14, a four-digit code ending in 1 -> _lite, and ensemble -> _ensemble on an independent boolean; the consumer appends .onnx, so the full {Full, Lite} x {ensemble off, on} space is four names",
         "localPresence": "all four names present under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and every tracked tree. native/rife-acquisition.md records the archive pin, extraction, structural check and weight comparison; native/videojanai-acquisition.md records the byte-identical comparison against component-rife.7z.",
-        "acquiredArchivePin": { "asset": "rife-fp16-1.7z", "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9", "bytes": 322142263, "publishedDigestReproducedExactly": true, "butLicence": "the publishing repository declares no licence of its own and the asset carries no per-file notice" }
+        "acquiredArchivePin": {
+          "asset": "rife-fp16-1.7z",
+          "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9",
+          "bytes": 322142263,
+          "publishedDigestReproducedExactly": true,
+          "butLicence": "the publishing repository declares no licence of its own and the asset carries no per-file notice"
+        }
       },
       "licence": {
         "spdx": "MIT",
@@ -426,35 +627,2237 @@
       "redistribution": "blocked",
       "inBundle": false,
       "blockerRef": "ESC-3",
-      "blockReason": "Whole-graph provenance and redistribution rights, not asset availability. The four graphs are acquired and their weight data traces to the MIT author, but exporter identity and the non-weight graph material are unresolved and no grant covers redistributing the files as artefacts."
+      "blockScope": "redistribution only",
+      "blockReason": "Whole-graph provenance and redistribution rights, not asset availability. The four graphs are acquired and their weight data traces to the MIT author, but exporter identity and the non-weight graph material are unresolved and no grant covers redistributing the files as artefacts.",
+      "note": "This blocks redistribution of the four graph files, and only redistribution. It does not block local non-commercial use or the M12 capability surface, which is buildable and unit-testable against fixture inputs. The 2026-10-04 owner grant covers this project's own integration code only (projectIntegrationGrant).",
+      "conditions": [
+        "retain the attribution for hzwer/Practical-RIFE and its pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 in the shipped notice",
+        "state the licence as MIT on the basis of the author's affirmative README grant, not on the basis of a licence declared by the publishing repository, which declares none",
+        "record that the graphs were obtained from the animejanai-inference release asset rife-fp16-1.7z (sha256 3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9) rather than built by this project"
+      ]
     }
   ],
-
+  "installedBundleInventory": {
+    "purpose": "M03's per-file record. Every binary in the installed private native bundle is listed here with the source it was actually attributed to, the licence as actually located, and one of the three redistribution decisions. This is a RECORD of decisions, not a grant: no row here creates permission, and ESC-1/ESC-2/ESC-3 remain open exactly as before.",
+    "whatThisIsNot": [
+      "It is not a licence clearance. A row marked cleared means the located licence text permits redistribution and its conditions are recorded; it is not legal advice and does not mean the conditions are already satisfied.",
+      "It is not a release pin. The sha256 values are the measurements already published in the installed bundle manifest, reproduced here so the mapping is checkable against the files on disk. They are descriptive identity of the shipped bytes, not a reproduction claim from any source revision.",
+      "It is not a rights grant for this project's integration code or for anything else. The owner's 2026-10-04 grant covers this project's own code only (projectIntegrationGrant) and clears no third-party component."
+    ],
+    "scope": "The private, locally installed bundle native-0.1.0-dev.2 at %LOCALAPPDATA%/Mikai/Mikai Wrapper/native/runtime/native-0.1.0-dev.2, which is what current-native points at. 83 files, 80 DLLs and 3 EXEs. Read-only inspection: no file was modified, moved, re-hashed into a pin, or executed.",
+    "verificationMethod": "Each of the 83 recorded sha256 values was recomputed from the file on disk and matched. Attribution was then established per file: 36 mpv-deps DLLs by exact digest match against the pinned MSYS2 package archive index; 17 self-built cohort binaries (the 14 ggml-cpu variants plus ggml-0, ggml-base-0 and libwhisper-1) by exact digest match against the outputs of this repository's own ggml/whisper build; the 13 rebuilt GNU-runtime-free DLLs by digest match against this repository's own relink outputs plus an export-set comparison against the prefix originals. The remaining files were attributed by acquisition route: the core and the ABI-8 shims and the two preparation helpers by exact digest match against this repository's own builds, the CUDA runtime against NVIDIA's published redistributable, TensorRT and ONNX Runtime and DirectML against their pinned vendor packages, and the Microsoft CRT against the pinned vc_redist installer payload.",
+    "digestSummary": "Every one of the 83 digests was independently recomputed from the installed file and matched the manifest. 36 + 17 + 13 + 5 (this repository's own core, aji.dll, aji_trt.dll, mikai_native_prep.exe, mikai_native_verify.exe) + 1 (cudart) + 3 (TensorRT) + 3 (ORT/DirectML) + 4 (CRT) = 83. native_inspect.exe is the one binary with no independently recomputed input: it is a project-owned tool built by the root CMake in the Qt/MinGW cohort and its only prior copy in the SDK tree predates this build, so its provenance rests on codePaths plus the build record, not on a digest match.",
+    "decisions": {
+      "cleared": "the located licence text permits redistribution and the conditions are recorded on the component",
+      "external": "consumed from outside the bundle - downloaded from its own vendor at assembly time, or installed separately; nothing is vendored into this repository",
+      "blocked": "redistribution is not permitted on the located evidence, or a required grant is absent; see the component's blockerRef"
+    },
+    "cohorts": {
+      "core": "libmpv-2.dll - this repository's own build of the pinned fork. GPL-2.0-or-later, cleared with the GPL-family obligations recorded on core.fork-mpv.",
+      "abi8Shims": "aji.dll and aji_trt.dll - built from the unlicensed upstream inference source at the pinned commit with this repository's patch series applied. BLOCKED (ESC-1); no licence text exists upstream to permit redistribution. Shipped locally; never redistributed.",
+      "selfBuiltCohort": "the 14 ggml-cpu-*.dll variants plus mpv-deps ggml-0, ggml-base-0 and libwhisper-1 - built by this repository from the pinned ggml 0.25.3 and whisper.cpp d09f61a70 sources. MIT, cleared with the retain-the-notice obligation.",
+      "mpvDepsVerbatim": "36 DLLs copied byte-identically from the pinned MSYS2 mingw64 prefix. Mixed permissive, LGPL and GPL-family terms per owning package; cleared per package with each package's own obligations recorded. GPL-family members carry source and relinkability duties.",
+      "mpvDepsRebuilt": "13 DLLs relinked by this repository from the same packages' static archives so the closure imports no GNU runtime DLL. Identical export sets measured; behavioural equivalence NOT proved. Licence follows the owning package, unchanged by the relink.",
+      "msvcCrt": "4 DLLs from the pinned vc_redist installer payload. Microsoft Visual C++ Redistributable terms; the EULA text was not recovered, which is recorded as missing evidence, not as permission.",
+      "cudaRuntime": "cudart64_13.dll - byte-identical to NVIDIA's published CUDA redistributable. CUDA EULA Attachment A names the CUDA Runtime as redistributable, subject to the Agreement's conditions and the required NVIDIA notice.",
+      "tensorrt": "nvinfer_11.dll, nvonnxparser_11.dll and the sm120 builder resource - byte-identical to the pinned TensorRT 11.3.0.99 external SDK. Redistributable runtime portions under the TensorRT SLA plus Supplement, subject to its conditions and the required NVIDIA notice.",
+      "onnxDirectml": "onnxruntime.dll, onnxruntime_providers_shared.dll (MIT) and DirectML.dll (Microsoft Software License Terms for the binary, MIT for the code).",
+      "projectTools": "the three EXEs. mikai_native_prep and mikai_native_verify are built by this repository from native/tools/ under the owner's Unlicense grant and carry no third-party binary; native_inspect is likewise project-owned and needs the Qt cohort at run time, which it deliberately does not ship."
+    },
+    "wireAndAbiNote": "The bundle manifest declares protocolVersion 1 and engineSchemaVersion 1, and that is CORRECT for the Qt/status wire: the shipped core contains the strings mikai.native.status/1, mikai.native.admission/1 and mikai.native.control/1 and no /2 variant, matching the producer in the effective fork. The producer CAPI snapshot/schema v2, factory query v1 and source ABI 8 are a SEPARATE domain - aji_dispatch.cpp's negotiated snapshot and the managed prepared-plan factory query - and are not the same numbers as the status wire. They are recorded in sources.json#abi and #patchSeries; nothing here conflates them and no version field was changed.",
+    "closureFinding": "Every static import of every one of the 83 files resolves either inside the bundle, to an api-ms/ext-ms API set, or to a Windows system DLL. No file in the bundle imports a third-party DLL that the bundle does not ship, and none of the 80 DLLs imports libstdc++-6, libgcc_s_seh-1 or libwinpthread-1 - so the native closure cannot collide with the Qt GNU cohort. What the bundle DOES import from outside itself is named per row under importsNeedingAnExternalProvider, and every such name is a Windows system library or a driver-supplied library (nvcuda via the CUDA driver, Qt6Core for the project-owned inspect tool). That is a system dependency, not a missing third-party binary.",
+    "selfContainmentLimit": "ggml_backend_load_all resolves CPU backend DLLs by searching the executable's own directory and the current working directory, not via AddDllDirectory. The 14 ggml-cpu-*.dll files sitting beside the core is therefore necessary but NOT by itself proof that the variant set resolves on an arbitrary machine; that remains a run-time question and is not claimed here.",
+    "escalationsUnchanged": "ESC-1 (unlicensed upstream inference source), ESC-2 (CC BY-NC-SA spatial graphs, redistribution not cleared) and ESC-3 (RIFE whole-graph redistribution unresolved) are all still open. Nothing in this record resolves any of them, and no escalation was marked resolved by this integration.",
+    "unknownsAndGaps": [
+      "The Microsoft CRT EULA text was not recovered from the pinned installer payload, so the licence terms are identified by acquisition route only. Recorded as missing evidence, not as a grant.",
+      "The 13 relinked mpv-deps DLLs are export-identical to their prefix originals and byte-verified, but were built with --allow-multiple-definition and a statically linked private winpthread. Behavioural equivalence at run time is not proved and must not be inferred from the export comparison.",
+      "libmpv-2.dll statically imports vulkan-1.dll even though the meson option records vulkan=disabled. It is satisfied by the system Vulkan loader if one is present and is a soft dependency rather than a hard one, but its presence is recorded rather than assumed away.",
+      "The shipped bundle contains only the sm120 TensorRT builder resource, not the ptx and sm75-sm100 ones that buildConfigurationPins.CMAKE_CUDA_ARCHITECTURES enumerates. On a GPU whose SM is not sm120 the builder would need the matching resource, which is absent from this bundle. That is a real closure gap for this particular installed instance and is recorded, not worked around.",
+      "models.* and the animejanai-onnx and rife graphs are user-supplied at run time and are deliberately NOT in the bundle; their ESC-2 and ESC-3 positions are recorded on their components and are unaffected by this inventory."
+    ],
+    "files": [
+      {
+        "path": "aji.dll",
+        "bytes": 96768,
+        "sha256": "234ad37f98a65a1290fd3dfcea4a9dd77102cf83d3ecdb02dbac601dfd9312af",
+        "componentId": "engine.aji-dispatcher",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "blocked",
+        "redistributionNote": "ESC-1 - the upstream inference source declares no licence, no SPDX identifier and no per-file headers, and no upstream grant has been obtained. Local private use is what this bundle is; redistribution is not cleared."
+      },
+      {
+        "path": "aji_trt.dll",
+        "bytes": 1210880,
+        "sha256": "630267bac82ffbcb5ab72931865355024464c4aab13c21a85a76ba60e6633e4a",
+        "componentId": "engine.aji-trt",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "bcrypt.dll",
+          "kernel32.dll"
+        ],
+        "redistribution": "blocked",
+        "redistributionNote": "ESC-1 - same unlicensed upstream inference source as aji.dll. Not redistributable on the located evidence."
+      },
+      {
+        "path": "cuda/cudart64_13.dll",
+        "bytes": 551024,
+        "sha256": "d26fd1c2629594759af569a5252f94e4568d4ebeca67dc323834deb141aa278a",
+        "componentId": "runtime.cuda-cudart",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-core-console-l1-1-0.dll",
+          "api-ms-win-core-datetime-l1-1-0.dll",
+          "api-ms-win-core-debug-l1-1-0.dll",
+          "api-ms-win-core-errorhandling-l1-1-0.dll",
+          "api-ms-win-core-file-l1-1-0.dll",
+          "api-ms-win-core-handle-l1-1-0.dll",
+          "api-ms-win-core-heap-l1-1-0.dll",
+          "api-ms-win-core-interlocked-l1-1-0.dll",
+          "api-ms-win-core-libraryloader-l1-2-0.dll",
+          "api-ms-win-core-localization-l1-2-0.dll",
+          "api-ms-win-core-processenvironment-l1-1-0.dll",
+          "api-ms-win-core-processthreads-l1-1-0.dll",
+          "api-ms-win-core-processthreads-l1-1-1.dll",
+          "api-ms-win-core-profile-l1-1-0.dll",
+          "api-ms-win-core-rtlsupport-l1-1-0.dll",
+          "api-ms-win-core-string-l1-1-0.dll",
+          "api-ms-win-core-synch-l1-1-0.dll",
+          "api-ms-win-core-synch-l1-2-0.dll",
+          "api-ms-win-core-sysinfo-l1-1-0.dll",
+          "api-ms-win-core-util-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [],
+        "redistribution": "external",
+        "redistributionNote": "CUDA EULA Attachment A names the CUDA Runtime redistributable, subject to the Agreement's conditions and the same NVIDIA notice. Acquired from NVIDIA's published redistributable, not vendored."
+      },
+      {
+        "path": "ggml-cpu-alderlake.dll",
+        "bytes": 1879510,
+        "sha256": "5875864eaf53c41e8123233920f7fcabe7faa61c93e0a75574a608ec19fa9431",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-cannonlake.dll",
+        "bytes": 2050486,
+        "sha256": "0589f7b276a0e78f733bb80f828870a7eb00df0eecab72205761b9db8d0eff81",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-cascadelake.dll",
+        "bytes": 2050486,
+        "sha256": "14847e417e2aaa745d9b7e03ec985064c792c85fb13154c14f4068a0c07cd497",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-cooperlake.dll",
+        "bytes": 2051510,
+        "sha256": "104bf6c730cc037d9648a1be3f3e0203d9c4bcbea7fdd23367ed6ef90c2bd427",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-haswell.dll",
+        "bytes": 1882582,
+        "sha256": "ce18c0c9c81b91e394135d323ff64a22d52dfc15d669217751925e462e079892",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-icelake.dll",
+        "bytes": 2047414,
+        "sha256": "743fc42a78841af7e9efa88452606c40b24d3c50f6cc4bc6fdfbe1a100b9ebaa",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-ivybridge.dll",
+        "bytes": 1821284,
+        "sha256": "04e0885e491fe125a837d4da917a0fabf1c66cbe7d2e92878795440a2dd7d07d",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-piledriver.dll",
+        "bytes": 1819236,
+        "sha256": "3a02ab39c0cb7fee489a66ffa8a7cf5cc290aff77cca6d2dfa4f6072c4f8a17d",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-sandybridge.dll",
+        "bytes": 1826404,
+        "sha256": "4823d82231c804708130a8ab8377db4a8145966eb14136828abb7768c4d407ae",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-sapphirerapids.dll",
+        "bytes": 2366391,
+        "sha256": "ce12eb216c14d94a5fe2f261345c625b709bb244233b7a1a5e35899542db806c",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-skylakex.dll",
+        "bytes": 2054582,
+        "sha256": "19cc82720311b84a8a15f55688275f432c10bad8c54d4d39e954f8d3617a16ab",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-sse42.dll",
+        "bytes": 1767984,
+        "sha256": "7817cc838e704ebf4a868459a7b939292b48d6e7076e7da1f7b13e90868fa0f1",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-x64.dll",
+        "bytes": 1783673,
+        "sha256": "a1138e071f5deebbbf5df74e27dc868d8d10b639046109f214482d8681587cc6",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "ggml-cpu-zen4.dll",
+        "bytes": 2047926,
+        "sha256": "3711578e6004579954d45727569cc72c09fc9e7da05891e12cd895c571859f06",
+        "componentId": "ggml-whisper-build",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "libmpv-2.dll",
+        "bytes": 149970714,
+        "sha256": "8d03aff4db5d38a3c1659932e1ebcb48022aa8c18af02cc7571cc832ec2c3c94",
+        "componentId": "core.fork-mpv",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-core-path-l1-1-0.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "avicap32.dll",
+          "avrt.dll",
+          "bcryptprimitives.dll",
+          "crypt32.dll",
+          "dwmapi.dll",
+          "gdi32.dll",
+          "imm32.dll",
+          "iphlpapi.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ncrypt.dll",
+          "ntdll.dll",
+          "ole32.dll",
+          "oleaut32.dll",
+          "opengl32.dll",
+          "shcore.dll",
+          "shell32.dll",
+          "shlwapi.dll",
+          "user32.dll",
+          "userenv.dll",
+          "uxtheme.dll",
+          "version.dll",
+          "vulkan-1.dll",
+          "winmm.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "GPL-family redistribution permitted; complete corresponding source including this repository's patch series, both licence texts, and relinkability must accompany any distribution (ESC-6 obligations)."
+      },
+      {
+        "path": "mpv-deps/ggml-0.dll",
+        "bytes": 2825708,
+        "sha256": "024213e9243815f31761b3c6b04888727161aa5bd4929481666edaf4d850b5e6",
+        "componentId": "ggml-whisper-build",
+        "cohort": "self-built",
+        "owningPackage": "ggml/whisper.cpp",
+        "packageVersion": "ggml 0.25.3 / whisper d09f61a708f3487afa956ff578e60eae5e7a233c",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://github.com/ggml-org/ggml ; https://github.com/ggml-org/whisper.cpp",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libwhisper-1.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "mpv-deps/ggml-base-0.dll",
+        "bytes": 1713601,
+        "sha256": "9ef1f4120363f839bc038d4d914db3da1abdf18229f1317e6416eeeb18ed84cc",
+        "componentId": "ggml-whisper-build",
+        "cohort": "self-built",
+        "owningPackage": "ggml/whisper.cpp",
+        "packageVersion": "ggml 0.25.3 / whisper d09f61a708f3487afa956ff578e60eae5e7a233c",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://github.com/ggml-org/ggml ; https://github.com/ggml-org/whisper.cpp",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "ggml-cpu-alderlake.dll",
+          "ggml-cpu-cannonlake.dll",
+          "ggml-cpu-cascadelake.dll",
+          "ggml-cpu-cooperlake.dll",
+          "ggml-cpu-haswell.dll",
+          "ggml-cpu-icelake.dll",
+          "ggml-cpu-ivybridge.dll",
+          "ggml-cpu-piledriver.dll",
+          "ggml-cpu-sandybridge.dll",
+          "ggml-cpu-sapphirerapids.dll",
+          "ggml-cpu-skylakex.dll",
+          "ggml-cpu-sse42.dll",
+          "ggml-cpu-x64.dll",
+          "ggml-cpu-zen4.dll",
+          "mpv-deps/ggml-0.dll",
+          "mpv-deps/libwhisper-1.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "mpv-deps/libbrotlicommon.dll",
+        "bytes": 143429,
+        "sha256": "ca7bc06ead80259971badf2cd0bfc688db9154dad65f139f49a38b4be9976f97",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-brotli",
+        "packageVersion": "1.2.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://github.com/google/brotli",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libbrotlidec.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libbrotlidec.dll",
+        "bytes": 62461,
+        "sha256": "a142dc6cfa77cb907028aa9426f486f3d8de37855e8db2ae2894147908121881",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-brotli",
+        "packageVersion": "1.2.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://github.com/google/brotli",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libfreetype-6.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libbz2-1.dll",
+        "bytes": 108633,
+        "sha256": "a4fbb97c26662d2b8a80bf4597ed3effb69b12048b0cb1eef2c3f211e2e66673",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-bzip2",
+        "packageVersion": "1.0.8-4",
+        "licenceSpdxAsDeclaredByPackage": "custom",
+        "upstream": "https://sourceware.org/bzip2/",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libfreetype-6.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libcairo-2.dll",
+        "bytes": 1638019,
+        "sha256": "5004740c38f025d503af4f79fd81186aa16a983dd3bad133e4e11824423a1cdf",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-cairo",
+        "packageVersion": "1.18.6-2",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later OR MPL-1.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-cairo-1.18.6-2-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING",
+          "COPYING-LGPL-2.1",
+          "COPYING-MPL-1.1"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-gobject-2.dll",
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "gdi32.dll",
+          "kernel32.dll",
+          "msimg32.dll",
+          "msvcrt.dll",
+          "ole32.dll",
+          "user32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libcairo-gobject-2.dll",
+        "bytes": 64995,
+        "sha256": "8361e4f5c418a05567d0a879be304284bafeeab03795eeb938b91be56146f967",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-cairo",
+        "packageVersion": "1.18.6-2",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later OR MPL-1.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-cairo-1.18.6-2-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING",
+          "COPYING-LGPL-2.1",
+          "COPYING-MPL-1.1"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libcrypto-3-x64.dll",
+        "bytes": 5501270,
+        "sha256": "26c5c4804d14049dc50e7d1a7ba5fd479c1bcee3ae5c3942a7f069f5159a4745",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-openssl",
+        "packageVersion": "3.6.5-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:Apache-2.0",
+        "upstream": "https://openssl-library.org",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libngtcp2_crypto_ossl-0.dll",
+          "mpv-deps/libssh2-1.dll",
+          "mpv-deps/libssl-3-x64.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "crypt32.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "user32.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libcurl-4.dll",
+        "bytes": 1427585,
+        "sha256": "61fbeddfa74a7a0a68db0d9a494bbe11502759e57a6eb31256d1ad6566ce0194",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-curl",
+        "packageVersion": "8.22.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://curl.se/",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "bcrypt.dll",
+          "crypt32.dll",
+          "iphlpapi.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "secur32.dll",
+          "wldap32.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libdatrie-1.dll",
+        "bytes": 35033,
+        "sha256": "2f784872e6404e57847201fe1e7e591bd5b5be4a319ef38ebcb36014ac7f385d",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libdatrie",
+        "packageVersion": "0.2.14-1",
+        "licenceSpdxAsDeclaredByPackage": "LGPL",
+        "upstream": "https://linux.thai.net/projects/datrie",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libthai-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libexpat-1.dll",
+        "bytes": 238525,
+        "sha256": "a79b7025c3fdccb6fe38fb560f3b6cfa75c26750052cf6de307816fb7c22faa0",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-expat",
+        "packageVersion": "2.8.5-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://libexpat.github.io/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libfontconfig-1.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libffi-8.dll",
+        "bytes": 39699,
+        "sha256": "b649c515907436a3299326f83aea0e8d75c61853eb1609602603bbcb9b00b4db",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libffi",
+        "packageVersion": "3.8.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://sourceware.org/libffi",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libgobject-2.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libfontconfig-1.dll",
+        "bytes": 613076,
+        "sha256": "9082bc5908d0ff948c0f364d7fe42c2bba9a4f768e75e4e589c9e50d4c708479",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-fontconfig",
+        "packageVersion": "2.18.3-1",
+        "licenceSpdxAsDeclaredByPackage": "custom",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-fontconfig-2.18.3-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-2.dll",
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libfreetype-6.dll",
+        "bytes": 938320,
+        "sha256": "a2a173ec3f34c26ff80567de3e312cfdf9e7b35cc0efed011ca9ba1d14b86bad",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-freetype",
+        "packageVersion": "2.14.3-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:GPL-2.0-or-later OR FTL",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-freetype-2.14.3-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "FTL.TXT",
+          "GPLv2.TXT"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-2.dll",
+          "mpv-deps/libfontconfig-1.dll",
+          "mpv-deps/libharfbuzz-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libfribidi-0.dll",
+        "bytes": 154276,
+        "sha256": "ae9e30c61e1c62886d36e23a91d2943970ae990f85155cbd222b9ba44de9c51b",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-fribidi",
+        "packageVersion": "1.0.17-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://github.com/fribidi/fribidi",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libpango-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+        "bytes": 305176,
+        "sha256": "b88dd8cfb0c6696e74ba43f2ee3f8c1059d5f283705f9716864a63f3e4e83109",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-gdk-pixbuf2",
+        "packageVersion": "2.44.7-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-gdk-pixbuf2-2.44.7-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "gdiplus.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ole32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libgio-2.0-0.dll",
+        "bytes": 1918835,
+        "sha256": "1404c1bf2ce190032ab6a50ed8afa09d52e9e85fe806a20ae10019a04ec72c2e",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-glib2",
+        "packageVersion": "2.90.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://gitlab.gnome.org/GNOME/glib",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+          "mpv-deps/libpango-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll",
+          "mpv-deps/libpangowin32-1.0-0.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "dnsapi.dll",
+          "iphlpapi.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ole32.dll",
+          "shell32.dll",
+          "shlwapi.dll",
+          "user32.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libglib-2.0-0.dll",
+        "bytes": 1571222,
+        "sha256": "9778ba7e7a3a3e92e7c1802a45cd9350a905ff3fbff193566630b6c47a3e7b9c",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-glib2",
+        "packageVersion": "2.90.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://gitlab.gnome.org/GNOME/glib",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-gobject-2.dll",
+          "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+          "mpv-deps/libgio-2.0-0.dll",
+          "mpv-deps/libgmodule-2.0-0.dll",
+          "mpv-deps/libgobject-2.0-0.dll",
+          "mpv-deps/libharfbuzz-0.dll",
+          "mpv-deps/libpango-1.0-0.dll",
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll",
+          "mpv-deps/libpangowin32-1.0-0.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ole32.dll",
+          "shell32.dll",
+          "user32.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libgmodule-2.0-0.dll",
+        "bytes": 23387,
+        "sha256": "20d170ae2d89710376bdd64638399de48a417281769ccb6930927aa28a26d704",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-glib2",
+        "packageVersion": "2.90.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://gitlab.gnome.org/GNOME/glib",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+          "mpv-deps/libgio-2.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libgobject-2.0-0.dll",
+        "bytes": 357682,
+        "sha256": "2ea01b58d9a0972c34eed00f012c0fb5cb4178267c4181296e84c50647062000",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-glib2",
+        "packageVersion": "2.90.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://gitlab.gnome.org/GNOME/glib",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-gobject-2.dll",
+          "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+          "mpv-deps/libgio-2.0-0.dll",
+          "mpv-deps/libpango-1.0-0.dll",
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll",
+          "mpv-deps/libpangowin32-1.0-0.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libgraphite2.dll",
+        "bytes": 308450,
+        "sha256": "755c3c09b7cd211ca16921592be0490b7ee5d63210454a42602171fca8a7a1ac",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-graphite2",
+        "packageVersion": "1.3.15-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-graphite2-1.3.15-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING",
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libharfbuzz-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libharfbuzz-0.dll",
+        "bytes": 2117439,
+        "sha256": "7d419ec8be3bebc839f5bd13617fa28764ce47af413ca90a668d2f8ea5a91c93",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-harfbuzz",
+        "packageVersion": "14.5.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-harfbuzz-14.5.0-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libfreetype-6.dll",
+          "mpv-deps/libpango-1.0-0.dll",
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll",
+          "mpv-deps/libpangowin32-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "dwrite.dll",
+          "gdi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "rpcrt4.dll",
+          "user32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libhwy.dll",
+        "bytes": 555421,
+        "sha256": "f03dd8af49f1be371d536516f899ed5206850e5df416acb9b905d6d4f8fc9cb7",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-highway",
+        "packageVersion": "1.4.0-3",
+        "licenceSpdxAsDeclaredByPackage": "spdx:Apache-2.0",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-highway-1.4.0-3-any.pkg.tar.zst",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libiconv-2.dll",
+        "bytes": 1143148,
+        "sha256": "7a282a854e01be726c6cccfe46f548c716aa45b3014818468253aaa4efbcd067",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libiconv",
+        "packageVersion": "1.19-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later\ndocumentation:spdx:GPL-3.0-or-later",
+        "upstream": "https://www.gnu.org/software/libiconv/",
+        "licenceFiles": [
+          "COPYING",
+          "COPYING.LIB",
+          "README",
+          "libcharset"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libidn2-0.dll",
+          "mpv-deps/libintl-8.dll",
+          "mpv-deps/libpsl-5.dll",
+          "mpv-deps/libunistring-5.dll",
+          "mpv-deps/libxml2-16.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libidn2-0.dll",
+        "bytes": 247081,
+        "sha256": "9880b52651a0247640a2531d777380f7c35fac7efa7e3979b265ddcb78db8642",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libidn2",
+        "packageVersion": "2.3.8-4",
+        "licenceSpdxAsDeclaredByPackage": "spdx:GPL-2.0-or-later\nspdx:LGPL-3.0-or-later",
+        "upstream": "https://www.gnu.org/software/libidn/#libidn2",
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libpsl-5.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libintl-8.dll",
+        "bytes": 298731,
+        "sha256": "0537c3dd2378218508ebe3cc416d72a99ee2d24ae1c5525e23458f32544ef861",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-gettext-runtime",
+        "packageVersion": "1.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:GPL-3.0-or-later AND LGPL-2.1-or-later",
+        "upstream": "https://www.gnu.org/software/gettext/",
+        "licenceFiles": [
+          "COPYING",
+          "intl",
+          "libasprintf"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libfontconfig-1.dll",
+          "mpv-deps/libgdk_pixbuf-2.0-0.dll",
+          "mpv-deps/libgio-2.0-0.dll",
+          "mpv-deps/libglib-2.0-0.dll",
+          "mpv-deps/libidn2-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libjpeg-8.dll",
+        "bytes": 967968,
+        "sha256": "b564d34adaca83e73af0e2231719dd0198ea6cd074c64b2ba85bfd7182f27db7",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libjpeg-turbo",
+        "packageVersion": "3.2.0-1",
+        "licenceSpdxAsDeclaredByPackage": "custom:BSD-like",
+        "upstream": "https://libjpeg-turbo.virtualgl.org/",
+        "licenceFiles": [
+          "LICENSE.md",
+          "README.ijg",
+          "README.md",
+          "simd"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/liblzma-5.dll",
+        "bytes": 190709,
+        "sha256": "ccb6a179acf35e704b2ffd7f232677982c4856bd1dda1341713a27518cf97ce1",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-xz",
+        "packageVersion": "5.8.4-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:0BSD AND LGPL-2.1-or-later AND GPL-2.0-or-later",
+        "upstream": "https://tukaani.org/xz",
+        "licenceFiles": [
+          "COPYING",
+          "COPYING.0BSD",
+          "COPYING.GPLv2",
+          "COPYING.GPLv3",
+          "COPYING.LGPLv2.1"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libnghttp2-14.dll",
+        "bytes": 215032,
+        "sha256": "25e6516899fd5021df8c67b92e9f7246249fb03bb7bdf56a08260a8dded06b00",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-nghttp2",
+        "packageVersion": "1.70.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://nghttp2.org/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libnghttp3-9.dll",
+        "bytes": 207858,
+        "sha256": "f94b97f5f882e70c13c2f540e2bcb3da5f5bba0e2e40dcd784dd5ef65771f001",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-nghttp3",
+        "packageVersion": "1.18.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://nghttp2.org/nghttp3/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libngtcp2-16.dll",
+        "bytes": 393683,
+        "sha256": "5df6354a4efbd5e797dc9ec3e0f38892a2ee89d759d781e91a0f14a70344a8f5",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-ngtcp2",
+        "packageVersion": "1.25.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://nghttp2.org/ngtcp2/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libngtcp2_crypto_ossl-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libngtcp2_crypto_ossl-0.dll",
+        "bytes": 54255,
+        "sha256": "6fe49128e600120ef04937b69e6f9a2447f1293697d4b8aa4c239d7549bc913a",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-ngtcp2",
+        "packageVersion": "1.25.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://nghttp2.org/ngtcp2/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpango-1.0-0.dll",
+        "bytes": 571101,
+        "sha256": "8d8c43eaf51205040ccb507eb3861c633e1e93ff33aba08d5dd2472a432e0dbb",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-pango",
+        "packageVersion": "1.58.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-pango-1.58.2-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libpangocairo-1.0-0.dll",
+          "mpv-deps/libpangoft2-1.0-0.dll",
+          "mpv-deps/libpangowin32-1.0-0.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpangocairo-1.0-0.dll",
+        "bytes": 151688,
+        "sha256": "23af3a0578df369d3bb82257818aaa769bd1ed18f7b9448f2511db1d0234c732",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-pango",
+        "packageVersion": "1.58.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-pango-1.58.2-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpangoft2-1.0-0.dll",
+        "bytes": 198738,
+        "sha256": "3a1316b736e9af20fa473c896a671991fcac0bc95aedc4a3050b4a7c4c442da7",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-pango",
+        "packageVersion": "1.58.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-pango-1.58.2-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libpangocairo-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpangowin32-1.0-0.dll",
+        "bytes": 236899,
+        "sha256": "75f99f8b5181bc9579bcc9679149a6891700b49662e0ad99ef9fdd825d3b6d0a",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-pango",
+        "packageVersion": "1.58.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-pango-1.58.2-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libpangocairo-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "dwrite.dll",
+          "gdi32.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "user32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpcre2-8-0.dll",
+        "bytes": 706915,
+        "sha256": "68a7cee2acc36d6a61d73f78825d17dfd32f8580f4bb1bc399134719518213d5",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-pcre2",
+        "packageVersion": "10.49-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:BSD-3-Clause",
+        "upstream": "https://pcre.org/",
+        "licenceFiles": [
+          "COPYING",
+          "LICENCE.md"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libglib-2.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpixman-1-0.dll",
+        "bytes": 740378,
+        "sha256": "55ce45825eb8e825c635416171be4736147a6b0b690469f545d8c4ae8e85b4a3",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-pixman",
+        "packageVersion": "0.46.4-3",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://gitlab.freedesktop.org/pixman/pixman",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcairo-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpng16-16.dll",
+        "bytes": 260070,
+        "sha256": "fdac85bb70ec3af940810036eb9838765dceb61aaf81a60b244209f99c617f3d",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libpng",
+        "packageVersion": "1.6.59-1",
+        "licenceSpdxAsDeclaredByPackage": "custom",
+        "upstream": "http://www.libpng.org/pub/png/libpng.html",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcairo-2.dll",
+          "mpv-deps/libfreetype-6.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libpsl-5.dll",
+        "bytes": 105304,
+        "sha256": "b31fc70eda598a39b65fe2736d815518db0652d641346f75eac40c2a0499b058",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libpsl",
+        "packageVersion": "0.21.5-3",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://rockdaboot.github.io/libpsl/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/librsvg-2-2.dll",
+        "bytes": 17303418,
+        "sha256": "e11291c4ab0f492bf144fc2349932967479fadcb8962778c569d5c1385a8415c",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "rebuilt-from-static-archive",
+        "owningPackage": "mingw-w64-x86_64-librsvg",
+        "packageVersion": "2.63.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-librsvg-2.63.2-1-any.pkg.tar.zst",
+        "licenceFiles": [
+          "COPYING.LIB"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "bcryptprimitives.dll",
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ntdll.dll",
+          "userenv.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libshaderc_shared.dll",
+        "bytes": 10596561,
+        "sha256": "e9b484362c54a1dda64f1f0d20f0b1167ad26d32752130f4b4ce28dfa01a040e",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-shaderc",
+        "packageVersion": "2026.3-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:Apache-2.0",
+        "upstream": "https://github.com/google/shaderc",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libsharpyuv-0.dll",
+        "bytes": 53757,
+        "sha256": "ab0c9f61dc69b6bcdff1011e215f8d5fd6e5096aba9be3386ab87f217fbbeffe",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libwebp",
+        "packageVersion": "1.6.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:BSD-3-Clause",
+        "upstream": "https://developers.google.com/speed/webp/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libwebp-7.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libssh2-1.dll",
+        "bytes": 312147,
+        "sha256": "a8e1cc06bfff6be779066c5dc34ce740ed0226dcb6f75f46d9c915aee19a21b1",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libssh2",
+        "packageVersion": "1.11.1-2",
+        "licenceSpdxAsDeclaredByPackage": "spdx:BSD-3-Clause",
+        "upstream": "https://libssh2.org/",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll",
+          "user32.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libssl-3-x64.dll",
+        "bytes": 997269,
+        "sha256": "a3ddb63a654e05844cf59d463c9557eed7ae675d59fd2c47f3415f5e1fc067f5",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-openssl",
+        "packageVersion": "3.6.5-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:Apache-2.0",
+        "upstream": "https://openssl-library.org",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libngtcp2_crypto_ossl-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll",
+          "ws2_32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libthai-0.dll",
+        "bytes": 72294,
+        "sha256": "5d741974fdec19e0f6cddbcdb539428af0c7392740a056634714c2884157fdb9",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libthai",
+        "packageVersion": "0.1.30-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-2.1-or-later",
+        "upstream": "https://linux.thai.net/projects/libthai",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "mpv-deps/libpango-1.0-0.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll",
+          "shlwapi.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libunistring-5.dll",
+        "bytes": 2251328,
+        "sha256": "b91e2850d3668d4931056a8f4d35783b8ec3eea3735485108a936a072cd16071",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libunistring",
+        "packageVersion": "1.4.2-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:LGPL-3.0-or-later OR GPL-3.0-or-later",
+        "upstream": "https://www.gnu.org/software/libunistring",
+        "licenceFiles": [
+          "LICENSE",
+          "LICENSE.LIB"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libidn2-0.dll",
+          "mpv-deps/libpsl-5.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libwebp-7.dll",
+        "bytes": 749724,
+        "sha256": "c6c21a10f8cfe13270832e64640b82709e1d87b956b5f15af435a6c25acd6bbf",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libwebp",
+        "packageVersion": "1.6.0-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:BSD-3-Clause",
+        "upstream": "https://developers.google.com/speed/webp/",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libwhisper-1.dll",
+        "bytes": 3162851,
+        "sha256": "5b6c186fc3e04fe8d1884d02057622a8bfe6e7a28ac0ac4bdf9a9c36a6350fb4",
+        "componentId": "ggml-whisper-build",
+        "cohort": "self-built",
+        "owningPackage": "ggml/whisper.cpp",
+        "packageVersion": "ggml 0.25.3 / whisper d09f61a708f3487afa956ff578e60eae5e7a233c",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://github.com/ggml-org/ggml ; https://github.com/ggml-org/whisper.cpp",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT (ggml and whisper.cpp); retain the copyright notice and permission text."
+      },
+      {
+        "path": "mpv-deps/libxml2-16.dll",
+        "bytes": 1255475,
+        "sha256": "81e97f59e486f95de3b8b12973860102cddebbaaeedbbc22786aaec0728b2c68",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-libxml2",
+        "packageVersion": "2.15.4-1",
+        "licenceSpdxAsDeclaredByPackage": "spdx:MIT",
+        "upstream": "https://gitlab.gnome.org/GNOME/libxml2/-/wikis/home",
+        "licenceFiles": [
+          "COPYING"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/librsvg-2-2.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "bcrypt.dll",
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/libzstd.dll",
+        "bytes": 1218273,
+        "sha256": "b95c223a9548a9ecf51377c962e0bc8f0c51eb0c6f67a296dbc885996f0dd40d",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-zstd",
+        "packageVersion": "1.5.7-2",
+        "licenceSpdxAsDeclaredByPackage": "spdx:BSD-3-Clause OR GPL-2.0-or-later",
+        "upstream": "https://facebook.github.io/zstd/",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcurl-4.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "mpv-deps/zlib1.dll",
+        "bytes": 128488,
+        "sha256": "93e9243a44c29200eeacaf9658efe2558581770e4b11ca4b500e18e424a6e3b5",
+        "componentId": "mpv-mingw64-closure",
+        "cohort": "verbatim-prefix",
+        "owningPackage": "mingw-w64-x86_64-zlib",
+        "packageVersion": "1.3.2-2",
+        "licenceSpdxAsDeclaredByPackage": "spdx:Zlib",
+        "upstream": "https://www.zlib.net/",
+        "licenceFiles": [
+          "LICENSE"
+        ],
+        "importedByWithinBundle": [
+          "libmpv-2.dll",
+          "mpv-deps/libcairo-2.dll",
+          "mpv-deps/libcurl-4.dll",
+          "mpv-deps/libfreetype-6.dll",
+          "mpv-deps/libgio-2.0-0.dll",
+          "mpv-deps/libpng16-16.dll",
+          "mpv-deps/libssh2-1.dll",
+          "mpv-deps/libxml2-16.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Cleared per owning package on the licence the package declares. This is a cohort label, not a single licence: the cohort is mixed permissive, LGPL and GPL-family (including GPL-2.0-or-later libfreetype/FTL dual terms, LGPL-2.1 pango, LGPL/GPL dual terms in libiconv, libidn2 and libunistring, and GPL-3.0-or-later AND LGPL-2.1-or-later libintl). Each package's own obligations apply, and GPL-family members carry source and relinkability duties."
+      },
+      {
+        "path": "msvcp140.dll",
+        "bytes": 557728,
+        "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+        "componentId": "msvc-crt-redist",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "aji.dll",
+          "aji_trt.dll",
+          "msvcp140_1.dll",
+          "ort/onnxruntime.dll",
+          "tools/mikai_native_prep.exe",
+          "tools/mikai_native_verify.exe"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-time-l1-1-0.dll",
+          "api-ms-win-crt-utility-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "Microsoft Visual C++ Redistributable terms; shipped as part of the application, not as a stand-alone offering. The EULA text was not recovered from the pinned payload - recorded as missing evidence, not as a grant."
+      },
+      {
+        "path": "msvcp140_1.dll",
+        "bytes": 35952,
+        "sha256": "bfad5aef4c63a669e3c140655cdfdf395b6c979b400a447bd5dcb65ed8826c3d",
+        "componentId": "msvc-crt-redist",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "ort/onnxruntime.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "Microsoft Visual C++ Redistributable terms; shipped as part of the application, not as a stand-alone offering. The EULA text was not recovered from the pinned payload - recorded as missing evidence, not as a grant."
+      },
+      {
+        "path": "ort/DirectML.dll",
+        "bytes": 18527776,
+        "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1",
+        "componentId": "runtime.directml",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-appmodel-runtime-l1-1-0.dll",
+          "api-ms-win-core-console-l1-1-0.dll",
+          "api-ms-win-core-datetime-l1-1-0.dll",
+          "api-ms-win-core-debug-l1-1-0.dll",
+          "api-ms-win-core-errorhandling-l1-1-0.dll",
+          "api-ms-win-core-fibers-l1-1-0.dll",
+          "api-ms-win-core-file-l1-1-0.dll",
+          "api-ms-win-core-handle-l1-1-0.dll",
+          "api-ms-win-core-heap-l1-1-0.dll",
+          "api-ms-win-core-interlocked-l1-1-0.dll",
+          "api-ms-win-core-libraryloader-l1-2-0.dll",
+          "api-ms-win-core-libraryloader-l1-2-1.dll",
+          "api-ms-win-core-localization-l1-2-0.dll",
+          "api-ms-win-core-memory-l1-1-0.dll",
+          "api-ms-win-core-processenvironment-l1-1-0.dll",
+          "api-ms-win-core-processthreads-l1-1-0.dll",
+          "api-ms-win-core-processthreads-l1-1-1.dll",
+          "api-ms-win-core-profile-l1-1-0.dll",
+          "api-ms-win-core-rtlsupport-l1-1-0.dll",
+          "api-ms-win-core-string-l1-1-0.dll",
+          "api-ms-win-core-synch-l1-1-0.dll",
+          "api-ms-win-core-sysinfo-l1-1-0.dll",
+          "api-ms-win-core-timezone-l1-1-0.dll",
+          "api-ms-win-core-util-l1-1-0.dll",
+          "api-ms-win-eventing-provider-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "d3d12.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Microsoft Software License Terms permit copying and distribution in Windows/Xbox applications that embed it, not as a stand-alone offering; Microsoft notices must not be removed. The code portion is MIT."
+      },
+      {
+        "path": "ort/onnxruntime.dll",
+        "bytes": 17328152,
+        "sha256": "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40",
+        "componentId": "runtime.onnxruntime-directml",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-core-path-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-time-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "dbghelp.dll",
+          "kernel32.dll",
+          "setupapi.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT; retain the Microsoft copyright notice and permission text in copies or substantial portions."
+      },
+      {
+        "path": "ort/onnxruntime_providers_shared.dll",
+        "bytes": 22040,
+        "sha256": "265c8daf29637cb259cac8be9f08f2cd45f3883f0f0e4949cbfddd5b4cbec3b6",
+        "componentId": "runtime.onnxruntime-directml",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-runtime-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "MIT; retain the Microsoft copyright notice and permission text in copies or substantial portions."
+      },
+      {
+        "path": "tools/mikai_native_prep.exe",
+        "bytes": 136704,
+        "sha256": "d15b06087b9d0482ed60d586cd918cb0063bcb2bd3f26d38fe73e883a5bc7db6",
+        "componentId": "native-tools",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "bcrypt.dll",
+          "kernel32.dll",
+          "version.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Project-owned code under this project's Unlicense grant (projectIntegrationGrant). Carries no third-party binary; links TensorRT and CUDA at build time only."
+      },
+      {
+        "path": "tools/mikai_native_verify.exe",
+        "bytes": 226304,
+        "sha256": "f58e44f79be2b421e4793c7af8066367cf7259495a89a8f508a5b45b936dddc1",
+        "componentId": "native-tools",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "bcrypt.dll",
+          "kernel32.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Project-owned code under this project's Unlicense grant (projectIntegrationGrant). Carries no third-party binary; links TensorRT and CUDA at build time only."
+      },
+      {
+        "path": "tools/native_inspect.exe",
+        "bytes": 1218012,
+        "sha256": "53a640a7ecf06c09f72bc54a386d0fb481551ee0cc5a56e2ffbb300d60f95c3f",
+        "componentId": "native-inspect-tool",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll",
+          "msvcrt.dll",
+          "qt6core.dll"
+        ],
+        "redistribution": "cleared",
+        "redistributionNote": "Project-owned code under this project's Unlicense grant. Imports Qt6Core from the application cohort at run time and deliberately does not ship it, so the bundle does not carry Qt."
+      },
+      {
+        "path": "trt/nvinfer_11.dll",
+        "bytes": 401707120,
+        "sha256": "ab5148bc65ba53675ffbb7ebd86694937b3cff15e52655f43afc2421b90bdc6b",
+        "componentId": "runtime.tensorrt",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "aji_trt.dll",
+          "tools/mikai_native_prep.exe",
+          "tools/mikai_native_verify.exe"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "advapi32.dll",
+          "kernel32.dll",
+          "ntdll.dll",
+          "ole32.dll",
+          "shell32.dll",
+          "user32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "NVIDIA redistributable runtime portion, acquired from NVIDIA's own '-external' SDK at assembly time and bundled under the TensorRT SLA plus Supplement, including the required 'This software contains source code provided by NVIDIA Corporation.' notice. Not vendored into this repository."
+      },
+      {
+        "path": "trt/nvinfer_builder_resource_sm120_11.dll",
+        "bytes": 269391472,
+        "sha256": "7b616872410c519caa7ebfcf2197a748cb5d0b21d9163704e7ca2ae8828ed677",
+        "componentId": "runtime.tensorrt-resources",
+        "cohort": null,
+        "importedByWithinBundle": [],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "same TensorRT SLA plus Supplement; the per-SM builder resources are redistributable runtime portions."
+      },
+      {
+        "path": "trt/nvonnxparser_11.dll",
+        "bytes": 2290288,
+        "sha256": "823f7d6e3d2b0273d438296b14fb1b71f1ef37b2a0a8539d7f04a41960584c8c",
+        "componentId": "runtime.tensorrt",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "tools/mikai_native_prep.exe"
+        ],
+        "importsResolvedByTheOperatingSystem": [],
+        "importsNeedingAnExternalProvider": [
+          "dbghelp.dll",
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "NVIDIA redistributable runtime portion, acquired from NVIDIA's own '-external' SDK at assembly time and bundled under the TensorRT SLA plus Supplement, including the required 'This software contains source code provided by NVIDIA Corporation.' notice. Not vendored into this repository."
+      },
+      {
+        "path": "vcruntime140.dll",
+        "bytes": 124544,
+        "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+        "componentId": "msvc-crt-redist",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "aji.dll",
+          "aji_trt.dll",
+          "msvcp140.dll",
+          "msvcp140_1.dll",
+          "ort/onnxruntime.dll",
+          "ort/onnxruntime_providers_shared.dll",
+          "tools/mikai_native_prep.exe",
+          "tools/mikai_native_verify.exe",
+          "vcruntime140_1.dll"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "Microsoft Visual C++ Redistributable terms; shipped as part of the application, not as a stand-alone offering. The EULA text was not recovered from the pinned payload - recorded as missing evidence, not as a grant."
+      },
+      {
+        "path": "vcruntime140_1.dll",
+        "bytes": 49792,
+        "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+        "componentId": "msvc-crt-redist",
+        "cohort": null,
+        "importedByWithinBundle": [
+          "aji.dll",
+          "aji_trt.dll",
+          "msvcp140.dll",
+          "ort/onnxruntime.dll",
+          "tools/mikai_native_prep.exe",
+          "tools/mikai_native_verify.exe"
+        ],
+        "importsResolvedByTheOperatingSystem": [
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ],
+        "importsNeedingAnExternalProvider": [
+          "kernel32.dll"
+        ],
+        "redistribution": "external",
+        "redistributionNote": "Microsoft Visual C++ Redistributable terms; shipped as part of the application, not as a stand-alone offering. The EULA text was not recovered from the pinned payload - recorded as missing evidence, not as a grant."
+      }
+    ]
+  },
   "buildTimeOnly": [
-    { "id": "toolchain.msvc", "name": "MSVC 14.44.35207 + Windows SDK", "redistribution": "external", "note": "never shipped" },
-    { "id": "toolchain.cuda-toolkit", "name": "CUDA toolkit (nvcc, headers, libs)", "redistribution": "external", "note": "never shipped; only cudart redistributables are shipped, and those are listed above" },
-    { "id": "toolchain.tensorrt-sdk", "name": "TensorRT SDK include/ and *.lib", "redistribution": "external", "note": "never shipped; link-time only" },
-    { "id": "toolchain.onnxruntime-headers", "name": "onnxruntime_c_api.h from the ORT DirectML package", "redistribution": "external", "note": "never shipped" },
-    { "id": "toolchain.directml-headers", "name": "DirectML.h, DirectMLConfig.h from the DirectML package", "redistribution": "external", "note": "never shipped" },
-    { "id": "sdk.7zr", "name": "7zr.exe", "redistribution": "external", "note": "pre-existing stock-runtime extraction dependency; not a native-bundle component" }
+    {
+      "id": "toolchain.msvc",
+      "name": "MSVC 14.44.35207 + Windows SDK",
+      "redistribution": "external",
+      "note": "never shipped"
+    },
+    {
+      "id": "toolchain.cuda-toolkit",
+      "name": "CUDA toolkit (nvcc, headers, libs)",
+      "redistribution": "external",
+      "note": "never shipped; only cudart redistributables are shipped, and those are listed above"
+    },
+    {
+      "id": "toolchain.tensorrt-sdk",
+      "name": "TensorRT SDK include/ and *.lib",
+      "redistribution": "external",
+      "note": "never shipped; link-time only"
+    },
+    {
+      "id": "toolchain.onnxruntime-headers",
+      "name": "onnxruntime_c_api.h from the ORT DirectML package",
+      "redistribution": "external",
+      "note": "never shipped"
+    },
+    {
+      "id": "toolchain.directml-headers",
+      "name": "DirectML.h, DirectMLConfig.h from the DirectML package",
+      "redistribution": "external",
+      "note": "never shipped"
+    },
+    {
+      "id": "sdk.7zr",
+      "name": "7zr.exe",
+      "redistribution": "external",
+      "note": "pre-existing stock-runtime extraction dependency; not a native-bundle component"
+    }
   ],
-
   "explicitlyNotAdopted": [
-    { "item": "mpvnet.exe / mpvnet.dll / mpvnet.com / .NET manager binaries", "reason": "out of scope by plan section 1" },
-    { "item": "AnimeJaNaiManager.exe", "reason": "out of scope" },
-    { "item": "AnimeJaNaiUpdater.exe", "reason": "out of scope" },
-    { "item": "7za.exe, yt-dlp.exe, yt-dlp dependencies", "reason": "out of scope" },
-    { "item": "portable_config/scripts/*.lua, mpv-animejanai.conf, input-animejanai.conf", "reason": "out of scope" },
-    { "item": "D3DCompiler_47_cor3.dll, MediaInfo.dll, PenImc_cor3.dll, PresentationNative_cor3.dll, wpfgfx_cor3.dll, vcruntime140_cor3.dll, NGettext.Wpf.pdb, libHarfBuzzSharp.dll, libSkiaSharp.dll, av_libglesv2.dll", "reason": ".NET/WPF and manager payload, not native-bundle runtime" },
-    { "item": "animejanai/benchmarks/*.mp4 and benchmark.ps1", "reason": "research fixtures; M02 owns hermetic fixtures for this repository" },
-    { "item": "AnimeInterp (any tree)", "reason": "explicitly excluded from this project; not a source, not an asset, not a dependency" },
-    { "item": "the ambient Conda TensorRT 11.3 runtime on this machine", "reason": "research residue; production must never depend on Conda, Torch, Python or any ambient install" }
+    {
+      "item": "mpvnet.exe / mpvnet.dll / mpvnet.com / .NET manager binaries",
+      "reason": "out of scope by plan section 1"
+    },
+    {
+      "item": "AnimeJaNaiManager.exe",
+      "reason": "out of scope"
+    },
+    {
+      "item": "AnimeJaNaiUpdater.exe",
+      "reason": "out of scope"
+    },
+    {
+      "item": "7za.exe, yt-dlp.exe, yt-dlp dependencies",
+      "reason": "out of scope"
+    },
+    {
+      "item": "portable_config/scripts/*.lua, mpv-animejanai.conf, input-animejanai.conf",
+      "reason": "out of scope"
+    },
+    {
+      "item": "D3DCompiler_47_cor3.dll, MediaInfo.dll, PenImc_cor3.dll, PresentationNative_cor3.dll, wpfgfx_cor3.dll, vcruntime140_cor3.dll, NGettext.Wpf.pdb, libHarfBuzzSharp.dll, libSkiaSharp.dll, av_libglesv2.dll",
+      "reason": ".NET/WPF and manager payload, not native-bundle runtime"
+    },
+    {
+      "item": "animejanai/benchmarks/*.mp4 and benchmark.ps1",
+      "reason": "research fixtures; M02 owns hermetic fixtures for this repository"
+    },
+    {
+      "item": "AnimeInterp (any tree)",
+      "reason": "explicitly excluded from this project; not a source, not an asset, not a dependency"
+    },
+    {
+      "item": "the ambient Conda TensorRT 11.3 runtime on this machine",
+      "reason": "research residue; production must never depend on Conda, Torch, Python or any ambient install"
+    }
   ],
-
   "provenanceRecord": {
-    "coreSha": { "sourceCommit": "63d127174d8f70336c82a22408929e2bc301edcb", "patchSeriesIdentity": "PENDING (M04)", "buildToolchain": "PENDING (M04)" },
-    "inferenceSourceSha": { "source": "animejanai-inference", "licenceStatus": "absent - ESC-1" },
-    "fileHashes": "see sources.json#observations for measured hashes of pre-existing files; the release-pin hashes are those this repository's own build produces and records in the M05 bundle manifest",
-    "status": "INCOMPLETE by construction: an inference-source pin and a toolchain record cannot exist until M04 has a build, and the inference source has no licence to pin under."
+    "coreSha": {
+      "sourceCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
+      "gitTree": "5e68e27afefea4a79ac4736853b5db9a32601581",
+      "patchSeriesIdentity": "6c95b14e97c76ae24076331559974dd8894030e265cb705ed88134627fcce4c4 - the sha256 of the three-line 'name=sha256' composition of native/patches/*.patch in sorted order, the same composition native/CMakeLists.txt writes to its .mikai-patched stamp. The fork's own series under native/patches/mpv/ is recorded separately at sources.json#patchSeries.mpvForkPatchSeries; it is applied to a different base and is not a shim build input.",
+      "buildToolchain": "w64devkit GCC at C:/temp/w64dev/w64devkit, meson, configure-native-static.cmd options as recorded at sources.json#sources[id=mpv-fork] and confirmed against mpv-native-static-build/meson-info/intro-buildoptions.json (gpl=true, libmpv=true, cplayer=false, animejanai=enabled, gl=enabled, vulkan=disabled, cuda-hwaccel=enabled, cuda-interop=enabled, default_library=shared, prefer_static=true, build-date=false)."
+    },
+    "inferenceSourceSha": {
+      "source": "animejanai-inference",
+      "commit": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
+      "nineFileDigests": "verified locally and against upstream at this exact commit; see sources.json#sources[id=animejanai-inference].sourceDigestsMeasuredLocally",
+      "licenceStatus": "no upstream licence text located; upstream terms not verified; the draft permission request remains unsent (ESC-1)"
+    },
+    "fileHashes": "The digests in sources.json#observations - including the four observedBinaries entries - are descriptive measurements of files this repository did not build and are NOT release pins. The digests in installedBundleInventory.files are the installed bundle manifest's own measurements of the installed files; they record which bytes ship, and they are not a claim that those bytes were reproduced from the recorded sources. Where a reproduction claim is warranted it is stated per cohort in verificationMethod.",
+    "status": "Provenance is recorded for every source AND for every one of the 83 binaries in the installed private bundle; see installedBundleInventory for the per-file map. Identity is pinned by revision or archive digest wherever a digest is computable, and the shipped-byte digests are recorded as descriptive measurements in the bundle manifest and reproduced in the inventory for checkability - never promoted to release pins. What remains outstanding on the rights side is unchanged: ESC-1, ESC-2 and ESC-3 are open and the Native bundle shipping decision stays 'blocked'. That is a rights position, not a provenance gap."
+  },
+  "escalationsSummary": {
+    "open": [
+      "ESC-1 (upstream inference source: no licence located, upstream terms not verified)",
+      "ESC-2 (CC BY-NC-SA spatial graphs: redistribution not cleared under the recorded scope)",
+      "ESC-3 (RIFE graphs: whole-graph artefact redistribution unresolved)"
+    ],
+    "resolved": [
+      "ESC-4 (DirectML package licence obtained)",
+      "ESC-5 (trtexec.exe omitted by architecture)"
+    ],
+    "advisoryOnly": [
+      "ESC-6 (GPL-family obligations to discharge on the shipped core)"
+    ],
+    "statement": "The Native bundle is redistribution 'blocked': its third-party components (ESC-1, ESC-2, ESC-3) have no established redistribution clearance, and none is claimed. The owner's 2026-10-04 grant covers this project's own integration code only (projectIntegrationGrant). M50 and M52 remain gated by those open items plus M04/M05 capability and runtime proof."
+  },
+  "projectIntegrationGrant": {
+    "recordedOn": "2026-10-04",
+    "grant": "The project owner granted unrestricted use of this project's own native integration, with no restrictions (in-session).",
+    "recordedAt": "../../LICENSE (The Unlicense)",
+    "scope": "This project's own native integration code, its patch series and its recorded decisions only.",
+    "doesNotCover": "Any third-party component. The upstream AnimeJaNai inference sources and models, Qt, mpv, FFmpeg, NVIDIA CUDA/TensorRT/cuDART, ONNX Runtime and DirectML each keep their own upstream terms; this grant neither relicenses nor verifies them, and no upstream reuse is authorized by it. The draft permission request at native/permission-request.md remains unsent."
+  },
+  "inBundleSemantics": {
+    "meaning": "inBundle answers 'may this component go into a DISTRIBUTABLE bundle?', not 'is this file present in the locally installed private bundle?'. The two differ for the blocked components and confusing them would either hide ESC-1 or pretend it away.",
+    "privateInstalledInstance": "The installed private bundle native-0.1.0-dev.2 does contain aji.dll and aji_trt.dll, built locally from the unlicensed upstream source. They are present for the owner's own private use and are marked inBundle false because no redistribution clearance exists for them.",
+    "howToCheckPresence": "installedBundleInventory.files[].componentId maps every one of the 83 installed files to its component, so presence and shipping decision are both explicit per file and neither has to be inferred from the other.",
+    "unbuiltComponents": "engine.aji-dml, tool.trtexec, models.animejanai-onnx and models.rife-v4.14 have no installed file at all: the DirectML interop proof was refused at run time and is recorded as an honest disabled capability, trtexec is omitted by architecture (ESC-5), and the model graphs are user-supplied at run time rather than shipped."
   }
 }

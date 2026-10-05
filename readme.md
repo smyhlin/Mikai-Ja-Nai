@@ -84,6 +84,14 @@ than a screen of blank placeholders.
 windeployqt --translations uk build-cmake/mikai.exe
 ```
 
+`MIKAI_MINGW_RUNTIME_DIR` has to name the compiler runtime the configured Qt
+links (Qt's `bin` directory); configure refuses anything else. Qt6Core.dll
+imports `libgcc_s_seh-1`/`libstdc++-6`/`libwinpthread-1` by name, the
+executable's directory wins that lookup, and a process keeps one copy per module
+name, so a native closure from another MinGW generation cannot bring its own in
+beside Qt's - it has to be built against the Qt runtime. Deploy with
+`windeployqt --no-compiler-runtime …` so Qt does not overwrite the selected CRT.
+
 `windeployqt` does not copy an mpv runtime. Mikai resolves one at runtime
 (beside the exe or in `%LOCALAPPDATA%/MPVBackend/runtime`), so copy the
 runtime tree into either place when the deployed folder has to play on its own. `--translations uk` deploys
@@ -124,18 +132,64 @@ builds a CPU-only ONNX model inspector and its `TestNativeCatalog` suite; it is
 not a GPU/DirectML/TensorRT path, and the default build has no ONNX Runtime
 dependency. These probes and the suite are hand-run checks, not a CI pipeline.
 
+`native_prep_probe` is the one hand-run probe that drives the native
+preparation helper against a real CUDA device. The helper builds a plan
+in-process through the TensorRT builder API and launches no other executable:
+
+```sh
+native_prep_probe <helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>
+```
+
+On the current helper — which builds a plan in-process through the TensorRT
+builder API and launches no other executable — it reports `RESULT: PASS` over
+seven behaviours: an existing output refuses and keeps its bytes, a corrupt
+graph exits `5` and leaves nothing engine-shaped, an absent GPU UUID refuses
+rather than falling back to another adapter, `build-started` is emitted before
+the build proceeds, the TF32-off/strongly-typed precision gate holds, cancelling
+mid-build publishes nothing, and failure or cancellation leaves prior artifacts
+and source bytes unchanged.
+
+That is builder-invocation proof only. The spatial engine it produces is
+currently **rejected** by `mikai_native_verify` — its bindings and GPU enqueue
+succeed, but `maxAbsoluteError` exceeds the FP16 tolerance. The RIFE matrix
+splits: all four graphs run a real CPU reference and all four serialize on GPU;
+**lite** and **lite ensemble** verify numerically, **full** and **ensemble** are
+rejected on `maxAbsoluteError`. A verify pass covers raw engine bytes,
+bindings and numerics only (`manifestVerified: false`, `prepared: false`), so
+nothing is `Ready` or `Active`. The pinned mpv fork core builds and its isolated
+core loads (exit `0`), and a Lua-enabled candidate now plays a real 320×180 HEVC
+24 fps video through the owned runtime with **Native off** — 921600/921600
+non-black samples, 290264/921600 motion, 0 decoder and 0 VO drops, 0 live `vf`
+chain entries — with an inspected colored 1280×720 motion pattern, and
+`widget_pixel_probe` passes 21/21 with 0 skips (colored 640×360 PNG, GL 4.6,
+0 `ErrorType`, `glGetError` 0, 30.44% motion); that is the runtime surface only,
+not the native filter, CUDA interop or active inference.
+The bundle candidate itself still aborts verification on a `GGML` initializer
+(fix in flight, no PASS yet). See `native/README.md` and `native/build-msvc.md`.
+
 The window-driving probes need the interactive desktop session attached: with
 the session detached there is no GL context and no video output, so every
-pixel-counting proof reports a black frame (`hasVideo=0`). `interaction_probe`
-passes 149/149 and `hls_recovery_probe` passes 23/23 with the session
-attached; `native_settings_probe`, `rife_settings_probe` (both languages),
+pixel-counting proof reports a black frame (`hasVideo=0`). With the session
+attached, `interaction_probe` passes 149/149, `compare_probe` 30/30
+(frozen-frame proof, 0.000/255 noise floor), and `hls_recovery_probe` and
+`external_media_probe` report `RESULT: PASS` (real expired-signature recovery;
+real picker, HTTP, same-URL retry and file URL). `native_settings_probe`,
+`rife_settings_probe` (both languages),
 `native_menu_probe`, `native_status_probe`, `runtime_selection_probe`,
 `spatial_assets_probe` and the ORT-backed `native_assets_probe`
 (`MIKAI_ORT_RUNTIME_DIR` naming the runtime directory) pass either way. The
 `compare_probe` accepts an optional media file argument. A failed direct-media
 stream shows its error with a Retry chip that survives chrome auto-hide;
 replacing the player deletes the old dialog synchronously, so no parked core
-decodes behind the new stream.
+decodes behind the new stream. `widget_pixel_probe` takes a PNG path argument
+(otherwise one fixed lavfi source), so it does not cover alternate-media or
+dialog flows; its only observed failure is a refused PNG save. `shell_probe` and
+`dialog_probe` are what observed the missing-input FAIL (exit code 1), the
+static/black inconclusive SKIP (exit code 77), the moving-portrait and the
+1 s-EOF cases. `mpv_surface_smoke` also requires inter-frame motion, so static
+near-black is SKIP (exit code 77). `headless_pixel_probe` proves lit pixels and
+a real render without a motion requirement: static near-black can pass there,
+while all-black is inconclusive.
 
 `mikai_tests` is hermetic except the live oracle, which runs only with both set:
 
@@ -150,7 +204,7 @@ Labels shown in these examples use Ukrainian; the interface can also run in Engl
 - **Home** — carousels for titles you recently opened, titles airing now, and Mikai's current popular picks, plus the latest episode updates and the weekly airing schedule. Every card shows the poster, the airing status and the aired/planned episode count, and a search result row reads the same way (`Бліч · 2004 · TV · Завершено · 366 серій`) straight from the list response, with no extra request; right-click a card to open it, copy its mikai.me link or raw id, or open the site page in a browser.
 - **Title** — description, cover, scores, genres and related titles, then one tab per release (voice or subtitles, grouped by dubbing team). Each episode opens the player at the qualities the provider actually has; the right-click menu adds copy-URL-only, re-extract, and hand-off to an external player. The cover opens full size with pan and zoom.
 - **Player** — a player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. It opens full screen, and the `><` / `<>` buttons beside the PiP icon — or a double click on the picture, or `F` / `F11` — toggle a real decorated native window, so leaving full screen restores the previous windowed geometry and the OS titlebar handles dragging, resizing, snap layouts and moving the window to another monitor. The toggle is scoped to the player; the app's main window is unaffected. The picture fills the window edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports network throughput, decoded FPS and, while enhancement is active, the source-to-output resolution. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float drops the video into a small always-on-top window with its own overlaid controls — click to pause, hold and drag to move it.
-- **Anime4K** — the dock's sparkle button opens **Покращення**, whose **Anime4K** row opens a tree on hover: resting on a row opens the level under it as a panel beside the one it sits in, so the four categories - *Швидкість* (Fast A/B/C), *Якість* (HQ A/B/C), *Максимум* (the double-restore chains) and *Експериментальні* (3D Graphics, Old Film Restore, Deblur, plus single-file Noise Reduction, Thin Lines, Texture Enhancement and Darken presets). **Вимкнено** turns enhancement off. The choice is applied to the running mpv core, so it lands on the next rendered frame without reopening the episode, and it is remembered across runs. The same tree lists **RIFE**, **RealESRGAN** and **Інші моделі** as panels of their own, each holding a disabled *В планах* leaf: they have no engine yet, and nothing in them can be chosen. The presets live in `shaders/` and are deployed next to the executable; the enhancement control hides itself if that folder did not ship.
+- **Anime4K** — the dock's sparkle button opens **Покращення**, whose **Anime4K** row opens a tree on hover: resting on a row opens the level under it as a panel beside the one it sits in, so the four categories - *Швидкість* (Fast A/B/C), *Якість* (HQ A/B/C), *Максимум* (the double-restore chains) and *Експериментальні* (3D Graphics, Old Film Restore, Deblur, plus single-file Noise Reduction, Thin Lines, Texture Enhancement and Darken presets). **Вимкнено** turns enhancement off. The choice is applied to the running mpv core, so it lands on the next rendered frame without reopening the episode, and it is remembered across runs. The same tree lists **RIFE**, **RealESRGAN** and **Інші моделі** as panels of their own, each holding a disabled *В планах* leaf: they have no engine yet, no model in them executes, and nothing can be chosen — RIFE because its producer is unavailable (ESC-1), RealESRGAN and Інші моделі simply planned. The presets live in `shaders/` and are deployed next to the executable; the enhancement control hides itself if that folder did not ship.
 - **External video** — the home-page **Відкрити відео** menu opens a local file or a media/stream URL in the built-in mpv player. Standalone playback keeps seeking, volume, speed, PiP, **Enhancements → Anime4K**, and the picture's right-click **Порівняти якість** action, but has no anime quality selector, episode list, or release picker. URLs go directly to mpv; anime-provider page extraction is not used. A failed source displays an error, and **Повторити** retries that same file or URL.
 - **Settings** — the API token with its live quota, a checklist of home blocks, and an **Interface language** selector for system, English, or Ukrainian. A disabled block is never requested. The **Presets** tab assigns a one-keypress shortcut to every Anime4K preset; duplicate assignments are rejected and built-in player keys remain reserved.
 
@@ -246,8 +300,29 @@ The **RPM** indicator beside Settings shows the server-reported requests used in
 `src/backend/` is the domain — `MikaiClient` (rate-limited Qt Network calls), models, HLS extraction (`ashdi`/`moon`/`tortuga`) and stock mpv discovery/provisioning — and `src/app/` is the Qt Widgets frontend (`MainWindow`, `SearchPage`, `TitlePage`, dialogs, theme tokens), with the player (`src/player/`: `PlayerDialog` → `PlayerShell` → mpv-backed `VideoSurface`, over the once-pinned `MpvApi` dynamic module loader) driven in-process through a `PlayerHost` bridge, and `shaders/` holding the Anime4K `.glsl` presets that CMake copies next to the executable. `docs.md` is the authoritative API contract and `AGENTS.md` the map for contributors: architecture, conventions, build commands and the testing setup. Run the checks with `ctest --test-dir build-cmake -R mikai_tests`.
 
 `native/README.md` covers the optional native (AnimeJaNai) track — source pins,
-acquisition records and the rights position. It is not on this build path, no
-native SDK is needed to build the app, and no native bundle is built or shipped.
+acquisition records and the licence basis; the findings and their resolutions
+live in `native/manifest/components.json`. This project's own native integration
+is covered by the owner grant of 2026-10-04 (unrestricted OpenSource use of this
+project's own integration and its recorded decisions); third-party components
+keep their own terms, and the inference shim's upstream terms are not verified.
+The four RIFE v4.14 graphs are acquired and their stored weights match the
+author's MIT checkpoints after fp16 rounding; the residual whole-graph questions
+are recorded by owner decision rather than answered. The RIFE, RealESRGAN and Інші моделі panels
+all remain placeholders and no model in them executes, so the app performs no
+native processing. The optional MSVC `native/` project builds the shim from the
+pinned, patched source and has produced raw TensorRT plans on a real GPU. The
+shim also now compiles and links with the additive ABI v2 snapshot patch, and
+its `native_abi_probe` reports ABI 8 unchanged with protocol/schema 2/2 and a
+real-context probe that stays `Unavailable` (no `Prepared`/`Active`). Two
+RIFE engines (lite and lite ensemble) and the spatial HD Performance engine
+verify numerically against the CPU reference; RIFE full and ensemble are
+rejected on `maxAbsoluteError`. Nothing is `Ready` or `Active`, no complete
+prepared recipe exists, and no native frame has been rendered. The pinned mpv
+fork core builds and its isolated core loads (exit `0`), and a Lua-enabled
+candidate plays real 320×180 HEVC video through the owned runtime with Native
+off (0 decoder and 0 VO drops), but the bundle candidate still aborts
+verification on a `GGML` initializer (fix in flight, no PASS yet). It is not on
+this build path and no native SDK is needed to build the app.
 
 The `mikai_tests` target and shader-using probes deploy `shaders/` beside their
 executables during their own builds; building only the test target in a fresh

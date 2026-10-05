@@ -30,8 +30,4 @@ permit redistribution of the adopted source, our patches, and built DLLs?
 Distribution is not currently authorized; this is a request for clarification,
 not an intention to publish before the terms permit it.
 
-Until a grant is received, source adoption and native runtime delivery remain
-blocked. No substitute inference implementation is proposed. See
-`manifest/THIRD_PARTY_NOTICES.md` and `manifest/components.json` for the evidence
-and affected components. Sending this request requires the project owner's
-explicit approval; no recipient address or message has been invented or sent.
+Owner determination (2026-10-04, in-session): the project owner granted unrestricted use of the project's own native integration, with no restrictions. That grant is recorded at `../LICENSE` (The Unlicense) and covers this project's own integration code and its recorded decisions only; it does not relicense, license or verify the third-party upstream AnimeJaNai inference source this request concerns, which still has no located licence and is recorded in `manifest/components.json` as "upstream terms not verified" with ESC-1 open. It does not cover Qt, mpv, FFmpeg, NVIDIA CUDA/TensorRT/cuDART, ONNX Runtime, DirectML or the upstream models either; each keeps its own upstream terms. Nothing in that grant makes this request sent, records any reply, or authorizes reuse of the upstream source. See `manifest/THIRD_PARTY_NOTICES.md` and `manifest/components.json` for per-component licence and decision. Sending this request requires the project owner's explicit approval; no recipient address or message has been invented or sent.

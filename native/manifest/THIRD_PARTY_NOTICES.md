@@ -1,11 +1,16 @@
 # Third-party notices — native runtime components
 
-Generated 2026-10-01 for M03. This file records what was actually found, with
-citations. It does **not** grant permission and is not legal advice. Where a
-licence is unresolved it says so, rather than picking the convenient reading.
+Generated 2026-10-01 for M03; per-file inventory added 2026-10-04. This file
+records what was actually found, with citations. It does **not** grant
+permission and is not legal advice. Where a licence is unresolved it says so,
+rather than picking the convenient reading.
 
-Nothing has been vendored. As of this writing the repository contains no
-third-party native binary, and no native bundle ships.
+Nothing has been **vendored**: the repository contains no third-party native
+binary. A private bundle `native-0.1.0-dev.2` is however **installed and
+running locally** on the owner's machine — 83 files built or acquired outside
+this repository — and §11 maps every one of those files. Installed locally is
+not shipped: the Native bundle's distribution decision remains `blocked`, and
+the three open escalations are unchanged.
 
 ## 0. Scope of use
 
@@ -437,6 +442,111 @@ Conda, Torch, Python or any ambient install.
 
 ---
 
+## 11. Per-file inventory of the installed private bundle
+
+`components.json#installedBundleInventory` maps **every one of the 83 files**
+(80 DLLs, 3 EXEs) in the installed private bundle `native-0.1.0-dev.2` to its
+source, the licence as actually located, and one of the three decisions. This
+section summarises; it does not replace it.
+
+Each of the 83 digests was recomputed from the file on disk and matched. How
+each attribution was *established* matters more than the hash:
+
+| Cohort | Files | Attribution basis | Licence as located | Decision |
+|---|---|---|---|---|
+| mpv fork core | 1 | byte-identical to this repository's own build of the pinned commit | GPL-2.0-or-later | cleared, GPL obligations |
+| ABI-8 shims | 2 | byte-identical to this repository's build from the patched pinned source | **none upstream** | **blocked** (ESC-1) |
+| ggml / whisper self-build | 17 | byte-identical to this repository's own build | MIT | cleared |
+| MSYS2 verbatim cohort | 36 | exact digest match to the pinned package archive | mixed permissive / LGPL / GPL | cleared per package |
+| MSYS2 relinked cohort | 13 | byte-identical to this repository's relink + export-set comparison | as owning package | cleared per package |
+| Microsoft CRT | 4 | pinned `vc_redist` payload | VC++ Redistributable terms, **text not recovered** | external |
+| CUDA runtime | 1 | byte-identical to NVIDIA's published redistributable | CUDA EULA Att. A | external |
+| TensorRT | 3 | byte-identical to the pinned `-external` SDK | TensorRT SLA + Supplement | external |
+| ONNX Runtime / DirectML | 3 | byte-identical to the pinned NuGet packages | MIT / MS Terms | cleared |
+| Project tools | 3 | project-owned code paths | this project's Unlicense grant | cleared |
+
+### What the licence cohort label does *not* say
+
+The 49 `mpv-deps` files have **no single licence**. This is a cohort, not a
+licence: it contains permissive (MIT, BSD-3, Apache-2.0, Zlib, ISC), LGPL
+(`glib2`, `fribidi`, `graphite2`, `gdk-pixbuf`, `librsvg`, `libthai`,
+`libunistring`), **GPL-family and dual terms** (`libfreetype`
+GPL-2.0-or-later OR FTL, `libiconv` LGPL-2.1-or-later OR GPL-3.0-or-later,
+`libidn2` GPL-2.0-or-later OR LGPL-3.0-or-later, `libintl`
+GPL-3.0-or-later AND LGPL-2.1-or-later, `libzstd` BSD-3-Clause OR
+GPL-2.0-or-later, `liblzma` 0BSD AND LGPL-2.1 AND GPL-2.0, `libdatrie` LGPL)
+and packages declaring only `custom` or a non-SPDX string. Each DLL keeps its
+owning package's terms; the per-file `licenceSpdxAsDeclaredByPackage` field
+carries the exact string. GPL-family members carry source and relinkability
+duties on any distribution.
+
+### Three things this inventory does **not** prove
+
+1. **The 13 relinked DLLs are not behaviourally proven.** Their export sets are
+   identical to the prefix originals (measured: cairo 415, fontconfig 246,
+   freetype 220, harfbuzz 1415, pango 514, rsvg 55, … zero missing, zero extra)
+   and they import none of `libstdc++-6`/`libgcc_s_seh-1`/`libwinpthread-1`. But
+   they were linked with `-Wl,--allow-multiple-definition` and a privately
+   linked winpthread. That is a symbol-interposition risk, not a build failure.
+   Export identity is **not** behavioural equivalence; no run-time equivalence
+   test is recorded.
+
+2. **The Microsoft CRT licence text is missing.** The pinned installer was
+   downloaded and its payload located as two cabinet containers, but the EULA
+   was not recovered from them. The terms are identified by acquisition route
+   only. This is recorded as *missing evidence*, not as a grant.
+
+3. **Only the `sm120` TensorRT builder resource ships.** The kernel-architecture
+   list in `sources.json#buildConfigurationPins` enumerates ptx plus
+   sm75–sm100 and sm120; this bundle carries **only** `sm120`. On a GPU whose
+   SM is not sm120, the builder would need a resource that is absent. That is a
+   real closure gap in this particular installed instance and is recorded here
+   rather than papered over.
+
+### Closure and self-containment
+
+Every static import of all 83 files resolves inside the bundle, to an
+`api-ms`/`ext-ms` API set, or to a Windows system library. No bundled binary
+imports a third-party DLL the bundle does not ship, and none imports the GNU
+runtime trio — so the native closure cannot collide with the Qt cohort. What is
+still imported from outside is named per row under
+`importsNeedingAnExternalProvider`, and every such name is either a Windows
+system library or a driver-supplied one (`nvcuda` via the CUDA driver;
+`Qt6Core` for the project-owned `native_inspect.exe`, which deliberately does
+not ship Qt).
+
+`ggml_backend_load_all` resolves CPU backends from the executable's directory
+and the current working directory, **not** via `AddDllDirectory`. The 14
+`ggml-cpu-*.dll` files sitting beside the core is necessary but is **not** by
+itself proof the variant set resolves on an arbitrary machine. That remains a
+run-time question and is not claimed here.
+
+`libmpv-2.dll` statically imports `vulkan-1.dll` even though the meson build
+records `vulkan=disabled`. It is satisfied by the system loader when present
+and is a soft dependency, but it is recorded rather than assumed away.
+
+### Wire version versus producer ABI
+
+The bundle manifest's `protocolVersion: 1` and `engineSchemaVersion: 1` are
+**correct** and are not a mismatch. The shipped core contains
+`mikai.native.status/1`, `mikai.native.admission/1` and
+`mikai.native.control/1`, and no `/2` variant — matching the producer in the
+effective fork. The producer CAPI snapshot/schema **v2**, the factory query
+**v1** and source **ABI 8** are a separate domain (`sources.json#abi`,
+`#patchSeries`); they are not the same numbers as the status wire and are not
+conflated with it. No version field was changed.
+
+### Escalations unchanged
+
+Nothing in this inventory resolves ESC-1, ESC-2 or ESC-3, and the Native
+bundle's shipping decision stays `blocked`. The owner's 2026-10-04 grant covers
+this project's own integration code only. `aji.dll` and `aji_trt.dll` are
+**present** in the installed private bundle and **blocked** for redistribution —
+`inBundle` in `components.json` answers "may this ship?", not "is it here?"; see
+`components.json#inBundleSemantics`.
+
+---
+
 ## Summary
 
 | Component | Licence as located | Redistribution |
@@ -449,19 +559,30 @@ Conda, Torch, Python or any ambient install.
 | `cudart64_*.dll` | CUDA EULA Attachment A | external — acquired from the CUDA redistributable |
 | `onnxruntime.dll` | MIT | **cleared** |
 | `DirectML.dll` | Microsoft Software License Terms (binary) + MIT (code) | **cleared**, on the licence read from the pinned package |
-| AnimeJaNai ONNX models | CC BY-NC-SA 4.0 | **redistribution blocked**; local non-commercial use permitted |
-| RIFE v4.14 full/lite/ensemble × {ensemble off/on} | MIT upstream — stored weight data traced; whole-graph redistribution unresolved | **blocked** — redistribution, not availability |
+| AnimeJaNai ONNX models | CC BY-NC-SA 4.0 | **redistribution blocked** (ESC-2); local non-commercial use permitted |
+| RIFE v4.14 full/lite/ensemble × {ensemble off/on} | MIT upstream — stored weight data traced; whole-graph redistribution unresolved | **blocked** — redistribution, not availability (ESC-3) |
 | Anime4K shaders | MIT (47) / Unlicense (2) | cleared — out of native scope, recorded for completeness |
+| `mpv-deps` cohort (49 files) | mixed: permissive, LGPL, GPL-family and dual terms, per owning package | cleared **per package**; GPL-family members carry source and relinkability duties |
+| ggml / whisper self-build (17 files) | MIT | **cleared** — retain the copyright notice |
+| Microsoft CRT (4 files) | VC++ Redistributable terms; **text not recovered** | external — recorded as missing evidence, not as a grant |
 
-**One rights blocker remains, and it is not paperwork.** §2 — the inference
-shim has no licence of any kind, and the recorded non-commercial scope does not
-change that. It binds the tasks that build, ship or execute the shim; the
-stock mpv loader path, the contract and vocabulary work, and the import of
-user-supplied models are untouched by it. §7 now blocks only the
-*redistribution* of five model files, not their local use. §8 blocks the
+**Three rights blockers remain open, and none is paperwork.** ESC-1 (§2) — the
+inference shim has no licence of any kind, and the recorded non-commercial
+scope does not change that. ESC-2 (§7) blocks only the *redistribution* of five
+CC BY-NC-SA model files, not their local use. ESC-3 (§8) blocks the
 *redistribution* of the four acquired RIFE graphs on whole-graph provenance and
-rights, not their acquisition: the graphs are on disk and the stored weight data
-traces to the author's MIT checkpoints.
+rights, not their acquisition. The earlier wording of this paragraph said "one
+rights blocker"; that was wrong on its own terms and against
+`components.json#escalationsSummary`, which has always recorded three. It is
+corrected here rather than quietly narrowed.
+
+ESC-1 binds the tasks that build, ship or execute the shim; the stock mpv
+loader path, the contract and vocabulary work, and the import of user-supplied
+models are untouched by it. ESC-2 blocks only the *redistribution* of five
+model files, not their local use. ESC-3 blocks the *redistribution* of the four
+acquired RIFE graphs on whole-graph provenance and rights, not their
+acquisition: the graphs are on disk and the stored weight data traces to the
+author's MIT checkpoints.
 
 The full blocker-to-task mapping is in
 [`components.json`](components.json#blockertaskbindings) and in

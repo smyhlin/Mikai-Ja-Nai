@@ -81,6 +81,8 @@ patent or trademark rights.
 These bytes are kept as **private, non-commercial reference inputs on this
 machine only**. This repository does not redistribute, re-host or ship them.
 
+**Licence position (2026-10-04, in-session):** The project's own integration is covered by the owner's unrestricted grant (recorded at `../LICENSE`, The Unlicense); these third-party CC BY-NC-SA 4.0 graphs are not relicensed by it and remain governed by their upstream terms as recorded. All original digests, pins and provenance tables are preserved unchanged.
+
 ## 4. Declared boundary and CPU reference observation (M11 instrument)
 
 The five graphs were passed to `native_inspect` — M11's read-only inspection CLI
