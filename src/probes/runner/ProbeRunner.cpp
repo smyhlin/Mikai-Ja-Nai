@@ -40,6 +40,7 @@
 #include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "pages/MainWindow.hpp"
 #include "workers/Runner.hpp"
 
 #include "PlayerDialog.hpp"
@@ -49,6 +50,7 @@
 namespace mikai::probes {
 namespace {
 
+using mikai::app::MainWindow;
 using mikai::app::Runner;
 using mikai::app::SettingsDialog;
 using mikai::backend::MikaiClient;
@@ -621,6 +623,24 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
     const QString title = QStringLiteral("Mikai probe: %1")
                               .arg(manifest.name.isEmpty() ? QStringLiteral("(unnamed)")
                                                            : manifest.name);
+    if (manifest.surface == ProbeSurface::MainWindow) {
+        if (!manifest.media.isEmpty() || !manifest.episodes.isEmpty()) {
+            *reason = QStringLiteral("the main_window surface opens no stream, and manifest "
+                                     "'%1' names media or episodes")
+                          .arg(manifest.name);
+            return false;
+        }
+        // Exactly the way main() builds it: a client, a window, show. The
+        // window is the discovery root, so home-page widgets are reached by
+        // objectName.
+        surface->client = std::make_unique<MikaiClient>(QStringLiteral("probe-key"));
+        auto* window = new MainWindow(*surface->client);
+        surface->root = window;
+        window->setWindowTitle(title);
+        window->resize(manifest.width, manifest.height);
+        window->show();
+        return true;
+    }
     if (manifest.surface == ProbeSurface::SettingsDialog) {
         if (!manifest.media.isEmpty()) {
             *reason = QStringLiteral("the settings_dialog surface opens no stream, and manifest "

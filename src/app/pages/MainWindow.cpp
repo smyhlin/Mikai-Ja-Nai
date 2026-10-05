@@ -80,6 +80,7 @@ constexpr int kNativeContextWaitMs = 8000;
 
 MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     : QWidget(parent), client_(client) {
+    setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Mikai Wrapper"));
     setMinimumSize(860, 620);
     resize(1080, 760);

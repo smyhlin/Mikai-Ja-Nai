@@ -1,0 +1,40 @@
+{
+  "name": "app-starts-windowed",
+  "description": "The application window starts in a normal windowed state: visible, neither minimized nor fullscreen nor hidden.",
+  "category": "ui-interaction",
+  "surface": "main_window",
+  "width": 1080,
+  "height": 760,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "mainWindow",
+      "timeout_ms": 15000,
+      "note": "The window must actually appear. A start that leaves the app running with no visible window — tray-only, hidden, or failed show — never satisfies this."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "mainWindow",
+      "property": "visible",
+      "expected": true,
+      "note": "The window is on screen. main() calls window.show() (src/app/main.cpp), so invisible here means the show was lost somewhere after it."
+    },
+    {
+      "kind": "qt_property",
+      "target": "mainWindow",
+      "property": "minimized",
+      "expected": false,
+      "note": "Not minimized to the taskbar. A start that opens straight into a minimized window reads as 'nothing happened' to whoever launched it."
+    },
+    {
+      "kind": "qt_property",
+      "target": "mainWindow",
+      "property": "fullScreen",
+      "expected": false,
+      "note": "Not fullscreen either. Windowed is the launch contract: a normal resizable window the user can move, resize and close."
+    }
+  ]
+}

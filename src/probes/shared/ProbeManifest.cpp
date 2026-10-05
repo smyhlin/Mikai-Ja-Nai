@@ -733,10 +733,12 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
             manifest.surface = ProbeSurface::PlayerDialog;
         } else if (surface == QLatin1String("settingsdialog")) {
             manifest.surface = ProbeSurface::SettingsDialog;
+        } else if (surface == QLatin1String("mainwindow")) {
+            manifest.surface = ProbeSurface::MainWindow;
         } else {
             fail(reason,
                  QStringLiteral("manifest '%1': unknown surface '%2' (accepted: video_surface, "
-                                "player_dialog, settings_dialog)")
+                                "player_dialog, settings_dialog, main_window)")
                      .arg(manifest.name, surfaceValue.toString()));
             return std::nullopt;
         }

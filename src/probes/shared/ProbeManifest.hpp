@@ -31,6 +31,11 @@ enum class ProbeSurface {
     /// by objectName. It opens no stream, so 'media' is refused; width and
     /// height size the dialog.
     SettingsDialog,
+    /// The real application window, built exactly the way main() builds it:
+    /// a client, a window, show. The window is the discovery root. It opens
+    /// no stream, so 'media' and 'episodes' are refused; width and height
+    /// size the window.
+    MainWindow,
 };
 
 /// One thing the probe does to the application.
