@@ -1,0 +1,61 @@
+{
+  "name": "hover-does-not-seek",
+  "description": "Moving the pointer across the timeline previews a position but never seeks - only a press and release moves playback.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "Pause first, so any movement below is caused by the pointer and not by playback."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "mouse_move",
+      "target": "playerScrubBar",
+      "position": 0.8,
+      "note": "Hover the far end of the timeline with no button held. RangeSlider tracks a hover fraction separately from its value, so this must move nothing."
+    },
+    {
+      "kind": "mouse_move",
+      "target": "playerScrubBar",
+      "position": 0.2,
+      "note": "And hover the near end, so the assertion covers a sweep in both directions rather than one resting position."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300,
+      "note": "Bounded settle so any seek a hover wrongly started would already have landed before the core is read."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerScrubBar",
+      "property": "value",
+      "comparison": "less_than",
+      "expected": 0.25,
+      "note": "The control did not follow the pointer. A build that commits on hover would sit at 0.8 and fail here."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "less_than",
+      "expected": 1.0,
+      "note": "And the core did not move either. This is the assertion that matters: a hover that sought would send a viewer to a random point in the film just by moving the pointer across the dock."
+    }
+  ]
+}

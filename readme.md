@@ -109,6 +109,49 @@ cmake --build --preset tests --parallel
 ctest --test-dir build/release -R mikai_tests
 ```
 
+### Behavioural probes (JSON manifests)
+
+`probe_runner` is a single executable that runs declarative probes, so adding
+coverage means adding a JSON file rather than a new binary:
+
+```sh
+cmake --build --preset release --target probe_runner --parallel
+build/release/probe_runner.exe probes/                  # run everything
+build/release/probe_runner.exe probes/ --list           # what exists, without running
+build/release/probe_runner.exe probes/ --filter seek    # one scenario by name
+```
+
+Manifests live in `probes/<category>/` and address the application by identity
+only: a widget by its `objectName`, the core by an mpv property. There are no
+screen coordinates, no image or pixel comparison, and no sleep used as a
+synchroniser — a scenario waits on a signal or on an observable condition.
+Assertions read behaviour: a Qt signal, a Qt property, or what mpv itself holds
+(`pause`, `volume`, `duration`, `time-pos`, `filename`).
+
+```json
+{
+  "name": "settings-gear-opens-flyout",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "steps": [
+    { "kind": "wait_for", "name": "hasVideo" },
+    { "kind": "click", "target": "playerSettingsButton" }
+  ],
+  "assertions": [
+    { "kind": "qt_property", "target": "playerSettingsFlyout",
+      "property": "visible", "expected": true }
+  ]
+}
+```
+
+Four categories are in use: `ui-interaction`, `player-behavior`, `state-sync`
+(which checks that the Qt state and the core agree) and `regression`, which pins
+a defect that has already been fixed. Adding a probe to an interactive widget
+usually means giving that widget an `objectName` first; a control a manifest has
+to write also needs its `Q_PROPERTY` exposed, so the manifest drives the real
+setter and sees the same signal a user would.
+
 The optional `external_media_probe` target exercises the actual home file/URL dialogs,
 video rendering, Compare, Anime4K menu, standalone control visibility, error recovery,
 and close/reopen/shutdown. Run it with a 320×180 clip longer than 10 seconds and

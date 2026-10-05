@@ -1,0 +1,66 @@
+{
+  "name": "drag-scrub-bar-seeks",
+  "description": "Dragging the scrub bar with the mouse seeks, where setting its value does not - the two reach the core by different paths.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "Pause first so the position cannot race past the assertion."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "drag",
+      "target": "playerScrubBar",
+      "position": 0.0,
+      "position_end": 0.75,
+      "note": "Press at the left edge and slide to three quarters. ScrubBar is a self-painting RangeSlider with no child handle, so a drag can only work if its own press/move/release handling runs - which is the path set_value deliberately does not take."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 400,
+      "note": "Bounded settle so the exact seek lands before the synchronous core read. The assertion below carries the scenario; this is not a synchroniser."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "duration",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 12.0,
+      "tolerance": 0.5,
+      "note": "Pins the constant the next assertion is computed from, so a fixture or load fault reports as its own failure instead of quietly invalidating the expected 9.0."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 9.0,
+      "tolerance": 0.6,
+      "note": "Three quarters of a 12.000s fixture. A build whose scrub bar ignored the drag leaves time-pos at the start and fails here."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerScrubBar",
+      "property": "value",
+      "comparison": "greater_than",
+      "expected": 0.6,
+      "note": "The widget followed the pointer, not just the core. A build that seeked the core without moving the control would pass the time-pos assertion and fail this one."
+    }
+  ]
+}

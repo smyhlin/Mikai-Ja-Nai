@@ -16,6 +16,8 @@
 #include <QJsonValue>
 #include <QMap>
 
+#include <cmath>
+
 namespace mikai::probes {
 namespace {
 
@@ -114,6 +116,12 @@ std::optional<ProbeStep::Kind> stepKind(const QString& literal) {
     if (key == QLatin1String("doubleclick")) {
         return ProbeStep::Kind::DoubleClick;
     }
+    if (key == QLatin1String("mousemove")) {
+        return ProbeStep::Kind::MouseMove;
+    }
+    if (key == QLatin1String("drag")) {
+        return ProbeStep::Kind::Drag;
+    }
     if (key == QLatin1String("keypress")) {
         return ProbeStep::Kind::KeyPress;
     }
@@ -144,6 +152,10 @@ QString stepKindName(ProbeStep::Kind kind) {
             return QStringLiteral("click");
         case ProbeStep::Kind::DoubleClick:
             return QStringLiteral("double_click");
+        case ProbeStep::Kind::MouseMove:
+            return QStringLiteral("mouse_move");
+        case ProbeStep::Kind::Drag:
+            return QStringLiteral("drag");
         case ProbeStep::Kind::KeyPress:
             return QStringLiteral("key_press");
         case ProbeStep::Kind::SetValue:
@@ -168,6 +180,8 @@ bool stepNeedsTarget(ProbeStep::Kind kind) {
     switch (kind) {
         case ProbeStep::Kind::Click:
         case ProbeStep::Kind::DoubleClick:
+        case ProbeStep::Kind::MouseMove:
+        case ProbeStep::Kind::Drag:
         case ProbeStep::Kind::SetValue:
         case ProbeStep::Kind::TypeText:
         case ProbeStep::Kind::Focus:
@@ -191,6 +205,8 @@ bool stepNeedsName(ProbeStep::Kind kind) {
         case ProbeStep::Kind::Click:
         case ProbeStep::Kind::DoubleClick:
         case ProbeStep::Kind::KeyPress:
+        case ProbeStep::Kind::MouseMove:
+        case ProbeStep::Kind::Drag:
         case ProbeStep::Kind::TypeText:
         case ProbeStep::Kind::Focus:
         case ProbeStep::Kind::SleepMs:
@@ -210,6 +226,8 @@ QString stepNameRole(ProbeStep::Kind kind) {
         case ProbeStep::Kind::Click:
         case ProbeStep::Kind::DoubleClick:
         case ProbeStep::Kind::KeyPress:
+        case ProbeStep::Kind::MouseMove:
+        case ProbeStep::Kind::Drag:
         case ProbeStep::Kind::TypeText:
         case ProbeStep::Kind::Focus:
         case ProbeStep::Kind::SleepMs:
@@ -391,6 +409,29 @@ bool readTimeoutMs(const QJsonObject& owner, const QString& where, int* out, QSt
     return true;
 }
 
+/// Reads an optional fraction of a widget's width. Absent leaves `*out`
+/// untouched, so each step keeps the default its kind calls for.
+bool readFraction(const QJsonObject& owner, const QString& key, const QString& where, double* out,
+                  QString* reason) {
+    if (!owner.contains(key)) {
+        return true;
+    }
+    const QJsonValue value = owner.value(key);
+    if (!value.isDouble()) {
+        return fail(reason, QStringLiteral("%1: '%2' must be a number, not %3")
+                                .arg(where, key, jsonTypeName(value)));
+    }
+    const double fraction = value.toDouble();
+    if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0) {
+        return fail(reason,
+                    QStringLiteral("%1: '%2' must be a finite number between 0 and 1, got %3")
+                        .arg(where, key)
+                        .arg(fraction));
+    }
+    *out = fraction;
+    return true;
+}
+
 bool parseStep(const QJsonValue& entry, int index, ProbeStep* out, QString* reason) {
     const QString where = QStringLiteral("steps[%1]").arg(index);
     if (!entry.isObject()) {
@@ -400,9 +441,10 @@ bool parseStep(const QJsonValue& entry, int index, ProbeStep* out, QString* reas
     }
     const QJsonObject object = entry.toObject();
     static const QStringList known{
-        QStringLiteral("kind"),   QStringLiteral("target"),     QStringLiteral("name"),
-        QStringLiteral("value"),  QStringLiteral("key"),        QStringLiteral("modifiers"),
-        QStringLiteral("timeout_ms"), QStringLiteral("note"),
+        QStringLiteral("kind"),     QStringLiteral("target"),      QStringLiteral("name"),
+        QStringLiteral("value"),    QStringLiteral("key"),         QStringLiteral("modifiers"),
+        QStringLiteral("position"), QStringLiteral("position_end"), QStringLiteral("timeout_ms"),
+        QStringLiteral("note"),
     };
     for (const QString& key : object.keys()) {
         if (!known.contains(key)) {
@@ -424,8 +466,8 @@ bool parseStep(const QJsonValue& entry, int index, ProbeStep* out, QString* reas
     if (!kind.has_value()) {
         return fail(reason,
                     QStringLiteral("%1: unknown step kind '%2' (accepted: click, double_click, "
-                                   "key_press, set_value, type_text, focus, wait_for_signal, "
-                                   "wait_for, sleep_ms)")
+                                   "mouse_move, drag, key_press, set_value, type_text, focus, "
+                                   "wait_for_signal, wait_for, sleep_ms)")
                         .arg(where, kindValue.toString()));
     }
 
@@ -436,6 +478,8 @@ bool parseStep(const QJsonValue& entry, int index, ProbeStep* out, QString* reas
         || !readString(object, QStringLiteral("key"), where, &step.key, reason)
         || !readString(object, QStringLiteral("note"), where, &step.note, reason)
         || !readModifiers(object, where, &step.modifiers, reason)
+        || !readFraction(object, QStringLiteral("position"), where, &step.position, reason)
+        || !readFraction(object, QStringLiteral("position_end"), where, &step.positionEnd, reason)
         || !readTimeoutMs(object, where, &step.timeoutMs, reason)) {
         return false;
     }
@@ -466,6 +510,13 @@ bool parseStep(const QJsonValue& entry, int index, ProbeStep* out, QString* reas
     if (step.kind == ProbeStep::Kind::SetValue && !object.contains(QStringLiteral("value"))) {
         return fail(reason,
                     QStringLiteral("%1: set_value needs a 'value' to write, got none").arg(where));
+    }
+    // A drag with no start would press the widget's centre and call that the
+    // press point the manifest asked for, so the start is required outright.
+    if (step.kind == ProbeStep::Kind::Drag && !object.contains(QStringLiteral("position"))) {
+        return fail(reason,
+                    QStringLiteral("%1: drag needs a 'position' (0..1) to press at, got none")
+                        .arg(where));
     }
     if (step.kind == ProbeStep::Kind::WaitFor) {
         if (!knownPredicate(step.name)) {

@@ -60,8 +60,7 @@
       "mpv_kind": "number",
       "comparison": "not_equals",
       "expected": 20.0,
-      "tolerance": 1.0,
-      "note": "The level set one step earlier, so a core frozen at the first write cannot pass by holding a stale-but-matching value. tolerance keeps not_equals numeric rather than an exact 20.0 == 20.0 test."
+      "note": "The level written one step earlier, so a core that froze at the first write cannot pass by holding a stale-but-matching value. Deliberately an exact compare: the runner reads tolerance only under approximately (compareValues in ProbeRunner.cpp), so a tolerance here would be silently ignored and would not print in the report line. Exact is also the stronger claim - it rejects the precise stale value rather than a band around it."
     }
   ]
 }

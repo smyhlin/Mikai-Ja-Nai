@@ -242,6 +242,8 @@ QString stepKindName(ProbeStep::Kind kind) {
     switch (kind) {
         case ProbeStep::Kind::Click: return QStringLiteral("click");
         case ProbeStep::Kind::DoubleClick: return QStringLiteral("double_click");
+        case ProbeStep::Kind::MouseMove: return QStringLiteral("mouse_move");
+        case ProbeStep::Kind::Drag: return QStringLiteral("drag");
         case ProbeStep::Kind::KeyPress: return QStringLiteral("key_press");
         case ProbeStep::Kind::SetValue: return QStringLiteral("set_value");
         case ProbeStep::Kind::TypeText: return QStringLiteral("type_text");
@@ -435,6 +437,35 @@ bool runStep(const ProbeStep& step, const Surface& surface, QString* reason) {
             }
             QCoreApplication::processEvents();
             QTest::mouseDClick(widget, Qt::LeftButton, Qt::NoModifier, widget->rect().center());
+            return true;
+        }
+        case ProbeStep::Kind::MouseMove: {
+            QWidget* widget = widgetTarget(surface, step.target, reason);
+            if (widget == nullptr) {
+                return false;
+            }
+            QCoreApplication::processEvents();
+            // No button is held: this is the hover path a move or enter handler
+            // answers, not a click that happens to land somewhere.
+            const double fraction = step.position >= 0.0 ? step.position : 0.5;
+            const QPoint point(qRound(widget->width() * fraction), widget->height() / 2);
+            QTest::mouseMove(widget, point);
+            return true;
+        }
+        case ProbeStep::Kind::Drag: {
+            QWidget* widget = widgetTarget(surface, step.target, reason);
+            if (widget == nullptr) {
+                return false;
+            }
+            QCoreApplication::processEvents();
+            // Press, move and release inside the widget, so the drag reports
+            // through its own press/move/release handlers rather than by a
+            // direct property write. The parser refuses a drag with no start.
+            const QPoint start(qRound(widget->width() * step.position), widget->height() / 2);
+            const QPoint end(qRound(widget->width() * step.positionEnd), widget->height() / 2);
+            QTest::mousePress(widget, Qt::LeftButton, Qt::NoModifier, start);
+            QTest::mouseMove(widget, end);
+            QTest::mouseRelease(widget, Qt::LeftButton, Qt::NoModifier, end);
             return true;
         }
         case ProbeStep::Kind::KeyPress: {

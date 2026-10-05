@@ -33,7 +33,9 @@ struct ProbeStep {
     enum class Kind {
         Click,        ///< press+release the left button on a widget
         DoubleClick,
-        KeyPress,     ///< a key, optionally with Ctrl/Alt/Shift
+        KeyPress,     ///< a key, optionally with Ctrl, Alt or Shift
+        MouseMove,    ///< move the cursor over a widget, no button held
+        Drag,         ///< press at one fraction of the widget's width, slide, release
         SetValue,     ///< write a widget property (the real setter, so it emits)
         TypeText,     ///< type into a focusable widget
         Focus,
@@ -51,6 +53,11 @@ struct ProbeStep {
     /// Key text for key_press ("Space", "Q", "Escape").
     QString key;
     Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+    /// For mouse_move: where along the widget's own width to point, 0..1
+    /// (absent means the centre). For drag: where the press starts.
+    double position = -1.0;
+    /// For drag only: where along the widget's width the drag ends, 0..1.
+    double positionEnd = 1.0;
     int timeoutMs = 5000;
     /// human-readable note, printed when the step fails
     QString note;
