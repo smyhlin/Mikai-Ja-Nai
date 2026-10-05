@@ -41,7 +41,7 @@
 #include "Anime4K.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
-#include "native/NativeMenu.hpp"
+#include "native/status/NativeMenu.hpp"
 
 namespace mplayer {
 class VideoSurface;

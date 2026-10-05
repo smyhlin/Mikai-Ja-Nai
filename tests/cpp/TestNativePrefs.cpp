@@ -1,10 +1,10 @@
 #include "TestNativePrefs.hpp"
 
-#include "native/NativePaths.hpp"
-#include "native/NativePrefs.hpp"
-#include "native/NativeProfiles.hpp"
-#include "native/NativeRuntimeSelection.hpp"
-#include "native/NativeStatus.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/bundle/NativePrefs.hpp"
+#include "native/models/NativeProfiles.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
+#include "native/status/NativeStatus.hpp"
 #include "player/PresetShortcuts.hpp"
 
 #include <QtCore/QDir>

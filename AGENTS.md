@@ -4,7 +4,7 @@
 
 C++/Qt6 desktop client for the Mikai public anime API
 (`https://api.mikai.me/public/v1`). One process, one Qt event loop: the app is
-`build-cmake/mikai.exe`, built by the root `CMakeLists.txt`. Home feed with
+`build/release/mikai.exe` (via `CMakePresets.json`), built by the root `CMakeLists.txt`. Home feed with
 carousels (recently opened / ongoing / popular) plus updates and schedule rows;
 search with a format filter bar; a title page with detail, related titles,
 per-release tabs, and a compact episode grid where a click fetches that
@@ -349,19 +349,18 @@ build needs `QT_PLUGIN_PATH=<qt>/plugins` in the environment or TLS reports 0
 and every HTTPS call fails.
 
 ```sh
-cmake -S . -B build-cmake -G "MinGW Makefiles" \
-  -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe \
-  -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
-  -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
-  -DMPV_INCLUDE_DIR=<mpv>/include
-cmake --build build-cmake --target mikai --parallel
-build-cmake/mikai.exe       # run directly; no launcher script needed
-ctest --test-dir build-cmake -R mikai_tests   # hermetic + live oracle when keyed
+cmake --preset release
+cmake --build --preset app --parallel
+build/release/mikai.exe     # run directly; no launcher script needed
+ctest --test-dir build/release -R mikai_tests   # hermetic + live oracle when keyed
 curl "https://api.mikai.me/public/v1/meta"   # API sanity check
 ```
 
+Presets (`CMakePresets.json`): `release` (default), `debug`, `native`
+(inspection ON). Build presets: `app`, `tests`, `app-native`, `tests-native`.
+
 `mikai.exe` links Qt dynamically, so the Qt runtime has to sit beside it or be
-on `PATH`; a fresh tree needs `windeployqt build-cmake/mikai.exe`. The mpv DLL
+on `PATH`; a fresh tree needs `windeployqt build/release/mikai.exe`. The mpv DLL
 is not a load-time import: the app resolves a stock runtime by discovery
 (beside the exe or in `%LOCALAPPDATA%/MPVBackend/runtime`), so copy a runtime
 tree into one of those places for playback. `mikai.exe` is `WIN32_EXECUTABLE`
@@ -454,19 +453,19 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
   refused in place and needs a restart. Non-Windows hosts rely on a system mpv.
 - The repo is a git repository. The root `.gitignore` covers `.env`,
   `__pycache__/` (leftover bytecode only, untracked), `.venv/` (removed),
-  `*.png`, and `build-cmake/` / `build-dbg/`; there is no CI pipeline, no
+  `*.png`, and `build/`; there is no CI pipeline, no
   Dockerfile, and no linter, type checker, or coverage config.
 
 ## Testing & QA
 
 ```sh
-ctest --test-dir build-cmake -R mikai_tests
+ctest --test-dir build/release -R mikai_tests
 ```
 
 - `tests/cpp/main.cpp` drives every suite in turn, prints one
   `[mikai_tests] <Suite>: PASS/FAIL/SKIP (rc=…)` line per suite to stderr (QTest
   itself stays silent on success), and accepts a suite name to run just one:
-  `build-cmake/mikai_tests.exe TestStreams`. `MIKAI_SOURCE_DIR` lets the
+  `build/release/mikai_tests.exe TestStreams`. `MIKAI_SOURCE_DIR` lets the
   layer guards read the sources they police instead of passing vacuously.
 - Hermetic suites: `TestModels` (parse fixtures: ref fallback
   `mikai/mal/al/hikka/slug:`, `displayName`, thumb/poster/cover order,
@@ -495,7 +494,7 @@ These are observed results, not a claim that everything is green:
 
 - A fresh isolated inspection-off build (the default,
   `MIKAI_WITH_MODEL_INSPECTION=OFF`) built `mikai` and `mikai_tests` (exit 0),
-  and `ctest --test-dir build-cmake -R mikai_tests` passed in **14.82 s**
+  and `ctest --test-dir build/release -R mikai_tests` passed in **14.82 s**
   (14.83 s wall; one ctest entry, 24 suites PASS + `LiveOracle` SKIP). The
   isolated inspection-on matrix built the app, tests and the listed
   probes/helpers, and its ctest run passed in **15.17 s** (25 suites PASS +

@@ -1,7 +1,7 @@
 #include "TestNativePrepPlan.hpp"
 
-#include "player/native/NativePreparationPlan.hpp"
-#include "player/native/NativeRife.hpp"
+#include "native/prepare/NativePreparationPlan.hpp"
+#include "native/models/NativeRife.hpp"
 
 #include <QtCore/QRect>
 #include <QtCore/QSet>

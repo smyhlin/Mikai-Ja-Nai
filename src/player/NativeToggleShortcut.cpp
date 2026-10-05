@@ -10,7 +10,7 @@
 // dropped: it is reported as stored-but-invalid so the preferences layer can
 // name the reason.
 
-#include "native/NativePrefs.hpp"
+#include "native/bundle/NativePrefs.hpp"
 
 #include <QtCore/QSettings>
 #include <QtGui/QKeySequence>

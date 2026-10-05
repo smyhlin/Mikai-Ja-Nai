@@ -39,8 +39,8 @@
 #include <QtCore/QVector>
 #include <QtWidgets/QWidget>
 
-#include <native/NativeRecipe.hpp>
-#include <native/NativeTypes.hpp>
+#include <native/models/NativeRecipe.hpp>
+#include <native/status/NativeTypes.hpp>
 
 class QCheckBox;
 class QComboBox;

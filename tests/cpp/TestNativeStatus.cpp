@@ -15,8 +15,8 @@
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
-#include "native/NativeDiagnostics.hpp"
-#include "native/NativeStatus.hpp"
+#include "native/bundle/NativeDiagnostics.hpp"
+#include "native/status/NativeStatus.hpp"
 
 using mplayer::AsyncReply;
 using mplayer::MpvApi;

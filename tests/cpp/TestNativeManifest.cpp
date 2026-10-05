@@ -1,8 +1,8 @@
 #include "TestNativeManifest.hpp"
 
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeManifest.hpp"
-#include "native/NativePaths.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/bundle/NativeManifest.hpp"
+#include "native/bundle/NativePaths.hpp"
 
 #include <optional>
 #include <utility>

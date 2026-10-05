@@ -42,9 +42,9 @@
 #include <QtCore/QString>
 #include <QtGlobal>
 
-#include "native/NativePreparedPlan.hpp"
-#include "native/NativePreparationContext.hpp"
-#include "native/NativeTypes.hpp"
+#include "native/prepare/NativePreparedPlan.hpp"
+#include "native/prepare/NativePreparationContext.hpp"
+#include "native/status/NativeTypes.hpp"
 
 namespace mikai::app {
 

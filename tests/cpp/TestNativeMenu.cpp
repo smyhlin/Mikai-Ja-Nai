@@ -1,7 +1,7 @@
 #include "TestNativeMenu.hpp"
 
 #include "Anime4K.hpp"
-#include "native/NativeMenu.hpp"
+#include "native/status/NativeMenu.hpp"
 
 #include <algorithm>
 

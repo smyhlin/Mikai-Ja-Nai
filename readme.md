@@ -14,15 +14,11 @@ build needs no native SDK. The toolchain paths have to be passed explicitly — 
 toolchain is not on `PATH`.
 
 ```sh
-cmake -S . -B build-cmake -G "MinGW Makefiles" \
-  -DCMAKE_MAKE_PROGRAM=<w64devkit>/bin/make.exe \
-  -DCMAKE_CXX_COMPILER=<w64devkit>/bin/g++.exe \
-  -DCMAKE_PREFIX_PATH=<qt>/6.8.3/mingw_64 \
-  -DMPV_INCLUDE_DIR=<mpv>/include
-cmake --build build-cmake --target mikai --parallel
+cmake --preset release
+cmake --build --preset app --parallel
 ```
 
-Then run `build-cmake\mikai.exe`. Mikai selects its mpv core at runtime and
+Then run `build\release\mikai.exe`. Mikai selects its mpv core at runtime and
 loads it explicitly, so the DLL is not a load-time import: discovery looks
 beside the executable and in `%LOCALAPPDATA%/MPVBackend/runtime`, and a probe
 or test that must pin one DLL names it with `MIKAI_MPV_MODULE`. The selected
@@ -36,7 +32,7 @@ Mikai's interface is available in English and Ukrainian. English is the source l
 To refresh the catalog after changing source strings, build the `update_translations` target, then translate the new entries in `translations/mikai_uk.ts`:
 
 ```sh
-cmake --build build-cmake --target update_translations
+cmake --build --preset release --target update_translations
 ```
 
 Keep stable IDs, API values, file patterns, URLs, and dynamic title/team/provider names untranslated. Preserve Qt placeholders such as `%1` and `%n`, HTML markup, and all numerus forms. The app build compiles and embeds the application catalog; Qt omits unfinished entries, which then fall back to the English source text. Before release, check that the catalog contains no unfinished entries.
@@ -81,7 +77,7 @@ than a screen of blank placeholders.
 `PATH`; a fresh exe with no deployed DLLs exits with `0xC0000135`.
 
 ```sh
-windeployqt --translations uk build-cmake/mikai.exe
+windeployqt --translations uk build/release/mikai.exe
 ```
 
 `MIKAI_MINGW_RUNTIME_DIR` has to name the compiler runtime the configured Qt
@@ -109,16 +105,16 @@ crash report still on disk says so in the log.
 ## Tests
 
 ```sh
-cmake --build build-cmake --target mikai_tests --parallel
-ctest --test-dir build-cmake -R mikai_tests
+cmake --build --preset tests --parallel
+ctest --test-dir build/release -R mikai_tests
 ```
 
 The optional `external_media_probe` target exercises the actual home file/URL dialogs,
 video rendering, Compare, Anime4K menu, standalone control visibility, error recovery,
 and close/reopen/shutdown. Run it with a 320×180 clip longer than 10 seconds and
 its HTTP URL. The fixture lives in the repository: build
-`cmake --build build-cmake --target mikai_http_fixture` and start
-`build-cmake/tests/fixtures/mikai_http_fixture.exe --port 0 --facts facts.json
+`cmake --build --preset release --target mikai_http_fixture` and start
+`build/release/tests/fixtures/mikai_http_fixture.exe --port 0 --facts facts.json
 --require-accept-language`; it serves the real clips under `tests/fixtures/media/`
 and the three HLS renditions under `tests/fixtures/hls/`, with `/media.mp4` as the
 plain clip and `/retry.mp4` as the same bytes after one deliberate 404, which is
@@ -194,7 +190,7 @@ while all-black is inconclusive.
 `mikai_tests` is hermetic except the live oracle, which runs only with both set:
 
 ```sh
-set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build-cmake -R mikai_tests
+set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build/release -R mikai_tests
 ```
 
 ## What it does
@@ -260,9 +256,9 @@ The three planned models are submenus, not presets: **RIFE**, **RealESRGAN** and
 - Thin lines: `Thin_{VeryFast,Fast,HQ}`.
 - Other: `Clamp_Highlights`, `AutoDownscalePre_{x2,x4}`, `3DGraphics_Upscale_x2_US`, `3DGraphics_AA_Upscale_x2_US`.
 
-**Runtime and persistence.** Every preset and its localized hint comes from the catalogue, and a menu row selects by that preset's id - never by an enum ordinal or a menu index. `VideoSurface` resolves the applied *id* (not the mode) to ordered absolute paths and writes them to mpv's `glsl-shaders`, both when the core is created and on every later change, so a chain picked before the engine exists is still honoured on the first frame. `player/anime4k` stores that id: the ten built-in ids are frozen (`off`, `fast_a`…`hq_ca`) so an existing selection cannot be repointed, and the experiments have permanent readable ids (`exp_thin_hq`, `exp_deblur_strong`, …) rather than positions in a menu. PiP copies both the mode and the applied chain id into the float's own core; the info chip shows a nested experiment qualified by its category (`Тонкі лінії · HQ`). The Compare window borrows the live surface to render each side and puts the player's own chain back when it is done, so a comparison never leaves the player running a preview chain. At startup the app searches `<exe directory>/shaders`, then `./shaders`, then `./build-cmake/shaders`; when none exists, Anime4K controls are hidden. The shader `//!WHEN` conditions can decline to upscale when the output is not larger than the source, so enabling a chain does not guarantee every stage changes every frame.
+**Runtime and persistence.** Every preset and its localized hint comes from the catalogue, and a menu row selects by that preset's id - never by an enum ordinal or a menu index. `VideoSurface` resolves the applied *id* (not the mode) to ordered absolute paths and writes them to mpv's `glsl-shaders`, both when the core is created and on every later change, so a chain picked before the engine exists is still honoured on the first frame. `player/anime4k` stores that id: the ten built-in ids are frozen (`off`, `fast_a`…`hq_ca`) so an existing selection cannot be repointed, and the experiments have permanent readable ids (`exp_thin_hq`, `exp_deblur_strong`, …) rather than positions in a menu. PiP copies both the mode and the applied chain id into the float's own core; the info chip shows a nested experiment qualified by its category (`Тонкі лінії · HQ`). The Compare window borrows the live surface to render each side and puts the player's own chain back when it is done, so a comparison never leaves the player running a preview chain. At startup the app searches `<exe directory>/shaders`, then `./shaders`, then `./build/release/shaders`; when none exists, Anime4K controls are hidden. The shader `//!WHEN` conditions can decline to upscale when the output is not larger than the source, so enabling a chain does not guarantee every stage changes every frame.
 
-**Build and language.** Implementation and build configuration are C++20/CMake; shader programs are GLSL. The 49 source assets live in root `shaders/`. `CMakeLists.txt`'s `mikai` POST_BUILD rule copies that directory beside `mikai.exe`; CMake does not precompile GLSL—mpv loads the copied files at runtime. Build from the configured tree with `cmake --build build-cmake --target mikai --parallel`. The Anime4K categories, preset labels and hints are localized UI text; the future-model submenus intentionally remain placeholder-only with a disabled **В планах** leaf each. Keep menu labels and tooltips in translation catalogs; keep preset IDs and shader filenames unchanged because settings and chain resolution depend on them. `cmake --build build-cmake --target anime4k_menu_probe --parallel && build-cmake/anime4k_menu_probe.exe` runs the full native Anime4K smoke (every menu leaf, pixel rendering, settings reopen, Compare groups, PiP chain and minimum-window fit); `build-cmake/resolver_probe.exe` verifies the 71-candidate catalog resolves cleanly.
+**Build and language.** Implementation and build configuration are C++20/CMake; shader programs are GLSL. The 49 source assets live in root `shaders/`. `CMakeLists.txt`'s `mikai` POST_BUILD rule copies that directory beside `mikai.exe`; CMake does not precompile GLSL—mpv loads the copied files at runtime. Build from the configured tree with `cmake --build --preset app --parallel`. The Anime4K categories, preset labels and hints are localized UI text; the future-model submenus intentionally remain placeholder-only with a disabled **В планах** leaf each. Keep menu labels and tooltips in translation catalogs; keep preset IDs and shader filenames unchanged because settings and chain resolution depend on them. `cmake --build --preset release --target anime4k_menu_probe --parallel && build/release/anime4k_menu_probe.exe` runs the full native Anime4K smoke (every menu leaf, pixel rendering, settings reopen, Compare groups, PiP chain and minimum-window fit); `build/release/resolver_probe.exe` verifies the 71-candidate catalog resolves cleanly.
 
 Qualities are extracted once per episode, only when that episode opens, and the resulting stream URLs are cached for half an hour, so reopening a title repaints instead of re-hitting every provider. The links are signed and do expire; if a stream fails to play the player re-extracts it once on its own before reporting the error.
 

@@ -1,8 +1,8 @@
 #include "TestNativeProfiles.hpp"
 
-#include "native/NativePrefs.hpp"
-#include "native/NativeProfiles.hpp"
-#include "native/NativeRecipe.hpp"
+#include "native/bundle/NativePrefs.hpp"
+#include "native/models/NativeProfiles.hpp"
+#include "native/models/NativeRecipe.hpp"
 
 #include <QtCore/QSize>
 

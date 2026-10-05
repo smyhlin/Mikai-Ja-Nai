@@ -20,9 +20,9 @@
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
-#include "native/NativeBundle.hpp"
-#include "native/NativeFilterCommand.hpp"
-#include "native/NativeRuntimeSelection.hpp"
+#include "native/bundle/NativeBundle.hpp"
+#include "native/status/NativeFilterCommand.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 
 namespace mplayer {
 

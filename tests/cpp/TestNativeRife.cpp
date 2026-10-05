@@ -1,8 +1,8 @@
 #include "TestNativeRife.hpp"
 
-#include "native/NativeRecipe.hpp"
-#include "native/NativeRife.hpp"
-#include "native/NativeUserRecipes.hpp"
+#include "native/models/NativeRecipe.hpp"
+#include "native/models/NativeRife.hpp"
+#include "native/models/NativeUserRecipes.hpp"
 
 #include <QtCore/QSet>
 #include <QtCore/QSize>

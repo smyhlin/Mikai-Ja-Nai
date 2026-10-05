@@ -10,16 +10,16 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QTemporaryDir>
 
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeCatalog.hpp"
-#include "native/NativeManifest.hpp"
-#include "native/NativePlaybackController.hpp"
-#include "native/NativePreparedPlan.hpp"
-#include "native/NativePreparationPlan.hpp"
-#include "native/NativeRecipe.hpp"
-#include "native/NativeStatus.hpp"
-#include "native/NativeTypes.hpp"
-#include "native/NativeWorkLease.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/models/NativeCatalog.hpp"
+#include "native/bundle/NativeManifest.hpp"
+#include "native/status/NativePlaybackController.hpp"
+#include "native/prepare/NativePreparedPlan.hpp"
+#include "native/prepare/NativePreparationPlan.hpp"
+#include "native/models/NativeRecipe.hpp"
+#include "native/status/NativeStatus.hpp"
+#include "native/status/NativeTypes.hpp"
+#include "native/prepare/NativeWorkLease.hpp"
 
 using namespace mplayer::native;
 

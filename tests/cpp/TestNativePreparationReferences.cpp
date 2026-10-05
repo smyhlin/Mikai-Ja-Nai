@@ -15,7 +15,7 @@
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QtEndian>
 
-#include "src/player/native/NativePreparationReferences.hpp"
+#include "native/prepare/NativePreparationReferences.hpp"
 
 using namespace mplayer::native;
 

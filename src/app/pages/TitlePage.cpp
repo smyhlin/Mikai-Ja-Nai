@@ -18,7 +18,7 @@
 #include <backend/MikaiClient.hpp>
 #include <backend/Releases.hpp>
 #include <backend/Streams.hpp>
-#include <native/NativeRuntimeSelection.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <QAbstractItemView>
 #include <QComboBox>

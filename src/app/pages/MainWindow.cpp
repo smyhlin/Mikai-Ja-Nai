@@ -8,8 +8,8 @@
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
-#include <native/NativePreparationContext.hpp>
-#include <native/NativeRuntimeSelection.hpp>
+#include <native/prepare/NativePreparationContext.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <PlayerDialog.hpp>
 #include <memory>
@@ -19,7 +19,7 @@
 #include <QtCore/QMetaObject>
 #include <QtCore/QTimer>
 #include <QtCore/QVector>
-#include <native/NativeFrameFixture.hpp>
+#include <native/prepare/NativeFrameFixture.hpp>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QLineEdit>

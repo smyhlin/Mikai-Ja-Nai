@@ -4,7 +4,7 @@
 #include "theme/Theme.hpp"
 
 #include <backend/MikaiClient.hpp>
-#include <native/NativeRuntimeSelection.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <QApplication>
 #include <QDebug>

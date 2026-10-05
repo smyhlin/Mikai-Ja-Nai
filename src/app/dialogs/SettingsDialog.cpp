@@ -10,8 +10,8 @@
 #include <backend/MikaiClient.hpp>
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <dialogs/NativeRifeControls.hpp>
-#include <native/NativeRuntimeSelection.hpp>
-#include <native/NativeStatus.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
+#include <native/status/NativeStatus.hpp>
 #include <player/Anime4K.hpp>
 #include <player/PresetShortcuts.hpp>
 #include <player/ProcessingSettingsIntent.hpp>

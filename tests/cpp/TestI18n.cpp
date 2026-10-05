@@ -5,8 +5,8 @@
 #include <app/I18n.hpp>
 #include <app/workers/Runner.hpp>
 #include <backend/MikaiClient.hpp>
-#include <native/NativePrefs.hpp>
-#include <native/NativeRuntimeSelection.hpp>
+#include <native/bundle/NativePrefs.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
 #include <player/PlayerShell.hpp>
 
 #include <QtCore/QCoreApplication>

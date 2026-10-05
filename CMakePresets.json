@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_MAKE_PROGRAM": "C:/temp/w64dev/w64devkit/bin/make.exe",
+        "CMAKE_CXX_COMPILER": "C:/temp/w64dev/w64devkit/bin/g++.exe",
+        "CMAKE_PREFIX_PATH": "C:/temp/qt6/6.8.3/mingw_64",
+        "MPV_INCLUDE_DIR": "C:/Users/myhli/AppData/Local/MPVBackend/runtime/include",
+        "MIKAI_BUILD_PROBES": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (default)",
+      "description": "What build-cmake was: Release, inspection OFF",
+      "inherits": "base",
+      "cacheVariables": { "MIKAI_WITH_MODEL_INSPECTION": "OFF" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "What build-dbg was",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF"
+      }
+    },
+    {
+      "name": "native",
+      "displayName": "Release + model inspection",
+      "description": "What build-native-baseline was. Requires -DORT_INCLUDE_DIR=<onnxruntime>/include on first configure",
+      "inherits": "base",
+      "cacheVariables": {
+        "MIKAI_WITH_MODEL_INSPECTION": "ON",
+        "MIKAI_WITH_NATIVE": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "app", "configurePreset": "release", "targets": ["mikai"] },
+    { "name": "tests", "configurePreset": "release", "targets": ["mikai_tests"] },
+    { "name": "app-native", "configurePreset": "native", "targets": ["mikai"] },
+    { "name": "tests-native", "configurePreset": "native", "targets": ["mikai_tests"] }
+  ]
+}

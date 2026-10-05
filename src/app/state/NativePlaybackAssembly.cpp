@@ -21,14 +21,14 @@
 #include <PlayerDialog.hpp>
 
 #include "dialogs/NativeAssetsPanel.hpp"
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeBundle.hpp"
-#include "native/NativeManifest.hpp"
-#include "native/NativeModelInspect.hpp"
-#include "native/NativeModelInventory.hpp"
-#include "native/NativePreparationPlan.hpp"
-#include "native/NativeProfiles.hpp"
-#include "native/NativeUserRecipes.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/bundle/NativeBundle.hpp"
+#include "native/bundle/NativeManifest.hpp"
+#include "native/models/NativeModelInspect.hpp"
+#include "native/models/NativeModelInventory.hpp"
+#include "native/prepare/NativePreparationPlan.hpp"
+#include "native/models/NativeProfiles.hpp"
+#include "native/models/NativeUserRecipes.hpp"
 #include "workers/Runner.hpp"
 
 namespace mikai::app {

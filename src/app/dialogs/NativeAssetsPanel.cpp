@@ -47,15 +47,15 @@
 #include <backend/Errors.hpp>
 #include <backend/MikaiClient.hpp>
 
-#include <native/NativeBundle.hpp>
-#include <native/NativeInspectedPlan.hpp>
-#include <native/NativeManifest.hpp>
-#include <native/NativePaths.hpp>
-#include <native/NativePreparationPlan.hpp>
-#include <native/NativePreparationReferences.hpp>
-#include <native/NativeRuntimeSelection.hpp>
-#include <native/NativeSpatialAssets.hpp>
-#include <native/NativeUserRecipes.hpp>
+#include <native/bundle/NativeBundle.hpp>
+#include <native/models/NativeInspectedPlan.hpp>
+#include <native/bundle/NativeManifest.hpp>
+#include <native/bundle/NativePaths.hpp>
+#include <native/prepare/NativePreparationPlan.hpp>
+#include <native/prepare/NativePreparationReferences.hpp>
+#include <native/bundle/NativeRuntimeSelection.hpp>
+#include <native/models/NativeSpatialAssets.hpp>
+#include <native/models/NativeUserRecipes.hpp>
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
 

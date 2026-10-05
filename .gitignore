@@ -16,9 +16,6 @@ _ui_geometry.json
 _grab_*.png
 _*.log
 
-build-cmake/
-build-dbg/
-build-native-baseline/
-build-native-plain/
+build/
 dist-mikai/
 .probe-out/

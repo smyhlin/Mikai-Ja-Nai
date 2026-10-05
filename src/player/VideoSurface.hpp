@@ -32,12 +32,12 @@
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "PlaybackDiagnostics.hpp"
-#include "native/NativeFrameFixture.hpp"
-#include "native/NativePlaybackController.hpp"
-#include "native/NativeTypes.hpp"
-#include "native/NativePreparationContext.hpp"
-#include "native/NativeStatus.hpp"
-#include "native/NativeWorkLease.hpp"
+#include "native/prepare/NativeFrameFixture.hpp"
+#include "native/status/NativePlaybackController.hpp"
+#include "native/status/NativeTypes.hpp"
+#include "native/prepare/NativePreparationContext.hpp"
+#include "native/status/NativeStatus.hpp"
+#include "native/prepare/NativeWorkLease.hpp"
 
 namespace mplayer {
 class MpvHandle;

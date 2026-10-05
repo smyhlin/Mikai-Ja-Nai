@@ -1,7 +1,7 @@
 #include "TestAnime4K.hpp"
 
 #include "Anime4K.hpp"
-#include "native/NativeMenu.hpp"
+#include "native/status/NativeMenu.hpp"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>

@@ -1,8 +1,8 @@
 #include "TestRuntimeSelection.hpp"
 
 #include "MpvApi.hpp"
-#include "native/NativeBundle.hpp"
-#include "native/NativeRuntimeSelection.hpp"
+#include "native/bundle/NativeBundle.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 
 #include <backend/Runtime.hpp>
 

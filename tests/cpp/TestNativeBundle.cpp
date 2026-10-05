@@ -1,9 +1,9 @@
 #include "TestNativeBundle.hpp"
 
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeBundle.hpp"
-#include "native/NativePaths.hpp"
-#include "native/NativePeImage.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/bundle/NativeBundle.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/bundle/NativePeImage.hpp"
 
 #include <algorithm>
 

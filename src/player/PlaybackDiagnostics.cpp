@@ -1,8 +1,8 @@
 #include "PlaybackDiagnostics.hpp"
 
 #include "MpvHandle.hpp"
-#include "native/NativeFilterCommand.hpp"
-#include "native/NativeStatus.hpp"
+#include "native/status/NativeFilterCommand.hpp"
+#include "native/status/NativeStatus.hpp"
 
 namespace mplayer {
 

@@ -5,7 +5,7 @@
 #include "CompareGrid.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
-#include "native/NativePlaybackController.hpp"
+#include "native/status/NativePlaybackController.hpp"
 
 #include <QCloseEvent>
 #include <QComboBox>

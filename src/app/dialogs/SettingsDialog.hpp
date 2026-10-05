@@ -2,7 +2,7 @@
 
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <dialogs/NativeRifeControls.hpp>
-#include <native/NativePrefs.hpp>
+#include <native/bundle/NativePrefs.hpp>
 #include <player/Anime4K.hpp>
 #include <player/PresetShortcuts.hpp>
 #include <player/ProcessingSettingsIntent.hpp>

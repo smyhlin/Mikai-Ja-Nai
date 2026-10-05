@@ -1,7 +1,7 @@
 #include "TestNativeTypes.hpp"
 
-#include "native/NativeCatalog.hpp"
-#include "native/NativeTypes.hpp"
+#include "native/models/NativeCatalog.hpp"
+#include "native/status/NativeTypes.hpp"
 
 #include <optional>
 

@@ -1,9 +1,9 @@
 #include "TestNativeAssets.hpp"
 
 #include "dialogs/NativeAssetsPanel.hpp"
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeFrameReference.hpp"
-#include "native/NativeModelInventory.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/prepare/NativeFrameReference.hpp"
+#include "native/models/NativeModelInventory.hpp"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>

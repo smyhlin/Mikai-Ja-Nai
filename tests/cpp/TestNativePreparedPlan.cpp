@@ -1,9 +1,9 @@
 #include "TestNativePreparedPlan.hpp"
 
-#include "native/NativeArtifactStore.hpp"
-#include "native/NativeManifest.hpp"
-#include "native/NativePaths.hpp"
-#include "native/NativePreparedPlan.hpp"
+#include "native/prepare/NativeArtifactStore.hpp"
+#include "native/bundle/NativeManifest.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/prepare/NativePreparedPlan.hpp"
 
 #include <optional>
 

@@ -1,7 +1,7 @@
 #include "TestNativeRecipe.hpp"
 
-#include "native/NativeRecipe.hpp"
-#include "native/NativeRife.hpp"
+#include "native/models/NativeRecipe.hpp"
+#include "native/models/NativeRife.hpp"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>

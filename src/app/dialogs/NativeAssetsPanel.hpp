@@ -47,14 +47,14 @@
 #include <QtCore/QVector>
 #include <QtWidgets/QWidget>
 
-#include <native/NativeArtifactStore.hpp>
-#include <native/NativeBuilder.hpp>
-#include <native/NativeCatalog.hpp>
-#include <native/NativeFrameFixture.hpp>
-#include <native/NativeModelInspect.hpp>
-#include <native/NativeModelInventory.hpp>
-#include <native/NativePreparationContext.hpp>
-#include <native/NativeSpatialAssets.hpp>
+#include <native/prepare/NativeArtifactStore.hpp>
+#include <native/prepare/NativeBuilder.hpp>
+#include <native/models/NativeCatalog.hpp>
+#include <native/prepare/NativeFrameFixture.hpp>
+#include <native/models/NativeModelInspect.hpp>
+#include <native/models/NativeModelInventory.hpp>
+#include <native/prepare/NativePreparationContext.hpp>
+#include <native/models/NativeSpatialAssets.hpp>
 
 class QEvent;
 class QLabel;

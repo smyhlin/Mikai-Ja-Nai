@@ -7,8 +7,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 
-#include "src/player/native/NativeBuilder.hpp"
-#include "src/player/native/NativeWorkLease.hpp"
+#include "native/prepare/NativeBuilder.hpp"
+#include "native/prepare/NativeWorkLease.hpp"
 
 using namespace mplayer::native;
 

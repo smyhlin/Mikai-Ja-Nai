@@ -33,10 +33,10 @@ QT_END_NAMESPACE
 
 #include "Anime4K.hpp"
 #include "ProcessingSettingsIntent.hpp"
-#include "native/NativeFrameFixture.hpp"
-#include "native/NativeMenu.hpp"
-#include "native/NativePlaybackController.hpp"
-#include "native/NativePreparationContext.hpp"
+#include "native/prepare/NativeFrameFixture.hpp"
+#include "native/status/NativeMenu.hpp"
+#include "native/status/NativePlaybackController.hpp"
+#include "native/prepare/NativePreparationContext.hpp"
 
 namespace mplayer {
 class VideoSurface;

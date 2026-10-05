@@ -12,11 +12,11 @@
 
 #include "TestNativeCatalog.hpp"
 
-#include "native/NativeFrameReference.hpp"
-#include "native/NativeInspectedPlan.hpp"
-#include "native/NativeModelInventory.hpp"
-#include "native/NativePaths.hpp"
-#include "native/NativePreparationPlan.hpp"
+#include "native/prepare/NativeFrameReference.hpp"
+#include "native/models/NativeInspectedPlan.hpp"
+#include "native/models/NativeModelInventory.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/prepare/NativePreparationPlan.hpp"
 
 #include <limits>
 #include <optional>

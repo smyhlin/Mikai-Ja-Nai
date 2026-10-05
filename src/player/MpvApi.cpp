@@ -1,6 +1,6 @@
 #include "MpvApi.hpp"
 
-#include "native/NativePaths.hpp"
+#include "native/bundle/NativePaths.hpp"
 
 #include <QDir>
 #include <QFileInfo>

@@ -1,10 +1,10 @@
 #include "TestNativeUserRecipes.hpp"
 
-#include "native/NativeCatalog.hpp"
-#include "native/NativePaths.hpp"
-#include "native/NativePrefs.hpp"
-#include "native/NativeRecipe.hpp"
-#include "native/NativeUserRecipes.hpp"
+#include "native/models/NativeCatalog.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/bundle/NativePrefs.hpp"
+#include "native/models/NativeRecipe.hpp"
+#include "native/models/NativeUserRecipes.hpp"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>

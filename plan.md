@@ -1446,7 +1446,7 @@ is missing — provisioning is no longer a `show()` side effect.
 
 The Qt application keeps building with MinGW-w64 g++ / Qt 6.8 / CMake. The
 native addon is a **separate, optional** build with **MSVC + nvcc** for C, C++17
-and CUDA. Nothing in the default `cmake --build build-cmake --target mikai`
+and CUDA. Nothing in the default `cmake --build --preset app`
 depends on CUDA, TensorRT, MSVC or nvcc; a machine without the native SDK
 configures and builds the app unchanged.
 

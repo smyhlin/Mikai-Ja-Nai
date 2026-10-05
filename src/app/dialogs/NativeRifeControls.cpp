@@ -20,8 +20,8 @@
 #include <QtWidgets/QToolButton>
 #include <QtWidgets/QVBoxLayout>
 
-#include <native/NativeRife.hpp>
-#include <native/NativeUserRecipes.hpp>
+#include <native/models/NativeRife.hpp>
+#include <native/models/NativeUserRecipes.hpp>
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
