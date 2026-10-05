@@ -13,9 +13,11 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QVector>
 
 #include <stdexcept>
 
@@ -85,6 +87,44 @@ std::optional<QDir> folderWithLibrary(const QDir& folder) {
     return std::nullopt;
 }
 
+// Every library file under `folder`, one entry per match, in the name order
+// libraryNames() declares and then lexicographically, so a caller enumerating
+// candidates gets a stable order rather than the filesystem's.
+QStringList librariesIn(const QDir& folder) {
+    QStringList found;
+    if (!folder.exists()) {
+        return found;
+    }
+    for (const QString& name : libraryNames()) {
+        QStringList matches;
+        QDirIterator it(folder.absolutePath(), {name}, QDir::Files,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            matches.append(QDir::cleanPath(it.next()));
+        }
+        matches.sort(Qt::CaseInsensitive);
+        found.append(matches);
+    }
+    return found;
+}
+
+// The directories the stock search walks, in its order: the caller's hint
+// first, then the bundled locations beside the executable, then the runtime a
+// previous run downloaded.
+QVector<QDir> candidateDirs(const QString& hint) {
+    QVector<QDir> candidates;
+    if (!hint.isEmpty()) {
+        const QFileInfo info(hint);
+        candidates.append(info.isDir() ? QDir(hint) : QDir(info.absolutePath()));
+    }
+    const QDir appRoot(QCoreApplication::applicationDirPath());
+    candidates.append(QDir(appRoot.filePath(QStringLiteral("mpv"))));
+    candidates.append(QDir(appRoot.filePath(QStringLiteral("lib"))));
+    candidates.append(appRoot);
+    candidates.append(cacheDir());
+    return candidates;
+}
+
 QString findSevenZip() {
     const QString found = QStandardPaths::findExecutable(QStringLiteral("7z.exe"));
     if (!found.isEmpty()) {
@@ -132,36 +172,25 @@ QStringList libraryNames() {
     return {QStringLiteral("mpv-2.dll"), QStringLiteral("libmpv-2.dll"), QStringLiteral("mpv.dll")};
 }
 
-std::optional<QDir> findRuntime(const QString& hint) {
-    QVector<QDir> candidates;
-    if (!hint.isEmpty()) {
-        const QFileInfo info(hint);
-        candidates.append(info.isDir() ? QDir(hint) : QDir(info.absolutePath()));
-    }
-
-    // Common bundled locations next to the executable.
-    const QDir appRoot(QCoreApplication::applicationDirPath());
-    candidates.append(QDir(appRoot.filePath(QStringLiteral("mpv"))));
-    candidates.append(QDir(appRoot.filePath(QStringLiteral("lib"))));
-    candidates.append(appRoot);
-
-    // The runtime downloaded by an earlier run.
-    candidates.append(cacheDir());
-
-    for (const QDir& candidate : candidates) {
-        if (const std::optional<QDir> found = folderWithLibrary(candidate)) {
-            return found;
+QStringList runtimeCandidates(const QString& hint) {
+    QStringList candidates;
+    QSet<QString> seen;
+    for (const QDir& dir : candidateDirs(hint)) {
+        for (const QString& module : librariesIn(dir)) {
+            const QString key = QDir::cleanPath(module).toLower();
+            if (seen.contains(key)) {
+                continue;
+            }
+            seen.insert(key);
+            candidates.append(module);
         }
     }
-    return std::nullopt;
+    return candidates;
 }
 
-QDir ensureRuntime(const QString& hint, bool autoDownload) {
-    if (const std::optional<QDir> found = findRuntime(hint)) {
-        return *found;
-    }
-    if (!autoDownload) {
-        throw std::runtime_error("libmpv was not found. Pass a hint path or enable auto download.");
+QDir provisionRuntime(const QString& destination) {
+    if (destination.trimmed().isEmpty()) {
+        throw std::runtime_error("no destination was given for the mpv runtime");
     }
     if (QSysInfo::currentCpuArchitecture() != QLatin1String("x86_64")) {
         throw std::runtime_error(
@@ -229,8 +258,10 @@ QDir ensureRuntime(const QString& hint, bool autoDownload) {
         throw std::runtime_error("The downloaded mpv archive did not contain a supported libmpv DLL.");
     }
 
-    // Keep the full tree: libmpv resolves FFmpeg and friends next to it.
-    const QDir target = cacheDir();
+    // Keep the full tree: libmpv resolves FFmpeg and friends next to it. The
+    // destination is replaced atomically through a sibling staging directory,
+    // so a failure never leaves a half-installed tree behind the caller.
+    const QDir target(destination);
     QDir().mkpath(target.absolutePath());
     const QDir staging = QDir(target.absolutePath() + QStringLiteral(".new"));
     QDir(staging.absolutePath()).removeRecursively();
