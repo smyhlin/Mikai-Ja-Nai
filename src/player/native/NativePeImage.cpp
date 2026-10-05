@@ -23,6 +23,11 @@ constexpr qsizetype kDataDirectoryStartOffset = 112;
 constexpr qsizetype kImageBaseOffset = 24;             // inside the optional header
 constexpr qsizetype kSectionHeaderSize = 40;
 constexpr qsizetype kSizeOfHeadersOffset = 60;  // inside the optional header
+constexpr qsizetype kExportDirectorySize = 40;         // IMAGE_EXPORT_DIRECTORY size
+constexpr qsizetype kExportNamePointerRvaOffset = 32;   // AddressOfNames
+constexpr qsizetype kExportOrdinalTableRvaOffset = 36; // AddressOfNameOrdinals
+constexpr qsizetype kExportNumberOfNamesOffset = 24;    // NumberOfNames
+constexpr qsizetype kExportNumberOfFunctionsOffset = 20; // NumberOfFunctions
 
 /// Little-endian readers over a buffer that is never trusted. A short read
 /// yields 0, and the caller checks the length separately before using a value.
@@ -60,7 +65,8 @@ qsizetype rvaToOffset(quint32 rva, const QVector<Section>& sections, qsizetype s
                       qsizetype fileSize) {
     for (const Section& section : sections) {
         const quint32 span = std::max(section.virtualSize, section.rawSize);
-        if (rva < section.virtualAddress || rva >= section.virtualAddress + span) continue;
+        if (rva < section.virtualAddress ||
+            quint64(rva) >= quint64(section.virtualAddress) + span) continue;
         const quint32 delta = rva - section.virtualAddress;
         if (delta >= section.rawSize) return -1;  // uninitialised tail
         const qsizetype offset = qsizetype(section.rawPointer) + qsizetype(delta);
@@ -232,6 +238,7 @@ QStringList systemImportExceptions() {
         QStringLiteral("evr.dll"),
         QStringLiteral("gdi32.dll"),
         QStringLiteral("gdi32full.dll"),
+        QStringLiteral("gdiplus.dll"),
         QStringLiteral("graphicscapture.dll"),
         QStringLiteral("imagehlp.dll"),
         QStringLiteral("imm32.dll"),
@@ -283,8 +290,129 @@ QStringList systemImportExceptions() {
         QStringLiteral("wintrust.dll"),
         QStringLiteral("wldap32.dll"),
         QStringLiteral("ws2_32.dll"),
+        QStringLiteral("wsock32.dll"),
         QStringLiteral("wtsapi32.dll"),
     };
+}
+
+PeExportInfo inspectPeExports(const QByteArray& bytes) {
+    PeExportInfo result;
+    const auto refuse = [&result](QString reason) {
+        result.ok = false;
+        result.reason = std::move(reason);
+        result.exportsMpvClientApiVersion = false;
+        return result;
+    };
+    if (bytes.size() < 64 || u16(bytes, 0) != kDosSignature)
+        return refuse(QStringLiteral("missing or truncated DOS header"));
+    const qsizetype nt = u32(bytes, 0x3c);
+    if (nt == 0 || nt > bytes.size() - 24 || u32(bytes, nt) != kNtSignature)
+        return refuse(QStringLiteral("invalid PE header"));
+    const qsizetype fileHeader = nt + 4;
+    const qsizetype optional = fileHeader + 20;
+    const qsizetype optionalSize = u16(bytes, fileHeader + 16);
+    if (u16(bytes, fileHeader) != kMachineAmd64 || optionalSize < 112 ||
+        optional > bytes.size() - optionalSize ||
+        u16(bytes, optional) != kOptionalMagicPe32Plus)
+        return refuse(QStringLiteral("invalid x64 optional header"));
+    const quint32 directoryCount = u32(bytes, optional + kNumberOfRvaAndSizesOffset);
+    if (directoryCount == 0) {
+        result.ok = true;
+        return result;
+    }
+    if (optionalSize < kDataDirectoryStartOffset + 8)
+        return refuse(QStringLiteral("export directory entry is truncated"));
+    const quint32 directoryRva = u32(bytes, optional + kDataDirectoryStartOffset);
+    const quint32 directorySize = u32(bytes, optional + kDataDirectoryStartOffset + 4);
+    if (directoryRva == 0 && directorySize == 0) {
+        result.ok = true;
+        return result;
+    }
+    if (directoryRva == 0 || directorySize < kExportDirectorySize ||
+        quint64(directoryRva) + directorySize > (quint64{1} << 32))
+        return refuse(QStringLiteral("invalid export directory"));
+
+    const qsizetype sectionCount = u16(bytes, fileHeader + 2);
+    const qsizetype sectionTable = optional + optionalSize;
+    if (sectionCount > (bytes.size() - sectionTable) / kSectionHeaderSize)
+        return refuse(QStringLiteral("section table is truncated"));
+    QVector<Section> sections;
+    sections.reserve(sectionCount);
+    for (qsizetype i = 0; i < sectionCount; ++i) {
+        const qsizetype at = sectionTable + i * kSectionHeaderSize;
+        sections.append({u32(bytes, at + 12), u32(bytes, at + 8),
+                         u32(bytes, at + 20), u32(bytes, at + 16)});
+    }
+    const qsizetype headers = u32(bytes, optional + kSizeOfHeadersOffset);
+    const auto mappedRange = [&](quint32 rva, quint64 length) -> qsizetype {
+        const qsizetype offset = rvaToOffset(rva, sections, headers, bytes.size());
+        if (offset < 0 || length > quint64(bytes.size() - offset)) return -1;
+        for (const Section& section : sections) {
+            if (rva < section.virtualAddress) continue;
+            const quint64 delta = quint64(rva) - section.virtualAddress;
+            if (delta >= std::max(section.virtualSize, section.rawSize)) continue;
+            return delta <= section.rawSize && length <= section.rawSize - delta ? offset : -1;
+        }
+        return quint64(rva) < quint64(headers) &&
+                       length <= quint64(headers) - rva ? offset : -1;
+    };
+    const qsizetype directory = mappedRange(directoryRva, kExportDirectorySize);
+    if (directory < 0) return refuse(QStringLiteral("export directory is outside file-backed data"));
+    const quint32 functionCount = u32(bytes, directory + kExportNumberOfFunctionsOffset);
+    const quint32 nameCount = u32(bytes, directory + kExportNumberOfNamesOffset);
+    if (nameCount == 0) {
+        result.ok = true;
+        return result;
+    }
+    const qsizetype functions = mappedRange(u32(bytes, directory + 28), quint64(functionCount) * 4);
+    const qsizetype names = mappedRange(u32(bytes, directory + kExportNamePointerRvaOffset),
+                                       quint64(nameCount) * 4);
+    const qsizetype ordinals = mappedRange(u32(bytes, directory + kExportOrdinalTableRvaOffset),
+                                          quint64(nameCount) * 2);
+    if (functionCount == 0 || functions < 0 || names < 0 || ordinals < 0)
+        return refuse(QStringLiteral("export tables are outside file-backed data"));
+    constexpr char target[] = "mpv_client_api_version";
+    qsizetype nameBudget = bytes.size();
+    for (quint32 i = 0; i < nameCount; ++i) {
+        const quint16 ordinal = u16(bytes, ordinals + qsizetype(i) * 2);
+        if (ordinal >= functionCount)
+            return refuse(QStringLiteral("export ordinal exceeds the function table"));
+        const quint32 nameRva = u32(bytes, names + qsizetype(i) * 4);
+        const qsizetype name = mappedRange(nameRva, 1);
+        if (name < 0) return refuse(QStringLiteral("export name is outside file-backed data"));
+        qsizetype capacity = bytes.size() - name;
+        bool inSection = false;
+        for (const Section& section : sections) {
+            if (nameRva < section.virtualAddress) continue;
+            const quint64 delta = quint64(nameRva) - section.virtualAddress;
+            if (delta >= std::max(section.virtualSize, section.rawSize)) continue;
+            capacity = std::min(capacity, qsizetype(section.rawSize - delta));
+            inSection = true;
+            break;
+        }
+        if (!inSection) capacity = std::min(capacity, headers - qsizetype(nameRva));
+        qsizetype length = 0;
+        while (length < capacity && bytes.at(name + length) != '\0') {
+            if (nameBudget-- == 0)
+                return refuse(QStringLiteral("export names exceed the scan budget"));
+            ++length;
+        }
+        if (length == capacity || length == 0)
+            return refuse(QStringLiteral("export name is unterminated or empty"));
+        if (length != sizeof(target) - 1 ||
+            QByteArrayView(bytes.constData() + name, length) != QByteArrayView(target))
+            continue;
+        const quint32 functionRva = u32(bytes, functions + qsizetype(ordinal) * 4);
+        if (functionRva == 0 || mappedRange(functionRva, 1) < 0)
+            return refuse(QStringLiteral("mpv client API export has no file-backed address"));
+        // A forwarder is not a second core; its actual target is not proved by this image.
+        if (functionRva >= directoryRva &&
+            quint64(functionRva) < quint64(directoryRva) + directorySize)
+            return refuse(QStringLiteral("mpv client API export is forwarded"));
+        result.exportsMpvClientApiVersion = true;
+    }
+    result.ok = true;
+    return result;
 }
 
 bool isSystemImportException(const QString& dllName) {

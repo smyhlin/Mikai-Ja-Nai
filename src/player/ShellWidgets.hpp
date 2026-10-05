@@ -110,6 +110,7 @@ public:
     void popupNear(const QPoint& anchorGlobal);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
@@ -124,6 +125,8 @@ private:
 
     double rate_ = 1.0;
     QString quality_;
+    QLabel* speedCaption_ = nullptr;
+    QLabel* qualityCaption_ = nullptr;
     QLabel* badge_ = nullptr;
     QLabel* qualityLabel_ = nullptr;
     RangeSlider* slider_ = nullptr;
@@ -236,8 +239,13 @@ public:
     static QVector<QPair<QString, QString>> shortcutTable();
 
 protected:
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+
+private:
+    QLabel* caption_ = nullptr;
+    QVector<QLabel*> descriptions_;
 };
 
 }  // namespace shell

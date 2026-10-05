@@ -25,6 +25,7 @@
 #include "VideoSurface.hpp"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QEasingCurve>
 #include <QFileInfo>
@@ -1063,6 +1064,14 @@ PlayerDialog::~PlayerDialog() {
     if (subtitlesPopup_) {
         subtitlesPopup_->close();
     }
+    // A destructor cannot wait for an acknowledgement, so a native transition that
+    // is still in flight here is named instead of being silently destroyed:
+    // forced destruction is not a stop acknowledgement.
+    if (surface_ != nullptr && !surface_->nativePlaybackStatus().pendingRequestId.isEmpty()) {
+        qWarning().noquote() << "mikai: native transition in flight at dialog destruction ("
+                             << surface_->nativePlaybackStatus().pendingRequestId
+                             << "); forced teardown, not an acknowledgement";
+    }
     releasePipPool();
 }
 
@@ -1113,6 +1122,31 @@ void PlayerDialog::buildStatus() {
     retryButton_->setAccessibleName(tr("Retry playback"));
     connect(retryButton_, &QPushButton::clicked, this, &PlayerDialog::retryPlayback);
     row->addWidget(retryButton_, 0);
+
+    const auto addChip = [&](const QString& name, const QString& text,
+                           const QString& tip, void (PlayerDialog::*handler)()) {
+        auto* button = makeChip(statusPanel_, name, text);
+        button->setToolTip(tip);
+        button->setAccessibleName(tip);
+        connect(button, &QPushButton::clicked, this, handler);
+        row->addWidget(button, 0);
+        button->hide();
+        return button;
+    };
+    processingPrepareButton_ = addChip(
+        QStringLiteral("playerPrepareButton"), tr("Prepare"),
+        tr("Prepare the selected recipe"), &PlayerDialog::onProcessingPrepareRequested);
+    processingProvidersButton_ = addChip(
+        QStringLiteral("playerProvidersButton"), tr("Providers"),
+        tr("Choose the processing provider"),
+        &PlayerDialog::onProcessingProvidersRequested);
+    processingOriginalButton_ = addChip(
+        QStringLiteral("playerOriginalButton"), tr("Original"),
+        tr("Stay on the Original picture"), &PlayerDialog::onProcessingOriginalRequested);
+
+    // A reason can echo a provider's or a model's own error text, so it is
+    // plain text by construction rather than per call site.
+    statusLabel_->setTextFormat(Qt::PlainText);
     statusPanel_->hide();
 
     statusTimer_ = new QTimer(this);
@@ -1186,7 +1220,11 @@ void PlayerDialog::loadPresetShortcuts() {
     // Claims are keyed on the sequence as it will fire, so a second preset bound
     // to the same keystroke is skipped rather than fighting the first one over
     // every press. The catalogue order decides which of the two wins.
-    QSet<QKeySequence> claimed;
+    //
+    // The one shared collision check answers here too, so a preset cannot be
+    // refused for a reason the settings dialog would have allowed - and it is
+    // what names the owner a skipped binding lost to.
+    QMap<QString, ShortcutClaim> claims;
     const QVector<anime4k::ModeInfo> modes = anime4k::availableModes();
     for (const anime4k::ModeInfo& info : modes) {
         const QString stored = settings.value(info.id).toString();
@@ -1197,13 +1235,29 @@ void PlayerDialog::loadPresetShortcuts() {
             QKeySequence::fromString(stored, QKeySequence::PortableText);
         // Empty here means the stored text named no key at all, which is the
         // same thing as never having bound it.
-        if (sequence.isEmpty() || isReservedPresetShortcut(sequence)) {
+        if (sequence.isEmpty()) {
+            qWarning().noquote() << "mikai: stored preset shortcut" << info.id
+                                 << "names no key and was not installed";
             continue;
         }
-        if (claimed.contains(sequence)) {
+        const ShortcutConflict conflict = findShortcutConflict(sequence, claims);
+        if (conflict.blocked) {
+            // A stored binding that can never fire is a fact about this build's
+            // key space, not a preference the viewer chose afresh: the key was
+            // set and does nothing, so it is reported rather than dropped in
+            // silence. The reason key and owner come from the shared check, so
+            // this cannot name a different cause than the settings dialog would.
+            qWarning().noquote() << "mikai: stored preset shortcut" << info.id << "for"
+                                 << shortcutClaimKey(sequence) << "was not installed:"
+                                 << conflict.reasonKey << "is held by" << conflict.ownerId
+                                 << conflict.ownerLabel;
             continue;
         }
-        claimed.insert(sequence);
+        ShortcutClaim claim;
+        claim.ownerId = info.id;
+        claim.ownerLabel = info.label;
+        claim.kind = ShortcutOwnerKind::Preset;
+        claims.insert(shortcutClaimKey(sequence), claim);
 
         // Parented to the dialog and WindowShortcut-scoped: active while the
         // player window is, and for the overlays that are its children, which
@@ -1231,13 +1285,29 @@ void PlayerDialog::loadNativeShortcuts() {
     }
     const QKeySequence sequence =
         QKeySequence::fromString(stored, QKeySequence::PortableText);
-    if (sequence.isEmpty() || isReservedPresetShortcut(sequence)) {
+    if (sequence.isEmpty()) {
+        qWarning().noquote() << "mikai: stored native toggle shortcut" << stored
+                             << "names no key and was not installed";
         return;
     }
     const ShortcutConflict conflict = findShortcutConflict(sequence, installedPresetClaims());
     if (conflict.blocked) {
         // Somebody already owns the key. The native action is simply not
-        // installed; it never shadows a preset or a player key.
+        // installed; it never shadows a preset or a player key. A binding that
+        // lands here is a fact the viewer has to be able to account for - the
+        // key is set and does nothing - so the skip is reported with the reason
+        // and owner the shared check already resolved. Nothing here reads the
+        // store's other keys, so no preference beyond this binding is named, and
+        // the source is named truthfully: the default is only offered when the
+        // store holds no decision, so a viewer who never chose a key is not told
+        // a binding they stored was refused.
+        qWarning().noquote() << "mikai:"
+                             << (preferences.toggleProcessingShortcutStored
+                                     ? "stored native toggle shortcut"
+                                     : "default native toggle shortcut")
+                             << "for" << shortcutClaimKey(sequence) << "was not installed:"
+                             << conflict.reasonKey << "is held by" << conflict.ownerId
+                             << conflict.ownerLabel;
         return;
     }
     auto* shortcut = new QShortcut(sequence, this);
@@ -1255,7 +1325,24 @@ void PlayerDialog::toggleNativeProcessing() {
                        QString());
 }
 
-void PlayerDialog::refreshNativeInputs() {
+namespace {
+
+/// The factory observation the core that owns playback currently holds, or
+/// nullptr when that core has published no accepted status document for the
+/// source it is playing. The pointer addresses the owning surface's own
+/// published view - a closed, replaced or rebound source has already cleared
+/// that view - so an old source's observation cannot be offered as the current
+/// one's eligibility. It lives as long as the call that read it.
+const native::NativeFactoryObservation* observedFactoryOf(const VideoSurface* owner) {
+    if (owner == nullptr) return nullptr;
+    const native::NativeStatusView& view = owner->nativeStatus();
+    if (!view.snapshot.has_value() || !view.snapshot->factory.has_value()) return nullptr;
+    return &*view.snapshot->factory;
+}
+
+}  // namespace
+
+void PlayerDialog::pushNativeInputs() {
     if (shell_ == nullptr) {
         return;
     }
@@ -1264,13 +1351,44 @@ void PlayerDialog::refreshNativeInputs() {
     // and the filter's own status. None of them is invented here.
     native::menu::Inputs inputs;
     inputs.preferences = native::loadNativePreferences();
-    inputs.availability = native::currentNativeAvailability();
+    // The availability is a pure projection of the factory observation the core
+    // that OWNS PLAYBACK has actually published for the source it is playing -
+    // the float's own observation while PiP is up, never the parked main core's.
+    // A core with no accepted document for its current source passes nullptr, so
+    // a closed or replaced source cannot keep the roles eligible. This is
+    // eligibility to REQUEST, never a claim that a plan is prepared or running:
+    // announceNativeRequest()'s observed-context gate is what authorizes a
+    // request, and it remains separate from this field.
+    VideoSurface* owner = playbackSurface();
+    inputs.availability = native::currentNativeAvailability(observedFactoryOf(owner));
     inputs.runtime = native::currentSelection();
-    if (surface_ != nullptr) {
-        inputs.status = surface_->nativeStatus();
+    if (owner != nullptr) {
+        inputs.status = owner->nativeStatus();
     }
     shell_->setNativeMenuInputs(inputs);
     syncNativeStatusPolling(inputs.preferences.enabled);
+}
+
+void PlayerDialog::refreshStoredSettings() {
+    // The store is shared with the settings dialog, so a save made there is
+    // invisible here until the bindings are read again. Both loaders are
+    // whole-store reads that reinstall idempotently, and refreshNativeInputs()
+    // deduplicates the announcement, so a save that changed nothing costs a store
+    // read and announces nothing. Nothing here reopens the stream, calls the API,
+    // touches the quality cache, or replaces an effective native plan.
+    loadNativeShortcuts();
+    loadPresetShortcuts();
+    refreshNativeInputs();
+}
+
+void PlayerDialog::refreshNativeInputs() {
+    pushNativeInputs();
+    // A settings change writes the store and then asks for this refresh, so the
+    // selection it may have changed is announced from here too. The announcement
+    // dedups, and it returns early while the request is off. An ownership change
+    // pushes the inputs only: announcing there would race the claim hand-off,
+    // whose own settle step is what re-announces.
+    announceNativeRequest();
 }
 
 void PlayerDialog::onNativeActionRequested(native::menu::Action action, const QString& value) {
@@ -1281,6 +1399,14 @@ void PlayerDialog::onNativeStatusChanged(const native::NativeStatusView& status)
     if (shell_ == nullptr) {
         return;
     }
+    // Only the core that owns playback speaks for the current source. The parked
+    // core keeps polling its own filter while the float plays, and letting its
+    // document reach the HUD (or the availability) would report the wrong core's
+    // roles for the source the viewer is actually watching.
+    VideoSurface* owner = playbackSurface();
+    if (owner != nullptr && sender() != owner) {
+        return;
+    }
     // The reader published a genuine change: amend the inputs already held
     // rather than reading the store again, and let the shell re-render the HUD
     // from them. Polling is deliberately not re-armed here - the surface is the
@@ -1288,7 +1414,14 @@ void PlayerDialog::onNativeStatusChanged(const native::NativeStatusView& status)
     // would clear that halt.
     native::menu::Inputs inputs = shell_->nativeInputs();
     inputs.status = status;
+    // A genuine probe observation is what moves the availability: eligibility
+    // named from the factory this document carries, and named unavailable when
+    // it carries none (unobserved, refused, or a source that just changed).
+    inputs.availability = native::currentNativeAvailability(observedFactoryOf(owner));
     shell_->setNativeMenuInputs(inputs);
+    // The observation may be the first one to carry this core's source and
+    // device. The announcement dedups, so a repeated pump costs nothing.
+    announceNativeRequest();
 }
 
 void PlayerDialog::syncNativeStatusPolling(bool requested) {
@@ -1343,36 +1476,338 @@ void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString
     refreshNativeInputs();
 
     if (action == native::menu::Action::TurnOff) {
-        // Off never touches the Anime4K chain, the stream or the media.
+        // Off never touches the Anime4K chain, the stream or the media. It does
+        // stop native processing on whichever core owns playback now, and it
+        // retires any assembly the previous request had started.
+        nativeHandoff_ = NativeHandoff::None;
+        nativeHandoffFloat_.clear();
+        nativeRequestAnnounced_ = false;
+        nativeRequestContext_.reset();
+        emit nativeAdmissionCancelled();
+        if (VideoSurface* owner = playbackSurface()) {
+            owner->turnNativeOff();
+        }
         flashStatus(tr("Native processing off · Original picture"));
         return;
     }
 
-    const native::NativeSelectionView view = native::evaluateNativeSelection(
-        native::loadNativePreferences(), native::currentNativeAvailability());
-    if (view.requestAvailable) {
-        // Eligible is not active: only the filter's own status snapshot may
-        // report the chain as running, and the shell renders the HUD from that.
-        flashStatus(tr("Native processing requested"));
-        return;
-    }
-    // A processing reason, not a media one: no retry chip, no re-extraction, no
-    // API call, no quality refetch, and the URL is untouched. The menu around
-    // this row offers the remedies - switch provider or stay on Original.
-    showProcessingStatus(
-        view.availability.reason.isEmpty()
-            ? tr("Native processing is not available in this build.")
-            : tr("%1 Keeping the Original pipeline.").arg(view.availability.reason));
+    // A requested change is announced to the assembly layer, which owns the
+    // model store, the measured build identity and the runtime backends. The
+    // announcement carries only facts this core actually observed; it never
+    // claims the chain is running, and nothing here touches the URL, the stream
+    // or the media.
+    announceNativeRequest();
 }
 
 void PlayerDialog::reportNativeProcessingFailure(const QString& reason) {
-    // A native preparation or engine failure is separated from a media failure
-    // on purpose: it must never consume API rate budget, re-extract a signed
-    // URL, or masquerade as an expired link.
-    const QString message = reason.trimmed().isEmpty()
-                                ? tr("Native processing failed.")
-                                : reason.trimmed();
-    showProcessingStatus(tr("%1 Staying on the Original picture.").arg(message));
+    reportNativeProcessingFailure(QString(), reason);
+}
+
+void PlayerDialog::reportNativeProcessingFailure(const QString& reasonKey, const QString& reason) {
+    showProcessingFailure(reasonKey, reason);
+}
+
+bool PlayerDialog::nativeEffectiveActive() const {
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) return false;
+    // A confirmed admission or an effective plan. A refused REPLACEMENT leaves the
+    // previous plan in force, so "the Original picture" would be a lie here.
+    const native::NativePlaybackController::Status& status = owner->nativePlaybackStatus();
+    return status.confirmed || status.effective.has_value();
+}
+
+QString PlayerDialog::processingFailureMessage(const QString& reason) const {
+    const QString base = reason.trimmed().isEmpty() ? tr("Native processing failed.")
+                                                    : reason.trimmed();
+    return nativeEffectiveActive() ? tr("%1 Keeping the current picture.").arg(base)
+                                   : tr("%1 Staying on the Original picture.").arg(base);
+}
+
+namespace {
+
+/// True while the controller has real native work to release: a confirmed plan,
+/// an effective one, or a transition that is still holding the inference claim.
+/// A merely attached probe holds nothing, so a suspend against it would be
+/// refused and reported as a failure nobody caused.
+bool nativeCoreEngaged(const native::NativePlaybackController::Status& status) {
+    using State = native::NativePlaybackController::State;
+    return status.confirmed || status.effective.has_value() ||
+           status.state == State::Admitting || status.state == State::Active ||
+           status.state == State::Draining;
+}
+
+/// A refused transition that says only "there was nothing to do". It arrives
+/// through the same failure signal as a real one - a refused transition must
+/// never be silent - so it is named here and swallowed rather than shown as a
+/// processing failure the viewer cannot act on.
+bool nativeFailureIsBenign(const QString& reasonKey) {
+    return reasonKey == QLatin1String("native.playback.nothingToRemove") ||
+           reasonKey == QLatin1String("native.playback.nothingToDrain") ||
+           reasonKey == QLatin1String("native.playback.nothingToSuspend") ||
+           reasonKey == QLatin1String("native.playback.notSuspended") ||
+           reasonKey == QLatin1String("native.playback.noSource") ||
+           reasonKey == QLatin1String("native.playback.transitionInFlight");
+}
+
+}  // namespace
+
+void PlayerDialog::submitNativeAdmission(const native::PreparedAdmissionRequest& request) {
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) {
+        reportNativeProcessingFailure(QStringLiteral("native.core.absent"),
+                                      tr("No playback core can take a native admission."));
+        return;
+    }
+    // The epoch is the owning core's own observed source epoch, which the
+    // assembly layer cannot know. A request stamped for another source is
+    // refused by the controller rather than applied here.
+    native::PreparedAdmissionRequest stamped = request;
+    stamped.epoch = owner->nativePlaybackStatus().sourceEpoch;
+    // The core has to read its own filter back for the admission to be
+    // acknowledged: a submitted command is not an observation.
+    owner->setNativeStatusPolling(true);
+    owner->requestNativeAdmission(stamped);
+}
+
+bool PlayerDialog::hasActiveSource() const {
+    VideoSurface* owner = playbackSurface();
+    return owner != nullptr && owner->hasVideo();
+}
+
+VideoSurface* PlayerDialog::playbackSurface() const {
+    // The float owns playback while it is up; the main core is parked. Native
+    // work follows the core that is actually decoding, not the hidden one.
+    if (pip_ != nullptr && pip_->videoSurface() != nullptr) {
+        return pip_->videoSurface();
+    }
+    return surface_;
+}
+
+bool PlayerDialog::nativeRequestEnabled() const {
+    return native::loadNativePreferences().enabled;
+}
+
+std::optional<native::NativePreparationContext> PlayerDialog::nativePreparationContext() const {
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) {
+        return std::nullopt;
+    }
+    return owner->nativePreparationContext();
+}
+
+void PlayerDialog::armNativeProbe(native::Backend backend) {
+    if (VideoSurface* owner = playbackSurface()) {
+        owner->armNativeProbe(backend);
+    }
+}
+
+void PlayerDialog::announceNativeRequest() {
+    if (closed_) {
+        return;
+    }
+    if (nativeHandoff_ != NativeHandoff::None) {
+        // Mid hand-off the single inference claim still belongs to the outgoing
+        // core, and a request for the incoming one can only be refused on the
+        // lease it has not released yet. That refusal would be read as the
+        // hand-off settling, so the announcement waits for the settling path,
+        // which announces the incoming core once the claim is actually free.
+        return;
+    }
+    const native::NativePreferences preferences = native::loadNativePreferences();
+    if (!preferences.enabled || preferences.recipeId.isEmpty()) {
+        return;
+    }
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) {
+        return;
+    }
+    // The probe binding is what makes an observation possible at all, and it is
+    // armed only here - on an explicit request that names a recipe, never at
+    // startup. It is idempotent and carries no admission.
+    // The backend the request names, which is the stored one here: this path is
+    // the saved request being announced, not an unsaved settings choice.
+    owner->armNativeProbe(preferences.backend);
+    const std::optional<native::NativePreparationContext> context =
+        owner->nativePreparationContext();
+    if (!context.has_value()) {
+        // Nothing was observed on this core yet. The request waits for the next
+        // observation rather than announcing a source and device nobody read.
+        return;
+    }
+    native::SelectionState selection;
+    selection.recipeId = preferences.recipeId;
+    selection.backend = preferences.backend;
+    // Only a NEW selection or a NEW observation reissues the request; the pump
+    // republishes the same facts and must not spin the assembly layer.
+    if (nativeRequestAnnounced_ && nativeRequestSelection_ == selection &&
+        nativeRequestContext_.has_value() &&
+        native::sourceGeometryEqual(nativeRequestContext_->source, context->source) &&
+        native::deviceIdentityEqual(nativeRequestContext_->device, context->device) &&
+        nativeRequestContext_->modulePath == context->modulePath) {
+        return;
+    }
+    if (nativeRequestAnnounced_) {
+        // The selection or the owning core moved: the generation that was in
+        // flight describes a request that is no longer the one wanted.
+        emit nativeAdmissionCancelled();
+    }
+    nativeRequestAnnounced_ = true;
+    nativeRequestSelection_ = selection;
+    nativeRequestContext_ = *context;
+    emit nativeAdmissionRequested(selection, *context);
+}
+
+void PlayerDialog::requestNativeReferenceFrame(int frameIndex) {
+    if (closed_) {
+        return;
+    }
+    if (nativeReferencePending_ && nativeReferenceSurface_.isNull()) {
+        // The core that was asked is gone; its reply can never arrive.
+        nativeReferencePending_ = false;
+    }
+    if (nativeReferencePending_) {
+        emit nativeReferenceFrameFailed(
+            QStringLiteral("native.reference.inFlight"),
+            tr("A reference frame capture is already in flight."), frameIndex);
+        return;
+    }
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) {
+        emit nativeReferenceFrameFailed(QStringLiteral("native.reference.noCore"),
+                                        tr("No playback core can capture a reference frame."),
+                                        frameIndex);
+        return;
+    }
+    // The epoch and the index are recorded so a reply that arrives after the
+    // source moved - or that belongs to a request this dialog has already
+    // abandoned - is dropped instead of handed over as the frame that was asked
+    // for.
+    nativeReferenceSurface_ = owner;
+    nativeReferenceSourceEpoch_ = owner->nativePlaybackStatus().sourceEpoch;
+    nativeReferenceFrameIndex_ = frameIndex;
+    nativeReferencePending_ = true;
+    owner->requestNativeReferenceFrame(frameIndex);
+}
+
+void PlayerDialog::onNativeReferenceFrameReady(const native::FrameFixture& frame,
+                                               quint64 sourceEpoch, double framePosition,
+                                               int frameIndex,
+                                               std::optional<native::Rational> frameFps) {
+    if (!nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
+        return;
+    }
+    if (frameIndex != nativeReferenceFrameIndex_) {
+        // A frame for a request this dialog has moved past. The surface is the
+        // authority on its own captures, but this index is the dialog's own guard:
+        // forwarding it would hand a caller a frame it never asked for.
+        return;
+    }
+    if (sourceEpoch != 0 && nativeReferenceSourceEpoch_ != 0 &&
+        sourceEpoch != nativeReferenceSourceEpoch_) {
+        // The source moved under the capture: this frame is not the one asked
+        // for, and the surface's own stale-source refusal is the authority.
+        return;
+    }
+    nativeReferencePending_ = false;
+    emit nativeReferenceFrameReady(frame, sourceEpoch, framePosition, frameIndex, frameFps);
+}
+
+void PlayerDialog::onNativeReferenceFrameFailed(const QString& reasonKey, const QString& reason,
+                                                int frameIndex) {
+    if (!nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
+        return;
+    }
+    if (frameIndex != nativeReferenceFrameIndex_) {
+        return;
+    }
+    nativeReferencePending_ = false;
+    emit nativeReferenceFrameFailed(reasonKey, reason, frameIndex);
+}
+
+void PlayerDialog::cancelPendingReferenceCapture(const QString& reasonKey, const QString& reason) {
+    if (!nativeReferencePending_) {
+        return;
+    }
+    nativeReferencePending_ = false;
+    emit nativeReferenceFrameFailed(reasonKey, reason, nativeReferenceFrameIndex_);
+}
+
+void PlayerDialog::activateFloatNative() {
+    if (closed_ || pip_ == nullptr) {
+        return;
+    }
+    nativeHandoffFloat_.clear();
+    // The float owns playback now: its own core, its own observed source and
+    // device are what the request must be assembled for, and its own reader must
+    // be running for the probe observation and the acknowledgement to arrive.
+    pip_->videoSurface()->setNativeStatusPolling(true);
+    announceNativeRequest();
+}
+
+void PlayerDialog::finishNativeHandoff() {
+    nativeHandoffFloat_.clear();
+    if (closed_ || surface_ == nullptr) {
+        return;
+    }
+    // The float's generation is spent; the main core takes the single inference
+    // claim back. Resume revalidates the artifacts and device the plan named, so
+    // no fresh assembly is needed for a plan the controller already holds. A
+    // main core that was never suspended has nothing to resume, and asking would
+    // be refused as a failure nobody caused.
+    emit nativeAdmissionCancelled();
+    if (surface_->nativePlaybackStatus().state == native::NativePlaybackController::State::Suspended) {
+        surface_->resumeNativeProcessing();
+    }
+}
+
+void PlayerDialog::onNativePlaybackStatusChanged(
+    const native::NativePlaybackController::Status& status) {
+    if (nativeHandoff_ == NativeHandoff::None) {
+        return;
+    }
+    // A settled state, not a request: only the controller's own observation
+    // releases the single inference claim.
+    const bool settled = status.state == native::NativePlaybackController::State::Suspended ||
+                         status.state == native::NativePlaybackController::State::Off ||
+                         status.state == native::NativePlaybackController::State::Failed;
+    if (!settled) {
+        return;
+    }
+    VideoSurface* floatSurface =
+        nativeHandoffFloat_ != nullptr ? nativeHandoffFloat_->videoSurface() : nullptr;
+    if (nativeHandoff_ == NativeHandoff::SuspendingMain) {
+        if (sender() == floatSurface) {
+            return;
+        }
+        nativeHandoff_ = NativeHandoff::None;
+        activateFloatNative();
+        return;
+    }
+    if (sender() == floatSurface) {
+        nativeHandoff_ = NativeHandoff::None;
+        finishNativeHandoff();
+    }
+}
+
+void PlayerDialog::onNativeProcessingFailure(const QString& reasonKey, const QString& reason) {
+    if (nativeHandoff_ != NativeHandoff::None) {
+        const NativeHandoff phase = nativeHandoff_;
+        nativeHandoff_ = NativeHandoff::None;
+        // A hand-off that could not suspend still has to move on, or the
+        // incoming core would never get its turn. The refusal is the hand-off's
+        // own bookkeeping, not a viewer-facing processing failure; a real one
+        // surfaces when the incoming core's own admission is refused.
+        if (phase == NativeHandoff::SuspendingMain) {
+            activateFloatNative();
+        } else {
+            finishNativeHandoff();
+        }
+        return;
+    }
+    if (nativeFailureIsBenign(reasonKey)) {
+        return;
+    }
+    reportNativeProcessingFailure(reasonKey, reason);
 }
 
 void PlayerDialog::copyStreamUrl() {
@@ -1402,6 +1837,19 @@ void PlayerDialog::connectEngine() {
     // follow it; nothing is synthesised from the request.
     connect(surface_, &VideoSurface::nativeStatusChanged, this,
             &PlayerDialog::onNativeStatusChanged);
+    // The core's own transaction state and its named failures. A failure is
+    // routed away from the media path on purpose: it never re-extracts a signed
+    // URL and never offers the retry chip.
+    connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
+            &PlayerDialog::onNativePlaybackStatusChanged);
+    connect(surface_, &VideoSurface::nativeProcessingFailure, this,
+            &PlayerDialog::onNativeProcessingFailure);
+    // The reference capture is forwarded from whichever core owns playback; a
+    // reply from a core that no longer does is dropped, not handed over.
+    connect(surface_, &VideoSurface::nativeReferenceFrameReady, this,
+            &PlayerDialog::onNativeReferenceFrameReady);
+    connect(surface_, &VideoSurface::nativeReferenceFrameFailed, this,
+            &PlayerDialog::onNativeReferenceFrameFailed);
 }
 
 QList<QualityEntry> PlayerDialog::usableQualities(const QList<QualityEntry>& qualities) {
@@ -1513,6 +1961,9 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
         retryButton_->hide();
         statusPanel_->hide();
     }
+    // A new source supersedes the remedies too: they described the previous
+    // source's processing. The media chip and its loop are untouched above.
+    retireProcessingRow();
     // A swap carries the position, the pause and the rate across so playback
     // continues where it was instead of restarting.
     resumePending_ = resume && surface_->hasVideo();
@@ -2117,14 +2568,14 @@ void PlayerDialog::updateSeriesToggle() {
 void PlayerDialog::syncStatusVisibility() {
     // Bring the status back after the auto-hide lifted. A flashing toast that
     // was still on screen when the chrome hid has to reappear with the chrome;
-    // one that already retired stays retired. A visible retry chip is the
-    // other thing that must survive: it is the only offer a failed direct
-    // stream makes, and an auto-hidden panel underneath it reads as a dead
-    // window with no way back.
+    // one that already retired stays retired. A visible retry chip and an
+    // actionable processing row are the other things that must survive: they are
+    // the only offers a failed stream and a failed plan make, and an auto-hidden
+    // panel underneath them reads as a dead window with no way back.
     if (closed_) {
         return;
     }
-    if (errorActive_ || retryButton_->isVisible()) {
+    if (errorActive_ || retryButton_->isVisible() || processingActive_) {
         statusPanel_->show();
     } else if (statusTimer_->isActive()) {
         statusPanel_->show();
@@ -2136,7 +2587,15 @@ void PlayerDialog::flashStatus(const QString& message) {
     if (closed_) {
         return;
     }
-    errorActive_ = false;
+    // A toast never retires an actionable row: while a media error or a
+    // processing failure owns the panel, the toast only updates the label and
+    // leaves every chip - and the transient timer that would hide them - alone.
+    if (errorActive_ || processingActive_) {
+        statusLabel_->setText(message);
+        statusPanel_->show();
+        statusPanel_->raise();
+        return;
+    }
     retryButton_->hide();
     statusLabel_->setText(message);
     statusTimer_->start(kStatusMs);
@@ -2152,6 +2611,14 @@ void PlayerDialog::showErrorStatus(const QString& message) {
     statusTimer_->stop();
     statusLabel_->setText(message);
     retryButton_->show();
+    // A media failure raises its own chip. It never clears processingActive_, so a
+    // remedy already on offer stays on offer beside it: the two are separate
+    // failures and neither hides the other.
+    if (!processingActive_) {
+        processingPrepareButton_->hide();
+        processingProvidersButton_->hide();
+        processingOriginalButton_->hide();
+    }
     statusPanel_->show();
     statusPanel_->raise();
 }
@@ -2162,15 +2629,82 @@ void PlayerDialog::showProcessingStatus(const QString& reason) {
     if (closed_) {
         return;
     }
-    // The media path's chip is deliberately not reused: a processing failure
-    // has no stream to retry, so the retry chip stays down and the host is never
-    // asked to re-extract. The message is the fact and nothing else.
-    errorActive_ = false;
-    retryButton_->hide();
+    // The GENERIC native-status line: progress and an acknowledged Off use this.
+    // It carries no transient timer of its own and no remedies, so a status that
+    // is not a failure can never be mistaken for one, and it leaves an actionable
+    // row already up untouched.
+    if (processingActive_ || errorActive_) {
+        statusLabel_->setText(reason);
+        statusPanel_->show();
+        statusPanel_->raise();
+        return;
+    }
     statusLabel_->setText(reason);
     statusTimer_->start(kStatusMs);
     statusPanel_->show();
     statusPanel_->raise();
+}
+
+void PlayerDialog::showProcessingFailure(const QString& reasonKey, const QString& reason) {
+    if (closed_) {
+        return;
+    }
+    lastProcessingReasonKey_ = reasonKey;
+    lastProcessingReason_ = reason.trimmed().isEmpty() ? reasonKey.trimmed() : reason.trimmed();
+    showProcessingStatus(processingFailureMessage(lastProcessingReason_));
+    // The row is shown only after the label, and it has no timer: the remedies
+    // stay up until one is chosen, a new source supersedes them, or the dialog
+    // closes. Real video does not retire them - Original keeps playing under them.
+    processingActive_ = true;
+    processingPrepareButton_->show();
+    processingProvidersButton_->show();
+    processingOriginalButton_->show();
+    statusPanel_->show();
+    statusPanel_->raise();
+}
+
+void PlayerDialog::retireProcessingRow() {
+    processingActive_ = false;
+    lastProcessingReasonKey_.clear();
+    lastProcessingReason_.clear();
+    processingPrepareButton_->hide();
+    processingProvidersButton_->hide();
+    processingOriginalButton_->hide();
+    // An outstanding media error keeps the panel up and keeps its own chip.
+    if (!errorActive_) {
+        statusPanel_->hide();
+    }
+}
+
+void PlayerDialog::onProcessingPrepareRequested() {
+    if (closed_) {
+        return;
+    }
+    // Nothing happens here beyond asking the host to open its existing Processing
+    // tab: no URL, no quality probe, no stream state, and no preparation is
+    // started by opening anything.
+    emit processingSettingsRequested(ProcessingSettingsIntent::Prepare);
+}
+
+void PlayerDialog::onProcessingProvidersRequested() {
+    if (closed_) {
+        return;
+    }
+    // Only brings the existing validated provider choice into view; Save
+    // persists it exactly as it does today.
+    emit processingSettingsRequested(ProcessingSettingsIntent::Providers);
+}
+
+void PlayerDialog::onProcessingOriginalRequested() {
+    if (closed_) {
+        return;
+    }
+    // The existing native TurnOff path: it saves the request, stops native work on
+    // whichever core owns playback, retires the assembly and leaves the media and
+    // the Anime4K chain untouched. Only this row is retired; a media error keeps
+    // its chip and its recovery loop.
+    retireProcessingRow();
+    applyNativeRequest(native::menu::Action::TurnOff, QString());
 }
 
 void PlayerDialog::retryPlayback() {
@@ -2317,6 +2851,22 @@ void PlayerDialog::showEvent(QShowEvent* event) {
     layoutPanels();
 }
 
+void PlayerDialog::changeEvent(QEvent* event) {
+    QDialog::changeEvent(event);
+    if (event->type() != QEvent::LanguageChange) {
+        return;
+    }
+    seriesButton_->setToolTip(tr("Episode list (S)"));
+    seriesButton_->setAccessibleName(tr("Episode list"));
+    processingPrepareButton_->setText(tr("Prepare"));
+    processingPrepareButton_->setToolTip(tr("Prepare the selected recipe"));
+    processingProvidersButton_->setText(tr("Providers"));
+    processingProvidersButton_->setToolTip(tr("Choose the processing provider"));
+    processingOriginalButton_->setText(tr("Original"));
+    processingOriginalButton_->setToolTip(tr("Stay on the Original picture"));
+    layoutPanels();
+}
+
 void PlayerDialog::resizeEvent(QResizeEvent* event) {
     QDialog::resizeEvent(event);
     rememberWindowedGeometry();
@@ -2436,19 +2986,78 @@ bool PlayerDialog::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void PlayerDialog::closeEvent(QCloseEvent* event) {
+    if (shuttingDown_) {
+        // A reentrant close arrives through the settle below, which spins the
+        // event loop, so it must not tear the same cores down twice. A close
+        // that arrives after the stop really finished (the owner disposing the
+        // session from playerClosed()) is not reentrant and may be accepted.
+        if (shutdownComplete_) {
+            QDialog::closeEvent(event);
+            return;
+        }
+        event->ignore();
+        return;
+    }
+    shuttingDown_ = true;
     closed_ = true;
+    const bool statusTimerWasActive = statusTimer_->isActive();
     statusTimer_->stop();
     audioPopup_->close();
     subtitlesPopup_->close();
+    // A frozen capture holds the plan lock, and a locked request would only queue
+    // the stops below and time them out, so Compare is closed first; its own
+    // close path releases the lock.
+    if (compare_ != nullptr) {
+        compare_->close();
+    }
+    // Both cores are paused before anything is asked of their filters: a stop is
+    // not the place to keep decoding into.
+    if (surface_ != nullptr) {
+        surface_->setPaused(true);
+    }
+    if (PipFloat* parked = pip_ != nullptr ? pip_ : pipPool_) {
+        if (parked->videoSurface() != nullptr) {
+            parked->videoSurface()->setPaused(true);
+        }
+    }
+    // Hides the float, retires the hand-off and cancels a capture in flight; the
+    // pooled widget itself outlives this handler and is released by the destructor.
     leavePip(/*closing=*/true);
+    // M30 order: both cores are stopped with a real acknowledgement while their
+    // GL contexts are still alive, and only then are the streams closed. The
+    // settle spins the event loop, so the dialog is guarded weakly across it.
+    QPointer<PlayerDialog> self(this);
+    const bool parkedSettled = settleParkedNative();
+    if (self.isNull()) return;
+    const bool coreSettled = surface_ == nullptr || surface_->settleNativeForTeardown();
+    if (self.isNull()) return;
+    if (!parkedSettled || !coreSettled) {
+        // Nothing is torn down: both cores and their render contexts stay alive so
+        // the stop can be retried, and no stream or core is closed on a stop that
+        // was never acknowledged.
+        qWarning().noquote()
+            << "mikai: native stop unsettled (native.playback.teardownUnsettled); close refused";
+        flashStatus(tr("Native processing did not acknowledge its stop; the player stays open so "
+                       "it can be retried."));
+        closed_ = false;
+        shuttingDown_ = false;
+        if (statusTimerWasActive) statusTimer_->start();
+        event->ignore();
+        return;
+    }
     shell_->close();
     // VideoSurface owns the libmpv handle: a dialog closed by the host's
     // shutdown must not leave the core running behind it.
     surface_->close();
+    // The stop is complete, so the event may be accepted - and that has to be
+    // recorded before the host is told, because the host reacts by disposing the
+    // session, which closes this dialog again and must find it finished rather
+    // than mid-settle.
+    shutdownComplete_ = true;
+    QDialog::closeEvent(event);
     if (host_ != nullptr) {
         host_->playerClosed();
     }
-    QDialog::closeEvent(event);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2513,6 +3122,24 @@ void PlayerDialog::enterPip() {
         // pauses the float, and it reads pip_, not the local `window`, so a
         // pooled float is still the one that gets put away.
         connect(window, &PipFloat::closeRequested, this, &PlayerDialog::close);
+        // The float is its own core, so its native transaction observations and
+        // failures come from its own surface, not the main one.
+        connect(window->videoSurface(), &VideoSurface::nativePlaybackStatusChanged, this,
+                &PlayerDialog::onNativePlaybackStatusChanged);
+        connect(window->videoSurface(), &VideoSurface::nativeProcessingFailure, this,
+                &PlayerDialog::onNativeProcessingFailure);
+        // The float's own probe observation is what makes its source/device
+        // ready, and its own factory observation is what names the current
+        // source's availability while it owns playback. The slot drops the
+        // parked main core's documents and dedups the announcement against the
+        // pump.
+        connect(window->videoSurface(), &VideoSurface::nativeStatusChanged, this,
+                &PlayerDialog::onNativeStatusChanged);
+        // The float's own core can be the one a reference capture is asked of.
+        connect(window->videoSurface(), &VideoSurface::nativeReferenceFrameReady, this,
+                &PlayerDialog::onNativeReferenceFrameReady);
+        connect(window->videoSurface(), &VideoSurface::nativeReferenceFrameFailed, this,
+                &PlayerDialog::onNativeReferenceFrameFailed);
     }
     // The float owns a second core, so it needs the chain separately: the mode
     // alone would drop a chain the compare window applied. It is pooled, so the
@@ -2552,21 +3179,68 @@ void PlayerDialog::enterPip() {
         window->moveToCorner(fallback);
     }
     pip_ = window;
+    // The owning core changes here, so a capture asked of the main core can no
+    // longer describe what the viewer is watching.
+    cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
+                                  tr("The reference capture was asked of the other core."));
     window->show();
     window->raise();
     syncPipBar();
+    // Native hand-off: there is one process-wide inference claim, so the float
+    // may only admit once the main core's claim is released by an acknowledged
+    // suspend. The hand-off gate reads the stored request, never a claim that
+    // native is already running.
+    if (nativeRequestEnabled() && surface_ != nullptr) {
+        // The float's own reader must be running for it to observe its source
+        // and device and to acknowledge its own admission later.
+        window->videoSurface()->setNativeStatusPolling(true);
+        if (nativeCoreEngaged(surface_->nativePlaybackStatus())) {
+            nativeHandoff_ = NativeHandoff::SuspendingMain;
+            nativeHandoffFloat_ = window;
+            surface_->suspendNativeProcessing();
+        } else {
+            // Nothing to release: the float may take the claim straight away.
+            activateFloatNative();
+        }
+    }
+    // The float owns playback from here, so the HUD, the menu and the
+    // availability follow ITS observation, never the parked main core's: until
+    // the float publishes a document of its own the roles are named unavailable
+    // rather than inherited from the core that is no longer decoding. The
+    // announcement is not made here: the float's own settle step makes it once
+    // the claim is free.
+    pushNativeInputs();
             flashStatus(tr("Picture in picture"));
     // The float owns the picture now, so what is left behind would be an empty
     // black frame.
     hide();
 }
 
+bool PlayerDialog::settleParkedNative() {
+    // leavePip() clears pip_ but keeps the pooled widget, so both are checked.
+    PipFloat* parked = pip_ != nullptr ? pip_ : pipPool_;
+    if (parked == nullptr || parked->videoSurface() == nullptr) {
+        return true;
+    }
+    return parked->videoSurface()->settleNativeForTeardown();
+}
+
 void PlayerDialog::releasePipPool() {
+    nativeHandoff_ = NativeHandoff::None;
+    nativeHandoffFloat_.clear();
+    nativeReferencePending_ = false;
+    nativeReferenceSurface_.clear();
     PipFloat* pool = pipPool_;
     pipPool_ = nullptr;
     pip_ = nullptr;
     if (pool == nullptr) {
         return;
+    }
+    if (pool->videoSurface() != nullptr &&
+        !pool->videoSurface()->nativePlaybackStatus().pendingRequestId.isEmpty()) {
+        qWarning().noquote() << "mikai: parked native transition in flight at destruction ("
+                             << pool->videoSurface()->nativePlaybackStatus().pendingRequestId
+                             << "); forced teardown, not an acknowledgement";
     }
     // NVIDIA faults if the pooled GL widget dies while the main surface is visible.
     hide();
@@ -2579,6 +3253,10 @@ void PlayerDialog::releasePipPool() {
 void PlayerDialog::leavePip(bool closing) {
     PipFloat* window = pip_;
     pip_ = nullptr;
+    // The owning core returns to the main player, so a capture asked of the
+    // float can no longer describe what the viewer is watching.
+    cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
+                                  tr("The reference capture was asked of the other core."));
     // Everything the viewer did in PiP happened in the float's core, so that
     // is where the main player resumes - not the position it was parked at on
     // entry. Read before anything else, and NOT clamped against the main
@@ -2596,13 +3274,36 @@ void PlayerDialog::leavePip(bool closing) {
         window->videoSurface()->setPaused(true);
     }
     if (closed_) {
+        nativeHandoff_ = NativeHandoff::None;
+        nativeHandoffFloat_.clear();
         return;
     }
     const bool wasFullscreen = pipWasFullscreen_;
     pipWasFullscreen_ = false;
     if (closing) {
+        nativeHandoff_ = NativeHandoff::None;
+        nativeHandoffFloat_.clear();
         return;
     }
+    // Native hand-back, the mirror of the entry: release the float's claim,
+    // then let the main core take the single inference claim back.
+    if (nativeRequestEnabled() && window != nullptr && window->videoSurface() != nullptr) {
+        if (nativeCoreEngaged(window->videoSurface()->nativePlaybackStatus())) {
+            nativeHandoff_ = NativeHandoff::SuspendingFloat;
+            nativeHandoffFloat_ = window;
+            window->videoSurface()->suspendNativeProcessing();
+        } else {
+            finishNativeHandoff();
+        }
+    } else if (surface_ != nullptr &&
+               surface_->nativePlaybackStatus().state ==
+                   native::NativePlaybackController::State::Suspended) {
+        surface_->resumeNativeProcessing();
+    }
+    // The main core owns playback again from here, so the HUD, the menu and the
+    // availability go back to its own observation instead of the float's. The
+    // announcement is left to the resume that follows, exactly as before.
+    pushNativeInputs();
     QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen] {
         if (closed_) {
             return;

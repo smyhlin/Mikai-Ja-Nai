@@ -16,6 +16,7 @@
 
 #include <optional>
 
+#include <QtCore/QJsonObject>
 #include <QtCore/QList>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
@@ -37,6 +38,42 @@ struct BundleFile {
     QString sha256;
 };
 
+/// The three preparation executables a bundle ships. Root-relative, `.exe`,
+/// each a member of `Bundle::files`; the layout is a declaration, not a claim
+/// that a build will succeed.
+struct BundlePreparationTools {
+    QString inspect;
+    QString prep;
+    QString verifier;
+};
+
+/// The provider runtime directories the tools resolve their own DLLs against.
+/// Root-relative single directory names; `trt` and `cuda` may be the same
+/// directory, and a directory carrying DLLs must also be a declared dependency.
+struct BundlePreparationRuntime {
+    QString ort;
+    QString trt;
+    QString cuda;
+};
+
+/// The optional preparation block: which provider backends the toolchain can
+/// prepare for, the source-ABI provenance of the inference core the bundle was
+/// built from, the tools themselves, and their provider runtime directories.
+///
+/// The block is a validated statement about the bundle's own bytes, pinned by
+/// the module and file hashes the inventory already proves. It is not an
+/// independent measurement: `coreSha`/`sourceAbi` are not re-derived from the
+/// binaries, and no CUDA/TensorRT version is asserted here - the tools' own
+/// device query supplies those. Its presence says nothing about engine or
+/// effective readiness.
+struct BundlePreparation {
+    QStringList types;
+    QString coreSha;
+    int sourceAbi = 0;
+    BundlePreparationTools tools;
+    BundlePreparationRuntime runtime;
+};
+
 /// `root` and `modulePath` are absolute and canonical. `deps` are dependency
 /// directory names as the manifest states them, relative to `root`;
 /// `toMpvBundleDescriptor()` is what turns them into the absolute directories
@@ -53,6 +90,10 @@ struct Bundle {
     int engineSchemaVersion = 0;
     QStringList deps;
     QVector<BundleFile> files;
+    /// Present exactly when the manifest declares a complete, valid
+    /// `preparation` block. A bundle without one is a playback-only bundle:
+    /// preparation is then named unavailable rather than completed.
+    std::optional<BundlePreparation> preparation;
 
     /// Loader-facing projection. No IO, no module handle, no capability claim.
     MpvBundle toMpvBundleDescriptor() const;
@@ -61,6 +102,28 @@ struct Bundle {
 /// The one manifest schema this build understands; any other value is refused
 /// rather than interpreted.
 QString bundleSchemaId();
+
+/// The preparation backend types this build can prepare for, in a stable order.
+/// A manifest naming any other type is refused rather than read as the one it
+/// does.
+QStringList bundlePreparationTypes();
+
+/// The backend library a preparation type names inside the bundle:
+/// "tensorrt" -> "aji_trt.dll", "directml" -> "aji_dml.dll"; empty for a type
+/// this build does not know.
+QString bundlePreparationBackendLibrary(const QString& type);
+
+/// The library a native bundle ships that owns the source ABI: the dispatcher
+/// the filter loads ("aji.dll"). Every declared backend is loaded through it, so
+/// a preparation block is incoherent without it.
+QString bundlePreparationProducerLibrary();
+
+/// Parses a present `preparation` member. Shape only: a reserved placeholder
+/// (forty zeroes) or a zero `sourceAbi` parses here and is refused by
+/// `readBundle`/`validateBundle`, so a layout example stays readable while a
+/// real bundle cannot carry an unmeasured value.
+std::optional<BundlePreparation> parsePreparation(const QJsonObject& manifest,
+                                                  QString* reason = nullptr);
 
 QString bundleKindName(BundleKind kind);
 
@@ -107,7 +170,22 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
 /// only the staging directory this call created and leaves every previously
 /// published bundle and the pointer untouched. The stock
 /// `%LOCALAPPDATA%/MPVBackend/runtime` tree is refused outright.
-bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* reason = nullptr);
+///
+/// A stock `describeStandardRuntime` descriptor has no `bundle.json` beside it
+/// and must not be written to. For exactly that case - kind Standard, a zero
+/// load-time API version, and no manifest in the source root - the manifest is
+/// materialised into the staging directory from the already-verified inventory
+/// and version. The source is read, never written. A Native descriptor without
+/// a manifest is refused rather than invented. On success `publishedRoot`, when
+/// given, receives the absolute path of the immutable published directory.
+///
+/// Standard and Native are never mixed inside one bundle, so a descriptor whose
+/// `kind` or `version` disagrees with the `bundle.json` beside it is refused by
+/// name before anything is staged: publishing it would create a
+/// `<kind>-<version>` directory whose name contradicts its own manifest, which
+/// discovery can only refuse again.
+bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* reason = nullptr,
+                   QString* publishedRoot = nullptr);
 
 /// `<kind>-<version>`, the immutable published directory name.
 QString bundleDirectoryName(BundleKind kind, const QString& version);

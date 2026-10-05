@@ -248,11 +248,11 @@ const QVector<CategoryInfo>& categories() {
                                                  "Experimental, not a typical setting"),
          false},
         // The models this player does not run each get their own page rather
-        // than a dead row, so the menu can say where they will live: the page
-        // holds a single disabled "Planned" leaf and the usual way back.
-        {QStringLiteral("rife"), QString(), QStringLiteral("RIFE"),
-         QCoreApplication::translate("Anime4K", "Frame interpolation: engine not implemented"),
-         false},
+        // than a dead row, so the menu can say where they will live. RIFE
+        // lives here no longer: the native menu owns the "rife" level (see
+        // native::menu::ownsLevel and rootRows), so neither the category nor
+        // any Planned leaf remains here. RealESRGAN and the other models stay
+        // placeholders.
         {QStringLiteral("realesrgan"), QString(), QStringLiteral("RealESRGAN"),
          QCoreApplication::translate("Anime4K", "Neural upscaling: engine not implemented"),
          false},
@@ -260,9 +260,6 @@ const QVector<CategoryInfo>& categories() {
          QCoreApplication::translate("Anime4K", "Other models"),
          QCoreApplication::translate("Anime4K", "Other enhancement models: engine not implemented"),
          false},
-        {QStringLiteral("rife/planned"), QStringLiteral("rife"),
-         QCoreApplication::translate("Anime4K", "Planned"),
-         QCoreApplication::translate("Anime4K", "Planned: RIFE is not implemented yet"), true},
         {QStringLiteral("realesrgan/planned"), QStringLiteral("realesrgan"),
          QCoreApplication::translate("Anime4K", "Planned"),
          QCoreApplication::translate("Anime4K", "Planned: RealESRGAN is not implemented yet"),

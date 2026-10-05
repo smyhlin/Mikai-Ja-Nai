@@ -5,11 +5,14 @@
 #include "CompareGrid.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "native/NativePlaybackController.hpp"
 
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QLabel>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -23,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace mplayer {
 namespace shell {
@@ -35,7 +39,6 @@ constexpr int kGap = 12;
 constexpr int kGapSmall = 8;
 constexpr int kWindowWidth = 1280;
 constexpr int kWindowHeight = 800;
-constexpr int kInfoHeight = 44;
 /// How long a frame may sit still before the picture counts as settled. The
 /// surface reports its position from a 50 ms pump, so anything tighter would
 /// be measuring the pump rather than the video.
@@ -99,11 +102,15 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     if (surface_ != nullptr) {
         connect(surface_, &VideoSurface::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
+        // Carries the queue depth and the end of a settling transition, so the
+        // armed retry never freezes a stale epoch.
+        connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
+                &CompareWindow::onNativeStatusSettled);
     }
     render();
 }
 
-CompareWindow::~CompareWindow() = default;
+CompareWindow::~CompareWindow() { releasePlanLock(); }
 
 void CompareWindow::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
@@ -116,9 +123,99 @@ void CompareWindow::showEvent(QShowEvent* event) {
     }
 }
 
+void CompareWindow::closeEvent(QCloseEvent* event) {
+    // The window is reused, so the lock is released here and re-taken in
+    // showEvent; release is also what applies a queued native request.
+    releasePlanLock();
+    QDialog::closeEvent(event);
+}
+
+void CompareWindow::hideEvent(QHideEvent* event) {
+    releasePlanLock();
+    QDialog::hideEvent(event);
+}
+
 void CompareWindow::captureNow() {
+    // Every capture path holds the plan lock, so no freeze is ever taken outside it.
+    if (surface_ != nullptr && !ensurePlanLock()) {
+        frame_ = QImage();
+        captureError_.clear();
+        render();
+        return;
+    }
     captureFrame();
     render();
+    // The lock's lifetime is the visible window: a programmatic capture on a
+    // hidden window must not leave the plan held.
+    if (!isVisible()) {
+        releasePlanLock();
+    }
+}
+
+bool CompareWindow::ensurePlanLock() {
+    if (nativeLock_.has_value() && *nativeLock_) {
+        return true;
+    }
+    if (surface_ == nullptr) {
+        return true;
+    }
+    QString reasonKey;
+    QString reason;
+    std::optional<VideoSurface::NativePlanLock> lock =
+        surface_->acquireNativePlanLock(&reasonKey, &reason);
+    if (lock.has_value()) {
+        nativeLock_ = std::move(lock);
+        lockError_.clear();
+        lockRetryArmed_ = false;
+        return true;
+    }
+    if (reasonKey == QLatin1String("native.playback.noSource")) {
+        // No source epoch exists, so no native plan can move: there is nothing to
+        // freeze, and the capture itself will say there is no video.
+        lockError_.clear();
+        return true;
+    }
+    lockError_ = reason.isEmpty()
+                     ? tr("The native plan cannot be frozen right now.")
+                     : reason;
+    // One retry on the surface's settled signal: an epoch already mid-swap must
+    // not be frozen stale, and the refusal is named meanwhile.
+    lockRetryArmed_ = reasonKey == QLatin1String("native.playback.lockBusy");
+    return false;
+}
+
+void CompareWindow::releasePlanLock() {
+    // Reset runs the scoped token's destructor, submitting any queued transition.
+    nativeLock_.reset();
+    lockRetryArmed_ = false;
+}
+
+void CompareWindow::onNativeStatusSettled() {
+    if (surface_ == nullptr) {
+        return;
+    }
+    updateInfo();
+    if (!lockRetryArmed_) {
+        return;
+    }
+    const native::NativePlaybackController::Status& status = surface_->nativePlaybackStatus();
+    const bool settled =
+        status.pendingRequestId.isEmpty() &&
+        status.state != native::NativePlaybackController::State::Admitting &&
+        status.state != native::NativePlaybackController::State::Draining;
+    if (!settled) {
+        return;
+    }
+    // Exactly one retry. Deferred, because capture pumps the event loop and this
+    // runs from the surface's own status publication.
+    lockRetryArmed_ = false;
+    QTimer::singleShot(0, this, [this] {
+        if (ensurePlanLock()) {
+            captureNow();
+        } else {
+            render();
+        }
+    });
 }
 
 void CompareWindow::buildUi() {
@@ -229,7 +326,7 @@ void CompareWindow::buildUi() {
     info_ = new QLabel(this);
     info_->setObjectName(QStringLiteral("compareInfo"));
     info_->setWordWrap(true);
-    info_->setFixedHeight(kInfoHeight);
+    info_->setFixedHeight(kCompareInfoHeight);
     info_->setFont(uiFont(9));
     info_->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(w55().name()));
     right->addWidget(info_);
@@ -297,6 +394,12 @@ QImage CompareWindow::grabSettledFrame(double* settledPosition) {
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
         QCoreApplication::processEvents();
         QThread::msleep(kPollIntervalMs);
+        // The event loop above can deliver a close that destroys the borrowed
+        // surface; the QPointer turns that into a refusal here instead of a
+        // read of freed memory.
+        if (surface_ == nullptr) {
+            return QImage();
+        }
         const QImage probe = surface_->grabFramebuffer();
         const double now = surface_->position();
         // Phase one, observed first and on its own: has the surface stopped
@@ -362,13 +465,27 @@ void CompareWindow::captureFrame() {
         captureError_ = tr("No video to compare");
         return;
     }
-    if (surface_->isPlaying()) {
+    // The pause below is a temporary override that buys a settled grab. Only a
+    // picture earns it: a capture that cannot read one has frozen nothing, so
+    // the play state it was found in is what it has to be left with.
+    const bool wasPlaying = surface_->isPlaying();
+    if (wasPlaying) {
         surface_->setPaused(true);
     }
+    // The native plan is held by the real scoped lock (ensurePlanLock), not by
+    // stopping the status reader: pausing polling is not locking, and the reader
+    // stays live so a transition already in flight is still acknowledged. Only
+    // the Anime4K shader chain is mutated here; native identity is untouched.
     double settled = 0.0;
     const QImage grabbed = grabSettledFrame(&settled);
     if (grabbed.isNull()) {
         captureError_ = tr("Could not capture a new frame");
+        // Nothing was frozen, so the pause that bought the grab is put back.
+        // The guard is the same QPointer one the grab loop uses: the event
+        // loop above can have destroyed the borrowed surface mid-wait.
+        if (wasPlaying && surface_ != nullptr) {
+            surface_->setPaused(false);
+        }
         return;
     }
     // Both sides render from this one image, so the difference between them is
@@ -394,6 +511,11 @@ QImage CompareWindow::renderWithChain(const QString& id) {
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
         QCoreApplication::processEvents();
         QThread::msleep(kPollIntervalMs);
+        // Same guard as the capture loop: the pump can destroy the borrowed
+        // surface mid-render.
+        if (surface_ == nullptr) {
+            return QImage();
+        }
         surface_->update();
         QCoreApplication::processEvents();
         const QImage probe = surface_->grabFramebuffer();
@@ -413,20 +535,21 @@ QImage CompareWindow::renderWithChain(const QString& id) {
 
 void CompareWindow::render() {
     if (frame_.isNull()) {
-        // The reason, not a generic "no frame": a capture that failed and a
-        // window that was never given a frame are different faults, and saying
-        // which is the difference between a diagnosable window and a shrug.
-        // Nothing of the previous picture is left on screen either.
+        // A failed capture, an unfrozen plan and a window with no frame are
+        // different faults; the named one is shown and no stale picture remains.
         renderedA_ = QImage();
         renderedB_ = QImage();
-        canvas_->clear(captureError_.isEmpty() ? tr("No frame to compare") : captureError_);
+        canvas_->clear(!lockError_.isEmpty()
+                           ? lockError_
+                           : (captureError_.isEmpty() ? tr("No frame to compare")
+                                                      : captureError_));
         canvas_->setSideImages(QImage(), QImage(), QImage());
         grid_->setItems({}, {}, {});
         updateInfo();
         return;
     }
-    // Read first and put back after both sides: rendering applies chains to the
-    // borrowed surface, and Compare must not leave the player running one.
+    // The live chain is read before both sides and put back after: Compare must
+    // not leave the player running a preview chain.
     const QString liveChain = surface_ != nullptr ? surface_->anime4KChainId() : QString();
     const QImage a = renderWithChain(sideA());
     const QImage b = renderWithChain(sideB());
@@ -575,11 +698,61 @@ void CompareWindow::updateInfo() {
     };
     describe(QStringLiteral("A"), a, infoA);
     describe(QStringLiteral("B"), b, infoB);
+    // A plan that could not be frozen outranks everything: with no held epoch no
+    // comparison of a native frame is claimed at all.
+    if (!lockError_.isEmpty()) {
+        info_->setText(tr("Native plan not frozen: %1").arg(lockError_));
+        return;
+    }
     // A failed capture leads the line. Whatever the two sides are, the
     // comparison itself did not happen, and that outranks naming them.
     if (!captureError_.isEmpty()) {
         info_->setText(tr("Capture error: %1").arg(captureError_));
         return;
+    }
+    // The base is named from the filter's own effective plan, never the request;
+    // a requested-but-not-effective chain is labelled as the original frame.
+    if (surface_ != nullptr) {
+        const native::NativePlaybackController::Status& native =
+            surface_->nativePlaybackStatus();
+        if (native.effective.has_value()) {
+            const native::NativeEffectivePlan& plan = *native.effective;
+            QString line = tr("Native output base");
+            if (!plan.recipe.isEmpty()) {
+                line += QStringLiteral(" · ") + tr("recipe %1").arg(plan.recipe);
+            }
+            QStringList identity;
+            if (!plan.provider.isEmpty()) identity.append(plan.provider);
+            if (!plan.model.isEmpty()) identity.append(plan.model);
+            if (!identity.isEmpty()) {
+                line += QStringLiteral(" · ") + identity.join(QLatin1Char(' '));
+            }
+            if (plan.interpolation.has_value() && plan.interpolation->factor.isValid()) {
+                line += QStringLiteral(" · ") +
+                        tr("RIFE %1").arg(plan.interpolation->factor.toString());
+                if (!plan.order.isEmpty()) {
+                    line += QLatin1Char(' ') + plan.order;
+                }
+            }
+            parts.prepend(line);
+        } else if (native.state != native::NativePlaybackController::State::Off &&
+                   native.state != native::NativePlaybackController::State::Idle) {
+            // The queued case is named by this translated line plus the
+            // translated count below, never by the controller's untranslated C
+            // sentence; a real refusal keeps the actual reason in the wrapper.
+            const bool queueState =
+                native.reasonKey == QLatin1String("native.playback.planLocked") ||
+                native.reasonKey == QLatin1String("native.playback.planLockRelease") ||
+                queuedNativeChanges() > 0;
+            parts.prepend(queueState
+                              ? tr("Native requested · base is the original frame")
+                              : tr("Native requested · base is the original frame — %1")
+                                    .arg(native.reason));
+        }
+    }
+    if (queuedNativeChanges() > 0) {
+        parts.append(tr("%n native change(s) queued until Compare closes", nullptr,
+                        queuedNativeChanges()));
     }
     if (parts.isEmpty()) {
         info_->setText(tr("Select at least one variant to compare."));

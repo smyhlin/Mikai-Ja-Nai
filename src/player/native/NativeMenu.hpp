@@ -32,7 +32,8 @@ Action actionFromName(const QString& name);
 
 struct Row {
     /// Stable identity the current mark follows: `native/off`, `native/on`,
-    /// `native/backend/<name>`, `native/recipe/<id>`, `rife/<model name>`.
+    /// `native/backend/<name>`, `native/recipe/<id>`, `rife/recipe/<id>` for a
+    /// configured RIFE recipe, `rife/<model name>` for a missing variant.
     QString id;
     QString label;
     QString tooltip;
@@ -77,11 +78,20 @@ QString currentRowId(const NativePreferences& preferences);
 /// that blocks it.
 QVector<Row> nativeRows(const Inputs& in);
 
-/// The four variant graphs this build reaches, each blocked on the open lineage
-/// hop; never Ready until the conversion-to-original-weight lineage is confirmed.
+/// The configured native RIFE recipes, each routing its exact saved recipe id
+/// through `Action::SetRecipe`. One row per stored temporal recipe, so several
+/// recipes for the same variant stay separately selectable; a variant with no
+/// configured recipe gets one honest disabled row asking for configuration and
+/// naming the actual runtime gap. Never fabricates a recipe, factor or model.
 QVector<Row> rifeRows(const Inputs& in);
 
-/// Either of the above, or empty for a level this module does not own.
+/// The enhancement-tree root rows this module owns: the Native and RIFE
+/// submenus. `value` is the exact level id the shell drills into with
+/// `level|<value>`; both stay available so the RIFE page can explain itself
+/// even with no configured recipe.
+QVector<Row> rootRows(const Inputs& in);
+
+/// Any owned level's rows, or empty for a level this module does not own.
 QVector<Row> levelRows(const QString& levelId, const Inputs& in);
 
 /// Every field is empty when the snapshot does not state it: an unpublished

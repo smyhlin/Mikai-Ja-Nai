@@ -20,6 +20,11 @@ namespace native {
 /// every preference caller.
 struct RuntimeSelection;
 
+/// Declared, not included, for the same reason: an availability caller passes a
+/// pointer to the observation its own core published, and `nullptr` is a whole
+/// caller (cold, offline, no status read yet). The definition is NativeStatus.hpp.
+struct NativeFactoryObservation;
+
 /// This module's group; it also holds the runtime choice, owned by
 /// NativeRuntimeSelection and preserved.
 QString nativeSettingsGroup();
@@ -81,6 +86,24 @@ struct NativePreferences {
     bool isDefault() const;
 };
 
+/// The stored toggle binding as the player's Qt GUI reader reported it. Reading
+/// and canonicalising a PortableText key chord needs QKeySequence, which lives
+/// in QtGui; this QtCore-only contract declares the shape, and the reader
+/// (src/player/NativeToggleShortcut.cpp) performs the read and the parse.
+struct NativeToggleShortcut {
+    /// True when the key is present at all, even as an explicit empty binding.
+    bool stored = false;
+    /// The canonical PortableText binding; empty when unbound or invalid.
+    QString value;
+    /// False only when a stored, non-empty text named no key at all; the fact
+    /// is then named by the caller, never silently dropped.
+    bool valid = true;
+};
+
+/// Reads the toggle binding from the shortcuts group through the player's GUI
+/// reader. Never writes.
+NativeToggleShortcut loadStoredToggleShortcut();
+
 /// Additive and read-only: no key is written, removed or created, so opening
 /// settings cannot mutate the store.
 NativePreferences loadNativePreferences();
@@ -115,32 +138,58 @@ struct NativeRecipeOption {
     QString id;
     QString label;
     AvailabilityState availability;
+    /// The exact temporal curated model identity derived from the recipe's
+    /// temporal stage via `rifeModelName` (e.g. "rife_v4.14_lite"); empty when
+    /// the recipe carries no temporal stage. Never parsed from a label, a file
+    /// name or an ordinal. Populated in every real producer path for stored
+    /// recipes so the RIFE panel can route without guessing.
+    QString rifeModel;
 };
 
 /// An empty snapshot is not an error: nothing is available yet, and the reason
 /// says so.
 struct NativeAvailability {
-    /// True only when a real engine exists to run a prepared chain.
+    /// True only when a factory observation for the live source executed a query
+    /// that answered success and so proved the runtime can consume at least one
+    /// role. It is eligibility to run a prepared chain on this runtime - NOT an
+    /// attestation that any particular engine is built, cached, Prepared or
+    /// Active, or that a model is present; those separate facts belong to the
+    /// preparation and status paths. A preference, a manifest label, a file name,
+    /// a stored recipe or a previous source never sets it, and nothing here is
+    /// latched across calls.
     bool engineAvailable = false;
+    /// The named fact that blocks the engine; empty exactly when `engineAvailable`.
     QString engineReasonKey;
     QString engineReason;
 
-    /// As a producer vouched for them; a vocabulary is not a claim, so this stays
-    /// empty until one does.
+    /// The backends the queried factory was actually checked against. A
+    /// vocabulary is not a claim, so this stays empty until one vouches for it.
     QVector<Backend> backends;
 
+    /// Every recipe row this build offers, each with its own availability. A row
+    /// is a REQUEST: available means selectable, never that its artifacts exist
+    /// or that a chain is running - only the filter's own status says that.
     QVector<NativeRecipeOption> recipes;
 
     const NativeRecipeOption* findRecipe(const QString& id) const;
 };
 
-/// Named rather than guessed: a non-native selection names the runtime gap, a loaded
-/// native runtime its unconfirmed capabilities. No capability is read off a manifest label.
-NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime);
+/// Named rather than guessed, in this order: the module this process actually
+/// pinned (absent or refused names the runtime gap), then the observation for the
+/// live source (absent or unexecuted names the unconfirmed gap), then the
+/// observation's own refusal (protocol, device, backend) carried verbatim, and
+/// only an executed success makes the engine available. No capability is read off
+/// a manifest label.
+///
+/// `factory` is the parsed observation from the SAME source's status snapshot, or
+/// `nullptr` for a caller with none; it is required so no global factory state
+/// can stand in for a caller's own.
+NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime,
+                                         const NativeFactoryObservation* factory);
 
-/// Observed from the runtime selection this process actually made; nothing is faked
-/// Ready.
-NativeAvailability currentNativeAvailability();
+/// The above against the runtime selection this process actually made. The caller
+/// passes the observation its own core published; nothing is cached here.
+NativeAvailability currentNativeAvailability(const NativeFactoryObservation* factory);
 
 /// Requested versus effective, kept apart.
 struct NativeSelectionView {

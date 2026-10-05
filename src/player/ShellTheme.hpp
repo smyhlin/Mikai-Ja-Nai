@@ -34,6 +34,9 @@ inline constexpr int kDockActionGlyph = 20;
 // Six action buttons at kDockActionSize plus their spacing.
 inline constexpr int kDockSideWidth = 6 * kDockActionSize + 5 * 4;
 inline constexpr int kInfoChipHeight = 32;
+// Holds the two chain lines plus the wrapped native-base and queued-change
+// lines, so a frozen native recipe caption is never clipped.
+inline constexpr int kCompareInfoHeight = 72;
 inline constexpr double kAspectFallback = 16.0 / 9.0;
 
 // ── palette ────────────────────────────────────────────────────────────────

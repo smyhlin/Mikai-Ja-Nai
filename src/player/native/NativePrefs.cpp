@@ -1,8 +1,10 @@
 #include "NativePrefs.hpp"
 
+#include "NativeCapabilities.hpp"
 #include "NativePaths.hpp"
 #include "NativeProfiles.hpp"
 #include "NativeRuntimeSelection.hpp"
+#include "NativeStatus.hpp"
 #include "NativeUserRecipes.hpp"
 
 #include <QtCore/QCoreApplication>
@@ -11,7 +13,6 @@
 #include <QtCore/QMetaType>
 #include <QtCore/QSettings>
 #include <QtCore/QVariant>
-#include <QtGui/QKeySequence>
 
 namespace mplayer {
 namespace native {
@@ -48,6 +49,63 @@ NativePreferenceIssue issue(const char* key, const char* reasonKey, const QStrin
     result.reasonKey = QLatin1String(reasonKey);
     result.reason = reason;
     return result;
+}
+
+/// The fact that a recipe's spatial stage cannot run on the queried factory. A
+/// role is what the factory answers, so the reason names the role and not a stage.
+AvailabilityState spatialRoleUnavailable() {
+    return unavailableAvailability(
+        QStringLiteral("native.recipe.spatialUnsupported"),
+        translated(QT_TRANSLATE_NOOP(
+            "NativePrefs",
+            "The queried runtime factory answered no spatial role, so a spatial recipe "
+            "cannot run on it.")));
+}
+
+/// As above for the original 11-channel RIFE temporal stage.
+AvailabilityState rifeRoleUnavailable() {
+    return unavailableAvailability(
+        QStringLiteral("native.recipe.rifeUnsupported"),
+        translated(QT_TRANSLATE_NOOP(
+            "NativePrefs",
+            "The queried runtime factory answered no RIFE role, so this recipe's "
+            "interpolation stage cannot run on it.")));
+}
+
+/// The rows offered while the engine is not available: the curated leaves and every
+/// stored recipe each carry the one named gap. The leaves come from NativeProfiles
+/// and the rest from the store, so no row is invented here.
+QVector<NativeRecipeOption> unavailableRecipeRows(const QString& reasonKey,
+                                                  const QString& reason) {
+    QVector<NativeRecipeOption> rows = builtinProfileOptions(reasonKey, reason);
+    const AvailabilityState gap = unavailableAvailability(reasonKey, reason);
+    QString storedReason;
+    for (const Recipe& recipe : UserRecipeStore().recipes(&storedReason)) {
+        NativeRecipeOption option;
+        option.id = recipe.id;
+        option.label = recipe.label.isEmpty() ? recipe.id : recipe.label;
+        option.availability = gap;
+        option.rifeModel =
+            recipe.temporal.has_value() ? recipe.temporal->modelId() : QString();
+        rows.append(option);
+    }
+    return rows;
+}
+
+/// What one stored recipe's own stages need from the queried factory: a spatial
+/// stage needs the spatial role, a temporal stage the RIFE role. Every role
+/// answered makes the row a selectable request; a role the observation did not
+/// answer leaves it named unavailable, and no stage is dropped or substituted to
+/// make it fit.
+AvailabilityState storedRecipeState(const Recipe& recipe,
+                                    const NativeFactoryObservation& factory) {
+    if (!recipe.spatial.isEmpty() && !factory.spatial) {
+        return spatialRoleUnavailable();
+    }
+    if (recipe.temporal.has_value() && !factory.rife) {
+        return rifeRoleUnavailable();
+    }
+    return readyAvailability();
 }
 
 }  // namespace
@@ -147,30 +205,20 @@ NativePreferences loadNativePreferences() {
 
     settings.endGroup();
 
-    settings.beginGroup(nativeShortcutsSettingsGroup());
-    // Presence, not value: a cleared binding was still set by the user and must not
-    // re-offer a default.
-    preferences.toggleProcessingShortcutStored =
-        settings.contains(QLatin1String(kNativeToggleProcessingKey));
-    if (settings.contains(QLatin1String(kNativeToggleProcessingKey))) {
-        const QString stored =
-            settings.value(QLatin1String(kNativeToggleProcessingKey)).toString().trimmed();
-        if (!stored.isEmpty()) {
-            const QKeySequence sequence =
-                QKeySequence::fromString(stored, QKeySequence::PortableText);
-            const QString normalized = sequence.toString(QKeySequence::PortableText);
-            if (normalized.isEmpty()) {
-                preferences.issues.append(issue(
-                    kNativeToggleProcessingKey, "native.shortcutInvalid",
-                    translated(QT_TRANSLATE_NOOP(
-                        "NativePrefs",
-                        "The saved native shortcut did not name a key; it was cleared."))));
-            } else {
-                preferences.toggleProcessingShortcut = normalized;
-            }
-        }
+    // The PortableText binding is read and canonicalised by the player's Qt GUI
+    // reader, so this module stays QtCore-only and never grows a key grammar of
+    // its own; an invalid key stays named rather than silently dropped.
+    const NativeToggleShortcut shortcut = loadStoredToggleShortcut();
+    preferences.toggleProcessingShortcutStored = shortcut.stored;
+    if (shortcut.stored && !shortcut.valid) {
+        preferences.issues.append(issue(
+            kNativeToggleProcessingKey, "native.shortcutInvalid",
+            translated(QT_TRANSLATE_NOOP(
+                "NativePrefs",
+                "The saved native shortcut did not name a key; it was cleared."))));
+    } else {
+        preferences.toggleProcessingShortcut = shortcut.value;
     }
-    settings.endGroup();
 
     for (const NativePreferenceIssue& entry : preferences.issues) {
         qWarning().noquote() << "mikai: native preference" << entry.key
@@ -293,12 +341,13 @@ const NativeRecipeOption* NativeAvailability::findRecipe(const QString& id) cons
     return nullptr;
 }
 
-NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime) {
+NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime,
+                                         const NativeFactoryObservation* factory) {
     NativeAvailability available;
-    // No engine is ever claimed in this build; the reason is the runtime selection's
-    // own observed condition, never a descriptor label.
-    available.engineAvailable = false;
 
+    // Named in precedence order. 1: the module this process actually pinned; a
+    // missing or refused native runtime is the selection's own observed fact,
+    // never a descriptor label.
     if (!runtime.loaded || runtime.kind != BundleKind::Native) {
         available.engineReasonKey = QStringLiteral("native.runtimeUnavailable");
         available.engineReason =
@@ -307,39 +356,85 @@ NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime) {
                       "NativePrefs",
                       "The native runtime is not the module this launch selected."))
                 : runtime.reason;
-    } else {
+        available.recipes =
+            unavailableRecipeRows(available.engineReasonKey, available.engineReason);
+        return available;
+    }
+
+    // 2: the observation for THIS source. Without one nothing has been executed,
+    // so no backend or role is claimed and the request stays a request.
+    if (factory == nullptr || !factory->observed) {
         available.engineReasonKey = QStringLiteral("native.capabilitiesUnconfirmed");
         available.engineReason = translated(QT_TRANSLATE_NOOP(
             "NativePrefs",
-            "The native runtime is loaded, but nothing has confirmed which capabilities "
-            "it can run."));
+            "The native runtime is loaded, but no factory observation for this source "
+            "has confirmed which roles it can run."));
+        available.recipes =
+            unavailableRecipeRows(available.engineReasonKey, available.engineReason);
+        return available;
     }
 
-    // Left empty deliberately: no producer vouches for a backend, and a vocabulary is
-    // not a capability.
-    available.backends.clear();
+    // 3: a query that ran and refused names its own fact - the protocol, the
+    // device or the backend it was actually checked against - reported verbatim
+    // rather than re-worded here.
+    if (!factory->isUsable()) {
+        available.engineReasonKey = factory->reasonKey.isEmpty()
+                                        ? QStringLiteral("native.factoryUnavailable")
+                                        : factory->reasonKey;
+        available.engineReason =
+            factory->reason.isEmpty()
+                ? translated(QT_TRANSLATE_NOOP(
+                      "NativePrefs",
+                      "The queried runtime factory did not answer success for this "
+                      "source."))
+                : factory->reason;
+        available.recipes =
+            unavailableRecipeRows(available.engineReasonKey, available.engineReason);
+        return available;
+    }
 
-    // Curated profile leaves come first so a requested leaf is found whatever order
-    // the stored recipes follow; each carries the runtime gap, not a fake engine.
-    available.recipes = builtinProfileOptions(available.engineReasonKey, available.engineReason);
+    // 4: an executed success. The engine is available because the runtime factory
+    // really ran against the adopted source and answered at least one role, and the
+    // backend offered is the one it was checked against. This is eligibility, not
+    // activation and not artifact readiness: only the filter's own status reports a
+    // chain running.
+    available.engineAvailable = true;
+    const NativeCapabilities capabilities = nativeCapabilitiesFrom(*factory);
+    if (capabilities.hasTensorRT) {
+        available.backends.append(Backend::TensorRT);
+    }
+    if (capabilities.hasDirectML) {
+        available.backends.append(Backend::DirectML);
+    }
 
-    // Stored recipes are offered as requested choices, not Ready: each carries the
-    // runtime gap. The store caches its documents, so a tick does not re-read them.
-    const UserRecipeStore storedRecipes;
-    QString recipesReason;
-    for (const Recipe& recipe : storedRecipes.recipes(&recipesReason)) {
+    // The curated leaves are the three spatial request templates, so each is
+    // selectable exactly when the queried factory answered the spatial role. The
+    // rows and their labels come from NativeProfiles; only their availability is
+    // the fact observed here.
+    const AvailabilityState leafState =
+        factory->spatial ? readyAvailability() : spatialRoleUnavailable();
+    available.recipes = builtinProfileOptions(leafState.reasonKey, leafState.reason);
+    for (NativeRecipeOption& option : available.recipes) {
+        option.availability = leafState;
+    }
+
+    // A stored recipe needs the roles its own stages name. The store caches its
+    // documents, so a tick does not re-read them.
+    QString storedReason;
+    for (const Recipe& recipe : UserRecipeStore().recipes(&storedReason)) {
         NativeRecipeOption option;
         option.id = recipe.id;
         option.label = recipe.label.isEmpty() ? recipe.id : recipe.label;
-        option.availability =
-            unavailableAvailability(available.engineReasonKey, available.engineReason);
+        option.availability = storedRecipeState(recipe, *factory);
+        option.rifeModel =
+            recipe.temporal.has_value() ? recipe.temporal->modelId() : QString();
         available.recipes.append(option);
     }
     return available;
 }
 
-NativeAvailability currentNativeAvailability() {
-    return nativeAvailabilityFor(currentSelection());
+NativeAvailability currentNativeAvailability(const NativeFactoryObservation* factory) {
+    return nativeAvailabilityFor(currentSelection(), factory);
 }
 
 NativeSelectionView evaluateNativeSelection(const NativePreferences& preferences,

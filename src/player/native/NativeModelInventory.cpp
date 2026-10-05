@@ -10,6 +10,7 @@
 #include "NativeModelInventory.hpp"
 
 #include <cmath>
+#include <limits>
 
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
@@ -23,6 +24,7 @@
 #include <QtCore/QJsonValue>
 #include <QtCore/QSaveFile>
 #include <QtCore/QStringList>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QUuid>
 
 #include "NativeArtifactStore.hpp"
@@ -37,6 +39,8 @@ constexpr const char* kSchema = "mikai.native.model/2";
 constexpr const char* kManifestFileName = "record.json";
 constexpr const char* kModelFileName = "model.onnx";
 constexpr const char* kStagingPrefix = ".staging-";
+constexpr qint64 kTemporalInChannels = 11;
+constexpr qint64 kTemporalOutChannels = 3;
 
 void fail(QString* reasonKey, QString* reason, const QString& key, const QString& text) {
   if (reasonKey) *reasonKey = key;
@@ -309,18 +313,26 @@ bool sameBackendSet(const QVector<Backend>& recorded, const QVector<Backend>& su
   return true;
 }
 
-/// Rewrites only the recorded backend support of an already published row.
-///
-/// This is the one update an owned row admits after it is written: a provisioner
-/// that later vouches for a backend the row was not published with raises that
-/// claim without a new graph identity, a second copy or a re-inspection. Nothing
-/// else is reachable from here - the graph bytes, the content identity, the
-/// declared profile, the source provenance and the CPU reference proof stay
-/// exactly as they were - because the document is re-read and re-checked against
-/// the row it must still describe (schema, id, digest) before only its `backends`
-/// member is replaced, atomically, through a save file.
+QVector<Backend> supportedBackendsForRole(ModelRole role, const QVector<Backend>& supplied) {
+  QVector<Backend> supported;
+  for (const Backend backend : supplied) {
+    if (role == ModelRole::Temporal && backend != Backend::TensorRT) continue;
+    if (!supported.contains(backend)) supported.append(backend);
+  }
+  return supported;
+}
+
+QString temporalBackendUnavailableReason() {
+  return QStringLiteral("the native temporal route supports TensorRT only; DirectML cannot run "
+                        "the RIFE N=1/C=11 to N=1/C=3 graph");
+}
+
+/// Rewrites recorded backend support and, for Temporal rows only, the availability
+/// established by the current import proof. The graph bytes, identity, provenance
+/// and CPU reference proof remain unchanged.
 bool updateRecordedSupport(const QString& directory, const StoredModel& row,
-                           const QVector<Backend>& backends, QString* reasonKey,
+                           const QVector<Backend>& backends,
+                           const AvailabilityState& availability, QString* reasonKey,
                            QString* reason) {
   const QString manifestPath = QDir(directory).filePath(QString::fromLatin1(kManifestFileName));
   QFile file(manifestPath);
@@ -363,6 +375,15 @@ bool updateRecordedSupport(const QString& directory, const StoredModel& row,
     return false;
   }
   object.insert(QStringLiteral("backends"), backendsToJson(backends));
+  if (row.record.role == ModelRole::Temporal) {
+    QJsonObject availabilityObject;
+    availabilityObject.insert(QStringLiteral("value"), stableName(availability.value));
+    if (!availability.reasonKey.isEmpty()) {
+      availabilityObject.insert(QStringLiteral("reasonKey"), availability.reasonKey);
+      availabilityObject.insert(QStringLiteral("reason"), availability.reason);
+    }
+    object.insert(QStringLiteral("availability"), availabilityObject);
+  }
 
   const QByteArray updated = QJsonDocument(object).toJson(QJsonDocument::Compact);
   QSaveFile save(manifestPath);
@@ -437,6 +458,67 @@ QJsonObject manifestFor(const ModelRecord& record, const QString& sourcePath,
                   QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
   return manifest;
 }
+
+}  // namespace
+
+// The temporal boundary policy lives outside the unnamed namespace because the
+// import translation unit (NativeModelImport.cpp) reuses this one implementation
+// instead of restating it; the declarations are in the header.
+QString temporalCandidateRefusal(const ModelProfile& profile) {
+  const TensorProfile& in = profile.input;
+  const TensorProfile& out = profile.output;
+  if (!isEligibleIoType(in.dtype) || !isEligibleIoType(out.dtype)) {
+    return QStringLiteral("declared temporal input %1 (%2) and output %3 (%4); only fp16 I/O is eligible on both tensors, and no converter is applied").arg(in.describe(), in.dtype, out.describe(), out.dtype);
+  }
+  if (in.rank != 4 || out.rank != 4) {
+    return QStringLiteral("declared temporal input rank %1 and output rank %2; rank 4 required on both").arg(in.rank).arg(out.rank);
+  }
+  if (in.batch != 1 || out.batch != 1) {
+    return QStringLiteral("declared temporal input %1 and output %2; N=1 required on both").arg(in.describe(), out.describe());
+  }
+  if (in.channels != kTemporalInChannels || out.channels != kTemporalOutChannels) {
+    return QStringLiteral("declared temporal input %1 and output %2; C=11 on input and C=3 on output required").arg(in.describe(), out.describe());
+  }
+  if ((in.height && *in.height <= 0) || (in.width && *in.width <= 0) || (out.height && *out.height <= 0) || (out.width && *out.width <= 0)) {
+    return QStringLiteral("declared temporal input %1 and output %2 carry a non-positive H/W").arg(in.describe(), out.describe());
+  }
+  if (in.hasGeometry() && out.hasGeometry()) {
+    const std::optional<int> scale = ModelProfile{in, out}.derivedUniformScale();
+    if (!scale.has_value() || *scale != 1) {
+      return QStringLiteral("declared temporal output %1 is not the same geometry as input %2; RIFE interpolates without rescaling").arg(out.describe(), in.describe());
+    }
+  }
+  return QString();
+}
+
+QString temporalReferenceRefusal(const ModelProfile& declared, const ModelProfile& reference) {
+  const QString candidateRefusal = temporalCandidateRefusal(declared);
+  if (!candidateRefusal.isEmpty()) return candidateRefusal;
+  const QString referenceRefusal = temporalCandidateRefusal(reference);
+  if (!referenceRefusal.isEmpty()) return referenceRefusal;
+  if (!reference.input.hasGeometry() || !reference.output.hasGeometry()) {
+    return QStringLiteral("the temporal reference %1 -> %2 has no concrete geometry; a run returns shapes, so a declaration is not a proof").arg(reference.input.describe(), reference.output.describe());
+  }
+  const auto statedByRun = [](const TensorProfile& declaredTensor, const TensorProfile& referenceTensor) {
+    if (declaredTensor.dtype != referenceTensor.dtype) return false;
+    if (declaredTensor.rank != referenceTensor.rank) return false;
+    if (declaredTensor.batch != referenceTensor.batch) return false;
+    if (declaredTensor.channels != referenceTensor.channels) return false;
+    if (declaredTensor.height.has_value() && declaredTensor.height != referenceTensor.height) return false;
+    if (declaredTensor.width.has_value() && declaredTensor.width != referenceTensor.width) return false;
+    return true;
+  };
+  if (!statedByRun(declared.input, reference.input) || !statedByRun(declared.output, reference.output)) {
+    return QStringLiteral("the temporal reference %1 -> %2 does not prove declared %3 -> %4").arg(reference.input.describe(), reference.output.describe(), declared.input.describe(), declared.output.describe());
+  }
+  const std::optional<int> proofScale = reference.derivedUniformScale();
+  if (!proofScale.has_value() || *proofScale != 1) {
+    return QStringLiteral("the temporal reference %1 -> %2 is not uniform factor 1").arg(reference.input.describe(), reference.output.describe());
+  }
+  return QString();
+}
+
+namespace {
 
 bool readGeometry(const QJsonObject& object, QSize* size, QString* error) {
   if (!noUnknownKeys(object, geometryKeys())) {
@@ -636,6 +718,21 @@ bool readStored(const QString& root, const QString& directory, StoredModel* mode
          QStringLiteral("%1: %2").arg(manifestPath, profileError));
     return false;
   }
+  ModelProfile roleBoundary = parsed.record.actualProfile;
+  if (!isEligibleIoType(roleBoundary.input.dtype) ||
+      !isEligibleIoType(roleBoundary.output.dtype)) {
+    roleBoundary.input.dtype = QString::fromLatin1(kEligibleIoType);
+    roleBoundary.output.dtype = QString::fromLatin1(kEligibleIoType);
+  }
+  const QString roleBoundaryRefusal = parsed.record.role == ModelRole::Temporal
+      ? temporalCandidateRefusal(roleBoundary)
+      : spatialCandidateRefusal(roleBoundary);
+  if (!roleBoundaryRefusal.isEmpty()) {
+    fail(reasonKey, reason, QStringLiteral("model.store.role"),
+         QStringLiteral("%1 declares a boundary that is not valid for its %2 role: %3")
+             .arg(manifestPath, stableName(parsed.record.role), roleBoundaryRefusal));
+    return false;
+  }
 
   const QJsonValue availabilityValue = object.value(QStringLiteral("availability"));
   if (!availabilityValue.isObject()) {
@@ -672,6 +769,7 @@ bool readStored(const QString& root, const QString& directory, StoredModel* mode
     parsed.record.availability = unavailableAvailability(availabilityKey, availabilityReason);
   }
 
+
   // The recorded backend support is required, and is rehydrated here rather than
   // re-derived: a row whose document is silent about where it can run is not a
   // row this reader can rebuild, and one whose list names a backend this build
@@ -687,6 +785,16 @@ bool readStored(const QString& root, const QString& directory, StoredModel* mode
     fail(reasonKey, reason, QStringLiteral("model.store.manifest"),
          QStringLiteral("%1: %2").arg(manifestPath, backendsError));
     return false;
+  }
+  if (parsed.record.role == ModelRole::Temporal) {
+    parsed.record.availableBackends =
+        supportedBackendsForRole(parsed.record.role, parsed.record.availableBackends);
+    if (parsed.record.availableBackends.isEmpty() &&
+        parsed.record.availability.isUsable()) {
+      parsed.record.availability =
+          unavailableAvailability(QStringLiteral("model.backend.unsupported"),
+                                  temporalBackendUnavailableReason());
+    }
   }
 
   QString storedFile;
@@ -756,6 +864,14 @@ bool readStored(const QString& root, const QString& directory, StoredModel* mode
     }
   }
 
+  if (parsed.record.role == ModelRole::Temporal &&
+      parsed.record.availability.value == Availability::Ready &&
+      !object.contains(QStringLiteral("reference"))) {
+    fail(reasonKey, reason, QStringLiteral("model.store.proof"),
+         QStringLiteral("%1 offers a temporal row without its CPU reference proof")
+             .arg(manifestPath));
+    return false;
+  }
   if (object.contains(QStringLiteral("reference"))) {
     const QJsonValue referenceValue = object.value(QStringLiteral("reference"));
     if (!referenceValue.isObject()) {
@@ -800,7 +916,9 @@ bool readStored(const QString& root, const QString& directory, StoredModel* mode
            QStringLiteral("%1: %2").arg(manifestPath, profileError));
       return false;
     }
-    const QString proofRefusal = spatialReferenceRefusal(parsed.record.actualProfile, reference);
+    const QString proofRefusal = parsed.record.role == ModelRole::Temporal
+        ? temporalReferenceRefusal(parsed.record.actualProfile, reference)
+        : spatialReferenceRefusal(parsed.record.actualProfile, reference);
     if (!proofRefusal.isEmpty()) {
       fail(reasonKey, reason, QStringLiteral("model.store.proof"),
            QStringLiteral("%1: the reference profile is not consistent with the declared "
@@ -950,82 +1068,11 @@ bool ModelInventory::ensureOwned(QString* reason) const {
   return true;
 }
 
-ModelImportOutcome ModelInventory::importFile(const QString& sourcePath,
-                                              const InspectionRuntime& runtime,
-                                              const QSize& stageGeometry,
-                                              const BackendAvailability& backends,
-                                              const QString& termsNote,
-                                              ImportCancellation* cancellation) {
-  ModelImportOutcome outcome;
-  const auto refuse = [&outcome](const QString& key, const QString& text) {
-    outcome.ok = false;
-    outcome.published = false;
-    outcome.reasonKey = key;
-    outcome.reason = text;
-    return outcome;
-  };
-
-  const QFileInfo sourceInfo(QDir::cleanPath(sourcePath));
-  if (sourcePath.isEmpty() || !sourceInfo.isAbsolute()) {
-    return refuse(QStringLiteral("model.source.absolute"),
-                  QStringLiteral("the model path '%1' is not an absolute path").arg(sourcePath));
-  }
-  if (!sourceInfo.isFile()) {
-    return refuse(QStringLiteral("model.source.missing"),
-                  QStringLiteral("%1 does not exist or is not a regular file").arg(sourcePath));
-  }
-  const QString canonicalSource = sourceInfo.canonicalFilePath();
-  if (canonicalSource.isEmpty()) {
-    return refuse(QStringLiteral("model.source.missing"),
-                  QStringLiteral("%1 could not be resolved").arg(sourcePath));
-  }
-
-  QFile file(canonicalSource);
-  if (!file.open(QIODevice::ReadOnly)) {
-    return refuse(QStringLiteral("model.source.unreadable"),
-                  QStringLiteral("%1 cannot be read: %2")
-                      .arg(canonicalSource, file.errorString()));
-  }
-  const QByteArray bytes = file.readAll();
-  if (file.error() != QFile::NoError) {
-    return refuse(QStringLiteral("model.source.unreadable"),
-                  QStringLiteral("%1 could not be read: %2")
-                      .arg(canonicalSource, file.errorString()));
-  }
-  file.close();
-
-  if (cancellation != nullptr && cancellation->isCancelled()) {
-    // A cancel that arrived before the graph was inspected: the CPU reference is
-    // never run and the store is never touched.
-    return refuse(QStringLiteral("native.import.cancelled"),
-                  QStringLiteral("the import was cancelled before inspection began"));
-  }
-
-  const InspectionResult inspection = inspectGraph(runtime, bytes, stageGeometry);
-  if (!inspection.ok) {
-    // A refusal publishes nothing: a truncated graph, two inputs, a rank-5
-    // boundary or a non-uniform declared scale leaves the store untouched.
-    return refuse(inspection.reasonKey, inspection.reason);
-  }
-
-  // The publication gate: the one atomic step that commits the import. If a
-  // cancel won the race while the graph was being inspected, nothing is written
-  // and the outcome says so; if this call passes, the copy is committed and a
-  // later cancel is refused rather than re-labelling a committed row.
-  if (cancellation != nullptr && !cancellation->beginPublication()) {
-    return refuse(QStringLiteral("native.import.cancelled"),
-                  QStringLiteral("the import was cancelled before anything was published"));
-  }
-
-  const QString displayName = sourceInfo.completeBaseName();
-  return publish(bytes, inspection, canonicalSource, displayName, backends, termsNote);
-}
-
 ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
                                            const InspectionResult& inspection,
                                            const QString& sourcePath, const QString& displayName,
                                            const BackendAvailability& backends,
-                                           const QString& termsNote) {
+                                           const QString& termsNote, ModelRole role) {
   ModelImportOutcome outcome;
   const auto refuse = [&outcome](const QString& key, const QString& text) {
     outcome.ok = false;
@@ -1043,14 +1090,33 @@ ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
 
   const QString digest = sha256HexOf(bytes);
   const ModelProfile declared = inspection.declared;
-  const ModelRole role = ModelRole::Spatial;
 
   const bool fp16 = isEligibleIoType(declared.input.dtype) &&
                     isEligibleIoType(declared.output.dtype);
+  if (fp16) {
+    const QString boundaryRefusal = role == ModelRole::Temporal
+        ? temporalCandidateRefusal(declared)
+        : spatialCandidateRefusal(declared);
+    if (!boundaryRefusal.isEmpty()) {
+      return refuse(QStringLiteral("model.profile.ineligible"), boundaryRefusal);
+    }
+  }
   AvailabilityState availability;
   std::optional<StageResolution> importResolution;
   std::optional<ModelProfile> verifiedReferenceProfile;
-  if (!fp16) {
+  if (role == ModelRole::Temporal && !fp16) {
+    // Same recording rule under the temporal boundary: only the dtype may be wrong,
+    // so the fp16-carrying sample must pass the temporal candidate rule, and the
+    // recorded reason names the dtype actually declared. Nothing is executed.
+    ModelProfile fp16Sample = declared;
+    fp16Sample.input.dtype = QString::fromLatin1(kEligibleIoType);
+    fp16Sample.output.dtype = QString::fromLatin1(kEligibleIoType);
+    if (!temporalCandidateRefusal(fp16Sample).isEmpty()) {
+      return refuse(QStringLiteral("model.profile.ineligible"), temporalCandidateRefusal(declared));
+    }
+    availability = unavailableAvailability(QStringLiteral("model.io.unsupported"),
+                                            temporalCandidateRefusal(declared));
+  } else if (!fp16) {
     // The dtype is the only thing wrong with this boundary: record the row as
     // unsupported, naming the observed dtype, and run nothing. The candidate
     // rule is used so a symbolic output batch in an unsupported dtype is still
@@ -1066,15 +1132,49 @@ ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
     }
     availability = unavailableAvailability(QStringLiteral("model.io.unsupported"),
                                             spatialCandidateRefusal(declared));
-  } else {
-    const QString candidateRefusal = spatialCandidateRefusal(declared);
-    if (!candidateRefusal.isEmpty()) {
-      return refuse(QStringLiteral("model.profile.ineligible"), candidateRefusal);
+  } else if (role == ModelRole::Temporal) {
+    // Temporal proof arrives from the entry point's own CPU run via InspectionResult.
+    // Temporal rows are never offered on declaration alone: the concrete factor-1
+    // boundary must arrive in `inspection` from the entry point's own CPU run.
+    if (!inspection.referenceRan || !inspection.verifiedReferenceProfile.has_value() ||
+        !inspection.resolvedGeometry.has_value() || !inspection.resolvedScale.has_value()) {
+      QString temporalKey = inspection.referenceKey;
+      QString temporalText = inspection.referenceReason;
+      if (temporalKey.isEmpty()) temporalKey = QStringLiteral("model.reference.needed");
+      if (temporalText.isEmpty()) {
+        temporalText = QStringLiteral("the temporal boundary can only be offered once a real CPU reference run proves a concrete 1x11 to 1x3 output at the supplied shape");
+      }
+      availability = unavailableAvailability(temporalKey, temporalText);
+    } else {
+      const ModelProfile& proofT = *inspection.verifiedReferenceProfile;
+      const QString proofRefusalT = temporalReferenceRefusal(declared, proofT);
+      if (!proofRefusalT.isEmpty()) {
+        return refuse(QStringLiteral("model.profile.ineligible"), proofRefusalT);
+      }
+      if (!proofT.input.hasGeometry() || !proofT.output.hasGeometry() ||
+          QSize(static_cast<int>(*proofT.input.width), static_cast<int>(*proofT.input.height)) != inspection.runGeometry ||
+          QSize(static_cast<int>(*proofT.output.width), static_cast<int>(*proofT.output.height)) != *inspection.resolvedGeometry ||
+          !proofT.derivedUniformScale().has_value() || *proofT.derivedUniformScale() != *inspection.resolvedScale ||
+          *inspection.resolvedScale != 1) {
+        return refuse(QStringLiteral("model.profile.ineligible"),
+                      QStringLiteral("the temporal verified boundary and the geometry the run reported are not the same factor-1 fact"));
+      }
+      availability = readyAvailability();
+      verifiedReferenceProfile = proofT;
+      StageResolution resolutionT;
+      resolutionT.input = QSize(static_cast<int>(*proofT.input.width), static_cast<int>(*proofT.input.height));
+      resolutionT.output = QSize(static_cast<int>(*proofT.output.width), static_cast<int>(*proofT.output.height));
+      resolutionT.scale = 1;
+      resolutionT.fromCpuReference = true;
+      resolutionT.verifiedReferenceProfile = proofT;
+      importResolution = resolutionT;
     }
-    // The strict rule, and whether the declaration alone can vouch for the row.
-    // A symbolic output batch passes only the candidate rule; an unresolved
-    // geometry knows no H/W at import time. Both need the concrete boundary a
-    // real CPU reference run produced before the row may be offered.
+  } else {
+    // Spatial: the declaration alone decides whether a CPU reference run is
+    // required - a fixed, strictly-eligible boundary answers for itself, while a
+    // symbolic output batch or an H/W the graph left dynamic is only offered once
+    // a run proved the concrete N=1/C=3 geometry it produces. `spatialCandidateRefusal`
+    // was already checked for this role above, so only the proof remains.
     const bool strictEligible = spatialEligibilityRefusal(declared).isEmpty();
     const bool needsReference = declared.isDynamicGeometry() || !strictEligible;
     if (!needsReference) {
@@ -1100,6 +1200,13 @@ ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
         importResolution = resolution;
       }
     }
+  }
+  const QVector<Backend> recordedBackends =
+      supportedBackendsForRole(role, backends.available);
+  if (role == ModelRole::Temporal && recordedBackends.isEmpty() &&
+      availability.isUsable()) {
+    availability = unavailableAvailability(QStringLiteral("model.backend.unsupported"),
+                                           temporalBackendUnavailableReason());
   }
 
   const QString contentId = computeContentId(role, digest, declared);
@@ -1128,14 +1235,12 @@ ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
   // The concrete boundary the run produced is separate evidence; the id and the
   // declared profile above remain exactly what the graph stated.
   record.verifiedReferenceProfile = verifiedReferenceProfile;
-  // Model compatibility, kept apart from runtime presence. What the provisioner
-  // supplies is the only claim about this model that exists, so it is exactly what
-  // the row records: an empty supply is not a licence to claim this build's
-  // vocabulary, and a model vouched for on no backend is planned on none. A later
-  // import of these same bytes may raise the claim (see updateRecordedSupport);
-  // which backends the runtime actually carries is a separate fact the planner is
-  // given, and a backend it no longer carries is refused there.
-  record.availableBackends = backends.available;
+  // Model compatibility, kept apart from runtime presence. The provisioner's
+  // claim is filtered through the role's native route; Temporal supports TensorRT
+  // only, never DirectML. An empty compatible supply is not a licence to claim
+  // this build's vocabulary. Which backends the runtime actually carries remains
+  // a separate fact the planner is given.
+  record.availableBackends = recordedBackends;
   record.termsNote = termsNote;
   record.availability = availability;
 
@@ -1147,17 +1252,18 @@ ModelImportOutcome ModelInventory::publish(const QByteArray& bytes,
     if (readStored(root_, finalDirectory, &existing, &existingKey, &existingReason, true) &&
         existing.record.onnxSha256 == digest) {
       // These exact bytes are already published under this identity, so nothing is
-      // written again. A provisioner may, however, now vouch for a backend the row
-      // was not published with, and that single claim is updated in the row's own
-      // document rather than frozen at whatever was known first. A supply that
-      // names no backend says nothing new, so it leaves the recorded support alone
-      // instead of erasing it.
-      if (!backends.available.isEmpty() &&
-          !sameBackendSet(existing.record.availableBackends, backends.available)) {
+      // written again. A provisioner may now vouch for an additional compatible
+      // backend; Temporal readiness is also refreshed from this import's CPU proof.
+      // The graph identity, bytes, provenance and proof stay unchanged. A supply
+      // with no compatible backend says nothing new and never erases existing support.
+      if (!recordedBackends.isEmpty() &&
+          (!sameBackendSet(existing.record.availableBackends, recordedBackends) ||
+           (role == ModelRole::Temporal &&
+            existing.record.availability.value != record.availability.value))) {
         QString updateKey;
         QString updateReason;
-        if (!updateRecordedSupport(finalDirectory, existing, backends.available, &updateKey,
-                                   &updateReason)) {
+        if (!updateRecordedSupport(finalDirectory, existing, recordedBackends,
+                                   record.availability, &updateKey, &updateReason)) {
           return refuse(updateKey, updateReason);
         }
         StoredModel reread;

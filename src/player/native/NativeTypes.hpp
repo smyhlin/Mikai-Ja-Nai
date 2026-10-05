@@ -135,6 +135,20 @@ struct SelectionState {
   bool operator!=(const SelectionState& other) const { return !(*this == other); }
 };
 
+/// A CUDA device UUID is sixteen bytes of hexadecimal, but its observed spelling is
+/// not fixed. Producers present the same device as the bare 32-hex payload, as
+/// the dashed 8-4-4-4-12 form, and behind a `GPU-` prefix. That prefix is
+/// presentation, not another GPU: it names the vendor the payload already
+/// names. Case and punctuation are presentation too. The payload is what is
+/// recorded and what stays authoritative; nothing here normalizes a recorded
+/// value, an engine identity, a manifest field or a build key.
+
+/// Whether two observed device spellings name the same CUDA device: the payload
+/// behind an optional `GPU-` prefix must be equal ignoring case and punctuation.
+/// Two genuinely different payloads are never equal, and no adapter, ordinal or
+/// default is invented to make a comparison succeed.
+bool isSameDeviceUuid(const QString& left, const QString& right);
+
 /// A basename is a legal id; a basename alone is never identity.
 bool isValidModelId(const QString& id);
 

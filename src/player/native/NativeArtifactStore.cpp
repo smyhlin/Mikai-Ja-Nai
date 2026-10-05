@@ -150,6 +150,18 @@ bool resolveEnginePath(const QString& artifactRoot, const QString& ownedRoot,
              .arg(manifest.engine.file));
     return false;
   }
+  // Containment proves where this resolves; representability proves the platform
+  // can receive it. The resolved path is what a native producer is later handed
+  // and deserializes, so it is refused here - before any caller can read it -
+  // rather than at the point of use by a component that does not share this
+  // policy.
+  const NativePathTrust trust = nativePathTrust(canonical, true);
+  if (!trust.trusted) {
+    fail(reasonKey, reason, QStringLiteral("artifact.enginePath"),
+         QStringLiteral("engine file '%1' does not resolve to a usable local path: %2")
+             .arg(manifest.engine.file, trust.reason));
+    return false;
+  }
   *path = canonical;
   clearReason(reasonKey, reason);
   return true;
@@ -270,7 +282,12 @@ bool removeTreeWithProof(const QString& directory, QString* reasonKey, QString* 
       return false;
     }
   }
-  QDir().rmdir(directory);
+  if (!QDir().rmdir(directory)) {
+    fail(reasonKey, reason, QStringLiteral("artifact.cleanupFailed"),
+         QStringLiteral("the regular files were removed but directory %1 could not be removed")
+             .arg(directory));
+    return false;
+  }
   clearReason(reasonKey, reason);
   return true;
 }
@@ -361,6 +378,17 @@ ArtifactStore::ArtifactStore(QString root) : root_(std::move(root)), explicitRoo
 bool ArtifactStore::isOwned(QString* reason) const {
   if (root_.isEmpty()) {
     setReason(reason, QStringLiteral("no artifacts root was supplied"));
+    return false;
+  }
+  // The root is a directory this module may create files in and delete files
+  // from, so what it spells is proved before any containment argument is made
+  // about it: containment is decided on canonical paths, and a canonicalization
+  // of a path that names a device or a redirector share would compare strings
+  // about somewhere the app does not own.
+  const NativePathTrust rootTrust = nativePathTrust(root_, true);
+  if (!rootTrust.trusted) {
+    setReason(reason, QStringLiteral("artifacts root %1 is not a usable local path: %2")
+                          .arg(root_, rootTrust.reason));
     return false;
   }
   if (!QDir::isAbsolutePath(root_)) {
@@ -624,7 +652,13 @@ std::optional<ArtifactRecord> publishArtifact(const ArtifactStore& store,
                   QStringLiteral("staging directory %1 could not be created").arg(stagingDirectory));
   }
   const auto abandon = [&](const QString& key, const QString& text) {
-    removeTreeWithProof(stagingDirectory, nullptr, nullptr);
+    QString cleanupKey;
+    QString cleanupReason;
+    if (!removeTreeWithProof(stagingDirectory, &cleanupKey, &cleanupReason)) {
+      return refuse(QStringLiteral("publish.cleanupFailed"),
+                    QStringLiteral("%1 (%2); staging cleanup also failed (%3): %4")
+                        .arg(text, key, cleanupKey, cleanupReason));
+    }
     return refuse(key, text);
   };
 
@@ -975,23 +1009,111 @@ bool removeArtifact(const ArtifactStore& store, const QString& buildKey, QString
     return false;
   }
 
-  // Only the engine the manifest names, proved byte-for-byte above, and the
-  // manifest itself are removed. Anything else the directory holds was not
-  // published by this cache and is left alone; the directory goes only when that
-  // leaves it empty. A flat engine name - enforced by the manifest invariant -
-  // is what makes removing those two files leave exactly an empty directory, so
-  // no leftover nested directory can block re-publication.
-  if (!QFile::remove(enginePath)) {
+  // First atomically move the complete, proved directory out of the published
+  // name. A failed file deletion can therefore never leave a damaged artifact
+  // selectable under its content id. Unknown entries travel with the directory
+  // and are never traversed or deleted.
+  const QString quarantineName =
+      QStringLiteral(".deleting-%1-%2")
+          .arg(directoryName,
+               QUuid::createUuid().toString(QUuid::WithoutBraces).left(8));
+  const QString quarantine = QDir(store.root()).filePath(quarantineName);
+  if (!QDir().rename(directory, quarantine)) {
     fail(reasonKey, reason, QStringLiteral("artifact.removeFailed"),
-         QStringLiteral("the engine %1 could not be removed").arg(enginePath));
+         QStringLiteral("the proved artifact directory %1 could not be moved out of the published "
+                        "name; it remains unchanged")
+             .arg(directory));
     return false;
   }
-  if (!QFile::remove(manifestPath)) {
-    fail(reasonKey, reason, QStringLiteral("artifact.removeFailed"),
-         QStringLiteral("the manifest %1 could not be removed").arg(manifestPath));
+
+  const QString quarantinedEngine =
+      QDir(quarantine).filePath(QFileInfo(enginePath).fileName());
+  const QString quarantinedManifest =
+      QDir(quarantine).filePath(ArtifactStore::artifactManifestFileName());
+  ArtifactRecord quarantinedRecord = record;
+  quarantinedRecord.root = quarantine;
+  quarantinedRecord.manifestPath = quarantinedManifest;
+  QString proofKey;
+  QString proofReason;
+  if (!readManifestFile(quarantinedManifest, quarantine, &quarantinedRecord.manifest,
+                        &proofKey, &proofReason) ||
+      quarantinedRecord.manifest.buildKey != buildKey ||
+      !engineMatchesRecord(store, quarantinedRecord, nullptr, &proofKey, &proofReason)) {
+    if (proofReason.isEmpty()) {
+      proofReason = QStringLiteral("the relocated manifest records a different build key");
+    }
+    fail(reasonKey, reason, QStringLiteral("artifact.quarantineUnproven"),
+         QStringLiteral("the artifact changed while being quarantined and is left at %1: %2")
+             .arg(quarantine, proofReason));
     return false;
   }
-  QDir().rmdir(directory);
+  QFile manifestFile(quarantinedManifest);
+  if (!manifestFile.remove()) {
+    QString removeError = manifestFile.errorString();
+    if (removeError.isEmpty()) removeError = QStringLiteral("the filesystem refused the removal");
+    const QString cause =
+        QStringLiteral("the manifest %1 could not be removed: %2")
+            .arg(quarantinedManifest, removeError);
+    ArtifactRecord restoreRecord = record;
+    restoreRecord.root = quarantine;
+    restoreRecord.manifestPath = quarantinedManifest;
+    QString restoreKey;
+    QString restoreReason;
+    const bool manifestStillMatches =
+        readManifestFile(quarantinedManifest, quarantine, &restoreRecord.manifest,
+                         &restoreKey, &restoreReason) &&
+        restoreRecord.manifest.buildKey == record.manifest.buildKey &&
+        restoreRecord.manifest.engineSha256 == record.manifest.engineSha256 &&
+        restoreRecord.manifest.engine.file == record.manifest.engine.file;
+    if (manifestStillMatches && restoreReason.isEmpty()) {
+      engineMatchesRecord(store, restoreRecord, nullptr, &restoreKey, &restoreReason);
+    }
+    const bool stillComplete = manifestStillMatches && restoreReason.isEmpty();
+    const bool restored = stillComplete && QDir().rename(quarantine, directory);
+    if (!stillComplete && restoreReason.isEmpty()) {
+      restoreReason = QStringLiteral("the relocated manifest no longer describes the original artifact");
+    }
+    const QString detail =
+        restored ? QStringLiteral("; the complete verified artifact was restored")
+                 : QStringLiteral("; the incomplete or unverified artifact remains unselectable at %1%2")
+                       .arg(quarantine,
+                            stillComplete ? QStringLiteral(" because it could not be restored")
+                                          : QStringLiteral(": %1").arg(restoreReason));
+    fail(reasonKey, reason, QStringLiteral("artifact.removeFailed"), cause + detail);
+    return false;
+  }
+
+  QFile engineFile(quarantinedEngine);
+  if (!engineFile.remove()) {
+    QString removeError = engineFile.errorString();
+    if (removeError.isEmpty()) removeError = QStringLiteral("the filesystem refused the removal");
+    const QString cause =
+        QStringLiteral("the engine %1 could not be removed: %2")
+            .arg(quarantinedEngine, removeError);
+    fail(reasonKey, reason, QStringLiteral("artifact.removeFailed"),
+         QStringLiteral("the manifest was removed, but %1; the incomplete artifact remains "
+                        "unselectable at %2")
+             .arg(cause, quarantine));
+    return false;
+  }
+
+  const QFileInfoList remaining =
+      QDir(quarantine).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+  if (remaining.isEmpty()) {
+    if (!QDir().rmdir(quarantine)) {
+      fail(reasonKey, reason, QStringLiteral("artifact.cleanupFailed"),
+           QStringLiteral("the proved files were removed but empty quarantine directory %1 could "
+                          "not be removed")
+               .arg(quarantine));
+      return false;
+    }
+  } else if (!QDir().rename(quarantine, directory)) {
+    fail(reasonKey, reason, QStringLiteral("artifact.cleanupFailed"),
+         QStringLiteral("the proved files were removed but foreign entries remain quarantined at "
+                        "%1 because they could not be restored to %2")
+             .arg(quarantine, directory));
+    return false;
+  }
   clearReason(reasonKey, reason);
   return true;
 }

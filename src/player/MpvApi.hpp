@@ -20,6 +20,11 @@ namespace mplayer {
 // root/modulePath are absolute and canonical; deps are canonical dependency
 // directories inside root. System DLLs are the only dependency that may live
 // outside root and are found by the restricted search itself.
+//
+// Nothing here names a particular file: the module is whatever path the
+// selection names, in whatever directory it names it, under whatever file name
+// it carries. That is what lets the stock module and a native fork - same
+// loader, same table, same entry points - take one path.
 struct MpvBundle {
     QString root;
     QString modulePath;
@@ -70,6 +75,11 @@ public:
 
     // Failure selects nothing, so a later call can still succeed. A different
     // module is refused by name: swapping it would unmap code live handles use.
+    // A dependency directory that cannot be registered is refused rather than
+    // skipped, so a module never loads against a closure other than the one its
+    // descriptor declared. What load() records is the descriptor as resolved:
+    // canonical root, module path and the dependency directories actually
+    // registered, so bundle() reports what the search uses.
     bool load(const MpvBundle& bundle, QString* reason = nullptr);
 
     bool loaded() const;

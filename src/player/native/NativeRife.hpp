@@ -1,7 +1,8 @@
-// The RIFE capability table and the one typed factory that turns a user's RIFE
-// configuration into a recipe.
+// The RIFE capability table, the exact content pins those curated names resolve
+// to, and the one typed factory that turns a user's RIFE configuration into a
+// recipe.
 //
-// Two facts are load-bearing here.
+// Three facts are load-bearing here.
 //
 //  * Identity is the model name, never an index. The four original v4.14
 //    variants - full and lite, each with and without the ensemble flag - are
@@ -11,13 +12,24 @@
 //    combo box. `rifeModelCode` is the model number the reference conf uses
 //    (414 full, 4141 lite); ensemble is a separate conf key and never changes it.
 //
-//  * Every capability in this build is Unavailable, and every row says why: the
-//    original v4.14 weights are acquired and hashed, but the
-//    converted-graph-to-original-weight lineage hop is unresolved and no
-//    prepared native runtime graph has been provisioned, so nothing can attest
-//    the graph's provenance. The configuration is still a legal, storable
-//    request; the picture stays on the original pipeline until a real source/
-//    graph right and a prepared native pipeline exist. Requesting is
+//  * A curated name is a REQUEST, not a graph. Each one carries an exact content
+//    pin - the lower-case SHA-256 of the exact original graph bytes this build's
+//    model space reaches - and nothing resolves that name to a runnable graph
+//    except `resolveRifeModel`, which joins the pin to an owned temporal row in
+//    the store the caller supplies. The pin is data, not an alias: there is no
+//    second ModelRecord named after a curated variant, and a row that happens to
+//    claim one of these names is never accepted as the model. A pin that is
+//    absent, a row that does not carry it, a row of another role, a declaration
+//    that is not the RIFE boundary, or a missing/disagreeing CPU-reference proof
+//    each keep their own named reason.
+//
+//  * Provenance is still unresolved for redistribution. The four original v4.14
+//    graphs are acquired and byte-verified - 128/128 weight names and shapes,
+//    FP32-to-FP16 rounding bytes identical - against the author's MIT v4.14
+//    full/lite checkpoints, but the exporter identity, the non-weight graph
+//    material and the applicable whole-graph permissions are unresolved. This is
+//    private local proof only; no publicly shippable claim is made here. The
+//    configuration is still a legal, storable request, and requesting is
 //    configuration, not execution - the two are kept apart on purpose.
 //
 // The factory builds only what was asked for: a RIFE-only recipe when no base is
@@ -38,12 +50,41 @@
 namespace mplayer {
 namespace native {
 
-/// The stable key every capability row carries while the weights' lineage and
-/// the prepared runtime graph are unresolved. A row's reason is never empty.
-inline constexpr char kRifeCapabilityReasonKey[] = "rife.capability.unavailable";
+/// One pinned original temporal graph: the exact content digest a curated variant
+/// resolves to, and the acquisition file name that digest was taken from (used
+/// only so a refusal can name the row).
+struct RifeModelPin {
+    RifeVersion version = RifeVersion::V4_14;
+    RifeVariant variant = RifeVariant::Full;
+    bool ensemble = false;
+
+    /// Lower-case SHA-256 of the exact original graph bytes. The content pin: a
+    /// row is this variant exactly when its `onnxSha256` equals this value.
+    QString graphSha256;
+
+    /// The acquisition file name, for refusal sentences only. Never identity and
+    /// never read.
+    QString fileName;
+};
+
+/// The four pinned v4.14 variants, in the stable order the capability table
+/// offers. Data only; nothing here is a claim about what the store holds.
+const QVector<RifeModelPin>& rifeModelPins();
+
+/// The pin for the exact variant identity, or nullptr.
+const RifeModelPin* rifeModelPin(RifeVersion version, RifeVariant variant, bool ensemble);
+
+/// The pin whose content digest is `sha256` (case-insensitive), or nullptr. Two
+/// variants can never share a digest; if that ever happened this returns the
+/// first in table order and `resolveRifeModel` still refuses the ambiguous row.
+const RifeModelPin* rifeModelPinForGraphSha(const QString& sha256);
+
+/// The pin a curated model name (`rife_v4.14_lite_ensemble`, ...) names, or
+/// nullptr. This is identity lookup only - never a resolution.
+const RifeModelPin* rifeModelPinForName(const QString& modelId);
 
 /// One row of the capability table: the exact original variant this build's
-/// model space reaches, and its honest availability.
+/// model space reaches, its content pin, and its honest availability.
 struct RifeCapability {
     RifeVersion version = RifeVersion::V4_14;
     RifeVariant variant = RifeVariant::Full;
@@ -56,17 +97,70 @@ struct RifeCapability {
     /// separate conf key and never changes it.
     int modelCode = 0;
 
-    /// Unavailable in this build, with the fact that blocks it.
+    /// The exact graph digest this row resolves to. Never empty.
+    QString graphSha256;
+
+    /// The owned catalogue row's own content-addressed id, once the pin has been
+    /// resolved against a store. Empty when it has not been resolved here. This
+    /// is the identity planning and selection consume - never the curated name.
+    QString resolvedModelId;
+
+    /// Usability now, with the mandatory reason when it is not.
     AvailabilityState availability;
 };
 
-/// The four v4.14 variants, in a stable order. Every row is Unavailable.
-QVector<RifeCapability> rifeCapabilities();
+/// The outcome of resolving one curated variant against supplied owned rows.
+struct RifeModelResolution {
+    /// The pin the request named, or nullptr when the variant identity is not one
+    /// this build reaches.
+    const RifeModelPin* pin = nullptr;
 
-/// The row naming `modelId`, or nullptr. Identity is the model name.
+    /// The owned row the pin resolved to, pointing into the `CatalogView` the
+    /// resolver was given. Null on refusal. Its lifetime is the caller's.
+    const ModelRecord* record = nullptr;
+
+    /// Empty on success; on refusal the stable key and the sentence.
+    QString reasonKey;
+    QString reason;
+
+    bool resolved() const { return record != nullptr; }
+    /// The owned row's content-addressed id, or empty.
+    QString modelId() const { return record != nullptr ? record->id : QString(); }
+    /// The owned row's content identity, or empty.
+    QString contentId() const { return record != nullptr ? record->contentId() : QString(); }
+};
+
+/// Resolves the exact pinned owned temporal graph a curated variant names.
+///
+/// Never substitutes: it walks `catalog` for the row whose `onnxSha256` equals
+/// the variant's pin, then requires that the row is offered and usable, carries
+/// the Temporal role, declares the RIFE 1xC11 -> 1xC3 fp16 boundary, and carries a
+/// CPU-reference proof that agrees with that declaration. Any other outcome - an
+/// unknown variant, an absent pinned row, a carried pin in a non-temporal row, a
+/// corrupt/unready row, a wrong declared boundary, or a missing/disagreeing
+/// reference - returns a resolution with its own named `reasonKey`/`reason` and a
+/// null `record`. A row that merely claims the curated name is never accepted.
+RifeModelResolution resolveRifeModel(RifeVersion version, RifeVariant variant, bool ensemble,
+                                     const CatalogView& catalog);
+
+/// As above for a recipe's temporal stage: version, variant and ensemble are the
+/// only facts consulted; the stage's factor, order and threshold are preserved by
+/// the caller, never by this join.
+RifeModelResolution resolveRifeModel(const TemporalStage& stage, const CatalogView& catalog);
+
+/// The four curated variants with availability observed from `catalog`. Each row
+/// resolves its pin; a row whose pinned owned graph is present and usable is
+/// offered, and every other row carries the refusal `resolveRifeModel` produced.
+QVector<RifeCapability> rifeCapabilities(const CatalogView& catalog);
+
+/// Identity lookup only: the capability row naming `modelId`, or nullptr. Its
+/// availability has not been observed against any store, so it is Preparing with
+/// the reason that says so - a caller that needs usability must call
+/// `rifeCapabilities(catalog)` or `resolveRifeModel`.
 const RifeCapability* findRifeCapability(const QString& modelId);
 
-/// The row for the exact variant, or nullptr.
+/// The row for the exact variant identity, or nullptr. Same unresolved
+/// availability as above.
 const RifeCapability* findRifeCapability(RifeVersion version, RifeVariant variant, bool ensemble);
 
 /// Everything the user asked a RIFE stage to be, plus the surface it sits on.

@@ -5,6 +5,7 @@
 #include <QList>
 #include <QPoint>
 #include <QPointF>
+#include <QPointer>
 #include <QString>
 #include <QVariant>
 #include <QVariantMap>
@@ -28,8 +29,14 @@ class QVariantAnimation;
 class QWidget;
 QT_END_NAMESPACE
 
+#include <optional>
+
 #include "Anime4K.hpp"
+#include "ProcessingSettingsIntent.hpp"
+#include "native/NativeFrameFixture.hpp"
 #include "native/NativeMenu.hpp"
+#include "native/NativePlaybackController.hpp"
+#include "native/NativePreparationContext.hpp"
 
 namespace mplayer {
 class VideoSurface;
@@ -220,16 +227,71 @@ public:
     /// failure on purpose: it shows its own reason, offers no stream retry, and
     /// never re-extracts a signed URL or re-probes a quality.
     void reportNativeProcessingFailure(const QString& reason);
-    /// Re-reads the stored request, the producer availability and the selected
-    /// runtime, takes the filter's own status from the surface's reader, and
-    /// pushes the four at the shell as one input set. The host calls this after
-    /// the settings dialog is accepted; a status change arrives through
-    /// `VideoSurface::nativeStatusChanged` instead.
+    /// The named form the surface's `nativeProcessingFailure` carries. A bare
+    /// refusal still names itself when the reason text is empty.
+    void reportNativeProcessingFailure(const QString& reasonKey, const QString& reason);
+    /// Submits a whole resolved admission to the core that owns playback right
+    /// now - the float's while PiP is up, the main core's otherwise. The epoch is
+    /// stamped from that core's own observed source epoch before it goes, and a
+    /// refused replacement leaves the previous plan exactly where it was.
+    void submitNativeAdmission(const native::PreparedAdmissionRequest& request);
+    /// Replaces the shell's four native inputs (request, producer availability,
+    /// selected runtime, the filter's own status) with what the core that owns
+    /// playback right now actually reported - the float's own while PiP is up.
+    /// The availability is the pure projection of that core's observed factory,
+    /// so a core with no document for its current source names the roles
+    /// unavailable rather than inheriting another core's. This is the ownership
+    /// path's half: it never announces, because a request sent while a claim
+    /// hand-off is still moving would be refused on the lease the outgoing core
+    /// has not released yet.
+    void pushNativeInputs();
+    /// `pushNativeInputs()` plus a request announcement. The host calls this
+    /// after the settings dialog is accepted or an action changes the stored
+    /// request; a status change arrives through `VideoSurface::nativeStatusChanged`
+    /// instead.
     void refreshNativeInputs();
+    /// Re-reads every stored player preference and installs what changed: the
+    /// native toggle binding, the Anime4K preset bindings, the stored native
+    /// request, then the native inputs plus the deduplicated request
+    /// announcement. This is what an application owner calls after a settings
+    /// save is accepted, because the store is shared and only the running
+    /// process can pick the save up. It is idempotent, so a save that changed
+    /// nothing announces nothing; it never reopens the stream, never calls the
+    /// API, never touches the quality cache and never replaces an effective
+    /// native plan.
+    void refreshStoredSettings();
     /// Opens the first stream; the engine exists from the shell's surface.
     void startPlayer();
 
     bool isPipActive() const;
+    /// True while the core that owns playback - the float's while PiP is up -
+    /// actually has a video loaded. The dialog hides itself for PiP, so this,
+    /// not isVisible(), is what says it still owns a running stream.
+    bool hasActiveSource() const;
+    /// The observed source/device facts of the core that owns playback right
+    /// now, for the preparation path. Nullopt - never a guessed UUID, cadence or
+    /// module path - whenever that core has not actually observed them. Forwarded
+    /// to the float's surface while PiP owns playback.
+    std::optional<native::NativePreparationContext> nativePreparationContext() const;
+    /// Arms the probe binding on the core that owns playback, so the producer can
+    /// publish the observed source and device the preparation path needs. Armed
+    /// only by an explicit native or preparation request - never at startup - and
+    /// idempotent, so a repeated call costs nothing. `backend` is the DESIRED
+    /// backend and is passed through to the core's alignment, so a preparation
+    /// made from an unsaved provider choice aligns to that provider's decoder
+    /// rather than to whatever the stored preference named.
+    void armNativeProbe(native::Backend backend = native::Backend::TensorRT);
+    /// Requests one actual decoded source frame from the core that owns playback
+    /// right now, for the preparation reference path. Asynchronous, and refused
+    /// by the surface while a native plan could be what the chain holds or while
+    /// a preparation build holds the shared work lease.
+    ///
+    /// `frameIndex` is 0 for the first observation and 1 for the adjacent second
+    /// of a temporal pair. Index 1 is a REAL neighbouring source frame, obtained
+    /// at the observed source cadence and followed by a restore to the position
+    /// playback was parked at; it is never the first frame captured twice, and a
+    /// source that cannot produce a genuine neighbour is refused by name.
+    void requestNativeReferenceFrame(int frameIndex = 0);
     /// The height the shell is currently labelled with, 0 when unknown.
     int currentHeight() const { return currentHeight_; }
     /// The embed the track popup marks as current, for the host to read back.
@@ -247,8 +309,37 @@ signals:
     /// The engine could not be created at all: the host should provision the
     /// mpv runtime and call startPlayer() again.
     void runtimeRequested();
+    /// The viewer asked for native processing, and the core that owns playback
+    /// has actually observed its own source and device. The assembly layer
+    /// resolves this into a whole prepared admission and answers with
+    /// submitNativeAdmission(). Never emitted from a preference alone, and never
+    /// twice for the same observation.
+    void nativeAdmissionRequested(const native::SelectionState& selection,
+                                  const native::NativePreparationContext& context);
+    /// The selection or the owning core changed while an assembly was in flight.
+    /// Any request being resolved for the previous generation is stale.
+    void nativeAdmissionCancelled();
+    /// One captured reference frame, exactly as the core that owns playback
+    /// returned it. `framePosition` is where playback actually was when the core
+    /// answered, which is what a caller restores afterwards; `frameFps` is the
+    /// observed source cadence, absent when it was never observed rather than
+    /// defaulted to a guessed rate.
+    void nativeReferenceFrameReady(const native::FrameFixture& frame, quint64 sourceEpoch,
+                                   double framePosition, int frameIndex,
+                                   std::optional<native::Rational> frameFps);
+    /// The capture could not be produced, named, for `frameIndex`. Never a
+    /// fabricated frame. The index is carried so a caller can drop a refusal that
+    /// belongs to a request it has already abandoned.
+    void nativeReferenceFrameFailed(const QString& reasonKey, const QString& reason,
+                                    int frameIndex);
+    /// A processing-failure remedy that needs the application to open its own
+    /// existing Settings surface at a named place. The dialog never re-extracts a
+    /// URL, never re-probes a quality and never starts preparation itself:
+    /// Original needs no host at all and is answered inside the dialog.
+    void processingSettingsRequested(ProcessingSettingsIntent intent);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
@@ -284,6 +375,28 @@ private:
     /// callback. Used for a native refusal and for a native failure, never for a
     /// media load failure.
     void showProcessingStatus(const QString& reason);
+    /// The actionable form of a processing failure: the named reason plus the
+    /// three remedies that can actually change it. Kept separate from
+    /// showProcessingStatus(), which is the generic native-status line that
+    /// progress and an acknowledged Off also use - so remedies are never shown
+    /// for a status that is not a failure, and a status update never retires
+    /// remedies that are still the viewer's to act on.
+    void showProcessingFailure(const QString& reasonKey, const QString& reason);
+    /// True while this failure row is up. The remedies live exactly as long as
+    /// it does; nothing else in the status panel consults it.
+    bool hasProcessingFailure() const { return processingActive_; }
+    void onProcessingPrepareRequested();
+    void onProcessingProvidersRequested();
+    void onProcessingOriginalRequested();
+    /// True while the core that owns playback holds a confirmed admission or an
+    /// effective plan. A refused replacement kept that plan, so "the Original
+    /// picture" must not be claimed in that case.
+    bool nativeEffectiveActive() const;
+    /// States what is actually keeping the picture on screen.
+    QString processingFailureMessage(const QString& reason) const;
+    /// Retires only the processing row, leaving an outstanding media error and
+    /// its retry chip exactly where they are.
+    void retireProcessingRow();
     void retryPlayback();
     void watchPanels();
     void placeWindowed();
@@ -310,9 +423,45 @@ private:
     /// menu, the settings dialog and the toggle, so the three cannot disagree
     /// about what was asked for.
     void onNativeActionRequested(native::menu::Action action, const QString& value);
-    /// The filter's own status changed. The held inputs and the HUD follow it,
-    /// and nothing here re-arms a poll the surface has already stopped.
+    /// The filter's own status changed. The held inputs, the HUD and the
+    /// availability follow it, and nothing here re-arms a poll the surface has
+    /// already stopped. A document from a core that no longer owns playback is
+    /// dropped: it says nothing about the source the viewer is watching.
     void onNativeStatusChanged(const native::NativeStatusView& status);
+    /// The core's own transaction state changed. This is the acknowledgement
+    /// channel for a PiP hand-off: the transition waits for the suspending core
+    /// to settle here instead of polling a flag.
+    void onNativePlaybackStatusChanged(const native::NativePlaybackController::Status& status);
+    /// A native failure from a core's controller. During a PiP hand-off it
+    /// settles the transition; otherwise it is reported as a processing failure
+    /// that never touches the media path.
+    void onNativeProcessingFailure(const QString& reasonKey, const QString& reason);
+    /// The surface that owns playback now: the float's while PiP is up.
+    VideoSurface* playbackSurface() const;
+    /// True while the stored request asks for native processing. The request is
+    /// never treated as effective; this only decides whether a suspend/resume
+    /// hand-off is worth arming.
+    bool nativeRequestEnabled() const;
+    /// Announces the stored request to the assembly layer, but only when the
+    /// owning core has ACTUALLY observed its source and device, and only when
+    /// one of those facts or the selection is new. It never builds a plan: the
+    /// assembly runs where the owned model store, the measured build identity
+    /// and the observed runtime backends live.
+    void announceNativeRequest();
+    /// Activates native processing on the float's own core, once the main core
+    /// has released the single process-wide inference claim.
+    void activateFloatNative();
+    /// Runs the deferred half of a PiP hand-off after the suspending core
+    /// settled, or after it failed. A hand-off never waits forever.
+    void finishNativeHandoff();
+    void onNativeReferenceFrameReady(const native::FrameFixture& frame, quint64 sourceEpoch,
+                                     double framePosition, int frameIndex,
+                                     std::optional<native::Rational> frameFps);
+    void onNativeReferenceFrameFailed(const QString& reasonKey, const QString& reason,
+                                      int frameIndex);
+    /// Names a capture that can no longer arrive - the owning core changed or
+    /// went away - so a caller never waits on a reply from another core.
+    void cancelPendingReferenceCapture(const QString& reasonKey, const QString& reason);
     /// Pushes the polling demand at the surface: the request is on and a core
     /// exists to read from. A demand, not a timer - the surface issues at most
     /// one outstanding request and halts itself after a terminal state or an
@@ -350,6 +499,10 @@ private:
     QPoint settingsAnchor() const;
     void enterPip();
     void leavePip(bool closing = false);
+    /// Acknowledges the parked float's native stop while its core and GL context
+    /// are still alive, so releasePipPool() never destroys a pending transition.
+    /// False when a stop never acknowledged within its bound.
+    bool settleParkedNative();
     /// Destroys the pooled float, whichever state PiP is in. The float is
     /// parentless, so the dialog is the only thing that can release it.
     void releasePipPool();
@@ -367,6 +520,9 @@ private:
     QPushButton* seriesButton_ = nullptr;
     QLabel* statusLabel_ = nullptr;
     QPushButton* retryButton_ = nullptr;
+    QPushButton* processingPrepareButton_ = nullptr;
+    QPushButton* processingProvidersButton_ = nullptr;
+    QPushButton* processingOriginalButton_ = nullptr;
     QTimer* statusTimer_ = nullptr;
     /// The float on screen, or null when PiP is down. While PiP is up it names
     /// the same object as pipPool_; releasePipPool() is the one place either is
@@ -396,11 +552,47 @@ private:
     bool fullscreen_ = true;
     bool transitioning_ = false;
     bool seriesExpanded_ = false;
+    /// Processing-row liveness, deliberately separate from errorActive_: a
+    /// processing failure never clears a media error's state or hides its retry
+    /// chip, and a media failure never clears these remedies.
+    bool processingActive_ = false;
+    QString lastProcessingReasonKey_;
+    QString lastProcessingReason_;
     bool errorActive_ = false;
     bool refreshAttempted_ = false;
     bool closed_ = false;
     bool forwardingKey_ = false;
     bool pipWasFullscreen_ = false;
+    /// Set for the whole of closeEvent: the native settle spins the event loop,
+    /// so a reentrant close must not tear the same cores down twice.
+    bool shuttingDown_ = false;
+    /// True once closeEvent has really finished its stop and accepted the event.
+    /// The owner closes the dialog again from `playerClosed()` (the page disposes
+    /// the session), and that second close must be accepted, not refused.
+    bool shutdownComplete_ = false;
+    /// The native half of a PiP hand-off. There is one process-wide inference
+    /// claim, so the incoming core may only admit after the outgoing core's
+    /// suspend is acknowledged; this names which half is waiting.
+    enum class NativeHandoff { None, SuspendingMain, SuspendingFloat };
+    NativeHandoff nativeHandoff_ = NativeHandoff::None;
+    /// The float a hand-off is waiting on, guarded: the pooled float can be
+    /// released by the dialog while a transition it started is still in flight.
+    QPointer<PipFloat> nativeHandoffFloat_;
+    /// The last observation that was announced, so the request is reissued only
+    /// when the selection or an observed source/device fact is new - never as a
+    /// busy loop while the context is still being observed.
+    bool nativeRequestAnnounced_ = false;
+    native::SelectionState nativeRequestSelection_;
+    std::optional<native::NativePreparationContext> nativeRequestContext_;
+    /// The one reference capture in flight: which core it was asked of, and the
+    /// source epoch it was asked under, so a reply from another core or another
+    /// source is dropped rather than handed over as the current frame.
+    QPointer<VideoSurface> nativeReferenceSurface_;
+    quint64 nativeReferenceSourceEpoch_ = 0;
+    /// The index the pending capture was asked for, so a reply belonging to a
+    /// request this dialog has moved past is dropped instead of forwarded.
+    int nativeReferenceFrameIndex_ = -1;
+    bool nativeReferencePending_ = false;
     // The float is kept across a PiP session, not destroyed by leavePip(). Each
     // one owns a QOpenGLWidget with a live mpv render context, and building or
     // tearing one down while the other is on screen faults the display driver.

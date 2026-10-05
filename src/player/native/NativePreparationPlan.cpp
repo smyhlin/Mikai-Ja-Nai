@@ -4,6 +4,8 @@
 
 #include <QtCore/QCryptographicHash>
 
+#include "NativeRife.hpp"
+
 namespace mplayer {
 namespace native {
 
@@ -565,36 +567,23 @@ PreparationPlan resolvePreparationPlan(const PlanRequest& request) {
     spatialRecords.append(record);
   }
 
+  // The temporal stage names a curated variant, never a catalogue id: the
+  // variant is joined to the exact pinned owned graph here, and the plan then
+  // carries that graph's own content-addressed id. A missing, corrupt, wrongly
+  // pinned or numerically unproved row keeps its own named reason.
+  const ModelRecord* temporalRecord = nullptr;
   if (request.recipe.temporal.has_value()) {
     const TemporalStage& temporal = *request.recipe.temporal;
-    const ModelRecord* record = request.catalog.find(temporal.modelId());
-    if (record == nullptr) {
-      builder.block(QStringLiteral("model.missing"),
-                    QStringLiteral("recipe %1 names temporal model %2, which is not in the "
-                                   "supplied catalogue; the stage is refused, not skipped")
-                        .arg(request.recipe.id, temporal.modelId()));
-      finishUnavailable();
-      return plan;
-    }
-    QString offerKey;
-    QString offerReason;
-    record->refusal(&offerKey, &offerReason);
-    if (!offerKey.isEmpty()) {
-      builder.block(offerKey, QStringLiteral("recipe %1: %2").arg(request.recipe.id, offerReason),
+    const RifeModelResolution rife = resolveRifeModel(temporal, request.catalog);
+    if (!rife.resolved()) {
+      builder.block(rife.reasonKey,
+                    QStringLiteral("recipe %1: %2").arg(request.recipe.id, rife.reason),
                     static_cast<int>(spatialRecords.size()));
       finishUnavailable();
       return plan;
     }
-    if (record->role != ModelRole::Temporal) {
-      builder.block(QStringLiteral("model.role.mismatch"),
-                    QStringLiteral("recipe %1 names model %2 as the temporal model, but it is a %3 "
-                                   "model")
-                        .arg(request.recipe.id, temporal.modelId(), stableName(record->role)),
-                    static_cast<int>(spatialRecords.size()));
-      finishUnavailable();
-      return plan;
-    }
-    if (!record->supportsBackend(request.recipe.backend)) {
+    temporalRecord = rife.record;
+    if (!temporalRecord->supportsBackend(request.recipe.backend)) {
       builder.block(QStringLiteral("model.backend.unsupported"),
                     QStringLiteral("recipe %1 asks for model %2 on the %3 backend, which that "
                                    "model does not support")
@@ -652,7 +641,10 @@ PreparationPlan resolvePreparationPlan(const PlanRequest& request) {
     ResolvedStage stage;
     stage.kind = StageKind::Temporal;
     stage.role = ModelRole::Temporal;
-    stage.modelId = temporal->modelId();
+    // The resolved owned graph's own id, exactly as for a spatial stage: the
+    // curated variant name above is a request, and the plan carries the identity
+    // planning, selection and admission all join on downstream.
+    stage.modelId = temporalRecord->id;
     stage.recipeIndex = -1;
     stage.inputChannels = kRifeInputChannels;
     stage.outputChannels = kRifeOutputChannels;
@@ -677,10 +669,9 @@ PreparationPlan resolvePreparationPlan(const PlanRequest& request) {
     }
     stage.outputFps = *outFps;
 
-    const ModelRecord* record = request.catalog.find(temporal->modelId());
-    stage.declaredInput = record->actualProfile.input;
-    stage.declaredOutput = record->actualProfile.output;
-    stage.modelContentId = record->contentId();
+    stage.declaredInput = temporalRecord->actualProfile.input;
+    stage.declaredOutput = temporalRecord->actualProfile.output;
+    stage.modelContentId = temporalRecord->contentId();
 
     if (stage.inputShape().isEmpty() || stage.outputShape().isEmpty()) {
       builder.block(QStringLiteral("stage.temporal.geometry.invalid"),

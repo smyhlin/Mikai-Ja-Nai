@@ -1,11 +1,3 @@
-// What a Windows binary declares about itself, read from its bytes alone.
-// Nothing here loads a module or resolves an export: a passing result means
-// "well-formed 64-bit PE whose imports are these names", never that the image
-// will load or that a native filter registered.
-//
-// The delay-import table is walked too - satisfying eager imports while
-// ignoring delayed ones has not closed a closure - including its VA-based
-// descriptor form, which is why the image base is read here.
 
 #pragma once
 
@@ -26,8 +18,16 @@ struct PeImageInfo {
     QStringList delayImports;
 };
 
+struct PeExportInfo {
+    bool ok = false;
+    QString reason;
+    bool exportsMpvClientApiVersion = false;
+};
+
 /// Parses an in-memory PE image. Never throws, never loads.
 PeImageInfo inspectPeImage(const QByteArray& bytes);
+
+PeExportInfo inspectPeExports(const QByteArray& bytes);
 
 /// The only external dependency exception in the design: modules the operating
 /// system owns. API sets match by prefix, since the system decides which

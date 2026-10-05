@@ -3,6 +3,8 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QStringList>
 
+#include <utility>
+
 namespace mplayer {
 namespace native {
 namespace menu {
@@ -33,8 +35,6 @@ QString variantLabel(RifeVariant variant) {
     return QString();
 }
 
-/// The human-readable state; the enum stays logic and `stableName()` stays the
-/// protocol.
 QString uiStateLabel(NativeState state) {
     switch (state) {
         case NativeState::Off: return translated(QT_TRANSLATE_NOOP("NativeMenu", "Off"));
@@ -55,18 +55,6 @@ QString uiStateLabel(NativeState state) {
     return QString();
 }
 
-/// The one open hop behind every RIFE row: the graphs are acquired and byte-verified,
-/// but the conversion-to-original-weight lineage is open, so they are not Ready.
-QString rifeLineageReason() {
-    return translated(QT_TRANSLATE_NOOP(
-        "NativeMenu",
-        "Not Ready: the graphs are acquired and byte-verified, but the "
-        "conversion-to-original-weight lineage is still open, so they cannot be exposed "
-        "as Ready."));
-}
-
-/// Prefers the selection's own fact, then the producer's engine reason, then the
-/// runtime's.
 QString refusalReason(const Inputs& in, const NativeSelectionView& view) {
     if (!view.availability.reason.isEmpty()) {
         return view.availability.reason;
@@ -87,8 +75,6 @@ bool snapshotActive(const Inputs& in) {
     return in.status.snapshot.has_value() && in.status.snapshot->state == NativeState::Active;
 }
 
-/// The fact blocking a capability row: engine first, then runtime, then the option's
-/// own state.
 QString capabilityReason(const Inputs& in, const AvailabilityState& option) {
     if (!option.isUsable() && option.hasMandatoryReason()) {
         return option.reason;
@@ -162,10 +148,38 @@ QString categoryTooltip(const QString& levelId, const Inputs& in) {
             .arg(refusalReason(in, view));
     }
     if (levelId == QLatin1String(kRifeLevelId)) {
+        int configured = 0;
+        int usable = 0;
+        for (const NativeRecipeOption& option : in.availability.recipes) {
+            if (option.rifeModel.isEmpty()) {
+                continue;
+            }
+            ++configured;
+            if (in.availability.engineAvailable && option.availability.isUsable()) {
+                ++usable;
+            }
+        }
+        if (usable > 0) {
+            return translated(QT_TRANSLATE_NOOP(
+                       "NativeMenu",
+                       "Frame interpolation. %1 configured RIFE recipe(s) available."))
+                .arg(usable);
+        }
+        if (configured > 0) {
+            const NativeSelectionView view =
+                evaluateNativeSelection(in.preferences, in.availability);
+            return translated(QT_TRANSLATE_NOOP("NativeMenu", "Frame interpolation. %1"))
+                .arg(refusalReason(in, view));
+        }
+        if (!in.availability.engineReason.isEmpty()) {
+            return translated(QT_TRANSLATE_NOOP(
+                       "NativeMenu",
+                       "Frame interpolation. No RIFE recipe is configured. %1"))
+                .arg(in.availability.engineReason);
+        }
         return translated(QT_TRANSLATE_NOOP(
-                   "NativeMenu",
-                   "Frame interpolation. ")) +
-               rifeLineageReason();
+            "NativeMenu",
+            "Frame interpolation. No RIFE recipe is configured yet."));
     }
     return QString();
 }
@@ -332,9 +346,26 @@ QVector<Row> nativeRows(const Inputs& in) {
 }
 
 QVector<Row> rifeRows(const Inputs& in) {
-    Q_UNUSED(in);
-    // The full/lite axis composed with the ensemble flag; sites are named by the
-    // model name the backend asks for, never a row index.
+    QVector<Row> rows;
+    for (const NativeRecipeOption& option : in.availability.recipes) {
+        if (option.rifeModel.isEmpty()) {
+            continue;
+        }
+        Row row;
+        row.id = QStringLiteral("rife/recipe/") + option.id;
+        row.label = option.label.isEmpty() ? option.id : option.label;
+        row.value = option.id;
+        row.action = Action::SetRecipe;
+        row.current = in.preferences.enabled && in.preferences.recipeId == option.id;
+        row.disabled = !in.availability.engineAvailable || !option.availability.isUsable();
+        row.tooltip =
+            row.disabled
+                ? translated(QT_TRANSLATE_NOOP("NativeMenu", "Not available: %1"))
+                      .arg(capabilityReason(in, option.availability))
+                : translated(QT_TRANSLATE_NOOP("NativeMenu", "Run the native recipe “%1”."))
+                      .arg(row.label);
+        rows.append(std::move(row));
+    }
     struct Variant {
         RifeVariant variant;
         bool ensemble;
@@ -345,9 +376,24 @@ QVector<Row> rifeRows(const Inputs& in) {
         {RifeVariant::Full, true},
         {RifeVariant::Lite, true},
     };
-    QVector<Row> rows;
+    QString gap;
+    if (!in.availability.engineReason.isEmpty()) {
+        gap = in.availability.engineReason;
+    } else if (!in.runtime.reason.isEmpty()) {
+        gap = in.runtime.reason;
+    }
     for (const Variant& entry : kVariants) {
         const QString model = rifeModelName(RifeVersion::V4_14, entry.variant, entry.ensemble);
+        bool configured = false;
+        for (const NativeRecipeOption& option : in.availability.recipes) {
+            if (option.rifeModel == model) {
+                configured = true;
+                break;
+            }
+        }
+        if (configured) {
+            continue;
+        }
         Row row;
         row.id = QStringLiteral("rife/") + model;
         row.label = entry.ensemble
@@ -360,8 +406,42 @@ QVector<Row> rifeRows(const Inputs& in) {
                               "RIFE v4.14 · %1"))
                               .arg(variantLabel(entry.variant));
         row.disabled = true;
-        row.tooltip = rifeLineageReason();
-        rows.append(row);
+        row.tooltip =
+            gap.isEmpty()
+                ? translated(QT_TRANSLATE_NOOP(
+                      "NativeMenu",
+                      "No RIFE recipe is configured for %1 yet. Configure one in Settings."))
+                      .arg(model)
+                : translated(QT_TRANSLATE_NOOP(
+                      "NativeMenu",
+                      "No RIFE recipe is configured for %1 yet. Configure one in Settings: %2"))
+                      .arg(model, gap);
+        rows.append(std::move(row));
+    }
+    return rows;
+}
+
+QVector<Row> rootRows(const Inputs& in) {
+    QVector<Row> rows(2);
+    Row& native = rows[0];
+    native.id = QString::fromLatin1(kNativeLevelId);
+    native.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Native processing"));
+    native.tooltip = categoryTooltip(native.id, in);
+    native.submenu = true;
+    native.disabled = false;
+    native.current = in.preferences.enabled;
+    native.value = native.id;
+    Row& rife = rows[1];
+    rife.id = QString::fromLatin1(kRifeLevelId);
+    rife.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "RIFE"));
+    rife.tooltip = categoryTooltip(rife.id, in);
+    rife.submenu = true;
+    rife.disabled = false;
+    rife.value = rife.id;
+    if (in.preferences.enabled && !in.preferences.recipeId.isEmpty()) {
+        const NativeRecipeOption* selected =
+            in.availability.findRecipe(in.preferences.recipeId);
+        rife.current = selected != nullptr && !selected->rifeModel.isEmpty();
     }
     return rows;
 }

@@ -24,6 +24,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
+#include <QtCore/QStringList>
 #include <QtCore/QVector>
 
 #include <onnxruntime_c_api.h>
@@ -299,7 +300,8 @@ OrtSession* createSession(const OrtApi* api, OrtEnv* env, const QByteArray& byte
 /// Reads one tensor's declared type and shape. A negative dimension is dynamic
 /// and stays absent; anything else is recorded exactly as declared.
 bool readTensor(const OrtApi* api, OrtSession* session, bool input, size_t index,
-                TensorProfile* profile, QString* name, QString* error) {
+                TensorProfile* profile, QString* name, QString* error,
+                QVector<qint64>* declaredDims = nullptr) {
   OrtAllocator* allocator = nullptr;
   if (OrtStatus* status = api->GetAllocatorWithDefaultOptions(&allocator)) {
     *error = takeStatus(api, status);
@@ -365,6 +367,9 @@ bool readTensor(const OrtApi* api, OrtSession* session, bool input, size_t index
   if (dimCount == 4) {
     if (dims[2] >= 0) out.height = dims[2];
     if (dims[3] >= 0) out.width = dims[3];
+  }
+  if (declaredDims != nullptr) {
+    *declaredDims = dims;
   }
   *profile = out;
   return true;
@@ -592,6 +597,323 @@ bool needsReferenceRun(const ModelProfile& profile) {
          hasUnknownBatch(profile.input) || hasUnknownBatch(profile.output);
 }
 
+qint64 referenceElementSize(const QString& dtype) {
+  if (dtype == QLatin1String("fp16")) return 2;
+  if (dtype == QLatin1String("fp32")) return 4;
+  return 0;
+}
+
+bool referenceElementType(const QString& dtype, ONNXTensorElementDataType* type) {
+  if (dtype == QLatin1String("fp16")) {
+    *type = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+    return true;
+  }
+  if (dtype == QLatin1String("fp32")) {
+    *type = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
+    return true;
+  }
+  return false;
+}
+
+qint64 referenceElementCount(const QVector<int64_t>& dims, qint64 elementSize) {
+  if (elementSize <= 0 || dims.isEmpty()) return 0;
+  qint64 elements = 1;
+  for (const int64_t dim : dims) {
+    if (dim <= 0 || dim > kMaxReferenceInputBytes) return 0;
+    if (elements > kMaxReferenceInputBytes / dim) return 0;
+    elements *= dim;
+  }
+  return elements;
+}
+
+QString validateReferenceInput(const ReferenceInput& input, const QStringList& sessionInputs) {
+  if (input.name.isEmpty()) {
+    return QStringLiteral("an input with no name was supplied; a reference never guesses which "
+                          "tensor a caller meant");
+  }
+  if (!sessionInputs.contains(input.name)) {
+    return QStringLiteral("'%1' is not an input of this graph; its inputs are %2")
+        .arg(input.name, sessionInputs.join(QStringLiteral(", ")));
+  }
+  const qint64 elementSize = referenceElementSize(input.dtype);
+  if (elementSize == 0) {
+    return QStringLiteral("input '%1' is named %2; this bridge binds fp16 and fp32 only")
+        .arg(input.name, input.dtype);
+  }
+  if (input.shape.isEmpty()) {
+    return QStringLiteral("input '%1' has no shape; a tensor cannot be bound without one")
+        .arg(input.name);
+  }
+  qint64 elements = 1;
+  for (const qint64 dim : input.shape) {
+    if (dim <= 0) {
+      return QStringLiteral("input '%1' has the non-positive dimension %2; a symbolic dimension "
+                            "cannot be fed")
+          .arg(input.name)
+          .arg(dim);
+    }
+    if (elements > kMaxReferenceInputBytes / dim) {
+      return QStringLiteral("input '%1' is beyond the probe's allocation bound").arg(input.name);
+    }
+    elements *= dim;
+  }
+  const qint64 needed = elements * elementSize;
+  if (input.data.size() != needed) {
+    return QStringLiteral("input '%1' holds %2 bytes, but its rank-%3 shape as %4 needs %5")
+        .arg(input.name)
+        .arg(input.data.size())
+        .arg(input.shape.size())
+        .arg(input.dtype)
+        .arg(needed);
+  }
+  return QString();
+}
+
+bool readSessionNames(const OrtApi* api, OrtSession* session, bool input, QStringList* names,
+                      QString* error) {
+  size_t count = 0;
+  if (OrtStatus* status = input ? api->SessionGetInputCount(session, &count)
+                               : api->SessionGetOutputCount(session, &count)) {
+    *error = takeStatus(api, status);
+    return false;
+  }
+  OrtAllocator* allocator = nullptr;
+  if (OrtStatus* status = api->GetAllocatorWithDefaultOptions(&allocator)) {
+    *error = takeStatus(api, status);
+    return false;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    char* raw = nullptr;
+    if (OrtStatus* status = input ? api->SessionGetInputName(session, i, allocator, &raw)
+                                  : api->SessionGetOutputName(session, i, allocator, &raw)) {
+      *error = takeStatus(api, status);
+      return false;
+    }
+    names->append(QString::fromUtf8(raw));
+    api->AllocatorFree(allocator, raw);
+  }
+  return true;
+}
+
+}  // namespace
+
+ReferenceRun runReferenceTensor(const InspectionRuntime& runtime, const QByteArray& graphBytes,
+                                const QVector<ReferenceInput>& inputs) {
+  ReferenceRun run;
+  const auto refuse = [&run](const QString& key, const QString& text) {
+    run.ok = false;
+    run.reasonKey = key;
+    run.reason = text;
+    run.outputs.clear();
+    return run;
+  };
+
+  if (graphBytes.isEmpty()) {
+    return refuse(QStringLiteral("reference.graph.empty"), QStringLiteral("the graph has no bytes"));
+  }
+  if (inputs.isEmpty()) {
+    return refuse(QStringLiteral("reference.inputs"),
+                  QStringLiteral("a reference run binds the inputs it is given; none were supplied"));
+  }
+
+  const RuntimeHandle handle = acquireRuntime(runtime);
+  if (handle.api == nullptr) return refuse(handle.errorKey, handle.error);
+  const OrtApi* api = handle.api;
+
+  QString error;
+  OrtSession* session = createSession(api, handle.env, graphBytes, &error);
+  if (session == nullptr) {
+    return refuse(QStringLiteral("reference.session"),
+                  QStringLiteral("the ONNX graph could not be read: %1").arg(error));
+  }
+  auto sessionGuard = scoped(session, [api](OrtSession* value) { api->ReleaseSession(value); });
+
+  QStringList sessionInputs;
+  QStringList sessionOutputs;
+  if (!readSessionNames(api, session, true, &sessionInputs, &error) ||
+      !readSessionNames(api, session, false, &sessionOutputs, &error)) {
+    return refuse(QStringLiteral("reference.session"), error);
+  }
+
+  if (inputs.size() != sessionInputs.size()) {
+    return refuse(QStringLiteral("reference.inputs.count"),
+                  QStringLiteral("%1 input(s) were supplied but this graph takes %2")
+                      .arg(inputs.size())
+                      .arg(sessionInputs.size()));
+  }
+  QStringList supplied;
+  for (const ReferenceInput& input : inputs) {
+    const QString problem = validateReferenceInput(input, sessionInputs);
+    if (!problem.isEmpty()) return refuse(QStringLiteral("reference.inputs"), problem);
+    if (supplied.contains(input.name)) {
+      return refuse(QStringLiteral("reference.inputs.duplicate"),
+                    QStringLiteral("input '%1' was supplied twice").arg(input.name));
+    }
+    supplied.append(input.name);
+  }
+
+  OrtMemoryInfo* memoryInfo = nullptr;
+  if (OrtStatus* status =
+          api->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memoryInfo)) {
+    return refuse(QStringLiteral("reference.memory"), takeStatus(api, status));
+  }
+  auto memoryGuard =
+      scoped(memoryInfo, [api](OrtMemoryInfo* value) { api->ReleaseMemoryInfo(value); });
+
+  QVector<OrtValue*> values;
+  QVector<QByteArray> nameBytes;
+  values.reserve(inputs.size());
+  nameBytes.reserve(inputs.size());
+  const auto releaseValues = [&values, api]() {
+    for (OrtValue* value : values) api->ReleaseValue(value);
+    values.clear();
+  };
+
+  for (const ReferenceInput& input : inputs) {
+    ONNXTensorElementDataType element = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+    if (!referenceElementType(input.dtype, &element)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.inputs.dtype"),
+                    QStringLiteral("input '%1' is named %2; this bridge binds fp16 and fp32 only")
+                        .arg(input.name, input.dtype));
+    }
+    QVector<int64_t> dims(static_cast<qsizetype>(input.shape.size()));
+    for (qsizetype i = 0; i < input.shape.size(); ++i) {
+      dims[i] = static_cast<int64_t>(input.shape.at(i));
+    }
+    OrtValue* value = nullptr;
+    // ORT declares this buffer `_Inout_` because the same call also wraps a
+    // writable output, but an input tensor is only read during Run. The cast is
+    // deliberate and no copy is made: these exact bytes are the ones this call
+    // also digests and writes out, and a copy would break that provenance.
+    if (OrtStatus* status = api->CreateTensorWithDataAsOrtValue(
+            memoryInfo, const_cast<char*>(input.data.constData()),
+            static_cast<size_t>(input.data.size()), dims.constData(), dims.size(), element,
+            &value)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.tensor"), takeStatus(api, status));
+    }
+    values.append(value);
+    nameBytes.append(input.name.toUtf8());
+  }
+
+  QVector<const OrtValue*> inputValues;
+  QVector<const char*> inputNames;
+  inputValues.reserve(values.size());
+  inputNames.reserve(nameBytes.size());
+  for (qsizetype i = 0; i < values.size(); ++i) {
+    inputValues.append(values.at(i));
+    inputNames.append(nameBytes.at(i).constData());
+  }
+
+  QVector<QByteArray> outputNameBytes;
+  outputNameBytes.reserve(sessionOutputs.size());
+  for (const QString& name : sessionOutputs) outputNameBytes.append(name.toUtf8());
+  QVector<const char*> outputNames;
+  outputNames.reserve(outputNameBytes.size());
+  for (const QByteArray& name : outputNameBytes) outputNames.append(name.constData());
+
+  QVector<OrtValue*> outputs(static_cast<qsizetype>(sessionOutputs.size()), nullptr);
+  if (OrtStatus* status = api->Run(session, nullptr, inputNames.constData(),
+                                  inputValues.constData(), inputValues.size(),
+                                  outputNames.constData(), outputNames.size(), outputs.data())) {
+    releaseValues();
+    return refuse(QStringLiteral("reference.run"), takeStatus(api, status));
+  }
+  auto outputsGuard = scoped(&outputs, [api](QVector<OrtValue*>* value) {
+    for (OrtValue* item : *value) {
+      if (item != nullptr) api->ReleaseValue(item);
+    }
+  });
+
+  QVector<ReferenceTensor> produced;
+  produced.reserve(outputs.size());
+  for (qsizetype i = 0; i < outputs.size(); ++i) {
+    OrtTensorTypeAndShapeInfo* shapeInfo = nullptr;
+    if (OrtStatus* status = api->GetTensorTypeAndShape(outputs.at(i), &shapeInfo)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.shape"), takeStatus(api, status));
+    }
+    auto shapeGuard = scoped(shapeInfo, [api](OrtTensorTypeAndShapeInfo* value) {
+      api->ReleaseTensorTypeAndShapeInfo(value);
+    });
+
+    ONNXTensorElementDataType element = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+    if (OrtStatus* status = api->GetTensorElementType(shapeInfo, &element)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.shape"), takeStatus(api, status));
+    }
+    size_t dimCount = 0;
+    if (OrtStatus* status = api->GetDimensionsCount(shapeInfo, &dimCount)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.shape"), takeStatus(api, status));
+    }
+    QVector<int64_t> dims(static_cast<qsizetype>(dimCount), 0);
+    if (dimCount > 0) {
+      if (OrtStatus* status = api->GetDimensions(shapeInfo, dims.data(), dimCount)) {
+        releaseValues();
+        return refuse(QStringLiteral("reference.output.shape"), takeStatus(api, status));
+      }
+    }
+
+    const QString actualDtype = dtypeName(element);
+    const qint64 elementSize = referenceElementSize(actualDtype);
+    if (elementSize == 0) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.dtype"),
+                    QStringLiteral("output '%1' is %2; this bridge exports fp16 and fp32 only")
+                        .arg(sessionOutputs.at(i), actualDtype));
+    }
+    const qint64 elements = referenceElementCount(dims, elementSize);
+    if (elements == 0) {
+      QStringList printed;
+      for (const int64_t dim : dims) printed.append(QString::number(dim));
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.shape"),
+                    QStringLiteral("output '%1' has the shape [%2], whose dimensions are not all "
+                                   "positive and bounded")
+                        .arg(sessionOutputs.at(i), printed.join(QStringLiteral(", "))));
+    }
+    const qint64 outputBytes = elements * elementSize;
+    if (outputBytes > kMaxReferenceInputBytes) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.shape"),
+                    QStringLiteral("output '%1' holds %2 bytes, beyond the exporter's bound")
+                        .arg(sessionOutputs.at(i))
+                        .arg(outputBytes));
+    }
+
+    void* raw = nullptr;
+    if (OrtStatus* status = api->GetTensorMutableData(outputs.at(i), &raw)) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.data"), takeStatus(api, status));
+    }
+    if (raw == nullptr) {
+      releaseValues();
+      return refuse(QStringLiteral("reference.output.data"),
+                    QStringLiteral("output '%1' came back with no readable data")
+                        .arg(sessionOutputs.at(i)));
+    }
+
+    ReferenceTensor tensor;
+    tensor.name = sessionOutputs.at(i);
+    tensor.dtype = actualDtype;
+    for (const int64_t dim : dims) tensor.shape.append(static_cast<qint64>(dim));
+    tensor.data = QByteArray(static_cast<const char*>(raw), static_cast<qsizetype>(outputBytes));
+    tensor.elementCount = elements;
+    produced.append(tensor);
+  }
+
+  releaseValues();
+  run.ok = true;
+  run.reasonKey.clear();
+  run.reason.clear();
+  run.outputs = produced;
+  return run;
+}
+
+namespace {
+
 void refuseWith(QString* key, QString* reason, const QString& keyText, const QString& reasonText) {
   if (key != nullptr) *key = keyText;
   if (reason != nullptr) *reason = reasonText;
@@ -615,6 +937,11 @@ InspectionRuntime defaultInspectionRuntime() {
   const QString directory = qEnvironmentVariable("MIKAI_ORT_RUNTIME_DIR");
   if (directory.isEmpty()) return InspectionRuntime{};
   return inspectionRuntimeAt(directory);
+}
+
+QString inspectionRuntimeLoadedVersion() {
+  QMutexLocker locker(&g_runtimeMutex);
+  return g_runtime.version;
 }
 
 bool inspectionRuntimeIsPresent(const InspectionRuntime& runtime, QString* reason) {
@@ -736,6 +1063,62 @@ InspectionResult inspectGraph(const InspectionRuntime& runtime, const QByteArray
 
   runReferenceInto(runtime, bytes, runAt, &result);
   return result;
+}
+
+bool inspectDeclaredBoundaries(const InspectionRuntime& runtime, const QByteArray& bytes,
+                               DeclaredBoundaries* boundaries, QString* reasonKey,
+                               QString* reason) {
+  const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
+    if (reasonKey != nullptr) *reasonKey = key;
+    if (reason != nullptr) *reason = text;
+    return false;
+  };
+
+  if (bytes.isEmpty()) {
+    return refuse(QStringLiteral("inspect.graph.empty"), QStringLiteral("the graph has no bytes"));
+  }
+  const RuntimeHandle handle = acquireRuntime(runtime);
+  if (handle.api == nullptr) return refuse(handle.errorKey, handle.error);
+  const OrtApi* api = handle.api;
+
+  QString error;
+  OrtSession* session = createSession(api, handle.env, bytes, &error);
+  if (session == nullptr) {
+    return refuse(QStringLiteral("inspect.graph.unreadable"),
+                  QStringLiteral("the ONNX graph could not be read: %1").arg(error));
+  }
+  auto sessionGuard = scoped(session, [api](OrtSession* value) { api->ReleaseSession(value); });
+
+  DeclaredBoundaries out;
+  for (const bool input : {true, false}) {
+    size_t count = 0;
+    OrtStatus* status = nullptr;
+    if (input) {
+      status = api->SessionGetInputCount(session, &count);
+    } else {
+      status = api->SessionGetOutputCount(session, &count);
+    }
+    if (status != nullptr) {
+      return refuse(QStringLiteral("inspect.graph.read"), takeStatus(api, status));
+    }
+    if (count == 0) {
+      return refuse(QStringLiteral("inspect.graph.ioCount"),
+                    QStringLiteral("the graph declares no %1 tensor")
+                        .arg(input ? QStringLiteral("input") : QStringLiteral("output")));
+    }
+    QVector<NamedTensorProfile>& side = input ? out.inputs : out.outputs;
+    for (size_t i = 0; i < count; ++i) {
+      NamedTensorProfile entry;
+      if (!readTensor(api, session, input, i, &entry.profile, &entry.name, &error, &entry.dims)) {
+        return refuse(QStringLiteral("inspect.graph.type"), error);
+      }
+      side.append(entry);
+    }
+  }
+  *boundaries = out;
+  if (reasonKey != nullptr) reasonKey->clear();
+  if (reason != nullptr) reason->clear();
+  return true;
 }
 
 std::optional<StageResolution> resolveStageGeometry(const ModelProfile& declared,

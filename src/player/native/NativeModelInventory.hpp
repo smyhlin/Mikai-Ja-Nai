@@ -49,6 +49,15 @@
 //    is supplied separately to the planner, so the model's claim and the
 //    runtime's capability stay two facts, and a model is planned only on a
 //    backend that is both recorded as supported and currently present.
+//
+// The store is split by what it needs to run, not by what it exposes. Ownership,
+// strict manifest reading, the stored rows, integrity, publication and the digest
+// helpers are compiled into `mikai_native_support` unconditionally and carry no
+// ONNX Runtime dependency, so a build without the inspector can still read,
+// verify and publish owned rows. Only `importFile` and `importTemporalFile` - the
+// two entry points that actually load the runtime - are compiled into
+// `mikai_model_inspection` (NativeModelImport.cpp). Every declaration and the
+// whole type vocabulary stay here for both.
 
 #pragma once
 
@@ -61,6 +70,7 @@
 #include <QtCore/QVector>
 
 #include "NativeCatalog.hpp"
+#include "NativeFrameReference.hpp"
 #include "NativeModelInspect.hpp"
 #include "NativeTypes.hpp"
 
@@ -69,6 +79,17 @@ namespace native {
 
 /// Lower-case hex SHA-256 of `bytes`, the one digest convention the store uses.
 QString sha256HexOf(const QByteArray& bytes);
+
+/// The temporal boundary policy, shared by this store's reader/writer and the
+/// import translation unit that resolves a temporal graph: it names why a
+/// declared boundary is not an eligible RIFE 1xC11 -> 1xC3 candidate, and why a
+/// CPU run's concrete boundary does not prove the declaration it accompanies.
+/// Empty means the rule is satisfied. There is one implementation of it
+/// (NativeModelInventory.cpp): `readStored` and `publish` apply it to a row's
+/// recorded declaration, and the temporal import applies it before it runs
+/// anything, so restating it would be a second reader of the same rule.
+QString temporalCandidateRefusal(const ModelProfile& profile);
+QString temporalReferenceRefusal(const ModelProfile& declared, const ModelProfile& reference);
 
 /// The one cancellation gate an import and its submitter share. `Inspecting` is
 /// the only state a cancel can win in; the worker's publication gate moves it
@@ -166,13 +187,14 @@ class ModelInventory {
   /// is the geometry a dynamic graph's CPU reference is resolved at; it is
   /// ignored by a fixed graph.
   ///
-  /// `backends` is the availability the importing provisioner supplies, and it is
-  /// recorded as the row's backend support (model compatibility) and persisted
-  /// with it. Supplying nothing records nothing: the row claims no backend rather
-  /// than this build's whole vocabulary, so the runtime's capability is never
-  /// mistaken for the model's. Importing the same bytes again with a non-empty
-  /// supply raises that one claim in the row's own document, and a supply of
-  /// nothing leaves a previous vouch exactly as it was.
+  /// `backends` is the availability the importing provisioner supplies. It is
+  /// recorded as backend support (model compatibility), subject to the role's
+  /// supported native route: Temporal rows record TensorRT only because DirectML
+  /// cannot run the RIFE boundary. Supplying nothing records nothing: the row
+  /// claims no backend rather than this build's whole vocabulary, so the runtime's
+  /// capability is never mistaken for the model's. Importing the same bytes again
+  /// with a non-empty compatible supply raises that claim in the row's document,
+  /// and a supply of nothing leaves a previous vouch exactly as it was.
   ///
   /// `cancellation` is optional (null means no cancellation, as every CLI and
   /// test call site has it). When present, a cancel that wins before the
@@ -185,17 +207,44 @@ class ModelInventory {
                                 const QString& termsNote = QString(),
                                 ImportCancellation* cancellation = nullptr);
 
+  /// Reads `sourcePath` (read-only) as an owned temporal (RIFE) graph and publishes
+  /// an immutable copy with role Temporal. `rawInputs` are the real raw reference
+  /// tensor(s) the CPU proof is run against - exactly the in-memory snapshot's own
+  /// input, bound verbatim with no casts, re-exports or default tensors. The single
+  /// temporal boundary is required: one rank-4 FP16 N=1/C=11 input to one rank-4
+  /// FP16 N=1/C=3 output, with dynamic HW resolved at the supplied raw shape and
+  /// concrete proof kept beside the symbolic declaration. A successful run must
+  /// produce the same positive H/W on both sides (uniform factor 1). Wrong
+  /// counts, shapes or dtypes are refused by name before anything is published; a
+  /// non-FP16 graph with an otherwise temporal shape is recorded Unavailable with
+  /// `model.io.unsupported` and never executed. Temporal backend support is
+  /// TensorRT only; DirectML cannot run this boundary, so a DirectML-only
+  /// provisioner claim leaves the owned row unavailable instead of selectable.
+  /// Cancellation follows the same publication gate as `importFile`: a cancel
+  /// winning before it writes nothing, a later one is refused rather than
+  /// re-labelling a commit. Reference scratch
+  /// lives in a fresh directory this call owns under the app-owned native scratch
+  /// tree and only that directory is ever removed.
+  ModelImportOutcome importTemporalFile(const QString& sourcePath,
+                                        const InspectionRuntime& runtime,
+                                        const QVector<RawReferenceInput>& rawInputs,
+                                        const BackendAvailability& backends = BackendAvailability(),
+                                        const QString& termsNote = QString(),
+                                        ImportCancellation* cancellation = nullptr);
+
   /// Publishes bytes that were already inspected. Does not run anything. The
   /// digest is computed over exactly these bytes, so the stored copy and the
   /// identity cannot disagree. `backends` is the provisioner's supplied
-  /// availability, recorded as the row's backend support exactly as `importFile`
-  /// records it; when these exact bytes are already published, a non-empty supply
-  /// updates only that recorded set - no new identity and no second copy - and an
-  /// empty one leaves it alone.
+  /// availability, recorded as role-compatible backend support exactly as
+  /// `importFile` records it; Temporal rows can claim TensorRT, not DirectML.
+  /// When these exact bytes are already published, a non-empty compatible supply
+  /// updates that claim and Temporal readiness established by the current CPU
+  /// proof - no new identity and no second copy - and an empty one leaves it alone.
   ModelImportOutcome publish(const QByteArray& bytes, const InspectionResult& inspection,
                              const QString& sourcePath, const QString& displayName,
                              const BackendAvailability& backends = BackendAvailability(),
-                             const QString& termsNote = QString());
+                             const QString& termsNote = QString(),
+                             ModelRole role = ModelRole::Spatial);
 
   /// Every published row, each re-proved against the immutable copy on disk.
   /// An entry whose manifest or bytes do not verify is returned as a row that is

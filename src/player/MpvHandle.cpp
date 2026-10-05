@@ -62,11 +62,11 @@ void copyNode(const mpv_node* source, NodeValue& out) {
             out.number = source->u.double_;
             break;
         case MPV_FORMAT_BYTE_ARRAY:
-            // Kept as text so a byte array survives the copy without needing an
-            // mpv-owned buffer; nothing in the player reads this format.
+            // Copied into its own buffer, so the payload survives the next
+            // wait_event without pointing into mpv storage.
             if (source->u.ba != nullptr && source->u.ba->size > 0) {
-                out.text.assign(reinterpret_cast<const char*>(source->u.ba->data),
-                                static_cast<size_t>(source->u.ba->size));
+                out.bytes.assign(reinterpret_cast<const char*>(source->u.ba->data),
+                                 static_cast<size_t>(source->u.ba->size));
             }
             break;
         case MPV_FORMAT_NODE_ARRAY:
@@ -477,6 +477,7 @@ void MpvHandle::invalidateAsyncEpoch() {
 }
 
 size_t MpvHandle::pendingAsyncCount() const noexcept { return pending_.size(); }
+std::string MpvHandle::describeError(int error) const { return errorText(error); }
 
 void MpvHandle::dispatchAsyncReply(const mpv_event* event) {
     const auto it = pending_.find(event->reply_userdata);

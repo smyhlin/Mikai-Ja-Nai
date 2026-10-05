@@ -149,10 +149,10 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->setSpacing(5);
 
     auto* head = new QHBoxLayout();
-    auto* cap = new QLabel(tr("SPEED"));
-    cap->setFont(monoFont(8));
-    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
-    head->addWidget(cap);
+    speedCaption_ = new QLabel(tr("SPEED"));
+    speedCaption_->setFont(monoFont(8));
+    speedCaption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    head->addWidget(speedCaption_);
     head->addStretch();
     badge_ = new QLabel(QStringLiteral("1.0x"));
     badge_->setFont(monoFont(9));
@@ -198,10 +198,10 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     qlay->setSpacing(5);
 
     auto* qrow = new QHBoxLayout();
-    auto* ql = new QLabel(tr("QUALITY"));
-    ql->setFont(monoFont(8));
-    ql->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
-    qrow->addWidget(ql);
+    qualityCaption_ = new QLabel(tr("QUALITY"));
+    qualityCaption_->setFont(monoFont(8));
+    qualityCaption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
+    qrow->addWidget(qualityCaption_);
     qrow->addStretch();
     qualityLabel_ = new QLabel(QStringLiteral("HD"));
     qualityLabel_->setFont(monoFont(9));
@@ -277,6 +277,15 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
     }
     qualitySection_->setVisible(!qualityOptions_.isEmpty());
     refresh();
+}
+
+void SettingsFlyout::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        speedCaption_->setText(tr("SPEED"));
+        qualityCaption_->setText(tr("QUALITY"));
+        refresh();
+    }
 }
 
 void SettingsFlyout::paintEvent(QPaintEvent*) {
@@ -653,13 +662,14 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(12, 10, 12, 10);
     lay->setSpacing(4);
-    auto* cap = new QLabel(tr("KEYBOARD SHORTCUTS"));
-    cap->setFont(monoFont(8));
-    cap->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent; letter-spacing: 0.5px;"));
-    lay->addWidget(cap);
+    caption_ = new QLabel(tr("KEYBOARD SHORTCUTS"));
+    caption_->setFont(monoFont(8));
+    caption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent; letter-spacing: 0.5px;"));
+    lay->addWidget(caption_);
     lay->addSpacing(2);
 
     const QVector<QPair<QString, QString>> table = shortcutTable();
+    descriptions_.reserve(table.size());
     for (const auto& entry : table) {
         auto* row = new QHBoxLayout();
         row->setSpacing(8);
@@ -675,9 +685,25 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
         action->setFont(uiFont(9));
         action->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(rgba(white(180))));
         row->addWidget(key);
+        descriptions_.append(action);
         row->addWidget(action, 1);
         lay->addLayout(row);
     }
+}
+
+void KeyHints::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() != QEvent::LanguageChange) {
+        return;
+    }
+    caption_->setText(tr("KEYBOARD SHORTCUTS"));
+    const auto table = shortcutTable();
+    for (int row = 0; row < descriptions_.size(); ++row) {
+        descriptions_.at(row)->setText(table.at(row).second);
+    }
+    layout()->invalidate();
+    layout()->activate();
+    setFixedSize(layout()->sizeHint());
 }
 
 void KeyHints::paintEvent(QPaintEvent*) {

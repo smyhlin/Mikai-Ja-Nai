@@ -51,6 +51,19 @@ const QRegularExpression& sha256Pattern() {
     return pattern;
 }
 
+const QRegularExpression& sha1Pattern() {
+    static const QRegularExpression pattern(QStringLiteral("^[0-9a-f]{40}$"));
+    return pattern;
+}
+
+/// The placeholder an unsubstituted layout example carries: forty zeroes is a
+/// well-formed commit shape no real commit uses, so it can never be mistaken for
+/// a measured source pin.
+const QString& reservedCoreSha() {
+    static const QString value(40, QLatin1Char('0'));
+    return value;
+}
+
 /// A single path segment safe to use as a directory or file name of ours: the
 /// published directory name, the staging name and the pointer content all go
 /// through this, so a crafted manifest can never steer a write.
@@ -102,7 +115,80 @@ QStringList manifestKeys() {
     return {QStringLiteral("schema"),   QStringLiteral("kind"),     QStringLiteral("version"),
             QStringLiteral("module"),   QStringLiteral("mpvApiVersion"),
             QStringLiteral("protocolVersion"), QStringLiteral("engineSchemaVersion"),
-            QStringLiteral("deps"),      QStringLiteral("files")};
+            QStringLiteral("deps"),      QStringLiteral("files"),
+            QStringLiteral("preparation")};
+}
+
+QStringList preparationKeys() {
+    return {QStringLiteral("types"), QStringLiteral("source"), QStringLiteral("tools"),
+            QStringLiteral("runtime")};
+}
+
+QStringList preparationSourceKeys() {
+    return {QStringLiteral("coreSha"), QStringLiteral("sourceAbi")};
+}
+
+QStringList preparationToolKeys() {
+    return {QStringLiteral("inspect"), QStringLiteral("prep"), QStringLiteral("verifier")};
+}
+
+QStringList preparationRuntimeKeys() {
+    return {QStringLiteral("ort"), QStringLiteral("trt"), QStringLiteral("cuda")};
+}
+
+/// The preparation block's tools, producer and declared backends must all be
+/// files this bundle's inventory declares. Pure manifest reasoning: no payload
+/// byte is read, so this holds for a parsed bundle before validation touches the
+/// filesystem.
+bool preparationInventoryCoherent(const Bundle& bundle, QString* reason) {
+    const BundlePreparation& preparation = *bundle.preparation;
+    const auto declared = [&bundle](const QString& path) {
+        return std::any_of(bundle.files.cbegin(), bundle.files.cend(),
+                           [&path](const BundleFile& file) {
+                               return file.path.compare(path, pathCaseSensitivity()) == 0;
+                           });
+    };
+    const auto declaresLibrary = [&bundle](const QString& library) {
+        return std::any_of(bundle.files.cbegin(), bundle.files.cend(),
+                           [&library](const BundleFile& file) {
+                               return QFileInfo(file.path).fileName().compare(
+                                          library, pathCaseSensitivity()) == 0;
+                           });
+    };
+    const QStringList tools{preparation.tools.inspect, preparation.tools.prep,
+                            preparation.tools.verifier};
+    for (const QString& tool : tools) {
+        if (!declared(tool)) {
+            setReason(reason, QStringLiteral("preparation tool '%1' is not in the file inventory")
+                                  .arg(tool));
+            return false;
+        }
+    }
+    // The dispatcher owns the source ABI every backend is reached through; a
+    // block without it names no producer the ABI could be checked against.
+    if (!declaresLibrary(bundlePreparationProducerLibrary())) {
+        setReason(reason, QStringLiteral("preparation block needs '%1' in the bundle, which declares "
+                                         "none")
+                              .arg(bundlePreparationProducerLibrary()));
+        return false;
+    }
+    // A declared backend type without its library would let a caller build for a
+    // provider the bundle cannot run.
+    for (const QString& type : preparation.types) {
+        const QString library = bundlePreparationBackendLibrary(type);
+        if (library.isEmpty()) {
+            setReason(reason, QStringLiteral("preparation type '%1' is not one this build can prepare")
+                                  .arg(type));
+            return false;
+        }
+        if (!declaresLibrary(library)) {
+            setReason(reason, QStringLiteral("preparation type '%1' needs '%2' in the bundle, which "
+                                             "declares none")
+                                  .arg(type, library));
+            return false;
+        }
+    }
+    return true;
 }
 
 QStringList fileKeys() {
@@ -253,6 +339,124 @@ MpvBundle Bundle::toMpvBundleDescriptor() const {
 
 QString bundleSchemaId() { return QString::fromLatin1(kSchemaId); }
 
+QStringList bundlePreparationTypes() {
+    return {QStringLiteral("tensorrt"), QStringLiteral("directml")};
+}
+
+QString bundlePreparationBackendLibrary(const QString& type) {
+    if (type == QLatin1String("tensorrt")) return QStringLiteral("aji_trt.dll");
+    if (type == QLatin1String("directml")) return QStringLiteral("aji_dml.dll");
+    return {};
+}
+
+QString bundlePreparationProducerLibrary() { return QStringLiteral("aji.dll"); }
+
+std::optional<BundlePreparation> parsePreparation(const QJsonObject& manifest, QString* reason) {
+    setReason(reason, QString{});
+    const auto refuse = [reason](const QString& text) -> std::optional<BundlePreparation> {
+        setReason(reason, text);
+        return std::nullopt;
+    };
+
+    const QJsonValue value = manifest.value(QStringLiteral("preparation"));
+    if (!value.isObject()) return refuse(QStringLiteral("'preparation' is not an object"));
+    const QJsonObject block = value.toObject();
+    QString offender;
+    if (!noUnknownKeys(block, preparationKeys(), &offender))
+        return refuse(QStringLiteral("'preparation' has an unknown member '%1'").arg(offender));
+
+    if (!block.value(QStringLiteral("types")).isArray())
+        return refuse(QStringLiteral("'preparation.types' is not an array"));
+    const QJsonArray types = block.value(QStringLiteral("types")).toArray();
+    if (types.isEmpty()) return refuse(QStringLiteral("'preparation.types' is empty"));
+    const QStringList knownTypes = bundlePreparationTypes();
+    QStringList parsedTypes;
+    for (const QJsonValue& entry : types) {
+        if (!entry.isString())
+            return refuse(QStringLiteral("'preparation.types' holds a non-string entry"));
+        const QString type = entry.toString();
+        if (!knownTypes.contains(type))
+            return refuse(
+                QStringLiteral("preparation type '%1' is not one this build can prepare").arg(type));
+        if (parsedTypes.contains(type))
+            return refuse(QStringLiteral("preparation type '%1' is listed twice").arg(type));
+        parsedTypes.append(type);
+    }
+
+    const QJsonValue sourceValue = block.value(QStringLiteral("source"));
+    if (!sourceValue.isObject())
+        return refuse(QStringLiteral("'preparation.source' is not an object"));
+    const QJsonObject source = sourceValue.toObject();
+    if (!noUnknownKeys(source, preparationSourceKeys(), &offender))
+        return refuse(QStringLiteral("'preparation.source' has an unknown member '%1'").arg(offender));
+    QString coreSha;
+    if (!jsonString(source, QStringLiteral("coreSha"), &coreSha))
+        return refuse(QStringLiteral("'preparation.source.coreSha' is not a string"));
+    coreSha = coreSha.toLower();
+    if (!sha1Pattern().match(coreSha).hasMatch())
+        return refuse(QStringLiteral("'preparation.source.coreSha' is not a full 40-hex commit"));
+    qint64 sourceAbi = 0;
+    if (!jsonInteger(source.value(QStringLiteral("sourceAbi")), &sourceAbi) || sourceAbi < 0)
+        return refuse(QStringLiteral("'preparation.source.sourceAbi' is not a non-negative integer"));
+
+    const QJsonValue toolsValue = block.value(QStringLiteral("tools"));
+    if (!toolsValue.isObject())
+        return refuse(QStringLiteral("'preparation.tools' is not an object"));
+    const QJsonObject tools = toolsValue.toObject();
+    if (!noUnknownKeys(tools, preparationToolKeys(), &offender))
+        return refuse(QStringLiteral("'preparation.tools' has an unknown member '%1'").arg(offender));
+    BundlePreparationTools parsedTools;
+    const QStringList toolKeys = preparationToolKeys();
+    QString* toolSlots[] = {&parsedTools.inspect, &parsedTools.prep, &parsedTools.verifier};
+    for (int i = 0; i < toolKeys.size(); ++i) {
+        QString raw;
+        if (!jsonString(tools, toolKeys.at(i), &raw))
+            return refuse(
+                QStringLiteral("'preparation.tools.%1' is not a string").arg(toolKeys.at(i)));
+        QString pathReason;
+        const QString normalized = safeRelativePath(raw, &pathReason);
+        if (normalized.isEmpty())
+            return refuse(QStringLiteral("preparation tool %1").arg(pathReason));
+        if (!normalized.endsWith(QLatin1String(".exe"), pathCaseSensitivity()))
+            return refuse(QStringLiteral("preparation tool '%1' is not a .exe path").arg(raw));
+        *toolSlots[i] = normalized;
+    }
+
+    const QJsonValue runtimeValue = block.value(QStringLiteral("runtime"));
+    if (!runtimeValue.isObject())
+        return refuse(QStringLiteral("'preparation.runtime' is not an object"));
+    const QJsonObject runtime = runtimeValue.toObject();
+    if (!noUnknownKeys(runtime, preparationRuntimeKeys(), &offender))
+        return refuse(
+            QStringLiteral("'preparation.runtime' has an unknown member '%1'").arg(offender));
+    BundlePreparationRuntime parsedRuntime;
+    const QStringList runtimeKeys = preparationRuntimeKeys();
+    QString* runtimeSlots[] = {&parsedRuntime.ort, &parsedRuntime.trt, &parsedRuntime.cuda};
+    for (int i = 0; i < runtimeKeys.size(); ++i) {
+        QString raw;
+        if (!jsonString(runtime, runtimeKeys.at(i), &raw))
+            return refuse(
+                QStringLiteral("'preparation.runtime.%1' is not a string").arg(runtimeKeys.at(i)));
+        QString pathReason;
+        const QString normalized = safeRelativePath(raw, &pathReason);
+        if (normalized.isEmpty())
+            return refuse(QStringLiteral("preparation runtime directory %1").arg(pathReason));
+        if (normalized.contains(QLatin1Char('/')))
+            return refuse(QStringLiteral("'preparation.runtime.%1' must be one directory inside the "
+                                         "bundle")
+                              .arg(runtimeKeys.at(i)));
+        *runtimeSlots[i] = normalized;
+    }
+
+    BundlePreparation preparation;
+    preparation.types = parsedTypes;
+    preparation.coreSha = coreSha;
+    preparation.sourceAbi = int(sourceAbi);
+    preparation.tools = parsedTools;
+    preparation.runtime = parsedRuntime;
+    return preparation;
+}
+
 QString bundleKindName(BundleKind kind) {
     return kind == BundleKind::Native ? QStringLiteral("native") : QStringLiteral("standard");
 }
@@ -283,6 +487,15 @@ std::optional<Bundle> readBundle(const QString& root, QString* reason) {
     };
 
     if (root.trimmed().isEmpty()) return refuse(QStringLiteral("no bundle root was given"));
+    // The root is spelled by whoever pointed at the bundle, so what it says is
+    // checked before anything is asked of the filesystem: a truncation, a device
+    // namespace or a redirector share must be refused by name, not resolved and
+    // then explained by whatever it happened to be.
+    const NativePathTrust rootTrust = nativePathTrust(root, true);
+    if (!rootTrust.trusted) {
+        return refuse(QStringLiteral("bundle root is not a usable local path: %1")
+                          .arg(rootTrust.reason));
+    }
     const QFileInfo rootInfo(root);
     if (!rootInfo.exists() || !rootInfo.isDir())
         return refuse(QStringLiteral("%1 is not an existing directory").arg(root));
@@ -296,6 +509,11 @@ std::optional<Bundle> readBundle(const QString& root, QString* reason) {
     const QString canonical = rootInfo.canonicalFilePath();
     if (canonical.isEmpty())
         return refuse(QStringLiteral("%1 cannot be resolved to a canonical path").arg(root));
+    const NativePathTrust canonicalTrust = nativePathTrust(canonical, true);
+    if (!canonicalTrust.trusted) {
+        return refuse(QStringLiteral("bundle root does not resolve to a usable local path: %1")
+                          .arg(canonicalTrust.reason));
+    }
 
     const QString manifestPath = QDir(canonical).filePath(QLatin1String(kManifestFileName));
     const QString canonicalManifest = canonicalPath(manifestPath);
@@ -474,6 +692,29 @@ std::optional<Bundle> readBundle(const QString& root, QString* reason) {
     if (!moduleDeclared)
         return refuse(QStringLiteral("module '%1' is not in the file inventory").arg(moduleRelative));
 
+    // The preparation block is optional. Absent, the bundle is playback-only.
+    // Present, it must be complete and coherent on its own terms: a placeholder
+    // source pin or a zero ABI is refused here, before any file is read, so a
+    // real bundle cannot carry an unmeasured provenance value.
+    if (manifest.contains(QStringLiteral("preparation"))) {
+        QString preparationReason;
+        const std::optional<BundlePreparation> preparation =
+            parsePreparation(manifest, &preparationReason);
+        if (!preparation.has_value()) return refuse(preparationReason);
+        if (kind != BundleKind::Native)
+            return refuse(QStringLiteral("a standard bundle declares no preparation block"));
+        if (preparation->coreSha == reservedCoreSha())
+            return refuse(QStringLiteral("preparation source coreSha is the reserved placeholder"));
+        if (preparation->sourceAbi <= 0)
+            return refuse(QStringLiteral("preparation source ABI must be observed, not zero"));
+        bundle.preparation = *preparation;
+        // The block must name files this bundle actually declares, so a
+        // hand-edited manifest cannot pair a valid source pin with a tool layout
+        // nothing measured.
+        if (!preparationInventoryCoherent(bundle, &preparationReason))
+            return refuse(QStringLiteral("preparation %1").arg(preparationReason));
+    }
+
     return bundle;
 }
 
@@ -582,6 +823,82 @@ bool verifyNoUndeclaredFiles(const QString& root, const QVector<BundleFile>& fil
     return true;
 }
 
+/// The preparation block's closure against the bundle's own inventory and
+/// declared dependency search paths. Pure path and inventory reasoning: it
+/// loads nothing, so a passing check is a coherent layout, not a working
+/// toolchain and not an engine.
+bool validatePreparationClosure(const Bundle& bundle, QString* reason) {
+    if (bundle.kind != BundleKind::Native) {
+        setReason(reason, QStringLiteral("a standard bundle declares no preparation block"));
+        return false;
+    }
+    const BundlePreparation& preparation = *bundle.preparation;
+    if (preparation.coreSha == reservedCoreSha()) {
+        setReason(reason, QStringLiteral("preparation source coreSha is the reserved placeholder"));
+        return false;
+    }
+    if (preparation.sourceAbi <= 0) {
+        setReason(reason, QStringLiteral("preparation source ABI must be observed, not zero"));
+        return false;
+    }
+    if (!preparationInventoryCoherent(bundle, reason)) return false;
+
+    const QStringList runtimeDirs{preparation.runtime.ort, preparation.runtime.trt,
+                                  preparation.runtime.cuda};
+    QSet<QString> checked;
+    for (const QString& directory : runtimeDirs) {
+        const QString key = directory.toLower();
+        if (checked.contains(key)) continue;
+        checked.insert(key);
+        if (QDir::isAbsolutePath(directory) || directory.contains(QLatin1Char('\\'))) {
+            setReason(reason, QStringLiteral("preparation runtime directory '%1' must be relative to "
+                                             "the bundle root")
+                                  .arg(directory));
+            return false;
+        }
+        QString directoryReason;
+        const QString normalized = safeRelativePath(directory, &directoryReason);
+        if (normalized.isEmpty()) {
+            setReason(reason, QStringLiteral("preparation runtime directory %1").arg(directoryReason));
+            return false;
+        }
+        const QString absolute = QDir::cleanPath(QDir(bundle.root).filePath(normalized));
+        const QString canonicalDirectory = canonicalPath(absolute);
+        if (canonicalDirectory.isEmpty() || !QFileInfo(canonicalDirectory).isDir()) {
+            setReason(reason, QStringLiteral("preparation runtime directory '%1' does not exist")
+                                  .arg(directory));
+            return false;
+        }
+        if (!pathWithinRoot(bundle.root, canonicalDirectory) ||
+            !pathHasNoReparsePoints(bundle.root, canonicalDirectory)) {
+            setReason(reason, QStringLiteral("preparation runtime directory '%1' is outside the "
+                                             "bundle root or reached through a reparse point")
+                                  .arg(directory));
+            return false;
+        }
+        bool holdsDeclaredFile = false;
+        bool holdsDll = false;
+        for (const BundleFile& file : bundle.files) {
+            if (!file.path.startsWith(normalized + QLatin1Char('/'), pathCaseSensitivity())) continue;
+            holdsDeclaredFile = true;
+            if (file.path.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive)) holdsDll = true;
+        }
+        if (!holdsDeclaredFile) {
+            setReason(reason, QStringLiteral("preparation runtime directory '%1' contains no declared "
+                                             "file")
+                                  .arg(directory));
+            return false;
+        }
+        if (holdsDll && !bundle.deps.contains(normalized, pathCaseSensitivity())) {
+            setReason(reason, QStringLiteral("preparation runtime directory '%1' carries DLLs but is "
+                                             "not a declared dependency")
+                                  .arg(directory));
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 bool validateBundle(const Bundle& bundle, QString* reason) {
@@ -660,6 +977,7 @@ bool validateBundle(const Bundle& bundle, QString* reason) {
             return false;
         }
     }
+    if (bundle.preparation.has_value() && !validatePreparationClosure(bundle, reason)) return false;
     return true;
 }
 
@@ -684,12 +1002,11 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
         return refuse(QStringLiteral("%1 is reached through a reparse point").arg(canonicalModule));
     if (!moduleInfo.fileName().endsWith(QLatin1String(".dll"), Qt::CaseInsensitive))
         return refuse(QStringLiteral("%1 is not a DLL").arg(canonicalModule));
-    // A root holding bundle.json is a published bundle, not the stock runtime
-    // installed where it is. findRuntime() walks the application directory
-    // recursively, so a Native bundle beside the executable is reachable
-    // through the stock path; describing it here would report a Native core as
-    // kind=Standard carrying a derived stock identity. Refused by name, before
-    // anything is inventoried, exactly as a junction root is.
+    // A root holding bundle.json is a published bundle, not a stock runtime
+    // installed where it is. The stock search walks the application directory
+    // recursively, so a published bundle beside the executable is reachable
+    // through it; describing that as Standard would report the wrong kind for a
+    // core whose own manifest says otherwise.
     if (QFileInfo::exists(QDir(root).filePath(QLatin1String(kManifestFileName))))
         return refuse(QStringLiteral("%1 holds a bundle.json; it is a published bundle, not a "
                                      "stock runtime")
@@ -893,8 +1210,10 @@ QList<Bundle> discoverBundles(const QStringList& roots, QStringList* rejections)
 
 // ------------------------------------------------------------------ install
 
-bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* reason) {
+bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* reason,
+                   QString* publishedRoot) {
     setReason(reason, QString{});
+    if (publishedRoot) publishedRoot->clear();
     const auto fail = [reason](const QString& text) {
         setReason(reason, text);
         return false;
@@ -932,7 +1251,49 @@ bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* re
         return fail(QStringLiteral("runtime root %1 and bundle root %2 overlap")
                         .arg(canonicalRoot, source.root));
 
-    const QString publishName = bundleDirectoryName(source.kind, source.version);
+    const QString manifestSource = QDir(source.root).filePath(QLatin1String(kManifestFileName));
+    const bool manifestPresent = QFileInfo::exists(manifestSource);
+
+    // A descriptor's `kind` and the manifest beside it are two independent
+    // claims, and Standard and Native are never mixed inside one bundle.
+    // Publishing a Native descriptor whose root holds a standard manifest would
+    // create a `native-<version>` directory carrying a standard bundle.json: a
+    // directory whose name and contents disagree, which discovery can only
+    // refuse. The disagreement is caught here, before a byte is staged, and is
+    // named rather than resolved.
+    if (manifestPresent) {
+        QString manifestReason;
+        const std::optional<Bundle> manifestBundle = readBundle(source.root, &manifestReason);
+        if (!manifestBundle.has_value()) {
+            return fail(QStringLiteral("the source bundle.json cannot be read: %1")
+                            .arg(manifestReason));
+        }
+        if (manifestBundle->kind != source.kind) {
+            return fail(QStringLiteral("the source bundle is described as '%1' but its bundle.json "
+                                       "declares kind '%2'")
+                            .arg(bundleKindName(source.kind),
+                                 bundleKindName(manifestBundle->kind)));
+        }
+        if (manifestBundle->version != source.version) {
+            return fail(QStringLiteral("the source bundle is described as version '%1' but its "
+                                       "bundle.json declares '%2'")
+                            .arg(source.version, manifestBundle->version));
+        }
+    }
+
+    // A stock descriptor has a content-derived version token and no manifest;
+    // the strict manifest schema wants a release-shaped version, so the token
+    // is folded into one that still names the exact inventory. Anything else
+    // must already carry a publishable version (readBundle produced it).
+    QString publishVersion = source.version;
+    if (!versionPattern().match(publishVersion).hasMatch()) {
+        if (source.kind != BundleKind::Standard || source.mpvApiVersion != 0 || manifestPresent)
+            return fail(QStringLiteral("version '%1' cannot name a published directory")
+                            .arg(source.version));
+        publishVersion = QStringLiteral("0.0.0-stock.") + source.descriptorId;
+    }
+
+    const QString publishName = bundleDirectoryName(source.kind, publishVersion);
     const QString publishPath = QDir(canonicalRoot).filePath(publishName);
     if (QFileInfo::exists(publishPath))
         return fail(QStringLiteral("%1 is already published; published bundles are immutable")
@@ -988,12 +1349,50 @@ bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* re
         }
     }
     if (writeFailure.isEmpty()) {
-        const QString manifestSource = QDir(source.root).filePath(QLatin1String(kManifestFileName));
-        const QString manifestDestination = QDir(stagingPath).filePath(QLatin1String(kManifestFileName));
-        if (!QFileInfo::exists(manifestSource))
+        const QString manifestDestination =
+            QDir(stagingPath).filePath(QLatin1String(kManifestFileName));
+        if (manifestPresent) {
+            if (!QFile::copy(manifestSource, manifestDestination))
+                writeFailure = QStringLiteral("could not copy bundle.json into the staging directory");
+        } else if (source.kind == BundleKind::Standard && source.mpvApiVersion == 0) {
+            // The one case where a manifest is synthesised: a validated stock
+            // descriptor whose bytes carry no manifest of their own. It is
+            // written into our staging directory from the inventory that was
+            // already verified against disk, so the source is read, not edited.
+            QJsonArray deps;
+            for (const QString& dep : source.deps) deps.append(dep);
+            QJsonArray files;
+            for (const BundleFile& file : source.files) {
+                files.append(QJsonObject{{QStringLiteral("path"), file.path},
+                                         {QStringLiteral("bytes"), double(file.bytes)},
+                                         {QStringLiteral("sha256"), file.sha256}});
+            }
+            const QJsonObject manifest{
+                {QStringLiteral("schema"), bundleSchemaId()},
+                {QStringLiteral("kind"), bundleKindName(source.kind)},
+                {QStringLiteral("version"), publishVersion},
+                {QStringLiteral("module"), QDir(source.root).relativeFilePath(source.modulePath)},
+                {QStringLiteral("mpvApiVersion"), double(source.mpvApiVersion)},
+                {QStringLiteral("protocolVersion"), double(source.protocolVersion)},
+                {QStringLiteral("engineSchemaVersion"), double(source.engineSchemaVersion)},
+                {QStringLiteral("deps"), deps},
+                {QStringLiteral("files"), files}};
+            QFile manifestOut(manifestDestination);
+            if (!manifestOut.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                writeFailure =
+                    QStringLiteral("could not write bundle.json into the staging directory");
+            } else {
+                const QByteArray bytes = QJsonDocument(manifest).toJson(QJsonDocument::Indented);
+                if (manifestOut.write(bytes) != bytes.size())
+                    writeFailure =
+                        QStringLiteral("could not write bundle.json into the staging directory");
+                manifestOut.close();
+            }
+        } else {
+            // A Native descriptor arrives from its own manifest, so a missing
+            // one is a refusal, not something to invent.
             writeFailure = QStringLiteral("the source bundle has no bundle.json to publish");
-        else if (!QFile::copy(manifestSource, manifestDestination))
-            writeFailure = QStringLiteral("could not copy bundle.json into the staging directory");
+        }
     }
     if (!writeFailure.isEmpty()) return abort(writeFailure);
 
@@ -1031,6 +1430,7 @@ bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* re
         return fail(QStringLiteral("could not commit the current pointer in %1; the new bundle is "
                                    "published but not selected")
                         .arg(canonicalRoot));
+    if (publishedRoot) *publishedRoot = publishPath;
     return true;
 }
 

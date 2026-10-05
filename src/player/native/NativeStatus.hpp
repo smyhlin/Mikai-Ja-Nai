@@ -20,14 +20,17 @@
 #include <QtCore/QVector>
 
 #include "MpvHandle.hpp"
+#include "NativeFilterCommand.hpp"
+#include "NativePreparationPlan.hpp"
 #include "NativeTypes.hpp"
 
 namespace mplayer {
 namespace native {
 
-/// The filter's `GET_META` label and the ordinary mpv property the Qt side reads;
-/// it never resolves an `aji` symbol.
-inline constexpr const char* kNativeStatusLabel = "mikai_native";
+/// The ordinary mpv property the Qt side reads; it never resolves an `aji`
+/// symbol. The filter's `GET_META` label itself is owned by
+/// `NativeFilterCommand.hpp`, the one QtCore-only place the producer and this
+/// reader can share it from, and is taken from there rather than repeated here.
 inline constexpr const char* kNativeStatusProperty = "vf-metadata/mikai_native";
 
 /// The one schema this build writes and reads; an unknown tag is a named refusal,
@@ -37,6 +40,16 @@ inline constexpr const char* kNativeStatusSchema = "mikai.native.status/1";
 /// Both layers must declare this protocol; a mismatch is refused with both
 /// versions named, never half-working.
 inline constexpr int kNativeStatusProtocol = 1;
+
+/// The optional factory observation carries its own identity, kept distinct from
+/// the status protocol above and from the producer's snapshot protocol/schema
+/// and AJI ABI: the filter must state each exactly, and a conflation of the
+/// status wire with the producer's ABI is refused by name rather than read as
+/// availability.
+inline constexpr int kNativeFactoryQueryProtocol = 1;
+inline constexpr int kNativeFactorySnapshotProtocol = 2;
+inline constexpr int kNativeFactorySnapshotSchema = 2;
+inline constexpr int kNativeFactorySourceAbi = 8;
 
 /// At most one request every 500 ms; an unanswered one is abandoned after this
 /// so a lost reply cannot stop the poll forever.
@@ -76,6 +89,11 @@ QVector<NativeState> allNativeStates();
 
 /// Poll Active and Preparing: only a poll discovers the return from either, so
 /// polling stops once the filter says neither.
+///
+/// This asks whether the producer advances the state ON ITS OWN, which is not
+/// the same question a reader asks: mplayer::nativeSnapshotKeepsPolling also
+/// keeps reading Probe, because that state completes only when the producer
+/// adopts a decoded frame.
 bool nativeStateNeedsPolling(NativeState state);
 
 /// Both sides are positive; a zero side is a refusal, not something to clamp.
@@ -134,7 +152,9 @@ struct NativeEffectivePlan {
 };
 
 /// The filter's own cadence accounting; a spatial-only chain keeps framesOut ==
-/// framesIn and interpolated == 0.
+/// framesIn and interpolated == 0. `interpolated` counts frames synthesized at the
+/// output pin, not the net cadence gain, so it is bounded by the factor's
+/// per-source synthesis rate and by the frames actually emitted.
 struct NativeCadenceCounters {
   qint64 framesIn = 0;
   qint64 framesOut = 0;
@@ -150,6 +170,57 @@ struct NativeCadenceCounters {
   bool operator!=(const NativeCadenceCounters& other) const { return !(*this == other); }
 };
 
+/// Observed facts, never requested ones. Each member is absent when nothing
+/// was observed; unknown fields stay absent, never a placeholder.
+struct NativeProbePayload {
+  std::optional<SourceGeometry> source;
+  std::optional<DeviceIdentity> device;
+
+  bool operator==(const NativeProbePayload& other) const;
+  bool operator!=(const NativeProbePayload& other) const { return !(*this == other); }
+};
+
+bool sourceGeometryEqual(const SourceGeometry& a, const SourceGeometry& b);
+bool deviceIdentityEqual(const DeviceIdentity& a, const DeviceIdentity& b);
+
+/// The OPTIONAL factory observation the filter publishes for the source it is
+/// actually attached to. It is an availability fact only, never Prepared, Active
+/// or artifact-ready: `observed` is true only when the filter executed the
+/// producer's own query against the adopted context, and `spatial`/`rife` are
+/// true only for a successful answer whose compiled roles name them. An
+/// unavailable or unobserved factory always carries a non-empty `reasonKey`, and
+/// such an observation can never claim a supported role.
+struct NativeFactoryObservation {
+  bool observed = false;
+  /// The backend actually checked, or empty when nothing was checked.
+  QString backend;
+  bool spatial = false;
+  bool rife = false;
+  /// The runtime the producer actually initialised and checked.
+  QString runtimeVersion;
+  /// The adopted device UUID the factory was checked against, in the ABI's hex
+  /// form; it belongs to the same source/epoch as the snapshot carrying it.
+  QString deviceIdentity;
+  /// 0 is unknown; there is no default compute capability.
+  int smMajor = 0;
+  int smMinor = 0;
+  /// Non-empty exactly when the factory is not usable, naming why in a stable key.
+  QString reasonKey;
+  QString reason;
+
+  /// True only for an executed query that answered success with at least one
+  /// compiled role and no refusal.
+  bool isUsable() const { return observed && (spatial || rife) && reasonKey.isEmpty(); }
+
+  bool operator==(const NativeFactoryObservation& other) const {
+    return observed == other.observed && backend == other.backend && spatial == other.spatial &&
+           rife == other.rife && runtimeVersion == other.runtimeVersion &&
+           deviceIdentity == other.deviceIdentity && smMajor == other.smMajor &&
+           smMinor == other.smMinor && reasonKey == other.reasonKey && reason == other.reason;
+  }
+  bool operator!=(const NativeFactoryObservation& other) const { return !(*this == other); }
+};
+
 /// `requested` uses the preference contract's vocabulary and `effective` is the
 /// filter's own report; every optional member is absent when omitted, never synthesised.
 struct StatusSnapshot {
@@ -160,14 +231,19 @@ struct StatusSnapshot {
   std::optional<SelectionState> requested;
   std::optional<NativeEffectivePlan> effective;
   std::optional<NativeCadenceCounters> counters;
+  /// Observed source/device; absent when nothing observed.
+  std::optional<NativeProbePayload> probe;
+  /// The optional producer factory observation; absent when the producer
+  /// published none. It never influences the state above.
+  std::optional<NativeFactoryObservation> factory;
   /// Non-empty exactly when the state is not Active, empty for Active.
   QString reason;
 
   bool operator==(const StatusSnapshot& other) const {
     return version == other.version && revision == other.revision && state == other.state &&
            epoch == other.epoch && requested == other.requested &&
-           effective == other.effective && counters == other.counters &&
-           reason == other.reason;
+           effective == other.effective && counters == other.counters && probe == other.probe &&
+           factory == other.factory && reason == other.reason;
   }
   bool operator!=(const StatusSnapshot& other) const { return !(*this == other); }
 };
@@ -215,9 +291,14 @@ bool parseStatusSnapshot(const QByteArray& payload, StatusSnapshot* snapshot,
 bool parseStatusTags(const NodeValue& tags, StatusSnapshot* snapshot,
                      QString* errorKey = nullptr, QString* error = nullptr);
 
-/// The canonical writer: writes exactly the members present, never substituting a
-/// default for an absent one.
+/// The raw document writer: writes exactly the members present, never substituting
+/// a default for an absent one, and keeps every string verbatim. A hostile filter's
+/// URL must reach `parseStatusSnapshot` unchanged so it is refused by name rather
+/// than quietly redacted into an accepted document, so this output is not safe to
+/// log or export.
 QJsonObject statusSnapshotToJson(const StatusSnapshot& snapshot);
+/// The export/writer boundary: the same document with every free-text member
+/// redacted first, so no credential leaves in the clear.
 QByteArray serializeStatusSnapshot(const StatusSnapshot& snapshot);
 
 /// The tag map as an app-allocated node (freed with the app's allocator, never

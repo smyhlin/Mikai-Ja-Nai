@@ -159,9 +159,10 @@ bool verifyArtifactSource(const ArtifactRecord& record, const QString& onnxPath,
 
 /// Removes one artifact, and only with proof: its manifest must parse strictly,
 /// its engine must be a regular non-reparse file inside the store root, and both
-/// the recorded size and the recorded SHA-256 must match the bytes on disk. Only
-/// the engine it names and the manifest are removed, and only the directory if
-/// that leaves it empty; anything else in the directory is left in place.
+/// the recorded size and the recorded SHA-256 must match the bytes on disk. The
+/// proved directory is first atomically quarantined so deletion failure cannot
+/// leave a half-valid artifact under its content id. Only the engine it names
+/// and the manifest are removed; unknown entries are preserved.
 ///
 /// Refuses with `native.artifact.inUse` while a lease on the same owned root and
 /// build key is still held, including one taken through another store instance.

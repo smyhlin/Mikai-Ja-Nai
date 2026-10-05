@@ -45,6 +45,7 @@
 
 namespace mplayer {
 class VideoSurface;
+enum class StreamFpsSource : int;
 }
 
 namespace mplayer {
@@ -108,7 +109,8 @@ public:
     /// resolved against the catalogue, so an unknown id is a no-op rather than
     /// a chain nobody has. "off" is a real preset here and turns the chain off.
     void applyAnime4KPreset(const QString& presetId);
-    void setStreamStats(double bytesPerSecond, double framesPerSecond);
+    void setStreamStats(double bytesPerSecond, double framesPerSecond,
+                        StreamFpsSource fpsSource);
     void setSourceSize(int width, int height);
     void setEpisodeStepping(bool hasPrevious, bool hasNext);
     void setEpisodeLabel(const QString& label);
@@ -192,6 +194,7 @@ signals:
     void nativeActionRequested(native::menu::Action action, const QString& value);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -244,6 +247,7 @@ private:
     /// opens what sits under it.
     void watchEnhancementRows(MenuPopup* panel);
     void updateInfoChip();
+    void retranslateUi();
     void openKeys();
     void openMenu();
     void buildPictureMenu();
@@ -367,6 +371,7 @@ private:
     bool hasNextEpisode_ = false;
     double networkBytesPerSecond_ = 0.0;
     double streamFramesPerSecond_ = 0.0;
+    StreamFpsSource streamFpsSource_ = static_cast<StreamFpsSource>(0);
     int sourceWidth_ = 0;
     int sourceHeight_ = 0;
     int outputWidth_ = 0;

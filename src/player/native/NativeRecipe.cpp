@@ -3,11 +3,14 @@
 #include <cmath>
 #include <limits>
 
+#include "NativeRife.hpp"
+
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonParseError>
 #include <QtCore/QJsonValue>
 #include <QtCore/QStringList>
+#include <QtCore/QStringView>
 
 namespace mplayer {
 namespace native {
@@ -295,10 +298,23 @@ RecipeEligibility evaluateEligibility(const Recipe& recipe, const CatalogView& c
   }
 
   if (recipe.temporal.has_value()) {
-    QString reasonKey;
-    QString reason;
-    if (!resolveModel(recipe, ModelRole::Temporal, recipe.temporal->modelId(), catalog, &reasonKey,
-                      &reason)) {
+    // A temporal stage names a curated variant, not a catalogue id. The exact
+    // pinned owned graph is what is evaluated; a curated-name lookup would match
+    // no owned row and a row that merely claims the name is never accepted.
+    const RifeModelResolution rife = resolveRifeModel(*recipe.temporal, catalog);
+    if (!rife.resolved()) {
+      const QString reason =
+          QStringLiteral("recipe %1: %2").arg(recipe.id, rife.reason);
+      result.stageReasons.append(reason);
+      refuse(rife.reasonKey, reason);
+      return result;
+    }
+    if (!rife.record->supportsBackend(recipe.backend)) {
+      const QString reasonKey = QStringLiteral("model.backend.unsupported");
+      const QString reason =
+          QStringLiteral("recipe %1 asks for model %2 on the %3 backend, which that model does "
+                         "not support")
+              .arg(recipe.id, recipe.temporal->modelId(), stableName(recipe.backend));
       result.stageReasons.append(reason);
       refuse(reasonKey, reason);
       return result;
@@ -485,6 +501,32 @@ AvailabilityState preparingAvailability(const QString& reasonKey, const QString&
 
 AvailabilityState unavailableAvailability(const QString& reasonKey, const QString& reason) {
   return AvailabilityState{Availability::Unavailable, reasonKey, reason};
+}
+
+bool isSameDeviceUuid(const QString& left, const QString& right) {
+  // CUDA tools add GPU- to the same UUID the decoder reports without it.
+  static constexpr QStringView kGpuPrefix = u"GPU-";
+  const auto payload = [](QStringView value) {
+    return value.size() > kGpuPrefix.size() &&
+                   value.left(kGpuPrefix.size()).compare(kGpuPrefix, Qt::CaseInsensitive) == 0
+               ? value.mid(kGpuPrefix.size())
+               : value;
+  };
+
+  const QStringView a = payload(left);
+  const QStringView b = payload(right);
+  qsizetype ia = 0;
+  qsizetype ib = 0;
+  while (true) {
+    while (ia < a.size() && !a.at(ia).isLetterOrNumber()) ++ia;
+    while (ib < b.size() && !b.at(ib).isLetterOrNumber()) ++ib;
+    if (ia == a.size() || ib == b.size()) {
+      return ia == a.size() && ib == b.size();
+    }
+    if (a.at(ia).toLower() != b.at(ib).toLower()) return false;
+    ++ia;
+    ++ib;
+  }
 }
 
 bool isValidModelId(const QString& id) {

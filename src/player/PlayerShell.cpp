@@ -38,14 +38,6 @@ QString stateName(PlayerShell::State state) {
 /// category, an experiment family, and the deepest one a preset hangs in.
 constexpr int kEnhancementTreeDepth = 5;
 
-/// The rows of one level of the enhancement tree. The catalogue levels come
-/// from `anime4k::menuRows`; the native branch and the RIFE capability page are
-/// built by `native::menu`, which reads the requested preference, the runtime
-/// and the filter's status rather than inventing a capability. The root also
-/// gains the native branch row.
-///
-/// A category row carries the level it opens, so the panel beside it is built
-/// from the row alone; a disabled row carries nothing, because it leads nowhere.
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
                                       const native::menu::Inputs& native) {
     QVector<MenuEntry> entries;
@@ -93,9 +85,6 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
                 entry.disabled = true;
                 break;
         }
-        // The RIFE page and the native page are ours. The catalogue row stays
-        // where it is, but a disabled row's tooltip has to be the fact this
-        // build can stand behind, not the catalogue's older wording.
         if (row.role != anime4k::MenuRow::Role::Preset) {
             const QString override = native::menu::categoryTooltip(row.id, native);
             if (!override.isEmpty()) {
@@ -105,16 +94,16 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
         entries.append(entry);
     }
     if (levelId.isEmpty()) {
-        // The native branch lives inside the existing tree: no seventh dock
-        // button, no new top-level window.
-        MenuEntry entry;
-        entry.text = QCoreApplication::translate("PlayerShell", "Native processing") +
-                     QStringLiteral("  ›");
-        entry.tooltip = native::menu::categoryTooltip(native::menu::kNativeLevelId, native);
-        entry.submenu = true;
-        entry.current = native.preferences.enabled;
-        entry.payload = QStringLiteral("level|native");
-        entries.append(entry);
+        for (const native::menu::Row& row : native::menu::rootRows(native)) {
+            MenuEntry entry;
+            entry.text = row.label + (row.submenu ? QStringLiteral("  ›") : QString());
+            entry.tooltip = row.tooltip;
+            entry.disabled = row.disabled;
+            entry.submenu = row.submenu;
+            entry.current = row.current;
+            entry.payload = QStringLiteral("level|") + row.value;
+            entries.append(entry);
+        }
     }
     return entries;
 }
@@ -144,8 +133,10 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     // The native branch is built before anyone pushes real inputs at it, so its
     // starting state has to be the truth of this build: no engine, and no
-    // status snapshot read yet. Nothing here claims a capability.
-    nativeInputs_.availability = native::currentNativeAvailability();
+    // status snapshot read yet. Nothing here claims a capability. No core exists
+    // yet, so no factory observation is passed - the owning player supplies the
+    // per-core ledger later through setNativeMenuInputs().
+    nativeInputs_.availability = native::currentNativeAvailability(nullptr);
     nativeInputs_.status.availability = native::unavailableAvailability(
         QStringLiteral("native.statusAbsent"), tr("No native status has been read."));
 
@@ -350,6 +341,7 @@ void PlayerShell::buildDock() {
     btnSettings_ = new IconButton(IconPainter::gear, tr("Quality and speed"),
                                   kDockActionSize, kDockActionGlyph, actionHost);
     btnSettings_->setObjectName(QStringLiteral("playerSettingsButton"));
+    connect(btnSettings_, &QPushButton::clicked, this, &PlayerShell::openSettings);
     actions->addWidget(btnSettings_);
     topRow->addWidget(actionHost);
     dockLayout->addLayout(topRow);
@@ -437,6 +429,8 @@ void PlayerShell::buildFooter() {
     lblNetworkStats_ = new QLabel(QStringLiteral("0.00 Mbps × — FPS"), footerLeft_);
     lblNetworkStats_->setObjectName(QStringLiteral("playerNetworkStats"));
     lblNetworkStats_->setFont(monoFont(8));
+    lblNetworkStats_->setToolTip(tr("FPS unknown"));
+    lblNetworkStats_->setAccessibleDescription(tr("FPS unknown"));
     lblNetworkStats_->setStyleSheet(
         QStringLiteral("background: transparent; color: rgba(255,255,255,185);"));
     info->addWidget(lblNetworkStats_);
@@ -1011,9 +1005,11 @@ void PlayerShell::setNativeMenuInputs(const native::menu::Inputs& inputs) {
     refreshEnhancementTree();
 }
 
-void PlayerShell::setStreamStats(double bytesPerSecond, double framesPerSecond) {
+void PlayerShell::setStreamStats(double bytesPerSecond, double framesPerSecond,
+                                 StreamFpsSource fpsSource) {
     networkBytesPerSecond_ = std::max(0.0, bytesPerSecond);
     streamFramesPerSecond_ = std::max(0.0, framesPerSecond);
+    streamFpsSource_ = fpsSource;
     updateInfoChip();
 }
 
@@ -1059,6 +1055,17 @@ void PlayerShell::refreshEnhancementTree() {
         if (!panel->isVisible()) {
             continue;
         }
+        const QString& level = enhancementLevels_.at(depth);
+        if (level.isEmpty()) {
+            panel->setTitle(tr("ENHANCEMENTS"));
+        } else if (level == QLatin1String(native::menu::kNativeLevelId)) {
+            panel->setTitle(tr("NATIVE PROCESSING"));
+        } else if (level == QLatin1String(native::menu::kRifeLevelId)) {
+            panel->setTitle(QStringLiteral("RIFE"));
+        } else {
+            const QString label = anime4k::categoryLabel(level);
+            panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
+        }
         panel->setEntries(
             enhancementEntries(enhancementLevels_.at(depth), currentId, nativeInputs_));
         watchEnhancementRows(panel);
@@ -1090,6 +1097,8 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
     MenuPopup* panel = enhancementPanels_.at(depth);
     if (levelId == QLatin1String(native::menu::kNativeLevelId)) {
         panel->setTitle(tr("NATIVE PROCESSING"));
+    } else if (levelId == QLatin1String(native::menu::kRifeLevelId)) {
+        panel->setTitle(QStringLiteral("RIFE"));
     } else {
         const QString label = anime4k::categoryLabel(levelId);
         panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
@@ -1165,6 +1174,20 @@ void PlayerShell::updateInfoChip() {
             ? QStringLiteral("%1 FPS").arg(streamFramesPerSecond_, 0, 'f', 2)
             : QStringLiteral("— FPS");
     lblNetworkStats_->setText(QStringLiteral("%1 × %2").arg(throughput, fps));
+    QString fpsProvenance;
+    switch (streamFpsSource_) {
+        case StreamFpsSource::MpvOutput:
+            fpsProvenance = tr("mpv output FPS");
+            break;
+        case StreamFpsSource::Container:
+            fpsProvenance = tr("container source FPS");
+            break;
+        case StreamFpsSource::Unknown:
+            fpsProvenance = tr("FPS unknown");
+            break;
+    }
+    lblNetworkStats_->setToolTip(fpsProvenance);
+    lblNetworkStats_->setAccessibleDescription(fpsProvenance);
 
     if (anime4kMode_ == anime4k::Mode::Off) {
         lblEnhancement_->hide();
@@ -1544,6 +1567,57 @@ void PlayerShell::dropEvent(QDropEvent* event) {
 // ═════════════════════════════════════════════════════════════════════════════
 //  PAINT & LIFECYCLE
 // ═════════════════════════════════════════════════════════════════════════════
+
+void PlayerShell::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void PlayerShell::retranslateUi() {
+    const QString name = path_.isEmpty() ? tr("no media loaded") : QFileInfo(path_).fileName();
+    setWindowTitle(tr("%1 · Media Lightbox").arg(name));
+    btnOriginal_->setToolTip(tr("Open the original file"));
+    titleMin_->setToolTip(tr("Minimize the window"));
+    titleMax_->setToolTip(tr("Toggle fullscreen / windowed"));
+    titleClose_->setToolTip(tr("Exit the player  (Esc)"));
+    btnMin_->setToolTip(tr("Minimize the window"));
+    btnClose_->setToolTip(tr("Exit the player  (Esc)"));
+    btnPrev_->setToolTip(tr("Previous episode  (←)"));
+    btnNext_->setToolTip(tr("Next episode  (→)"));
+    btnPlay_->setToolTip(tr("Play / pause  (Space)"));
+    btnPip_->setToolTip(tr("Picture in picture"));
+    btnAudio_->setToolTip(tr("Audio — choose a dub  (T)"));
+    btnSubs_->setToolTip(tr("Subtitles — choose a track  (C)"));
+    btnEnhance_->setToolTip(tr("Open enhancements"));
+    btnSettings_->setToolTip(tr("Quality and speed"));
+    btnKeys_->setToolTip(tr("Keyboard shortcuts  (?)"));
+    btnMore_->setToolTip(tr("Open more menu"));
+    btnWindowMode_->setToolTip(fullscreen_ ? tr("Windowed mode") : tr("Fullscreen mode"));
+
+    morePopup_->setTitle(tr("MORE"));
+    for (MenuPopup* popup : {morePopup_, pictureMenu_}) {
+        QVector<MenuEntry> entries;
+        entries.reserve(popup->rowCount());
+        for (int row = 0; row < popup->rowCount(); ++row) {
+            MenuEntry entry = popup->entryAt(row);
+            const QString action = entry.payload.toString();
+            if (action == QLatin1String("copy")) entry.text = tr("Copy link");
+            else if (action == QLatin1String("open")) entry.text = tr("Open containing folder");
+            else if (action == QLatin1String("exit")) entry.text = tr("Exit  (Esc)");
+            else if (action == QLatin1String("frame")) entry.text = tr("Copy frame");
+            else if (action == QLatin1String("compare")) entry.text = tr("Compare quality");
+            entries.append(std::move(entry));
+        }
+        popup->setEntries(entries);
+    }
+    refreshEnhancementTree();
+    updateInfoChip();
+    updateTimeLabels();
+    layoutChrome();
+    update();
+}
 
 void PlayerShell::paintEvent(QPaintEvent*) {
     QPainter p(this);

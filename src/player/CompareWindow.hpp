@@ -14,11 +14,15 @@
 
 #include <QDialog>
 #include <QImage>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 #include "CompareLayout.hpp"
 #include "PlayerPopups.hpp"
+#include "VideoSurface.hpp"
 
 class QComboBox;
 class QDoubleSpinBox;
@@ -30,9 +34,6 @@ class QTimer;
 class QToolButton;
 
 namespace mplayer {
-
-class VideoSurface;
-
 namespace shell {
 
 class CompareCanvas;
@@ -55,6 +56,16 @@ public:
     /// Empty unless the last capture failed, in which case it says why and the
     /// window is showing the failure rather than an older picture.
     QString captureError() const { return captureError_; }
+    /// Empty when the native plan is held (or when there is no source to hold),
+    /// otherwise the named reason it could not be frozen - so a caller can tell
+    /// "nothing to freeze" from "refused to freeze".
+    QString lockError() const { return lockError_; }
+    /// The surface's own native-transition queue depth, read live: the window
+    /// owns no queue, and a request made while the lock is held changes no
+    /// published status, so a cached copy would go stale.
+    int queuedNativeChanges() const {
+        return surface_ != nullptr ? surface_->queuedNativeTransitions() : 0;
+    }
     /// Re-freezes the live surface at wherever the player is now. Every
     /// explicit extraction goes through here, so "capture again" can only ever
     /// mean "capture this position".
@@ -73,6 +84,12 @@ protected:
     /// The window is kept and reused by the player, so being shown again is
     /// the viewer's "compare where I am now" and has to take a new frame.
     void showEvent(QShowEvent* event) override;
+    /// Releasing here, not only in the destructor, is what lets a native request
+    /// made while Compare was open be applied the moment the window closes.
+    void closeEvent(QCloseEvent* event) override;
+    /// close() hides the window, so the lock is released here as well: a hidden
+    /// Compare window never keeps the native plan frozen.
+    void hideEvent(QHideEvent* event) override;
 
 private:
     void buildUi();
@@ -93,11 +110,25 @@ private:
     QImage renderWithChain(const QString& id);
     void updateInfo();
     void updateFlickerTimer();
+    /// Takes the real native-plan lock the open window holds for its whole
+    /// lifetime, so no admission, drain, suspend or resume can move the plan
+    /// under the frozen frame. False, with `lockError_` set, when a transition is
+    /// settling and the one retry also failed - the window then says so instead
+    /// of freezing a plan that is about to change.
+    bool ensurePlanLock();
+    void releasePlanLock();
+    /// The surface published a native status: refresh the on-demand queue depth
+    /// and retry a lock that was refused while a transition was settling.
+    void onNativeStatusSettled();
     QString sideA() const;
     QString sideB() const;
     QString labelFor(const QString& id) const;
 
-    mplayer::VideoSurface* surface_ = nullptr;
+    /// Borrowed, not owned: the player that created the window holds the
+    /// surface, and it can be destroyed while this window is pumping the event
+    /// loop mid-capture. A QPointer makes that a null check instead of a
+    /// dangling read; every post-pump touch goes through the guard.
+    QPointer<mplayer::VideoSurface> surface_;
     CompareCanvas* canvas_ = nullptr;
     CompareGrid* grid_ = nullptr;
     QStackedWidget* stack_ = nullptr;
@@ -134,6 +165,15 @@ private:
     QString currentCandidateId_;
     CompareMode mode_ = CompareMode::SideBySide;
     bool flickerShowA_ = true;
+
+    /// The real native-plan lock, held while the window is visible so no native
+    /// transition can move the plan under the frozen frame.
+    std::optional<mplayer::VideoSurface::NativePlanLock> nativeLock_;
+    /// The named reason the lock could not be taken; empty when it was.
+    QString lockError_;
+    /// Set when a lock was refused because a transition was settling, so the
+    /// next settled status retries it exactly once rather than spinning.
+    bool lockRetryArmed_ = false;
 };
 
 }  // namespace shell

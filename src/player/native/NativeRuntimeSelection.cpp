@@ -10,6 +10,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QtGlobal>
 
 #include <atomic>
@@ -84,41 +85,99 @@ RuntimeSelection describe(const Bundle& bundle, RuntimeChoice choice) {
     return selection;
 }
 
-/// The stock module `dir` names, described as a bundle. Shared by the local and
-/// the provisioning answers, so both report the same reason for the same shape.
-RuntimeSelection describeStandardFrom(const std::optional<QDir>& dir) {
-    if (!dir.has_value()) {
+/// Every legacy candidate module, described in turn, so one corrupt DLL cannot
+/// mask a valid one beside it: a candidate that fails validation is named and
+/// the search continues. The stock descriptor describes what is already on
+/// disk and writes nothing.
+RuntimeSelection describeLegacyStandard(const QString& hint) {
+    const QStringList modules = mikai::backend::runtimeCandidates(hint);
+    if (modules.isEmpty()) {
         return unavailable(RuntimeChoice::Standard,
                            translated(QT_TRANSLATE_NOOP(
                                "RuntimeSelection", "No mpv runtime was found.")));
     }
-    const QString module = moduleFrom(dir.value());
-    if (module.isEmpty()) {
-        return unavailable(RuntimeChoice::Standard,
-                           translated(QT_TRANSLATE_NOOP(
-                               "RuntimeSelection", "No libmpv library is present in %1."))
-                               .arg(dir->path()));
+    QStringList rejections;
+    for (const QString& module : modules) {
+        QString reason;
+        const std::optional<Bundle> bundle = describeStandardRuntime(module, &reason);
+        if (bundle.has_value()) {
+            return describe(*bundle, RuntimeChoice::Standard);
+        }
+        rejections.append(QStringLiteral("%1: %2").arg(module, reason));
     }
-    QString reason;
-    const std::optional<Bundle> bundle = describeStandardRuntime(module, &reason);
-    if (!bundle.has_value()) {
-        return unavailable(RuntimeChoice::Standard, reason);
-    }
-    return describe(*bundle, RuntimeChoice::Standard);
+    return unavailable(RuntimeChoice::Standard,
+                       translated(QT_TRANSLATE_NOOP(
+                           "RuntimeSelection", "No usable mpv runtime: %1"))
+                           .arg(rejections.join(QStringLiteral("; "))));
 }
 
 /// Answers from what is already on disk. Never downloads, so the GUI thread can
-/// call it during startup without blocking on the network.
-RuntimeSelection resolveStandardLocal() {
-    return describeStandardFrom(mikai::backend::findRuntime());
+/// call it during startup without blocking on the network. Installed Standard
+/// bundles are considered first, because they are the ones this app validated
+/// and published; the legacy locations are the fallback, never the reverse.
+RuntimeSelection resolveStandardLocal(const QString& hint) {
+    QStringList installedRejections;
+    const QList<Bundle> installed = discoverBundles({}, &installedRejections);
+    for (const Bundle& bundle : installed) {
+        if (bundle.kind == BundleKind::Standard) {
+            return describe(bundle, RuntimeChoice::Standard);
+        }
+    }
+    RuntimeSelection legacy = describeLegacyStandard(hint);
+    if (!legacy.resolvedBundle.has_value() && !installedRejections.isEmpty()) {
+        legacy.reason = legacy.reason.isEmpty()
+                            ? installedRejections.join(QStringLiteral("; "))
+                            : QStringLiteral("%1; %2").arg(
+                                  legacy.reason,
+                                  installedRejections.join(QStringLiteral("; ")));
+    }
+    return legacy;
 }
 
-/// The stock discovery with provisioning: the only path that may download, so
-/// it belongs off the GUI thread. A download failure is named rather than
-/// thrown, because the app stays usable either way.
-RuntimeSelection resolveStandardProvisioned() {
+/// The provisioning half: when nothing already installed validates or loads,
+/// the stock archive is fetched and published as an app-owned Standard bundle.
+/// The download lands in app-owned scratch and is validated before the atomic
+/// installer publishes it, so a reference install and the stock cache are never
+/// written, replaced or deleted.
+RuntimeSelection provisionStandard() {
+    const QString scratchRoot = QDir(nativeStorageRoot()).filePath(QStringLiteral("scratch"));
+    if (!QDir().mkpath(scratchRoot)) {
+        return unavailable(RuntimeChoice::Standard,
+                           translated(QT_TRANSLATE_NOOP(
+                               "RuntimeSelection", "No app-owned scratch directory is available.")));
+    }
+    QTemporaryDir work(QDir(scratchRoot).filePath(QStringLiteral("provision-XXXXXX")));
+    if (!work.isValid()) {
+        return unavailable(RuntimeChoice::Standard,
+                           translated(QT_TRANSLATE_NOOP(
+                               "RuntimeSelection", "No app-owned scratch directory is available.")));
+    }
     try {
-        return describeStandardFrom(mikai::backend::ensureRuntime());
+        const QDir extracted = mikai::backend::provisionRuntime(work.path());
+        const QString module = moduleFrom(extracted);
+        QString describeReason;
+        const std::optional<Bundle> described = describeStandardRuntime(module, &describeReason);
+        if (!described.has_value()) {
+            return unavailable(RuntimeChoice::Standard, describeReason);
+        }
+        QString installReason;
+        QString publishedRoot;
+        if (!installAtomic(*described, runtimeStorageRoot(), &installReason, &publishedRoot)) {
+            return unavailable(RuntimeChoice::Standard, installReason);
+        }
+        // Re-read and revalidate the published descriptor rather than trusting
+        // the source it was copied from: what commit loads has to be exactly
+        // what the installer published.
+        QString readReason;
+        const std::optional<Bundle> published = readBundle(publishedRoot, &readReason);
+        if (!published.has_value()) {
+            return unavailable(RuntimeChoice::Standard, readReason);
+        }
+        QString validateReason;
+        if (!validateBundle(*published, &validateReason)) {
+            return unavailable(RuntimeChoice::Standard, validateReason);
+        }
+        return describe(*published, RuntimeChoice::Standard);
     } catch (const std::exception& error) {
         return unavailable(RuntimeChoice::Standard, QString::fromUtf8(error.what()));
     } catch (...) {
@@ -129,9 +188,30 @@ RuntimeSelection resolveStandardProvisioned() {
     }
 }
 
-RuntimeSelection resolveNative(QString* reason) {
+/// The stock discovery with provisioning: the only path that may download, so
+/// it belongs off the GUI thread. A download failure is named rather than
+/// thrown, because the app stays usable either way.
+RuntimeSelection resolveStandardProvisioned(const QString& hint) {
+    RuntimeSelection local = resolveStandardLocal(hint);
+    if (local.resolvedBundle.has_value()) {
+        return local;
+    }
+    return provisionStandard();
+}
+
+/// The native half: the first Native bundle that validates, described and
+/// nothing more. A missing or unusable bundle names why in `reason`, so the
+/// Standard fallback carries that sentence instead of inventing its own.
+RuntimeSelection resolveNative(const QString& hint, QString* reason) {
     QStringList rejections;
-    const QList<Bundle> candidates = discoverBundles({}, &rejections);
+    // The hint is searched before the installed locations, exactly as the
+    // Standard half searches it: one resolver, one order, so a probe pointing
+    // at a scratch tree never needs a second selection path to exist.
+    QStringList roots;
+    if (!hint.isEmpty()) {
+        roots.append(hint);
+    }
+    const QList<Bundle> candidates = discoverBundles(roots, &rejections);
     for (const Bundle& bundle : candidates) {
         if (bundle.kind == BundleKind::Native) {
             return describe(bundle, RuntimeChoice::Native);
@@ -152,33 +232,57 @@ RuntimeSelection resolveNative(QString* reason) {
 /// the resolver that answers the fallback, so the startup answer stays local
 /// while the recovery answer may provision.
 template <typename StandardResolver>
-RuntimeSelection resolveWith(RuntimeChoice choice, StandardResolver standard) {
+RuntimeSelection resolveWith(RuntimeChoice choice, StandardResolver standard, const QString& hint) {
     if (choice != RuntimeChoice::Native) {
-        return standard();
+        return standard(hint);
     }
     // Native first, then Standard as the one module this process will ever
     // load. The refusal rides along on the fallback so the surface can say why
     // the request was not honoured; the loaded kind never claims to be native.
     QString reason;
-    const RuntimeSelection native = resolveNative(&reason);
+    const RuntimeSelection native = resolveNative(hint, &reason);
     if (!native.modulePath.isEmpty()) {
         return native;
     }
-    RuntimeSelection fallback = standard();
+    // The refusal is always named, even when Standard stands in for playback:
+    // what is unavailable here is the *native* runtime, not playback. An empty
+    // reason would let the surface read as though the request was ignored.
+    if (reason.isEmpty()) {
+        reason = translated(QT_TRANSLATE_NOOP(
+            "RuntimeSelection", "No native runtime bundle is installed."));
+    }
+    RuntimeSelection fallback = standard(hint);
     fallback.requested = RuntimeChoice::Native;
     // Both flags travel together, as plan 8.4 requires: the requested runtime is
     // unavailable and native was not applied, while Standard carries playback.
     fallback.nativeNotApplied = true;
     fallback.runtimeUnavailable = true;
-    fallback.reason = fallback.modulePath.isEmpty() && !fallback.reason.isEmpty()
-                          ? QStringLiteral("%1; %2").arg(reason, fallback.reason)
-                          : reason;
+    // Two named failures compose into one line: which native bundle was refused,
+    // and why Standard could not stand in for it either. A Standard that did
+    // load keeps only the native half, because its own state needs no excuse.
+    if (fallback.resolvedBundle.has_value() || fallback.reason.isEmpty()) {
+        fallback.reason = reason;
+    } else {
+        fallback.reason = QStringLiteral("%1; %2").arg(reason, fallback.reason);
+    }
     return fallback;
 }
 
+/// Why the choice cannot be honoured without a restart: the pinned module and
+/// the asked-for kind, both named, because "restart" alone does not say what a
+/// restart would change.
+QString restartReason(BundleKind pinned, RuntimeChoice requested) {
+    return translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                       "%1 is loaded; %2 takes effect after a restart."))
+        .arg(bundleKindName(pinned),
+             runtimeChoiceToString(requested) == QLatin1String("native")
+                 ? translated(QT_TRANSLATE_NOOP("RuntimeSelection", "native"))
+                 : translated(QT_TRANSLATE_NOOP("RuntimeSelection", "standard")));
+}
+
 /// The GUI-thread half: never downloads, so startup cannot block on the network.
-RuntimeSelection resolveRuntimeLocal(RuntimeChoice choice) {
-    return resolveWith(choice, &resolveStandardLocal);
+RuntimeSelection resolveRuntimeLocal(RuntimeChoice choice, const QString& hint) {
+    return resolveWith(choice, &resolveStandardLocal, hint);
 }
 
 }  // namespace
@@ -224,13 +328,46 @@ bool storeRuntimeChoice(RuntimeChoice choice, QString* reason) {
     return true;
 }
 
-RuntimeSelection resolveRuntime(RuntimeChoice choice) {
-    return resolveWith(choice, &resolveStandardProvisioned);
+bool restartRequiredFor(RuntimeChoice choice) {
+    const RuntimeSelection& selection = recorded();
+    if (!selection.loaded) {
+        // Nothing is pinned, so the next selection reads whatever was stored.
+        return false;
+    }
+    const BundleKind wanted =
+        choice == RuntimeChoice::Native ? BundleKind::Native : BundleKind::Standard;
+    return selection.kind != wanted;
+}
+
+RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint) {
+    return resolveWith(choice, &resolveStandardProvisioned, hint);
 }
 
 RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
     if (recorded().loaded) {
-        return recorded();
+        // One module per process. The pinned module is never replaced, so a
+        // commit that arrives for the other kind is reported as the restart it
+        // is: dropping the request here would let a recovery attempt look as
+        // though it had been honoured.
+        RuntimeSelection selection = recorded();
+        if (resolved.nativeNotApplied) {
+            // A native request that fell back to Standard is not a restart
+            // question - it is the same kind that is already pinned - but the
+            // reason why native is not running has to survive the commit.
+            selection.requested = resolved.requested;
+            selection.nativeNotApplied = true;
+            selection.runtimeUnavailable = true;
+            if (!resolved.reason.isEmpty()) {
+                selection.reason = resolved.reason;
+            }
+            return selection;
+        }
+        if (selection.kind != resolved.kind) {
+            selection.requested = resolved.requested;
+            selection.restartRequired = true;
+            selection.reason = restartReason(selection.kind, resolved.requested);
+        }
+        return selection;
     }
     // Nothing validated travels with this selection, so there is no descriptor
     // to trust and nothing to load. The refusal names the condition rather than
@@ -305,7 +442,7 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
     return selection;
 }
 
-RuntimeSelection selectRuntime(RuntimeChoice choice) {
+RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint) {
     if (recorded().loaded) {
         // One module per process. A different choice is a restart, never a swap.
         const BundleKind wanted =
@@ -314,9 +451,7 @@ RuntimeSelection selectRuntime(RuntimeChoice choice) {
         if (selection.kind != wanted) {
             selection.requested = choice;
             selection.restartRequired = true;
-            selection.reason = translated(QT_TRANSLATE_NOOP(
-                                   "RuntimeSelection",
-                                   "The runtime choice changes after a restart."));
+            selection.reason = restartReason(selection.kind, choice);
         }
         return selection;
     }
@@ -325,14 +460,18 @@ RuntimeSelection selectRuntime(RuntimeChoice choice) {
     // The resolution stays local: provisioning may download, and that belongs to
     // the recovery path's `resolveRuntime()` on the pool, never to a GUI-thread
     // selection that a startup is waiting on.
-    return commitRuntime(resolveRuntimeLocal(choice));
+    return commitRuntime(resolveRuntimeLocal(choice, hint));
 }
 
 RuntimeSelection selectRuntime() { return selectRuntime(storedRuntimeChoice()); }
 
-RuntimeSelection selectStandardRuntime() { return selectRuntime(RuntimeChoice::Standard); }
+RuntimeSelection selectStandardRuntime(const QString& hint) {
+    return selectRuntime(RuntimeChoice::Standard, hint);
+}
 
-RuntimeSelection selectStartupRuntime() { return selectRuntime(storedRuntimeChoice()); }
+RuntimeSelection selectStartupRuntime(const QString& hint) {
+    return selectRuntime(storedRuntimeChoice(), hint);
+}
 
 const RuntimeSelection& currentSelection() { return recorded(); }
 

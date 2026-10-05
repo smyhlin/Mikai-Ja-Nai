@@ -37,7 +37,20 @@ RuntimeChoice storedRuntimeChoice();
 
 /// Writes the choice. Returns false with a reason when the value cannot be
 /// stored; the process keeps running on what it already selected either way.
+/// The write is the whole of what happens here. A stored choice is applied on
+/// the next launch and never to the module this process already pinned, so a
+/// user who switches it gets exactly what `restartRequiredFor()` reports and no
+/// hot swap behind their back.
 bool storeRuntimeChoice(RuntimeChoice choice, QString* reason = nullptr);
+
+/// True when storing `choice` cannot take effect until the app restarts, because
+/// a module of the other kind is already pinned. The settings surface asks this
+/// to say "restart required" while the dialog is still open, rather than
+/// discovering it from a swap that never happens.
+///
+/// False when nothing is pinned yet: the next selection reads the stored value,
+/// so no restart is owed to anyone.
+bool restartRequiredFor(RuntimeChoice choice);
 
 /// What selection produced. Every field here is observed: the kind and version
 /// come from the descriptor that was validated, the API version from the loaded
@@ -89,22 +102,28 @@ RuntimeSelection selectRuntime();
 /// This never provisions: it answers from what is already installed, so it can
 /// run on the GUI thread without blocking. `resolveRuntime()` is the half that
 /// may download, and the recovery path runs that on the pool.
-RuntimeSelection selectRuntime(RuntimeChoice choice);
+///
+/// `hint` names one directory to search before the bundled and cached
+/// locations; it is how a probe points the same resolver at a scratch tree
+/// without a second selection path existing.
+RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint = {});
 
 /// Explicit Standard selection for probe and test entrypoints, which set up
 /// isolated settings and then need the same module the app would pick.
-RuntimeSelection selectStandardRuntime();
+RuntimeSelection selectStandardRuntime(const QString& hint = {});
 
 /// The startup entrypoint: selects the stored choice from what is already
 /// installed, without provisioning and without touching the network. `main()`
 /// calls this before the first core, so a machine with nothing installed gets a
 /// named reason instead of a download that blocks startup; the first play runs
 /// the provisioning attempt on the pool through `resolveRuntime()`.
-RuntimeSelection selectStartupRuntime();
+RuntimeSelection selectStartupRuntime(const QString& hint = {});
 
 /// Resolves a choice to a validated descriptor without loading anything. This
 /// is the half that may download, so it blocks and belongs off the GUI thread.
-RuntimeSelection resolveRuntime(RuntimeChoice choice);
+/// It still refuses to disturb a reference install: a download lands in
+/// app-owned scratch and is published through the atomic installer.
+RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint = {});
 
 /// Loads a resolved descriptor. Runs on the GUI thread and, once it succeeds,
 /// pins the module for the rest of the process.

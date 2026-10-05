@@ -28,6 +28,8 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QSize>
 #include <QtCore/QString>
+#include <QtCore/QStringList>
+#include <QtCore/QVector>
 
 #include "NativeCatalog.hpp"
 #include "NativeTypes.hpp"
@@ -63,6 +65,11 @@ InspectionRuntime inspectionRuntimeAt(const QString& directory);
 /// The runtime named by `MIKAI_ORT_RUNTIME_DIR`, or an empty record. The
 /// environment variable is an explicit directory, never a PATH entry.
 InspectionRuntime defaultInspectionRuntime();
+
+/// The version string of the runtime this process has actually loaded, or empty
+/// when none is loaded. Never a version assumed from a package name, and read
+/// after a run so it names the module that ran rather than one that might load.
+QString inspectionRuntimeLoadedVersion();
 
 /// True when the module exists as a regular file directly inside the named
 /// directory. Does not load it.
@@ -143,6 +150,57 @@ InspectionResult inspectDeclaredProfile(const InspectionRuntime& runtime, const 
 /// declaration and the run's outcome are separate facts.
 InspectionResult inspectGraph(const InspectionRuntime& runtime, const QByteArray& bytes,
                               const QSize& sourceGeometry);
+
+/// `dims` is the declared shape verbatim, negatives included: a symbolic batch or
+/// a dynamic H/W stays as the graph stated it.
+struct NamedTensorProfile {
+  QString name;
+  TensorProfile profile;
+  QVector<qint64> dims;
+};
+
+/// Unlike `inspectDeclaredProfile`, which answers a single-pair spatial question,
+/// this reads every tensor and refuses nothing for its counts.
+struct DeclaredBoundaries {
+  QVector<NamedTensorProfile> inputs;
+  QVector<NamedTensorProfile> outputs;
+};
+
+bool inspectDeclaredBoundaries(const InspectionRuntime& runtime, const QByteArray& bytes,
+                               DeclaredBoundaries* boundaries, QString* reasonKey = nullptr,
+                               QString* reason = nullptr);
+
+/// `data` is the very buffer the run bound or produced, copied out unchanged.
+struct ReferenceTensor {
+  QString name;
+  QString dtype;
+  QVector<qint64> shape;
+  QByteArray data;
+  qint64 elementCount = 0;
+};
+
+struct ReferenceInput {
+  QString name;
+  QString dtype;
+  QVector<qint64> shape;
+  QByteArray data;
+};
+
+/// `outputs` is only ever what ran, never a declaration.
+struct ReferenceRun {
+  bool ok = false;
+  QString reasonKey;
+  QString reason;
+  QVector<ReferenceTensor> outputs;
+};
+
+/// Names and counts come from the session itself, not from the declaration, and
+/// the two must agree exactly: a supplied name that is not an input, a name given
+/// twice, a missing input, and a `data` length that is not `elements *
+/// sizeof(dtype)` are each refused. Outputs are the session's real names,
+/// element types and dimensions as ORT reported them.
+ReferenceRun runReferenceTensor(const InspectionRuntime& runtime, const QByteArray& graphBytes,
+                                const QVector<ReferenceInput>& inputs);
 
 /// The geometry one model resolves to at one stage's source size.
 struct StageResolution {

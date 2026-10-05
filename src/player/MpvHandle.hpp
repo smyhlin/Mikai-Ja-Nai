@@ -53,6 +53,10 @@ struct NodeValue {
     int64_t integer = 0;
     double number = 0.0;
     std::string text;
+    // Raw payload of a MPV_FORMAT_BYTE_ARRAY member. Kept apart from `text`
+    // because a screenshot's pixels are not a string and must not be decoded as
+    // one: the size is the byte count mpv declared.
+    std::string bytes;
     std::vector<NodeValue> list;
     std::vector<std::pair<std::string, NodeValue>> map;
 };
@@ -144,6 +148,10 @@ public:
     // relying on the destructor, so a late reply cannot run against moved-on state.
     void cancelAllAsync();
     size_t pendingAsyncCount() const noexcept;
+    // Human-readable text for an mpv error code. A refused asynchronous command
+    // carries only its code, so a caller that must name the refusal rather than
+    // report a generic one has no other way to read the table's own text.
+    std::string describeError(int error) const;
 
     // Monotonic, never reused and preserved through moves, so two handles can
     // never be confused even when their request numbers coincide.
