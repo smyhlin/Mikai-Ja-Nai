@@ -1,0 +1,39 @@
+{
+  "name": "surface-reports-playback-state",
+  "description": "The bare surface announces playback state changes on its own signals, with no dialog or shell between the caller and the core.",
+  "category": "player-behavior",
+  "surface": "video_surface",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 640,
+  "height": 360,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 10000,
+      "note": "The engine reports what the surface itself observes; there is no shell here to ask."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "videoSurface",
+      "property": "hasVideo",
+      "expected": true,
+      "note": "Only true once a decoded frame is actually on the surface, so this cannot pass on a surface that opened the file and rendered nothing."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "greater_than",
+      "expected": 0.0,
+      "note": "Read from the core the surface owns, with no dialog cache in the middle - the shortest possible Qt-to-mpv path."
+    }
+  ]
+}

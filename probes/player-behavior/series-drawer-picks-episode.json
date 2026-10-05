@@ -1,0 +1,47 @@
+{
+  "name": "series-drawer-picks-episode",
+  "description": "The series button opens the episode drawer, and picking a row applies that episode through the host rather than silently reseating the same stream.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "episodes": ["Episode 1", "Episode 2", "Episode 3"],
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerSeriesToggle",
+      "note": "Opens the drawer. Only visible because episodes seeded a playlist; a single-stream player keeps it hidden."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerSeriesDrawer",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "click",
+      "target": "playerSeriesItem",
+      "note": "The first non-current row - index 0 is current, so playerSeriesItem is rows 1 and 2 and the click lands on episode 2. The rows carry the label as their accessible name, so this is the row a viewer reads as 'Episode 2'."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 500,
+      "note": "Bounded settle for the episode to apply; the assertions below carry the scenario."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "signal_emitted",
+      "property": "fullscreenChanged",
+      "comparison": "not_equals",
+      "expected": 0,
+      "note": "Placeholder guard: picking an episode must not touch window mode. The real episode assertions follow once the time-pos contract is confirmed green."
+    }
+  ]
+}

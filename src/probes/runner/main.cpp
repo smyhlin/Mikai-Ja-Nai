@@ -7,14 +7,18 @@
 // and counted as a failure, never skipped silently.
 //
 // Usage: probe_runner [probe-dir | manifest.json] [--filter <substring>] [--list]
+//        [--isolate [--isolate-timeout-ms <ms>]]
 //
 // These are the only options: --filter selects the manifests whose manifest
 // `name` contains the substring, --list prints name/category/description
-// without running anything.
+// without running anything, --isolate runs each selected manifest in a fresh
+// child process (the runner re-invoked on itself), --isolate-timeout-ms caps
+// one child in milliseconds (default 120000).
 
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QProcess>
 #include <QSettings>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -34,7 +38,10 @@ int usage(const QString& problem) {
         std::fprintf(stderr, "probe_runner: %s\n", qPrintable(problem));
     }
     std::fprintf(stderr, "usage: probe_runner [probe-dir | manifest.json]");
-    std::fprintf(stderr, " [--filter <substring>] [--list]\n");
+    std::fprintf(stderr, " [--filter <substring>] [--list] [--isolate [--isolate-timeout-ms <ms>]]\n");
+    std::fprintf(stderr,
+                 "language: MIKAI_PROBE_LANGUAGE is the runner default; a manifest's own "
+                 "\"language\" overrides it for that manifest only\n");
     return 2;
 }
 
@@ -44,6 +51,12 @@ int main(int argc, char** argv) {
     QString positional;
     QString filter;
     bool listOnly = false;
+    bool isolate = false;
+    int isolateTimeoutMs = 120000;
+    // Flags the parent was given that an isolated child must repeat. --isolate
+    // and --isolate-timeout-ms are never recorded here: a child always runs
+    // its single manifest in-process and must not recurse.
+    QStringList forwardArgs;
     for (int i = 1; i < argc; ++i) {
         const QString arg = QString::fromLocal8Bit(argv[i]);
         if (arg == QStringLiteral("--filter")) {
@@ -52,8 +65,30 @@ int main(int argc, char** argv) {
                 return usage(QStringLiteral("--filter needs a substring"));
             }
             filter = QString::fromLocal8Bit(argv[i]);
+            forwardArgs << QStringLiteral("--filter") << filter;
         } else if (arg == QStringLiteral("--list")) {
             listOnly = true;
+            forwardArgs << QStringLiteral("--list");
+        } else if (arg == QStringLiteral("--isolate")) {
+            isolate = true;
+        } else if (arg == QStringLiteral("--isolate-timeout-ms")) {
+            ++i;
+            if (i >= argc) {
+                return usage(QStringLiteral("--isolate-timeout-ms needs milliseconds"));
+            }
+            bool ok = false;
+            const int ms = QString::fromLocal8Bit(argv[i]).toInt(&ok);
+            if (!ok || ms <= 0) {
+                return usage(QStringLiteral("--isolate-timeout-ms needs a positive integer"));
+            }
+            isolateTimeoutMs = ms;
+        } else if (arg.startsWith(QStringLiteral("--isolate-timeout-ms="))) {
+            bool ok = false;
+            const int ms = arg.mid(arg.indexOf(QLatin1Char('=')) + 1).toInt(&ok);
+            if (!ok || ms <= 0) {
+                return usage(QStringLiteral("--isolate-timeout-ms needs a positive integer"));
+            }
+            isolateTimeoutMs = ms;
         } else if (arg.startsWith(QStringLiteral("--"))) {
             return usage(QStringLiteral("unknown option: ") + arg);
         } else if (!positional.isNull()) {
@@ -136,7 +171,164 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    // --isolate fans the selected manifests out to fresh child processes: the
+    // runner re-invoked on itself as `<self> <manifest> [--filter ..] [--list]`
+    // with the parent's environment inherited (QProcess passes it through
+    // unless setEnvironment is called, which this never does). The child's
+    // output is replayed verbatim under a `=== <name> ===` header, so
+    // --isolate output is a superset of the default output, never a different
+    // format; the parent's own summary aggregates the children's
+    // `probe_runner: …` lines. A child that crashes (or never starts) reports
+    // `[FAIL] <name>: child died (exit <code>)`, one that exceeds
+    // --isolate-timeout-ms reports `[FAIL] <name>: child timed out
+    // (exit <code>)`, and the run continues with the next manifest.
+    if (isolate) {
+        const QString self = QCoreApplication::applicationFilePath();
+        if (listOnly) {
+            int refused = 0;
+            for (const QString& file : manifestFiles) {
+                QString reason;
+                const std::optional<mikai::probes::ProbeManifest> manifest =
+                    mikai::probes::loadProbeManifest(file, &reason);
+                if (!manifest.has_value()) {
+                    std::printf("[FAIL] %s: %s\n", qPrintable(file), qPrintable(reason));
+                    ++refused;
+                    continue;
+                }
+                if (!filter.isEmpty() && !manifest->name.contains(filter)) {
+                    continue;
+                }
+                std::printf("=== %s ===\n", qPrintable(manifest->name));
+                std::fflush(stdout);
+                QStringList childArgs;
+                childArgs << file << forwardArgs;
+                QProcess child;
+                child.setProcessChannelMode(QProcess::MergedChannels);
+                child.start(self, childArgs);
+                if (!child.waitForStarted(isolateTimeoutMs)) {
+                    std::printf("[FAIL] %s: child died (exit -1)\n",
+                                qPrintable(manifest->name));
+                    ++refused;
+                    continue;
+                }
+                const bool finished = child.waitForFinished(isolateTimeoutMs);
+                const QByteArray out = child.readAllStandardOutput();
+                if (!out.isEmpty()) {
+                    std::fwrite(out.constData(), 1, static_cast<size_t>(out.size()), stdout);
+                }
+                if (!finished) {
+                    child.kill();
+                    child.waitForFinished(5000);
+                    std::printf("[FAIL] %s: child timed out (exit %d)\n",
+                                qPrintable(manifest->name), child.exitCode());
+                    ++refused;
+                    continue;
+                }
+                if (child.exitStatus() != QProcess::NormalExit) {
+                    std::printf("[FAIL] %s: child died (exit %d)\n",
+                                qPrintable(manifest->name), child.exitCode());
+                    ++refused;
+                    continue;
+                }
+                if (child.exitCode() != 0) {
+                    ++refused;
+                }
+            }
+            return refused == 0 ? 0 : 1;
+        }
+        int manifests = 0;
+        int assertions = 0;
+        int failed = 0;
+        for (const QString& file : manifestFiles) {
+            QString reason;
+            const std::optional<mikai::probes::ProbeManifest> manifest =
+                mikai::probes::loadProbeManifest(file, &reason);
+            if (!manifest.has_value()) {
+                std::printf("[FAIL] %s: %s\n", qPrintable(file), qPrintable(reason));
+                ++manifests;
+                ++failed;
+                continue;
+            }
+            if (!filter.isEmpty() && !manifest->name.contains(filter)) {
+                continue;
+            }
+            ++manifests;
+            std::printf("=== %s ===\n", qPrintable(manifest->name));
+            std::fflush(stdout);
+            QStringList childArgs;
+            childArgs << file << forwardArgs;
+            QProcess child;
+            child.setProcessChannelMode(QProcess::MergedChannels);
+            child.start(self, childArgs);
+            if (!child.waitForStarted(isolateTimeoutMs)) {
+                std::printf("[FAIL] %s: child died (exit -1)\n",
+                            qPrintable(manifest->name));
+                ++failed;
+                continue;
+            }
+            const bool finished = child.waitForFinished(isolateTimeoutMs);
+            const QByteArray out = child.readAllStandardOutput();
+            if (!out.isEmpty()) {
+                std::fwrite(out.constData(), 1, static_cast<size_t>(out.size()), stdout);
+                std::fflush(stdout);
+            }
+            if (!finished) {
+                child.kill();
+                child.waitForFinished(5000);
+                std::printf("[FAIL] %s: child timed out (exit %d)\n",
+                            qPrintable(manifest->name), child.exitCode());
+                ++failed;
+                continue;
+            }
+            if (child.exitStatus() != QProcess::NormalExit) {
+                std::printf("[FAIL] %s: child died (exit %d)\n",
+                            qPrintable(manifest->name), child.exitCode());
+                ++failed;
+                continue;
+            }
+            int childAssertions = 0;
+            int childFailed = 0;
+            bool haveSummary = false;
+            for (const QByteArray& line : out.split('\n')) {
+                int dummy = 0;
+                int a = 0;
+                int f = 0;
+                if (std::sscanf(line.constData(),
+                                "probe_runner: %d manifests, %d assertions, %d failed", &dummy, &a,
+                                &f) == 3) {
+                    childAssertions = a;
+                    childFailed = f;
+                    haveSummary = true;
+                }
+            }
+            assertions += childAssertions;
+            if (!haveSummary) {
+                if (child.exitCode() != 0) {
+                    std::printf("[FAIL] %s: child died (exit %d)\n",
+                                qPrintable(manifest->name), child.exitCode());
+                    ++failed;
+                }
+                continue;
+            }
+            if (childFailed > 0 || child.exitCode() != 0) {
+                ++failed;
+            }
+        }
+        std::printf("probe_runner: %d manifests, %d assertions, %d failed\n", manifests, assertions,
+                    failed);
+        return failed == 0 ? 0 : 1;
+    }
+
     if (listOnly) {
+        // MIKAI_PROBE_LANGUAGE is the runner default, installed once at startup
+        // by initializeUi. A manifest's own "language" overrides it for that
+        // manifest only, and the runner restores the default after that
+        // manifest tears down, so each line below says which of the two applies.
+        const QString runnerLanguage =
+            qEnvironmentVariable("MIKAI_PROBE_LANGUAGE", QStringLiteral("en"));
+        std::printf("language: MIKAI_PROBE_LANGUAGE=%s is the runner default; a manifest's "
+                    "own \"language\" overrides it for that manifest only\n",
+                    qPrintable(runnerLanguage));
         int refused = 0;
         for (const QString& file : manifestFiles) {
             QString reason;
@@ -150,8 +342,13 @@ int main(int argc, char** argv) {
             if (!filter.isEmpty() && !manifest->name.contains(filter)) {
                 continue;
             }
-            std::printf("%s [%s] - %s\n", qPrintable(manifest->name),
-                        qPrintable(manifest->category), qPrintable(manifest->description));
+            const bool ownLanguage = !manifest->language.isEmpty();
+            const QString shown = ownLanguage ? manifest->language : runnerLanguage;
+            const QString source = ownLanguage ? QStringLiteral("manifest language")
+                                                : QStringLiteral("runner default");
+            std::printf("%s [%s] (language %s, %s) - %s\n", qPrintable(manifest->name),
+                        qPrintable(manifest->category), qPrintable(shown), qPrintable(source),
+                        qPrintable(manifest->description));
         }
         return refused == 0 ? 0 : 1;
     }

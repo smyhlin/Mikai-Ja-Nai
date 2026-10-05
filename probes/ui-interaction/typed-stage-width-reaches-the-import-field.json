@@ -1,0 +1,54 @@
+{
+  "name": "typed-stage-width-reaches-the-import-field",
+  "description": "A typed stage width reaches the Native import field as text, and reaches only that field. This is the first genuine type_text coverage in the manifest suite: the keystrokes go through the widget's own key handling, not through setProperty, so a field that was read-only, disabled or not the focus target could not answer with the typed value.",
+  "category": "ui-interaction",
+  "surface": "settings_dialog",
+  "width": 760,
+  "height": 780,
+  "steps": [
+    {
+      "kind": "focus",
+      "target": "nativeStageWidthEdit",
+      "note": "The field the typing is aimed at. It is a QLineEdit built in NativeAssetsPanel's import row (NativeAssetsPanel.cpp:791-802) and put on the Processing page (SettingsDialog.cpp:929-932). Focus is stated first so the run reads as the viewer's sequence: click the field, then type. Deviation from the 960x540 the player surfaces use: the settings dialog has its own minimum (560x600, SettingsDialog.cpp:216 via theme::kSettingsDialogMinWidth/Height) and its own default (760x780, same ctor), so this manifest asks for the default rather than a size clamped up from below."
+    },
+    {
+      "kind": "type_text",
+      "target": "nativeStageWidthEdit",
+      "value": "1280",
+      "note": "The runner's TypeText sets the focus, processes events and then sends the keys with QTest::keyClicks (ProbeRunner.cpp, Kind::TypeText), so every character arrives as a key press the widget's own keyPressEvent inserts. The field starts empty - nothing writes its text at construction (NativeAssetsPanel.cpp:791-802) - and carries a QIntValidator(1, 100000) (NativeAssetsPanel.cpp:800), so every intermediate value \"1\", \"12\", \"128\", \"1280\" is acceptable and none is rejected."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "primary",
+      "property": "visible",
+      "expected": true,
+      "note": "The surface really is up before anything is asserted. The settings_dialog surface builds and shows the dialog itself, and the dialog root has no objectName (SettingsDialog.cpp:214-217 sets only the window title), so `primary` - the Save QPushButton in the button box (SettingsDialog.cpp:270-271) - is the one control on the main layout that is visible on every tab. Visibility, not existence: the button exists whether or not the dialog was shown."
+    },
+    {
+      "kind": "qt_property",
+      "target": "nativeStageWidthEdit",
+      "property": "text",
+      "comparison": "equals",
+      "expected": "1280",
+      "note": "The keystrokes reached the field as text. `text` is QLineEdit's own Q_PROPERTY, so this reads what the widget holds rather than what a probe stashed, and it fails on a build whose field was read-only or disabled (a disabled QLineEdit drops key events, leaving the text empty) exactly as it fails when the typing never happened."
+    },
+    {
+      "kind": "qt_property",
+      "target": "nativeStageWidthEdit",
+      "property": "modified",
+      "comparison": "equals",
+      "expected": true,
+      "note": "The edit was made by the user's keystrokes, not by a programmatic write. QLineEdit::setText clears `modified` and only key-inserted characters set it, so a build that reached the same visible text by writing the property would pass the assertion above and fail here. This is what makes the previous assertion about typing rather than about the text."
+    },
+    {
+      "kind": "qt_property",
+      "target": "nativeStageHeightEdit",
+      "property": "text",
+      "comparison": "equals",
+      "expected": "",
+      "note": "The discriminating check. The height box is a sibling in the same import row (NativeAssetsPanel.cpp:807-813) and starts empty too, so if the keystrokes had gone to whatever held focus instead of to the field the run named, or had been delivered to every line edit on the page, the typed digits would show up here. An empty height field is what a real viewer gets."
+    }
+  ]
+}

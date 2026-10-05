@@ -693,7 +693,8 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
     static const QStringList known{
         QStringLiteral("name"),        QStringLiteral("description"),
         QStringLiteral("category"),    QStringLiteral("surface"),
-        QStringLiteral("media"),       QStringLiteral("width"),
+        QStringLiteral("language"),    QStringLiteral("media"),
+        QStringLiteral("episodes"),    QStringLiteral("width"),
         QStringLiteral("height"),      QStringLiteral("steps"),
         QStringLiteral("assertions"),
     };
@@ -730,13 +731,35 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
             manifest.surface = ProbeSurface::VideoSurface;
         } else if (surface == QLatin1String("playerdialog")) {
             manifest.surface = ProbeSurface::PlayerDialog;
+        } else if (surface == QLatin1String("settingsdialog")) {
+            manifest.surface = ProbeSurface::SettingsDialog;
         } else {
             fail(reason,
                  QStringLiteral("manifest '%1': unknown surface '%2' (accepted: video_surface, "
-                                "player_dialog)")
+                                "player_dialog, settings_dialog)")
                      .arg(manifest.name, surfaceValue.toString()));
             return std::nullopt;
         }
+    }
+
+    if (document.contains(QStringLiteral("language"))) {
+        const QJsonValue languageValue = document.value(QStringLiteral("language"));
+        if (!languageValue.isString()) {
+            fail(reason, QStringLiteral("manifest '%1': 'language' must be a string, not %2")
+                             .arg(manifest.name, jsonTypeName(languageValue)));
+            return std::nullopt;
+        }
+        // The runner can only install the languages the application actually
+        // ships, so anything else is named here rather than left to fail as an
+        // unavailable catalog after the surface is half built.
+        const QString language = folded(languageValue.toString());
+        if (language != QLatin1String("en") && language != QLatin1String("uk")) {
+            fail(reason,
+                 QStringLiteral("manifest '%1': unknown language '%2' (accepted: en, uk)")
+                     .arg(manifest.name, languageValue.toString()));
+            return std::nullopt;
+        }
+        manifest.language = language;
     }
 
     if (document.contains(QStringLiteral("width"))) {
@@ -777,19 +800,60 @@ std::optional<ProbeManifest> parseProbeManifest(const QJsonObject& document, QSt
         }
         manifest.media = manifest.media.trimmed();
     }
-    // PlayerDialog starts the stream it is handed, so media is what it opens;
-    // VideoSurface has no start path, so media there would be a claim the run
-    // cannot keep. Refusing both directions keeps the field honest.
+    // SettingsDialog opens no stream - its host is a backend client and a job
+    // runner, never mpv - so media handed to it is refused here, naming the
+    // path the manifest passed rather than silently ignoring it.
+    if (manifest.surface == ProbeSurface::SettingsDialog && !manifest.media.isEmpty()) {
+        fail(reason, QStringLiteral("manifest '%1': surface 'settings_dialog' opens no stream, so "
+                                    "'media' is refused, got '%2'")
+                         .arg(manifest.name, manifest.media));
+        return std::nullopt;
+    }
+    // PlayerDialog starts the stream it is handed, so media is what it opens.
+    // VideoSurface opens it directly too (the runner calls open), so media is
+    // allowed on either surface and only a PlayerDialog without media is
+    // refused: it would be a player with nothing to play.
     if (manifest.surface == ProbeSurface::PlayerDialog && manifest.media.isEmpty()) {
         fail(reason, QStringLiteral("manifest '%1': surface 'player_dialog' needs 'media' to "
                                     "open, got none")
                          .arg(manifest.name));
         return std::nullopt;
     }
-    if (manifest.surface == ProbeSurface::VideoSurface && !manifest.media.isEmpty()) {
-        fail(reason, QStringLiteral("manifest '%1': surface 'video_surface' opens no media, so "
-                                    "'media' ('%2') is refused there")
-                         .arg(manifest.name, manifest.media));
+
+    if (document.contains(QStringLiteral("episodes"))) {
+        const QJsonValue episodesValue = document.value(QStringLiteral("episodes"));
+        if (!episodesValue.isArray()) {
+            fail(reason, QStringLiteral("manifest '%1': 'episodes' must be an array, not %2")
+                             .arg(manifest.name, jsonTypeName(episodesValue)));
+            return std::nullopt;
+        }
+        // Labels only: every row points at `media`, because the runner owns no
+        // fixture server and a second stream would be a claim it cannot load.
+        // Blank labels refuse too, since an empty row is a click with no name.
+        for (const QJsonValue& entry : episodesValue.toArray()) {
+            if (!entry.isString() || entry.toString().trimmed().isEmpty()) {
+                fail(reason, QStringLiteral("manifest '%1': every 'episodes' entry must be a "
+                                            "non-empty label")
+                                 .arg(manifest.name));
+                return std::nullopt;
+            }
+            manifest.episodes << entry.toString().trimmed();
+        }
+        // The drawer needs a list to open: one entry is a player, not a series,
+        // and would leave playerSeriesToggle hidden exactly like no episodes.
+        if (manifest.episodes.size() == 1) {
+            fail(reason, QStringLiteral("manifest '%1': 'episodes' needs at least two labels to "
+                                        "open a series drawer, got one")
+                             .arg(manifest.name));
+            return std::nullopt;
+        }
+    }
+    // Episodes seed the dialog's playlist, so they are refused wherever there
+    // is no dialog to seed: naming streams on a bare surface or a settings
+    // dialog would be a claim the run silently drops.
+    if (!manifest.episodes.isEmpty() && manifest.surface != ProbeSurface::PlayerDialog) {
+        fail(reason, QStringLiteral("manifest '%1': 'episodes' needs the player_dialog surface")
+                         .arg(manifest.name));
         return std::nullopt;
     }
 

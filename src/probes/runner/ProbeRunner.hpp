@@ -1,11 +1,12 @@
 // The manifest runner: executes one declarative ProbeManifest against the real
 // application and reports a pass/fail line for every assertion.
 //
-// It owns exactly one surface per run - the render surface alone, or the real
-// player dialog - builds it from the manifest, walks the manifest's steps by
-// objectName, then decides the manifest's assertions. Every widget it touches is
-// reached through QObject::findChild(objectName); a target that is not there is
-// a named failure, never a coordinate or a pixel guess.
+// It owns exactly one surface per run - the render surface alone, the real
+// player dialog, or the real settings dialog - builds it from the manifest,
+// walks the manifest's steps by objectName, then decides the manifest's
+// assertions. Every widget it touches is reached through
+// QObject::findChild(objectName); a target that is not there is a named
+// failure, never a coordinate or a pixel guess.
 //
 // Per-assertion "[PASS]"/"[FAIL]" lines are printed as they are decided; this
 // header only reports the counts a caller needs to print its own summary.
@@ -40,8 +41,9 @@ public:
 
     /// Builds the surface the manifest names, runs its steps and assertions,
     /// then closes and settles the surface. Never throws. `manifest.media` is
-    /// required when the surface is the player dialog; an absent one refuses
-    /// the manifest by name.
+    /// required when the surface is the player dialog - an absent one refuses
+    /// the manifest by name - and refused outright on the settings dialog,
+    /// which opens no stream.
     ProbeRunResult run(const ProbeManifest& manifest);
 };
 

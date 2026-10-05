@@ -14,8 +14,10 @@
 
 #include <QCoreApplication>
 #include <QDialog>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QFileInfo>
 #include <QHash>
 #include <QKeySequence>
 #include <QMetaMethod>
@@ -35,6 +37,11 @@
 #include <optional>
 #include <vector>
 
+#include "I18n.hpp"
+#include "backend/MikaiClient.hpp"
+#include "dialogs/SettingsDialog.hpp"
+#include "workers/Runner.hpp"
+
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "VideoSurface.hpp"
@@ -42,6 +49,9 @@
 namespace mikai::probes {
 namespace {
 
+using mikai::app::Runner;
+using mikai::app::SettingsDialog;
+using mikai::backend::MikaiClient;
 using mplayer::ProbePropertyKind;
 using mplayer::ProbePropertyValue;
 using mplayer::VideoSurface;
@@ -55,11 +65,44 @@ constexpr int kDefaultTimeoutMs = 5000;
 constexpr double kFrozenEpsilon = 0.05;
 constexpr int kFrozenHoldMs = 400;
 
-/// The one surface a run builds. `dialog` selects which owner closes it.
+/// The host a seeded series answers to. Every row points at the manifest's
+/// own media, so an episode request re-applies what is already open through
+/// the dialog's own applyEpisode path rather than inventing a stream. Anything
+/// the runner cannot answer (tracks, variants, recovery) is a named refusal
+/// on the dialog's status line, never a silent drop.
+class ProbePlayerHost : public mplayer::shell::PlayerHost {
+public:
+    mplayer::shell::PlayerDialog* dialog = nullptr;
+    /// The rows and qualities the runner seeded, so an episode request
+    /// re-applies known state rather than reaching into the dialog.
+    QVector<QVariantMap> rows;
+    QList<QualityEntry> qualities;
+    int height = 0;
+
+    void requestVariant(const QString&, const QString&) override {}
+    void requestEpisode(int index) override {
+        if (dialog == nullptr || index < 0 || index >= rows.size()) return;
+        const QString label = rows.at(index).value(QStringLiteral("label")).toString();
+        const QString embed = rows.at(index).value(QStringLiteral("embed")).toString();
+        dialog->applyEpisode(label, embed, index, qualities, {});
+    }
+    void requestTrackProbe(const QString&) override {}
+    void requestOpenOriginal() override {}
+    void requestCopyStreamUrl() override {}
+    void playerClosed() override {}
+    void playbackFailed() override {}
+};
+
 struct Surface {
     QWidget* root = nullptr;   ///< the shown window steps are found under
     VideoSurface* video = nullptr;  ///< the mpv screen, for core reads and settles
     bool dialog = false;
+    /// The settings dialog borrows these, so the Surface owns them and is reset
+    /// only after the dialog is destroyed; every other surface leaves them null.
+    std::unique_ptr<MikaiClient> client;
+    std::unique_ptr<Runner> runner;
+    /// The seeded-series host outlives the dialog it answers for.
+    std::unique_ptr<ProbePlayerHost> extraHost;
 };
 
 void report(bool passed, const QString& line) {
@@ -578,6 +621,26 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
     const QString title = QStringLiteral("Mikai probe: %1")
                               .arg(manifest.name.isEmpty() ? QStringLiteral("(unnamed)")
                                                            : manifest.name);
+    if (manifest.surface == ProbeSurface::SettingsDialog) {
+        if (!manifest.media.isEmpty()) {
+            *reason = QStringLiteral("the settings_dialog surface opens no stream, and manifest "
+                                     "'%1' names media '%2'")
+                          .arg(manifest.name, manifest.media);
+            return false;
+        }
+        // The real dialog over the same fixture the HLS probe's recorder builds:
+        // a MikaiClient and a Runner it borrows. The dialog itself is the
+        // discovery root, so every step and assertion is found under it.
+        surface->client = std::make_unique<MikaiClient>(QStringLiteral("probe-key"));
+        surface->runner = std::make_unique<Runner>();
+        auto* dialog = new SettingsDialog(*surface->client, *surface->runner, nullptr);
+        surface->root = dialog;
+        surface->dialog = true;
+        dialog->setWindowTitle(title);
+        dialog->resize(manifest.width, manifest.height);
+        dialog->show();
+        return true;
+    }
     if (manifest.surface == ProbeSurface::PlayerDialog) {
         if (manifest.media.isEmpty()) {
             *reason = QStringLiteral(
@@ -588,12 +651,32 @@ bool buildSurface(const ProbeManifest& manifest, Surface* surface, QString* reas
         // One entry at the manifest height: the dialog then opens exactly the
         // stream the manifest named, through its own startPlayer path.
         const QList<QualityEntry> qualities{{manifest.height, manifest.media}};
+        // Episodes share the host the runner already owns: each row points at
+        // the manifest's own media, so picking one re-opens what is already
+        // open rather than reaching for a stream that does not exist.
+        auto* host = new ProbePlayerHost();
+        host->dialog = nullptr; // attached below, so applyEpisode cannot run early
         auto* dialog = new PlayerDialog(
             manifest.name.isEmpty() ? QStringLiteral("probe") : manifest.name, manifest.media,
-            qualities, manifest.height, nullptr);
+            qualities, manifest.height, manifest.episodes.isEmpty() ? nullptr : host);
+        surface->extraHost.reset(host);
+        host->dialog = dialog;
         surface->root = dialog;
         surface->dialog = true;
         dialog->setWindowTitle(title);
+        if (!manifest.episodes.isEmpty()) {
+            QVector<QVariantMap> playlist;
+            for (const QString& label : manifest.episodes) {
+                QVariantMap row;
+                row.insert(QStringLiteral("label"), label);
+                row.insert(QStringLiteral("embed"), manifest.media);
+                playlist.append(row);
+            }
+            host->rows = playlist;
+            host->qualities = qualities;
+            host->height = manifest.height;
+            dialog->setPlaylist(playlist, 0);
+        }
         dialog->startPlayer();
         dialog->resize(manifest.width, manifest.height);
         dialog->show();
@@ -792,6 +875,69 @@ void evaluateAssertion(const ProbeAssertion& assertion, const Surface& surface, 
     }
 }
 
+/// The Ukrainian catalog the runner installs with, found beside its own
+/// executable. The runner links mikai_app, which does not embed the application
+/// catalog, so a Ukrainian manifest has to be told where the built file is -
+/// the same file the geometry probe reads from MIKAI_PROBE_TRANSLATION.
+QString builtUkrainianCatalog() {
+    const QString applicationDirectory = QCoreApplication::applicationDirPath();
+    if (applicationDirectory.isEmpty()) {
+        return QString();
+    }
+    const QString path = QDir(applicationDirectory).absoluteFilePath(QStringLiteral("mikai_uk.qm"));
+    return QFileInfo::exists(path) ? path : QString();
+}
+
+/// The language the runner itself started in, from the same variable
+/// initializeUi read. Restoring this is what keeps one manifest's `language`
+/// from being the next manifest's language.
+QString startupLanguage() {
+    return qEnvironmentVariable("MIKAI_PROBE_LANGUAGE", QStringLiteral("en"));
+}
+
+/// Installs the manifest's language. Returns false with a reason naming the
+/// language when it cannot be installed: a manifest that asked for Ukrainian and
+/// got English would assert against strings it never meant to read, so the run
+/// is refused rather than silently answered in the wrong language.
+bool installRunLanguage(const ProbeManifest& manifest, QString* reason) {
+    const QString language = manifest.language;
+    const QString applicationCatalog =
+        language == QLatin1String("uk") ? builtUkrainianCatalog() : QString();
+    if (!mikai::app::applyInterfaceLanguage(language, applicationCatalog)) {
+        *reason = language == QLatin1String("uk")
+                      ? QStringLiteral(
+                            "language 'uk' is unavailable: no built Ukrainian catalog at %1 "
+                            "(the runner looks for mikai_uk.qm beside its own executable)")
+                            .arg(applicationCatalog.isEmpty()
+                                     ? QStringLiteral("<not found>")
+                                     : applicationCatalog)
+                      : QStringLiteral("language '%1' is unavailable").arg(language);
+        return false;
+    }
+    std::fprintf(stderr, "mikai probe run: manifest '%s' language=%s installed=%s catalog=%s\n",
+                 qPrintable(manifest.name), qPrintable(language),
+                 qPrintable(mikai::app::activeInterfaceLanguage()),
+                 applicationCatalog.isEmpty() ? "<none>" : qPrintable(applicationCatalog));
+    return true;
+}
+
+/// Puts the runner's startup language back, after teardown and while no surface
+/// of that run is left holding translated strings. A restore that fails is
+/// reported but not fatal: the next manifest installs its own language anyway.
+void restoreRunLanguage() {
+    const QString startup = startupLanguage();
+    if (startup == mikai::app::activeInterfaceLanguage()) {
+        return;
+    }
+    const QString applicationCatalog =
+        startup == QLatin1String("uk") ? builtUkrainianCatalog() : QString();
+    if (!mikai::app::applyInterfaceLanguage(startup, applicationCatalog)) {
+        std::fprintf(stderr,
+                     "mikai probe run: FAIL could not restore the runner startup language '%s'\n",
+                     qPrintable(startup));
+    }
+}
+
 }  // namespace
 
 ProbeRunner::ProbeRunner() = default;
@@ -799,6 +945,23 @@ ProbeRunner::~ProbeRunner() = default;
 
 ProbeRunResult ProbeRunner::run(const ProbeManifest& manifest) {
     ProbeRunResult result;
+
+    // The manifest's language is installed before the surface exists: a widget
+    // reads tr() when it is constructed, so installing after buildSurface would
+    // leave every label in the runner's startup language and pass anyway.
+    // An empty language means the runner's own default (MIKAI_PROBE_LANGUAGE),
+    // which is already installed: nothing to change, nothing to restore. A
+    // language that cannot be installed is refused by name, because falling
+    // back to English would let a Ukrainian manifest assert against English
+    // strings and read as a pass.
+    if (!manifest.language.isEmpty()) {
+        QString languageReason;
+        if (!installRunLanguage(manifest, &languageReason)) {
+            result.detail = languageReason;
+            report(false, QStringLiteral("%1 :: language — %2").arg(manifest.name, languageReason));
+            return result;
+        }
+    }
 
     Surface surface;
     QString reason;
@@ -809,6 +972,7 @@ ProbeRunResult ProbeRunner::run(const ProbeManifest& manifest) {
         if (!teardownProblem.isEmpty()) {
             result.detail = QStringLiteral("%1; teardown: %2").arg(result.detail, teardownProblem);
         }
+        restoreRunLanguage();
         return result;
     }
 
@@ -905,6 +1069,9 @@ ProbeRunResult ProbeRunner::run(const ProbeManifest& manifest) {
     }
 
     result.ok = result.detail.isEmpty() && result.failed == 0;
+    // After teardown, so the next manifest builds its surface in the runner's
+    // own language rather than inheriting this manifest's.
+    restoreRunLanguage();
     return result;
 }
 

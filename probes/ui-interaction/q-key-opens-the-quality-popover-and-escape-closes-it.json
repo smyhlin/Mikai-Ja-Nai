@@ -1,0 +1,75 @@
+{
+  "name": "q-key-opens-the-quality-popover-and-escape-closes-it",
+  "description": "The quality-and-speed popover is reachable and dismissible from the keyboard alone: Q opens it and Escape closes it again. No pointer is involved at either end, and Escape dismisses the overlay rather than the player.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "focus",
+      "target": "playerWindow",
+      "note": "The key is delivered to whatever holds focus, so the window is given it first - the way clicking the title bar or arriving from the page would. This is the real precondition for the shortcut rather than a formality."
+    },
+    {
+      "kind": "key_press",
+      "key": "Q",
+      "note": "PlayerDialog::onShellKey maps Q to shell_->openSettings() (PlayerDialog.cpp:2918-2919), so the shell's own gear handler runs with no pointer involved."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerSettingsFlyout",
+      "timeout_ms": 5000,
+      "note": "The visible proof that Q opened it. The popover is hidden at construction (ShellWidgets.cpp:146) and only shown by popupNear() (ShellWidgets.cpp:306-307), so this step fails the run on any build where Q did not reach openSettings(). A manifest cannot assert 'visible: true' mid-run - every assertion is decided after the last step - so this gate carries the open state and the assertion below carries the closed one."
+    },
+    {
+      "kind": "key_press",
+      "key": "Escape",
+      "note": "popupNear() gave the overlay the focus (ShellWidgets.cpp:327), so Escape lands in SettingsFlyout::keyPressEvent, which closes it (ShellWidgets.cpp:330-336). PlayerShell::dismissOverlay() reaches the same overlay from the shell's own handler (PlayerShell.cpp:1310-1312); either route closes the popover and neither closes the window."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetHidden",
+      "target": "playerSettingsFlyout",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsFlyout",
+      "property": "visible",
+      "expected": false,
+      "note": "Escape closed the popover. Visible - not merely present - because the widget is built either way: hide() runs in its constructor (ShellWidgets.cpp:146) and popupNear() shows it again, so an existence check would pass on a build where the key never arrived."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerQualitySection",
+      "property": "visible",
+      "expected": false,
+      "note": "The quality half went with it. qualitySection_ is shown by setQualityOptions() (ShellWidgets.cpp:284) and its isVisible() is false again as soon as its parent is hidden, so this fails if the overlay was torn down without taking its children - a leaked popover that still computes visible for its own rows."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerWindow",
+      "property": "visible",
+      "expected": true,
+      "note": "The discriminating check, and the reason this manifest is not just 'a key was pressed'. Both the flyout's own handler (ShellWidgets.cpp:332) and PlayerShell's (PlayerShell.cpp:1310) claim Escape for the overlay before anything else sees it; had the overlay refused it, onShellKey would have gone on to close() (PlayerDialog.cpp:2906). So a build that dismissed the window instead of the popover passes the two assertions above and fails here."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "equals",
+      "expected": false,
+      "note": "And the core never stopped. Read from mpv itself rather than from the Qt cache written alongside it, so a build that muted the overlay by pausing fails here instead of passing as a clean dismiss."
+    }
+  ]
+}

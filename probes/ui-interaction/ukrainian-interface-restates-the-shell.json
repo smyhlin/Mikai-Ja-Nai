@@ -1,0 +1,60 @@
+{
+  "name": "ukrainian-interface-restates-the-shell",
+  "description": "A run declared in Ukrainian builds its shell in Ukrainian: the captions inside the quality-and-speed popover are not the English ones. This asserts that the LANGUAGE reached the widget, not any particular Ukrainian spelling - a catalog that translated the strings differently would still pass, and only a run that installed no catalog (leaving the English sources in place) fails here.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "language": "uk",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerSettingsButton",
+      "note": "The gear, so the popover carrying the captions is on screen. PlayerShell.cpp:349-352 builds it from tr(\"Quality and speed\") and wires the click to openSettings()."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerSettingsFlyout",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsFlyout",
+      "property": "visible",
+      "expected": true,
+      "note": "The popover itself is hidden at construction (ShellWidgets.cpp:146) and popupNear() shows it (ShellWidgets.cpp:307), so visibility - not existence - says the click landed. Without it the caption below could be read off a widget that was never on screen."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerQualityCaption",
+      "property": "visible",
+      "expected": true,
+      "note": "The QUALITY caption is built inside qualitySection_, which starts hidden (ShellWidgets.cpp:224) and is only shown by setQualityOptions() when the option list is non-empty (ShellWidgets.cpp:284). The runner hands the dialog one quality entry at the manifest height (ProbeRunner.cpp:591), so this is visible only when the popover really is the one on screen."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerQualityCaption",
+      "property": "text",
+      "comparison": "not_equals",
+      "expected": "QUALITY",
+      "note": "The language reached the widget. qualityCaption_ is built from tr(\"QUALITY\") (ShellWidgets.cpp:205) and ShellWidgets.cpp:290-292 re-reads it on LanguageChange, so a run whose catalog failed to install leaves exactly this English source string here and fails. Deliberately not_equals rather than equals: the point is that the catalog was consulted, not that this run guessed the right Ukrainian word."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsButton",
+      "property": "toolTip",
+      "comparison": "not_equals",
+      "expected": "Quality and speed",
+      "note": "A second, independent surface of the same fact: the gear's own tooltip is tr(\"Quality and speed\") (PlayerShell.cpp:349, carried into the button by IconButton's ctor at ShellWidgets.cpp:92). It is built and translated independently of the flyout's captions, so a run that translated the popover but not the dock - or that read the caption off a stale string - fails one of the two."
+    }
+  ]
+}

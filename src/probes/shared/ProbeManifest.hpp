@@ -26,6 +26,11 @@ namespace mikai::probes {
 enum class ProbeSurface {
     VideoSurface,  ///< the render surface alone, no chrome
     PlayerDialog,  ///< the real player: shell, dock, popovers, pip pool
+    /// The real settings dialog, and only it: the dialog is the discovery root
+    /// for every step and assertion, so its tabs, combos and fields are reached
+    /// by objectName. It opens no stream, so 'media' is refused; width and
+    /// height size the dialog.
+    SettingsDialog,
 };
 
 /// One thing the probe does to the application.
@@ -95,8 +100,17 @@ struct ProbeManifest {
     QString description;
     QString category; ///< ui-interaction | player-behavior | state-sync | regression
     ProbeSurface surface = ProbeSurface::VideoSurface;
+    /// Interface language the run installs before any surface is built: "en"
+    /// or "uk". Empty is the runner's own default, never a guess the run makes.
+    QString language;
     /// Media the surface opens. Required for PlayerDialog; empty is refused.
+    /// Refused outright on SettingsDialog, which opens no stream.
     QString media;
+    /// Episode labels the runner seeds into the player dialog's playlist
+    /// before it starts, each one pointing at `media`. Only meaningful on
+    /// PlayerDialog; refused everywhere else. Empty means a single stream with
+    /// no series drawer.
+    QStringList episodes;
     /// Widget size for the surface under test.
     int width = 640;
     int height = 360;
