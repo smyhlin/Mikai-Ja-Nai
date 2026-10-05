@@ -644,6 +644,36 @@ void VideoSurface::setSpeed(double speed) {
 
 bool VideoSurface::isPlaying() const { return playing_; }
 
+std::optional<ProbePropertyValue> VideoSurface::probeMpvProperty(const QString& name,
+                                                               ProbePropertyKind want) {
+    if (mpv_ == nullptr) return std::nullopt;
+    const std::string property = name.toStdString();
+    try {
+        switch (want) {
+            case ProbePropertyKind::Flag: {
+                ProbePropertyValue value;
+                value.kind = ProbePropertyValue::Kind::Flag;
+                value.flag = mpv_->getFlag(property);
+                return value;
+            }
+            case ProbePropertyKind::Text: {
+                ProbePropertyValue value;
+                value.kind = ProbePropertyValue::Kind::Text;
+                value.text = QString::fromStdString(mpv_->getString(property));
+                return value;
+            }
+            case ProbePropertyKind::Number:
+                break;
+        }
+    } catch (const MpvError&) {
+        return std::nullopt;
+    }
+    ProbePropertyValue value;
+    value.kind = ProbePropertyValue::Kind::Double;
+    value.number = mpv_->getNumber(property);
+    return value;
+}
+
 void VideoSurface::setPlaying(bool playing) {
     // Announced, not just recorded. The state pump cannot notice a change this
     // class makes itself: it compares the core against this very flag, so

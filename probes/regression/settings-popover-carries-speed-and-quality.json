@@ -1,0 +1,57 @@
+{
+  "name": "settings-popover-carries-speed-and-quality",
+  "description": "The gear opens the speed-and-quality popover specifically - the defect just fixed, pinned so the gear cannot quietly open a different overlay again.",
+  "category": "regression",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerSettingsButton",
+      "note": "The gear at PlayerShell.cpp:346. The defect this pins was the gear not opening the popover that carries speed and quality."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerSettingsFlyout",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsFlyout",
+      "property": "visible",
+      "expected": true,
+      "note": "The popover itself is hidden at construction (ShellWidgets.cpp:146), so visibility - not existence - is what says the click landed."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerSpeedSlider",
+      "property": "visible",
+      "expected": true,
+      "note": "The SPEED half. playerSpeedSlider lives inside the flyout (ShellWidgets.cpp:167) and is not shown independently, so this can only pass when the speed-and-quality popover is the one on screen."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerQualitySection",
+      "property": "visible",
+      "expected": true,
+      "note": "The QUALITY half, and the reason this manifest exists. qualitySection_ is built hidden (ShellWidgets.cpp:224) and only shown when options exist - setQualityOptions() sets it visible from !qualityOptions_.isEmpty() (ShellWidgets.cpp:284). The player is built with one quality entry at the manifest height, so a build that opened a flyout without its quality list fails here rather than passing on 'an overlay appeared'."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerEnhancementsPopup",
+      "property": "visible",
+      "expected": false,
+      "note": "The discriminating check. The gear and the spark sit side by side in the same actionHost, and either press starts by dismissing the other overlay - so if the gear were wired to the enhancement tree, the positive assertions could still pass on a flyout left visible from an earlier interaction. This says the tree did not open."
+    }
+  ]
+}

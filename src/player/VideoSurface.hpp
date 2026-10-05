@@ -46,6 +46,26 @@ class MpvRenderContext;
 
 namespace mplayer {
 
+/// Which shape an mpv property is read as. A manifest names it, because a
+/// property read as the wrong shape is the manifest's mistake to see and not a
+/// silent zero to accept.
+enum class ProbePropertyKind { Number, Flag, Text };
+
+/// One mpv property as the core reports it. A manifest asserts against the
+/// value the core holds, not against a widget's cached mirror of it, so the
+/// shapes mpv answers with are kept apart instead of coerced to one.
+struct ProbePropertyValue {
+    enum class Kind { Double, Flag, Integer, Text };
+    Kind kind = Kind::Double;
+    double number = 0.0;
+    bool flag = false;
+    int64_t integer = 0;
+    QString text;
+
+    bool isNumeric() const { return kind == Kind::Double || kind == Kind::Integer; }
+    double asNumber() const { return kind == Kind::Integer ? static_cast<double>(integer) : number; }
+};
+
 /// Provenance for the legacy FPS value passed to the HUD; this is display
 /// metadata only and says nothing about whether a native filter ran.
 enum class StreamFpsSource : int {
@@ -137,6 +157,13 @@ public:
     /// been constructed but not yet shown never gets one, so a caller that
     /// needs a framebuffer has to be able to wait for it.
     bool waitForContext(int timeoutMs);
+
+    /// Probe-only: reads one mpv property so a manifest can assert on the core
+    /// itself ("pause", "volume", "duration", "time-pos", "filename") rather
+    /// than on the widget that mirrors it. Takes the mpv core lock, so it must
+    /// not be called while native work holds that lock.
+    std::optional<ProbePropertyValue> probeMpvProperty(const QString& name,
+                                                        ProbePropertyKind want);
 
     bool isPlaying() const;
     /// Records the pause state and announces a change. Every local pause goes

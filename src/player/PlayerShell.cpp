@@ -287,6 +287,8 @@ void PlayerShell::buildDock() {
     auto* volumeLayout = new QHBoxLayout(volumeHost);
     volumeLayout->setContentsMargins(0, 0, 0, 0);
     vol_ = new VolumeGroup(volumeHost);
+    vol_->setObjectName(QStringLiteral("playerVolumeGroup"));
+    vol_->setAccessibleName(tr("Volume"));
     connect(vol_, &VolumeGroup::volumeChanged, this, &PlayerShell::onVolume);
     connect(vol_, &VolumeGroup::muteClicked, this, &PlayerShell::toggleMute);
     volumeLayout->addWidget(vol_);
@@ -297,6 +299,11 @@ void PlayerShell::buildDock() {
     btnPlay_ = new IconButton(IconPainter::play, tr("Play / pause  (Space)"),
                               kDockPlaySize, kDockPlayGlyph, dock_);
     btnPlay_->setObjectName(QStringLiteral("playerPlayToggle"));
+    // Checkable so `checked` reports playback state to assistive technology and
+    // to a probe by identity; the engine rewrites it on every state change, so
+    // the auto-toggle a click performs is never left standing.
+    btnPlay_->setCheckable(true);
+    btnPlay_->setAccessibleName(tr("Play"));
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
     topRow->addWidget(btnPlay_);
     topRow->addStretch();
@@ -336,6 +343,7 @@ void PlayerShell::buildDock() {
 
     btnEnhance_ = new IconButton(IconPainter::spark, tr("Open enhancements"),
                                  kDockActionSize, kDockActionGlyph, actionHost);
+    btnEnhance_->setObjectName(QStringLiteral("playerEnhanceButton"));
     connect(btnEnhance_, &QPushButton::clicked, this, &PlayerShell::openEnhancements);
     actions->addWidget(btnEnhance_);
     btnSettings_ = new IconButton(IconPainter::gear, tr("Quality and speed"),
@@ -357,6 +365,8 @@ void PlayerShell::buildDock() {
     timeline->addWidget(lblElapsed_);
 
     scrub_ = new ScrubBar(dock_);
+    scrub_->setObjectName(QStringLiteral("playerScrubBar"));
+    scrub_->setAccessibleName(tr("Timeline"));
     scrub_->setMinimumWidth(120);
     connect(scrub_, &RangeSlider::valueChanged, this, &PlayerShell::onScrub);
     timeline->addWidget(scrub_, 1);
@@ -848,6 +858,11 @@ void PlayerShell::updatePlayIcon() {
     // viewer trusts absolutely.
     const bool running = surface_ != nullptr && surface_->isPlaying();
     btnPlay_->setIcon(running ? IconPainter::pause : IconPainter::play);
+    // Checked mirrors the same single fact, so the state is readable by identity
+    // instead of only by glyph. The engine still owns it: onPlayClicked writes
+    // through togglePause, and the next playingChanged rewrites this from the
+    // core, so the button never becomes a second source of truth.
+    btnPlay_->setChecked(running);
 }
 
 void PlayerShell::setEpisodeStepping(bool hasPrevious, bool hasNext) {

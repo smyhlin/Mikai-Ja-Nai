@@ -22,6 +22,9 @@ namespace shell {
 /// to a different quantity override those and inherit press/move behaviour.
 class RangeSlider : public QWidget {
     Q_OBJECT
+    // Exposed so a probe manifest can drive the control by identity rather than
+    // by coordinates; the write is the real setter, so it emits like a drag does.
+    Q_PROPERTY(double value READ value WRITE setValue)
 
 public:
     explicit RangeSlider(const QColor& accent = w95(), int track = 4, QWidget* parent = nullptr,
@@ -89,6 +92,8 @@ private:
 /// Speaker button plus an always-visible volume track.
 class VolumeGroup : public QWidget {
     Q_OBJECT
+    Q_PROPERTY(double volume READ effective WRITE setVolume)
+    Q_PROPERTY(bool muted READ isMuted WRITE setMuted)
 
 public:
     static constexpr int kTrack = 152;
@@ -98,6 +103,7 @@ public:
     void setVolume(double v);
     void setMuted(bool m);
     double effective() const { return muted_ ? 0.0 : vol_; }
+    bool isMuted() const { return muted_; }
 
     bool isDragging() const { return drag_; }
 

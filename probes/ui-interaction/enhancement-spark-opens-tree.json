@@ -1,0 +1,49 @@
+{
+  "name": "enhancement-spark-opens-tree",
+  "description": "Clicking the spark button in the player's top dock row opens the enhancement tree at its root.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000,
+      "note": "The spark is a chrome affordance that exists before the stream does; waiting keeps the tree opening over a live player."
+    },
+    {
+      "kind": "click",
+      "target": "playerEnhanceButton",
+      "note": "playerEnhanceButton is the spark IconButton at PlayerShell.cpp:341, connected to openEnhancements()."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerEnhancementsPopup",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerEnhancementsPopup",
+      "property": "visible",
+      "expected": true,
+      "note": "All five enhancement panels are built up front (PlayerShell.cpp:390-405) and only shown on demand, so existence proves nothing - openEnhancements() calls collapseEnhancementTree(0) and then shows the root. Visibility is the assertion that carries this."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsFlyout",
+      "property": "visible",
+      "expected": false,
+      "note": "The spark and the gear are neighbours in the same actionHost and both call dismissOverlay() before opening. If the spark were ever wired to openSettings, this is the assertion that would catch it."
+    },
+    {
+      "kind": "widget_exists",
+      "target": "playerEnhancementLevelPopup",
+      "note": "The tree is a real drill-down, not one flat list: the deeper levels are the panels named playerEnhancementLevelPopup (PlayerShell.cpp:391-392), and they only exist because openEnhancements() collapsed back to the root of a five-level tree."
+    }
+  ]
+}

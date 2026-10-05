@@ -164,6 +164,8 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->addLayout(head);
 
     slider_ = new RangeSlider(accent(), 4, this);
+    slider_->setObjectName(QStringLiteral("playerSpeedSlider"));
+    slider_->setAccessibleName(tr("Speed"));
     connect(slider_, &RangeSlider::valueChanged, this, &SettingsFlyout::onSlider);
     lay->addWidget(slider_);
 
@@ -192,6 +194,8 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     // where a viewer looks for stream settings, and the strip is for things
     // that act on the current episode.
     qualitySection_ = new QWidget(this);
+    qualitySection_->setObjectName(QStringLiteral("playerQualitySection"));
+    qualitySection_->setAccessibleName(tr("Quality"));
     qualitySection_->setStyleSheet(QStringLiteral("background: transparent;"));
     auto* qlay = new QVBoxLayout(qualitySection_);
     qlay->setContentsMargins(0, 0, 0, 0);
@@ -199,11 +203,13 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
 
     auto* qrow = new QHBoxLayout();
     qualityCaption_ = new QLabel(tr("QUALITY"));
+    qualityCaption_->setObjectName(QStringLiteral("playerQualityCaption"));
     qualityCaption_->setFont(monoFont(8));
     qualityCaption_->setStyleSheet(QStringLiteral("color: #9a9aa6; font-weight: 700; background: transparent;"));
     qrow->addWidget(qualityCaption_);
     qrow->addStretch();
     qualityLabel_ = new QLabel(QStringLiteral("HD"));
+    qualityLabel_->setObjectName(QStringLiteral("playerQualityLabel"));
     qualityLabel_->setFont(monoFont(9));
     qualityLabel_->setStyleSheet(
         QStringLiteral("color:%1; font-weight:700;").arg(green().name()));

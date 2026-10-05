@@ -1,0 +1,68 @@
+{
+  "name": "play-button-mirrors-core-pause",
+  "description": "The play control's checked state always agrees with the core's pause flag, in both running and paused states.",
+  "category": "state-sync",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 10000,
+      "note": "mpv brings a fresh file up playing, so the running state is the state the dialog opens into and needs no press to reach."
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle"
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "Back to running, so both states are checked rather than only the one the click produced."
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 5000,
+      "note": "Every assertion is evaluated against the FINAL state, so the last thing that happens is the agreement under test rather than an intermediate one."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerPlayToggle",
+      "property": "checked",
+      "comparison": "equals",
+      "expected": true,
+      "note": "updatePlayIcon() ends with btnPlay_->setChecked(running) (PlayerShell.cpp:865), so checked == true means running. This is the state the button used to have no handle on at all - the glyph was a function pointer and checked was pinned false on every build, which would have made any assertion here unfailable."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "equals",
+      "expected": false,
+      "note": "The other half of the pair. The button is a view of the core, never a second source of truth: updatePlayIcon() re-reads surface_->isPlaying() rather than trusting its own cached playing_, because a PiP hand-back can leave the two disagreeing."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "not_equals",
+      "expected": true,
+      "note": "The paused state the two presses passed through. If the core had never left paused, the checked == true assertion above would still hold on a player whose play control and core never agreed at all."
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "volume-slider-mirrors-core",
+  "description": "The volume group's value and mpv's volume stay the same level at all times, in both directions, across the 0..1 / 0..100 scale boundary.",
+  "category": "state-sync",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "set_value",
+      "target": "playerVolumeGroup",
+      "name": "volume",
+      "value": 0.2,
+      "note": "Moved DOWN first. Two steps in opposite directions are what make this a synchronisation check: a single point could agree by coincidence with a volume the player happened to start at."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300
+    },
+    {
+      "kind": "set_value",
+      "target": "playerVolumeGroup",
+      "name": "volume",
+      "value": 0.8
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300,
+      "note": "Bounded settles so the core's answer is observable after each write. The synchronisation itself is asserted, never timed."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "volume",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 80.0,
+      "tolerance": 1.0,
+      "note": "The final core value, 0.8 scaled to 80 by PlayerDialog.cpp:1177-1180. Read after the last write, so it fails if the core lagged, ignored, or clamped the change."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerVolumeGroup",
+      "property": "volume",
+      "comparison": "approximately",
+      "expected": 0.8,
+      "tolerance": 0.01,
+      "note": "The same level in the widget's own 0..1 scale. Asserting both sides in one manifest is the Qt-to-core check: a build that updated only the widget, or only the core, cannot satisfy the pair."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "volume",
+      "mpv_kind": "number",
+      "comparison": "not_equals",
+      "expected": 20.0,
+      "tolerance": 1.0,
+      "note": "The level set one step earlier, so a core frozen at the first write cannot pass by holding a stale-but-matching value. tolerance keeps not_equals numeric rather than an exact 20.0 == 20.0 test."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "volume-reaches-core",
+  "description": "Setting the volume group's value reaches mpv as a 0..100 volume, and the widget keeps the 0..1 fraction it was given.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000,
+      "note": "The volume path ends in surface_->setVolume on a live core; asserting before the engine exists would read nothing."
+    },
+    {
+      "kind": "set_value",
+      "target": "playerVolumeGroup",
+      "name": "volume",
+      "value": 0.5,
+      "note": "The declared Q_PROPERTY volume (ShellSliders.hpp:95), written through the real setter so it emits volumeChanged exactly as a drag does. The widget speaks 0..1; the core speaks 0..100."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300,
+      "note": "A bounded settle for the mpv write to be observable, not the synchroniser - the property comparison below is what decides the scenario."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "volume",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 50.0,
+      "tolerance": 1.0,
+      "note": "The whole Qt-to-core hop: VolumeGroup::volumeChanged -> PlayerShell::onVolume -> PlayerDialog.cpp:1177-1180 multiplies by 100 -> mpv. 0.5 on the widget is 50 in the core, and this is what fails if the scaling or the emission is ever dropped."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerVolumeGroup",
+      "property": "volume",
+      "comparison": "approximately",
+      "expected": 0.5,
+      "tolerance": 0.01,
+      "note": "The widget must hold the 0..1 fraction it was set to rather than the 0..100 the core uses - the same number in two scales is the trap this pairing exists to catch."
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "name": "play-starts-playback",
+  "description": "The play control resumes playback, mpv's pause flag clears, and the position really advances.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 10000,
+      "note": "mpv always brings a fresh file up playing (PlayerDialog.cpp:1974-1976), so a player dialog opens mid-playback. The scenario therefore pauses first and then presses play, which is the only way to test that play STARTS playback from a known paused state rather than testing that a paused file resumes by accident."
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "First press pauses, putting the player into the state the rest of the scenario starts from."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "The press under test."
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "wait_for",
+      "name": "positionIncreasing",
+      "timeout_ms": 5000,
+      "note": "Unpaused is not the same as playing: time-pos has to actually move. This is what separates a real resume from a pause flag that was merely cleared."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "equals",
+      "expected": false,
+      "note": "The core's own answer, read back from mpv rather than from the Qt cache that was written alongside it."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "greater_than",
+      "expected": 0.0,
+      "note": "mpv_kind is named rather than guessed (ProbeManifest.hpp:59-61): read as a flag, a numeric property answers 0 and would make this pass on a player that never moved."
+    },
+    {
+      "kind": "signal_emitted",
+      "property": "playingChanged",
+      "note": "setPlaying is announced, not just recorded (VideoSurface.cpp:677-680), because the state pump compares the core against that very flag. Counting starts once the surface has settled, so this is emitted by the press under test."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "name": "settings-gear-opens-flyout",
+  "description": "Clicking the gear in the player's top dock row opens the settings flyout, and that flyout is the one on screen.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000,
+      "note": "The dock gear is reachable before the stream is up, but a flyout opened over a dialog that has not loaded yet is not the behaviour under test."
+    },
+    {
+      "kind": "click",
+      "target": "playerSettingsButton",
+      "note": "playerSettingsButton is the gear at PlayerShell.cpp:346, wired to openSettings()."
+    },
+    {
+      "kind": "wait_for",
+      "name": "widgetVisible",
+      "target": "playerSettingsFlyout",
+      "timeout_ms": 5000,
+      "note": "openSettings() shows the flyout synchronously, so this only has to cover the click being delivered."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "qt_property",
+      "target": "playerSettingsFlyout",
+      "property": "visible",
+      "expected": true,
+      "note": "The flyout is constructed hidden (ShellWidgets.cpp:146 hide()), so widget_exists alone would pass on a build where the gear did nothing at all. The visibility read is what makes this fail when the click is dropped."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerEnhancementsPopup",
+      "property": "visible",
+      "expected": false,
+      "note": "openSettings() calls dismissOverlay() first, so the two overlays are mutually exclusive. This is the assertion that says the gear opened the flyout and not the enhancement tree - without it, any overlay appearing would satisfy a bare 'something opened' reading."
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "name": "pause-freezes-position",
+  "description": "Pressing the play control while running pauses the core, and the position genuinely stops advancing.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "positionIncreasing",
+      "timeout_ms": 10000,
+      "note": "Pausing something that was never running proves nothing, so the position is confirmed moving before the press. The dialog opens playing (mpv brings a fresh file up playing), so there is no preliminary press here."
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle"
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "wait_for",
+      "name": "positionFrozen",
+      "timeout_ms": 5000,
+      "note": "The real assertion of a pause: unchanged within 0.05s over a 400ms window. A sleep would only prove the clock ran, not that the position held - this is the bounded observation the contract asks for instead."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "equals",
+      "expected": true
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "greater_than",
+      "expected": 0.0,
+      "note": "A pause holds the position it paused at; a seek-to-zero or a stall would satisfy positionFrozen on a time-pos of 0."
+    },
+    {
+      "kind": "signal_emitted",
+      "property": "playingChanged",
+      "note": "Guarantees the pause was announced through the surface's own signal rather than the core's flag being set behind the shell's back."
+    }
+  ]
+}

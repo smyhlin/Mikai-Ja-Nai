@@ -140,10 +140,24 @@ VolumeGroup::VolumeGroup(QWidget* parent) : QWidget(parent) {
 }
 
 void VolumeGroup::setVolume(double v) {
-    vol_ = qBound(0.0, v, 1.0);
+    const double next = qBound(0.0, v, 1.0);
+    // Emits like a drag, so a programmatic set reaches the core the same way a
+    // pointer does instead of silently rewriting only this widget. The dead zone
+    // is what makes that safe in the other direction too: the shell pushes its
+    // own volume back down here, and without it every push would echo straight
+    // into onVolume and on into mpv.
+    if (qAbs(next - vol_) <= 1e-4) {
+        return;
+    }
+    vol_ = next;
+    emit volumeChanged(vol_);
     update();
 }
 
+// Silent by design, unlike setVolume: muted_ travels shell -> widget only, and
+// the widget's own contribution travels back as the muteClicked *request*, which
+// the shell answers by toggling. Emitting that here would ask for the opposite
+// of what was just set.
 void VolumeGroup::setMuted(bool m) {
     muted_ = m;
     update();

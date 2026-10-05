@@ -1,0 +1,74 @@
+{
+  "name": "scrub-bar-seeks",
+  "description": "Setting the scrub bar to the midpoint of the timeline moves mpv's time-pos to the midpoint of the duration.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "wait_for",
+      "name": "durationKnown",
+      "timeout_ms": 10000,
+      "note": "The scrub fraction is multiplied by duration_ (PlayerShell.cpp:979-980), so seeking before the duration has arrived would land at 0.0 no matter how the manifest asked for it."
+    },
+    {
+      "kind": "wait_for",
+      "name": "positionIncreasing",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "click",
+      "target": "playerPlayToggle",
+      "note": "Paused first, so the seek target is held still and can be compared as a number. Left running, time-pos would race past the assertion and this scenario would measure the clock rather than the seek."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "set_value",
+      "target": "playerScrubBar",
+      "name": "value",
+      "value": 0.5,
+      "note": "The declared Q_PROPERTY value (ShellSliders.hpp:27), written through the real setter so it emits valueChanged like a drag. The value is a 0..1 fraction of the timeline, not seconds - naming seconds here would be the classic misreading of this control."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 400,
+      "note": "Bounded settle for the seek to land in the core; the assertions below carry the scenario."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 6.0,
+      "tolerance": 0.4,
+      "note": "The fixture is exactly 12.000s, so half the timeline is 6.0s. This is the assertion that the seek reached the core: a build that updated the scrub bar's own picture without seeking would leave time-pos near 0 and fail here."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "duration",
+      "mpv_kind": "number",
+      "comparison": "approximately",
+      "expected": 12.0,
+      "tolerance": 0.5,
+      "note": "Pins the constant the previous assertion is computed from, so a fixture or load problem reports as its own failure instead of quietly invalidating the expected 6.0."
+    },
+    {
+      "kind": "signal_emitted",
+      "property": "positionChanged",
+      "note": "A seek is announced through the surface's position signal, which is how the dock's own labels follow it."
+    }
+  ]
+}

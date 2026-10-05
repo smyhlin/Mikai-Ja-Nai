@@ -664,6 +664,21 @@ if(TARGET mikai_backend)
         "$<TARGET_FILE_DIR:hls_recovery_probe>/shaders"
       COMMENT "Deploying Anime4K shader fixtures for hls_recovery_probe")
 
+    # The manifest-driven runner: ONE executable that executes declarative JSON
+    # probes. New coverage is a manifest, not a new binary.
+    add_executable(probe_runner EXCLUDE_FROM_ALL
+      src/probes/runner/main.cpp
+      src/probes/runner/ProbeRunner.cpp
+      src/probes/shared/ProbeManifest.cpp
+    )
+    target_link_libraries(probe_runner PRIVATE mikai_app Qt6::Test mikai_probe_shared)
+    set_target_properties(probe_runner PROPERTIES WIN32_EXECUTABLE FALSE)
+    add_custom_command(TARGET probe_runner POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        "$<TARGET_FILE_DIR:probe_runner>/shaders"
+      COMMENT "Deploying Anime4K shader fixtures for probe_runner")
+
     add_executable(rife_settings_probe EXCLUDE_FROM_ALL src/probes/native/RifeSettingsProbe.cpp)
     target_link_libraries(rife_settings_probe PRIVATE mikai_app Qt6::Test mikai_probe_shared)
     set_target_properties(rife_settings_probe PROPERTIES WIN32_EXECUTABLE FALSE)
