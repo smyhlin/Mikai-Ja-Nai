@@ -1,6 +1,7 @@
 #include "TestAnime4K.hpp"
 
 #include "Anime4K.hpp"
+#include "native/NativeMenu.hpp"
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -13,6 +14,7 @@ using mplayer::anime4k::allCandidates;
 using mplayer::anime4k::availableModes;
 using mplayer::anime4k::candidateForId;
 using mplayer::anime4k::categoryContainsPreset;
+using mplayer::anime4k::categoryLabel;
 using mplayer::anime4k::chainIsComplete;
 using mplayer::anime4k::filesForId;
 using mplayer::anime4k::findShadersDir;
@@ -158,6 +160,16 @@ void TestAnime4K::presetIdsRemainUniqueAndRestorableAfterMenuReordering() {
     ids.insert(info.id);
     QCOMPARE(modeId(info.mode), info.id);
     QCOMPARE(modeForId(info.id), info.mode);
+    // A preset with no label or no category is a row the menu cannot name and
+    // the Compare badge chooser cannot place. That chooser mirrors both fields,
+    // so an empty one there renders a blank leaf under no group - and an
+    // equality check against it would pass by comparing "" to "".
+    QVERIFY2(!info.label.trimmed().isEmpty(),
+             qPrintable(QStringLiteral("preset with no label: ") + info.id));
+    QVERIFY2(!info.category.isEmpty(),
+             qPrintable(QStringLiteral("preset with no category: ") + info.id));
+    QVERIFY2(!categoryLabel(info.category).isEmpty(),
+             qPrintable(QStringLiteral("preset under an unnamed category: ") + info.category));
   }
 
   // A caller may filter a category and sort its visible labels. Restoring by
@@ -252,6 +264,30 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
   for (const QString& id : catalogued) {
     QVERIFY2(reachablePresets.contains(id), qPrintable(QStringLiteral("unreachable preset: ") + id));
   }
+}
+
+void TestAnime4K::rifeLevelLivesInNativeMenuNotCatalogue() {
+  // The RIFE level is owned by the native menu cutover: no catalogue alias or
+  // Planned leaf remains, while every Anime4K preset id, label, chain and the
+  // other placeholders are untouched.
+  QVERIFY(mplayer::native::menu::ownsLevel(QStringLiteral("rife")));
+  QVERIFY(menuRows(QStringLiteral("rife")).isEmpty());
+  QVERIFY(categoryLabel(QStringLiteral("rife")).isEmpty());
+  QVERIFY(filesForId(QStringLiteral("rife/planned")).isEmpty());
+  QVERIFY(candidateForId(QStringLiteral("rife/planned")).id.isEmpty());
+
+  // The untouched neighbours: same ids, same placeholder roles, no chains.
+  QVERIFY(!categoryLabel(QStringLiteral("realesrgan")).isEmpty());
+  QVERIFY(!categoryLabel(QStringLiteral("other-models")).isEmpty());
+  for (const MenuRow& row : menuRows(QStringLiteral("realesrgan"))) {
+    QVERIFY(row.role == MenuRow::Role::Placeholder);
+    QVERIFY(filesForId(row.id).isEmpty());
+  }
+  for (const MenuRow& row : menuRows(QStringLiteral("other-models"))) {
+    QVERIFY(row.role == MenuRow::Role::Placeholder);
+    QVERIFY(filesForId(row.id).isEmpty());
+  }
+  QCOMPARE(availableModes().size(), 24);
 }
 
 void TestAnime4K::offAndUnknownIdsResolveNothing() {

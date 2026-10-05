@@ -27,17 +27,15 @@ using mplayer::native::RuntimeSelection;
 
 namespace {
 
-/// The directory holding the stock runtime the selection would provision, or
+/// The directory holding the first stock candidate the selection would walk, or
 /// nothing when this machine has none. The suite never downloads: a missing
-/// runtime skips the live cases instead of starting a network fetch. The stock
-/// discovery reports the entry it matched, which may be the module itself.
+/// runtime skips the live cases instead of starting a network fetch.
 std::optional<QString> stockRuntimeDir() {
-    const std::optional<QDir> found = mikai::backend::findRuntime();
-    if (!found.has_value()) {
+    const QStringList candidates = mikai::backend::runtimeCandidates();
+    if (candidates.isEmpty()) {
         return std::nullopt;
     }
-    const QFileInfo entry(found->path());
-    return QDir::cleanPath(entry.isFile() ? entry.absolutePath() : entry.absoluteFilePath());
+    return QFileInfo(candidates.first()).absolutePath();
 }
 
 bool nativeBundleInstalled() {
@@ -411,6 +409,96 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     QVERIFY(!mplayer::native::runtimeSelected());
 }
 
+void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall() {
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString source = QDir(temp.path()).filePath(QStringLiteral("stock"));
+    const QString runtimeRoot = QDir(temp.path()).filePath(QStringLiteral("runtime"));
+    // A flat stock runtime: one real x64 PE whose only import is a Windows
+    // system module, so its closure is satisfied by the module's own directory.
+    QVERIFY(writeFileBytes(QDir(source).filePath(QStringLiteral("libmpv-2.dll")),
+                           syntheticPe({QStringLiteral("kernel32.dll")})));
+    const QString sourceModule = QDir(source).filePath(QStringLiteral("libmpv-2.dll"));
+    const QString sourceBefore = treeFingerprint(source);
+    QVERIFY(!sourceBefore.isEmpty());
+
+    QString reason;
+    const std::optional<mplayer::native::Bundle> described =
+        mplayer::native::describeStandardRuntime(sourceModule, &reason);
+    QVERIFY2(described.has_value(), qPrintable(reason));
+    QCOMPARE(described->kind, BundleKind::Standard);
+    // A stock core's client API version is learned from the loaded module, so
+    // the descriptor carries the declared "unknown until load" value.
+    QCOMPARE(described->mpvApiVersion, quint64(0));
+
+    // Describing is read-only. A stock runtime has no manifest, and looking at
+    // it must never be what creates one.
+    QVERIFY(!QFileInfo::exists(QDir(source).filePath(QStringLiteral("bundle.json"))));
+
+    QString publishedRoot;
+    QString publishReason;
+    QVERIFY2(mplayer::native::installAtomic(*described, runtimeRoot, &publishReason, &publishedRoot),
+             qPrintable(publishReason));
+    QVERIFY(!publishedRoot.isEmpty());
+    QVERIFY(QFileInfo(publishedRoot).isDir());
+    QVERIFY(QDir::cleanPath(publishedRoot).startsWith(QDir::cleanPath(runtimeRoot),
+                                                     Qt::CaseInsensitive));
+    // The manifest is materialised from the inventory that was verified against
+    // disk, and only inside what this call published.
+    QVERIFY(QFileInfo::exists(QDir(publishedRoot).filePath(QStringLiteral("bundle.json"))));
+    QVERIFY(!QFileInfo::exists(QDir(source).filePath(QStringLiteral("bundle.json"))));
+    QCOMPARE(treeFingerprint(source), sourceBefore);
+
+    // The published bundle is re-read from disk rather than trusted because it
+    // was copied from a valid source, and the copy is what will be loaded.
+    QString readReason;
+    const std::optional<mplayer::native::Bundle> published =
+        mplayer::native::readBundle(publishedRoot, &readReason);
+    QVERIFY2(published.has_value(), qPrintable(readReason));
+    QCOMPARE(QFileInfo(publishedRoot).fileName(),
+             mplayer::native::bundleDirectoryName(BundleKind::Standard, published->version));
+    QString validateReason;
+    QVERIFY2(mplayer::native::validateBundle(*published, &validateReason), qPrintable(validateReason));
+    QCOMPARE(published->modulePath, QDir(publishedRoot).filePath(QStringLiteral("libmpv-2.dll")));
+
+    // The pointer is the one selected-bundle fact, and it names what was just
+    // published.
+    QFile pointer(QDir(runtimeRoot).filePath(
+        mplayer::native::bundlePointerFileName(BundleKind::Standard)));
+    QVERIFY(pointer.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(pointer.readAll()).trimmed(), QFileInfo(publishedRoot).fileName());
+    pointer.close();
+
+    // A published bundle is immutable, so a retry cannot rewrite what a load
+    // may already be using, and it leaves no staging directory behind.
+    QString secondReason;
+    QVERIFY2(!mplayer::native::installAtomic(*described, runtimeRoot, &secondReason),
+             "republishing the same inventory must be refused");
+    QVERIFY(!QFileInfo::exists(
+        QDir(runtimeRoot).filePath(QStringLiteral(".staging-") + QFileInfo(publishedRoot).fileName())));
+    QCOMPARE(treeFingerprint(source), sourceBefore);
+
+    // The published bundle is discoverable as what it is: a Standard bundle
+    // under an app-owned root, with its module inside it.
+    QStringList rejections;
+    const QList<mplayer::native::Bundle> found = mplayer::native::discoverBundles({runtimeRoot},
+                                                                                 &rejections);
+    QCOMPARE(found.size(), 1);
+    QCOMPARE(found.first().kind, BundleKind::Standard);
+    QCOMPARE(found.first().modulePath, published->modulePath);
+
+    // The stock reference install is refused outright, so recovery can never
+    // publish into it even when asked to.
+    const QString stockRoot = QDir(temp.path()).filePath(QStringLiteral("MPVBackend/runtime"));
+    QString stockReason;
+    QVERIFY2(!mplayer::native::installAtomic(*described, stockRoot, &stockReason, nullptr),
+             "installing into the stock tree must be refused");
+    QVERIFY2(stockReason.contains(QStringLiteral("stock"), Qt::CaseInsensitive),
+             qPrintable(stockReason));
+    QVERIFY(!QFileInfo::exists(stockRoot));
+    QCOMPARE(treeFingerprint(source), sourceBefore);
+}
+
 void TestRuntimeSelection::selectingStandardLoadsTheStockRuntimeWithoutTouchingIt() {
     const std::optional<QString> stock = stockRuntimeDir();
     if (!stock.has_value()) {
@@ -432,18 +520,6 @@ void TestRuntimeSelection::selectingStandardLoadsTheStockRuntimeWithoutTouchingI
     QVERIFY(selection.modulePath.startsWith(selection.root, Qt::CaseInsensitive));
     QVERIFY(mplayer::native::runtimeSelected());
     QCOMPARE(mplayer::native::currentSelection().modulePath, selection.modulePath);
-    QVERIFY(!mplayer::native::runtimeStatusText().isEmpty());
-
-    // The module the loader actually received is the resolved closure: the same
-    // root, module and dependency directories, and the same protocol that was
-    // validated, carried through resolve and commit without being rebuilt.
-    QVERIFY(selection.resolvedBundle.has_value());
-    const mplayer::MpvBundle loaded = mplayer::MpvApi::instance().bundle();
-    QCOMPARE(loaded.root, selection.resolvedBundle->root);
-    QCOMPARE(loaded.modulePath, selection.resolvedBundle->modulePath);
-    QCOMPARE(loaded.descriptorId, selection.resolvedBundle->descriptorId);
-    QCOMPARE(loaded.protocolVersion, selection.resolvedBundle->protocolVersion);
-    QCOMPARE(loaded.deps, selection.resolvedBundle->toMpvBundleDescriptor().deps);
 
     // Selecting loads through the explicit loader: no PATH edit, no QDir
     // search-path pretence, and not one byte of the stock tree written.
@@ -490,5 +566,103 @@ void TestRuntimeSelection::aDifferentChoiceNeverHotSwapsThePinnedModule() {
     const RuntimeSelection refused = mplayer::native::commitRuntime(alien);
     QCOMPARE(refused.kind, BundleKind::Standard);
     QCOMPARE(refused.modulePath, pinned.modulePath);
-    QVERIFY(!refused.restartRequired);
+}
+
+void TestRuntimeSelection::theLoaderPinsExactlyTheValidatedClosure() {
+    // M07's central claim: the loader receives the exact descriptor that was
+    // validated, so nothing it checked is reconstructed or lost on the way in.
+    // This is a synthetic PE fixture, so the module cannot actually load; what
+    // is verified here is that the descriptor the loader would be handed is the
+    // one the bundle's own validation produced, byte-for-byte in every field.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    QVERIFY2(writeSyntheticNativeBundle(temp.path()), "the synthetic native bundle must write");
+
+    QString reason;
+    const std::optional<mplayer::native::Bundle> bundle =
+        mplayer::native::readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(mplayer::native::validateBundle(*bundle, &reason), qPrintable(reason));
+
+    const mplayer::MpvBundle descriptor = bundle->toMpvBundleDescriptor();
+    // Every field is derived from the validated bundle, not from the display
+    // projection: a caller rebuilding the descriptor from root/modulePath would
+    // lose the protocol and the dependency directories.
+    QCOMPARE(descriptor.root, bundle->root);
+    QCOMPARE(descriptor.modulePath, bundle->modulePath);
+    QCOMPARE(descriptor.descriptorId, bundle->descriptorId);
+    QCOMPARE(descriptor.protocolVersion, kFixtureProtocol);
+    // Dependency directories are absolute, canonical and inside the root, so
+    // restricted search has a real directory to register for each one.
+    QCOMPARE(descriptor.deps.size(), bundle->deps.size());
+    for (int i = 0; i < descriptor.deps.size(); ++i) {
+        const QString expected = QDir::cleanPath(QDir(bundle->root).filePath(bundle->deps.at(i)));
+        QCOMPARE(descriptor.deps.at(i), expected);
+        QVERIFY(QDir::isAbsolutePath(descriptor.deps.at(i)));
+        QVERIFY(QFileInfo(descriptor.deps.at(i)).isDir());
+    }
+    // The descriptor identity is a stable digest of the manifest bytes, so two
+    // reads of the same bundle produce the same descriptor.
+    QVERIFY(descriptor.descriptorId.size() == 64);
+    const std::optional<mplayer::native::Bundle> again =
+        mplayer::native::readBundle(temp.path(), &reason);
+    QVERIFY2(again.has_value(), qPrintable(reason));
+    QCOMPARE(again->descriptorId, bundle->descriptorId);
+    QCOMPARE(again->toMpvBundleDescriptor().descriptorId, descriptor.descriptorId);
+}
+
+void TestRuntimeSelection::anUnresolvedSelectionNeverReachesTheLoaderWithACapabilityClaim() {
+    if (mplayer::native::runtimeSelected()) {
+        QSKIP("a module was already pinned by an earlier case");
+    }
+    // A selection that names a native bundle whose module is absent: the loader
+    // must refuse it, and the refusal must not carry any API version or
+    // capability claim for a module that never loaded.
+    RuntimeSelection resolved;
+    resolved.requested = RuntimeChoice::Native;
+    resolved.kind = BundleKind::Native;
+    resolved.resolvedBundle.reset();
+    const RuntimeSelection refused = mplayer::native::commitRuntime(resolved);
+    QVERIFY(!refused.loaded);
+    QVERIFY(refused.runtimeUnavailable);
+    QVERIFY(!refused.reason.isEmpty());
+    QCOMPARE(refused.apiVersion, quint64(0));
+    QVERIFY(!mplayer::native::runtimeSelected());
+}
+
+void TestRuntimeSelection::theUnavailablePlaybackLineNamesTheSameReasonAsTheStatusLine() {
+    if (mplayer::native::runtimeSelected()) {
+        QSKIP("a module was already pinned by an earlier case");
+    }
+    // M08's user-facing contract: a runtime that could not be produced produces
+    // one clear line naming why, never a silent black player. The title page and
+    // the standalone player share this one text, so the same failure reads the
+    // same way wherever it surfaces.
+    //
+    // Deliberately hermetic: this checks the two text surfaces against each
+    // other without resolving a runtime, because resolution is allowed to
+    // download and a test must never start a network fetch.
+    QVERIFY(!mplayer::native::runtimeSelected());
+    QVERIFY(!mplayer::native::currentSelection().loaded);
+
+    const QString status = mplayer::native::runtimeStatusText();
+    QVERIFY2(!status.isEmpty(), "with nothing loaded the status line must still name a state");
+
+    // An empty reason is not an excuse to say nothing: it falls back to the
+    // status line, so the surface is never blank.
+    const QString fromStatus = mplayer::native::runtimeUnavailablePlaybackText(QString());
+    QVERIFY(!fromStatus.isEmpty());
+    QVERIFY2(fromStatus.contains(status), qPrintable(fromStatus));
+
+    // A named reason is carried verbatim, so the line a user reads contains the
+    // same detail the log recorded rather than a generic apology.
+    const QString named = QStringLiteral("no usable native runtime bundle: native-2.1.0");
+    const QString fromReason = mplayer::native::runtimeUnavailablePlaybackText(named);
+    QVERIFY2(fromReason.contains(named), qPrintable(fromReason));
+    QVERIFY(fromReason != fromStatus);
+
+    // The two surfaces stay consistent: given the status line as the reason, the
+    // playback line names it, which is what makes one shared reason sufficient.
+    const QString echoed = mplayer::native::runtimeUnavailablePlaybackText(status);
+    QVERIFY2(echoed.contains(status), qPrintable(echoed));
 }

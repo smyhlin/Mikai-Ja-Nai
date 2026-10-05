@@ -1,20 +1,24 @@
-// Live dialog probe: builds the ported PlayerDialog with a stub host, plays a
-// test pattern, and writes PNGs so the strip, the status panel, the dock and the
-// series drawer can all be inspected in one shot.
+// The verdict reads the surface's own framebuffer, never the dialog grab.
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QPixmap>
+#include <QPointer>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QWidget>
+
 #include <cstdio>
+#include <functional>
+#include <memory>
 
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
-#include "VideoSurface.hpp"
+#include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
+#include "VideoSurface.hpp"
 
 using namespace mplayer::shell;
 
@@ -43,11 +47,9 @@ int visibleChildren(const QWidget* root) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // A close must not end the loop before the reopened run is judged.
+    app.setQuitOnLastWindowClosed(false);
 
-    // The dialog reads its player/anime4k and player/presetShortcuts settings
-    // inside its constructor, so both scopes are redirected into a directory
-    // that dies with this process before the first one is built. Without it a
-    // probe inherits whatever a real session left behind.
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
         std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
@@ -58,74 +60,143 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
 
     static StubHost host;
-    // A real URL can be handed in to check the mpv HTTP options against a live
-    // CDN; the lavfi pattern is the default because it needs no network.
     const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                  : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     const QList<QualityEntry> qualities = {{720, url}};
-    auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
-    // Two tracks, so the track chip has to appear; the drawer needs a playlist.
-    dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
-                                     {"embed", QStringLiteral("e1")},
-                                     {"kind", QStringLiteral("voice")}},
-                         QVariantMap{{"label", QStringLiteral("Цукіхана 720p")},
-                                     {"embed", QStringLiteral("e2")},
-                                     {"kind", QStringLiteral("sub")}}},
-                        QStringLiteral("e1"));
-    QStringList labels;
-    for (int i = 1; i <= 12; ++i) {
-        labels << QStringLiteral("Серія %1").arg(i);
-    }
-    dialog->setPlaylist([&] {
-        QVector<QVariantMap> playlist;
-        for (const QString& label : labels) {
-            playlist.append(QVariantMap{{"label", label}});
-        }
-        return playlist;
-    }(), 2);
-    dialog->setSeriesExpanded(true);
-    dialog->startPlayer();
-    dialog->show();
 
-    QTimer::singleShot(2000, [&] {
+    const QVector<QVariantMap> playlist = [] {
+        QVector<QVariantMap> rows;
+        for (int i = 1; i <= 12; ++i) {
+            rows.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(i)}});
+        }
+        return rows;
+    }();
+
+    const auto buildDialog = [&] {
+        auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
+        dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 1080p")},
+                                         {"embed", QStringLiteral("e1")},
+                                         {"kind", QStringLiteral("voice")}},
+                             QVariantMap{{"label", QStringLiteral("Цукіхана 720p")},
+                                         {"embed", QStringLiteral("e2")},
+                                         {"kind", QStringLiteral("sub")}}},
+                            QStringLiteral("e1"));
+        dialog->setPlaylist(playlist, 2);
+        dialog->setSeriesExpanded(true);
+        dialog->startPlayer();
+        dialog->show();
+        return dialog;
+    };
+
+    mplayer::probes::Verdict verdict;
+
+    // Evidence on disk only: a painted dialog over a dead surface looks identical.
+    const auto captureChrome = [&](PlayerDialog* dialog) {
+        auto* surface = dialog->findChild<mplayer::VideoSurface*>();
         const QImage frame = dialog->grab().toImage();
         frame.save(QStringLiteral("dialog_probe.png"));
-        std::fprintf(stderr, "dialog %dx%d visible children=%d\n", frame.width(), frame.height(),
-                     visibleChildren(dialog));
-        long nonblack = 0;
-        for (int y = 0; y < frame.height(); y += 2) {
-            for (int x = 0; x < frame.width(); x += 2) {
-                const QColor c = frame.pixelColor(x, y);
-                if (c.red() + c.green() + c.blue() > 30) ++nonblack;
-            }
+        verdict.metric(QStringLiteral("dialog %1x%2, visible children=%3")
+                           .arg(frame.width())
+                           .arg(frame.height())
+                           .arg(visibleChildren(dialog)));
+        auto* widgetShell = dialog->findChild<PlayerShell*>();
+        if (widgetShell != nullptr && surface != nullptr) {
+            verdict.metric(QStringLiteral("shell %1x%2, surface geometry %3x%4@%5,%6")
+                               .arg(widgetShell->width())
+                               .arg(widgetShell->height())
+                               .arg(surface->width())
+                               .arg(surface->height())
+                               .arg(surface->x())
+                               .arg(surface->y()));
         }
-        std::fprintf(stderr, "nonblack=%ld\n", nonblack);
-        auto* shell = dialog->findChild<mplayer::shell::PlayerShell*>();
-        if (shell != nullptr) {
-            auto* surface = shell->videoSurface();
-            std::fprintf(stderr, "shell %dx%d surface geom %dx%d@%d,%d\n",
-                         shell->width(), shell->height(), surface->width(),
-                         surface->height(), surface->x(), surface->y());
-            const QImage gl = surface->grabFramebuffer();
-            gl.save(QStringLiteral("dialog_gl.png"));
-            long lit = 0, total = 0;
-            for (int y = 0; y < gl.height(); y += 2) {
-                for (int x = 0; x < gl.width(); x += 2) {
-                    const QColor c = gl.pixelColor(x, y);
-                    ++total;
-                    if (c.red() + c.green() + c.blue() > 30) ++lit;
-                }
+    };
+
+    const std::function<void(PlayerDialog*, const char*, bool, std::function<void()>)>
+        verifyPlayback = [&](PlayerDialog* dialog, const char* pngName, bool wantChrome,
+                             std::function<void()> done) {
+            auto* surface = dialog->findChild<mplayer::VideoSurface*>();
+            if (surface == nullptr) {
+                verdict.require(false, QStringLiteral("dialog exposes a VideoSurface"));
+                QTimer::singleShot(0, &app, [&] { app.exit(verdict.report("dialog_probe")); });
+                return;
             }
-            std::fprintf(stderr, "framebuffer %dx%d video=%dx%d playing=%d lit=%ld/%ld\n",
-                         gl.width(), gl.height(), surface->videoWidth(),
-                         surface->videoHeight(), int(surface->isPlaying()), lit, total);
-        }
-        app.exit(0);
+            auto sampler = std::make_shared<mplayer::probes::PlaybackSampler>(*surface);
+            auto clock = std::make_shared<QElapsedTimer>();
+            clock->start();
+            auto mediaError = std::make_shared<QString>();
+            QObject::connect(surface, &mplayer::VideoSurface::errorOccurred, dialog,
+                             [mediaError](const QString& message) { *mediaError = message; });
+
+            auto* timer = new QTimer(dialog);
+            timer->setInterval(100);
+            auto chromeShot = std::make_shared<bool>(false);
+            QObject::connect(
+                timer, &QTimer::timeout, dialog,
+                [&, dialog, surface, sampler, clock, mediaError, timer, chromeShot, pngName,
+                 wantChrome, done] {
+                    if (wantChrome && !*chromeShot && clock->elapsed() >= 2000) {
+                        *chromeShot = true;
+                        captureChrome(dialog);
+                    }
+                    const bool paired = sampler->tick();
+                    if (!(!mediaError->isEmpty() || (paired && clock->elapsed() >= 4000) ||
+                          clock->elapsed() >= 9000)) {
+                        return;
+                    }
+                    timer->stop();
+
+                    const mplayer::probes::PlaybackSample& sample = sampler->later();
+                    verdict.metric(
+                        QStringLiteral("duration=%1 s, playing=%2, position=%3 s, video=%4x%5")
+                            .arg(surface->duration(), 0, 'f', 2)
+                            .arg(int(surface->isPlaying()))
+                            .arg(sample.position, 0, 'f', 2)
+                            .arg(sample.videoWidth)
+                            .arg(sample.videoHeight));
+                    verdict.metric(QStringLiteral("native status: polling=%1 (native work not "
+                                                  "requested); filter presence/absence not "
+                                                  "proven by this probe")
+                                       .arg(int(surface->nativeStatusPolling())));
+
+                    const bool saved =
+                        sample.hasPicture() && sample.framebuffer.save(QString::fromLatin1(pngName));
+                    verdict.metric(QStringLiteral("framebuffer png %1: %2")
+                                       .arg(QString::fromLatin1(pngName),
+                                            saved ? QStringLiteral("written")
+                                                  : QStringLiteral("FAILED")));
+                    verdict.require(
+                        saved, QStringLiteral("framebuffer PNG written to %1")
+                                   .arg(QString::fromLatin1(pngName)));
+
+                    verdict.require(mediaError->isEmpty(),
+                                    QStringLiteral("no playback error reported (%1)")
+                                        .arg(mediaError->isEmpty() ? QStringLiteral("none")
+                                                                   : *mediaError));
+
+                    mplayer::probes::requirePlayback(verdict, sampler->earlier(), sampler->later());
+
+                    // WA_DeleteOnClose: close() alone deletes it next loop turn.
+                    QPointer<PlayerDialog> guard(dialog);
+                    dialog->close();
+                    QTimer::singleShot(200, &app, [&, guard, done] {
+                        verdict.require(guard.isNull(),
+                                        QStringLiteral("dialog closed and destroyed"));
+                        done();
+                    });
+                });
+            timer->start();
+        };
+
+    auto* dialog = buildDialog();
+    verifyPlayback(dialog, "dialog_gl.png", /*wantChrome=*/true, [&] {
+        auto* reopened = buildDialog();
+        verifyPlayback(reopened, "dialog_gl_reopen.png", /*wantChrome=*/false,
+                       [&] { app.exit(verdict.report("dialog_probe")); });
     });
 
     return app.exec();

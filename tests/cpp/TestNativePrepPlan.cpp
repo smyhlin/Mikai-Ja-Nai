@@ -1,8 +1,10 @@
 #include "TestNativePrepPlan.hpp"
 
 #include "player/native/NativePreparationPlan.hpp"
+#include "player/native/NativeRife.hpp"
 
 #include <QtCore/QRect>
+#include <QtCore/QSet>
 #include <QtCore/QSize>
 #include <QtCore/QString>
 #include <QtCore/QVector>
@@ -12,7 +14,6 @@ using namespace mplayer::native;
 namespace {
 
 const QString kShaA = QString(64, QLatin1Char('a'));
-const QString kShaB = QString(64, QLatin1Char('b'));
 
 /// A fixed declared tensor. `geometry` drives both H and W.
 TensorProfile fixedTensor(const QSize& geometry, qint64 channels = 3) {
@@ -67,18 +68,42 @@ ModelRecord spatialRow(const QString& id, const ModelProfile& declared,
   return record;
 }
 
+/// The declared RIFE boundary: fp16, rank 4, N=1, C=11 in / C=3 out, H/W
+/// dynamic. The temporal inspection settles this boundary, not the spatial rules.
+ModelProfile temporalProfile() {
+  ModelProfile declared;
+  declared.input = dynamicTensor(11);
+  declared.output = dynamicTensor(3);
+  return declared;
+}
+
+/// The concrete boundary a real CPU run produced for the pinned graphs: a
+/// 320x180 pair interpolated to 320x180, uniform factor 1.
+ModelProfile temporalReference() {
+  ModelProfile reference;
+  reference.input = fixedTensor(QSize(320, 180), 11);
+  reference.output = fixedTensor(QSize(320, 180), 3);
+  return reference;
+}
+
+/// The owned temporal row the curated variant's exact pin resolves to. The id is
+/// content-addressed from the pin digest, role and declared boundary - there is
+/// no second row named after the curated variant.
 ModelRecord rifeRow(RifeVariant variant = RifeVariant::Full, bool ensemble = false) {
+  const RifeModelPin* pin = rifeModelPin(RifeVersion::V4_14, variant, ensemble);
+  Q_ASSERT(pin != nullptr);
   ModelRecord record;
-  record.id = rifeModelName(RifeVersion::V4_14, variant, ensemble);
-  record.displayName = record.id;
-  record.origin = ModelOrigin::Builtin;
-  record.onnxPath = QStringLiteral("C:/models/%1.pt").arg(record.id);
-  record.onnxSha256 = kShaB;
+  record.id = userModelIdFor(
+      computeContentId(ModelRole::Temporal, pin->graphSha256, temporalProfile()));
+  record.displayName = rifeModelName(RifeVersion::V4_14, variant, ensemble);
+  record.origin = ModelOrigin::UserImported;
+  record.onnxPath = QStringLiteral("C:/models/%1.onnx").arg(record.id);
+  record.onnxSha256 = pin->graphSha256;
+  record.onnxBytes = 4096;
   record.role = ModelRole::Temporal;
-  // A temporal graph declares a different boundary; its eligibility is settled by
-  // the temporal inspection, not by the spatial NCHW rules.
-  record.actualProfile = ModelProfile{};
-  record.availableBackends = {Backend::TensorRT, Backend::DirectML};
+  record.actualProfile = temporalProfile();
+  record.verifiedReferenceProfile = temporalReference();
+  record.availableBackends = {Backend::TensorRT};
   record.availability = readyAvailability();
   return record;
 }
@@ -536,13 +561,15 @@ void TestNativePrepPlan::aMissingModelRefusesThePlanByName() {
   QVERIFY(plan.stages.isEmpty());
   QVERIFY(plan.unknowns.isEmpty());
 
+  // A temporal stage names a curated variant, so an empty store reports the
+  // missing pinned graph rather than a missing catalogue id.
   request = requestOf(
       rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{},
                  temporalOf(TemporalOrder::AfterSpatial)),
       CatalogView{}, hdSource());
   plan = resolvePreparationPlan(request);
   QVERIFY(!plan.canPrepare());
-  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("model.missing"));
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("rife.model.missing"));
 }
 
 void TestNativePrepPlan::anUnavailableBackendRefusesThePlanByName() {
@@ -569,9 +596,10 @@ void TestNativePrepPlan::aModelOnTheWrongBackendIsRefused() {
 }
 
 void TestNativePrepPlan::aModelOfTheWrongRoleIsRefused() {
-  const QString rifeName = rifeModelName(RifeVersion::V4_14, RifeVariant::Full, false);
+  // A spatial stage names the owned temporal row by its own content id, so the
+  // role check - not a missing id - is what refuses it.
   PlanRequest request = requestOf(
-      spatialRecipe(QStringLiteral("janai.test.spatial.v1"), {stageOf(rifeName)}),
+      spatialRecipe(QStringLiteral("janai.test.spatial.v1"), {stageOf(rifeRow().id)}),
       catalogOf({rifeRow()}), hdSource());
 
   const PreparationPlan plan = resolvePreparationPlan(request);
@@ -1187,5 +1215,154 @@ void TestNativePrepPlan::anSdSourcePlansAndAnSdWindowRefusesBelowItsMinimum() {
   QVERIFY(!plan.canPrepare());
   QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("source.window.pixels"));
   QVERIFY(plan.blockers.first().reason.contains(QStringLiteral("57600")));
+  QVERIFY(plan.stages.isEmpty());
+}
+
+void TestNativePrepPlan::aPinnedTemporalStageResolvesToItsOwnedContentId() {
+  struct VariantCase {
+    RifeVariant variant;
+    bool ensemble;
+  };
+  const VariantCase cases[] = {
+      {RifeVariant::Full, false},
+      {RifeVariant::Lite, false},
+      {RifeVariant::Full, true},
+      {RifeVariant::Lite, true},
+  };
+
+  QSet<QString> ownedIds;
+  for (const VariantCase& value : cases) {
+    const ModelRecord owned = rifeRow(value.variant, value.ensemble);
+    TemporalStage temporal = temporalOf(TemporalOrder::AfterSpatial);
+    temporal.variant = value.variant;
+    temporal.ensemble = value.ensemble;
+
+    PlanRequest request = requestOf(
+        rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{}, temporal),
+        catalogOf({owned}), hdSource());
+
+    const PreparationPlan plan = resolvePreparationPlan(request);
+    QVERIFY(plan.isResolved());
+    QCOMPARE(plan.stages.size(), 1);
+    const ResolvedStage& stage = plan.stages.first();
+    QCOMPARE(stage.kind, StageKind::Temporal);
+    // The plan carries the owned graph's content-addressed id and content id -
+    // not the curated variant name, which is only the request. Each curated
+    // variant resolves to its own record, never a shared alias.
+    QCOMPARE(stage.modelId, owned.id);
+    QVERIFY(stage.modelId != rifeModelName(RifeVersion::V4_14, value.variant, value.ensemble));
+    QCOMPARE(stage.modelContentId, owned.contentId());
+    QVERIFY(!ownedIds.contains(owned.id));
+    ownedIds.insert(owned.id);
+  }
+  QCOMPARE(ownedIds.size(), 4);
+}
+
+void TestNativePrepPlan::aDifferentPinnedVariantIsNeverSubstituted() {
+  // Only lite's pinned graph is owned; a request for the full variant must not be
+  // answered by lite's row or by any other.
+  const ModelRecord lite = rifeRow(RifeVariant::Lite, false);
+  PlanRequest fullRequest = requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{},
+                 temporalOf(TemporalOrder::AfterSpatial)),
+      catalogOf({lite}), hdSource());
+  PreparationPlan plan = resolvePreparationPlan(fullRequest);
+  QVERIFY(!plan.canPrepare());
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("rife.model.missing"));
+  QVERIFY(plan.blockers.first().reason.contains(
+      rifeModelPin(RifeVersion::V4_14, RifeVariant::Full, false)->graphSha256));
+  QVERIFY(plan.stages.isEmpty());
+
+  // The exact lite pin does resolve, to lite's own row.
+  TemporalStage liteStage = temporalOf(TemporalOrder::AfterSpatial);
+  liteStage.variant = RifeVariant::Lite;
+  plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{}, liteStage),
+      catalogOf({lite}), hdSource()));
+  QVERIFY(plan.isResolved());
+  QCOMPARE(plan.stages.first().modelId, lite.id);
+}
+
+void TestNativePrepPlan::aCuratedNameAliasIsNotThePinnedGraph() {
+  // A row that merely claims a curated name carries another graph. It is never
+  // the model: the join is by content digest.
+  ModelRecord alias;
+  alias.id = QStringLiteral("rife_v4.14_lite");
+  alias.displayName = alias.id;
+  alias.origin = ModelOrigin::Builtin;
+  alias.onnxPath = QStringLiteral("C:/models/alias.onnx");
+  alias.onnxSha256 = kShaA;
+  alias.onnxBytes = 2048;
+  alias.role = ModelRole::Temporal;
+  alias.actualProfile = temporalProfile();
+  alias.verifiedReferenceProfile = temporalReference();
+  alias.availableBackends = {Backend::TensorRT};
+  alias.availability = readyAvailability();
+
+  const ModelRecord lite = rifeRow(RifeVariant::Lite, false);
+  TemporalStage liteStage = temporalOf(TemporalOrder::AfterSpatial);
+  liteStage.variant = RifeVariant::Lite;
+
+  // With both rows present the pinned lite graph resolves; the alias is ignored.
+  PreparationPlan plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{}, liteStage),
+      catalogOf({alias, lite}), hdSource()));
+  QVERIFY(plan.isResolved());
+  QCOMPARE(plan.stages.first().modelId, lite.id);
+  QVERIFY(plan.stages.first().modelId != alias.id);
+
+  // With only the alias present the pin is missing, not silently satisfied.
+  plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{}, liteStage),
+      catalogOf({alias}), hdSource()));
+  QVERIFY(!plan.canPrepare());
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("rife.model.missing"));
+}
+
+void TestNativePrepPlan::aCorruptPinnedRowKeepsItsOwnReason() {
+  ModelRecord corrupt = rifeRow();
+  corrupt.availability = unavailableAvailability(
+      QStringLiteral("model.store.corrupt"),
+      QStringLiteral("the owned copy no longer matches the row's identity"));
+
+  const PreparationPlan plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{},
+                 temporalOf(TemporalOrder::AfterSpatial)),
+      catalogOf({corrupt}), hdSource()));
+  QVERIFY(!plan.canPrepare());
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("model.store.corrupt"));
+  QVERIFY(plan.stages.isEmpty());
+}
+
+void TestNativePrepPlan::aWrongRifeBoundaryIsRefusedByName() {
+  ModelRecord wrong = rifeRow();
+  ModelProfile notRife = temporalProfile();
+  notRife.input.channels = 3;
+  notRife.output.channels = 3;
+  wrong.actualProfile = notRife;
+  // The id must still derive from the declared boundary, so this is a genuine
+  // row that declares the wrong thing, not a tampered id.
+  wrong.id = userModelIdFor(
+      computeContentId(ModelRole::Temporal, wrong.onnxSha256, notRife));
+
+  const PreparationPlan plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{},
+                 temporalOf(TemporalOrder::AfterSpatial)),
+      catalogOf({wrong}), hdSource()));
+  QVERIFY(!plan.canPrepare());
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("rife.model.boundary"));
+  QVERIFY(plan.stages.isEmpty());
+}
+
+void TestNativePrepPlan::aPinnedRowWithoutAReferenceProofIsRefused() {
+  ModelRecord unproved = rifeRow();
+  unproved.verifiedReferenceProfile.reset();
+
+  const PreparationPlan plan = resolvePreparationPlan(requestOf(
+      rifeRecipe(QStringLiteral("janai.test.rife.v1"), QVector<SpatialStage>{},
+                 temporalOf(TemporalOrder::AfterSpatial)),
+      catalogOf({unproved}), hdSource()));
+  QVERIFY(!plan.canPrepare());
+  QCOMPARE(plan.blockers.first().reasonKey, QStringLiteral("rife.model.reference"));
   QVERIFY(plan.stages.isEmpty());
 }

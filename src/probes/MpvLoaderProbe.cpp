@@ -60,7 +60,11 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const MpvBundle bundle = descriptorFor(module);
+    MpvBundle bundle = descriptorFor(module);
+    if (arguments.size() > 3) {
+        bundle.root = arguments.at(3);
+        bundle.deps = arguments.mid(4);
+    }
     QString reason;
     if (!MpvApi::instance().load(bundle, &reason)) {
         say(QStringLiteral("RESULT FAIL ") + reason);

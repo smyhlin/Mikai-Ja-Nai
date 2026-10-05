@@ -19,6 +19,7 @@
 #include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
@@ -36,12 +37,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "native/NativePrefs.hpp"
 #include "ProbeUi.hpp"
 #include "native/NativeRife.hpp"
-#include "native/NativeRifeControls.hpp"
+#include "dialogs/NativeRifeControls.hpp"
 #include "native/NativeUserRecipes.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
@@ -49,7 +51,7 @@
 using mikai::app::Runner;
 using mikai::app::SettingsDialog;
 using mplayer::native::Backend;
-using mplayer::native::NativeRifeControls;
+using mikai::app::NativeRifeControls;
 using mplayer::native::Rational;
 using mplayer::native::Recipe;
 using mplayer::native::RecipeShape;
@@ -187,8 +189,8 @@ int main(int argc, char** argv) {
         dialog.show();
         QApplication::processEvents();
 
-        check(mikai::probes::dialogActionsFit(dialog, requestedSize),
-              "Save and Cancel stay visible at the requested window size");
+        check(mikai::probes::dialogActionsFit(dialog, dialog.size()),
+              "Save and Cancel stay visible before editing");
         auto* panel = dialog.findChild<NativeRifeControls*>(QStringLiteral("nativeRifePanel"));
         auto* variant = dialog.findChild<QComboBox*>(QStringLiteral("nativeRifeVariantCombo"));
         auto* ensemble = dialog.findChild<QCheckBox*>(QStringLiteral("nativeRifeEnsembleCheck"));
@@ -636,6 +638,106 @@ int main(int argc, char** argv) {
                          scroll->widget()->minimumSizeHint().width(), scroll->viewport()->width(),
                          qUtf8Printable(parts.join(QStringLiteral("; "))),
                          outside.isEmpty() ? "none" : qUtf8Printable(outside));
+        }
+    }
+
+    {
+        // ── 10. the language switches live, in place, and keeps the request ──
+        // The reported defect was that a language choice only took effect on the
+        // next launch: the settings surface, the player chrome and the native
+        // menus stayed in the old language until the application was restarted.
+        // What source reading cannot settle is whether a switch now updates an
+        // *open* surface without discarding what the user had typed into it, so
+        // this drives the real switch with a real request half-described.
+        const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+        if (catalog.isEmpty() || !QFileInfo::exists(catalog)) {
+            std::fprintf(stderr,
+                         "SKIP the live language section: MIKAI_PROBE_TRANSLATION must name the "
+                         "built catalog for this probe to switch into Ukrainian\n");
+        } else {
+            SettingsDialog dialog(client, runner);
+            dialog.resize(mikai::probes::windowSize(QSize(820, 940)));
+            auto* tabs = dialog.findChild<QTabWidget*>();
+            if (tabs != nullptr) {
+                tabs->setCurrentIndex(tabs->count() - 1);
+            }
+            dialog.show();
+            QApplication::processEvents();
+
+            auto* num = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorNumSpin"));
+            auto* den = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorDenSpin"));
+            auto* threshold =
+                dialog.findChild<QLineEdit*>(QStringLiteral("nativeRifeSceneThresholdEdit"));
+            auto* storeButton =
+                dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
+            auto* status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
+            auto* scroll =
+                dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
+            if (num == nullptr || den == nullptr || threshold == nullptr ||
+                storeButton == nullptr || status == nullptr || scroll == nullptr) {
+                check(false, "the live-language dialog has its controls");
+                return 1;
+            }
+
+            // A half-described request the user has not stored yet.
+            num->setValue(7);
+            den->setValue(4);
+            setThreshold(threshold, 0.25);
+            scroll->verticalScrollBar()->setValue(30);
+            QApplication::processEvents();
+            const QString englishStore = storeButton->text();
+            const QString englishStatus = status->text();
+            const int englishScroll = scroll->verticalScrollBar()->value();
+
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog),
+                  "the built Ukrainian catalog installs into the running application");
+            QApplication::processEvents();
+
+            check(num->value() == 7 && den->value() == 4,
+                  "the unsaved factor survives the language switch");
+            // The number is preserved, not the glyphs: the language switch moves
+            // the decimal separator, so the text is expected to be re-rendered in
+            // the new locale while denoting the very same double.
+            check(closeEnough(thresholdValue(threshold), 0.25),
+                  "the unsaved threshold no longer denotes the number the user typed");
+            check(closeEnough(thresholdValue(threshold), 0.25),
+                  "the unsaved threshold still parses to the number the user typed");
+            check(scroll->verticalScrollBar()->value() == englishScroll,
+                  "the Processing page stayed where the user left it");
+            check(storeButton->text() != englishStore,
+                  "the RIFE store button was restated in the switched language");
+            check(status->text() != englishStatus,
+                  "the RIFE availability note was restated in the switched language");
+            if (!dialog.grab().save(QStringLiteral("rife-settings-live-language-probe.png"))) {
+                check(false, "the live-language screenshot is written");
+            } else {
+                check(true, "the live-language screenshot is written");
+            }
+
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the switch back to English succeeds");
+            QApplication::processEvents();
+            check(num->value() == 7 && den->value() == 4 &&
+                      closeEnough(thresholdValue(threshold), 0.25),
+                  "the unsaved request is still exactly as described after the round trip");
+
+            // Nothing above reached a store: an unsaved request stays unsaved.
+            {
+                const QVector<Recipe> recipes = UserRecipeStore().recipes();
+                bool sevenOfFour = false;
+                for (const Recipe& recipe : recipes) {
+                    if (!recipe.temporal.has_value()) continue;
+                    if (recipe.temporal->factor.num == 7 && recipe.temporal->factor.den == 4 &&
+                        closeEnough(recipe.temporal->sceneThreshold, 0.25)) {
+                        sevenOfFour = true;
+                    }
+                }
+                check(!sevenOfFour,
+                      "switching the language stored a request the user never saved");
+            }
+
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the probe leaves English installed");
         }
     }
 

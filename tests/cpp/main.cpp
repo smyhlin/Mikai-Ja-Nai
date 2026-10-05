@@ -18,6 +18,11 @@
 #include "TestNativeAssets.hpp"
 #include "TestNativeUserRecipes.hpp"
 #include "TestNativeBundle.hpp"
+#include "TestNativeBuilder.hpp"
+#include "TestNativePreparationReferences.hpp"
+#include "TestNativeStoredModels.hpp"
+#include "TestNativePreparedPlan.hpp"
+#include "TestNativePlaybackController.hpp"
 #include "TestNativeManifest.hpp"
 #include "TestNativeMenu.hpp"
 #include "TestNativePrefs.hpp"
@@ -26,6 +31,7 @@
 #include "TestNativeProfiles.hpp"
 #include "TestNativeRife.hpp"
 #include "TestNativeStatus.hpp"
+#include "TestPlaybackDiagnostics.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -46,7 +52,9 @@ namespace {
 
 constexpr const char* kSuites[] = {
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
-    "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeStatus",
+    "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
+    "TestNativePreparationReferences", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
+    "TestPlaybackDiagnostics",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -144,7 +152,13 @@ int main(int argc, char** argv) {
   TestNativeBundle nativeBundle;
   TestNativePrepPlan nativePrepPlan;
   TestNativeManifest nativeManifest;
+  TestNativeBuilder nativeBuilder;
+  TestNativePreparationReferences nativePreparationReferences;
+  TestNativeStoredModels nativeStoredModels;
+  TestNativePreparedPlan nativePreparedPlan;
+  TestNativePlaybackController nativePlaybackController;
   TestNativeStatus nativeStatus;
+  TestPlaybackDiagnostics playbackDiagnostics;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
   TestNativeUserRecipes nativeUserRecipes;
@@ -211,7 +225,13 @@ int main(int argc, char** argv) {
   run("TestNativeBundle", &nativeBundle, true);
   run("TestNativePrepPlan", &nativePrepPlan, true);
   run("TestNativeManifest", &nativeManifest, true);
+  run("TestNativePreparationReferences", &nativePreparationReferences, true);
+  run("TestNativeStoredModels", &nativeStoredModels, true);
+  run("TestNativeBuilder", &nativeBuilder, true);
+  run("TestNativePreparedPlan", &nativePreparedPlan, true);
+  run("TestNativePlaybackController", &nativePlaybackController, true);
   run("TestNativeStatus", &nativeStatus, true);
+  run("TestPlaybackDiagnostics", &playbackDiagnostics, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
   run("TestNativeUserRecipes", &nativeUserRecipes, true);

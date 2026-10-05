@@ -1,7 +1,8 @@
 #include "TestNativeAssets.hpp"
 
-#include "native/NativeAssetsPanel.hpp"
+#include "dialogs/NativeAssetsPanel.hpp"
 #include "native/NativeArtifactStore.hpp"
+#include "native/NativeFrameReference.hpp"
 #include "native/NativeModelInventory.hpp"
 
 #include <QtCore/QDir>
@@ -9,9 +10,15 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QVector>
+#include <QtCore/QtEndian>
+
+#include <cmath>
 
 using namespace mplayer;
 using namespace mplayer::native;
+using mikai::app::NativeCacheEntry;
+using mikai::app::deleteNativeCacheEntry;
+using mikai::app::enumerateNativeCache;
 
 // The cache surface's proof rules against real temporary directories. No engine
 // is built, no runtime is loaded and no widget is shown: what is asserted is
@@ -36,7 +43,56 @@ QByteArray readBytes(const QString& path) {
   return file.readAll();
 }
 
+float fp16Value(const QByteArray& bytes, qsizetype index) {
+  const auto* data = reinterpret_cast<const uchar*>(bytes.constData());
+  const quint16 half = qFromLittleEndian<quint16>(data + index * 2);
+  const float sign = (half & 0x8000u) == 0 ? 1.0f : -1.0f;
+  const quint16 exponent = (half >> 10) & 0x1Fu;
+  const quint16 mantissa = half & 0x03FFu;
+  if (exponent == 0) return sign * std::ldexp(static_cast<float>(mantissa), -24);
+  return sign * std::ldexp(static_cast<float>(1024u + mantissa),
+                           static_cast<int>(exponent) - 25);
+}
+
 }  // namespace
+
+void TestNativeAssets::rgbFrameComponentsArePreservedInNchwFp16Planes() {
+  FrameFixture fixture;
+  fixture.size = QSize(3, 2);
+  fixture.rgb = QByteArray::fromHex(
+      "ff0040"  // red-heavy
+      "0080ff"  // blue-heavy
+      "20c060"
+      "e010a0"
+      "115599"
+      "f03f07");
+
+  constexpr qsizetype planePixels = 3 * 2;
+  // Largest half-ULP rounding error for normalized values in [0, 1].
+  constexpr float maxFp16RoundingError = 0.000245f;
+  QCOMPARE(fixture.rgb.size(), planePixels * 3);
+
+  const QByteArray tensor = frameToFp16Tensor(fixture);
+  QCOMPARE(tensor.size(), planePixels * 3 * 2);
+
+  for (qsizetype channel = 0; channel < 3; ++channel) {
+    for (qsizetype pixel = 0; pixel < planePixels; ++pixel) {
+      const qsizetype rgbIndex = pixel * 3 + channel;
+      const qsizetype nchwIndex = channel * planePixels + pixel;
+      const float normalizedRgb =
+          static_cast<float>(static_cast<quint8>(fixture.rgb.at(rgbIndex))) / 255.0f;
+      const float packedFp16 = fp16Value(tensor, nchwIndex);
+      const float error = std::abs(packedFp16 - normalizedRgb);
+      QVERIFY2(error <= maxFp16RoundingError,
+               qPrintable(QStringLiteral("channel %1 pixel %2: packed %3, expected normalized RGB %4, error %5")
+                              .arg(channel)
+                              .arg(pixel)
+                              .arg(packedFp16, 0, 'g', 9)
+                              .arg(normalizedRgb, 0, 'g', 9)
+                              .arg(error, 0, 'g', 9)));
+    }
+  }
+}
 
 // The publication gate is the one place an import commits. These two cases pin
 // its two orderings: a cancel that arrives first stops the write, and a cancel

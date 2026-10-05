@@ -20,21 +20,27 @@
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QKeySequence>
 #include <QMouseEvent>
 #include <QPixmap>
+#include <QPointer>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QTest>
+#include <QThread>
 
 #include <cstdio>
 
 #include "Anime4K.hpp"
+#include "PresetShortcuts.hpp"
 #include "ProbeUi.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
+#include "VideoSurface.hpp"
 #include "native/NativeMenu.hpp"
 #include "native/NativePrefs.hpp"
 #include "native/NativeRuntimeSelection.hpp"
@@ -155,9 +161,10 @@ struct FakeHost : PlayerHost {
     void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     void playerClosed() override {}
-    void playbackFailed() override { ++failures; }
-
-    int failures = 0;
+    // Composition double only: the player needs a host to exist. The probe never
+    // reads a callback count as evidence - playback continuity below is what
+    // proves the media path was left alone.
+    void playbackFailed() override {}
 };
 
 /// Pushes the stored request at the shell through the public one-shot input
@@ -166,6 +173,203 @@ void pushStoredRequest(PlayerShell* shell) {
     native::menu::Inputs inputs = shell->nativeInputs();
     inputs.preferences = native::loadNativePreferences();
     shell->setNativeMenuInputs(inputs);
+}
+
+// ── stored-binding keyboard scenarios ──────────────────────────────────
+//
+// The binding is installed when the player is built, so each scenario owns its
+// store state *before* its player exists and its own dialog after: a second
+// player in the same process would be answering for the first one's settings.
+
+/// Empties the isolated store, so one scenario's bindings cannot leak into the
+/// next one's loader.
+void clearStore() {
+    QSettings settings;
+    settings.clear();
+    settings.sync();
+}
+
+/// Seeds the native binding through the preference contract itself, so the
+/// stored form is the one a settings save would leave - including the
+/// present-but-empty form that means "unbound on purpose".
+bool seedNativeToggle(const QString& portableText) {
+    native::NativePreferencePatch patch;
+    patch.toggleProcessingShortcut = portableText;
+    return native::saveNativePreferences(patch, nullptr);
+}
+
+/// Seeds a preset binding in the group the preset loader reads.
+void seedPresetBinding(const QString& presetId, const QString& portableText) {
+    QSettings settings;
+    settings.beginGroup(QLatin1String(kPresetShortcutSettingsGroup));
+    settings.setValue(presetId, portableText);
+    settings.endGroup();
+    settings.sync();
+}
+
+/// A keystroke as a viewer's arrives: the player window is active and the key
+/// goes through the window's own dispatch, where a WindowShortcut binding and
+/// the player's built-in keys are resolved together.
+void pressKey(QWidget* window, const QKeySequence& sequence) {
+    if (window == nullptr || sequence.isEmpty()) {
+        check(false, QStringLiteral("a keystroke has a window and a key to send"));
+        return;
+    }
+    window->activateWindow();
+    for (int waited = 0; QApplication::activeWindow() != window && waited < 1000; waited += 20) {
+        QCoreApplication::processEvents();
+    }
+    // WindowShortcut dispatch keys off the active window, so a press that lands
+    // while another window owns the keyboard would exercise the wrong dialog's
+    // binding - and could even pass on that other dialog's shortcut. Refuse to
+    // send a misrouted key rather than letting the assertions read one.
+    if (QApplication::activeWindow() != window) {
+        check(false, QStringLiteral("the window under test owns the keystroke that is sent"));
+        return;
+    }
+    QTest::keyClick(window, sequence[0].key(), sequence[0].keyboardModifiers());
+    QCoreApplication::processEvents();
+}
+
+/// Spins the event loop until the surface has decoded a real picture. A stream
+/// that never produces one is a failure the probe must not read past.
+bool waitForVideo(VideoSurface* surface, int timeoutMs = 15000) {
+    for (int waited = 0; waited < timeoutMs; waited += 40) {
+        QCoreApplication::processEvents();
+        if (surface != nullptr && surface->hasVideo() && surface->videoWidth() > 0 &&
+            surface->videoHeight() > 0) {
+            return true;
+        }
+        QThread::msleep(40);
+    }
+    return surface != nullptr && surface->hasVideo();
+}
+
+/// The stream's own progress in seconds: the media path's clock, not a host
+/// callback. A binding decision has to leave it running.
+bool clockAdvanced(VideoSurface* surface, double from, int timeoutMs = 4000) {
+    for (int waited = 0; waited < timeoutMs; waited += 40) {
+        QCoreApplication::processEvents();
+        if (surface != nullptr && surface->position() > from) {
+            return true;
+        }
+        QThread::msleep(40);
+    }
+    return surface != nullptr && surface->position() > from;
+}
+
+/// The media path's own failure UI: the retry chip a failed stream raises. A
+/// processing decision must never make it appear.
+bool mediaRetryVisible(const QWidget* dialog) {
+    const auto* retry = dialog != nullptr
+                            ? dialog->findChild<QPushButton*>(QStringLiteral("playerRetryButton"))
+                            : nullptr;
+    return retry != nullptr && retry->isVisible();
+}
+
+/// One scenario's player and the host it answers to. The dialog owns a real
+/// lavfi stream, so every binding decision is measured against a picture that is
+/// actually playing rather than against a callback count.
+struct Scenario {
+    FakeHost host;
+    QPointer<PlayerDialog> dialog;
+    bool mediaError = false;
+
+    Scenario()
+        : dialog(new PlayerDialog(QStringLiteral("Native shortcut probe"),
+                                  QStringLiteral("av://lavfi:testsrc2=size=320x180:rate=25"),
+                                  QList<QualityEntry>{},
+                                  0,
+                                  &host)) {
+        // The media path's own error report, read from the surface the probe
+        // already has; nothing is added to the application API.
+        if (VideoSurface* live = surface()) {
+            QObject::connect(live, &VideoSurface::errorOccurred, dialog.data(),
+                             [this](const QString&) { mediaError = true; });
+        }
+        dialog->startPlayer();
+    }
+
+    ~Scenario() {
+        if (dialog == nullptr) {
+            return;
+        }
+        // The dialog carries Qt::WA_DeleteOnClose, so it is never a stack member
+        // Qt could destroy a second time: close() schedules the delete and the
+        // QPointer is the only handle touched afterwards. It has to land before
+        // the members die, because the dialog reads &host.
+        dialog->close();
+        for (int waited = 0; dialog != nullptr && waited < 6000; waited += 20) {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QCoreApplication::processEvents();
+        }
+        // If a future edit stops close() from deleting, own the teardown here
+        // rather than leaking a window bound to a destroyed host.
+        if (dialog != nullptr) {
+            delete dialog.data();
+        }
+    }
+
+    VideoSurface* surface() const {
+        return dialog != nullptr ? dialog->findChild<VideoSurface*>() : nullptr;
+    }
+
+    PlayerShell* shell() const {
+        return dialog != nullptr ? dialog->findChild<PlayerShell*>() : nullptr;
+    }
+
+    /// Shows and activates the window and waits for a real picture, which is the
+    /// baseline every key press is judged against.
+    bool begin() {
+        dialog->show();
+        dialog->raise();
+        dialog->activateWindow();
+        QCoreApplication::processEvents();
+        return waitForVideo(surface());
+    }
+
+    /// The picture is still on screen and the media path has raised no failure
+    /// UI: the stream survived the decision untouched.
+    bool streamUnbroken() const {
+        VideoSurface* live = surface();
+        return live != nullptr && live->hasVideo() && live->videoWidth() > 0 && !mediaError &&
+               !mediaRetryVisible(dialog.data());
+    }
+};
+
+/// What the shell shows about native processing, read as the viewer reads it:
+/// the chip that is actually on screen, and the producer's own snapshot behind
+/// it. `producerActive` is the surface's last read of the filter - the only
+/// thing that may state Active - and `claimsActive` is the consumer derivation
+/// the chip renders from. A stored request alone can make neither true.
+struct ShownNativeStatus {
+    bool chipVisible = false;
+    QString chipText;
+    QString chipTooltip;
+    bool producerActive = false;
+    bool claimsActive = false;
+    QString reason;
+};
+
+ShownNativeStatus shownNativeStatus(PlayerShell* shell) {
+    ShownNativeStatus seen;
+    const auto* chip = shell->findChild<QLabel*>(QStringLiteral("playerNativeStatus"));
+    if (chip != nullptr) {
+        seen.chipVisible = chip->isVisible();
+        seen.chipText = chip->text();
+        // The chip carries the fact as its tooltip, so the displayed UI - not a
+        // counter - is what proves the viewer can see why nothing is running.
+        seen.chipTooltip = chip->toolTip();
+    }
+    // Anchored on the surface's own view, not the shell input derived from it: an
+    // Active claim is only accounted for when the filter reported it.
+    const native::NativeStatusView& status = shell->videoSurface()->nativeStatus();
+    seen.producerActive =
+        status.snapshot.has_value() && status.snapshot->state == native::NativeState::Active;
+    const native::menu::StatusLines lines = native::menu::statusLines(shell->nativeInputs());
+    seen.claimsActive = lines.active;
+    seen.reason = lines.reason;
+    return seen;
 }
 
 }  // namespace
@@ -199,8 +403,16 @@ int main(int argc, char** argv) {
           "the Standard runtime is the recorded selection");
 
     FakeHost host;
+    // Declared before the dialog so it outlives the connection that writes it.
+    bool mediaError = false;
     PlayerDialog dialog(QStringLiteral("Native menu probe"),
                         QStringLiteral("av://lavfi:testsrc2=size=320x180:rate=25"), {}, 0, &host);
+    auto* menuSurface = dialog.findChild<VideoSurface*>();
+    if (menuSurface != nullptr) {
+        QObject::connect(menuSurface, &VideoSurface::errorOccurred, &dialog,
+                         [&mediaError](const QString&) { mediaError = true; });
+    }
+    dialog.startPlayer();
     dialog.show();
     QCoreApplication::processEvents();
 
@@ -209,10 +421,15 @@ int main(int argc, char** argv) {
     if (shell == nullptr) {
         return 2;
     }
-    // An engine that cannot start - no GL context, no video output - asks the
-    // host to recover once, before any row is touched. That is the media path,
-    // not the menu, so the menu's own claim is measured as a delta.
-    const int recoverBeforeMenu = host.failures;
+    // The menu is judged against a picture that is actually playing: the native
+    // rows must leave the media path untouched, and a callback count would prove
+    // nothing. The position is the baseline the stream has to advance past.
+    check(waitForVideo(menuSurface), "the menu probe's own stream produces a real picture");
+    if (menuSurface == nullptr || !menuSurface->hasVideo()) {
+        std::fprintf(stderr, "FAIL no render context: lavfi testsrc2 did not load\n");
+        return 2;
+    }
+    const double menuStart = menuSurface->position();
 
     // ── the branch inside the real tree ─────────────────────────────────
     MenuPopup* native = openNativeBranch(shell, &dialog);
@@ -293,13 +510,223 @@ int main(int argc, char** argv) {
               "the current mark follows the stable id after the reopen");
     }
 
-    if (host.failures != recoverBeforeMenu) {
-        const QLabel* status = dialog.findChild<QLabel*>(QStringLiteral("playerStatusText"));
-        std::fprintf(stderr, "     the menu asked the host to recover: status=\"%s\"\n",
-                     status != nullptr ? qPrintable(status->text()) : "<no status label>");
+    check(menuSurface->hasVideo() && !mediaError && !mediaRetryVisible(&dialog),
+          "the native menu left the Original picture up with no retry chip");
+    check(clockAdvanced(menuSurface, menuStart),
+          "the native menu never stopped the stream's clock");
+
+    // ── stored bindings, pressed as a viewer presses them ───────────
+    //
+    // Each scenario owns its store state before its player is built and its own
+    // player after, because the binding is installed at construction: one shared
+    // dialog would be answering for whichever settings were current when it
+    // happened to be built.
+    //
+    // A stored binding nothing else owns installs, and the key flips the stored
+    // request both ways while the shell keeps saying the filter reported
+    // nothing.
+    {
+        clearStore();
+        const QKeySequence binding(QStringLiteral("Ctrl+Shift+K"));
+        check(seedNativeToggle(binding.toString(QKeySequence::PortableText)),
+              "a native toggle binding is stored");
+
+        Scenario scenario;
+        const bool live = scenario.begin();
+        check(live, "the stored binding scenario shows a live picture");
+        PlayerShell* scenarioShell = scenario.shell();
+        check(scenarioShell != nullptr, "the binding scenario has a shell");
+        if (!live || scenarioShell == nullptr) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const double started = scenario.surface()->position();
+        check(!native::loadNativePreferences().enabled,
+              "the stored binding scenario starts with the request off");
+
+        pressKey(scenario.dialog.data(), binding);
+        check(native::loadNativePreferences().enabled,
+              "the stored binding's key stores the native request on");
+        const ShownNativeStatus on = shownNativeStatus(scenarioShell);
+        check(on.chipVisible, "a requested native chain shows its status chip");
+        check(!on.chipText.isEmpty(), "the status chip states the situation rather than nothing");
+        check(!on.chipTooltip.isEmpty(),
+              "the status chip displays the fact that blocks the request");
+        check(!on.producerActive, "no filter snapshot reports the native chain active");
+        check(!on.claimsActive,
+              "a stored request alone never claims the native chain is active");
+        check(!on.reason.isEmpty(),
+              "a request that cannot be applied shows the fact that blocks it");
+
+        pressKey(scenario.dialog.data(), binding);
+        check(!native::loadNativePreferences().enabled,
+              "the same key clears the stored request again");
+        const ShownNativeStatus off = shownNativeStatus(scenarioShell);
+        check(!off.producerActive && !off.claimsActive,
+              "turning the request off claims no active chain either");
+        check(scenario.streamUnbroken(),
+              "the stored binding left the Original picture up with no retry chip");
+        check(clockAdvanced(scenario.surface(), started),
+              "the stored binding never stopped the stream's clock");
     }
-    check(host.failures == recoverBeforeMenu,
-          "no native menu row asked the host to recover");
+
+    // With no decision stored at all, the documented default installs and fires:
+    // an absent binding is not the same as one the viewer deliberately cleared.
+    {
+        clearStore();
+        check(!native::loadNativePreferences().toggleProcessingShortcutStored,
+              "a fresh store holds no toggle decision");
+
+        Scenario scenario;
+        const bool live = scenario.begin();
+        check(live, "the default-binding scenario shows a live picture");
+        PlayerShell* scenarioShell = scenario.shell();
+        check(scenarioShell != nullptr, "the default-binding scenario has a shell");
+        if (!live || scenarioShell == nullptr) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const double started = scenario.surface()->position();
+
+        pressKey(scenario.dialog.data(), native::menu::defaultToggleShortcut());
+        check(native::loadNativePreferences().enabled,
+              "the default key stores the native request when nothing was chosen");
+        const ShownNativeStatus byDefault = shownNativeStatus(scenarioShell);
+        check(byDefault.chipVisible && !byDefault.chipText.isEmpty() &&
+                  !byDefault.chipTooltip.isEmpty(),
+              "the default request shows its status like any stored one");
+        check(!byDefault.producerActive && !byDefault.claimsActive,
+              "the default request never claims an active native chain");
+        check(scenario.streamUnbroken(),
+              "the default key left the Original picture up with no retry chip");
+        check(clockAdvanced(scenario.surface(), started),
+              "the default key never stopped the stream's clock");
+    }
+
+    // A binding cleared on purpose is stored as an explicit decision, so the
+    // documented default must not come back and no key may act for it.
+    {
+        clearStore();
+        check(seedNativeToggle(QString()),
+              "an unbound native toggle decision is stored");
+        check(native::loadNativePreferences().toggleProcessingShortcutStored,
+              "the cleared binding is stored as a decision, not as an absence");
+
+        Scenario scenario;
+        const bool live = scenario.begin();
+        check(live, "the cleared-binding scenario shows a live picture");
+        PlayerShell* scenarioShell = scenario.shell();
+        check(scenarioShell != nullptr, "the cleared-binding scenario has a shell");
+        if (!live || scenarioShell == nullptr) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const double started = scenario.surface()->position();
+
+        pressKey(scenario.dialog.data(), native::menu::defaultToggleShortcut());
+        pressKey(scenario.dialog.data(), QKeySequence(QStringLiteral("Ctrl+Shift+K")));
+        check(!native::loadNativePreferences().enabled,
+              "a cleared binding installs no key and re-offers no default");
+        check(!shownNativeStatus(scenarioShell).chipVisible,
+              "a cleared binding shows no native chip, because nothing is requested");
+        check(scenario.streamUnbroken(),
+              "the cleared binding left the Original picture up with no retry chip");
+        check(clockAdvanced(scenario.surface(), started),
+              "the cleared binding never stopped the stream's clock");
+    }
+
+    // A native binding that collides with a stored preset key never installs:
+    // the preset keeps the key and the native request stays untouched.
+    {
+        clearStore();
+        // The catalogue leads with Off, which is not a preset a key can apply.
+        // Pick the first real enhancement, then prove the key moves the applied
+        // mode rather than reading a coincidence.
+        const QVector<anime4k::ModeInfo> modes = anime4k::availableModes();
+        QString presetId;
+        for (const anime4k::ModeInfo& info : modes) {
+            if (info.mode != anime4k::Mode::Off) {
+                presetId = info.id;
+                break;
+            }
+        }
+        check(!presetId.isEmpty(), "the catalogue offers a non-Off preset to bind");
+        if (presetId.isEmpty()) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const QKeySequence binding(QStringLiteral("Ctrl+Shift+P"));
+        seedPresetBinding(presetId, binding.toString(QKeySequence::PortableText));
+        check(seedNativeToggle(binding.toString(QKeySequence::PortableText)),
+              "a colliding native binding is stored over a preset key");
+
+        Scenario scenario;
+        const bool live = scenario.begin();
+        check(live, "the collision scenario shows a live picture");
+        PlayerShell* scenarioShell = scenario.shell();
+        check(scenarioShell != nullptr, "the collision scenario has a shell");
+        if (!live || scenarioShell == nullptr) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const double started = scenario.surface()->position();
+
+        const anime4k::Mode wanted = anime4k::modeForId(presetId);
+        const anime4k::Mode before = scenarioShell->videoSurface()->anime4KMode();
+        check(wanted != anime4k::Mode::Off, "the bound preset is a real enhancement, not Off");
+        check(before != wanted, "the preset's mode is not already applied before the key");
+        pressKey(scenario.dialog.data(), binding);
+        check(scenarioShell->videoSurface()->anime4KMode() == wanted,
+              "the preset keeps the key the native binding collided with");
+        check(!native::loadNativePreferences().enabled,
+              "the colliding native binding stores no request");
+        const ShownNativeStatus collided = shownNativeStatus(scenarioShell);
+        check(!collided.producerActive && !collided.claimsActive,
+              "a colliding binding claims no active native chain");
+        check(scenario.streamUnbroken(),
+              "the colliding binding left the stream playing with no retry chip");
+        check(clockAdvanced(scenario.surface(), started),
+              "the colliding binding never stopped the stream's clock");
+    }
+
+    // A stored binding on a key the player acts on itself is refused, and the
+    // player's own key still behaves exactly as it does for any viewer.
+    {
+        clearStore();
+        check(seedNativeToggle(QStringLiteral("F")),
+              "a native binding on a player-reserved key is stored");
+
+        Scenario scenario;
+        const bool live = scenario.begin();
+        check(live, "the reserved-binding scenario shows a live picture");
+        PlayerShell* scenarioShell = scenario.shell();
+        check(scenarioShell != nullptr, "the reserved-binding scenario has a shell");
+        if (!live || scenarioShell == nullptr) {
+            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
+            return 1;
+        }
+        const double started = scenario.surface()->position();
+        // The player opens fullscreen; the probe proves the key still owns the
+        // window mode rather than pinning which way it starts.
+        const bool startedFullscreen = scenario.dialog->isFullScreen();
+
+        pressKey(scenario.dialog.data(), QKeySequence(QStringLiteral("F")));
+        check(scenario.dialog->isFullScreen() != startedFullscreen,
+              "a reserved key still runs the player's own fullscreen action");
+        check(!native::loadNativePreferences().enabled,
+              "a stored binding on a reserved key stores no request");
+        const ShownNativeStatus refused = shownNativeStatus(scenarioShell);
+        check(!refused.producerActive && !refused.claimsActive,
+              "a refused reserved binding claims no active native chain");
+
+        pressKey(scenario.dialog.data(), QKeySequence(QStringLiteral("F")));
+        check(scenario.dialog->isFullScreen() == startedFullscreen,
+              "the player's own key is still reversible after the refusal");
+        check(scenario.streamUnbroken(),
+              "the refused reserved binding left the Original picture up with no retry chip");
+        check(clockAdvanced(scenario.surface(), started),
+              "the refused reserved binding never stopped the stream's clock");
+    }
 
     if (failures == 0) {
         std::printf("OK native_menu_probe\n");

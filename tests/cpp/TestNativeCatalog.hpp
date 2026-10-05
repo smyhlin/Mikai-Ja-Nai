@@ -49,6 +49,8 @@ class TestNativeCatalog : public QObject {
   // The acquired original graphs, when the machine has the assets.
   void theRealDynamicGraphLearnsItsScaleAtStageGeometry();
   void theRealHdGraphKeepsItsDeclaredSymbolicBatchAndProvesTwoBy();
+  void aTemporalImportProvesTheRawTensorAndKeepsItsOwnedCopy();
+  void temporalImportRejectsSpatialInputsAndCancellationWithoutPublishing();
 
   // The actual inspected-profile adapter: M13's dynamic resolver over the owned
   // store. Real generated graphs and real CPU runs, never a mocked answer.
@@ -71,4 +73,10 @@ class TestNativeCatalog : public QObject {
   void declaredInputBatchNotOneIsRefused();
   void channelC1GraphIsRefused();
   void dynamicGraphAtFixedStageProvesReferenceAndKeepsDeclaredMeta();
+
+  // The reference exporter: the bytes it writes are the bytes it ran, and a
+  // reference that is not entirely finite is refused before anything is written.
+  void aReferenceExportWritesTheExactBytesItRanAndNeverOverwrites();
+  void aReferenceExportRefusesAnInfinityOrNaNOutputBeforeWritingAnything();
+  void aReferenceExportRefusesARawTensorWhoseBytesDoNotMatchItsShape();
 };

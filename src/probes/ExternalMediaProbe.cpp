@@ -389,7 +389,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
     QSettings settings;

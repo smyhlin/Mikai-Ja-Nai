@@ -33,6 +33,12 @@ class TestNativePrepPlan : public QObject {
   void aRifeOnlyRecipeResolvesToOneTemporalStage();
 
   void aMissingModelRefusesThePlanByName();
+  void aPinnedTemporalStageResolvesToItsOwnedContentId();
+  void aDifferentPinnedVariantIsNeverSubstituted();
+  void aCuratedNameAliasIsNotThePinnedGraph();
+  void aCorruptPinnedRowKeepsItsOwnReason();
+  void aWrongRifeBoundaryIsRefusedByName();
+  void aPinnedRowWithoutAReferenceProofIsRefused();
   void anUnavailableBackendRefusesThePlanByName();
   void aModelOnTheWrongBackendIsRefused();
   void aModelOfTheWrongRoleIsRefused();

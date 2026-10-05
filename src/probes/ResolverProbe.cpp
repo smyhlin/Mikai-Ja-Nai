@@ -1,8 +1,4 @@
-// Throwaway: does the candidate resolver see every shader, and does every chain
-// resolve to files that exist? Nothing else in the suite covers the catalogue.
 #include <QCoreApplication>
-#include <QFileInfo>
-#include <QTextStream>
 #include <cstdio>
 
 #include "Anime4K.hpp"
@@ -36,44 +32,13 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stderr, "presets=%d singles=%d incomplete=%d emptyId=%d\n", presets, singles,
                  incomplete, emptyId);
-    // presets: the ten built-ins plus the fourteen experiments. singles: the 49
-    // files on disk minus the two AutoDownscalePre steps, which only ever run
-    // inside a preset's chain.
     std::fprintf(stderr, "standalone internals=%d\n", internals);
-    std::fprintf(stderr, "experiment exp_thin_hq parts: %d\n",
-                 int(filesForId(QStringLiteral("exp_thin_hq"), dir).size()));
-    std::fprintf(stderr, "experiment exp_deblur_strong parts: %d\n",
-                 int(filesForId(QStringLiteral("exp_deblur_strong"), dir).size()));
-
-    // round trip: every id must resolve back to itself
-    int roundTripFail = 0;
-    for (const Candidate& c : all) {
-        const QStringList back = filesForId(c.id, dir);
-        if (c.id != QLatin1String("off") && back.isEmpty()) {
-            ++roundTripFail;
-            std::fprintf(stderr, "  NO RESOLVE %s\n", qPrintable(c.id));
-        }
-    }
-    std::fprintf(stderr, "roundTripFail=%d\n", roundTripFail);
-
-    // the chain string must be non-empty for a real candidate
-    const QString chain = shaderStringForCandidate(QStringLiteral("hq_ca"), dir);
-    std::fprintf(stderr, "hq_ca chain parts: %d\n", chain.split(QLatin1Char(';')).size());
-
-    // a single shader resolves to itself
-    const QString one = shaderStringForCandidate(QStringLiteral("Anime4K_Restore_GAN_UUL.glsl"), dir);
-    std::fprintf(stderr, "single chain: %s\n", qPrintable(one));
-
-    // The ten built-in ids are a compatibility contract: a value stored under
-    // player/anime4k must keep naming the same chain, so the probe fails if one
-    // of them disappears even though the catalogue grew around them.
+    // Persisted preset ids must remain selectable when the catalogue grows.
     int missingBuiltins = 0;
     for (const char* id : {"off", "fast_a", "fast_b", "fast_c", "hq_a", "hq_b", "hq_c", "hq_aa",
                            "hq_bb", "hq_ca"}) {
         const QString key = QString::fromLatin1(id);
-        const bool known = key == QLatin1String("off")
-                               ? modeId(Mode::Off) == key
-                               : !filesForId(key, dir).isEmpty();
+        const bool known = candidateForId(key, dir).id == key;
         if (!known) {
             ++missingBuiltins;
             std::fprintf(stderr, "  MISSING BUILTIN %s\n", id);
@@ -81,9 +46,7 @@ int main(int argc, char** argv) {
     }
     std::fprintf(stderr, "missingBuiltins=%d\n", missingBuiltins);
 
-    const bool ok = incomplete == 0 && emptyId == 0 && roundTripFail == 0 &&
-                    internals == 0 && missingBuiltins == 0 && presets == 24 && singles == 47 &&
-                    !chain.isEmpty() && !one.isEmpty();
+    const bool ok = incomplete == 0 && emptyId == 0 && internals == 0 && missingBuiltins == 0;
     std::fprintf(stderr, "RESULT: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

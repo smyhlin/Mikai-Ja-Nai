@@ -7,17 +7,30 @@
 //     not the shader. This is the same trap InteractionProbe documents: seeking
 //     to one timestamp twice does not reproduce the same pixels, so the control
 //     pair is two SETTLED frames without re-seeking.
-//
 //  2. The catalogue is real. Every candidate resolves to files on disk, an
 //     unknown id resolves to nothing, and a chain that is applied actually
 //     changes the picture - mpv's glsl-shaders echoes the string back without
 //     validating it, so the only evidence is pixels.
+//
+//  2b. The badge chooser IS the player's preset set. Every leaf it offers is an
+//     `availableModes()` preset with that preset's own label under that
+//     preset's own category path, and every preset the catalogue holds is
+//     offered. The expectation is read out of the catalogue rather than typed,
+//     so a renamed preset stays a rename instead of a second copy of the
+//     wording that goes stale. A loose `.glsl` is never a choice: a compared
+//     model the player cannot select is not a model the player can run.
 //
 //  3. A capture is fresh. The window is kept and reused, so "capture again"
 //     after a rewind must give the new frame, not the one already frozen.
 //     testsrc2 changes every frame, so two captures at two timestamps are
 //     provably two different pictures, and the second must match what the
 //     player is actually showing.
+//
+//  4. Compare leaves the player as found. The chain read before the two sides
+//     is the chain afterwards, on a successful capture, on close and after a
+//     failed capture; the native status polling a capture paused comes back at
+//     the value it actually had (off stays off); and a surface that cannot be
+//     read - closed, empty, or absent - is refused by name rather than frozen.
 #include <QAction>
 #include <QApplication>
 #include <QImage>
@@ -138,7 +151,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
 
@@ -281,6 +294,7 @@ int main(int argc, char** argv) {
         // instead of turning into a broken probe.
         struct Offered {
             QString id;
+            QString label;
             QStringList path;
         };
         std::function<void(QMenu*, QStringList&, QVector<Offered>&)> collect =
@@ -291,7 +305,7 @@ int main(int argc, char** argv) {
                         collect(submenu, path, out);
                         path.removeLast();
                     } else if (!action->data().toString().isEmpty()) {
-                        out.append({action->data().toString(), path});
+                        out.append({action->data().toString(), action->text(), path});
                     }
                 }
             };
@@ -300,6 +314,7 @@ int main(int argc, char** argv) {
         QStringList repeated;   // player presets the chooser offers more than once
         QStringList foreign;    // choices that are not player presets at all
         QStringList misplaced;  // choices not under their category's own labels
+        QStringList mislabeled;  // choices whose leaf text is not the preset's own label
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
             if (chip->menu() == nullptr) {
                 continue;
@@ -332,6 +347,14 @@ int main(int argc, char** argv) {
                            !misplaced.contains(choice.id)) {
                     misplaced.append(choice.id);
                 }
+                // The chooser is specified in ids AND labels: a menu carrying the
+                // right preset under the right group but spelling a leaf
+                // differently is a chooser the viewer reads twice, and one the
+                // player menu cannot produce.
+                if (preset != presets.cend() && choice.label != preset->label &&
+                    !mislabeled.contains(choice.id)) {
+                    mislabeled.append(choice.id);
+                }
             }
         }
         std::fprintf(stderr, "     chip menus: %d, player presets: %d\n", chipMenus,
@@ -348,11 +371,15 @@ int main(int argc, char** argv) {
         for (const QString& id : misplaced) {
             std::fprintf(stderr, "     under the wrong group: %s\n", qPrintable(id));
         }
+        for (const QString& id : mislabeled) {
+            std::fprintf(stderr, "     spelled differently: %s\n", qPrintable(id));
+        }
         check(chipMenus > 0, "the compare badges carry a candidate chooser menu");
         check(unoffered.isEmpty(), "every player preset is selectable in the compare badges");
         check(repeated.isEmpty(), "no player preset is offered twice in one badge menu");
         check(foreign.isEmpty(), "every compare choice is a preset the player can run");
         check(misplaced.isEmpty(), "each choice sits under its own catalogue category labels");
+        check(mislabeled.isEmpty(), "each choice is spelled with its own catalogue label");
         // The chain internals: files a preset runs inside its chain but that the
         // catalogue does not list as candidates of their own (the AutoDownscale
         // steps). Which files those are is read from the catalogue rather than
@@ -452,19 +479,331 @@ int main(int argc, char** argv) {
         check(!firstCapture.isNull() && firstCapture.size() == secondCapture.size(),
               "both captures are the same source size");
 
-        // ── 7. the window is non-blocking and closable ────────────
-        check(!compare->isModal(), "the comparison does not take the player hostage");
-        compare->close();
-        QTest::qWait(400);
-        check(!compare->isVisible(), "the window closes on its own");
-
-        // ── 8. a chain with no Mode survives a restart ────────────
+        // ── 7. a chain with no Mode survives a restart ────────────
         // A single .glsl has no enum value, so an ordinal would drop it on
         // every start. The id is what is stored, and it is what is read back.
         surface->setAnime4KChain(single);
         QTest::qWait(400);
         check(surface->anime4KChainId() == single,
               "a chain with no Mode is remembered by its id");
+
+        // ── 8. Compare leaves the player as found ─────────────────
+        // R6. Each side is rendered by swapping the borrowed surface's chain,
+        // so the chain read before the two sides has to be the chain the
+        // player is running afterwards - on a successful capture, when the
+        // window closes, and on every reopen. `single` is a loose .glsl that
+        // is deliberately NOT one of the presets the badges offer, so a
+        // restore that never happened would surface here as a preset id
+        // instead of the one the player was actually running.
+        compare->close();
+        QTest::qWait(200);
+        check(surface->anime4KChainId() == single,
+              "closing the window leaves the player's chain unchanged");
+
+        emit shell->compareRequested();
+        QTest::qWait(3000);
+        check(compare->isVisible(), "the kept window reopens");
+        check(!compare->frozenFrame().isNull(), "the reopened window captured a frame");
+        check(compare->captureError().isEmpty(), "the reopened capture reported no error");
+        check(surface->anime4KChainId() == single,
+              "a reopened capture restores the player's chain");
+
+        compare->captureNow();
+        QTest::qWait(2500);
+        check(compare->captureError().isEmpty(), "the repeated capture reported no error");
+        check(surface->anime4KChainId() == single,
+              "capturing again restores the player's chain");
+
+        check(!compare->isModal(), "the comparison does not take the player hostage");
+        compare->close();
+        QTest::qWait(400);
+        check(!compare->isVisible(), "the window closes on its own");
+        check(surface->anime4KChainId() == single,
+              "the chain is still the player's after the second close");
+
+        // ── 9. polling is left at its PRIOR value, not switched on ─
+        // The invariant is the value the surface actually had, not a fixed
+        // true: this source never enabled native status polling, so it has to
+        // be found with polling off after a successful capture, a reopen and a
+        // close. Switching it on is exactly the failure this checks for.
+        surface->setNativeStatusPolling(false);
+        check(!surface->nativeStatusPolling(), "native polling is explicitly off on this source");
+        compare->captureNow();
+        QTest::qWait(2500);
+        check(compare->captureError().isEmpty(), "the off-prior capture succeeded");
+        check(!surface->nativeStatusPolling(), "an off-prior capture leaves polling off");
+        emit shell->compareRequested();
+        QTest::qWait(3000);
+        check(compare->isVisible(), "the off-prior compare reopens");
+        check(!surface->nativeStatusPolling(), "an off-prior reopen leaves polling off");
+        compare->close();
+        QTest::qWait(300);
+        check(!surface->nativeStatusPolling(), "an off-prior close leaves polling off");
+
+        // ── 9b. the native plan is really locked for the window's lifetime ─
+        // Pausing the status reader is not locking. The real scoped lock is what
+        // freezes planning: it is held while the window is open and released the
+        // moment it closes, and a window that cannot hold it names why rather
+        // than freezing a plan that is about to move.
+        surface->setNativeStatusPolling(true);
+        emit shell->compareRequested();
+        QTest::qWait(3000);
+        check(compare->isVisible(), "the compare window is open for the lock check");
+        check(surface->nativePlanLocked() || !compare->lockError().isEmpty() ||
+                  !compare->captureError().isEmpty(),
+              "an open window holds the plan lock or names why no native base is frozen");
+        const QImage lockedFrame = compare->frozenFrame();
+        auto* caption = compare->findChild<QLabel*>(QStringLiteral("compareInfo"));
+        QString queuedCaption;
+        if (surface->nativePlanLocked() && caption != nullptr) {
+            // Consumer state transition, not a wording check: the visible
+            // caption must change the moment a native request is queued, while
+            // the frozen frame keeps its epoch, and it must clear on release.
+            const QString before = caption->text();
+            surface->turnNativeOff();
+            QTest::qWait(150);
+            queuedCaption = caption->text();
+            std::fprintf(stderr, "     compare caption before: %s\n", qPrintable(before));
+            std::fprintf(stderr, "     compare caption queued: %s\n", qPrintable(queuedCaption));
+            check(surface->queuedNativeTransitions() == 1,
+                  "a native request while the plan is held is queued, not applied");
+            check(compare->frozenFrame() == lockedFrame,
+                  "the queued native request leaves the frozen frame untouched");
+            check(caption->isVisible() && queuedCaption != before,
+                  "the visible caption changes the moment a native change is queued");
+        }
+        compare->close();
+        QTest::qWait(300);
+        std::fprintf(stderr, "     compare caption released: %s\n",
+                     caption != nullptr ? qPrintable(caption->text()) : "(no caption)");
+        check(!surface->nativePlanLocked(),
+              "closing the window releases the held native plan lock");
+        if (!queuedCaption.isEmpty()) {
+            check(surface->queuedNativeTransitions() == 0,
+                  "closing the window submits the queued native transition");
+            check(caption->text() != queuedCaption,
+                  "releasing the lock clears the queued state from the visible caption");
+        }
+        surface->setNativeStatusPolling(false);
+
+        // ── 10. an unsettled capture fails and still restores the surface ──
+        // This is the failure path that cannot be reached through the dialog's
+        // guard: hasVideo() is true, but grabSettledFrame runs out of time. A
+        // timer keeps re-seeking while the capture runs, so the surface never
+        // stops reporting a move and no frame is ever believed. The window
+        // must name the failure, freeze nothing, and - the correction this
+        // exercises - hand the native status polling it paused back on.
+        surface->setNativeStatusPolling(true);
+        check(surface->nativeStatusPolling(), "native polling is on before the forced failure");
+        QTimer churn;
+        bool seekFlip = false;
+        QObject::connect(&churn, &QTimer::timeout, [&] {
+            seekFlip = !seekFlip;
+            surface->seek(seekFlip ? 4.0 : 9.0);
+        });
+        churn.start(20);
+        compare->captureNow();
+        churn.stop();
+        QTest::qWait(200);
+        std::fprintf(stderr, "     unsettled refusal: %s\n", qPrintable(compare->captureError()));
+        check(!compare->captureError().isEmpty(), "an unsettled capture refuses by name");
+        check(compare->frozenFrame().isNull(), "the unsettled capture froze no frame");
+        check(surface->nativeStatusPolling(),
+              "a failed capture restores the native status polling it paused");
+        check(surface->anime4KChainId() == single, "a failed capture leaves the chain alone");
+        surface->setNativeStatusPolling(false);
+
+        // ── 10b. the stored preset is not the live chain, and stays that way ──
+        // The player persists `player/anime4k`, but the surface can be running
+        // something that setting does not name - here a loose .glsl the badges
+        // cannot offer. Compare swaps the LIVE chain to render its two sides,
+        // so picking both sides has to put that live chain back untouched and
+        // must never rewrite what the player has stored. The evidence is the
+        // chain id AND the glsl-shaders string mpv actually holds, not just the
+        // window's own bookkeeping.
+        const QString storedKey = QStringLiteral("player/anime4k");
+        QSettings persisted;
+        persisted.setValue(storedKey, offId);
+        persisted.sync();
+        check(surface->anime4KChainId() == single && single != offId,
+              "the live chain is not the stored preset before the render");
+        check(QSettings().value(storedKey).toString() == offId,
+              "the stored preset is the off id, not the live chain");
+        const QString chainBefore = surface->anime4KChainId();
+        const QString propertyBefore = surface->effectiveShaderChain();
+        const auto pickPreset = [&](int chipIndex, const QString& id) {
+            int seen = -1;
+            for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
+                if (chip->menu() == nullptr) {
+                    continue;
+                }
+                if (++seen != chipIndex) {
+                    continue;
+                }
+                std::function<bool(QMenu*)> pick = [&](QMenu* menu) -> bool {
+                    for (QAction* action : menu->actions()) {
+                        if (QMenu* submenu = action->menu()) {
+                            if (pick(submenu)) {
+                                return true;
+                            }
+                        } else if (action->data().toString() == id) {
+                            action->trigger();
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                return pick(chip->menu());
+            }
+            return false;
+        };
+        check(pickPreset(0, presetIds.value(0)), "the first badge accepts a preset pick");
+        check(surface->anime4KChainId() == chainBefore,
+              "picking side A leaves the live chain id unchanged");
+        check(surface->effectiveShaderChain() == propertyBefore,
+              "picking side A leaves glsl-shaders as found");
+        check(pickPreset(1, presetIds.value(1)), "the second badge accepts another preset pick");
+        check(surface->anime4KChainId() == chainBefore,
+              "picking side B leaves the live chain id unchanged");
+        check(surface->effectiveShaderChain() == propertyBefore,
+              "picking side B leaves glsl-shaders as found");
+        compare->close();
+        QTest::qWait(200);
+        check(surface->anime4KChainId() == chainBefore,
+              "closing after both picks leaves the live chain id unchanged");
+        check(surface->effectiveShaderChain() == propertyBefore,
+              "closing after both picks leaves glsl-shaders as found");
+        check(QSettings().value(storedKey).toString() == offId,
+              "compare never rewrites the stored preset");
+
+        // ── 10c. a failed capture hands playback back as it found it ──
+        // The pause that buys a settled grab is a temporary override too: when
+        // the grab never settles there is no picture, so the surface has to be
+        // left playing - with its chain and polling as well - exactly as found.
+        surface->setNativeStatusPolling(true);
+        surface->setPaused(false);
+        QTest::qWait(200);
+        check(surface->isPlaying(), "the surface is playing before the failed capture");
+        check(surface->nativeStatusPolling(), "native polling is on before the failed capture");
+        QTimer churnPlayback;
+        bool flipPlayback = false;
+        QObject::connect(&churnPlayback, &QTimer::timeout, [&] {
+            flipPlayback = !flipPlayback;
+            surface->seek(flipPlayback ? 4.0 : 9.0);
+        });
+        churnPlayback.start(20);
+        compare->captureNow();
+        churnPlayback.stop();
+        QTest::qWait(200);
+        std::fprintf(stderr, "     playback refusal: %s\n", qPrintable(compare->captureError()));
+        check(!compare->captureError().isEmpty(), "a playback capture that cannot settle refuses");
+        check(compare->frozenFrame().isNull(), "the playback refusal froze no frame");
+        check(surface->isPlaying(), "a failed capture hands playback back playing");
+        check(surface->anime4KChainId() == single, "the playback refusal leaves the chain alone");
+        check(surface->nativeStatusPolling(), "the playback refusal leaves polling as found");
+        surface->setPaused(true);
+        surface->setNativeStatusPolling(false);
+
+        // ── 11. a closed surface is refused by name ───────────────
+        // Closing the borrowed surface is a REAL capture failure: hasVideo()
+        // goes false while the widget lives on. The window must name the
+        // refusal rather than freeze an old or empty picture, and it must not
+        // touch the chain it borrowed. This goes through the window's own
+        // public capture path, not the dialog's open guard.
+        surface->close();
+        QTest::qWait(250);
+        check(!surface->hasVideo(), "the player surface reports no video after close");
+        compare->captureNow();
+        QTest::qWait(250);
+        std::fprintf(stderr, "     closed-surface refusal: %s\n",
+                     qPrintable(compare->captureError()));
+        check(!compare->captureError().isEmpty(),
+              "a capture on a closed surface refuses instead of freezing");
+        check(compare->frozenFrame().isNull(), "the refused capture froze no frame");
+        check(surface->anime4KChainId() == single,
+              "the closed surface keeps the chain it was left on");
+        check(!surface->nativeStatusPolling(),
+              "a failed capture leaves polling at its prior off, not switched on");
+
+        // ── 12. a surface with no video is refused by name ────────
+        // A second, never-opened surface proves the refusal does not depend on
+        // the live player: the window borrows whatever surface it is handed,
+        // and one with no file loaded must refuse rather than freeze.
+        VideoSurface idleSurface;
+        idleSurface.setAnime4KChain(single);
+        check(!idleSurface.hasVideo(), "a fresh surface reports no video");
+        CompareWindow idleCompare(&idleSurface, idleSurface.anime4KChainId());
+        idleCompare.captureNow();
+        QTest::qWait(200);
+        std::fprintf(stderr, "     no-video refusal: %s\n",
+                     qPrintable(idleCompare.captureError()));
+        check(!idleCompare.captureError().isEmpty(),
+              "a capture on a surface with no video refuses by name");
+        check(idleCompare.frozenFrame().isNull(), "the no-video capture froze no frame");
+        check(idleSurface.anime4KChainId() == single,
+              "the no-video surface keeps the chain it was handed");
+
+        // The degenerate case: no surface at all. It has to name the missing
+        // surface rather than dereference it.
+        CompareWindow noSurface(nullptr, presetIds.value(0));
+        noSurface.captureNow();
+        QTest::qWait(50);
+        std::fprintf(stderr, "     no-surface refusal: %s\n",
+                     qPrintable(noSurface.captureError()));
+        check(!noSurface.captureError().isEmpty(), "a capture with no surface refuses by name");
+        check(noSurface.frozenFrame().isNull(), "the no-surface capture froze no frame");
+
+        // ── 13. a surface destroyed mid-grab is refused, not dereferenced ──
+        // The borrowed surface can die while a capture is pumping the event
+        // loop. The QPointer guard has to turn that into a named refusal rather
+        // than a read of freed memory. This surface really has video - it is
+        // made to freeze a working frame first - and is then deleted from a
+        // timer while the NEXT grab is still waiting for it to settle.
+        VideoSurface* borrowed = new VideoSurface();
+        borrowed->resize(320, 240);
+        const bool borrowedOpened = borrowed->open(url);
+        for (int attempt = 0; borrowedOpened && !borrowed->hasVideo() && attempt < 200; ++attempt) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+        }
+        if (borrowedOpened && borrowed->hasVideo()) {
+            auto* guardWindow = new CompareWindow(borrowed, presetIds.value(0));
+            guardWindow->captureNow();
+            check(!guardWindow->captureError().isEmpty() || !guardWindow->frozenFrame().isNull(),
+                  "the second surface produced a real frame before the guard check");
+            QTimer guardChurn;
+            bool guardFlip = false;
+            QObject::connect(&guardChurn, &QTimer::timeout, [&] {
+                guardFlip = !guardFlip;
+                borrowed->seek(guardFlip ? 4.0 : 9.0);
+            });
+            guardChurn.start(20);
+            QTimer guardKill;
+            guardKill.setSingleShot(true);
+            QObject::connect(&guardKill, &QTimer::timeout, [&] {
+                guardChurn.stop();
+                delete borrowed;
+                borrowed = nullptr;
+            });
+            guardKill.start(150);
+            guardWindow->captureNow();
+            guardChurn.stop();
+            if (borrowed != nullptr) {
+                delete borrowed;
+                borrowed = nullptr;
+            }
+            std::fprintf(stderr, "     destroyed-surface refusal: %s\n",
+                         qPrintable(guardWindow->captureError()));
+            check(!guardWindow->captureError().isEmpty(),
+                  "a surface destroyed mid-grab is refused by name");
+            check(guardWindow->frozenFrame().isNull(),
+                  "a surface destroyed mid-grab kept no frame");
+            delete guardWindow;
+        } else {
+            std::fprintf(stderr,
+                         "SKIP  no second surface for the destroyed-mid-grab guard check\n");
+            delete borrowed;
+        }
 
         std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");
         app.exit(failures == 0 ? 0 : 1);

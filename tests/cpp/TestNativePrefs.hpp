@@ -34,6 +34,10 @@ class TestNativePrefs : public QObject {
   void aLoadedNativeRuntimeWithoutConfirmedCapabilitiesNamesThatGap();
   void aRefusedNativeRequestKeepsItsNamedReason();
   void theAvailabilityProducerNeverClaimsAnEngine();
+  void aUsableFactoryObservationPermitsOnlyItsObservedBackend();
+  void anObservedFactoryRefusalKeepsItsOwnNamedReason();
+  void aRecipeNeedingAnUnsupportedRoleStaysUnavailable();
+  void aStandardModuleIgnoresAUsableFactoryObservation();
 
   void theSharedCheckRefusesReservedKeysInEveryForm();
   void theSharedCheckRefusesADuplicateAndNamesTheOwner();

@@ -25,11 +25,22 @@
 // retry and must never ask the host to re-extract. No native producer is
 // claimed and the private TitlePage host is not reached.
 //
+// The processing-failure policy then has to stand on its own, because the two
+// failures are separate states: the three remedies are really on screen, Prepare
+// and Providers really reach the application's real SettingsDialog - which lands
+// on its Processing tab and only an explicit Prepare asks the live core for its
+// preparation facts - while Original really turns the stored native request off
+// and leaves the Anime4K chain and the stream alone. Throughout, the fixture's
+// recorded request count proves that no remedy re-extracts or reloads anything,
+// and a genuinely failing media stream keeps its own retry chip and its one-shot
+// recovery loop beside the remedies rather than under them.
+//
 // The base URL argument must be loopback: this probe never opens an outbound
 // connection.
 
 #include <QApplication>
 #include <QColor>
+#include <QComboBox>
 #include <QDateTime>
 #include <QImage>
 #include <QJsonArray>
@@ -38,6 +49,7 @@
 #include <QJsonValue>
 #include <QLabel>
 #include <QMap>
+#include <QTabWidget>
 #include <QNetworkAccessManager>
 #include <QPointer>
 #include <QPushButton>
@@ -49,14 +61,19 @@
 #include <QUrlQuery>
 #include <QVariant>
 #include <cstdio>
+#include <memory>
 #include <functional>
 #include <utility>
 
+#include <backend/MikaiClient.hpp>
 #include <backend/Streams.hpp>
+#include "Anime4K.hpp"
 #include "CrashLog.hpp"
 #include "PlayerDialog.hpp"
+#include "ProcessingSettingsIntent.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
+#include "dialogs/SettingsDialog.hpp"
 #include "state/QualityCache.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
@@ -127,6 +144,75 @@ QString statusText(PlayerDialog* player) {
     auto* text = player->findChild<QLabel*>(QStringLiteral("playerStatusText"));
     return text != nullptr ? text->text() : QString();
 }
+
+/// One processing remedy chip, found by its objectName. The probe clicks these
+/// rather than calling a slot, so a remedy that is visible but not really wired
+/// to anything fails here.
+QPushButton* remedyButton(PlayerDialog* player, const QString& name) {
+    if (player == nullptr) return nullptr;
+    return player->findChild<QPushButton*>(name);
+}
+
+/// How many of the three remedies are on screen and usable right now.
+int visibleRemedies(PlayerDialog* player) {
+    if (player == nullptr) return 0;
+    int visible = 0;
+    for (const QString& name : {QStringLiteral("playerPrepareButton"),
+                                QStringLiteral("playerProvidersButton"),
+                                QStringLiteral("playerOriginalButton")}) {
+        QPushButton* button = remedyButton(player, name);
+        if (button != nullptr && button->isVisible() && button->isEnabled()) ++visible;
+    }
+    return visible;
+}
+
+class ProcessingSurfaceRecorder : public QWidget {
+public:
+    ProcessingSurfaceRecorder() : client_(QStringLiteral("probe-key")) {
+        dialog_ = new mikai::app::SettingsDialog(client_, runner_, this);
+        // Installed before the dialog is ever shown, exactly as the application
+        // installs them; Prepare is reachable only through these.
+        dialog_->setNativePreparationSourcePresence([this](QString*, QString*) {
+            return !core_.isNull() && core_->hasActiveSource();
+        });
+        dialog_->setNativePreparationContextProvider([this] {
+            return core_.isNull() ? std::optional<mplayer::native::NativePreparationContext>{}
+                                  : core_->nativePreparationContext();
+        });
+    }
+
+    ~ProcessingSurfaceRecorder() override {
+        // The dialog borrows client_ and runner_, so destroy it before those members.
+        delete dialog_;
+    }
+
+    void openForIntent(QPointer<PlayerDialog> core,
+                       mplayer::shell::ProcessingSettingsIntent intent) {
+        // Guarded like the application's own pointer: a dialog closed between the
+        // click and this call is never dereferenced.
+        core_ = core;
+        dialog_->show();
+        dialog_->applyProcessingIntent(intent);
+    }
+
+    bool wasOpened() const { return dialog_->isVisible(); }
+    /// True when the surface really is on its Processing tab.
+    bool processingTabActive() const {
+        auto* tabs = dialog_->findChild<QTabWidget*>();
+        return tabs != nullptr && tabs->count() > 2 && tabs->currentIndex() == 2;
+    }
+    /// True when the existing provider choice is the one on screen and usable.
+    bool providerChoicePresent() const {
+        auto* backend = dialog_->findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
+        return backend != nullptr && backend->count() > 0 && backend->isEnabled();
+    }
+
+private:
+    mikai::app::Runner runner_;
+    mikai::backend::MikaiClient client_;
+    mikai::app::SettingsDialog* dialog_ = nullptr;
+    QPointer<PlayerDialog> core_;
+};
 
 /// A frame from a real decoding surface carries saturated pixels; a blank or
 /// failed one does not.
@@ -286,6 +372,9 @@ struct FactReading {
     bool freshMasterFetched = false;
     bool sawV360 = false;
     bool acceptLanguageOnV360 = true;
+    /// Every request the fixture has recorded, all of them. A processing remedy
+    /// must add nothing here: no re-extraction, no media reload, no probe.
+    int requests = 0;
 };
 
 FactReading readFacts(const QUrl& factsUrl) {
@@ -315,6 +404,10 @@ FactReading readFacts(const QUrl& factsUrl) {
     for (const QJsonValue& value : requests) {
         const QJsonObject fact = value.toObject();
         const QString path = fact.value(QStringLiteral("path")).toString();
+        if (path == QLatin1String("/_facts") || path == QLatin1String("/_facts/summary")) {
+            continue;
+        }
+        ++reading.requests;
         const int status = fact.value(QStringLiteral("status")).toInt();
         const int seq = fact.value(QStringLiteral("seq")).toInt();
         bool hasFreshKey = false;
@@ -390,7 +483,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
     QSettings settings;
@@ -533,9 +626,7 @@ int main(int argc, char** argv) {
     }
 
     // ── scenario 3: processing failure policy ───────────────────────────────
-    // A processing failure is not a media failure: it shows its reason but
-    // offers no retry and never asks the host to re-extract. This makes no claim
-    // about a real native producer; it only exercises the public report.
+    // No native producer is claimed: only the public report is exercised.
     RecoveryHost quietHost(runner, cache, embed, freshMasterUrl.toString());
     auto* quiet = new PlayerDialog(QStringLiteral("HLS recovery (processing policy)"),
                                    stale.value(kTargetHeight), toQualities(stale), kTargetHeight,
@@ -543,16 +634,165 @@ int main(int argc, char** argv) {
     quietHost.attach(quiet);
     quiet->show();
     QTest::qWait(250);
+    const int requestsBeforeFailure = readFacts(factsUrl).requests;
     quiet->reportNativeProcessingFailure(QStringLiteral("fixture processing failure"));
     QTest::qWait(200);
     QPointer<PlayerDialog> quietPointer(quiet);
     check(!retryVisible(quietPointer) && quietHost.failed() == 0 &&
               statusPanelVisible(quietPointer) && !statusText(quietPointer).isEmpty(),
-          "a processing failure shows its reason but offers no retry or re-extraction");
-    if (quietPointer) {
-        quietPointer->close();
-        check(until([&quietPointer] { return quietPointer.isNull(); }),
-              "the processing-policy player closes safely");
+          "a processing failure shows its reason but offers no media retry or re-extraction");
+    check(visibleRemedies(quietPointer) == 3,
+          "a processing failure offers all three real remedies at once");
+
+    // ── scenario 4: a remedy reaches the real Processing surface ────────────
+    // The settings surface's own outcome is the evidence, not the remedy signal:
+    // the remedy click is what stands in for MainWindow's bridge.
+    ProcessingSurfaceRecorder surface;
+    auto* prepare = remedyButton(quietPointer, QStringLiteral("playerPrepareButton"));
+    if (prepare != nullptr) {
+        QObject::connect(prepare, &QPushButton::clicked, &surface,
+                         [&surface, quietPointer] {
+                             surface.openForIntent(
+                                 quietPointer, mplayer::shell::ProcessingSettingsIntent::Prepare);
+                         });
+        prepare->click();
+    }
+    QTest::qWait(200);
+    check(surface.wasOpened() && surface.processingTabActive(),
+          "Prepare reaches the Processing surface through the real SettingsDialog");
+    check(surface.providerChoicePresent(),
+          "the Processing surface the remedy opens really carries the native request");
+    check(quietHost.failed() == 0 && !quietHost.recovered() &&
+              readFacts(factsUrl).requests == requestsBeforeFailure,
+          "Prepare neither re-extracts the URL nor reloads the media");
+
+    auto* providers = remedyButton(quietPointer, QStringLiteral("playerProvidersButton"));
+    if (providers != nullptr) {
+        QObject::connect(providers, &QPushButton::clicked, &surface,
+                         [&surface, quietPointer] {
+                             surface.openForIntent(
+                                 quietPointer,
+                                 mplayer::shell::ProcessingSettingsIntent::Providers);
+                         });
+        providers->click();
+    }
+    QTest::qWait(200);
+    check(surface.processingTabActive() && visibleRemedies(quietPointer) == 3,
+          "Providers lands on the Processing surface without retiring the remedies");
+    check(readFacts(factsUrl).requests == requestsBeforeFailure,
+          "no processing remedy re-extracts the URL or reloads the media");
+
+    // ── scenario 5: a real media failure keeps its own recovery ─────────────
+    // The two rows are separate state: the retry chip's one-shot recovery loop
+    // must survive a processing failure rather than be replaced by it.
+    RecoveryHost stuckHost(runner, cache, embed, missingMaster.toString());
+    auto* stuck = new PlayerDialog(QStringLiteral("HLS recovery (media keeps retry)"),
+                                   stale.value(kTargetHeight), toQualities(stale), kTargetHeight,
+                                   &stuckHost, nullptr);
+    stuckHost.attach(stuck);
+    stuck->show();
+    QTest::qWait(250);
+    stuck->startPlayer();
+    QPointer<PlayerDialog> stuckPointer(stuck);
+    check(until([&stuckHost] { return stuckHost.failed() > 0; }, 30000) &&
+              retryVisible(stuckPointer),
+          "a real media failure leaves its visible retry chip up");
+    check(until([&stuckHost] { return !stuckHost.recoveryError().isEmpty(); }, 30000) &&
+              retryVisible(stuckPointer),
+          "a media failure whose re-extraction also fails keeps the retry chip up");
+    stuck->reportNativeProcessingFailure(QStringLiteral("fixture processing failure"));
+    QTest::qWait(200);
+    check(retryVisible(stuckPointer) && visibleRemedies(stuckPointer) == 3 &&
+              statusPanelVisible(stuckPointer),
+          "a processing failure offers its remedies beside the media retry, never over it");
+    check(stuckHost.failed() == 1 && !stuckHost.recovered(),
+          "the processing failure did not restart or replace the media recovery loop");
+    if (stuckPointer) {
+        stuckPointer->grab().save(QStringLiteral("hls-processing-and-retry.png"));
+        stuckPointer->close();
+        check(until([&stuckPointer] { return stuckPointer.isNull(); }),
+              "the media-retry player closes safely");
+    }
+
+    // ── scenario 6: Original turns native off and nothing else ──────────────
+    // Answered inside the dialog, so no owner is involved at all.
+    const int requestsBeforeOriginal = readFacts(factsUrl).requests;
+    mplayer::native::NativePreferencePatch arming;
+    arming.enabled = true;
+    QString armingReason;
+    check(mplayer::native::saveNativePreferences(arming, &armingReason),
+          "the stored native request can be armed for the Original scenario");
+    RecoveryHost originalHost(runner, cache, embed, freshMasterUrl.toString());
+    auto* original = new PlayerDialog(QStringLiteral("HLS recovery (original remedy)"),
+                                      stale.value(kTargetHeight), toQualities(stale),
+                                      kTargetHeight, &originalHost, nullptr);
+    originalHost.attach(original);
+    original->show();
+    QTest::qWait(250);
+    check(mplayer::native::loadNativePreferences().enabled,
+          "the player starts from a stored request that really asks for processing");
+    auto* originalSurface = original->findChild<mplayer::VideoSurface*>();
+    const QString hqAChainId = mplayer::anime4k::modeId(mplayer::anime4k::Mode::HqA);
+    if (originalSurface != nullptr) {
+        originalSurface->setAnime4KChain(hqAChainId);
+    }
+    original->reportNativeProcessingFailure(QStringLiteral("fixture processing failure"));
+    QTest::qWait(200);
+    QPointer<PlayerDialog> originalPointer(original);
+    auto* originalButton = remedyButton(originalPointer, QStringLiteral("playerOriginalButton"));
+    if (originalButton != nullptr) originalButton->click();
+    QTest::qWait(400);
+    check(!mplayer::native::loadNativePreferences().enabled,
+          "Original really turns the stored native request off");
+    check(originalHost.failed() == 0 && !originalHost.recovered(),
+          "Original asks the host for nothing and re-extracts nothing");
+    check(originalSurface != nullptr && originalSurface->anime4KChainId() == hqAChainId,
+          "Original leaves the Anime4K chain exactly as the player had it");
+    check(readFacts(factsUrl).requests == requestsBeforeOriginal,
+          "Original resolves no new stream: the fixture saw no request after it");
+    check(visibleRemedies(originalPointer) == 0 && statusPanelVisible(originalPointer) &&
+              !statusText(originalPointer).isEmpty(),
+          "Original retires its own row and reports what it did");
+    if (originalPointer) {
+        originalPointer->close();
+        check(until([&originalPointer] { return originalPointer.isNull(); }),
+              "the Original player closes safely");
+    }
+
+    // ── scenario 7: the hostless surface offers the same remedies ───────────
+    // The three-argument constructor: no PlayerHost at all, so nothing here can
+    // answer the dialog and no host-side recovery exists to run.
+    auto* hostless = new PlayerDialog(QStringLiteral("standalone.mkv"),
+                                      stale.value(kTargetHeight), nullptr);
+    hostless->show();
+    QTest::qWait(250);
+    const int requestsBeforeHostless = readFacts(factsUrl).requests;
+    hostless->reportNativeProcessingFailure(QStringLiteral("fixture processing failure"));
+    QTest::qWait(200);
+    QPointer<PlayerDialog> hostlessPointer(hostless);
+    check(visibleRemedies(hostlessPointer) == 3 && !retryVisible(hostlessPointer),
+          "a hostless standalone player offers the same three remedies and no media retry");
+    ProcessingSurfaceRecorder hostlessSurface;
+    auto* hostlessPrepare =
+        remedyButton(hostlessPointer, QStringLiteral("playerPrepareButton"));
+    if (hostlessPrepare != nullptr) {
+        QObject::connect(hostlessPrepare, &QPushButton::clicked, &hostlessSurface,
+                         [&hostlessSurface, hostlessPointer] {
+                             hostlessSurface.openForIntent(
+                                 hostlessPointer,
+                                 mplayer::shell::ProcessingSettingsIntent::Prepare);
+                         });
+        hostlessPrepare->click();
+    }
+    QTest::qWait(200);
+    check(hostlessSurface.wasOpened() && hostlessSurface.processingTabActive(),
+          "a hostless remedy reaches the application's Processing surface too");
+    check(readFacts(factsUrl).requests == requestsBeforeHostless,
+          "the hostless remedy resolves no new stream either");
+    if (hostlessPointer) {
+        hostlessPointer->close();
+        check(until([&hostlessPointer] { return hostlessPointer.isNull(); }),
+              "the hostless player closes safely");
     }
 
     std::fprintf(stderr, "RESULT: %s\n", failures ? "FAIL" : "PASS");

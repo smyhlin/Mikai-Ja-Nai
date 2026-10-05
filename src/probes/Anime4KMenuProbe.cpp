@@ -54,6 +54,8 @@
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
+#include "ShellTheme.hpp"
+#include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "ProbeRuntime.hpp"
 
@@ -181,6 +183,8 @@ QImage settledFrame(VideoSurface* surface, int timeoutMs = 6000) {
 // reason: every level below the root is the same pooled widget under the same
 // name.
 
+int rowFor(MenuPopup* panel, const QString& id);
+
 /// The visible panel showing catalogue `levelId`, waited for up to `timeoutMs`.
 /// A timeout of zero samples once and answers immediately, which is what a
 /// caller asking "is this level still up?" wants - waiting there would only
@@ -189,9 +193,16 @@ MenuPopup* levelPanel(QWidget* host, const QString& levelId, int timeoutMs = 400
     for (int waited = 0; waited == 0 || waited < timeoutMs; waited += 40) {
         QCoreApplication::processEvents();
         for (MenuPopup* panel : host->findChildren<MenuPopup*>()) {
-            if (panel->isVisible() && panel->property("enhancementLevel").toString() == levelId) {
-                return panel;
-            }
+            if (!panel->isVisible()) continue;
+            // The root records no level, so it is the panel carrying the Anime4K
+            // root row; every level below it records the catalogue level it
+            // shows. Reading both off the panel's own rows and properties keeps a
+            // popover that never had a level assigned out of an empty-level
+            // lookup, without pinning a widget name a cosmetic rename can break.
+            const bool matches =
+                levelId.isEmpty() ? rowFor(panel, QStringLiteral("anime4k")) >= 0
+                                  : panel->property("enhancementLevel").toString() == levelId;
+            if (matches) return panel;
         }
         QThread::msleep(40);
     }
@@ -273,14 +284,15 @@ bool clickRow(MenuPopup* panel, const QString& id) {
     return true;
 }
 
-/// The dock's sparkle button, by the tooltip a viewer hovers. The chrome
-/// auto-hides, and a hidden button is not one a viewer could press, so the
-/// shell is woken first.
+/// The dock's sparkle button, found by the glyph it paints rather than by a
+/// tooltip string: the tooltip is translated, the glyph is not, and the shell
+/// has exactly one spark button. The chrome auto-hides, and a hidden button is
+/// not one a viewer could press, so the shell is woken first.
 QPushButton* enhanceButton(PlayerShell* shell, QWidget* dialog) {
     shell->wake();
     QCoreApplication::processEvents();
-    for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
-        if (button->isVisible() && button->toolTip() == QLatin1String("open_enhancements")) {
+    for (IconButton* button : dialog->findChildren<IconButton*>()) {
+        if (button->isVisible() && button->icon() == &IconPainter::spark) {
             return button;
         }
     }
@@ -478,7 +490,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
     QSettings settings;
@@ -569,10 +581,19 @@ int main(int argc, char** argv) {
     // and the level it opened are both still on screen.
     check(levelPanel(dialog, QString()) != nullptr,
           "the root stays on screen beside the level it opened");
-    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental")),
+
+    // A row is clicked on the panel of its own level: the Anime4K level is a
+    // panel of its own, so the category that opens the experiments sits there,
+    // not on the speed level the previous click opened. Reading each panel back
+    // off its level id is what keeps the drill-down on the real tree.
+    MenuPopup* animeLevel = levelPanel(dialog, QStringLiteral("anime4k"));
+    check(animeLevel != nullptr, "the Anime4K level stays on screen beside the root");
+    check(clickRow(animeLevel, QStringLiteral("anime4k/experimental")),
           "the experimental category opens");
     shoot(dialog, QStringLiteral("anime4k-menu-experiments.png"));
-    check(clickRow(menus.anime, QStringLiteral("anime4k/experimental/noise")),
+    MenuPopup* experimentLevel = levelPanel(dialog, QStringLiteral("anime4k/experimental"));
+    check(experimentLevel != nullptr, "the experimental level opens beside the Anime4K level");
+    check(clickRow(experimentLevel, QStringLiteral("anime4k/experimental/noise")),
           "an experiment family opens as a submenu");
     shoot(dialog, QStringLiteral("anime4k-menu-family.png"));
     menus.anime = levelPanel(dialog, QStringLiteral("anime4k/experimental/noise"));

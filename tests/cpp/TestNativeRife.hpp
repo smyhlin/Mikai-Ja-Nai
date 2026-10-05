@@ -8,6 +8,9 @@ class TestNativeRife : public QObject {
 private slots:
     void unknownRifeVariantsAreRejected();
     void requestedVariantsResolveTheExactOriginalModelNames();
+    void theFourPinsAreDistinctExactDigests();
+    void thePinnedOwnedRowResolvesToItsContentIdentity();
+    void aSubstitutedOrWrongRowIsRefusedByItsOwnReason();
 
     void aRifeOnlyRequestBuildsARifeOnlyRecipe();
     void theFactoryPreservesTheExactRationalFactorAndOrder();

@@ -38,7 +38,7 @@
 
 #include <backend/MikaiClient.hpp>
 
-#include "native/NativeAssetsPanel.hpp"
+#include "dialogs/NativeAssetsPanel.hpp"
 #include "native/NativeModelInventory.hpp"
 #include "native/NativePaths.hpp"
 #include "native/NativePrefs.hpp"
@@ -48,6 +48,7 @@
 
 using namespace mplayer;
 using namespace mplayer::native;
+using mikai::app::NativeAssetsPanel;
 
 namespace {
 
@@ -385,7 +386,7 @@ int main(int argc, char** argv) {
             }
             check(!inModelStore,
                   QStringLiteral("a downloaded asset alone is not a model row"));
-            check(!currentNativeAvailability().engineAvailable,
+            check(!currentNativeAvailability(nullptr).engineAvailable,
                   QStringLiteral("the asset did not make any engine Ready"));
         }
     }
@@ -416,7 +417,7 @@ int main(int argc, char** argv) {
         }
         QObject::disconnect(connection);
         // Whether the runtime is present or not, no engine may have appeared.
-        check(!currentNativeAvailability().engineAvailable,
+        check(!currentNativeAvailability(nullptr).engineAvailable,
               QStringLiteral("importing a downloaded graph did not make an engine Ready"));
         if (!submitted) {
             say(QStringLiteral("import was refused before submission: %1")

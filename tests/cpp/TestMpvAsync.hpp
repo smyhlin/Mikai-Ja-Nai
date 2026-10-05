@@ -35,6 +35,23 @@ private slots:
     void theHeaderApiVersionIsAlwaysReported();
     void aHandleWithoutASelectedRuntimeIsRefused();
 
+    // ── public FPS provenance policy; these cases need no mpv runtime ───────
+    void fpsSelectorPrefersValidMpvOutput();
+    void fpsSelectorFallsBackToContainerForInvalidOutput_data();
+    void fpsSelectorFallsBackToContainerForInvalidOutput();
+    void fpsSelectorIgnoresStaleRatesWhenInactive_data();
+    void fpsSelectorIgnoresStaleRatesWhenInactive();
+    void fpsSelectorReturnsUnknownWithoutFinitePositiveRate_data();
+    void fpsSelectorReturnsUnknownWithoutFinitePositiveRate();
+
+    // ── native-status polling policy; these cases need no mpv runtime ──────
+    //
+    // The boundary that made an attached probe unreadable: a Probe document is
+    // published before the producer has seen a decoded frame, and halting on it
+    // meant the revision that names the device was never read.
+    void probeSnapshotsKeepTheStatusReaderPolling_data();
+    void probeSnapshotsKeepTheStatusReaderPolling();
+
     // ── transport against a real core ──────────────────────────────────────
     void anAsyncPropertyReplyCarriesItsOwnValue();
     void anUnknownPropertyRepliesWithAnError();

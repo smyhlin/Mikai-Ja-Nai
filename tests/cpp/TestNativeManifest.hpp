@@ -33,6 +33,7 @@ class TestNativeManifest : public QObject {
   void anExternalModelDirectorySentinelSurvivesTheLifecycle();
   void removalRequiresProofAndLeavesForeignFiles();
   void anArtifactDirectoryWithoutAManifestIsNotRemoved();
+  void aLockedManifestRemovalDoesNotExposeAPartialArtifact();
   void anEngineNameThatEscapesTheRootIsRefused();
   void aStoreRootThatIsNotADirectoryIsNotOwned();
 

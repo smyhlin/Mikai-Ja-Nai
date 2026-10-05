@@ -18,6 +18,8 @@ add_executable(mikai_http_fixture EXCLUDE_FROM_ALL http_fixture.cpp)
 
 target_link_libraries(mikai_http_fixture PRIVATE Qt6::Core Qt6::Network)
 
+mikai_deploy_mingw_runtime_targets()
+
 # A console target: unlike mikai.exe it prints its bound port and its URL list
 # on stdout, which is how a parent process learns the port when --port 0 was
 # requested.

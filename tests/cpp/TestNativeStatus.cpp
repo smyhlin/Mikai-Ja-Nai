@@ -4,6 +4,10 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRect>
+#include <QSize>
 #include <QString>
 #include <QThread>
 
@@ -76,6 +80,45 @@ StatusSnapshot combinedTwoTimes() {
   counters.sceneCuts = 2;
   snapshot.counters = counters;
   return snapshot;
+}
+
+// The one shape a usable factory observation may take: an executed query that
+// answered success on a real backend, against a runtime and a measured device it
+// actually checked. Every field a consumer reads is stated, so a regression that
+// lets any of them be dropped or defaulted is caught by name.
+NativeFactoryObservation aUsableFactory() {
+  NativeFactoryObservation factory;
+  factory.observed = true;
+  factory.backend = QStringLiteral("tensorrt");
+  factory.spatial = true;
+  factory.runtimeVersion = QStringLiteral("TensorRT-10.4.0");
+  factory.deviceIdentity = QStringLiteral("9f2c1a440b7d4e219c3a1d5e6f708192");
+  factory.smMajor = 8;
+  factory.smMinor = 9;
+  return factory;
+}
+
+// The same query, observed, but answered "not usable" with a named reason: no
+// role, and - as the producer publishes an unavailable observation - no device it
+// could claim was checked.
+NativeFactoryObservation anObservedUnavailableFactory() {
+  NativeFactoryObservation factory;
+  factory.observed = true;
+  factory.backend = QStringLiteral("tensorrt");
+  factory.runtimeVersion = QStringLiteral("TensorRT-10.4.0");
+  factory.reasonKey = QStringLiteral("native.factory.engineMissing");
+  factory.reason = QStringLiteral("no compiled engine for this graph");
+  return factory;
+}
+
+QJsonObject factoryObjectOf(const StatusSnapshot& snapshot) {
+  return statusSnapshotToJson(snapshot).value(QStringLiteral("factory")).toObject();
+}
+
+QJsonObject documentWithFactory(const StatusSnapshot& snapshot, const QJsonObject& factory) {
+  QJsonObject document = statusSnapshotToJson(snapshot);
+  document.insert(QStringLiteral("factory"), factory);
+  return document;
 }
 
 // The measurable verdict of the parser: the named reason key, or "<accepted>".
@@ -311,13 +354,16 @@ void TestNativeStatus::exactIntegersSurviveTheWireAndOversizedOnesAreRefused() {
   QCOMPARE(spatialBack.revision, exact);
   QCOMPARE(spatialBack.epoch, std::optional<qint64>(exact));
 
-  // A combined chain is where interpolated carries a value of its own.
+  // A combined chain is where interpolated carries a value of its own. At 2x the
+  // RIFE grid emits one original per source frame, so the truthful counts hold the
+  // exact-integer bound for `framesOut` while half the source frames are
+  // synthesized.
   StatusSnapshot combined = combinedTwoTimes();
   combined.revision = exact;
   combined.epoch = exact;
-  combined.counters->framesIn = exact;
+  combined.counters->framesIn = exact / 2;
   combined.counters->framesOut = exact;
-  combined.counters->interpolated = exact;
+  combined.counters->interpolated = exact / 2;
   StatusSnapshot combinedBack;
   QVERIFY2(parseStatusSnapshot(serializeStatusSnapshot(combined), &combinedBack, &key, &text),
            qPrintable(text));
@@ -603,6 +649,140 @@ void TestNativeStatus::countersMustAgreeWithTheEffectivePlan() {
                QStringLiteral("native.probe.awaiting-frame: no decoded frame has been observed"));
   probe.insert(QStringLiteral("counters"), counters);
   QCOMPARE(refusalOf(probe), QStringLiteral("native.status.counters.without.effective"));
+}
+
+// `interpolated` counts the frames actually synthesized at the output pin, not
+// the net gain over the source. The filter consumes source frames ahead of the
+// pin, so a snapshot can be a behind-prefix transient; the bound that accepts
+// every reachable state is framesIn*(num-1)/den (proved by the filter owner),
+// with the emitted total as a further limit. It must accept the true 5/2, 5/3 and
+// 4/3 counts and the real behind-prefix tuples, refuse one above the general safe
+// upper, and stay exact on large counts.
+void TestNativeStatus::interpolationCountersFollowTheActualRationalFactor() {
+  const auto combinedAtFactor = [](const Rational& factor, const Rational& sourceFps,
+                                   const Rational& outputFps, qint64 framesIn, qint64 framesOut,
+                                   qint64 interpolated) {
+    StatusSnapshot snapshot = combinedTwoTimes();
+    NativeEffectivePlan plan = *snapshot.effective;
+    plan.interpolation = NativeInterpolation{factor, QStringLiteral("rife_v4.14")};
+    plan.sourceFps = sourceFps;
+    plan.outputFps = outputFps;
+    snapshot.effective = plan;
+    NativeCadenceCounters counters;
+    counters.framesIn = framesIn;
+    counters.framesOut = framesOut;
+    counters.interpolated = interpolated;
+    snapshot.counters = counters;
+    return snapshot;
+  };
+
+  // Integer 4x/8x: one original per source frame, so 3 and 7 synthesized frames
+  // per source frame are the exact capacity.
+  StatusSnapshot four =
+      combinedAtFactor(Rational{4, 1}, Rational{24, 1}, Rational{96, 1}, 800, 3200, 2400);
+  QCOMPARE(refusalOf(statusSnapshotToJson(four)), QStringLiteral("<accepted>"));
+  four.counters->interpolated = 2401;
+  QCOMPARE(refusalOf(statusSnapshotToJson(four)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  StatusSnapshot eight =
+      combinedAtFactor(Rational{8, 1}, Rational{24, 1}, Rational{192, 1}, 400, 3200, 2800);
+  QCOMPARE(refusalOf(statusSnapshotToJson(eight)), QStringLiteral("<accepted>"));
+  eight.counters->interpolated = 2801;
+  QCOMPARE(refusalOf(statusSnapshotToJson(eight)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // The producer's literal integer counts sit just below the ideal cap (the grid
+  // origin is emitted alone), and must be accepted rather than refused as a
+  // near-miss.
+  StatusSnapshot fourReal =
+      combinedAtFactor(Rational{4, 1}, Rational{24, 1}, Rational{96, 1}, 800, 3197, 2397);
+  QCOMPARE(refusalOf(statusSnapshotToJson(fourReal)), QStringLiteral("<accepted>"));
+  StatusSnapshot eightReal =
+      combinedAtFactor(Rational{8, 1}, Rational{24, 1}, Rational{192, 1}, 400, 3193, 2793);
+  QCOMPARE(refusalOf(statusSnapshotToJson(eightReal)), QStringLiteral("<accepted>"));
+  StatusSnapshot twoReal =
+      combinedAtFactor(Rational{2, 1}, Rational{24, 1}, Rational{48, 1}, 1550, 3099, 1549);
+  QCOMPARE(refusalOf(statusSnapshotToJson(twoReal)), QStringLiteral("<accepted>"));
+
+  // Behind-prefix transients: the current call's source frame is counted but its
+  // outputs are not yet written, so the counts trail. These are real states, not
+  // malformed ones.
+  StatusSnapshot twoBehind =
+      combinedAtFactor(Rational{2, 1}, Rational{24, 1}, Rational{48, 1}, 3, 3, 1);
+  QCOMPARE(refusalOf(statusSnapshotToJson(twoBehind)), QStringLiteral("<accepted>"));
+  StatusSnapshot fiveHalvesBehind =
+      combinedAtFactor(Rational{5, 2}, Rational{2, 1}, Rational{5, 1}, 10, 20, 16);
+  QCOMPARE(refusalOf(statusSnapshotToJson(fiveHalvesBehind)), QStringLiteral("<accepted>"));
+
+  // 5/2 at 4 in: the completed grid emits 8 frames with 6 synthesized, and the
+  // general safe upper for 4 consumed frames is 8.
+  StatusSnapshot fiveHalves =
+      combinedAtFactor(Rational{5, 2}, Rational{2, 1}, Rational{5, 1}, 4, 8, 6);
+  QCOMPARE(refusalOf(statusSnapshotToJson(fiveHalves)), QStringLiteral("<accepted>"));
+  fiveHalves.counters->interpolated = 9;
+  QCOMPARE(refusalOf(statusSnapshotToJson(fiveHalves)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // 5/3 at 3 in: the completed grid emits 4 frames with 3 synthesized; the safe
+  // upper is 4.
+  StatusSnapshot fiveThirds =
+      combinedAtFactor(Rational{5, 3}, Rational{3, 1}, Rational{5, 1}, 3, 4, 3);
+  QCOMPARE(refusalOf(statusSnapshotToJson(fiveThirds)), QStringLiteral("<accepted>"));
+  fiveThirds.counters->interpolated = 5;
+  QCOMPARE(refusalOf(statusSnapshotToJson(fiveThirds)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // 4/3 at 4 in: the completed grid emits 5 frames with 3 synthesized; the safe
+  // upper is 4.
+  StatusSnapshot fourThirds =
+      combinedAtFactor(Rational{4, 3}, Rational{3, 1}, Rational{4, 1}, 4, 5, 3);
+  QCOMPARE(refusalOf(statusSnapshotToJson(fourThirds)), QStringLiteral("<accepted>"));
+  fourThirds.counters->interpolated = 5;
+  QCOMPARE(refusalOf(statusSnapshotToJson(fourThirds)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // A factor at or below one synthesizes nothing.
+  StatusSnapshot stalled =
+      combinedAtFactor(Rational{1, 1}, Rational{24, 1}, Rational{24, 1}, 1000, 1000, 1);
+  QCOMPARE(refusalOf(statusSnapshotToJson(stalled)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // The existing 2x overcount stays refused.
+  StatusSnapshot two = combinedTwoTimes();
+  two.counters->interpolated = 1551;
+  QCOMPARE(refusalOf(statusSnapshotToJson(two)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // Synthesized frames are a subset of the emitted frames.
+  StatusSnapshot beyondOut =
+      combinedAtFactor(Rational{4, 1}, Rational{24, 1}, Rational{96, 1}, 100, 50, 60);
+  QCOMPARE(refusalOf(statusSnapshotToJson(beyondOut)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // More frames out than the grid lays down for the source frames is impossible.
+  StatusSnapshot overOut =
+      combinedAtFactor(Rational{4, 1}, Rational{24, 1}, Rational{96, 1}, 100, 401, 0);
+  QCOMPARE(refusalOf(statusSnapshotToJson(overOut)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // Large legal counts stay exact: 2^40 source frames at 4x with the producer's
+  // literal counts, and one past.
+  const qint64 huge = qint64{1} << 40;
+  StatusSnapshot large = combinedAtFactor(Rational{4, 1}, Rational{24, 1}, Rational{96, 1}, huge,
+                                          4 * huge - 3, 3 * huge - 3);
+  QCOMPARE(refusalOf(statusSnapshotToJson(large)), QStringLiteral("<accepted>"));
+  large.counters->interpolated = 3 * huge + 1;
+  QCOMPARE(refusalOf(statusSnapshotToJson(large)),
+           QStringLiteral("native.status.counters.inconsistent"));
+
+  // A 2^53 source count at a large rational factor overflows the naive
+  // framesIn*num product; the split comparison accepts the legal count instead of
+  // wrapping into a wrong refusal.
+  StatusSnapshot wide =
+      combinedAtFactor(Rational{1000000, 3}, Rational{3, 1}, Rational{1000000, 1},
+                       kNativeStatusMaxExactInteger, kNativeStatusMaxExactInteger, 0);
+  QCOMPARE(refusalOf(statusSnapshotToJson(wide)), QStringLiteral("<accepted>"));
 }
 
 void TestNativeStatus::aFailedRequestKeepsTheNewRequestAndTheOldEffectivePlan() {
@@ -1038,4 +1218,556 @@ void TestNativeStatus::anEffectivePlanUnderAStateThatRunsNothingIsRefused() {
   failed.state = NativeState::Failed;
   failed.reason = QStringLiteral("failed");
   QVERIFY(statusSnapshotIsConsistent(failed, &key, &text));
+}
+
+// Observed facts travel with the snapshot but never promote it: a Probe with
+// real device and geometry stays Probe-flavoured Unavailable.
+void TestNativeStatus::anObservedProbeRoundTripsAndIsNeverPromotedToReady() {
+  StatusSnapshot snapshot;
+  snapshot.version = kNativeStatusProtocol;
+  snapshot.revision = 9;
+  snapshot.state = NativeState::Probe;
+  snapshot.epoch = 3;
+  snapshot.reason = QStringLiteral("native.probe.awaiting-frame: passthrough");
+  NativeProbePayload payload;
+  SourceGeometry source;
+  source.codedSize = QSize(1920, 1080);
+  source.rotationDegrees = 0;
+  source.fps = Rational{24000, 1001};
+  source.csp = QStringLiteral("bt709");
+  source.matrix = QStringLiteral("bt709");
+  source.range = QStringLiteral("limited");
+  source.siting = QStringLiteral("left");
+  source.bitDepth = 8;
+  payload.source = source;
+  DeviceIdentity device;
+  device.decoderDeviceUuid = QStringLiteral("GPU-9f2c1a44-0b7d-4e21-9c3a-1d5e6f70");
+  payload.device = device;
+  snapshot.probe = payload;
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(snapshot), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed, snapshot);
+  StatusSnapshot viaTags;
+  QVERIFY2(parseStatusTags(statusTags(snapshot), &viaTags, &key, &text), qPrintable(text));
+  QCOMPARE(viaTags, snapshot);
+  const AvailabilityState avail = statusSnapshotAvailability(parsed);
+  QCOMPARE(avail.value, Availability::Unavailable);
+  QVERIFY(avail.reasonKey.contains(QStringLiteral("Probe")));
+  QVERIFY(!parsed.effective.has_value());
+  QVERIFY(!parsed.counters.has_value());
+}
+
+void TestNativeStatus::aMalformedProbeIdentityIsRefusedByName() {
+  StatusSnapshot probe;
+  probe.version = kNativeStatusProtocol;
+  probe.revision = 9;
+  probe.state = NativeState::Probe;
+  probe.reason = QStringLiteral("native.probe.awaiting-frame: passthrough");
+  NativeProbePayload payload;
+  SourceGeometry source;
+  source.codedSize = QSize(1920, 1080);
+  payload.source = source;
+  DeviceIdentity device;
+  device.decoderDeviceUuid = QStringLiteral("unknown");
+  payload.device = device;
+  probe.probe = payload;
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.identity"));
+
+  probe.probe->device->decoderDeviceUuid = QStringLiteral("GPU-0");
+  probe.probe->device->smMinor = 9;
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.identity"));
+
+  QJsonObject typed = statusSnapshotToJson(probe);
+  QJsonObject inner = typed.value(QStringLiteral("probe")).toObject();
+  QJsonObject dev = inner.value(QStringLiteral("device")).toObject();
+  dev.insert(QStringLiteral("smMajor"), QStringLiteral("12"));
+  inner.insert(QStringLiteral("device"), dev);
+  typed.insert(QStringLiteral("probe"), inner);
+  QCOMPARE(refusalOf(typed), QStringLiteral("native.status.probe.malformed"));
+
+  QJsonObject unknown = statusSnapshotToJson(probe);
+  QJsonObject unknownProbe = unknown.value(QStringLiteral("probe")).toObject();
+  unknownProbe.insert(QStringLiteral("ordinal"), 0);
+  unknown.insert(QStringLiteral("probe"), unknownProbe);
+  QCOMPARE(refusalOf(unknown), QStringLiteral("native.status.probe.unknown.member"));
+}
+
+void TestNativeStatus::aContradictingProbeGeometryIsRefusedByName() {
+  StatusSnapshot probe;
+  probe.version = kNativeStatusProtocol;
+  probe.revision = 9;
+  probe.state = NativeState::Probe;
+  probe.reason = QStringLiteral("native.probe.awaiting-frame: passthrough");
+  NativeProbePayload payload;
+  SourceGeometry source;
+  source.codedSize = QSize(0, 1080);
+  payload.source = source;
+  probe.probe = payload;
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.geometry"));
+
+  probe.probe->source->codedSize = QSize(1920, 1080);
+  probe.probe->source->crop = QRect(1700, 0, 400, 1080);
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.geometry"));
+
+  probe.probe->source->crop = QRect(0, 0, 1920, 1080);
+  probe.probe->source->rotationDegrees = 45;
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.geometry"));
+
+  probe.probe->source->rotationDegrees = 0;
+  probe.probe->source->fps = Rational{0, 1};
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.cadence"));
+
+  probe.probe->source->fps = Rational{24, 1};
+  probe.probe->source->bitDepth = 7;
+  QCOMPARE(refusalOf(statusSnapshotToJson(probe)),
+           QStringLiteral("native.status.probe.geometry"));
+}
+
+void TestNativeStatus::aSensitiveProbeTagIsRefusedWithoutEcho() {
+  const QString url = QStringLiteral("https://cdn.example.invalid/graph.onnx?token=Zm9vYmFy");
+  StatusSnapshot probe;
+  probe.version = kNativeStatusProtocol;
+  probe.revision = 9;
+  probe.state = NativeState::Probe;
+  probe.reason = QStringLiteral("native.probe.awaiting-frame: passthrough");
+  NativeProbePayload payload;
+  SourceGeometry source;
+  source.codedSize = QSize(1920, 1080);
+  source.csp = url;
+  payload.source = source;
+  probe.probe = payload;
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY(!parseStatusSnapshot(statusSnapshotToJson(probe), &parsed, &key, &text));
+  QCOMPARE(key, QStringLiteral("native.status.sensitiveData"));
+  QCOMPARE(parsed, StatusSnapshot{});
+  QVERIFY(!text.contains(url));
+  QVERIFY(!text.contains(QStringLiteral("Zm9vYmFy")));
+  QVERIFY(!serializeStatusSnapshot(probe).contains(url.toUtf8()));
+}
+
+// ── the optional factory observation ───────────────────────────────────────
+
+// Eligibility, not readiness: a factory observation is usable only when the
+// filter actually ran the producer's query, answered success on a real backend,
+// and named the runtime and measured device it checked. Each fact is required and
+// never defaulted, and the same document round trips through both layers.
+void TestNativeStatus::aUsableFactoryIsEarnedByAnObservedAnswerOnAMeasuredDevice() {
+  StatusSnapshot snapshot = oneToOneSpatial();
+  snapshot.factory = aUsableFactory();
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(snapshot), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed, snapshot);
+  QVERIFY(parsed.factory.has_value());
+  QVERIFY(parsed.factory->isUsable());
+  QVERIFY(parsed.factory->spatial);
+  QVERIFY(!parsed.factory->rife);
+  QCOMPARE(parsed.factory->backend, QStringLiteral("tensorrt"));
+  QCOMPARE(parsed.factory->runtimeVersion, QStringLiteral("TensorRT-10.4.0"));
+  QCOMPARE(parsed.factory->deviceIdentity, QStringLiteral("9f2c1a440b7d4e219c3a1d5e6f708192"));
+  QCOMPARE(parsed.factory->smMajor, 8);
+  QCOMPARE(parsed.factory->smMinor, 9);
+  QVERIFY(parsed.factory->reasonKey.isEmpty());
+
+  // The outer tag map carries the same observation back unchanged.
+  StatusSnapshot viaTags;
+  QVERIFY2(parseStatusTags(statusTags(snapshot), &viaTags, &key, &text), qPrintable(text));
+  QCOMPARE(viaTags, snapshot);
+  QVERIFY(viaTags.factory->isUsable());
+
+  // Support can only be claimed through a runtime and a measured device it
+  // actually checked: an absent one is refused by name, never read as an empty
+  // string or a zero capability.
+  QJsonObject noRuntime = factoryObjectOf(snapshot);
+  noRuntime.remove(QStringLiteral("runtimeVersion"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, noRuntime)),
+           QStringLiteral("native.status.factory.identity"));
+
+  QJsonObject noDevice = factoryObjectOf(snapshot);
+  noDevice.remove(QStringLiteral("deviceIdentity"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, noDevice)),
+           QStringLiteral("native.status.factory.identity"));
+
+  QJsonObject noCapability = factoryObjectOf(snapshot);
+  noCapability.remove(QStringLiteral("smMajor"));
+  noCapability.remove(QStringLiteral("smMinor"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, noCapability)),
+           QStringLiteral("native.status.factory.identity"));
+
+  // A null where a value is required is not an empty string either.
+  QJsonObject nullRuntime = factoryObjectOf(snapshot);
+  nullRuntime.insert(QStringLiteral("runtimeVersion"), QJsonValue(QJsonValue::Null));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, nullRuntime)),
+           QStringLiteral("native.status.factory.identity"));
+
+  QJsonObject nullDevice = factoryObjectOf(snapshot);
+  nullDevice.insert(QStringLiteral("deviceIdentity"), QJsonValue(QJsonValue::Null));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, nullDevice)),
+           QStringLiteral("native.status.factory.identity"));
+}
+
+// A supported role is the one place a capability flag can be turned on, and it
+// can only come from an observed, successful, refusal-free answer on a backend
+// this build checks.
+void TestNativeStatus::aFactoryClaimsARoleOnlyWhenItsAnswerWasObservedAndRefusalFree() {
+  StatusSnapshot snapshot = oneToOneSpatial();
+  snapshot.factory = aUsableFactory();
+
+  // A role without an executed query is a claim the document cannot support.
+  QJsonObject unobserved = factoryObjectOf(snapshot);
+  unobserved.insert(QStringLiteral("observed"), false);
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, unobserved)),
+           QStringLiteral("native.status.factory.inconsistent"));
+
+  // A failed query keeps its refusal; it cannot also keep a supported role.
+  QJsonObject failed = factoryObjectOf(snapshot);
+  failed.insert(QStringLiteral("reasonKey"), QStringLiteral("native.factory.queryFailed"));
+  failed.insert(QStringLiteral("reason"), QStringLiteral("the producer query failed"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, failed)),
+           QStringLiteral("native.status.factory.inconsistent"));
+
+  // A backend this build does not check, and the honest "nothing checked" token,
+  // can never back support.
+  QJsonObject unknownBackend = factoryObjectOf(snapshot);
+  unknownBackend.insert(QStringLiteral("backend"), QStringLiteral("vulkan"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, unknownBackend)),
+           QStringLiteral("native.status.factory.backend"));
+
+  QJsonObject noneBackend = factoryObjectOf(snapshot);
+  noneBackend.insert(QStringLiteral("backend"), QStringLiteral("none"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, noneBackend)),
+           QStringLiteral("native.status.factory.backend"));
+
+  // An unavailable factory that names no reason is refused by name.
+  QJsonObject reasonless = factoryObjectOf(snapshot);
+  reasonless.insert(QStringLiteral("spatial"), false);
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, reasonless)),
+           QStringLiteral("native.status.factory.reason"));
+
+  // The rife role alone follows the same rule, and round trips when earned.
+  StatusSnapshot rife = oneToOneSpatial();
+  NativeFactoryObservation rifeFactory = aUsableFactory();
+  rifeFactory.spatial = false;
+  rifeFactory.rife = true;
+  rife.factory = rifeFactory;
+  QVERIFY(rife.factory->isUsable());
+  StatusSnapshot rifeParsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(rife), &rifeParsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(rifeParsed, rife);
+}
+
+// A legitimate observed-but-unavailable answer states why in a stable key, keeps
+// the runtime it really checked, and moves nothing else in the snapshot.
+void TestNativeStatus::anUnavailableFactoryNamesItsReasonAndKeepsTheRestOfTheSnapshot() {
+  StatusSnapshot snapshot = oneToOneSpatial();
+  snapshot.factory = anObservedUnavailableFactory();
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(snapshot), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed, snapshot);
+  QVERIFY(parsed.factory.has_value());
+  QVERIFY(!parsed.factory->isUsable());
+  QVERIFY(!parsed.factory->spatial);
+  QVERIFY(!parsed.factory->rife);
+  QCOMPARE(parsed.factory->reasonKey, QStringLiteral("native.factory.engineMissing"));
+  QCOMPARE(parsed.factory->reason, QStringLiteral("no compiled engine for this graph"));
+  QCOMPARE(parsed.factory->runtimeVersion, QStringLiteral("TensorRT-10.4.0"));
+  // An unavailable observation names no device it could have checked, and that
+  // absence is preserved rather than filled with a placeholder.
+  QCOMPARE(parsed.factory->deviceIdentity, QString());
+  QCOMPARE(parsed.factory->smMajor, 0);
+  QCOMPARE(parsed.factory->smMinor, 0);
+
+  // The refusal concerns the factory alone: the filter's own state, plan,
+  // counters and source identity are not rewritten by it.
+  QCOMPARE(parsed.state, snapshot.state);
+  QCOMPARE(parsed.epoch, snapshot.epoch);
+  QCOMPARE(parsed.requested, snapshot.requested);
+  QCOMPARE(parsed.effective, snapshot.effective);
+  QCOMPARE(parsed.counters, snapshot.counters);
+
+  // The honest "nothing was checked" backend is acceptable, but can only ever be
+  // an unavailable observation.
+  StatusSnapshot nothingChecked = oneToOneSpatial();
+  NativeFactoryObservation noBackend = anObservedUnavailableFactory();
+  noBackend.backend = QStringLiteral("none");
+  nothingChecked.factory = noBackend;
+  StatusSnapshot nothingParsed;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(nothingChecked), &nothingParsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(nothingParsed, nothingChecked);
+  QVERIFY(!nothingParsed.factory->isUsable());
+
+  // An unobserved observation with a named reason - there is no native source on
+  // this core - is accepted and reads as unavailable. The reader caps the factory
+  // at "missing" instead of rejecting the snapshot the filter did publish.
+  StatusSnapshot noSource = oneToOneSpatial();
+  NativeFactoryObservation unobservedFactory;
+  unobservedFactory.observed = false;
+  unobservedFactory.backend = QStringLiteral("none");
+  unobservedFactory.reasonKey = QStringLiteral("native.factory.noSource");
+  unobservedFactory.reason = QStringLiteral("no native source on this display");
+  noSource.factory = unobservedFactory;
+  StatusSnapshot noSourceParsed;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(noSource), &noSourceParsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(noSourceParsed, noSource);
+  QVERIFY(!noSourceParsed.factory->isUsable());
+  QCOMPARE(noSourceParsed.state, NativeState::Active);
+}
+
+// The status wire protocol, the producer's snapshot protocol/schema and the AJI
+// source ABI are four separate identities. Each is stated and checked against its
+// own value, so none can stand in for another, and every member has its real JSON
+// type rather than a scalar a hostile document could reuse.
+void TestNativeStatus::aFactoryStatesItsOwnIdentityAndTypesInsteadOfBeingConflated() {
+  StatusSnapshot snapshot = oneToOneSpatial();
+  snapshot.factory = aUsableFactory();
+
+  const QJsonObject written = factoryObjectOf(snapshot);
+  QCOMPARE(written.value(QStringLiteral("queryProtocol")).toInt(), kNativeFactoryQueryProtocol);
+  QCOMPARE(written.value(QStringLiteral("nativeProtocol")).toInt(),
+           kNativeFactorySnapshotProtocol);
+  QCOMPARE(written.value(QStringLiteral("nativeSchema")).toInt(), kNativeFactorySnapshotSchema);
+  QCOMPARE(written.value(QStringLiteral("sourceAbi")).toInt(), kNativeFactorySourceAbi);
+
+  struct Conflation {
+    const char* member;
+    int value;
+  };
+  const Conflation conflated[] = {
+      {"queryProtocol", kNativeFactorySnapshotProtocol},
+      {"nativeProtocol", kNativeStatusProtocol},
+      {"nativeSchema", kNativeStatusProtocol},
+      {"sourceAbi", kNativeFactorySnapshotSchema},
+  };
+  for (const Conflation& field : conflated) {
+    QJsonObject factory = factoryObjectOf(snapshot);
+    factory.insert(QString::fromLatin1(field.member), field.value);
+    QCOMPARE(refusalOf(documentWithFactory(snapshot, factory)),
+             QStringLiteral("native.status.factory.protocol"));
+  }
+  QJsonObject textualVersion = factoryObjectOf(snapshot);
+  textualVersion.insert(QStringLiteral("queryProtocol"), QStringLiteral("1"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, textualVersion)),
+           QStringLiteral("native.status.factory.protocol"));
+
+  // The role and observed flags are JSON booleans, never a 0/1 number or a string.
+  QJsonObject numericObserved = factoryObjectOf(snapshot);
+  numericObserved.insert(QStringLiteral("observed"), 1);
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, numericObserved)),
+           QStringLiteral("native.status.factory.malformed"));
+  QJsonObject stringSpatial = factoryObjectOf(snapshot);
+  stringSpatial.insert(QStringLiteral("spatial"), QStringLiteral("true"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, stringSpatial)),
+           QStringLiteral("native.status.factory.malformed"));
+
+  // The capability is a whole integer, not a fractional or textual one, and a
+  // required member can be neither absent nor null.
+  QJsonObject fractionalSm = factoryObjectOf(snapshot);
+  fractionalSm.insert(QStringLiteral("smMajor"), 8.5);
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, fractionalSm)),
+           QStringLiteral("native.status.factory.malformed"));
+  QJsonObject textualSm = factoryObjectOf(snapshot);
+  textualSm.insert(QStringLiteral("smMajor"), QStringLiteral("8"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, textualSm)),
+           QStringLiteral("native.status.factory.malformed"));
+  QJsonObject noObserved = factoryObjectOf(snapshot);
+  noObserved.remove(QStringLiteral("observed"));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, noObserved)),
+           QStringLiteral("native.status.factory.malformed"));
+  QJsonObject nullBackend = factoryObjectOf(snapshot);
+  nullBackend.insert(QStringLiteral("backend"), QJsonValue(QJsonValue::Null));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, nullBackend)),
+           QStringLiteral("native.status.factory.malformed"));
+  QJsonObject nullReasonKey = factoryObjectOf(snapshot);
+  nullReasonKey.insert(QStringLiteral("reasonKey"), QJsonValue(QJsonValue::Null));
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, nullReasonKey)),
+           QStringLiteral("native.status.factory.malformed"));
+
+  // An unknown member is a named refusal, never a zero-valued fact the filter
+  // never stated.
+  QJsonObject unknown = factoryObjectOf(snapshot);
+  unknown.insert(QStringLiteral("ordinal"), 0);
+  QCOMPARE(refusalOf(documentWithFactory(snapshot, unknown)),
+           QStringLiteral("native.status.factory.unknown.member"));
+}
+
+// The factory is eligibility for a runtime, never an attestation that anything is
+// prepared or active: it never moves the snapshot's own availability, the
+// counters or the plan.
+void TestNativeStatus::aFactoryObservationNeverMovesTheStateOrTheCounters() {
+  // A usable factory under a Probe snapshot is still Probe-flavoured Unavailable.
+  StatusSnapshot probe;
+  probe.version = kNativeStatusProtocol;
+  probe.revision = 9;
+  probe.state = NativeState::Probe;
+  probe.epoch = 3;
+  probe.reason = QStringLiteral("native.probe.awaiting-frame: passthrough");
+  probe.factory = aUsableFactory();
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(probe), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed, probe);
+  QVERIFY(parsed.factory->isUsable());
+  const AvailabilityState probeAvailability = statusSnapshotAvailability(parsed);
+  QCOMPARE(probeAvailability.value, Availability::Unavailable);
+  QVERIFY(probeAvailability.reasonKey.contains(QStringLiteral("Probe")));
+  QVERIFY(!probeAvailability.reasonKey.contains(QStringLiteral("factory")));
+
+  // A Preparing snapshot with an unusable factory still reads Preparing, and the
+  // plan and counters are exactly the filter's own report.
+  StatusSnapshot preparing = oneToOneSpatial();
+  preparing.state = NativeState::Preparing;
+  preparing.reason = QStringLiteral("warming up the graph");
+  preparing.factory = anObservedUnavailableFactory();
+  StatusSnapshot preparingParsed;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(preparing), &preparingParsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(preparingParsed, preparing);
+  QCOMPARE(statusSnapshotAvailability(preparingParsed).value, Availability::Preparing);
+  QCOMPARE(preparingParsed.effective, preparing.effective);
+  QCOMPARE(preparingParsed.counters, preparing.counters);
+
+  // An Active snapshot stays Ready whether the factory is usable or not: the
+  // factory never turns itself into the availability of the surface it rides on.
+  StatusSnapshot active = oneToOneSpatial();
+  active.factory = anObservedUnavailableFactory();
+  StatusSnapshot activeParsed;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(active), &activeParsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(activeParsed, active);
+  QCOMPARE(statusSnapshotAvailability(activeParsed).value, Availability::Ready);
+  QVERIFY(statusSnapshotAvailability(activeParsed).reasonKey.isEmpty());
+}
+
+// A credential or signed URL in any factory field is refused by name without an
+// echo, and the export boundary never puts it back in the clear.
+void TestNativeStatus::aSensitiveFactoryValueIsRefusedRawAndWithheldFromTheExport() {
+  const QString url = QStringLiteral("https://cdn.example.invalid/rtx.engine?token=Zm9vYmFy");
+  StatusSnapshot snapshot = oneToOneSpatial();
+  NativeFactoryObservation factory = aUsableFactory();
+  factory.runtimeVersion = url;
+  snapshot.factory = factory;
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY(!parseStatusSnapshot(statusSnapshotToJson(snapshot), &parsed, &key, &text));
+  QCOMPARE(key, QStringLiteral("native.status.sensitiveData"));
+  QCOMPARE(parsed, StatusSnapshot{});
+  QVERIFY(!text.contains(url));
+  QVERIFY(!text.contains(QStringLiteral("Zm9vYmFy")));
+
+  const QByteArray exported = serializeStatusSnapshot(snapshot);
+  QVERIFY(!exported.contains(url.toUtf8()));
+  QVERIFY(!exported.contains(QStringLiteral("Zm9vYmFy").toUtf8()));
+
+  // A credential in the factory's free-text reason is refused the same way.
+  StatusSnapshot reasonSnapshot = oneToOneSpatial();
+  NativeFactoryObservation withReason = aUsableFactory();
+  withReason.reason = QStringLiteral("Authorization: Bearer sk-live-abcdef");
+  reasonSnapshot.factory = withReason;
+  QVERIFY(!parseStatusSnapshot(statusSnapshotToJson(reasonSnapshot), &parsed, &key, &text));
+  QCOMPARE(key, QStringLiteral("native.status.sensitiveData"));
+  QVERIFY(!text.contains(QStringLiteral("sk-live-abcdef")));
+  QVERIFY(!serializeStatusSnapshot(reasonSnapshot).contains(QByteArray("sk-live-abcdef")));
+}
+
+// A later document that publishes no factory clears the previous observation
+// rather than letting a stale one describe a new source generation.
+void TestNativeStatus::aFactoryAbsentFromTheNewDocumentIsNotCarriedOverFromTheOldOne() {
+  StatusSnapshot withFactory = oneToOneSpatial();
+  withFactory.factory = aUsableFactory();
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(withFactory), &parsed, &key, &text),
+           qPrintable(text));
+  QVERIFY(parsed.factory.has_value());
+  QVERIFY(parsed.factory->isUsable());
+
+  // A new epoch that publishes no factory: the earlier observation belonged to
+  // another source generation and must not read as current.
+  StatusSnapshot withoutFactory = oneToOneSpatial();
+  withoutFactory.revision = 413;
+  withoutFactory.epoch = 8;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(withoutFactory), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed.factory.has_value(), false);
+  QCOMPARE(parsed, withoutFactory);
+
+  // The tag layer goes through the same parse and clears it too.
+  QVERIFY2(parseStatusTags(statusTags(withFactory), &parsed, &key, &text), qPrintable(text));
+  QVERIFY(parsed.factory.has_value());
+  QVERIFY2(parseStatusTags(statusTags(withoutFactory), &parsed, &key, &text), qPrintable(text));
+  QCOMPARE(parsed.factory.has_value(), false);
+
+  // A refusal clears the output rather than leaving the previous factory behind.
+  StatusSnapshot refused;
+  QVERIFY(!parseStatusSnapshot(QJsonObject{}, &refused, &key, &text));
+  QCOMPARE(refused.factory.has_value(), false);
+  QCOMPARE(refused, StatusSnapshot{});
+}
+
+// The factory names the device it was checked against; the probe names the source
+// device. The reader must never coerce one into the other, so a consumer can see a
+// factory that does not belong to this source and refuse to derive availability.
+void TestNativeStatus::aFactoryDeviceThatDoesNotMatchTheProbedSourceIsNeverRewrittenIntoOne() {
+  const QString deviceHex = QStringLiteral("9f2c1a440b7d4e219c3a1d5e6f708192");
+  const QString otherHex = QStringLiteral("0a1b2c3d4e5f60718293a4b5c6d7e8f9");
+
+  // The probe saw one decoder device; a factory checked against the same device is
+  // accepted even when the two spell its UUID differently (the dashed form is the
+  // same device, never a different one).
+  StatusSnapshot matching = oneToOneSpatial();
+  NativeProbePayload probe;
+  DeviceIdentity device;
+  device.decoderDeviceUuid = QStringLiteral("9f2c1a44-0b7d-4e21-9c3a-1d5e6f708192");
+  probe.device = device;
+  matching.probe = probe;
+  NativeFactoryObservation factory = aUsableFactory();
+  factory.deviceIdentity = deviceHex;
+  matching.factory = factory;
+
+  StatusSnapshot parsed;
+  QString key;
+  QString text;
+  QVERIFY2(parseStatusSnapshot(statusSnapshotToJson(matching), &parsed, &key, &text),
+           qPrintable(text));
+  QCOMPARE(parsed, matching);
+
+  // A factory checked against another device is refused by name: it is never
+  // rewritten into this source's device, so a consumer cannot read it as
+  // availability for the wrong core.
+  StatusSnapshot mismatched = matching;
+  mismatched.factory->deviceIdentity = otherHex;
+  QVERIFY(!parseStatusSnapshot(statusSnapshotToJson(mismatched), &parsed, &key, &text));
+  QCOMPARE(key, QStringLiteral("native.status.factory.identity"));
+  QCOMPARE(parsed, StatusSnapshot{});
 }

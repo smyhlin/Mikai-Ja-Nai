@@ -12,11 +12,13 @@
 
 #include "TestNativeCatalog.hpp"
 
+#include "native/NativeFrameReference.hpp"
 #include "native/NativeInspectedPlan.hpp"
 #include "native/NativeModelInventory.hpp"
 #include "native/NativePaths.hpp"
 #include "native/NativePreparationPlan.hpp"
 
+#include <limits>
 #include <optional>
 
 #include <QtCore/QDir>
@@ -335,6 +337,12 @@ QString realHdModelPath() {
   if (root.isEmpty()) return QString();
   return QDir(root).filePath(QStringLiteral(
       "spatial/onnx/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"));
+}
+
+QString realTemporalModelPath() {
+  const QString root = assetRoot();
+  if (root.isEmpty()) return QString();
+  return QDir(root).filePath(QStringLiteral("rife/onnx/rife_v4.14_lite.onnx"));
 }
 
 QByteArray readAll(const QString& path) {
@@ -1677,6 +1685,150 @@ void TestNativeCatalog::theRealHdGraphKeepsItsDeclaredSymbolicBatchAndProvesTwoB
   QCOMPARE(resolved->verifiedReferenceProfile->output.channels, qint64(3));
 }
 
+void TestNativeCatalog::aTemporalImportProvesTheRawTensorAndKeepsItsOwnedCopy() {
+  const QString modelPath = realTemporalModelPath();
+  if (modelPath.isEmpty()) QSKIP("MIKAI_NATIVE_ASSETS is not set");
+  QString runtimeReason;
+  if (!inspectionRuntimeIsPresent(ortRuntime(), &runtimeReason)) {
+    QSKIP(qPrintable(QStringLiteral("no ONNX Runtime: %1").arg(runtimeReason)));
+  }
+  const QByteArray graphBytes = readAll(modelPath);
+  QVERIFY2(!graphBytes.isEmpty(), qPrintable(modelPath));
+
+  DeclaredBoundaries boundaries;
+  QString inspectKey;
+  QString inspectReason;
+  QVERIFY2(inspectDeclaredBoundaries(ortRuntime(), graphBytes, &boundaries, &inspectKey,
+                                     &inspectReason),
+           qPrintable(inspectReason));
+  QCOMPARE(boundaries.inputs.size(), 1);
+  QCOMPARE(boundaries.outputs.size(), 1);
+  const TensorProfile& inputProfile = boundaries.inputs.first().profile;
+  QVERIFY(inputProfile.rank == 4);
+  QVERIFY(inputProfile.batch == 1);
+  QVERIFY(inputProfile.channels == 11);
+  const qint64 height = inputProfile.height.value_or(64);
+  const qint64 width = inputProfile.width.value_or(64);
+  QVERIFY(height > 0 && width > 0);
+  QVERIFY(height <= std::numeric_limits<int>::max());
+  QVERIFY(width <= std::numeric_limits<int>::max());
+
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  const QString sourcePath = QDir(temp.path()).filePath(QStringLiteral("rife.onnx"));
+  QVERIFY(writeFile(sourcePath, graphBytes));
+  const QString rawPath = QDir(temp.path()).filePath(QStringLiteral("raw-fp16.bin"));
+  const qint64 byteCount = height * width * 11 * 2;
+  QVERIFY(byteCount > 0 && byteCount <= std::numeric_limits<int>::max());
+  QVERIFY(writeFile(rawPath, QByteArray(static_cast<int>(byteCount), '\0')));
+
+  StoreFixture fixture;
+  if (!fixture.isValid()) QSKIP("the app-owned models directory is not writable");
+  ModelInventory inventory(fixture.root());
+  RawReferenceInput raw;
+  raw.name = boundaries.inputs.first().name;
+  raw.dtype = QStringLiteral("fp16");
+  raw.shape = {1, 11, height, width};
+  raw.filePath = rawPath;
+  BackendAvailability backends;
+  backends.available = {Backend::TensorRT};
+  const ModelImportOutcome imported =
+      inventory.importTemporalFile(sourcePath, ortRuntime(), {raw}, backends,
+                                   QStringLiteral("local development"));
+  QVERIFY2(imported.published, qPrintable(imported.reason));
+  QVERIFY2(imported.ok, qPrintable(imported.reason));
+  QCOMPARE(imported.model.record.role, ModelRole::Temporal);
+  QCOMPARE(imported.model.record.actualProfile.input.channels, qint64(11));
+  QCOMPARE(imported.model.record.actualProfile.output.channels, qint64(3));
+  QCOMPARE(imported.model.record.availableBackends, backends.available);
+  QVERIFY(imported.model.record.supportsBackend(Backend::TensorRT));
+  QVERIFY(imported.model.record.availability.isUsable());
+  QVERIFY(imported.model.importResolution.has_value());
+  QVERIFY(imported.model.importResolution->fromCpuReference);
+  QCOMPARE(imported.model.importResolution->input, QSize(static_cast<int>(width),
+                                                          static_cast<int>(height)));
+  QCOMPARE(imported.model.importResolution->output, imported.model.importResolution->input);
+  QCOMPARE(imported.model.importResolution->scale, 1);
+
+  StoreFixture directmlFixture;
+  if (!directmlFixture.isValid()) QSKIP("the app-owned models directory is not writable");
+  ModelInventory directmlInventory(directmlFixture.root());
+  BackendAvailability directmlOnly;
+  directmlOnly.available = {Backend::DirectML};
+  const ModelImportOutcome directmlImport =
+      directmlInventory.importTemporalFile(sourcePath, ortRuntime(), {raw}, directmlOnly);
+  QVERIFY(directmlImport.published);
+  QVERIFY(!directmlImport.ok);
+  QCOMPARE(directmlImport.model.record.role, ModelRole::Temporal);
+  QVERIFY(directmlImport.model.record.availableBackends.isEmpty());
+  QVERIFY(!directmlImport.model.record.supportsBackend(Backend::DirectML));
+  QVERIFY(!directmlImport.model.record.supportsBackend(Backend::TensorRT));
+  QVERIFY(!directmlImport.model.record.availability.isUsable());
+  QCOMPARE(directmlImport.model.record.availability.value, Availability::Unavailable);
+  QCOMPARE(directmlImport.model.record.availability.reasonKey,
+           QStringLiteral("model.backend.unsupported"));
+  QVERIFY(directmlImport.model.record.availability.reason.contains(QStringLiteral("TensorRT")));
+  const QVector<StoredModel> unsupportedRows = directmlInventory.stored();
+  QCOMPARE(unsupportedRows.size(), 1);
+  QCOMPARE(unsupportedRows.first().record.role, ModelRole::Temporal);
+  QVERIFY(!unsupportedRows.first().record.availability.isUsable());
+  QVERIFY(!unsupportedRows.first().record.supportsBackend(Backend::DirectML));
+
+  QVERIFY(writeFile(sourcePath, QByteArrayLiteral("changed source")));
+  const QVector<StoredModel> rows = inventory.stored();
+  QCOMPARE(rows.size(), 1);
+  QCOMPARE(rows.first().record.id, imported.model.record.id);
+  QCOMPARE(rows.first().record.role, ModelRole::Temporal);
+  QCOMPARE(rows.first().record.onnxSha256, sha256HexOf(graphBytes));
+  QCOMPARE(readAll(rows.first().storedPath), graphBytes);
+}
+
+void TestNativeCatalog::temporalImportRejectsSpatialInputsAndCancellationWithoutPublishing() {
+  const QString modelPath = realTemporalModelPath();
+  if (modelPath.isEmpty()) QSKIP("MIKAI_NATIVE_ASSETS is not set");
+  QString runtimeReason;
+  if (!inspectionRuntimeIsPresent(ortRuntime(), &runtimeReason)) {
+    QSKIP(qPrintable(QStringLiteral("no ONNX Runtime: %1").arg(runtimeReason)));
+  }
+  const QByteArray graphBytes = readAll(modelPath);
+  QVERIFY2(!graphBytes.isEmpty(), qPrintable(modelPath));
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  const QString sourcePath = QDir(temp.path()).filePath(QStringLiteral("rife.onnx"));
+  QVERIFY(writeFile(sourcePath, graphBytes));
+  const QString rawPath = QDir(temp.path()).filePath(QStringLiteral("raw-fp16.bin"));
+  QVERIFY(writeFile(rawPath, QByteArray(64 * 64 * 3 * 2, '\0')));
+
+  StoreFixture fixture;
+  if (!fixture.isValid()) QSKIP("the app-owned models directory is not writable");
+  ModelInventory inventory(fixture.root());
+  RawReferenceInput spatialRaw;
+  spatialRaw.name = QStringLiteral("wrong input");
+  spatialRaw.dtype = QStringLiteral("fp16");
+  spatialRaw.shape = {1, 3, 64, 64};
+  spatialRaw.filePath = rawPath;
+  const ModelImportOutcome rejected =
+      inventory.importTemporalFile(sourcePath, ortRuntime(), {spatialRaw});
+  QVERIFY(!rejected.published);
+  QVERIFY(!rejected.reasonKey.isEmpty());
+  QVERIFY(inventory.stored().isEmpty());
+
+  ImportCancellation cancellation;
+  QCOMPARE(cancellation.cancel(), ImportCancellation::CancelResult::CancelledNow);
+  const ModelImportOutcome cancelled =
+      inventory.importTemporalFile(sourcePath, ortRuntime(), {}, BackendAvailability(),
+                                   QString(), &cancellation);
+  QVERIFY(!cancelled.published);
+  QCOMPARE(cancelled.reasonKey, QStringLiteral("native.import.cancelled"));
+  QVERIFY(inventory.stored().isEmpty());
+
+  const ModelImportOutcome spatial =
+      inventory.importFile(sourcePath, ortRuntime(), QSize(64, 64));
+  QVERIFY(!spatial.published);
+  QVERIFY(!spatial.reasonKey.isEmpty());
+  QVERIFY(inventory.stored().isEmpty());
+}
+
 // ------------------------------------------------- the inspected-plan adapter
 
 void TestNativeCatalog::anOwnedDynamicStageResolvesThroughThePlanner() {
@@ -2087,4 +2239,221 @@ void TestNativeCatalog::aRowWhoseBytesDeclareAnotherBoundaryIsRefused() {
   QCOMPARE(key, QStringLiteral("model.owned.profile"));
   QCOMPARE(resolver.lastReasonKey(), QStringLiteral("model.owned.profile"));
   QVERIFY(!resolver.lastReason().isEmpty());
+}
+
+namespace {
+
+constexpr int kOnnxFloat = 1;
+
+QByteArray leBytes(quint64 value, int width) {
+  QByteArray bytes;
+  for (int byte = 0; byte < width; ++byte) {
+    bytes.append(static_cast<char>((value >> (8 * byte)) & 0xff));
+  }
+  return bytes;
+}
+
+QByteArray fp16TensorOf(const QVector<quint16>& samples) {
+  QByteArray bytes;
+  for (const quint16 sample : samples) bytes.append(leBytes(sample, 2));
+  return bytes;
+}
+
+QByteArray fp32TensorOf(const QVector<quint32>& samples) {
+  QByteArray bytes;
+  for (const quint32 sample : samples) bytes.append(leBytes(sample, 4));
+  return bytes;
+}
+
+/// 1x3x1x1, one input `X`, one output `Y`, straight through. Used where the
+/// point under test is the exporter's own gate and any dtype must reach it, so
+/// the graph is limited to data movement rather than arithmetic.
+QByteArray passthroughGraph(int elementType) {
+  const QVector<std::optional<qint64>> dims = {1, 3, 1, 1};
+  return onnxModel({node(QStringLiteral("Identity"), {QStringLiteral("X")},
+                         {QStringLiteral("Y")}, QStringLiteral("identity"))},
+                   {valueInfo(QStringLiteral("X"), elementType, dims)},
+                   {valueInfo(QStringLiteral("Y"), elementType, dims)});
+}
+
+/// The same boundary computed by Add(X, X), so a real run doubles every sample.
+/// Identity returns the input bytes unchanged, which cannot tell a genuine run
+/// apart from a copy of the input file; this cannot, because the output bytes
+/// then differ from the input bytes and so carry their own digest.
+QByteArray doublingGraph(int elementType) {
+  const QVector<std::optional<qint64>> dims = {1, 3, 1, 1};
+  return onnxModel({node(QStringLiteral("Add"), {QStringLiteral("X"), QStringLiteral("X")},
+                         {QStringLiteral("Y")}, QStringLiteral("add"))},
+                   {valueInfo(QStringLiteral("X"), elementType, dims)},
+                   {valueInfo(QStringLiteral("Y"), elementType, dims)});
+}
+
+}  // namespace
+
+void TestNativeCatalog::aReferenceExportWritesTheExactBytesItRanAndNeverOverwrites() {
+  QString runtimeReason;
+  if (!inspectionRuntimeIsPresent(ortRuntime(), &runtimeReason)) {
+    QSKIP(qPrintable(QStringLiteral("no ONNX Runtime: %1").arg(runtimeReason)));
+  }
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+
+  // Add(X, X): the run doubles every sample, so the output bytes differ from
+  // the input bytes and the two digests cannot be confused. fp32 arithmetic is
+  // the case whose CPU kernel support is not in question here.
+  const QByteArray graph = doublingGraph(kOnnxFloat);
+  const QVector<quint32> samples = {0x3F800000u, 0x00000000u, 0x40000000u};  // 1, 0, 2
+  const QByteArray tensor = fp32TensorOf(samples);
+  const QVector<quint32> doubled = {0x40000000u, 0x00000000u, 0x40800000u};  // 2, 0, 4
+  const QByteArray doubledBytes = fp32TensorOf(doubled);
+  const QString inputPath = QDir(temp.path()).filePath(QStringLiteral("in-fp32.bin"));
+  QVERIFY(writeFile(inputPath, tensor));
+
+  ReferenceExportRequest request;
+  request.directory = QDir(temp.path()).filePath(QStringLiteral("export"));
+  RawReferenceInput input;
+  input.name = QStringLiteral("X");
+  input.dtype = QStringLiteral("fp32");
+  input.shape = {1, 3, 1, 1};
+  input.filePath = inputPath;
+  request.rawInputs.append(input);
+
+  ReferenceExport exported;
+  QString reasonKey;
+  QString reason;
+  QVERIFY2(exportCpuFrameReference(ortRuntime(), graph, QStringLiteral("fixture.onnx"), request,
+                                   &exported, &reasonKey, &reason),
+           qPrintable(reason));
+
+  // The manifest names the graph that actually ran, and the files beside it are
+  // the very bytes that were bound - so a consumer can re-derive the digest.
+  QCOMPARE(exported.manifest.value(QStringLiteral("version")).toInt(), 1);
+  QCOMPARE(exported.manifest.value(QStringLiteral("kind")).toString(),
+           QStringLiteral("raw"));
+  QCOMPARE(exported.manifest.value(QStringLiteral("graphSha256")).toString(),
+           sha256HexOf(graph));
+  const QJsonArray inputs = exported.manifest.value(QStringLiteral("inputs")).toArray();
+  QCOMPARE(inputs.size(), 1);
+  QCOMPARE(inputs.at(0).toObject().value(QStringLiteral("sha256")).toString(),
+           sha256HexOf(tensor));
+  QCOMPARE(inputs.at(0).toObject().value(QStringLiteral("bytes")).toInt(), tensor.size());
+
+  const QJsonArray outputs = exported.manifest.value(QStringLiteral("outputs")).toArray();
+  QCOMPARE(outputs.size(), 1);
+  QCOMPARE(inputs.at(0).toObject().value(QStringLiteral("dtype")).toString(),
+           QStringLiteral("fp32"));
+  QCOMPARE(outputs.at(0).toObject().value(QStringLiteral("dtype")).toString(),
+           QStringLiteral("fp32"));
+  const QString outputFile =
+      outputs.at(0).toObject().value(QStringLiteral("file")).toString();
+  QVERIFY(!outputFile.isEmpty());
+  // The run computed, so the output is not a copy of the input: distinct bytes,
+  // distinct digest.
+  QVERIFY(outputs.at(0).toObject().value(QStringLiteral("sha256")).toString() !=
+          inputs.at(0).toObject().value(QStringLiteral("sha256")).toString());
+  QFile output(QDir(exported.directory).filePath(outputFile));
+  QVERIFY(output.open(QIODevice::ReadOnly));
+  QCOMPARE(output.readAll(), doubledBytes);
+
+  // A second export into the same directory is refused and the first one is
+  // left exactly as it was.
+  const QByteArray before = QFile(exported.manifestPath).readAll();
+  ReferenceExport second;
+  QVERIFY(!exportCpuFrameReference(ortRuntime(), graph, QStringLiteral("fixture.onnx"), request,
+                                    &second, &reasonKey, &reason));
+  QCOMPARE(reasonKey, QStringLiteral("reference.directory.exists"));
+  QCOMPARE(QFile(exported.manifestPath).readAll(), before);
+}
+
+void TestNativeCatalog::aReferenceExportRefusesAnInfinityOrNaNOutputBeforeWritingAnything() {
+  QString runtimeReason;
+  if (!inspectionRuntimeIsPresent(ortRuntime(), &runtimeReason)) {
+    QSKIP(qPrintable(QStringLiteral("no ONNX Runtime: %1").arg(runtimeReason)));
+  }
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+
+  const QByteArray fp16Graph = passthroughGraph(kOnnxFloat16);
+  const QByteArray fp32Graph = passthroughGraph(kOnnxFloat);
+  // The exponent alone is what makes a sample non-finite: an all-ones exponent
+  // is an infinity at a zero mantissa and a NaN at any non-zero one, and both
+  // must be refused. A normal value in the same tensor proves the check is not
+  // simply rejecting the tensor. fp32 is a separate dtype with its own helper,
+  // so it is a separate boundary here and not a restatement of the fp16 cases.
+  struct Case {
+    const QByteArray* graph;
+    QString dtype;
+    QByteArray bytes;
+    QString label;
+  };
+  const QVector<Case> cases = {
+      {&fp16Graph, QStringLiteral("fp16"), fp16TensorOf({0x7C00, 0x3C00, 0x3C00}), QStringLiteral("fp16 +inf")},
+      {&fp16Graph, QStringLiteral("fp16"), fp16TensorOf({0xFC00, 0x3C00, 0x3C00}), QStringLiteral("fp16 -inf")},
+      {&fp16Graph, QStringLiteral("fp16"), fp16TensorOf({0x7E00, 0x3C00, 0x3C00}), QStringLiteral("fp16 NaN")},
+      {&fp32Graph, QStringLiteral("fp32"), fp32TensorOf({0x7F800000u, 0x3F800000u, 0x3F800000u}),
+       QStringLiteral("fp32 +inf")},
+      {&fp32Graph, QStringLiteral("fp32"), fp32TensorOf({0xFF800000u, 0x3F800000u, 0x3F800000u}),
+       QStringLiteral("fp32 -inf")},
+      {&fp32Graph, QStringLiteral("fp32"), fp32TensorOf({0x7FC00000u, 0x3F800000u, 0x3F800000u}),
+       QStringLiteral("fp32 NaN")},
+  };
+  for (qsizetype i = 0; i < cases.size(); ++i) {
+    const Case& item = cases.at(i);
+    const QString inputPath =
+        QDir(temp.path()).filePath(QStringLiteral("nonfinite-%1.bin").arg(i));
+    QVERIFY(writeFile(inputPath, item.bytes));
+
+    const QString directory =
+        QDir(temp.path()).filePath(QStringLiteral("export-%1").arg(i));
+    ReferenceExportRequest request;
+    request.directory = directory;
+    RawReferenceInput input;
+    input.name = QStringLiteral("X");
+    input.dtype = item.dtype;
+    input.shape = {1, 3, 1, 1};
+    input.filePath = inputPath;
+    request.rawInputs.append(input);
+
+    ReferenceExport exported;
+    QString reasonKey;
+    QString reason;
+    QVERIFY2(!exportCpuFrameReference(ortRuntime(), *item.graph, QStringLiteral("fixture.onnx"),
+                                      request, &exported, &reasonKey, &reason),
+             qPrintable(QStringLiteral("%1 was accepted").arg(item.label)));
+    QCOMPARE(reasonKey, QStringLiteral("reference.output.nonFinite"));
+    // Nothing is written for a reference that cannot be compared.
+    QVERIFY(!QFileInfo(directory).exists());
+  }
+}
+
+void TestNativeCatalog::aReferenceExportRefusesARawTensorWhoseBytesDoNotMatchItsShape() {
+  QString runtimeReason;
+  if (!inspectionRuntimeIsPresent(ortRuntime(), &runtimeReason)) {
+    QSKIP(qPrintable(QStringLiteral("no ONNX Runtime: %1").arg(runtimeReason)));
+  }
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+
+  const QByteArray graph = passthroughGraph(kOnnxFloat16);
+  // 1x3x1x1 fp16 needs six bytes; three would otherwise be bound as whatever
+  // happened to follow them in memory.
+  const QString inputPath = QDir(temp.path()).filePath(QStringLiteral("short-fp16.bin"));
+  QVERIFY(writeFile(inputPath, fp16TensorOf({0x3C00})));
+
+  ReferenceExportRequest request;
+  request.directory = QDir(temp.path()).filePath(QStringLiteral("export"));
+  RawReferenceInput input;
+  input.name = QStringLiteral("X");
+  input.dtype = QStringLiteral("fp16");
+  input.shape = {1, 3, 1, 1};
+  input.filePath = inputPath;
+  request.rawInputs.append(input);
+
+  ReferenceExport exported;
+  QString reasonKey;
+  QString reason;
+  QVERIFY(!exportCpuFrameReference(ortRuntime(), graph, QStringLiteral("fixture.onnx"), request,
+                                    &exported, &reasonKey, &reason));
+  QCOMPARE(reasonKey, QStringLiteral("reference.inputs.bytes"));
+  QVERIFY(!QFileInfo(request.directory).exists());
 }

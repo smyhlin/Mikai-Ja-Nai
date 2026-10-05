@@ -20,6 +20,15 @@ class TestRuntimeSelection : public QObject {
     void aRefusedNativeRequestFallsBackToStandardAndNamesWhy();
     void aResolvedNativeHandoffCarriesItsDependencyClosureAndProtocol();
     void aStaleOrForgedBundleIsRefusedBeforeTheLoader();
+    void publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall();
+
+    // The M07 loader handoff and the M08 failure surfaces. These stay ahead of
+    // the live cases because none of them loads a module: once one is pinned the
+    // whole process keeps it, so these have to run while nothing is selected.
+    void theLoaderPinsExactlyTheValidatedClosure();
+    void anUnresolvedSelectionNeverReachesTheLoaderWithACapabilityClaim();
+    void theUnavailablePlaybackLineNamesTheSameReasonAsTheStatusLine();
+
     void selectingStandardLoadsTheStockRuntimeWithoutTouchingIt();
     void aDifferentChoiceNeverHotSwapsThePinnedModule();
 };

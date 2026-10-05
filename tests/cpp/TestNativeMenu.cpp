@@ -29,8 +29,12 @@ using mplayer::native::menu::levelRows;
 using mplayer::native::menu::nativeRows;
 using mplayer::native::menu::ownsLevel;
 using mplayer::native::menu::rifeRows;
+using mplayer::native::menu::rootRows;
 using mplayer::native::menu::statusLines;
 using mplayer::native::menu::toggleShortcut;
+using mplayer::native::rifeModelName;
+using mplayer::native::RifeVariant;
+using mplayer::native::RifeVersion;
 
 namespace {
 
@@ -377,27 +381,195 @@ void TestNativeMenu::effectiveOnlyWhenTheSnapshotSaysActive() {
   QVERIFY(effective->label != pendingLabel);
 }
 
-void TestNativeMenu::rifePageHoldsTheFourOriginalVariantsAllBlocked() {
+void TestNativeMenu::rootRowsOwnsNativeAndRifeLevels() {
+  const QVector<Row> roots = rootRows(unavailableInputs());
+  QCOMPARE(roots.size(), 2);
+  QVERIFY(ownsLevel(QStringLiteral("native")));
+  QVERIFY(ownsLevel(QStringLiteral("rife")));
+  QVERIFY(!ownsLevel(QStringLiteral("realesrgan")));
+
+  const Row* native = findRow(roots, QStringLiteral("native"));
+  const Row* rife = findRow(roots, QStringLiteral("rife"));
+  QVERIFY(native != nullptr);
+  QVERIFY(rife != nullptr);
+  // The shell drills with `level|<value>`, so the value is the exact level id.
+  QCOMPARE(native->value, QStringLiteral("native"));
+  QCOMPARE(rife->value, QStringLiteral("rife"));
+  QVERIFY(native->submenu);
+  QVERIFY(rife->submenu);
+  QVERIFY(!native->disabled);
+  QVERIFY(!rife->disabled);
+}
+
+namespace {
+NativeRecipeOption temporalRecipe(const QString& id, const QString& model,
+                                  Availability availability) {
+  NativeRecipeOption option;
+  option.id = id;
+  option.label = id;
+  option.availability = availability == Availability::Ready
+                            ? mplayer::native::readyAvailability()
+                            : mplayer::native::unavailableAvailability(
+                                  QStringLiteral("native.recipeUnavailable"),
+                                  QStringLiteral("The recipe is not available."));
+  option.rifeModel = model;
+  return option;
+}
+
+QString fullModel() { return rifeModelName(RifeVersion::V4_14, RifeVariant::Full, false); }
+QString liteModel() { return rifeModelName(RifeVersion::V4_14, RifeVariant::Lite, false); }
+QString fullEnsembleModel() {
+  return rifeModelName(RifeVersion::V4_14, RifeVariant::Full, true);
+}
+QString liteEnsembleModel() {
+  return rifeModelName(RifeVersion::V4_14, RifeVariant::Lite, true);
+}
+
+Inputs usableRifeInputs(const QString& recipeId, const QString& model) {
+  Inputs inputs;
+  inputs.availability.engineAvailable = true;
+  inputs.availability.backends = {Backend::TensorRT};
+  inputs.availability.recipes = {temporalRecipe(recipeId, model, Availability::Ready)};
+  inputs.preferences.enabled = true;
+  inputs.preferences.backend = Backend::TensorRT;
+  inputs.preferences.recipeId = recipeId;
+  return inputs;
+}
+}  // namespace
+
+void TestNativeMenu::rifeRootStaysAvailableWithNoConfiguredRecipe() {
+  // No stored temporal recipe: the RIFE root and page stay available so the
+  // page can explain the gap, with one honest disabled row per variant.
+  const QVector<Row> roots = rootRows(unavailableInputs());
+  QVERIFY(findRow(roots, QStringLiteral("rife")) != nullptr);
+
   const QVector<Row> rows = rifeRows(unavailableInputs());
-  QStringList ids;
+  QCOMPARE(rows.size(), 4);
   for (const Row& row : rows) {
-    ids.append(row.id);
     QVERIFY(row.disabled);
-    QVERIFY(!row.tooltip.isEmpty());
     QVERIFY(row.action == Action::None);
     QVERIFY(!row.submenu);
+    QVERIFY(row.value.isEmpty());
   }
-  std::sort(ids.begin(), ids.end());
-  QStringList expected = {QStringLiteral("rife/rife_v4.14"),
-                          QStringLiteral("rife/rife_v4.14_ensemble"),
-                          QStringLiteral("rife/rife_v4.14_lite"),
-                          QStringLiteral("rife/rife_v4.14_lite_ensemble")};
-  std::sort(expected.begin(), expected.end());
-  QCOMPARE(ids, expected);
-
-  // The page is reached through the real tree, not through a new button.
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + fullModel()) != nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + liteModel()) != nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + fullEnsembleModel()) != nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + liteEnsembleModel()) != nullptr);
   QVERIFY(ownsLevel(QStringLiteral("rife")));
-  QCOMPARE(levelRows(QStringLiteral("rife"), unavailableInputs()).size(), rows.size());
+}
+
+void TestNativeMenu::usableRifeRecipeIsChoosableWithItsExactId() {
+  const QString id = QStringLiteral("recipe:sha256:abc:tensorrt");
+  const Inputs inputs = usableRifeInputs(id, liteModel());
+
+  const QVector<Row> rows = rifeRows(inputs);
+  const Row* row = findRow(rows, QStringLiteral("rife/recipe/") + id);
+  QVERIFY(row != nullptr);
+  QVERIFY(!row->disabled);
+  QVERIFY(row->action == Action::SetRecipe);
+  // The shell spells the value into `native|recipe|<value>`, so the exact
+  // saved id is what the existing SetRecipe action receives.
+  QCOMPARE(row->value, id);
+  QVERIFY(row->current);
+
+  // The configured variant leaves no missing-variant shadow behind it.
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + liteModel()) == nullptr);
+  // The other variants still ask for configuration with the runtime gap.
+  const Row* missing = findRow(rows, QStringLiteral("rife/") + fullModel());
+  QVERIFY(missing != nullptr);
+  QVERIFY(missing->disabled);
+  QVERIFY(missing->action == Action::None);
+}
+
+void TestNativeMenu::unavailableRifeRecipeStaysDisabledWithItsOwnReason() {
+  Inputs inputs;
+  inputs.availability.engineAvailable = true;
+  inputs.availability.backends = {Backend::TensorRT};
+  inputs.availability.recipes = {
+      temporalRecipe(QStringLiteral("recipe:sha256:abc:tensorrt"), liteModel(),
+                     Availability::Unavailable)};
+  inputs.preferences.enabled = true;
+  inputs.preferences.backend = Backend::TensorRT;
+  inputs.preferences.recipeId = QStringLiteral("recipe:sha256:abc:tensorrt");
+
+  const QVector<Row> rows = rifeRows(inputs);
+  const Row* row =
+      findRow(rows, QStringLiteral("rife/recipe/recipe:sha256:abc:tensorrt"));
+  QVERIFY(row != nullptr);
+  QVERIFY(row->disabled);
+  QVERIFY(row->action == Action::SetRecipe);
+  QCOMPARE(row->value, QStringLiteral("recipe:sha256:abc:tensorrt"));
+  QVERIFY(row->current);
+  QVERIFY(row->tooltip.contains(QStringLiteral("The recipe is not available.")));
+}
+
+void TestNativeMenu::rifeVariantsNeverCrossRouteAndDuplicatesStaySelectable() {
+  // Two stored recipes for the same variant stay separately selectable; a full
+  // recipe never answers for a lite row.
+  Inputs inputs;
+  inputs.availability.engineAvailable = true;
+  inputs.availability.backends = {Backend::TensorRT};
+  inputs.availability.recipes = {
+      temporalRecipe(QStringLiteral("recipe:sha256:aaa:tensorrt"), liteModel(),
+                     Availability::Ready),
+      temporalRecipe(QStringLiteral("recipe:sha256:bbb:tensorrt"), liteModel(),
+                     Availability::Ready)};
+  inputs.preferences.enabled = true;
+  inputs.preferences.backend = Backend::TensorRT;
+  inputs.preferences.recipeId = QStringLiteral("recipe:sha256:aaa:tensorrt");
+
+  const QVector<Row> rows = rifeRows(inputs);
+  const Row* first = findRow(rows, QStringLiteral("rife/recipe/recipe:sha256:aaa:tensorrt"));
+  const Row* second = findRow(rows, QStringLiteral("rife/recipe/recipe:sha256:bbb:tensorrt"));
+  QVERIFY(first != nullptr);
+  QVERIFY(second != nullptr);
+  QVERIFY(!first->disabled);
+  QVERIFY(!second->disabled);
+  QCOMPARE(first->value, QStringLiteral("recipe:sha256:aaa:tensorrt"));
+  QCOMPARE(second->value, QStringLiteral("recipe:sha256:bbb:tensorrt"));
+  QVERIFY(first->current);
+  QVERIFY(!second->current);
+  // The configured variant has no missing shadow; the untouched variants do.
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + liteModel()) == nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + fullModel()) != nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + fullEnsembleModel()) != nullptr);
+  QVERIFY(findRow(rows, QStringLiteral("rife/") + liteEnsembleModel()) != nullptr);
+}
+
+void TestNativeMenu::rifeCurrentMarkSurvivesReordering() {
+  Inputs inputs;
+  inputs.availability.engineAvailable = true;
+  inputs.availability.backends = {Backend::TensorRT};
+  inputs.availability.recipes = {
+      temporalRecipe(QStringLiteral("recipe:sha256:aaa:tensorrt"), liteModel(),
+                     Availability::Ready),
+      temporalRecipe(QStringLiteral("recipe:sha256:bbb:tensorrt"), fullModel(),
+                     Availability::Ready)};
+  inputs.preferences.enabled = true;
+  inputs.preferences.backend = Backend::TensorRT;
+  inputs.preferences.recipeId = QStringLiteral("recipe:sha256:aaa:tensorrt");
+
+  QVector<Row> rows = rifeRows(inputs);
+  const int firstIndex =
+      indexOfRow(rows, QStringLiteral("rife/recipe/recipe:sha256:aaa:tensorrt"));
+  QVERIFY(firstIndex >= 0);
+  QVERIFY(rows.at(firstIndex).current);
+
+  std::swap(inputs.availability.recipes[0], inputs.availability.recipes[1]);
+  rows = rifeRows(inputs);
+  const int secondIndex =
+      indexOfRow(rows, QStringLiteral("rife/recipe/recipe:sha256:aaa:tensorrt"));
+  QVERIFY(secondIndex >= 0);
+  QVERIFY(rows.at(secondIndex).current);
+  QVERIFY(firstIndex != secondIndex);
+  int currents = 0;
+  for (const Row& row : rows) {
+    if (row.current) {
+      ++currents;
+      QCOMPARE(row.id, QStringLiteral("rife/recipe/recipe:sha256:aaa:tensorrt"));
+    }
+  }
+  QCOMPARE(currents, 1);
 }
 
 void TestNativeMenu::realesrganAndOtherModelsStayPlaceholders() {

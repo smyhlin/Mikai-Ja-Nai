@@ -47,7 +47,7 @@ QPushButton* playerSeriesToggle(QWidget* root) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
     const bool disposeEarly = app.arguments().contains(QStringLiteral("--dispose-early"));

@@ -16,6 +16,7 @@ class TestNativeStatus : public QObject {
   void aCadenceOrGeometryThatContradictsTheStageShapeIsRefused();
   void absentRatesAreRefusedForActiveAndNeverSerialisedAsZero();
   void countersMustAgreeWithTheEffectivePlan();
+  void interpolationCountersFollowTheActualRationalFactor();
   void aFailedRequestKeepsTheNewRequestAndTheOldEffectivePlan();
   void theReasonIsEmptyExactlyForActive();
   void anAbsentBlockIsNeverSynthesisedFromAnother();
@@ -25,6 +26,18 @@ class TestNativeStatus : public QObject {
   void aRefusedSnapshotHaltsThePollInsteadOfRepeatingIt();
   void aPreparingSnapshotIsPublishedAsPreparingAndNeverAsReady();
   void anEffectivePlanUnderAStateThatRunsNothingIsRefused();
+  void anObservedProbeRoundTripsAndIsNeverPromotedToReady();
+  void aMalformedProbeIdentityIsRefusedByName();
+  void aContradictingProbeGeometryIsRefusedByName();
+  void aSensitiveProbeTagIsRefusedWithoutEcho();
+  void aUsableFactoryIsEarnedByAnObservedAnswerOnAMeasuredDevice();
+  void aFactoryClaimsARoleOnlyWhenItsAnswerWasObservedAndRefusalFree();
+  void anUnavailableFactoryNamesItsReasonAndKeepsTheRestOfTheSnapshot();
+  void aFactoryStatesItsOwnIdentityAndTypesInsteadOfBeingConflated();
+  void aFactoryObservationNeverMovesTheStateOrTheCounters();
+  void aSensitiveFactoryValueIsRefusedRawAndWithheldFromTheExport();
+  void aFactoryAbsentFromTheNewDocumentIsNotCarriedOverFromTheOldOne();
+  void aFactoryDeviceThatDoesNotMatchTheProbedSourceIsNeverRewrittenIntoOne();
 
   void aCoreWithoutTheFilterReportsUnavailableWithAReason();
   void oneOutstandingRequestIsReissuedAtTheBoundedCadence();

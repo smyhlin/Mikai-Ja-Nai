@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <functional>
 #include <initializer_list>
+#include <memory>
 
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
@@ -356,6 +357,54 @@ PipFloat* awaitVisiblePipFloat(int timeoutMs = 6000) {
     return pip;
 }
 
+/// What the owning player actually did with one parentless float.
+///
+/// A QPointer answers "is it alive" and stops there. It cannot answer the two
+/// questions the pooled release has to get right: destroyed ONCE, and not
+/// destroyed while the player's own QOpenGLWidget is still on screen - the
+/// second is the DrvPresentBuffers fault the pool exists to avoid, and it is
+/// invisible from a pointer that is merely null afterwards. A parentless
+/// top-level widget gives exactly one notice, `destroyed`, so that is what is
+/// counted, and the main surface is read inside the handler: it is alive there
+/// (the dialog owns it and outlives its own destructor body), which is exactly
+/// the read that decides whether the release is ordered.
+struct FloatRelease {
+    int destroyed = 0;
+    bool mainAliveAtDestroy = false;
+    bool mainVisibleAtDestroy = false;
+};
+
+/// Starts counting one float's destruction against the player's own surface.
+std::shared_ptr<FloatRelease> watchFloatRelease(PipFloat* floatWindow, VideoSurface* mainSurface) {
+    auto release = std::make_shared<FloatRelease>();
+    // Guards, not raw pointers: the read runs from the float's destruction,
+    // and the surface it reads belongs to a dialog freed moments later.
+    QPointer<VideoSurface> main(mainSurface);
+    QObject::connect(floatWindow, &QObject::destroyed, [release, main] {
+        ++release->destroyed;
+        release->mainAliveAtDestroy = !main.isNull();
+        release->mainVisibleAtDestroy = !main.isNull() && main->isVisible();
+    });
+    return release;
+}
+
+/// The player's own surface. The float is parentless, so every VideoSurface
+/// under the dialog belongs to the main player.
+VideoSurface* playerSurface(PlayerDialog* dialog) {
+    return dialog != nullptr ? dialog->findChild<VideoSurface*>() : nullptr;
+}
+
+/// How many floats are still parentless top-level windows. Once every player
+/// is gone this has to be zero: a float outliving its owner is a whole
+/// QOpenGLWidget and mpv core that nothing is left to release.
+int livePipFloats() {
+    int live = 0;
+    for (QWidget* w : QApplication::topLevelWidgets()) {
+        if (qobject_cast<PipFloat*>(w) != nullptr) ++live;
+    }
+    return live;
+}
+
 /// Runs the probe's stages one at a time, in order.
 ///
 /// The stages used to be keyed to absolute clock times, so a stage that ran
@@ -427,7 +476,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
 
@@ -1642,6 +1691,14 @@ int main(int argc, char** argv) {
         // player is WA_DeleteOnClose, so a raw look at the float once the
         // player is freed is the use-after-free this probe has to avoid.
         QPointer<PipFloat> activeFloatGuard(floatWindow);
+        // A null guard afterwards only says the float is gone. This counts HOW
+        // MANY times it was destroyed, and reads the player's own surface at
+        // that instant: the float here was UP, so a release that ran while the
+        // main surface was still visible is the DrvPresentBuffers fault, and a
+        // second destroy of the same window is a double free. Neither is
+        // visible from the guard alone.
+        auto activeRelease = watchFloatRelease(floatWindow, playerSurface(second));
+        const int floatsBefore = livePipFloats();
         if (close != nullptr) {
             close->click();
             QTest::qWait(2500);
@@ -1669,6 +1726,21 @@ int main(int argc, char** argv) {
         // live top-level float, its QOpenGLWidget and its mpv core.
         waitFor([&] { return activeFloatGuard.isNull(); }, 4000);
         check(activeFloatGuard.isNull(), "closing the player destroyed the float it had up");
+        std::fprintf(stderr,
+                     "     active float release: destroyed=%d mainAliveAtDestroy=%d "
+                     "mainVisibleAtDestroy=%d floatsBefore=%d floatsAfter=%d\n",
+                     activeRelease->destroyed, int(activeRelease->mainAliveAtDestroy),
+                     int(activeRelease->mainVisibleAtDestroy), floatsBefore, livePipFloats());
+        check(activeRelease->destroyed == 1,
+              "closing the player destroyed the float it had up exactly once");
+        check(activeRelease->mainAliveAtDestroy,
+              "the float was released while the player still owned its surface");
+        // The order, stated as the fault it prevents: the parked/up float's GL
+        // widget must not be torn down while the main one is on screen.
+        check(!activeRelease->mainVisibleAtDestroy,
+              "the float's GL widget was torn down with the player's surface off screen");
+        check(livePipFloats() == floatsBefore - 1,
+              "closing the player left no parentless float behind");
     });
 
     // The parked float is what a restore leaves behind, and it has to belong to
@@ -1727,6 +1799,12 @@ int main(int argc, char** argv) {
             return;
         }
         QPointer<PipFloat> parkedFloatGuard(parkedFloat);
+        // Same count, and the same read of the main surface, for the case the
+        // pool exists for: the float is HIDDEN here, so a main surface still
+        // on screen at the moment of the delete is not a hidden-window save -
+        // it is the same fault, one state further along.
+        auto parkedRelease = watchFloatRelease(parkedFloat, playerSurface(parked));
+        const int floatsBefore = livePipFloats();
         auto clickRestore = [](PipFloat* pip) -> bool {
             auto* restore = pip->findChild<QPushButton*>(QStringLiteral("pipRestore"));
             if (restore == nullptr) return false;
@@ -1746,6 +1824,8 @@ int main(int argc, char** argv) {
         check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
                   !parkedFloatGuard->isVisible(),
               "the restore parked the float instead of destroying it");
+        check(parkedRelease->destroyed == 0,
+              "leaving PiP destroyed nothing - the float is pooled, not freed");
         if (parkedGuard == nullptr || parkedFloatGuard == nullptr) {
             // Still open in the second case: a window left on screen would
             // skew every stage after this one.
@@ -1771,6 +1851,8 @@ int main(int argc, char** argv) {
         check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
                   !parkedFloatGuard->isVisible(),
               "the float is parked again before its player is closed");
+        check(parkedRelease->destroyed == 0,
+              "the second leave parked the reused float instead of destroying it");
 
         // Close the owner with the float parked. The float is parentless, so
         // that destructor is the only path that releases it - this is the case
@@ -1790,6 +1872,19 @@ int main(int argc, char** argv) {
         }
         check(parkedFloatGuard.isNull(),
               "closing the player destroyed the float it had parked");
+        std::fprintf(stderr,
+                     "     parked float release: destroyed=%d mainAliveAtDestroy=%d "
+                     "mainVisibleAtDestroy=%d floatsBefore=%d floatsAfter=%d\n",
+                     parkedRelease->destroyed, int(parkedRelease->mainAliveAtDestroy),
+                     int(parkedRelease->mainVisibleAtDestroy), floatsBefore, livePipFloats());
+        check(parkedRelease->destroyed == 1,
+              "closing the player released the parked float exactly once");
+        check(parkedRelease->mainAliveAtDestroy,
+              "the parked float was released with the dialog that owned it");
+        check(!parkedRelease->mainVisibleAtDestroy,
+              "the parked float's GL widget went with the player's surface off screen");
+        check(livePipFloats() == floatsBefore - 1,
+              "closing the parked-case player left no parentless float behind");
     });
 
     // Esc unwinds one layer per press - picker, then the shell's own popover,

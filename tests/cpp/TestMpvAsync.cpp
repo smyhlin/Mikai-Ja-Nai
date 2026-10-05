@@ -8,12 +8,15 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
+#include "VideoSurface.hpp"
 
 using mplayer::AsyncReply;
 using mplayer::AsyncRequestId;
@@ -192,6 +195,127 @@ void TestMpvAsync::aHandleWithoutASelectedRuntimeIsRefused() {
         QVERIFY(QString::fromStdString(error.what()).contains(QStringLiteral("MpvApi::load")));
     }
     QVERIFY(refused);
+}
+
+// ── public FPS provenance policy; no mpv runtime required ──────────────────
+
+void TestMpvAsync::fpsSelectorPrefersValidMpvOutput() {
+    const auto resolved =
+        mplayer::resolveStreamFps(std::optional<double>{59.94}, 24.0, true);
+
+    QCOMPARE(resolved.framesPerSecond, 59.94);
+    QCOMPARE(resolved.source, mplayer::StreamFpsSource::MpvOutput);
+}
+
+void TestMpvAsync::fpsSelectorFallsBackToContainerForInvalidOutput_data() {
+    QTest::addColumn<bool>("hasOutput");
+    QTest::addColumn<double>("output");
+    QTest::addColumn<double>("container");
+
+    QTest::newRow("absent-output") << false << 0.0 << 23.976;
+    QTest::newRow("zero-output") << true << 0.0 << 23.976;
+    QTest::newRow("negative-output") << true << -1.0 << 23.976;
+    QTest::newRow("nan-output") << true << std::numeric_limits<double>::quiet_NaN() << 23.976;
+    QTest::newRow("infinite-output") << true << std::numeric_limits<double>::infinity() << 23.976;
+}
+
+void TestMpvAsync::fpsSelectorFallsBackToContainerForInvalidOutput() {
+    QFETCH(bool, hasOutput);
+    QFETCH(double, output);
+    QFETCH(double, container);
+
+    const std::optional<double> observed =
+        hasOutput ? std::optional<double>{output} : std::nullopt;
+    const auto resolved = mplayer::resolveStreamFps(observed, container, true);
+
+    QCOMPARE(resolved.framesPerSecond, container);
+    QCOMPARE(resolved.source, mplayer::StreamFpsSource::Container);
+}
+
+void TestMpvAsync::fpsSelectorIgnoresStaleRatesWhenInactive_data() {
+    QTest::addColumn<bool>("hasOutput");
+    QTest::addColumn<double>("output");
+    QTest::addColumn<double>("container");
+
+    QTest::newRow("stale-output-and-container") << true << 60.0 << 24.0;
+    QTest::newRow("stale-container-only") << false << 0.0 << 24.0;
+}
+
+void TestMpvAsync::fpsSelectorIgnoresStaleRatesWhenInactive() {
+    QFETCH(bool, hasOutput);
+    QFETCH(double, output);
+    QFETCH(double, container);
+
+    const std::optional<double> observed =
+        hasOutput ? std::optional<double>{output} : std::nullopt;
+    const auto resolved = mplayer::resolveStreamFps(observed, container, false);
+
+    QCOMPARE(resolved.framesPerSecond, 0.0);
+    QCOMPARE(resolved.source, mplayer::StreamFpsSource::Unknown);
+}
+
+void TestMpvAsync::fpsSelectorReturnsUnknownWithoutFinitePositiveRate_data() {
+    QTest::addColumn<bool>("hasOutput");
+    QTest::addColumn<double>("output");
+    QTest::addColumn<double>("container");
+
+    QTest::newRow("both-absent-or-zero") << false << 0.0 << 0.0;
+    QTest::newRow("nonpositive") << true << -1.0 << -24.0;
+    QTest::newRow("nan-candidates") << true << std::numeric_limits<double>::quiet_NaN()
+                                      << std::numeric_limits<double>::quiet_NaN();
+    QTest::newRow("infinite-candidates") << true << std::numeric_limits<double>::infinity()
+                                           << std::numeric_limits<double>::infinity();
+    QTest::newRow("invalid-container-only") << false << 0.0
+                                               << std::numeric_limits<double>::infinity();
+}
+
+void TestMpvAsync::fpsSelectorReturnsUnknownWithoutFinitePositiveRate() {
+    QFETCH(bool, hasOutput);
+    QFETCH(double, output);
+    QFETCH(double, container);
+
+    const std::optional<double> observed =
+        hasOutput ? std::optional<double>{output} : std::nullopt;
+    const auto resolved = mplayer::resolveStreamFps(observed, container, true);
+
+    QCOMPARE(resolved.framesPerSecond, 0.0);
+    QCOMPARE(resolved.source, mplayer::StreamFpsSource::Unknown);
+}
+
+// ── native-status polling policy; no mpv runtime required ──────────────────
+
+void TestMpvAsync::probeSnapshotsKeepTheStatusReaderPolling_data() {
+    QTest::addColumn<int>("state");
+    QTest::addColumn<bool>("keepsPolling");
+
+    // The producer publishes Probe before it has adopted a decoded frame, and
+    // its own document names exactly that ("the decoder device identity is not
+    // available"). Halting there is what left an attached probe unreadable.
+    QTest::newRow("probe-before-any-frame") << static_cast<int>(mplayer::native::NativeState::Probe)
+                                            << true;
+    QTest::newRow("active") << static_cast<int>(mplayer::native::NativeState::Active) << true;
+    QTest::newRow("preparing") << static_cast<int>(mplayer::native::NativeState::Preparing)
+                               << true;
+    // Every other state repeats identically until a new request arrives.
+    QTest::newRow("off") << static_cast<int>(mplayer::native::NativeState::Off) << false;
+    QTest::newRow("needs-preparation")
+        << static_cast<int>(mplayer::native::NativeState::NeedsPreparation) << false;
+    QTest::newRow("suspended") << static_cast<int>(mplayer::native::NativeState::Suspended)
+                               << false;
+    QTest::newRow("failed") << static_cast<int>(mplayer::native::NativeState::Failed) << false;
+    QTest::newRow("unsupported") << static_cast<int>(mplayer::native::NativeState::Unsupported)
+                                 << false;
+    QTest::newRow("deactivated") << static_cast<int>(mplayer::native::NativeState::Deactivated)
+                                 << false;
+}
+
+void TestMpvAsync::probeSnapshotsKeepTheStatusReaderPolling() {
+    QFETCH(int, state);
+    QFETCH(bool, keepsPolling);
+
+    QCOMPARE(mplayer::nativeSnapshotKeepsPolling(
+                 static_cast<mplayer::native::NativeState>(state)),
+             keepsPolling);
 }
 
 // ── transport against a real core ──────────────────────────────────────────

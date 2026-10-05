@@ -1,7 +1,9 @@
 #include "TestNativeBundle.hpp"
 
+#include "native/NativeArtifactStore.hpp"
 #include "native/NativeBundle.hpp"
 #include "native/NativePaths.hpp"
+#include "native/NativePeImage.hpp"
 
 #include <algorithm>
 
@@ -111,6 +113,27 @@ QByteArray syntheticPe(const QStringList& imports, const QStringList& delayImpor
     return image;
 }
 
+void putPe32(QByteArray& image, qsizetype at, quint32 value) {
+    for (int i = 0; i < 4; ++i) image[at + i] = char(value >> (8 * i));
+}
+
+QByteArray exportedPe(const QByteArray& name) {
+    QByteArray image = syntheticPe({});
+    putPe32(image, 0x98 + 112, 0x1200);
+    putPe32(image, 0x98 + 116, 0x100);
+    putPe32(image, 0x600 + 20, 1);
+    putPe32(image, 0x600 + 24, 1);
+    putPe32(image, 0x600 + 28, 0x1250);
+    putPe32(image, 0x600 + 32, 0x1254);
+    putPe32(image, 0x600 + 36, 0x1258);
+    putPe32(image, 0x650, 0x1300);
+    putPe32(image, 0x654, 0x1270);
+    std::copy(name.cbegin(), name.cend(), image.begin() + 0x670);
+    image[0x670 + name.size()] = '\0';
+    image[0x700] = char(0xc3);
+    return image;
+}
+
 QByteArray junk() { return QByteArrayLiteral("not a portable executable at all"); }
 
 QString digestOf(const QByteArray& data) {
@@ -206,6 +229,82 @@ Fixture nativeFixture(const QString& version = QStringLiteral("2.1.0")) {
     return fixture;
 }
 
+/// The complete, coherent preparation block a real prepared bundle carries: one
+/// known backend type, an observed (non-placeholder) source pin and ABI, the
+/// three tool executables, and the three provider runtime directories. The paths
+/// are the ones `preparedNativeFixture` actually declares and writes.
+QJsonObject completePreparationBlock() {
+    return QJsonObject{
+        {QStringLiteral("types"), QJsonArray{bundlePreparationTypes().value(0)}},
+        {QStringLiteral("source"),
+         QJsonObject{{QStringLiteral("coreSha"), QString(40, QLatin1Char('a'))},
+                     {QStringLiteral("sourceAbi"), 3}}},
+        {QStringLiteral("tools"),
+         QJsonObject{{QStringLiteral("inspect"), QStringLiteral("tools/inspect.exe")},
+                     {QStringLiteral("prep"), QStringLiteral("tools/prep.exe")},
+                     {QStringLiteral("verifier"), QStringLiteral("tools/verifier.exe")}}},
+        {QStringLiteral("runtime"),
+         QJsonObject{{QStringLiteral("ort"), QStringLiteral("ort")},
+                     {QStringLiteral("trt"), QStringLiteral("trt")},
+                     {QStringLiteral("cuda"), QStringLiteral("cuda")}}}};
+}
+
+/// A Native bundle whose inventory holds everything a preparation block names:
+/// the core, the dispatcher that owns the source ABI, the one backend library a
+/// declared type resolves to, three tool executables, and three provider runtime
+/// directories each carrying a declared DLL and therefore declared as a
+/// dependency. Nothing here claims the toolchain runs; it is the layout the
+/// reader accepts.
+Fixture preparedNativeFixture(const QString& version = QStringLiteral("3.0.0")) {
+    Fixture fixture;
+    fixture.kind = QStringLiteral("native");
+    fixture.version = version;
+    fixture.deps = {QStringLiteral("ort"), QStringLiteral("trt"), QStringLiteral("cuda")};
+    fixture.protocolVersion = kNativeProtocol;
+    fixture.engineSchemaVersion = kNativeEngineSchema;
+    const QString producer = bundlePreparationProducerLibrary();
+    const QString backend = bundlePreparationBackendLibrary(bundlePreparationTypes().value(0));
+    fixture.files.insert(QStringLiteral("libmpv-2.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll"), producer}));
+    fixture.files.insert(producer, syntheticPe({QStringLiteral("kernel32.dll")}));
+    fixture.files.insert(backend, syntheticPe({QStringLiteral("kernel32.dll")}));
+    fixture.files.insert(QStringLiteral("tools/inspect.exe"), QByteArrayLiteral("inspect helper"));
+    fixture.files.insert(QStringLiteral("tools/prep.exe"), QByteArrayLiteral("prep helper"));
+    fixture.files.insert(QStringLiteral("tools/verifier.exe"), QByteArrayLiteral("verify helper"));
+    fixture.files.insert(QStringLiteral("ort/onnxruntime.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll")}));
+    fixture.files.insert(QStringLiteral("trt/nvinfer_10.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll")}));
+    fixture.files.insert(QStringLiteral("cuda/cudart64_12.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll")}));
+    return fixture;
+}
+
+/// Writes a fixture's files and a manifest carrying `preparation` verbatim.
+/// `preparation` may be any JSON shape, including a partial or malformed one, so
+/// the refusal tests exercise the reader rather than the fixture builder.
+bool writePreparedFixture(const QString& root, const Fixture& fixture,
+                          const QJsonValue& preparation = completePreparationBlock()) {
+    if (!QDir().mkpath(root)) return false;
+    for (auto it = fixture.files.cbegin(); it != fixture.files.cend(); ++it) {
+        if (!writeFile(QDir(root).filePath(it.key()), it.value())) return false;
+    }
+    QJsonObject manifest = manifestFor(fixture);
+    if (!preparation.isUndefined()) manifest.insert(QStringLiteral("preparation"), preparation);
+    return writeManifest(root, manifest);
+}
+
+/// Entry names directly under `root`, sorted, so a read that must write nothing
+/// can be shown to have changed nothing.
+QStringList entryNames(const QString& root) {
+    QStringList names;
+    const QFileInfoList entries = QDir(root).entryInfoList(
+        QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
+    for (const QFileInfo& entry : entries) names.append(entry.fileName());
+    names.sort();
+    return names;
+}
+
 QString tempDir() {
     static int counter = 0;
     const QString path = QDir(QDir::tempPath())
@@ -274,6 +373,59 @@ bool makeJunction(const QString& link, const QString& target) {
 }
 
 }  // namespace
+
+void TestNativeBundle::staticExportsDistinguishTheCoreFromAHelper() {
+    const auto core = inspectPeExports(exportedPe("mpv_client_api_version"));
+    QVERIFY2(core.ok, qPrintable(core.reason));
+    QVERIFY(core.exportsMpvClientApiVersion);
+    const auto helper = inspectPeExports(exportedPe("aji_create"));
+    QVERIFY2(helper.ok, qPrintable(helper.reason));
+    QVERIFY(!helper.exportsMpvClientApiVersion);
+    const auto resource = inspectPeExports(syntheticPe({}));
+    QVERIFY2(resource.ok, qPrintable(resource.reason));
+    QVERIFY(!resource.exportsMpvClientApiVersion);
+}
+
+void TestNativeBundle::malformedExportsNeverClassifyAnImageAsTheCore_data() {
+    QTest::addColumn<QByteArray>("image");
+    QByteArray image = exportedPe("mpv_client_api_version");
+    image.truncate(0x680);
+    QTest::newRow("truncated-name") << image;
+    image = exportedPe("mpv_client_api_version");
+    putPe32(image, 0x600 + 24, 0xffffffffu);
+    QTest::newRow("oversized-name-table") << image;
+    image = exportedPe("mpv_client_api_version");
+    image[0x658] = 1;
+    QTest::newRow("ordinal-outside-functions") << image;
+    image = exportedPe("mpv_client_api_version");
+    putPe32(image, 0x650, 0);
+    QTest::newRow("null-function") << image;
+    image = exportedPe("mpv_client_api_version");
+    putPe32(image, 0x98 + 112, 0xfffffff0u);
+    QTest::newRow("overflowing-directory-range") << image;
+    image = exportedPe("mpv_client_api_version");
+    putPe32(image, 0x600 + 24, 2);
+    putPe32(image, 0x654 + 4, 0x1400);
+    putPe32(image, 0x600 + 36, 0x1260);
+    QTest::newRow("bad-name-after-valid-core-name") << image;
+}
+
+void TestNativeBundle::malformedExportsNeverClassifyAnImageAsTheCore() {
+    QFETCH(QByteArray, image);
+    const auto result = inspectPeExports(image);
+    QVERIFY(!result.ok);
+    QVERIFY(!result.exportsMpvClientApiVersion);
+}
+
+void TestNativeBundle::aForwardedClientApiIsRefusedWithoutResolvingIt() {
+    QByteArray image = exportedPe("mpv_client_api_version");
+    putPe32(image, 0x650, 0x1290);
+    const QByteArray forwarder("outside.mpv_client_api_version");
+    std::copy(forwarder.cbegin(), forwarder.cend(), image.begin() + 0x690);
+    const auto result = inspectPeExports(image);
+    QVERIFY(!result.ok);
+    QVERIFY(!result.exportsMpvClientApiVersion);
+}
 
 void TestNativeBundle::aValidStandardBundleIsReadAndValidated() {
     QTemporaryDir temp;
@@ -550,15 +702,18 @@ void TestNativeBundle::aDelayImportOutsideTheBundleIsRefused() {
 }
 
 void TestNativeBundle::aSystemImportIsAccepted() {
-    // A native bundle whose dependency directory holds the DLL the core imports
-    // closes its own closure and validates.
     QTemporaryDir temp;
-    QVERIFY(writeFixture(temp.path(), nativeFixture()));
+    Fixture fixture = nativeFixture();
+    fixture.files.insert(QStringLiteral("libmpv-2.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll"),
+                                      QStringLiteral("nvinfer_10.dll"),
+                                      QStringLiteral("GDIPLUS.dll")},
+                                     {QStringLiteral("WSOCK32.dll")}));
+    QVERIFY(writeFixture(temp.path(), fixture));
     QString reason;
     const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
     QVERIFY2(bundle.has_value(), qPrintable(reason));
     QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
-    QCOMPARE(bundle->deps, QStringList{QStringLiteral("trt")});
 }
 
 void TestNativeBundle::aDependencyDirectoryHoldingNoDeclaredFileIsRefused() {
@@ -1121,6 +1276,215 @@ void TestNativeBundle::aBundlePublishedWithoutAPointerFlipLeavesThePreviousSelec
     QVERIFY(rejections.isEmpty());
 }
 
+void TestNativeBundle::aTruncatingBundleRootIsRefusedByName() {
+    // A bundle root arrives from a stored pointer or a caller, and every
+    // filesystem API below the reader takes a NUL-terminated C string. A name
+    // carrying its own NUL would be truncated to a *different* directory that
+    // may well exist and hold a bundle - so it has to be refused before the
+    // reader asks the filesystem anything.
+    QTemporaryDir temp;
+    QVERIFY(QDir().mkpath(temp.path()));
+    QVERIFY(writeFixture(temp.path(), standardFixture()));
+
+    QString reason;
+    const std::optional<Bundle> read =
+        readBundle(temp.path() + QChar(0) + QStringLiteral("elsewhere"), &reason);
+    QVERIFY2(!read.has_value(), "a truncating root must not resolve to a bundle");
+    QVERIFY2(reason.contains(QStringLiteral("NUL")), qPrintable(reason));
+
+    // The untruncated name still reads, so the refusal is about the name and not
+    // about this fixture.
+    QVERIFY2(readBundle(temp.path(), &reason).has_value(), qPrintable(reason));
+}
+
+void TestNativeBundle::aDeviceOrShareBundleRootIsRefusedByName() {
+    QTemporaryDir temp;
+    QString reason;
+    // Both spell `\\`, and neither is a directory this application owns: one
+    // resolves through the Win32 device/extended namespace with path parsing
+    // switched off, the other through a network redirector. Both would make
+    // "inside the bundle root" a claim about somewhere else entirely.
+    for (const QString& root :
+         {QStringLiteral("\\\\?\\C:\\Mikai\\runtime"), QStringLiteral("\\\\.\\PhysicalDrive0"),
+          QStringLiteral("\\\\server\\share\\runtime")}) {
+        const std::optional<Bundle> read = readBundle(root, &reason);
+        QVERIFY2(!read.has_value(), qPrintable(root));
+        QVERIFY2(!reason.isEmpty(), qPrintable(root));
+    }
+    // The device and share refusals each name which namespace was refused, so a
+    // caller can tell a deliberate refusal from a missing directory.
+    QVERIFY(!readBundle(QStringLiteral("\\\\server\\share\\runtime"), &reason).has_value());
+    QVERIFY2(reason.contains(QStringLiteral("network")), qPrintable(reason));
+    QVERIFY(!readBundle(QStringLiteral("\\\\?\\C:\\Mikai"), &reason).has_value());
+    QVERIFY2(reason.contains(QStringLiteral("device")), qPrintable(reason));
+}
+
+void TestNativeBundle::aNonAsciiLocalBundleRootIsAccepted() {
+    // The refusal set is not "non-ASCII". A local directory with a non-ASCII
+    // name is an ordinary place to keep a runtime, and it has to read through
+    // exactly as an ASCII one does.
+    QTemporaryDir temp;
+    const QString root = QDir(temp.path()).filePath(QString::fromUtf8("Нативный Рантайм"));
+    QVERIFY(writeFixture(root, standardFixture(QStringLiteral("1.0.0-unicode"))));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(root, &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QCOMPARE(bundle->version, QStringLiteral("1.0.0-unicode"));
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+}
+
+void TestNativeBundle::aColonCommaPercentLocalPathIsAccepted() {
+    // These four are named together because they are exactly the characters that
+    // a filter command, a log line or a naive quoting scheme mangles. None of
+    // them is special to a Win32 *local path* - the colon only means something
+    // as a drive separator or an alternate data stream, which the per-segment
+    // rules in safeRelativePath already refuse.
+    QTemporaryDir temp;
+    const QString leaf = QString::fromUtf8("Пакет, 100% (v2)");
+    const QString root = QDir(temp.path()).filePath(leaf);
+    QVERIFY(writeFixture(root, standardFixture(QStringLiteral("1.0.0-punct"))));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(root, &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+
+    // The same characters inside a stored relative name, which the manifest
+    // carries, resolve and validate rather than being refused.
+    Fixture fixture = standardFixture(QStringLiteral("1.0.0-punct"));
+    fixture.files.insert(leaf + QStringLiteral("/helper.dll"),
+                         syntheticPe({QStringLiteral("kernel32.dll")}));
+    fixture.deps = {leaf};
+    const QString punct = QDir(temp.path()).filePath(QStringLiteral("punct"));
+    QVERIFY(writeFixture(punct, fixture));
+    const std::optional<Bundle> withPunct = readBundle(punct, &reason);
+    QVERIFY2(withPunct.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundle(*withPunct, &reason), qPrintable(reason));
+}
+
+void TestNativeBundle::aMalformedUnicodePathIsRefusedNotReplaced() {
+    // A lone surrogate has no UTF-8 encoding. Converting it would substitute
+    // U+FFFD, and the result names a *different* file - one that may exist and
+    // that the caller never asked about. Refusing is the only honest answer.
+    QTemporaryDir temp;
+    const QString orphanHigh(1, QChar(0xD800));
+    const QString orphanLow(1, QChar(0xDC00));
+
+    QString reason;
+    for (const QString& bad : {temp.path() + QLatin1Char('/') + orphanHigh,
+                               temp.path() + QLatin1Char('/') + orphanLow,
+                               orphanHigh + temp.path()}) {
+        const std::optional<Bundle> bundle = readBundle(bad, &reason);
+        QVERIFY2(!bundle.has_value(), qPrintable(bad.toUtf8().toHex()));
+        QVERIFY2(reason.contains(QStringLiteral("surrogate")), qPrintable(reason));
+    }
+
+    // A correctly paired surrogate is an ordinary character and must survive: it
+    // is the pairing, not the code point, that the check is about.
+    QString paired(1, QChar(0xD83D));  // U+1F600, as a surrogate pair
+    paired.append(QChar(0xDE00));
+    const QString root = QDir(temp.path()).filePath(paired);
+    QVERIFY(writeFixture(root, standardFixture(QStringLiteral("1.0.0-emoji"))));
+    QVERIFY2(readBundle(root, &reason).has_value(), qPrintable(reason));
+}
+
+void TestNativeBundle::anOverlongPathComponentIsRefusedAtItsExactLimit() {
+    // The per-component limit is Win32's, and the boundary is exact: a component
+    // of exactly the limit is a name the filesystem accepts, and one more is
+    // not. Asserting both sides is what makes this a limit test rather than a
+    // "long paths are refused" test.
+    QString reason;
+    const QString base = QStringLiteral("C:/models");
+    const QString longest =
+        base + QLatin1Char('/') + QString(kNativeComponentLimit, QLatin1Char('x'));
+    const QString tooLong =
+        base + QLatin1Char('/') + QString(kNativeComponentLimit + 1, QLatin1Char('x'));
+
+    const NativePathTrust atLimit = nativePathTrust(longest, true);
+    QVERIFY2(atLimit.trusted, qPrintable(atLimit.reason));
+
+    const NativePathTrust over = nativePathTrust(tooLong, true);
+    QVERIFY2(!over.trusted, "a component one unit over the limit must be refused");
+    QVERIFY2(over.reason.contains(QString::number(kNativeComponentLimit)), qPrintable(over.reason));
+
+    // The same total length split across two components is fine: the limit is
+    // per component, so a path must not be refused for its length while every
+    // part of it is individually nameable.
+    const QString split = base + QLatin1Char('/') +
+                          QString(kNativeComponentLimit, QLatin1Char('a')) + QLatin1Char('/') +
+                          QString(kNativeComponentLimit, QLatin1Char('b'));
+    const NativePathTrust parts = nativePathTrust(split, true);
+    QVERIFY2(parts.trusted, qPrintable(parts.reason));
+    QVERIFY2(parts.wideLength > kNativeComponentLimit,
+             "the split path is longer than one component, which is the point");
+}
+
+void TestNativeBundle::aPathAtTheWideLimitIsAcceptedAndOneBeyondIsRefused() {
+    // The wide Win32 APIs bound a path at 32767 UTF-16 code units, not at the 260
+    // the narrow ones impose. Refusing anything past 260 would refuse a path the
+    // wide loader opens without complaint, which is the blanket-length rule this
+    // boundary exists to replace.
+    //
+    const int units = kNativeWidePathLimit - 1;  // Reserve the terminating NUL.
+    const QString component = QString(253, QLatin1Char('x')) + QLatin1Char('/');
+    QString atLimit = QStringLiteral("C:/");
+    atLimit.reserve(units + 1);
+    while (atLimit.size() + component.size() <= units) {
+        atLimit += component;
+    }
+    atLimit += QString(units - atLimit.size(), QLatin1Char('y'));
+    const NativePathTrust ok = nativePathTrust(atLimit, true);
+    QVERIFY2(ok.trusted, qPrintable(ok.reason));
+
+    const NativePathTrust over = nativePathTrust(atLimit + QLatin1Char('z'), true);
+    QVERIFY2(!over.trusted, "a path one unit past the wide limit must be refused");
+}
+
+void TestNativeBundle::anUnrepresentableStoreRootIsRefusedAsUnowned() {
+    // The artifact store is allowed to create files in and delete files from its
+    // root. A root that names a truncation or a device namespace must therefore
+    // never become a writable store, whatever the containment argument would say
+    // about it - and that decision is observable through isOwned().
+    ArtifactStore truncating(QDir(QDir::tempPath()).filePath(QStringLiteral("store")) + QChar(0) +
+                             QStringLiteral("other"));
+    QString reason;
+    QVERIFY2(!truncating.isOwned(&reason), "a truncating store root must not be owned");
+    QVERIFY2(reason.contains(QStringLiteral("NUL")), qPrintable(reason));
+
+    for (const QString& root : {QStringLiteral("\\\\.\\PhysicalDrive0"),
+                                QStringLiteral("\\\\server\\share\\artifacts")}) {
+        ArtifactStore store(root);
+        QVERIFY2(!store.isOwned(&reason), qPrintable(root));
+        QVERIFY2(!reason.isEmpty(), qPrintable(root));
+    }
+
+    // A real temporary directory is still owned, so the refusal above is about
+    // the name and not about every explicit root.
+    QTemporaryDir temp;
+    QVERIFY2(ArtifactStore(temp.path()).isOwned(&reason), qPrintable(reason));
+}
+
+void TestNativeBundle::aStoredRelativeNameWithMalformedUnicodeIsRefused() {
+    // The manifest-declared file names take the same check as an absolute path:
+    // a name that cannot be encoded is refused where it is read, not later where
+    // it would be opened.
+    QString reason;
+    const QString orphan(1, QChar(0xD800));
+    for (const QString& bad :
+         {orphan + QStringLiteral(".onnx"), QStringLiteral("pack/") + orphan + QStringLiteral("/m.onnx"),
+          QStringLiteral("pack") + QChar(0)}) {
+        const QString safe = safeRelativePath(bad, &reason);
+        QVERIFY2(safe.isEmpty(), qPrintable(bad.toUtf8().toHex()));
+        QVERIFY2(!reason.isEmpty(), qPrintable(bad.toUtf8().toHex()));
+    }
+
+    // The same non-ASCII, comma and percent characters in a well-formed
+    // relative name are ordinary and must be kept verbatim.
+    const QString kept = QString::fromUtf8("Пакет, 100%/model.onnx");
+    QCOMPARE(safeRelativePath(kept, &reason), kept);
+}
+
 void TestNativeBundle::theNativeLayoutResolvesUnderOneAppLocalHierarchy() {
     // One hierarchy, one base: every app-owned native directory is a name
     // beneath AppLocalDataLocation()/native, so nothing is written to a second
@@ -1301,4 +1665,446 @@ void TestNativeBundle::aModuleImportingSomethingAbsentIsRefusedByName() {
     const std::optional<Bundle> fakeBundle = describeStandardRuntime(fake, &reason);
     QVERIFY(!fakeBundle.has_value());
     QVERIFY(reason.contains(QStringLiteral("other.dll")));
+}
+
+void TestNativeBundle::aPlaybackOnlyNativeBundleRemainsValidWithoutPreparation() {
+    QTemporaryDir temp;
+    QVERIFY(writeFixture(temp.path(), nativeFixture()));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    // No preparation block: the bundle is playback-only, and the absence is a
+    // real absence rather than a defaulted one.
+    QVERIFY(!bundle->preparation.has_value());
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+    QVERIFY(!bundle->preparation.has_value());
+}
+
+void TestNativeBundle::aCompletePreparationBlockNamesOwnedToolsAndVerifiedBackend() {
+    QTemporaryDir temp;
+    QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture()));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+    QVERIFY(bundle->preparation.has_value());
+
+    const BundlePreparation& preparation = *bundle->preparation;
+    const auto declared = [&bundle](const QString& path) {
+        return std::any_of(bundle->files.cbegin(), bundle->files.cend(),
+                           [&path](const BundleFile& file) {
+                               return file.path.compare(path, Qt::CaseInsensitive) == 0;
+                           });
+    };
+    const QString canonicalRoot = QFileInfo(bundle->root).canonicalFilePath();
+
+    // Each tool is a declared inventory file that really is on disk inside the
+    // bundle root, so the consumer gets an owned executable path and not a bare
+    // string.
+    const QStringList tools{preparation.tools.inspect, preparation.tools.prep,
+                            preparation.tools.verifier};
+    for (const QString& tool : tools) {
+        QVERIFY2(!tool.isEmpty(), "a complete block names all three tools");
+        QVERIFY2(declared(tool), qPrintable(tool));
+        const QFileInfo info(QDir(bundle->root).filePath(tool));
+        QVERIFY2(info.isFile(), qPrintable(tool));
+        QVERIFY2(info.canonicalFilePath().startsWith(canonicalRoot + QLatin1Char('/')),
+                 qPrintable(tool));
+    }
+
+    // The provenance is observed, not a placeholder: a full lower-case hex pin
+    // and a positive ABI.
+    QVERIFY(preparation.sourceAbi > 0);
+    const bool fullHexPin =
+        preparation.coreSha.size() == 40 &&
+        std::all_of(preparation.coreSha.cbegin(), preparation.coreSha.cend(), [](QChar c) {
+            return (c >= QLatin1Char('0') && c <= QLatin1Char('9')) ||
+                   (c >= QLatin1Char('a') && c <= QLatin1Char('f'));
+        });
+    QVERIFY(fullHexPin);
+    QVERIFY(preparation.coreSha != QString(40, QLatin1Char('0')));
+
+    // Each declared backend type resolves to a library this bundle actually
+    // ships: present in the verified inventory and on disk with the recorded
+    // digest, so the path a consumer receives is a verified one.
+    QVERIFY(!preparation.types.isEmpty());
+    for (const QString& type : preparation.types) {
+        const QString library = bundlePreparationBackendLibrary(type);
+        QVERIFY2(!library.isEmpty(), qPrintable(type));
+        const QFileInfo info(QDir(bundle->root).filePath(library));
+        QVERIFY2(info.isFile(), qPrintable(library));
+        QByteArray bytes;
+        QVERIFY(readFile(info.absoluteFilePath(), &bytes));
+        const QString digest = digestOf(bytes);
+        bool recorded = false;
+        for (const BundleFile& file : bundle->files) {
+            if (file.path.compare(library, Qt::CaseInsensitive) == 0 && file.sha256 == digest)
+                recorded = true;
+        }
+        QVERIFY2(recorded, qPrintable(library));
+    }
+
+    // The dispatcher that owns the source ABI travels in the inventory too.
+    QVERIFY(declared(bundlePreparationProducerLibrary()));
+
+    // The runtime directories are real directories inside the root, each holding
+    // a declared file and declared as a dependency because it carries DLLs.
+    const QStringList runtimeDirs{preparation.runtime.ort, preparation.runtime.trt,
+                                  preparation.runtime.cuda};
+    for (const QString& directory : runtimeDirs) {
+        QVERIFY(QFileInfo(QDir(bundle->root).filePath(directory)).isDir());
+        QVERIFY(bundle->deps.contains(directory, Qt::CaseInsensitive));
+    }
+}
+
+void TestNativeBundle::aPreparationBlockMissingAnySubMemberIsRefused() {
+    const QJsonObject complete = completePreparationBlock();
+    const QStringList topLevel{QStringLiteral("types"), QStringLiteral("source"),
+                               QStringLiteral("tools"), QStringLiteral("runtime")};
+    const QStringList toolKeys{QStringLiteral("inspect"), QStringLiteral("prep"),
+                               QStringLiteral("verifier")};
+    const QStringList sourceKeys{QStringLiteral("coreSha"), QStringLiteral("sourceAbi")};
+    const QStringList runtimeKeys{QStringLiteral("ort"), QStringLiteral("trt"),
+                                  QStringLiteral("cuda")};
+
+    // Start from a bundle that reads cleanly, so a refusal after a mutation can
+    // only be the missing fact and not an earlier defect.
+    QTemporaryDir probe;
+    QVERIFY(writePreparedFixture(probe.path(), preparedNativeFixture()));
+    QString probeReason;
+    QVERIFY2(readBundle(probe.path(), &probeReason).has_value(), qPrintable(probeReason));
+
+    const auto expectRefused = [](const QJsonObject& preparation, const QString& needle) {
+        QTemporaryDir temp;
+        if (!writePreparedFixture(temp.path(), preparedNativeFixture(), preparation)) return false;
+        const QStringList before = entryNames(temp.path());
+        QString reason;
+        const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+        // A refused read writes nothing: the source directory is unchanged.
+        if (entryNames(temp.path()) != before) return false;
+        return !bundle.has_value() && reason.contains(needle);
+    };
+
+    for (const QString& member : topLevel) {
+        QJsonObject preparation = complete;
+        preparation.remove(member);
+        QVERIFY2(expectRefused(preparation, member), qPrintable(member));
+    }
+    for (const QString& tool : toolKeys) {
+        QJsonObject tools = complete.value(QStringLiteral("tools")).toObject();
+        tools.remove(tool);
+        QJsonObject preparation = complete;
+        preparation.insert(QStringLiteral("tools"), tools);
+        QVERIFY2(expectRefused(preparation, tool), qPrintable(tool));
+    }
+    for (const QString& key : sourceKeys) {
+        QJsonObject source = complete.value(QStringLiteral("source")).toObject();
+        source.remove(key);
+        QJsonObject preparation = complete;
+        preparation.insert(QStringLiteral("source"), source);
+        QVERIFY2(expectRefused(preparation, key), qPrintable(key));
+    }
+    for (const QString& key : runtimeKeys) {
+        QJsonObject runtime = complete.value(QStringLiteral("runtime")).toObject();
+        runtime.remove(key);
+        QJsonObject preparation = complete;
+        preparation.insert(QStringLiteral("runtime"), runtime);
+        QVERIFY2(expectRefused(preparation, key), qPrintable(key));
+    }
+}
+
+void TestNativeBundle::aPlaceholderOrZeroProvenanceIsRefused() {
+    const QJsonObject complete = completePreparationBlock();
+    {
+        QJsonObject source = complete.value(QStringLiteral("source")).toObject();
+        source.insert(QStringLiteral("coreSha"), QString(40, QLatin1Char('0')));
+        QJsonObject preparation = complete;
+        preparation.insert(QStringLiteral("source"), source);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), preparation));
+        QString reason;
+        QVERIFY(!readBundle(temp.path(), &reason).has_value());
+        QVERIFY2(reason.contains(QStringLiteral("placeholder")), qPrintable(reason));
+    }
+    {
+        QJsonObject source = complete.value(QStringLiteral("source")).toObject();
+        source.insert(QStringLiteral("sourceAbi"), 0);
+        QJsonObject preparation = complete;
+        preparation.insert(QStringLiteral("source"), source);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), preparation));
+        QString reason;
+        QVERIFY(!readBundle(temp.path(), &reason).has_value());
+    }
+
+    // The validator refuses an unmeasured provenance too, even on an otherwise
+    // coherent bundle, so a value that bypassed the reader cannot be observed.
+    QTemporaryDir temp;
+    QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture()));
+    QString reason;
+    std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    bundle->preparation->coreSha = QString(40, QLatin1Char('0'));
+    QVERIFY2(!validateBundle(*bundle, &reason), qPrintable(reason));
+    bundle->preparation->coreSha = QString(40, QLatin1Char('a'));
+    bundle->preparation->sourceAbi = 0;
+    QVERIFY2(!validateBundle(*bundle, &reason), qPrintable(reason));
+}
+
+void TestNativeBundle::aStandardBundleCarryingPreparationIsRefused() {
+    // A Standard bundle names no native toolchain, so a preparation block on it
+    // is refused by the reader before it could describe a toolchain the bundle
+    // does not own.
+    QTemporaryDir temp;
+    QVERIFY(writePreparedFixture(temp.path(), standardFixture(), completePreparationBlock()));
+    QString reason;
+    QVERIFY(!readBundle(temp.path(), &reason).has_value());
+
+    // And the validator refuses the same contradiction on an already-parsed
+    // bundle: kind is a checked fact, not a label the block can override.
+    QTemporaryDir native;
+    QVERIFY(writePreparedFixture(native.path(), preparedNativeFixture()));
+    std::optional<Bundle> bundle = readBundle(native.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+    bundle->kind = BundleKind::Standard;
+    QVERIFY2(!validateBundle(*bundle, &reason), qPrintable(reason));
+}
+
+void TestNativeBundle::anUnknownDuplicateOrEmptyBackendListIsRefused() {
+    struct TypeCase {
+        QJsonArray types;
+        const char* label;
+    };
+    const QList<TypeCase> cases{
+        {QJsonArray{QStringLiteral("cuda")}, "unknown-type"},
+        {QJsonArray{bundlePreparationTypes().value(0), bundlePreparationTypes().value(0)},
+         "duplicate-type"},
+        {QJsonArray{}, "empty-list"},
+        {QJsonArray{3}, "non-string-type"},
+    };
+    for (const TypeCase& typeCase : cases) {
+        QJsonObject preparation = completePreparationBlock();
+        preparation.insert(QStringLiteral("types"), typeCase.types);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), preparation));
+        QString reason;
+        QVERIFY2(!readBundle(temp.path(), &reason).has_value(), typeCase.label);
+    }
+}
+
+void TestNativeBundle::anUnsafeToolPathOrOneOutsideTheInventoryIsRefused() {
+    const QStringList cases{
+        QStringLiteral("../evil.exe"),
+        QDir::temp().filePath(QStringLiteral("evil.exe")),
+        QStringLiteral("tools/elsewhere.exe"),
+        QStringLiteral("tools/inspect.dll"),
+    };
+    for (const QString& toolPath : cases) {
+        QJsonObject tools = completePreparationBlock().value(QStringLiteral("tools")).toObject();
+        tools.insert(QStringLiteral("inspect"), toolPath);
+        QJsonObject preparation = completePreparationBlock();
+        preparation.insert(QStringLiteral("tools"), tools);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), preparation));
+        QString reason;
+        const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+        QVERIFY2(!bundle.has_value(), qPrintable(toolPath));
+        // The refusal names either the unsafe path or the missing inventory
+        // entry, never a silently accepted path.
+        QVERIFY2(!reason.trimmed().isEmpty(), qPrintable(toolPath));
+    }
+}
+
+void TestNativeBundle::aRuntimeDirectoryOutsideTheBundleIsRefused() {
+    const QStringList keys{QStringLiteral("ort"), QStringLiteral("trt"), QStringLiteral("cuda")};
+    const QStringList escaping{QStringLiteral("../escape"), QStringLiteral("nested/dir"),
+                               QDir::temp().filePath(QStringLiteral("ort"))};
+    for (const QString& key : keys) {
+        for (const QString& value : escaping) {
+            QJsonObject runtime =
+                completePreparationBlock().value(QStringLiteral("runtime")).toObject();
+            runtime.insert(key, value);
+            QJsonObject preparation = completePreparationBlock();
+            preparation.insert(QStringLiteral("runtime"), runtime);
+            QTemporaryDir temp;
+            QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), preparation));
+            QString reason;
+            QVERIFY2(!readBundle(temp.path(), &reason).has_value(), qPrintable(key + value));
+            QVERIFY2(!reason.trimmed().isEmpty(), qPrintable(key + value));
+        }
+    }
+}
+
+void TestNativeBundle::aRuntimeDirectoryWithNoOwnedFileIsRefused() {
+    // The directory itself exists and parses, so the refusal has to come from the
+    // closure check: a provider runtime with no inventoried file behind it is not
+    // somewhere the tools could resolve their own DLLs.
+    const QStringList keys{QStringLiteral("ort"), QStringLiteral("trt"), QStringLiteral("cuda")};
+    for (const QString& key : keys) {
+        const QString emptyDir = QStringLiteral("blank-") + key;
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture()));
+        QVERIFY(QDir().mkpath(QDir(temp.path()).filePath(emptyDir)));
+        QJsonObject runtime = completePreparationBlock().value(QStringLiteral("runtime")).toObject();
+        runtime.insert(key, emptyDir);
+        QJsonObject preparation = completePreparationBlock();
+        preparation.insert(QStringLiteral("runtime"), runtime);
+        QJsonObject manifest = manifestFor(preparedNativeFixture());
+        manifest.insert(QStringLiteral("preparation"), preparation);
+        QVERIFY(writeManifest(temp.path(), manifest));
+
+        QString reason;
+        const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+        QVERIFY2(bundle.has_value(), qPrintable(reason));
+        QVERIFY2(!validateBundle(*bundle, &reason), qPrintable(reason));
+        QVERIFY2(reason.contains(emptyDir), qPrintable(reason));
+    }
+}
+
+void TestNativeBundle::aProducerOrBackendLibraryAbsentOrTamperedIsRefused() {
+    const QString producer = bundlePreparationProducerLibrary();
+    const QString backend = bundlePreparationBackendLibrary(bundlePreparationTypes().value(0));
+
+    // Absent from the inventory: a block naming a producer or backend the bundle
+    // does not declare is incoherent, whatever its own files say.
+    {
+        Fixture fixture = preparedNativeFixture();
+        fixture.files.remove(producer);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), fixture));
+        QString reason;
+        QVERIFY2(!readBundle(temp.path(), &reason).has_value(), qPrintable(producer));
+        QVERIFY2(reason.contains(producer), qPrintable(reason));
+    }
+    {
+        Fixture fixture = preparedNativeFixture();
+        fixture.files.remove(backend);
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), fixture));
+        QString reason;
+        QVERIFY2(!readBundle(temp.path(), &reason).has_value(), qPrintable(backend));
+        QVERIFY2(reason.contains(backend), qPrintable(reason));
+    }
+
+    // Present in the inventory but tampered on disk: only the digest can catch a
+    // same-size change to the producer or the backend the block pins.
+    for (const QString& library : {producer, backend}) {
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture()));
+        QByteArray tampered = syntheticPe({QStringLiteral("kernel32.dll")});
+        tampered[tampered.size() / 2] = char(tampered.at(tampered.size() / 2) ^ 0xFF);
+        QVERIFY(writeFile(QDir(temp.path()).filePath(library), tampered));
+
+        QString reason;
+        const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+        QVERIFY2(bundle.has_value(), qPrintable(reason));
+        QVERIFY2(!validateBundle(*bundle, &reason), qPrintable(reason));
+        QVERIFY2(reason.contains(library), qPrintable(reason));
+    }
+}
+
+void TestNativeBundle::anAllowedPreparationSurvivesInstallIntoANewOwnedRoot() {
+    QTemporaryDir source;
+    QTemporaryDir runtime;
+    QVERIFY(writePreparedFixture(source.path(), preparedNativeFixture()));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(source.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
+
+    QString publishedRoot;
+    QVERIFY2(installAtomic(*bundle, runtime.path(), &reason, &publishedRoot), qPrintable(reason));
+    QVERIFY(!publishedRoot.isEmpty());
+    QVERIFY(publishedRoot.startsWith(QDir::cleanPath(runtime.path())));
+
+    // The installed copy is a different root and the preparation block travelled
+    // with it: the tools and runtime directories now resolve inside the owned
+    // published directory, not back at the source.
+    QStringList rejections;
+    const QList<Bundle> found = discoverBundles({runtime.path()}, &rejections);
+    QCOMPARE(found.size(), 1);
+    QVERIFY(rejections.isEmpty());
+    const Bundle& published = found.first();
+    QCOMPARE(published.kind, BundleKind::Native);
+    QVERIFY2(validateBundle(published, &reason), qPrintable(reason));
+    QVERIFY(published.preparation.has_value());
+    QVERIFY(QFileInfo(published.root).canonicalFilePath() !=
+            QFileInfo(bundle->root).canonicalFilePath());
+
+    const BundlePreparation& preparation = *published.preparation;
+    const QStringList tools{preparation.tools.inspect, preparation.tools.prep,
+                            preparation.tools.verifier};
+    for (const QString& tool : tools)
+        QVERIFY2(QFileInfo(QDir(published.root).filePath(tool)).isFile(), qPrintable(tool));
+    const QStringList runtimeDirs{preparation.runtime.ort, preparation.runtime.trt,
+                                  preparation.runtime.cuda};
+    for (const QString& directory : runtimeDirs) {
+        QVERIFY2(QFileInfo(QDir(published.root).filePath(directory)).isDir(),
+                 qPrintable(directory));
+        QVERIFY(published.deps.contains(directory, Qt::CaseInsensitive));
+    }
+    const QString backend = bundlePreparationBackendLibrary(preparation.types.value(0));
+    QVERIFY2(QFileInfo(QDir(published.root).filePath(backend)).isFile(), qPrintable(backend));
+}
+
+void TestNativeBundle::noUnverifiedPreparationIsEverPresentedAsAvailable() {
+    // The UI toolchain is observed only from a validated bundle's preparation
+    // block, so any partial or false block must be refused by the reader and
+    // never reach that consumer.
+    QList<QJsonObject> falseBlocks;
+    {
+        QJsonObject block = completePreparationBlock();
+        block.remove(QStringLiteral("tools"));
+        falseBlocks.append(block);
+    }
+    {
+        QJsonObject block = completePreparationBlock();
+        block.insert(QStringLiteral("types"), QJsonArray{QStringLiteral("cuda")});
+        falseBlocks.append(block);
+    }
+    {
+        QJsonObject source = completePreparationBlock().value(QStringLiteral("source")).toObject();
+        source.insert(QStringLiteral("coreSha"), QString(40, QLatin1Char('0')));
+        QJsonObject block = completePreparationBlock();
+        block.insert(QStringLiteral("source"), source);
+        falseBlocks.append(block);
+    }
+    {
+        QJsonObject source = completePreparationBlock().value(QStringLiteral("source")).toObject();
+        source.insert(QStringLiteral("sourceAbi"), 0);
+        QJsonObject block = completePreparationBlock();
+        block.insert(QStringLiteral("source"), source);
+        falseBlocks.append(block);
+    }
+    for (const QJsonObject& block : falseBlocks) {
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture(), block));
+        QString reason;
+        QVERIFY2(!readBundle(temp.path(), &reason).has_value(),
+                 qPrintable(QString(QJsonDocument(block).toJson(QJsonDocument::Compact))));
+    }
+
+    // A Standard bundle is not a consumer of the block at all: carrying one is
+    // refused rather than read as a native toolchain.
+    {
+        QTemporaryDir temp;
+        QVERIFY(writePreparedFixture(temp.path(), standardFixture(), completePreparationBlock()));
+        QString reason;
+        QVERIFY(!readBundle(temp.path(), &reason).has_value());
+    }
+
+    // The one block this build accepts is fully resolved, so a consumer that
+    // trusts `preparation.has_value()` receives owned paths rather than strings.
+    QTemporaryDir temp;
+    QVERIFY(writePreparedFixture(temp.path(), preparedNativeFixture()));
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY(bundle->preparation.has_value());
+    QVERIFY2(QFileInfo(QDir(bundle->root).filePath(bundle->preparation->tools.inspect)).isFile(),
+             qPrintable(bundle->preparation->tools.inspect));
 }

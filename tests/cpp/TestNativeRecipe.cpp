@@ -1,6 +1,7 @@
 #include "TestNativeRecipe.hpp"
 
 #include "native/NativeRecipe.hpp"
+#include "native/NativeRife.hpp"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -53,16 +54,45 @@ ModelRecord spatialRow(const QString& id, const ModelProfile& profile,
 
 /// A temporal row declares a different boundary from a spatial one, which is
 /// exactly why the spatial NCHW rules must not be applied to it.
+ModelProfile temporalProfile() {
+  ModelProfile profile;
+  profile.input.dtype = QStringLiteral("fp16");
+  profile.input.rank = 4;
+  profile.input.batch = 1;
+  profile.input.channels = 11;
+  profile.output.dtype = QStringLiteral("fp16");
+  profile.output.rank = 4;
+  profile.output.batch = 1;
+  profile.output.channels = 3;
+  return profile;
+}
+
+ModelProfile temporalReference() {
+  ModelProfile profile = temporalProfile();
+  profile.input.height = 180;
+  profile.input.width = 320;
+  profile.output.height = 180;
+  profile.output.width = 320;
+  return profile;
+}
+
+/// The owned temporal row the curated variant's exact pin resolves to. Its id is
+/// content-addressed; the curated name is only a request.
 ModelRecord rifeRow(RifeVariant variant, bool ensemble) {
+  const RifeModelPin* pin = rifeModelPin(RifeVersion::V4_14, variant, ensemble);
+  Q_ASSERT(pin != nullptr);
   ModelRecord record;
-  record.id = rifeModelName(RifeVersion::V4_14, variant, ensemble);
-  record.displayName = record.id;
-  record.origin = ModelOrigin::Builtin;
-  record.onnxPath = QStringLiteral("C:/models/%1.pkl").arg(record.id);
-  record.onnxSha256 = QString::fromLatin1(kSdCompactSha);
+  record.id = userModelIdFor(
+      computeContentId(ModelRole::Temporal, pin->graphSha256, temporalProfile()));
+  record.displayName = rifeModelName(RifeVersion::V4_14, variant, ensemble);
+  record.origin = ModelOrigin::UserImported;
+  record.onnxPath = QStringLiteral("C:/models/%1.onnx").arg(record.id);
+  record.onnxSha256 = pin->graphSha256;
+  record.onnxBytes = 4096;
   record.role = ModelRole::Temporal;
-  record.actualProfile = ModelProfile{};
-  record.availableBackends = {Backend::TensorRT, Backend::DirectML};
+  record.actualProfile = temporalProfile();
+  record.verifiedReferenceProfile = temporalReference();
+  record.availableBackends = {Backend::TensorRT};
   record.availability = readyAvailability();
   return record;
 }
@@ -785,7 +815,9 @@ void TestNativeRecipe::readinessIsAllOrNothingAcrossTheWholeChain() {
   });
   const RecipeEligibility noRife = evaluateEligibility(combined, withoutRife, bothBackends());
   QCOMPARE(noRife.availability.value, Availability::Unavailable);
-  QCOMPARE(noRife.availability.reasonKey, QStringLiteral("model.missing"));
+  // The temporal stage names a curated variant joined to its exact pinned owned
+  // graph; without that graph the refusal is the missing pin, not a missing id.
+  QCOMPARE(noRife.availability.reasonKey, QStringLiteral("rife.model.missing"));
   QVERIFY(noRife.effective.isOriginal());
 
   // A spatial-only recipe over the same catalogue is unaffected: it never named
@@ -820,15 +852,18 @@ void TestNativeRecipe::aRefusedRecipeLeavesEffectiveOnTheOriginalPipeline() {
   QCOMPARE(evaluateEligibility(recipe, fullCatalog(), bothBackends()).availability.value,
            Availability::Ready);
 
-  // Remove just the lite row: the recipe names a variant nothing supplies.
+  // Remove just the lite pin: the recipe names a variant nothing supplies.
+  const RifeModelPin* litePin = rifeModelPin(RifeVersion::V4_14, RifeVariant::Lite, false);
+  QVERIFY(litePin != nullptr);
   CatalogView catalog = fullCatalog();
-  catalog.models.removeIf([](const ModelRecord& record) {
-    return record.id == QStringLiteral("rife_v4.14_lite");
+  catalog.models.removeIf([litePin](const ModelRecord& record) {
+    return record.role == ModelRole::Temporal &&
+           record.onnxSha256.compare(litePin->graphSha256, Qt::CaseInsensitive) == 0;
   });
 
   const RecipeEligibility refused = evaluateEligibility(recipe, catalog, bothBackends());
   QCOMPARE(refused.availability.value, Availability::Unavailable);
-  QCOMPARE(refused.availability.reasonKey, QStringLiteral("model.missing"));
+  QCOMPARE(refused.availability.reasonKey, QStringLiteral("rife.model.missing"));
 
   // Requested is exactly what was asked for; effective is Original. There is no
   // third state in which the full variant quietly ran instead.
@@ -851,8 +886,10 @@ void TestNativeRecipe::aRifeOnlyRecipeStillNeedsItsTemporalModelInTheCatalogue()
   const RecipeEligibility none =
       evaluateEligibility(recipe, CatalogView{}, bothBackends());
   QCOMPARE(none.availability.value, Availability::Unavailable);
-  QCOMPARE(none.availability.reasonKey, QStringLiteral("model.missing"));
+  QCOMPARE(none.availability.reasonKey, QStringLiteral("rife.model.missing"));
   QVERIFY(none.availability.reason.contains(QStringLiteral("rife_v4.14")));
+  QVERIFY(none.availability.reason.contains(
+      rifeModelPin(RifeVersion::V4_14, RifeVariant::Full, false)->graphSha256));
 
   // Every variant is a distinct name, so a catalogue holding one never satisfies
   // a stage naming another.
@@ -899,13 +936,14 @@ void TestNativeRecipe::anUnavailableModelRowIsRefusedWithItsOwnReason() {
   QCOMPARE(result.availability.reasonKey, QStringLiteral("model.assets.missing"));
   hd->availability = readyAvailability();
 
-  // A spatial row cannot stand in for a temporal stage.
+  // A spatial stage naming the temporal row by its own content id is refused by
+  // role: no curated name, and no row, is quietly substituted for it.
   Recipe combined = combinedRecipe(TemporalOrder::AfterSpatial);
-  combined.spatial = {stage(QStringLiteral("rife_v4.14"))};
+  combined.spatial = {stage(rifeRow(RifeVariant::Full, false).id)};
   result = evaluateEligibility(combined, catalog, bothBackends());
   QCOMPARE(result.availability.value, Availability::Unavailable);
   QCOMPARE(result.availability.reasonKey, QStringLiteral("model.role.mismatch"));
-  QVERIFY(result.availability.reason.contains(QStringLiteral("rife_v4.14")));
+  QVERIFY(result.availability.reason.contains(QStringLiteral("temporal")));
 
   // A refused stage carries a reason that points at it.
   sd->actualProfile.output.dtype = QStringLiteral("fp32");

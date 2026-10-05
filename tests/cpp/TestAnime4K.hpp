@@ -10,6 +10,7 @@ class TestAnime4K : public QObject {
   void experimentalPresetsHaveExactCompleteChains();
   void presetIdsRemainUniqueAndRestorableAfterMenuReordering();
   void menuCategoriesExposeTheirPresetMembership();
+  void rifeLevelLivesInNativeMenuNotCatalogue();
   void offAndUnknownIdsResolveNothing();
   void missingStageMakesTheEntireChainIncomplete();
   void individualShaderIdsResolveAndDownscaleStagesAreNotStandalone();

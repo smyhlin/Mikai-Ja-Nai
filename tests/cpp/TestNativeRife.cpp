@@ -4,6 +4,7 @@
 #include "native/NativeRife.hpp"
 #include "native/NativeUserRecipes.hpp"
 
+#include <QtCore/QSet>
 #include <QtCore/QSize>
 
 using namespace mplayer::native;
@@ -41,6 +42,66 @@ TemporalStage temporalOf(RifeVariant variant, bool ensemble, const Rational& fac
     stage.order = order;
     stage.sceneThreshold = threshold;
     return stage;
+}
+
+TensorProfile dynamicTensor(qint64 channels) {
+    TensorProfile tensor;
+    tensor.dtype = QString::fromLatin1(kEligibleIoType);
+    tensor.rank = 4;
+    tensor.batch = 1;
+    tensor.channels = channels;
+    return tensor;
+}
+
+ModelProfile temporalProfile() {
+    ModelProfile profile;
+    profile.input = dynamicTensor(11);
+    profile.output = dynamicTensor(3);
+    return profile;
+}
+
+TensorProfile fixedTensor180x320(qint64 channels) {
+    TensorProfile tensor;
+    tensor.dtype = QString::fromLatin1(kEligibleIoType);
+    tensor.rank = 4;
+    tensor.batch = 1;
+    tensor.channels = channels;
+    tensor.height = 180;
+    tensor.width = 320;
+    return tensor;
+}
+
+ModelProfile temporalReference() {
+    ModelProfile profile;
+    profile.input = fixedTensor180x320(11);
+    profile.output = fixedTensor180x320(3);
+    return profile;
+}
+
+/// The owned temporal row the curated variant's pin resolves to.
+ModelRecord pinnedRow(RifeVariant variant, bool ensemble) {
+    const RifeModelPin* pin = rifeModelPin(RifeVersion::V4_14, variant, ensemble);
+    Q_ASSERT(pin != nullptr);
+    ModelRecord record;
+    record.id = userModelIdFor(
+        computeContentId(ModelRole::Temporal, pin->graphSha256, temporalProfile()));
+    record.displayName = rifeModelName(RifeVersion::V4_14, variant, ensemble);
+    record.origin = ModelOrigin::UserImported;
+    record.onnxPath = QStringLiteral("C:/models/%1.onnx").arg(record.id);
+    record.onnxSha256 = pin->graphSha256;
+    record.onnxBytes = 4096;
+    record.role = ModelRole::Temporal;
+    record.actualProfile = temporalProfile();
+    record.verifiedReferenceProfile = temporalReference();
+    record.availableBackends = {Backend::TensorRT};
+    record.availability = readyAvailability();
+    return record;
+}
+
+CatalogView catalogOf(const QVector<ModelRecord>& records) {
+    CatalogView view;
+    view.models = records;
+    return view;
 }
 
 }  // namespace
@@ -246,4 +307,118 @@ void TestNativeRife::theLabelNeverChangesTheRecipeIdentity() {
     QVERIFY(b.has_value());
     QCOMPARE(a->id, b->id);
     QCOMPARE(a->id, storedRecipeIdFor(*a));
+}
+
+void TestNativeRife::theFourPinsAreDistinctExactDigests() {
+    const QVector<RifeModelPin>& pins = rifeModelPins();
+    QCOMPARE(pins.size(), 4);
+
+    QSet<QString> digests;
+    QSet<QString> names;
+    for (const RifeModelPin& pin : pins) {
+        QCOMPARE(pin.graphSha256.size(), 64);
+        QVERIFY(!digests.contains(pin.graphSha256.toLower()));
+        digests.insert(pin.graphSha256.toLower());
+        const QString name = rifeModelName(pin.version, pin.variant, pin.ensemble);
+        QVERIFY(!names.contains(name));
+        names.insert(name);
+
+        // Both lookups are the pin's own identity, round-tripping exactly.
+        const RifeModelPin* byName = rifeModelPinForName(name);
+        QVERIFY(byName != nullptr);
+        QCOMPARE(byName->graphSha256, pin.graphSha256);
+        const RifeModelPin* byDigest = rifeModelPinForGraphSha(pin.graphSha256.toUpper());
+        QVERIFY(byDigest != nullptr);
+        QCOMPARE(rifeModelName(byDigest->version, byDigest->variant, byDigest->ensemble), name);
+    }
+    QCOMPARE(digests.size(), 4);
+    QCOMPARE(rifeModelPin(RifeVersion::V4_14, RifeVariant::Lite, true)->graphSha256,
+             QStringLiteral("9486d87ca17a83a1594ac54b254b6fb1be6fa52f5dd11a31e4a602d124ea8b1b"));
+    QVERIFY(rifeModelPinForName(QStringLiteral("rife_v4.14_full")) == nullptr);
+}
+
+void TestNativeRife::thePinnedOwnedRowResolvesToItsContentIdentity() {
+    const ModelRecord lite = pinnedRow(RifeVariant::Lite, true);
+    TemporalStage stage = temporalOf(RifeVariant::Lite, true, Rational{2, 1},
+                                     TemporalOrder::AfterSpatial, 0.15);
+
+    const CatalogView catalog = catalogOf({lite});
+    const RifeModelResolution resolution = resolveRifeModel(stage, catalog);
+    QVERIFY(resolution.resolved());
+    QVERIFY(resolution.pin != nullptr);
+    QCOMPARE(resolution.record->id, lite.id);
+    QCOMPARE(resolution.modelId(), lite.id);
+    QCOMPARE(resolution.contentId(), lite.contentId());
+    QCOMPARE(resolution.modelId(),
+             userModelIdFor(computeContentId(ModelRole::Temporal, lite.onnxSha256,
+                                             lite.actualProfile)));
+    QVERIFY(resolution.modelId() != QStringLiteral("rife_v4.14_lite_ensemble"));
+
+    // The capability table reports the pinned row as offered, joined to its own id.
+    const QVector<RifeCapability> rows = rifeCapabilities(catalog);
+    QCOMPARE(rows.size(), 4);
+    for (const RifeCapability& row : rows) {
+        if (row.variant == RifeVariant::Lite && row.ensemble) {
+            QVERIFY(row.availability.isUsable());
+            QCOMPARE(row.resolvedModelId, lite.id);
+        } else {
+            QVERIFY(!row.availability.isUsable());
+            QVERIFY(!row.availability.reason.isEmpty());
+        }
+    }
+}
+
+void TestNativeRife::aSubstitutedOrWrongRowIsRefusedByItsOwnReason() {
+    TemporalStage stage = temporalOf(RifeVariant::Full, false, Rational{2, 1},
+                                     TemporalOrder::AfterSpatial, 0.15);
+
+    // An empty store names the missing pinned graph.
+    const CatalogView empty;
+    RifeModelResolution resolution = resolveRifeModel(stage, empty);
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("rife.model.missing"));
+
+    // A row that claims the curated name but carries another graph is not it.
+    ModelRecord alias = pinnedRow(RifeVariant::Full, false);
+    alias.onnxSha256 = QStringLiteral("0123456789abcdef0123456789abcdef0123456789abcdef"
+                                      "0123456789abcdef");
+    alias.id = userModelIdFor(
+        computeContentId(ModelRole::Temporal, alias.onnxSha256, alias.actualProfile));
+    resolution = resolveRifeModel(stage, catalogOf({alias}));
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("rife.model.missing"));
+
+    // The pin's digest carried by a non-temporal row is a wrong role.
+    ModelRecord spatial = pinnedRow(RifeVariant::Full, false);
+    spatial.role = ModelRole::Spatial;
+    resolution = resolveRifeModel(stage, catalogOf({spatial}));
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("rife.model.role"));
+
+    // A temporal row that declares the wrong boundary is refused by name.
+    ModelRecord wrongBoundary = pinnedRow(RifeVariant::Full, false);
+    wrongBoundary.actualProfile.input.channels = 3;
+    wrongBoundary.actualProfile.output.channels = 3;
+    wrongBoundary.id = userModelIdFor(computeContentId(ModelRole::Temporal,
+                                                       wrongBoundary.onnxSha256,
+                                                       wrongBoundary.actualProfile));
+    resolution = resolveRifeModel(stage, catalogOf({wrongBoundary}));
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("rife.model.boundary"));
+
+    // A declared boundary with no CPU-reference proof is not resolved.
+    ModelRecord unproved = pinnedRow(RifeVariant::Full, false);
+    unproved.verifiedReferenceProfile.reset();
+    resolution = resolveRifeModel(stage, catalogOf({unproved}));
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("rife.model.reference"));
+
+    // A corrupt/unready row keeps the store's own reason rather than being run.
+    ModelRecord corrupt = pinnedRow(RifeVariant::Full, false);
+    corrupt.availability = unavailableAvailability(
+        QStringLiteral("model.store.corrupt"),
+        QStringLiteral("the owned copy no longer matches the row's identity"));
+    resolution = resolveRifeModel(stage, catalogOf({corrupt}));
+    QVERIFY(!resolution.resolved());
+    QCOMPARE(resolution.reasonKey, QStringLiteral("model.store.corrupt"));
 }

@@ -31,18 +31,22 @@
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QFile>
 
+#include "dialogs/NativeAssetsPanel.hpp"
 #include "native/NativeArtifactStore.hpp"
-#include "native/NativeAssetsPanel.hpp"
 #include "native/NativeManifest.hpp"
 #include "native/NativeModelInventory.hpp"
 #include "native/NativeModelInspect.hpp"
 #include "native/NativePaths.hpp"
+#include "native/NativePreparationPlan.hpp"
 #include "native/NativePrefs.hpp"
 #include "ProbeUi.hpp"
 #include "workers/Runner.hpp"
 
 using namespace mplayer;
 using namespace mplayer::native;
+using mikai::app::NativeAssetsPanel;
+using mikai::app::NativeCacheEntry;
+using mikai::app::NativeModelView;
 
 namespace {
 
@@ -515,8 +519,8 @@ int main(int argc, char** argv) {
     }
 
     // ── 6. a verified model becomes a selectable request, with no engine claim
+    QString requested;
     if (!fixedId.isEmpty()) {
-        QString requested;
         QMetaObject::Connection connection = QObject::connect(
             panel, &NativeAssetsPanel::recipeRequested, &app,
             [&requested](const QString& id) { requested = id; });
@@ -524,7 +528,9 @@ int main(int argc, char** argv) {
         QObject::disconnect(connection);
         check(registered, QStringLiteral("the verified model registers as a single-spatial recipe"));
         check(!requested.isEmpty(), QStringLiteral("the panel hands the recipe id back"));
-        const NativeAvailability available = currentNativeAvailability();
+        // This probe holds no live source context, so no factory observation is
+        // passed: the registered recipe is offered as a request, not a capability.
+        const NativeAvailability available = currentNativeAvailability(nullptr);
         const NativeRecipeOption* option = available.findRecipe(requested);
         check(option != nullptr, QStringLiteral("the registered recipe is offered as a request"));
         check(option != nullptr && !option->availability.isUsable(),
@@ -583,6 +589,98 @@ int main(int argc, char** argv) {
     check(readBytes(userSentinel) == sentinel,
           QStringLiteral("a foreign user file in the cache is never touched"));
     check(QFileInfo(unproven).isDir(), QStringLiteral("the unverifiable directory survives"));
+
+    if (app.arguments().size() > 1) {
+        const QString graphPath = QFileInfo(app.arguments().at(1)).absoluteFilePath();
+        const QByteArray sourceBytes = readBytes(graphPath);
+        const QString sourceDigest = sha256HexOf(sourceBytes);
+        const bool imported = !sourceBytes.isEmpty() &&
+                              runImport(panel, graphPath, QSize(48, 48));
+        check(imported, QStringLiteral("the original graph imports through the visible panel"));
+        bool proved = false;
+        for (const StoredModel& model : ModelInventory().stored(nullptr)) {
+            if (model.record.onnxSha256 != sourceDigest) continue;
+            proved = model.importResolution.has_value() &&
+                     model.importResolution->input == QSize(48, 48) &&
+                     model.importResolution->output == QSize(96, 96) &&
+                     model.record.availability.isUsable() &&
+                     readBytes(model.storedPath) == sourceBytes;
+            const int row = indexOfModel(*panel, model.record.id);
+            check(row >= 0 && panel->models().at(row).usable,
+                  QStringLiteral("the original graph appears as an eligible inventory row"));
+            say(QStringLiteral("original graph: %1; learned geometry 48x48 -> %2x%3")
+                    .arg(model.record.id)
+                    .arg(model.importResolution.has_value()
+                             ? model.importResolution->output.width() : 0)
+                    .arg(model.importResolution.has_value()
+                             ? model.importResolution->output.height() : 0));
+        }
+        check(proved, QStringLiteral("the original graph's CPU run proves scale 2 and preserves its bytes"));
+        check(readBytes(graphPath) == sourceBytes,
+              QStringLiteral("the original source graph remains unchanged after GUI import"));
+    }
+
+    // ── 8. preparation readiness is named and honest, never a licence banner ──
+    {
+        // The recipe registered above is the one this panel would prepare. With
+        // no observed source context that is the first missing prerequisite, and
+        // it is named rather than replaced by a blanket "unavailable".
+        if (!requested.isEmpty()) {
+            panel->setRequestedRecipe(requested);
+            check(panel->preparationReadinessKey() == QStringLiteral("native.prepare.source"),
+                  QStringLiteral("without an observed source context, preparation names the "
+                                 "source"));
+        } else {
+            check(panel->preparationReadinessKey() == QStringLiteral("native.prepare.recipe"),
+                  QStringLiteral("without a selected recipe, preparation names the recipe"));
+        }
+        const int cacheBefore = panel->cache().size();
+        const bool submitted = panel->prepareArtifact();
+        check(!submitted,
+              QStringLiteral("preparation is not submitted while a prerequisite is missing"));
+        check(!panel->prepareStatusKey().isEmpty(),
+              QStringLiteral("the refusal carries a stable machine key"));
+        check(!panel->prepareInFlight(), QStringLiteral("no preparation job is left in flight"));
+        panel->refresh();
+        check(panel->cache().size() == cacheBefore,
+              QStringLiteral("a refused preparation publishes nothing into the cache"));
+
+        // A source context is only the first prerequisite: the toolchain and the
+        // whole-plan reference builder are separate observed facts, and whichever
+        // is missing next is named.
+        // An actual source a probe and a capture can run against, and the
+        // observed context when the core already published one.
+        panel->setPreparationSourcePresence([](QString*, QString*) { return true; });
+        panel->setPreparationContextProvider([] {
+            NativePreparationContext context;
+            context.source.codedSize = QSize(64, 64);
+            context.source.fps = Rational{24, 1};
+            context.device.decoderDeviceUuid = QStringLiteral("GPU-probe-decoder");
+            context.device.computeDeviceUuid = QStringLiteral("GPU-probe-compute");
+            context.device.smMajor = 12;
+            context.device.smMinor = 0;
+            context.modulePath = QStringLiteral("probe-module");
+            return std::optional<NativePreparationContext>(context);
+        });
+        const QString afterContext = panel->preparationReadinessKey();
+        check(afterContext != QStringLiteral("native.prepare.source"),
+              QStringLiteral("an observed source context clears the source prerequisite"));
+        check(afterContext.isEmpty() ||
+                  afterContext == QStringLiteral("native.prepare.toolchain") ||
+                  afterContext == QStringLiteral("native.prepare.toolsUnavailable") ||
+                  afterContext == QStringLiteral("native.prepare.backendUnavailable") ||
+                  afterContext == QStringLiteral("native.prepare.capture") ||
+                  afterContext == QStringLiteral("native.prepare.context"),
+              QStringLiteral("the next missing prerequisite is named, never a fake Ready"));
+        // No frame or reference builder is wired here, so the panel can never be
+        // fully ready and must still refuse by name.
+        check(!afterContext.isEmpty(),
+              QStringLiteral("a panel without the reference builder is not ready"));
+        check(!panel->prepareArtifact(),
+              QStringLiteral("a partially-ready panel still refuses to submit"));
+        check(!panel->prepareStatusKey().isEmpty(),
+              QStringLiteral("the partial refusal also carries a stable key"));
+    }
 
     shoot(&window, QStringLiteral("native-assets-probe.png"));
 

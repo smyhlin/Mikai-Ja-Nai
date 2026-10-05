@@ -26,7 +26,12 @@ class TestNativeMenu : public QObject {
   void offeredRecipeIsNotEchoedAsAnUnknownRow();
   void requestOffInventsNoUnknownRowOrCurrentOn();
   void effectiveOnlyWhenTheSnapshotSaysActive();
-  void rifePageHoldsTheFourOriginalVariantsAllBlocked();
+  void rootRowsOwnsNativeAndRifeLevels();
+  void rifeRootStaysAvailableWithNoConfiguredRecipe();
+  void usableRifeRecipeIsChoosableWithItsExactId();
+  void unavailableRifeRecipeStaysDisabledWithItsOwnReason();
+  void rifeVariantsNeverCrossRouteAndDuplicatesStaySelectable();
+  void rifeCurrentMarkSurvivesReordering();
   void realesrganAndOtherModelsStayPlaceholders();
   void statusStaysHiddenForDefaultOff();
   void statusRendersOnlyWhatTheSnapshotStates();

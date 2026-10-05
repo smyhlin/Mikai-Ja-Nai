@@ -12,9 +12,17 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonObject>
+#include <QtCore/QDirIterator>
 #include <QtCore/QProcess>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QUuid>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace mplayer;
 using namespace mplayer::native;
@@ -635,6 +643,72 @@ void TestNativeManifest::removalRequiresProofAndLeavesForeignFiles() {
   QVERIFY(!QFileInfo::exists(record->enginePath));
   QVERIFY(!QFileInfo::exists(record->manifestPath));
   QCOMPARE(readBytes(foreignPath), foreign);
+}
+
+void TestNativeManifest::aLockedManifestRemovalDoesNotExposeAPartialArtifact() {
+#ifdef Q_OS_WIN
+  QTemporaryDir temp;
+  const ArtifactStore store(temp.path());
+  const Sample sample = makeSample();
+  const auto record = publishSample(store, sample, temp.path());
+  QVERIFY(record.has_value());
+
+  const QByteArray engineBytes = readBytes(record->enginePath);
+  const QByteArray manifestBytes = readBytes(record->manifestPath);
+  QVERIFY(!engineBytes.isEmpty());
+  QVERIFY(!manifestBytes.isEmpty());
+
+  const QString foreignPath = QDir(record->root).filePath(QStringLiteral("foreign-sentinel.bin"));
+  const QByteArray foreignBytes = QByteArrayLiteral("foreign bytes must survive artifact removal");
+  QVERIFY(writeBytes(foreignPath, foreignBytes));
+
+  // Permit verification reads, but deny delete sharing on the real manifest file.
+  const HANDLE lock = CreateFileW(
+      reinterpret_cast<LPCWSTR>(record->manifestPath.utf16()), GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  QVERIFY(lock != INVALID_HANDLE_VALUE);
+
+  QString key;
+  QString reason;
+  const bool removedWhileLocked = removeArtifact(store, sample.manifest.buildKey, &key, &reason);
+  const QString removalKey = key;
+  const QString removalReason = reason;
+  const BOOL lockClosed = CloseHandle(lock);
+  QVERIFY(lockClosed != FALSE);
+  QVERIFY(!removedWhileLocked);
+  QCOMPARE(removalKey, QStringLiteral("artifact.removeFailed"));
+  QVERIFY(!removalReason.isEmpty());
+
+  QString lookupKey;
+  QString lookupReason;
+  const auto retained = readArtifact(store, sample.manifest.buildKey, &lookupKey, &lookupReason);
+  if (retained.has_value()) {
+    QCOMPARE(readBytes(retained->enginePath), engineBytes);
+    QCOMPARE(readBytes(retained->manifestPath), manifestBytes);
+
+    QVERIFY2(removeArtifact(store, sample.manifest.buildKey, &key, &reason), qPrintable(reason));
+    QVERIFY(!QFileInfo::exists(record->enginePath));
+    QVERIFY(!QFileInfo::exists(record->manifestPath));
+    QCOMPARE(readBytes(foreignPath), foreignBytes);
+  } else {
+    QVERIFY(removalReason.contains(QStringLiteral("manifest")));
+    QVERIFY(removalReason.contains(QStringLiteral("unselectable")));
+    bool foreignPayloadFound = false;
+    QDirIterator files(store.root(), QDir::Files | QDir::NoDotAndDotDot,
+                       QDirIterator::Subdirectories);
+    while (files.hasNext()) {
+      const QString path = files.next();
+      if (QFileInfo(path).fileName() == QFileInfo(foreignPath).fileName() &&
+          readBytes(path) == foreignBytes) {
+        foreignPayloadFound = true;
+        break;
+      }
+    }
+    QVERIFY(foreignPayloadFound);
+  }
+#else
+  QSKIP("Windows share-lock semantics are required for this deletion behavior");
+#endif
 }
 
 void TestNativeManifest::anArtifactDirectoryWithoutAManifestIsNotRemoved() {

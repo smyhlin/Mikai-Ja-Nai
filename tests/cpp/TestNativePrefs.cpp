@@ -2,7 +2,9 @@
 
 #include "native/NativePaths.hpp"
 #include "native/NativePrefs.hpp"
+#include "native/NativeProfiles.hpp"
 #include "native/NativeRuntimeSelection.hpp"
+#include "native/NativeStatus.hpp"
 #include "player/PresetShortcuts.hpp"
 
 #include <QtCore/QDir>
@@ -35,6 +37,42 @@ mplayer::shell::ShortcutClaim claim(const QString& id, const QString& label,
   result.ownerLabel = label;
   result.kind = kind;
   return result;
+}
+
+/// A parsed observation as the status reader hands one on: an executed query that
+/// answered success for this exact adopted source/device, naming the backend and
+/// the roles it really checked. This is the input availability must react to; the
+/// test never fabricates production state out of it.
+NativeFactoryObservation observedFactory(const QString& backend, bool spatial, bool rife) {
+  NativeFactoryObservation factory;
+  factory.observed = true;
+  factory.backend = backend;
+  factory.spatial = spatial;
+  factory.rife = rife;
+  factory.runtimeVersion = QStringLiteral("TensorRT 11.3.0.99");
+  factory.deviceIdentity = QStringLiteral("f76e436fc5198f5a95f7ce9481b54b5b");
+  factory.smMajor = 8;
+  factory.smMinor = 9;
+  return factory;
+}
+
+/// An observation that ran and refused, carrying the named fact it got back.
+NativeFactoryObservation refusedFactory(const QString& reasonKey, const QString& reason) {
+  NativeFactoryObservation factory;
+  factory.observed = true;
+  factory.reasonKey = reasonKey;
+  factory.reason = reason;
+  return factory;
+}
+
+/// The runtime selection a process that really pinned the native module reports.
+RuntimeSelection loadedNativeRuntime() {
+  RuntimeSelection native;
+  native.loaded = true;
+  native.kind = BundleKind::Native;
+  native.requested = RuntimeChoice::Native;
+  native.version = QStringLiteral("9.9.9");
+  return native;
 }
 
 }  // namespace
@@ -325,9 +363,9 @@ void TestNativePrefs::aRequestedTickPersistsWhileUnavailableAndKeepsTheRuntimeCh
   QVERIFY(loaded.backend == Backend::DirectML);
   QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2b.v1"));
 
-  // No engine is produced in this build, so the tick stays requested: nothing is
-  // invented to make it look applied.
-  const NativeAvailability available = currentNativeAvailability();
+  // A cold test process has no observation for any source, so the tick stays
+  // requested: nothing is invented to make it look applied.
+  const NativeAvailability available = currentNativeAvailability(nullptr);
   QVERIFY(!available.engineAvailable);
   QVERIFY(!available.engineReasonKey.isEmpty());
   QVERIFY(!available.engineReason.isEmpty());
@@ -454,7 +492,7 @@ void TestNativePrefs::aMissingNativeRuntimeNamesTheRuntimeGap() {
   // Nothing selected at all, and a Standard module that was selected: both are
   // "no native runtime", named rather than guessed.
   const RuntimeSelection none;
-  const NativeAvailability missing = nativeAvailabilityFor(none);
+  const NativeAvailability missing = nativeAvailabilityFor(none, nullptr);
   QVERIFY(!missing.engineAvailable);
   QCOMPARE(missing.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
   QVERIFY(!missing.engineReason.isEmpty());
@@ -463,7 +501,7 @@ void TestNativePrefs::aMissingNativeRuntimeNamesTheRuntimeGap() {
   RuntimeSelection standard;
   standard.loaded = true;
   standard.kind = BundleKind::Standard;
-  const NativeAvailability fromStandard = nativeAvailabilityFor(standard);
+  const NativeAvailability fromStandard = nativeAvailabilityFor(standard, nullptr);
   QVERIFY(!fromStandard.engineAvailable);
   QCOMPARE(fromStandard.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
   QVERIFY(!fromStandard.engineReason.isEmpty());
@@ -476,7 +514,7 @@ void TestNativePrefs::aLoadedNativeRuntimeWithoutConfirmedCapabilitiesNamesThatG
   native.requested = RuntimeChoice::Native;
   native.version = QStringLiteral("9.9.9");
 
-  const NativeAvailability available = nativeAvailabilityFor(native);
+  const NativeAvailability available = nativeAvailabilityFor(native, nullptr);
   // The descriptor's own label is not a capability, so the answer is unchanged
   // by it - and nothing is fabricated to fill the gap.
   QVERIFY(!available.engineAvailable);
@@ -498,7 +536,7 @@ void TestNativePrefs::aRefusedNativeRequestKeepsItsNamedReason() {
   refused.runtimeUnavailable = true;
   refused.reason = QStringLiteral("No native runtime bundle is installed.");
 
-  const NativeAvailability available = nativeAvailabilityFor(refused);
+  const NativeAvailability available = nativeAvailabilityFor(refused, nullptr);
   QVERIFY(!available.engineAvailable);
   QCOMPARE(available.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
   // The selection's own fact is what is reported, not a re-worded invention.
@@ -506,10 +544,154 @@ void TestNativePrefs::aRefusedNativeRequestKeepsItsNamedReason() {
 }
 
 void TestNativePrefs::theAvailabilityProducerNeverClaimsAnEngine() {
-  const NativeAvailability available = currentNativeAvailability();
+  // A caller with no observation at all - cold, offline, no status read yet -
+  // passes nullptr and gets no engine, with the gap named.
+  const NativeAvailability cold = currentNativeAvailability(nullptr);
+  QVERIFY(!cold.engineAvailable);
+  QVERIFY(!cold.engineReasonKey.isEmpty());
+  QVERIFY(!cold.engineReason.isEmpty());
+  QVERIFY(cold.backends.isEmpty());
+
+  const RuntimeSelection runtime = loadedNativeRuntime();
+
+  // A loaded native runtime with no observation, and one whose observation never
+  // executed, are both unconfirmed: the module label is not a capability.
+  const NativeAvailability unobserved = nativeAvailabilityFor(runtime, nullptr);
+  QVERIFY(!unobserved.engineAvailable);
+  QCOMPARE(unobserved.engineReasonKey, QStringLiteral("native.capabilitiesUnconfirmed"));
+  QVERIFY(unobserved.backends.isEmpty());
+
+  const NativeFactoryObservation notRun;
+  const NativeAvailability neverRun = nativeAvailabilityFor(runtime, &notRun);
+  QVERIFY(!neverRun.engineAvailable);
+  QCOMPARE(neverRun.engineReasonKey, QStringLiteral("native.capabilitiesUnconfirmed"));
+  QVERIFY(neverRun.backends.isEmpty());
+}
+
+void TestNativePrefs::aUsableFactoryObservationPermitsOnlyItsObservedBackend() {
+  const RuntimeSelection runtime = loadedNativeRuntime();
+
+  // The executed query's backend token is the only thing that names a backend:
+  // the offer is exactly the one the factory was actually checked against.
+  const NativeFactoryObservation tensorrt =
+      observedFactory(QStringLiteral("tensorrt"), true, false);
+  const NativeAvailability fromTensorrt = nativeAvailabilityFor(runtime, &tensorrt);
+  QVERIFY(fromTensorrt.engineAvailable);
+  QVERIFY(fromTensorrt.engineReasonKey.isEmpty());
+  QVERIFY(fromTensorrt.engineReason.isEmpty());
+  QCOMPARE(static_cast<int>(fromTensorrt.backends.size()), 1);
+  QVERIFY(fromTensorrt.backends.contains(Backend::TensorRT));
+  QVERIFY(!fromTensorrt.backends.contains(Backend::DirectML));
+
+  const NativeFactoryObservation directml =
+      observedFactory(QStringLiteral("directml"), true, false);
+  const NativeAvailability fromDirectml = nativeAvailabilityFor(runtime, &directml);
+  QVERIFY(fromDirectml.engineAvailable);
+  QCOMPARE(static_cast<int>(fromDirectml.backends.size()), 1);
+  QVERIFY(fromDirectml.backends.contains(Backend::DirectML));
+  QVERIFY(!fromDirectml.backends.contains(Backend::TensorRT));
+
+  // An existing curated leaf is the request row: the answered spatial role is
+  // what makes it selectable, and no row is invented for it. What was asked for
+  // is kept, and eligibility is still not activation.
+  const NativeRecipeOption* leaf =
+      fromTensorrt.findRecipe(QStringLiteral("janai.profile.quality.v1"));
+  QVERIFY(leaf != nullptr);
+  QVERIFY(leaf->availability.isUsable());
+
+  NativePreferences request;
+  request.enabled = true;
+  request.backend = Backend::TensorRT;
+  request.recipeId = QStringLiteral("janai.profile.quality.v1");
+  const NativeSelectionView view = evaluateNativeSelection(request, fromTensorrt);
+  QVERIFY(view.requestAvailable);
+  QVERIFY(view.requestedEnabled);
+  QCOMPARE(view.recipeId, QStringLiteral("janai.profile.quality.v1"));
+  QVERIFY(view.backend == Backend::TensorRT);
+  QVERIFY(view.availability.value == Availability::Ready);
+  QVERIFY(view.availability.isUsable());
+}
+
+void TestNativePrefs::anObservedFactoryRefusalKeepsItsOwnNamedReason() {
+  const RuntimeSelection runtime = loadedNativeRuntime();
+
+  // The shape the writer publishes for a named refusal: the query executed, and
+  // came back unavailable with neither role. The consumer reports that exact fact
+  // rather than re-wording it, and nothing is offered to run on.
+  const NativeFactoryObservation refused = refusedFactory(
+      QStringLiteral("native.factory.device"),
+      QStringLiteral("the adopted device did not match the queried factory"));
+  const NativeAvailability available = nativeAvailabilityFor(runtime, &refused);
   QVERIFY(!available.engineAvailable);
-  QVERIFY(!available.engineReasonKey.isEmpty());
-  QVERIFY(!available.engineReason.isEmpty());
+  QCOMPARE(available.engineReasonKey, refused.reasonKey);
+  QCOMPARE(available.engineReason, refused.reason);
+  QVERIFY(available.backends.isEmpty());
+  for (const NativeRecipeOption& option : available.recipes) {
+    QVERIFY(!option.availability.isUsable());
+    QCOMPARE(option.availability.reasonKey, refused.reasonKey);
+  }
+
+  // A refusal that names nothing still gets one named gap rather than an
+  // unavailable row with no reason.
+  NativeFactoryObservation bare;
+  bare.observed = true;
+  const NativeAvailability fromBare = nativeAvailabilityFor(runtime, &bare);
+  QVERIFY(!fromBare.engineAvailable);
+  QVERIFY(!fromBare.engineReasonKey.isEmpty());
+  QVERIFY(!fromBare.engineReason.isEmpty());
+}
+
+void TestNativePrefs::aRecipeNeedingAnUnsupportedRoleStaysUnavailable() {
+  const RuntimeSelection runtime = loadedNativeRuntime();
+
+  // The query answered the RIFE role but not the spatial one: the engine and its
+  // backend are offered, and every spatial leaf still names the missing role.
+  const NativeFactoryObservation rifeOnly =
+      observedFactory(QStringLiteral("tensorrt"), false, true);
+  const NativeAvailability available = nativeAvailabilityFor(runtime, &rifeOnly);
+  QVERIFY(available.engineAvailable);
+  QVERIFY(available.backends.contains(Backend::TensorRT));
+  for (const ProfileTemplate& profile : profileTemplates()) {
+    const NativeRecipeOption* option = available.findRecipe(profile.id);
+    QVERIFY(option != nullptr);
+    QVERIFY(!option->availability.isUsable());
+    QCOMPARE(option->availability.reasonKey,
+             QStringLiteral("native.recipe.spatialUnsupported"));
+    QVERIFY(!option->availability.reason.isEmpty());
+  }
+
+  NativePreferences request;
+  request.enabled = true;
+  request.backend = Backend::TensorRT;
+  request.recipeId = QStringLiteral("janai.profile.quality.v1");
+  const NativeSelectionView view = evaluateNativeSelection(request, available);
+  QVERIFY(!view.requestAvailable);
+  QVERIFY(view.requestedEnabled);
+  QCOMPARE(view.recipeId, request.recipeId);
+  QVERIFY(view.availability.value == Availability::Unavailable);
+  QCOMPARE(view.availability.reasonKey, QStringLiteral("native.recipe.spatialUnsupported"));
+}
+
+void TestNativePrefs::aStandardModuleIgnoresAUsableFactoryObservation() {
+  // A Standard module that took over a refused native request: the module this
+  // process pinned decides, and a successful observation published by some
+  // source's status does not make the native engine available on it.
+  RuntimeSelection standard;
+  standard.loaded = true;
+  standard.kind = BundleKind::Standard;
+  standard.requested = RuntimeChoice::Native;
+  standard.nativeNotApplied = true;
+
+  const NativeFactoryObservation observed =
+      observedFactory(QStringLiteral("tensorrt"), true, true);
+  const NativeAvailability available = nativeAvailabilityFor(standard, &observed);
+  QVERIFY(!available.engineAvailable);
+  QCOMPARE(available.engineReasonKey, QStringLiteral("native.runtimeUnavailable"));
+  QVERIFY(available.backends.isEmpty());
+  for (const NativeRecipeOption& option : available.recipes) {
+    QVERIFY(!option.availability.isUsable());
+    QCOMPARE(option.availability.reasonKey, available.engineReasonKey);
+  }
 }
 
 void TestNativePrefs::theSharedCheckRefusesReservedKeysInEveryForm() {

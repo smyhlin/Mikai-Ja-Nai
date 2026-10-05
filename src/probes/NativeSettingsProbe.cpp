@@ -17,11 +17,13 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QPushButton>
 #include <QSettings>
 #include <QStyle>
@@ -33,6 +35,7 @@
 
 #include <cstdio>
 
+#include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "native/NativePrefs.hpp"
@@ -378,6 +381,75 @@ int main(int argc, char** argv) {
             check(bindingFullyVisible(*preset),
                   "the preset field shows every character of the longest binding");
             check(clearActionInside(*preset), "the preset clear action is inside the field");
+        }
+    }
+
+    {
+        // ── the language applies live, and a failed save is a named refusal ──
+        // The old behaviour stored the choice and asked for a restart. What has
+        // to be true now is that the running translator follows the saved
+        // choice, and that a catalog which cannot be loaded leaves both the
+        // working translation and the stored preference exactly as they were.
+        const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+        if (catalog.isEmpty() || !QFileInfo::exists(catalog)) {
+            std::fprintf(stderr,
+                         "SKIP the live language section: MIKAI_PROBE_TRANSLATION must name the "
+                         "built catalog for this probe to switch into Ukrainian\n");
+        } else {
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the probe starts in English");
+
+            {
+                SettingsDialog dialog(client, runner);
+                auto* language =
+                    dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+                check(language != nullptr, "the language choice exists");
+                const int ukrainian = language != nullptr ? language->findData(QStringLiteral("uk")) : -1;
+                check(ukrainian >= 0, "the language choice offers Ukrainian");
+                if (language != nullptr && ukrainian >= 0) {
+                    language->setCurrentIndex(ukrainian);
+                    QDialogButtonBox* languageBox = dialog.findChild<QDialogButtonBox*>();
+                    QPushButton* languageSave = acceptButton(languageBox);
+                    if (languageSave != nullptr) {
+                        languageSave->click();
+                    }
+                    QApplication::processEvents();
+                    check(dialog.result() == static_cast<int>(QDialog::Accepted),
+                          "the Save that carries the language accepted the dialog");
+                }
+            }
+            check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                  "saving the language applied it to the running application without a restart");
+            {
+                QSettings settings;
+                check(settings.value(QStringLiteral("ui/language")).toString() ==
+                          QStringLiteral("uk"),
+                      "the saved language preference is the one that was applied");
+            }
+
+            // An unavailable catalog: the working translation and the stored
+            // preference both survive, and the refusal is named.
+            const QString workingError = mikai::app::localizedApiError(QStringLiteral("not_found"));
+            check(!mikai::app::applyInterfaceLanguage(
+                      QStringLiteral("uk"),
+                      QDir(QCoreApplication::applicationDirPath())
+                          .absoluteFilePath(QStringLiteral("mikai_absent_probe_catalog.qm"))),
+                  "an absent catalog is refused");
+            check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                  "a refused language left the working one installed");
+            check(QLocale().language() == QLocale::Ukrainian,
+                  "a refused language left the default locale alone");
+            check(mikai::app::localizedApiError(QStringLiteral("not_found")) == workingError,
+                  "a refused language left the working translation's texts alone");
+            {
+                QSettings settings;
+                check(settings.value(QStringLiteral("ui/language")).toString() ==
+                          QStringLiteral("uk"),
+                      "a refused language left the stored preference alone");
+            }
+
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the probe leaves English installed");
         }
     }
 

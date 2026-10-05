@@ -69,7 +69,7 @@ public:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    if (!mplayer::probes::selectStandardRuntime()) {
+    if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
     static Host host;

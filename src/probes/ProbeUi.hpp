@@ -5,12 +5,11 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDialogButtonBox>
-#include <QLibraryInfo>
 #include <QLocale>
 #include <QScrollArea>
 #include <QSize>
-#include <QTranslator>
 
+#include "I18n.hpp"
 #include "theme/Theme.hpp"
 
 namespace mikai::probes {
@@ -21,24 +20,27 @@ inline bool initializeUi(QApplication& app) {
         std::fprintf(stderr, "FAIL unsupported probe language\n");
         return false;
     }
-    const QLocale locale(language);
-    QLocale::setDefault(locale);
-    if (language == QLatin1String("uk")) {
-        auto* qtTranslator = new QTranslator(&app);
-        if (!qtTranslator->load(locale, QStringLiteral("qtbase"), QStringLiteral("_"),
-                                QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
-            std::fprintf(stderr, "FAIL Ukrainian Qt translations are missing\n");
-            return false;
-        }
-        app.installTranslator(qtTranslator);
-        auto* translator = new QTranslator(&app);
-        const QString path = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
-        if (path.isEmpty() || !translator->load(path)) {
-            std::fprintf(stderr, "FAIL probe application translation is missing\n");
-            return false;
-        }
-        app.installTranslator(translator);
+
+    // A probe links mikai_app, which does not embed the application catalog, so
+    // a Ukrainian run passes the real built file in. An unset variable then
+    // leaves the embedded default, which the probe cannot load and must fail on.
+    const QString catalog = language == QLatin1String("uk")
+                                ? qEnvironmentVariable("MIKAI_PROBE_TRANSLATION")
+                                : QString();
+    if (!mikai::app::applyInterfaceLanguage(language, catalog)) {
+        std::fprintf(stderr,
+                     "FAIL interface language %s unavailable (application catalog %s)\n",
+                     qPrintable(language), catalog.isEmpty() ? "<unset>" : qPrintable(catalog));
+        return false;
     }
+
+    // Print the language and catalog that are actually installed, so an English
+    // screenshot cannot be passed off as Ukrainian geometry evidence.
+    std::fprintf(stderr, "mikai probe ui: requested=%s installed=%s locale=%s catalog=%s\n",
+                 qPrintable(language), qPrintable(mikai::app::activeInterfaceLanguage()),
+                 qPrintable(QLocale().name()),
+                 catalog.isEmpty() ? "<none>" : qPrintable(catalog));
+
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
     return true;
