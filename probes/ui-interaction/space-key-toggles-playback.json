@@ -1,0 +1,66 @@
+{
+  "name": "space-key-toggles-playback",
+  "description": "The space bar toggles playback from the keyboard, with no pointer involved at all.",
+  "category": "ui-interaction",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "focus",
+      "target": "playerWindow",
+      "note": "Give the window the keyboard focus, the way clicking the title bar or arriving from the page would. The key is delivered to whatever holds focus, so this is the real precondition for the shortcut rather than a formality."
+    },
+    {
+      "kind": "key_press",
+      "key": "Space",
+      "note": "PlayerDialog::onShellKey maps Space to the play/pause request (PlayerDialog.cpp:910)."
+    },
+    {
+      "kind": "wait_for",
+      "name": "paused",
+      "timeout_ms": 5000
+    },
+    {
+      "kind": "key_press",
+      "key": "Space",
+      "note": "And again, so the assertion below can tell a toggle from a one-way pause."
+    },
+    {
+      "kind": "wait_for",
+      "name": "playing",
+      "timeout_ms": 5000
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "mpv_property",
+      "property": "pause",
+      "mpv_kind": "flag",
+      "comparison": "equals",
+      "expected": false,
+      "note": "The core is running after two presses. Read from mpv itself rather than from the Qt cache written alongside it, so a build that updated only the button would fail here."
+    },
+    {
+      "kind": "mpv_property",
+      "property": "time-pos",
+      "mpv_kind": "number",
+      "comparison": "greater_than",
+      "expected": 0.0,
+      "note": "And it really is advancing, so this is not a player that reports running while sitting still."
+    },
+    {
+      "kind": "qt_property",
+      "target": "playerPlayToggle",
+      "property": "checked",
+      "expected": true,
+      "note": "The control followed the keyboard, so the shortcut and the button cannot disagree about what the player is doing."
+    }
+  ]
+}

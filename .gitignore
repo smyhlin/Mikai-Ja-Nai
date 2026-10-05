@@ -16,6 +16,6 @@ _ui_geometry.json
 _grab_*.png
 _*.log
 
-build/
 dist-mikai/
 .probe-out/
+.omp/

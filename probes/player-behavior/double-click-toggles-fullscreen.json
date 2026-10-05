@@ -1,0 +1,50 @@
+{
+  "name": "double-click-toggles-fullscreen",
+  "description": "Double-clicking the picture toggles window mode - the gesture a viewer uses to go fullscreen.",
+  "category": "player-behavior",
+  "surface": "player_dialog",
+  "media": "tests/fixtures/media/motion_320x180_24fps_8bit_hevc.mp4",
+  "width": 960,
+  "height": 540,
+  "steps": [
+    {
+      "kind": "wait_for",
+      "name": "hasVideo",
+      "timeout_ms": 10000
+    },
+    {
+      "kind": "double_click",
+      "target": "videoSurface",
+      "note": "The picture is the whole of the window, so this is a double-click on the video itself."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300,
+      "note": "Bounded settle between the two gestures; the assertions below carry the scenario."
+    },
+    {
+      "kind": "double_click",
+      "target": "videoSurface",
+      "note": "The same gesture again, so the assertion can tell a toggle from a one-way set."
+    },
+    {
+      "kind": "sleep_ms",
+      "timeout_ms": 300,
+      "note": "Bounded settle after the second gesture."
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "signal_emitted",
+      "property": "fullscreenChanged",
+      "note": "The shell's own answer to the gesture. mouseDoubleClickEvent (PlayerShell.cpp:1366) calls windowModeToggled (655-663), which flips fullscreen_ and emits this. The surface is a child of the shell and forwards its own double-click (PlayerShell.cpp:1540), so this fails if the gesture is dropped anywhere on that path."
+    },
+    {
+      "kind": "signal_emitted",
+      "property": "fullscreenChanged",
+      "comparison": "equals",
+      "expected": 2,
+      "note": "The gesture toggles rather than sets: two double-clicks mean two announcements. A build that opened fullscreen once and then stopped responding would satisfy the assertion above and fail here."
+    }
+  ]
+}
