@@ -1,0 +1,29 @@
+From ... 
+Subject: [PATCH] aji_trt: replace weak basename+CRC32 cache with content-addressed
+
+The original uses basename + crc32(settings) + gpu token. This collides
+on different ONNX with same name and deletes foreign files via
+clean_stale_engines.
+
+Replace with content-addressed using GraphContentIdentity + EngineBuildIdentity
+from manifest (see M14). Use buildKey() for lookup, record engineSha256 after
+serialize. Never touch user model dirs.
+
+Also add preparedOnly mode that refuses configure if no pre-built engine.
+
+diff --git a/src/aji_trt.cpp b/src/aji_trt.cpp
+index ...
+--- a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@
+- std::string engine_path_for(...) {
+-     return model_dir / (onnx_name + "." + crc32(settings) + suffix);
+- }
+- void clean_stale_engines(...) { delete foreign .engine; }
++ // Mikai: use manifest-driven content address
++ std::string engine_path_for(const BuildKey& key) {
++     return artifact_dir / key + ".engine";
++ }
++ // no clean_stale that touches outside our root
+---
+# High-level patch. Owner clarification: MIT, proceed with adoption.

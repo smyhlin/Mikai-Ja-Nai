@@ -1,0 +1,659 @@
+From 738ce3b3020b3950c48ce3122a08f32af531d4fa Mon Sep 17 00:00:00 2001
+Subject: [PATCH] aji: add negotiated snapshots and acknowledged lifecycle controls
+
+The dispatcher exports protocol/schema v2; each backend reports its own
+configuration, measured engine/model SHA-256 values, provider/device facts and real ticket state.
+Drain/suspend use bounded completion-ticket waits and suspension releases the
+configured chain before resume reloads only available prepared artifacts.
+
+diff --git a/src/aji_dispatch.cpp b/src/aji_dispatch.cpp
+index 38240cb..5d9daa4 100644
+--- a/src/aji_dispatch.cpp
++++ b/src/aji_dispatch.cpp
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include "aji.h"
++#include "aji_native.h"
+ #include "aji_conf.h"
+ 
+ #include <cctype>
+@@ -50,6 +51,8 @@ struct aji_backend {
+                       double, const aji_frame *, void *);
+     const char *(*last_error)(aji_ctx *);
+     void (*destroy)(aji_ctx **);
++    int (*native_snapshot)(aji_ctx *, aji_native_snapshot_v2 *);
++    int (*native_control)(aji_ctx *, uint32_t, uint64_t, uint32_t);
+ };
+ 
+ /* The dispatcher's aji_ctx wraps the backend's. */
+@@ -170,6 +173,8 @@ static bool load_backend(const char *stem, aji_backend *be,
+     SYM(infer_rife,   "aji_infer_rife");
+     SYM(last_error,   "aji_last_error");
+     SYM(destroy,      "aji_destroy");
++    SYM(native_snapshot, "aji_native_backend_snapshot");
++    SYM(native_control, "aji_native_backend_control");
+ #undef SYM
+     return true;
+ }
+@@ -314,3 +319,107 @@ extern "C" AJI_EXPORT void aji_destroy(aji_ctx **c)
+     delete ctx;
+     *c = nullptr;
+ }
++
++static void reset_native_refusal(aji_native_snapshot_v2 *snapshot,
++                                 uint32_t requested_protocol, uint32_t result)
++{
++    char error[AJI_NATIVE_TEXT_CAPACITY];
++    snprintf(error, sizeof(error), "%s", snapshot->error);
++    const uint32_t size = snapshot->struct_size;
++    memset(snapshot, 0, sizeof(*snapshot));
++    snapshot->struct_size = size;
++    snapshot->requested_protocol_version = requested_protocol;
++    snapshot->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    snapshot->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    snapshot->aji_abi_version = AJI_API_VERSION;
++    snapshot->result = result;
++    snapshot->state = AJI_NATIVE_STATE_UNAVAILABLE;
++    snprintf(snapshot->error, sizeof(snapshot->error), "%s", error);
++}
++
++extern "C" AJI_EXPORT int aji_native_get_snapshot(
++    aji_ctx *c, uint32_t requested_protocol, aji_native_snapshot_v2 *s)
++{
++    if (!s || s->struct_size != sizeof(*s))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    const uint32_t size = s->struct_size;
++    memset(s, 0, sizeof(*s));
++    s->struct_size = size;
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++
++
++    if (requested_protocol != AJI_NATIVE_PROTOCOL_VERSION) {
++        snprintf(s->error, sizeof(s->error), "protocol mismatch: caller=%u producer=%u",
++                 requested_protocol, AJI_NATIVE_PROTOCOL_VERSION);
++        s->result = AJI_NATIVE_PROTOCOL_MISMATCH;
++        return AJI_NATIVE_PROTOCOL_MISMATCH;
++    }
++    if (!c) {
++        snprintf(s->error, sizeof(s->error), "native context is absent");
++        s->result = AJI_NATIVE_NO_CONTEXT;
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++    const int rc = c->be.native_snapshot(c->inner, s);
++    if (rc != AJI_NATIVE_OK) {
++        reset_native_refusal(s, requested_protocol, AJI_NATIVE_BACKEND_UNAVAILABLE);
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++    s->struct_size = size;
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    s->result = AJI_NATIVE_OK;
++    return AJI_NATIVE_OK;
++}
++
++extern "C" AJI_EXPORT int aji_native_control(
++    aji_ctx *c, uint32_t requested_protocol, uint32_t action, uint64_t epoch,
++    uint32_t timeout_ms, aji_native_snapshot_v2 *s)
++{
++    if (!s || s->struct_size != sizeof(*s))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    const uint32_t size = s->struct_size;
++    memset(s, 0, sizeof(*s));
++    s->struct_size = size;
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++
++
++    if (requested_protocol != AJI_NATIVE_PROTOCOL_VERSION) {
++        snprintf(s->error, sizeof(s->error), "protocol mismatch: caller=%u producer=%u",
++                 requested_protocol, AJI_NATIVE_PROTOCOL_VERSION);
++        s->result = AJI_NATIVE_PROTOCOL_MISMATCH;
++        return AJI_NATIVE_PROTOCOL_MISMATCH;
++    }
++    if (action < AJI_NATIVE_CONTROL_DRAIN || action > AJI_NATIVE_CONTROL_RESUME) {
++        snprintf(s->error, sizeof(s->error), "unknown native control action: %u", action);
++        s->result = AJI_NATIVE_INVALID_ARGUMENT;
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    if (!c) {
++        snprintf(s->error, sizeof(s->error), "native context is absent");
++        s->result = AJI_NATIVE_NO_CONTEXT;
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++    int rc = c->be.native_control(c->inner, action, epoch, timeout_ms);
++    const int snapshot_rc = c->be.native_snapshot(c->inner, s);
++    if (rc == AJI_NATIVE_OK && snapshot_rc != AJI_NATIVE_OK)
++        rc = snapshot_rc;
++    if (rc != AJI_NATIVE_OK) {
++        reset_native_refusal(s, requested_protocol, AJI_NATIVE_OPERATION_FAILED);
++        return AJI_NATIVE_OPERATION_FAILED;
++    }
++    s->struct_size = size;
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    s->result = AJI_NATIVE_OK;
++    return AJI_NATIVE_OK;
++}
+diff --git a/src/aji_dml.cpp b/src/aji_dml.cpp
+index 258550b..b52cc75 100644
+--- a/src/aji_dml.cpp
++++ b/src/aji_dml.cpp
+@@ -46,6 +46,10 @@
+ #include <vector>
+ 
+ #include "aji.h"
++#include "aji_native.h"
++#include <bcrypt.h>
++#include <chrono>
++#include <thread>
+ #include "aji_conf.h"
+ #include "dml_shaders.h"
+ #include "resample.h"
+@@ -173,7 +177,7 @@ struct DmlPlan {
+ 
+ struct DmlModel {
+     OrtSession *session = nullptr;
+-    std::string in_name, out_name;
++    std::string in_name, out_name, model_sha256;
+     bool fp16 = true;
+     int in_w = 0, in_h = 0, out_w = 0, out_h = 0;
+     OrtIoBinding *binding = nullptr;
+@@ -202,6 +206,12 @@ struct aji_ctx {
+     AjiConf conf;
+     int slot = 1;
+     bool active = false;
++    bool native_suspended = false;
++    bool native_output_observed = false;
++    uint64_t native_revision = 1, native_epoch = 0;
++    uint32_t native_requested_slot = 1, native_saved_slot = 1;
++    int native_saved_w = 0, native_saved_h = 0;
++    double native_saved_fps = 0;
+     int in_w = 0, in_h = 0, out_w = 0, out_h = 0;
+     std::string current_log;
+     std::vector<std::string> log_info, log_steps;
+@@ -1120,12 +1130,51 @@ OrtValue *make_tensor(aji_ctx *c, void *dml_alloc, size_t bytes, int n, int ch,
+     return v;
+ }
+ 
++bool native_sha256_file(const std::wstring &path, std::string *hex)
++{
++    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
++                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
++    if (file == INVALID_HANDLE_VALUE) return false;
++    BCRYPT_ALG_HANDLE algorithm = nullptr;
++    BCRYPT_HASH_HANDLE hash = nullptr;
++    DWORD objectBytes = 0, written = 0;
++    bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0;
++    if (ok) ok = BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
++                                   reinterpret_cast<PUCHAR>(&objectBytes), sizeof(objectBytes),
++                                   &written, 0) >= 0;
++    std::vector<UCHAR> object(ok ? objectBytes : 0);
++    if (ok) ok = BCryptCreateHash(algorithm, &hash, object.data(), objectBytes, nullptr, 0, 0) >= 0;
++    UCHAR bytes[1u << 16];
++    while (ok) {
++        DWORD got = 0;
++        if (!ReadFile(file, bytes, sizeof(bytes), &got, nullptr)) { ok = false; break; }
++        if (!got) break;
++        ok = BCryptHashData(hash, bytes, got, 0) >= 0;
++    }
++    CloseHandle(file);
++    UCHAR digest[32];
++    if (ok) ok = BCryptFinishHash(hash, digest, sizeof(digest), 0) >= 0;
++    if (hash) BCryptDestroyHash(hash);
++    if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
++    if (!ok) return false;
++    static constexpr char digits[] = "0123456789abcdef";
++    hex->clear();
++    hex->reserve(64);
++    for (UCHAR byte : digest) {
++        hex->push_back(digits[byte >> 4]);
++        hex->push_back(digits[byte & 0x0f]);
++    }
++    return true;
++}
++
+ // Create the session + discover the model's output dims for (in_w, in_h).
+ // Runs the model twice on a temporary input (the DML EP builds its
+ // reusable command list during the first executions — vsort's "replay").
+ bool model_open(aji_ctx *c, DmlModel *m, const std::string &onnx_path,
+                 int in_w, int in_h, int in_ch)
+ {
++    std::wstring identity_path = widen(onnx_path);
++    if (!native_sha256_file(identity_path, &m->model_sha256)) m->model_sha256.clear();
+     OrtSessionOptions *so = nullptr;
+     if (!c->ort_ck(g_ort->CreateSessionOptions(&so), "CreateSessionOptions"))
+         return false;
+@@ -1488,7 +1537,7 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+     c->conf_path = params->conf_path;
+     c->model_dir = params->model_dir ? params->model_dir : "";
+     c->rife_model_dir = params->rife_model_dir ? params->rife_model_dir : "";
+-    c->slot = params->slot ? params->slot : 1;
++    c->slot = params->slot ? params->slot : 1; c->native_requested_slot=(uint32_t)c->slot;
+     if (!aji_conf_load(c->conf_path.c_str(), &c->conf, &err))
+         c->verbose("conf load: %s", err.c_str());
+ 
+@@ -1594,8 +1643,7 @@ extern "C" AJI_EXPORT int aji_set_slot(aji_ctx *c, int slot)
+ {
+     if (!c)
+         return AJI_ERR;
+-    c->slot = slot;
+-    return AJI_OK;
++    c->slot=slot;c->native_requested_slot=(uint32_t)slot;++c->native_revision;return AJI_OK;
+ }
+ 
+ extern "C" AJI_EXPORT int aji_configure(aji_ctx *c, int w, int h, double fps,
+@@ -1603,6 +1651,7 @@ extern "C" AJI_EXPORT int aji_configure(aji_ctx *c, int w, int h, double fps,
+ {
+     if (!c || w < 2 || h < 2 || (w & 1) || (h & 1))
+         return AJI_ERR_SHAPE;
++    c->native_saved_w=w;c->native_saved_h=h;c->native_saved_fps=fps;c->native_output_observed=false;++c->native_revision;
+ 
+     // re-read the conf each configure so edits apply without restart
+     std::string err;
+@@ -1888,6 +1937,7 @@ extern "C" AJI_EXPORT int aji_infer(aji_ctx *c, const aji_frame *in,
+     (void)cu_stream;
+     if (!c || !in || !out)
+         return AJI_ERR;
++    if(c->native_suspended)return AJI_ERR;
+     if (!c->active) {
+         c->set_error("aji_infer without an active configuration");
+         return AJI_ERR;
+@@ -2409,7 +2459,12 @@ extern "C" AJI_EXPORT int aji_done(aji_ctx *c, uint64_t ticket)
+         return 1;
+     if (!c->done_fence || ticket > c->done_val)
+         return AJI_ERR;
+-    return c->done_fence->GetCompletedValue() >= ticket ? 1 : 0;
++    const bool done = c->done_fence->GetCompletedValue() >= ticket;
++    if (done && c->active && !c->native_output_observed) {
++        c->native_output_observed = true;
++        ++c->native_revision;
++    }
++    return done ? 1 : 0;
+ }
+ 
+ extern "C" AJI_EXPORT int aji_wait(aji_ctx *c, uint64_t ticket)
+@@ -2426,6 +2481,10 @@ extern "C" AJI_EXPORT int aji_wait(aji_ctx *c, uint64_t ticket)
+         diagnose_device(c, "ticket wait");
+         return AJI_ERR;
+     }
++    if (c->active && !c->native_output_observed) {
++        c->native_output_observed = true;
++        ++c->native_revision;
++    }
+     return AJI_OK;
+ }
+ 
+@@ -2436,6 +2495,7 @@ extern "C" AJI_EXPORT int aji_infer_rife(aji_ctx *c, const aji_frame *a,
+     (void)cu_stream;
+     if (!c || !a || !b || !out)
+         return AJI_ERR;
++    if(c->native_suspended)return AJI_ERR;
+     auto &R = c->rife;
+     if (!R.enabled) {
+         c->set_error("aji_infer_rife without an active RIFE configuration");
+@@ -2718,3 +2778,88 @@ extern "C" AJI_EXPORT void aji_destroy(aji_ctx **pc)
+     delete c;
+     *pc = nullptr;
+ }
++
++extern "C" AJI_EXPORT int aji_native_backend_snapshot(
++    aji_ctx *c, aji_native_snapshot_v2 *s)
++{
++    if (!c || !s) return AJI_NATIVE_INVALID_ARGUMENT;
++    s->backend = 2;
++    snprintf(s->provider, sizeof(s->provider), "%s", "DirectML");
++    s->capability_bits = AJI_NATIVE_CAP_TICKET_DRAIN;
++    if ((c->active || c->native_suspended) &&
++        c->native_saved_w >= 2 && c->native_saved_h >= 2)
++        s->capability_bits |= AJI_NATIVE_CAP_SUSPEND_RESUME;
++    
++
++
++    s->last_submitted_ticket = c->done_val;
++    s->completed_ticket = (c->done_fence ? c->done_fence->GetCompletedValue() : 0);
++    s->requested_slot = c->native_requested_slot;
++    s->revision = c->native_revision;
++    s->epoch = c->native_epoch;
++
++    s->effective_slot = 0;
++    s->input_width = c->in_w; s->input_height = c->in_h;
++
++    s->output_width = 0; s->output_height = 0;
++    s->stage_count = (uint32_t)c->models.size() + (c->rife.enabled ? 1u : 0u);
++    uint32_t index = 0;
++    for (const auto &model : c->models) {
++        if (index >= AJI_NATIVE_MAX_STAGES) break;
++        snprintf(s->model_sha256[index++], AJI_NATIVE_SHA256_CAPACITY, "%s", model.model_sha256.c_str());
++    }
++    if (c->rife.enabled && index < AJI_NATIVE_MAX_STAGES)
++        snprintf(s->model_sha256[index++], AJI_NATIVE_SHA256_CAPACITY, "%s", c->rife.model.model_sha256.c_str());
++
++    snprintf(s->requested_plan, sizeof(s->requested_plan), "slot:%u", c->native_requested_slot);
++    s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++    ComPtr<IDXGIDevice> dxgi; ComPtr<IDXGIAdapter> adapter; DXGI_ADAPTER_DESC desc = {};
++    if (SUCCEEDED(c->dev11.As(&dxgi)) && SUCCEEDED(dxgi->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetDesc(&desc))) {
++        snprintf(s->device_identity, sizeof(s->device_identity), "D3D11-LUID:%08X%08X", (uint32_t)desc.AdapterLuid.HighPart, (uint32_t)desc.AdapterLuid.LowPart);
++        s->capability_bits |= AJI_NATIVE_CAP_D3D_ADAPTER_LUID;
++    }
++    snprintf(s->error, sizeof(s->error), "%s",
++             "prepared-plan identity is not independently verified by this producer");
++    return AJI_NATIVE_OK;
++}
++
++extern "C" AJI_EXPORT int aji_native_backend_control(
++    aji_ctx *c, uint32_t action, uint64_t epoch, uint32_t timeout_ms)
++{
++    if (!c) return AJI_NATIVE_INVALID_ARGUMENT;
++    if (action == AJI_NATIVE_CONTROL_RESUME) {
++        if (!c->native_suspended) return AJI_NATIVE_OPERATION_FAILED;
++        c->slot = (int)c->native_saved_slot;
++        c->native_suspended = false;
++        int out_w = 0, out_h = 0;
++        const int configured = aji_configure(c, c->native_saved_w, c->native_saved_h, c->native_saved_fps, &out_w, &out_h);
++        if (configured <= 0) { c->native_suspended = true; c->set_error("resume found no usable prepared plan"); return AJI_NATIVE_OPERATION_FAILED; }
++        c->native_epoch = epoch; ++c->native_revision; return AJI_NATIVE_OK;
++    }
++    const uint64_t ticket = aji_flush(c, nullptr);
++    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
++    while (ticket) {
++        const int done = aji_done(c, ticket);
++        if (done == 1) break;
++        if (done < 0) return AJI_NATIVE_OPERATION_FAILED;
++        if (std::chrono::steady_clock::now() >= deadline) { c->set_error("native drain timed out at ticket %llu", (unsigned long long)ticket); return AJI_NATIVE_OPERATION_FAILED; }
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++    if (action == AJI_NATIVE_CONTROL_SUSPEND) {
++        if (!c->active || c->native_saved_w < 2 || c->native_saved_h < 2) {
++            c->set_error("suspend requires a configured plan");
++            return AJI_NATIVE_OPERATION_FAILED;
++        }
++        c->native_saved_slot = (uint32_t)c->slot; c->slot = 0;
++        int out_w = 0, out_h = 0;
++        const int configured = aji_configure(c, c->native_saved_w, c->native_saved_h, c->native_saved_fps, &out_w, &out_h);
++        if (configured < 0) { c->slot = (int)c->native_saved_slot; return AJI_NATIVE_OPERATION_FAILED; }
++        chain_teardown(c);
++        c->active = false;
++        c->native_suspended = true;
++        ++c->native_revision;
++        return AJI_NATIVE_OK;
++    }
++    return AJI_NATIVE_OK;
++}
++        
+diff --git a/src/aji_trt.cpp b/src/aji_trt.cpp
+index 21dd233..fd0b0b3 100644
+--- a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@ -43,6 +43,9 @@
+ #include <NvInfer.h>
+ 
+ #include "aji.h"
++#include "aji_native.h"
++#include <bcrypt.h>
++#include <chrono>
+ #include "aji_conf.h"
+ #include "kernels.h"
+ 
+@@ -240,8 +243,54 @@ struct ModelEngine {
+     const char *in_name = nullptr;
+     const char *out_name = nullptr;
+     int in_w = 0, in_h = 0, out_w = 0, out_h = 0;
++    std::string engine_sha256, model_sha256;
+ };
+ 
++bool native_sha256(const void *data, size_t bytes, std::string *hex)
++{
++    BCRYPT_ALG_HANDLE algorithm = nullptr;
++    BCRYPT_HASH_HANDLE hash = nullptr;
++    DWORD objectBytes = 0, written = 0;
++    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0)
++        return false;
++    if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH,
++                          reinterpret_cast<PUCHAR>(&objectBytes), sizeof(objectBytes),
++                          &written, 0) < 0) {
++        BCryptCloseAlgorithmProvider(algorithm, 0);
++        return false;
++    }
++    std::vector<UCHAR> object(objectBytes);
++    if (BCryptCreateHash(algorithm, &hash, object.data(), objectBytes, nullptr, 0, 0) < 0) {
++        BCryptCloseAlgorithmProvider(algorithm, 0);
++        return false;
++    }
++    const auto *input = static_cast<const UCHAR *>(data);
++    size_t offset = 0;
++    while (offset < bytes) {
++        const ULONG chunk = static_cast<ULONG>(
++            bytes - offset > (1u << 20) ? (1u << 20) : bytes - offset);
++        if (BCryptHashData(hash, const_cast<PUCHAR>(input + offset), chunk, 0) < 0) {
++            BCryptDestroyHash(hash);
++            BCryptCloseAlgorithmProvider(algorithm, 0);
++            return false;
++        }
++        offset += chunk;
++    }
++    UCHAR digest[32];
++    const NTSTATUS finished = BCryptFinishHash(hash, digest, sizeof(digest), 0);
++    BCryptDestroyHash(hash);
++    BCryptCloseAlgorithmProvider(algorithm, 0);
++    if (finished < 0) return false;
++    static constexpr char digits[] = "0123456789abcdef";
++    hex->clear();
++    hex->reserve(64);
++    for (UCHAR byte : digest) {
++        hex->push_back(digits[byte >> 4]);
++        hex->push_back(digits[byte & 0x0f]);
++    }
++    return true;
++}
++
+ struct Step {
+     enum Kind { RESIZE, MODEL } kind;
+     int out_w, out_h;
+@@ -268,6 +317,12 @@ struct aji_ctx {
+     std::vector<ModelEngine> engines;
+     std::vector<Step> steps;
+     bool active = false;
++    bool native_suspended = false;
++    bool native_output_observed = false;
++    uint64_t native_revision = 1, native_epoch = 0;
++    uint32_t native_requested_slot = 1, native_saved_slot = 1;
++    int native_saved_w = 0, native_saved_h = 0;
++    double native_saved_fps = 0;
+     int in_w = 0, in_h = 0, out_w = 0, out_h = 0;
+     std::string current_log;
+     std::vector<std::string> log_info, log_steps;
+@@ -751,6 +806,8 @@ bool load_engine(aji_ctx *c, const std::string &engine_path, ModelEngine *me,
+         c->set_error("cannot open engine: %s", engine_path.c_str());
+         return false;
+     }
++    if (!native_sha256(blob.data(), blob.size(), &me->engine_sha256))
++        me->engine_sha256.clear();
+     me->engine.reset(c->runtime->deserializeCudaEngine(blob.data(), blob.size()));
+     if (!me->engine) {
+         c->set_error("engine deserialization failed: %s", engine_path.c_str());
+@@ -903,6 +960,10 @@ int ensure_engine(aji_ctx *c, const std::string &name,
+                   const std::string *dir = nullptr)
+ {
+     const std::string model_dir = dir ? *dir : c->model_dir;
++    const std::string model_path = (fs::path(model_dir) / (name + ".onnx")).string();
++    std::vector<char> model_bytes;
++    if (read_file_bytes(model_path, &model_bytes))
++        native_sha256(model_bytes.data(), model_bytes.size(), &me->model_sha256);
+     const std::string short_epath = short_engine_path_for(model_dir, name, settings);
+ 
+     // Backwards compatibility: 3.5.0 and earlier cached engines used the
+@@ -1157,7 +1218,7 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+         c->model_dir = params->model_dir ? params->model_dir : ".";
+         c->trtexec = params->trtexec ? params->trtexec : "trtexec";
+         c->trtexec_env = params->trtexec_env ? params->trtexec_env : "";
+-        c->slot = params->slot >= 0 ? params->slot : 1;
++        c->slot = params->slot >= 0 ? params->slot : 1; c->native_requested_slot=(uint32_t)c->slot;
+         c->rife_model_dir =
+             params->rife_model_dir ? params->rife_model_dir : "";
+         c->async_build = params->async_build != 0;
+@@ -1201,8 +1262,7 @@ extern "C" AJI_EXPORT int aji_set_slot(aji_ctx *c, int slot)
+     // passthrough, which is exactly the wanted "off" behavior.
+     if (!c || slot < 0)
+         return AJI_ERR;
+-    c->slot = slot;
+-    return AJI_OK;
++    c->slot=slot;c->native_requested_slot=(uint32_t)slot;++c->native_revision;return AJI_OK;
+ }
+ 
+ extern "C" AJI_EXPORT int aji_configure(aji_ctx *c, int w, int h, double fps,
+@@ -1210,6 +1270,7 @@ extern "C" AJI_EXPORT int aji_configure(aji_ctx *c, int w, int h, double fps,
+ {
+     if (!c || w < 2 || h < 2 || (w & 1) || (h & 1))
+         return AJI_ERR_SHAPE;
++    c->native_saved_w=w;c->native_saved_h=h;c->native_saved_fps=fps;c->native_output_observed=false;++c->native_revision;
+ 
+     if (!c->conf_mode) {
+         if (w > c->max_w || h > c->max_h) {
+@@ -1660,6 +1721,7 @@ extern "C" AJI_EXPORT int aji_infer(aji_ctx *c, const aji_frame *in,
+ {
+     if (!c || !in || !out)
+         return AJI_ERR;
++    if(c->native_suspended)return AJI_ERR;
+     if (!c->active) {
+         c->set_error("aji_infer without an active configuration");
+         return AJI_ERR;
+@@ -2004,6 +2066,10 @@ extern "C" AJI_EXPORT int aji_done(aji_ctx *c, uint64_t ticket)
+     cudaError_t e = cudaEventQuery(c->tick_ev[ticket % aji_ctx::TICK_RING]);
+     if (e == cudaSuccess) {
+         c->tick_completed = std::max(c->tick_completed, ticket);
++        if (c->active && !c->native_output_observed) {
++            c->native_output_observed = true;
++            ++c->native_revision;
++        }
+         return 1;
+     }
+     if (e == cudaErrorNotReady)
+@@ -2029,6 +2095,10 @@ extern "C" AJI_EXPORT int aji_wait(aji_ctx *c, uint64_t ticket)
+         return AJI_ERR_CUDA;
+     }
+     c->tick_completed = std::max(c->tick_completed, ticket);
++    if (c->active && !c->native_output_observed) {
++        c->native_output_observed = true;
++        ++c->native_revision;
++    }
+     return AJI_OK;
+ }
+ 
+@@ -2078,6 +2148,7 @@ extern "C" AJI_EXPORT int aji_infer_rife(aji_ctx *c, const aji_frame *a,
+ {
+     if (!c || !a || !b || !out)
+         return AJI_ERR;
++    if(c->native_suspended)return AJI_ERR;
+     auto &R = c->rife;
+     if (!R.enabled) {
+         c->set_error("aji_infer_rife without an active RIFE configuration");
+@@ -2341,3 +2412,99 @@ extern "C" AJI_EXPORT void aji_destroy(aji_ctx **pc)
+     delete c;
+     *pc = nullptr;
+ }
++
++extern "C" AJI_EXPORT int aji_native_backend_snapshot(
++    aji_ctx *c, aji_native_snapshot_v2 *s)
++{
++    if (!c || !s) return AJI_NATIVE_INVALID_ARGUMENT;
++    s->backend = 1;
++    snprintf(s->provider, sizeof(s->provider), "%s", "TensorRT");
++    s->capability_bits = AJI_NATIVE_CAP_TICKET_DRAIN;
++    if (c->conf_mode && (c->active || c->native_suspended) &&
++        c->native_saved_w >= 2 && c->native_saved_h >= 2)
++        s->capability_bits |= AJI_NATIVE_CAP_SUSPEND_RESUME;
++
++    s->last_submitted_ticket = c->tick_next - 1;
++    s->completed_ticket = c->tick_completed;
++    s->requested_slot = c->native_requested_slot;
++    s->revision = c->native_revision;
++    s->epoch = c->native_epoch;
++
++    s->effective_slot = 0;
++    s->input_width = c->in_w; s->input_height = c->in_h;
++
++    s->output_width = 0; s->output_height = 0;
++    s->stage_count = (uint32_t)c->engines.size() + (c->rife.enabled ? 1u : 0u) + (!c->conf_mode && c->direct.engine ? 1u : 0u);
++    uint32_t index = 0;
++    for (const auto &engine : c->engines) {
++        if (index >= AJI_NATIVE_MAX_STAGES) break;
++        snprintf(s->engine_sha256[index], AJI_NATIVE_SHA256_CAPACITY, "%s", engine.engine_sha256.c_str());
++        snprintf(s->model_sha256[index], AJI_NATIVE_SHA256_CAPACITY, "%s", engine.model_sha256.c_str());
++        ++index;
++    }
++    if (c->rife.enabled && index < AJI_NATIVE_MAX_STAGES) {
++        snprintf(s->engine_sha256[index], AJI_NATIVE_SHA256_CAPACITY, "%s", c->rife.engine.engine_sha256.c_str());
++        snprintf(s->model_sha256[index], AJI_NATIVE_SHA256_CAPACITY, "%s", c->rife.engine.model_sha256.c_str());
++        ++index;
++    }
++    s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++    if (!c->conf_mode && c->direct.engine && index < AJI_NATIVE_MAX_STAGES)
++        snprintf(s->engine_sha256[index], AJI_NATIVE_SHA256_CAPACITY, "%s", c->direct.engine_sha256.c_str());
++
++    snprintf(s->requested_plan, sizeof(s->requested_plan), "slot:%u", c->native_requested_slot);
++    CtxGuard guard(c->cu_ctx);
++    CUdevice device; CUuuid uuid;
++    if (guard.ok && cuCtxGetDevice(&device) == CUDA_SUCCESS && cuDeviceGetUuid(&uuid, device) == CUDA_SUCCESS) {
++        int pos = snprintf(s->device_identity, sizeof(s->device_identity), "CUDA-UUID:");
++        for (int i = 0; i < 16 && pos < (int)sizeof(s->device_identity) - 2; ++i) pos += snprintf(s->device_identity + pos, sizeof(s->device_identity) - pos, "%02x", (unsigned char)uuid.bytes[i]);
++        s->capability_bits |= AJI_NATIVE_CAP_CU_DEVICE_UUID;
++    }
++    snprintf(s->error, sizeof(s->error), "%s",
++             "prepared-plan identity is not independently verified by this producer");
++    return AJI_NATIVE_OK;
++}
++
++extern "C" AJI_EXPORT int aji_native_backend_control(
++    aji_ctx *c, uint32_t action, uint64_t epoch, uint32_t timeout_ms)
++{
++    if (!c) return AJI_NATIVE_INVALID_ARGUMENT;
++    if (action == AJI_NATIVE_CONTROL_RESUME) {
++        if (!c->native_suspended) return AJI_NATIVE_OPERATION_FAILED;
++        c->slot = (int)c->native_saved_slot;
++        c->native_suspended = false;
++        int out_w = 0, out_h = 0;
++        const int configured = aji_configure(c, c->native_saved_w, c->native_saved_h, c->native_saved_fps, &out_w, &out_h);
++        if (configured <= 0) { c->native_suspended = true; c->set_error("resume found no usable prepared plan"); return AJI_NATIVE_OPERATION_FAILED; }
++        c->native_epoch = epoch; ++c->native_revision; return AJI_NATIVE_OK;
++    }
++    const uint64_t ticket = aji_flush(c, nullptr);
++    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
++    while (ticket) {
++        const int done = aji_done(c, ticket);
++        if (done == 1) break;
++        if (done < 0) return AJI_NATIVE_OPERATION_FAILED;
++        if (std::chrono::steady_clock::now() >= deadline) { c->set_error("native drain timed out at ticket %llu", (unsigned long long)ticket); return AJI_NATIVE_OPERATION_FAILED; }
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++    if (action == AJI_NATIVE_CONTROL_SUSPEND) {
++        if (!c->conf_mode || !c->active || c->native_saved_w < 2 ||
++            c->native_saved_h < 2) {
++            c->set_error("suspend requires a configured conf-mode plan");
++            return AJI_NATIVE_OPERATION_FAILED;
++        }
++        c->native_saved_slot = (uint32_t)c->slot; c->slot = 0;
++        int out_w = 0, out_h = 0;
++        const int configured = aji_configure(c, c->native_saved_w, c->native_saved_h, c->native_saved_fps, &out_w, &out_h);
++        if (configured < 0) { c->slot = (int)c->native_saved_slot; return AJI_NATIVE_OPERATION_FAILED; }
++        CtxGuard guard(c->cu_ctx);
++        if (!guard.ok) return AJI_NATIVE_OPERATION_FAILED;
++        for (void *&buffer : c->buf) if (buffer) { cudaFree(buffer); buffer = nullptr; }
++        c->buf_bytes = 0;
++        if (c->stage_in) { cudaFree(c->stage_in); c->stage_in = nullptr; c->stage_in_bytes = 0; }
++        if (c->stage_out) { cudaFree(c->stage_out); c->stage_out = nullptr; c->stage_out_bytes = 0; }
++        c->native_suspended = true;
++        ++c->native_revision;
++        return AJI_NATIVE_OK;
++    }
++    return AJI_NATIVE_OK;
++}

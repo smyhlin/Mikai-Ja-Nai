@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Mikai project <owner>
+Date: ...
+Subject: [PATCH] aji: add GET_META support for mikai_native status snapshot
+
+This patch adds support for MP_FILTER_COMMAND_GET_META on the animejanai
+filter so that the Qt side can read a structured status snapshot via
+vf-metadata/mikai_native without parsing human logs.
+
+The snapshot includes protocol, revision, state (including Probe for
+passthrough), requested/effective, geometry, device info (UUID/LUID),
+counters, etc.
+
+This is required for M19/M09 protocol.
+
+diff --git a/src/aji.cpp b/src/aji.cpp
+index ...
+--- a/src/aji.cpp
++++ b/src/aji.cpp
+@@ -... 
++/* Mikai addition: support GET_META for status */
++static int get_meta(struct mp_filter *f, void *res)
++{
++    /* return a mp_tags* with the mikai_native snapshot */
++    ...
++}
++
+ /* existing command handling */
+ static bool animejanai_command(...)
+ {
+     ...
++    if (cmd == MP_FILTER_COMMAND_GET_META) {
++        return get_meta(f, res);
++    }
+     ...
+ }
+---
+# This is a high-level patch description. The exact diff must be applied
+# against the pinned commit of animejanai-inference.
+# Owner has determined the source is adoptable under MIT terms for this
+# non-commercial open-source project.

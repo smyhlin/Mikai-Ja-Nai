@@ -1,0 +1,420 @@
+diff --git a/video/filter/vf_animejanai.c b/video/filter/vf_animejanai.c
+index 7b40ad93d..f2efa5945 100644
+--- a/video/filter/vf_animejanai.c
++++ b/video/filter/vf_animejanai.c
+@@ -44,6 +44,7 @@
+  * License along with mpv.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#include <stdatomic.h>
+ #include <stdio.h>
+ 
+ #include "config.h"
+@@ -59,13 +60,16 @@
+ #include <libavutil/hwcontext.h>
+ #include <libavutil/hwcontext_cuda.h>
+ #include <libavutil/pixfmt.h>
++#include <libavutil/rational.h>
+ 
+ #if HAVE_D3D11
++#include <dxgi.h>
+ #include <libavutil/hwcontext_d3d11va.h>
+ #endif
+ 
+ #include "common/common.h"
+ #include "filters/filter.h"
++#include "common/tags.h"
+ #include "filters/filter_internal.h"
+ #include "filters/user_filters.h"
+ #include "options/m_option.h"
+@@ -275,6 +279,18 @@ struct priv {
+     AVBufferRef *work_pool;          // work-res frames (interp temps + the
+                                      // pre-RIFE downscale output); only used
+                                      // when has_pre_resize
++
++    // Native status publication (the Qt NativeStatus contract): one monotonic
++    // revision, one lifecycle epoch, and a cached compact snapshot document.
++    int64_t status_revision;
++    int64_t status_epoch;
++    bool status_dirty;
++    char *status_json;
++    // Observed decoder-device identity, read from the adopted device context.
++    bool device_known;
++    char decoder_uuid[40];
++    char adapter_luid[24];
++    int sm_major, sm_minor;
+ };
+ 
+ static int check_cu(struct mp_filter *vf, CUresult err, const char *func)
+@@ -386,9 +402,150 @@ static void drain_backend(struct mp_filter *vf)
+     }
+ }
+ 
++// ---- Native status publication -------------------------------------------
++// The Qt consumer (mplayer::native::NativeStatus) reads one flat string map
++// with exactly `schema`, `protocol`, `revision` and `snapshot`; the snapshot is
++// a compact UTF-8 JSON document whose inner scalars keep their real JSON types.
++// This filter is the producer: the pure Probe passthrough reports only observed
++// source/decoder-device facts, never a plan, counters or Active. The document
++// is cached and rebuilt only when a published fact or the lifecycle changes.
++
++// The filter's monotonic change counter: unchanged state keeps the revision.
++static void status_touch(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    p->status_revision++;
++    p->status_dirty = true;
++}
++
++// Every epoch comes from one process-wide sequence, so a filter recreation (a
++// fresh priv starting from zero) is still a strictly newer lifecycle than the
++// one it replaced, and a consumer that missed the gap never reads the new
++// filter as a stale read of the old one.
++static atomic_int_least64_t status_epoch_seed;
++
++static int64_t status_next_epoch(void)
++{
++    return (int64_t)atomic_fetch_add(&status_epoch_seed, 1);
++}
++
++// A new lifecycle: seek/reset, source or device reinit, or filter recreation.
++// The epoch advances together with the revision so the consumer can tell a
++// restart from a stale read even when the facts themselves did not change.
++static void status_begin_epoch(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    p->status_epoch = status_next_epoch();
++    status_touch(vf);
++}
++
++// Drop the observed device identity: the context it was read from is gone.
++static void clear_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    const bool had = p->device_known || p->decoder_uuid[0] ||
++                     p->adapter_luid[0] || p->sm_major || p->sm_minor;
++    p->device_known = false;
++    p->decoder_uuid[0] = '\0';
++    p->adapter_luid[0] = '\0';
++    p->sm_major = p->sm_minor = 0;
++    if (had)
++        status_touch(vf);
++}
++
++// The actual decoder device, read from the CUDA context the incoming
++// AVHWFramesContext lives on. Pushes that context, queries the current CUdevice
++// and its identity, and pops on every successful push. The optional UUID entry
++// points are guarded; the SM is reported when the UUID is unavailable.
++static void query_cuda_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->cu || !p->cuda_ctx)
++        return;
++    CUcontext dummy;
++    if (CHECK_CU(p->cu->cuCtxPushCurrent(p->cuda_ctx)) < 0)
++        return;
++
++    CUdevice dev = 0;
++    bool have_dev = p->cu->cuCtxGetDevice &&
++                    CHECK_CU(p->cu->cuCtxGetDevice(&dev)) >= 0;
++    if (have_dev) {
++        CUuuid uuid;
++        memset(&uuid, 0, sizeof(uuid));
++        bool have_uuid = false;
++        if (p->cu->cuDeviceGetUuid_v2 &&
++            p->cu->cuDeviceGetUuid_v2(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        } else if (p->cu->cuDeviceGetUuid &&
++                   p->cu->cuDeviceGetUuid(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        }
++        if (have_uuid) {
++            snprintf(p->decoder_uuid, sizeof(p->decoder_uuid),
++                     "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
++                     "%02x%02x%02x%02x%02x%02x",
++                     (unsigned char)uuid.bytes[0], (unsigned char)uuid.bytes[1],
++                     (unsigned char)uuid.bytes[2], (unsigned char)uuid.bytes[3],
++                     (unsigned char)uuid.bytes[4], (unsigned char)uuid.bytes[5],
++                     (unsigned char)uuid.bytes[6], (unsigned char)uuid.bytes[7],
++                     (unsigned char)uuid.bytes[8], (unsigned char)uuid.bytes[9],
++                     (unsigned char)uuid.bytes[10], (unsigned char)uuid.bytes[11],
++                     (unsigned char)uuid.bytes[12], (unsigned char)uuid.bytes[13],
++                     (unsigned char)uuid.bytes[14], (unsigned char)uuid.bytes[15]);
++        }
++        int major = 0, minor = 0;
++        if (p->cu->cuDeviceComputeCapability &&
++            p->cu->cuDeviceComputeCapability(&major, &minor, dev) ==
++                CUDA_SUCCESS &&
++            major > 0) {
++            p->sm_major = major;
++            p->sm_minor = minor;
++        }
++    }
++    CHECK_CU(p->cu->cuCtxPopCurrent(&dummy));
++
++    p->device_known = have_dev && (p->decoder_uuid[0] || p->sm_major > 0);
++    status_touch(vf);
++    MP_VERBOSE(vf, "Probe decoder device: uuid=%s sm=%d.%d\n",
++               p->decoder_uuid[0] ? p->decoder_uuid : "(unavailable)",
++               p->sm_major, p->sm_minor);
++}
++
++#if HAVE_D3D11
++// The D3D11 source adapter, where supported: queried from the ID3D11Device the
++// incoming AVHWFramesContext borrowed, never inferred from the GUI adapter.
++static void query_d3d11_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->d3d_dev)
++        return;
++    IDXGIDevice *dxgi_dev = NULL;
++    IDXGIAdapter *adapter = NULL;
++    if (FAILED(ID3D11Device_QueryInterface(p->d3d_dev, &IID_IDXGIDevice,
++                                           (void **)&dxgi_dev)) ||
++        !dxgi_dev)
++        return;
++    if (SUCCEEDED(IDXGIDevice_GetAdapter(dxgi_dev, &adapter)) && adapter) {
++        DXGI_ADAPTER_DESC desc;
++        if (SUCCEEDED(IDXGIAdapter_GetDesc(adapter, &desc))) {
++            snprintf(p->adapter_luid, sizeof(p->adapter_luid), "%08lx%08lx",
++                     (unsigned long)desc.AdapterLuid.HighPart,
++                     (unsigned long)desc.AdapterLuid.LowPart);
++        }
++        IDXGIAdapter_Release(adapter);
++    }
++    IDXGIDevice_Release(dxgi_dev);
++    p->device_known = p->adapter_luid[0] != '\0';
++    status_touch(vf);
++}
++#endif
++
+ static void flush_frames(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
++    // A reset/seek starts a new lifecycle: the consumer must see a fresh epoch
++    // rather than a stale one that happens to match the next source.
++    status_begin_epoch(vf);
+     // GPU reads of the queued input frames must finish before the
+     // refqueue drops them
+     clear_ring(vf);
+@@ -426,6 +583,9 @@ static void release_device_state(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+ 
++    // The device identity is only valid for the context being dropped here.
++    clear_device_identity(vf);
++
+     // Finish submitted inference before releasing referenced surfaces or objects
+     // created in the old CUDA/D3D device context. clear_ring() waits on the
+     // upscaler ring; drain_backend() also flushes RIFE-first immediate work that
+@@ -531,6 +691,10 @@ static bool configure_aji(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+ 
++    // Any (re)configuration publishes a new state, even when unchanged *or*
++    // failed; the snapshot is rebuilt from the current facts on next read.
++    status_touch(vf);
++
+     p->out_params = p->params;
+     p->aji_active = false;
+     if (!p->aji) {
+@@ -1317,6 +1481,9 @@ static void vf_animejanai_process(struct mp_filter *vf)
+     if (in_fmt) {
+         if (p->configured || p->aji || p->av_device_ref)
+             MP_VERBOSE(vf, "Input reinit: rebuilding AnimeJaNai device state\n");
++        // A new device/context generation: fresh epoch before the old identity
++        // is cleared by release_device_state() and the new one is adopted.
++        status_begin_epoch(vf);
+         release_device_state(vf);
+ 
+         p->params = in_fmt->params;
+@@ -1405,6 +1572,15 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             return;
+         }
+ 
++        // Probe the actual decoder device of the adopted context, never the GUI
++        // adapter or a device-enumeration heuristic.
++#if HAVE_D3D11
++        if (p->is_d3d11)
++            query_d3d11_device_identity(vf);
++        else
++#endif
++            query_cuda_device_identity(vf);
++
+         if (p->api.handle && !p->aji) {
+             // mpv suboption values cannot contain '=', so the option takes a
+             // plain lib dir and the env assignment is composed here.
+@@ -1757,10 +1933,162 @@ static void vf_animejanai_process(struct mp_filter *vf)
+     mp_refqueue_write_out_pin(p->queue, out);
+ }
+ 
++// The observed cadence as a bounded exact rational. av_d2q recovers the
++// container's nominal rate instead of collapsing it onto a 1/1000 grid, so
++// 24000/1001 stays exact; both sides must fit the consumer's 1000000 bound.
++static bool status_rate_from_fps(double fps, int *num, int *den)
++{
++    if (!(fps > 0.0) || fps > 1000000.0)
++        return false;
++    AVRational rate = av_d2q(fps, 1000000);
++    if (rate.num < 1 || rate.den < 1 || rate.num > 1000000 || rate.den > 1000000)
++        return false;
++    *num = rate.num;
++    *den = rate.den;
++    return true;
++}
++
++// The state this build can prove. No shim loaded at all is the pure Probe
++// passthrough; a loaded shim is not a preparation report, so the legacy path is
++// never published as Prepared, Active or Ready.
++static const char *status_state_name(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    return p->api.handle ? "NeedsPreparation" : "Probe";
++}
++
++static const char *status_reason(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (p->api.handle)
++        return "the native engine is not prepared by this build";
++    if (!p->device_known)
++        return "probe passthrough: the decoder device identity is not available";
++    return "probe passthrough: no inference engine is configured";
++}
++
++// Build (or return the cached) snapshot document. Only re-serialises when a
++// published fact changed, so polling it does no per-request JSON construction.
++static const char *build_status_document(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->status_dirty && p->status_json)
++        return p->status_json;
++
++    talloc_free(p->status_json);
++    p->status_json = NULL;
++
++    const bool have_source = p->params.w > 0 && p->params.h > 0;
++    const bool have_device = p->device_known;
++
++    bstr s = {0};
++    bstr_xappend_asprintf(vf, &s,
++        "{\"schema\":\"mikai.native.status/1\",\"protocol\":1,"
++        "\"revision\":%lld,\"state\":\"%s\",\"epoch\":%lld",
++        (long long)p->status_revision, status_state_name(vf),
++        (long long)p->status_epoch);
++
++    if (have_source || have_device) {
++        bstr_xappend0(vf, &s, ",\"probe\":{");
++        if (have_source) {
++            bstr_xappend_asprintf(vf, &s, "\"source\":{\"codedW\":%d,\"codedH\":%d",
++                                  p->params.w, p->params.h);
++            // An adopted frame reports rotate == 0 when it carries none, so
++            // zero is an observed fact; only an angle this build does not
++            // model stays absent (the consumer refuses it by name).
++            const int rotate = p->params.rotate;
++            if (rotate == 0 || rotate == 90 || rotate == 180 || rotate == 270)
++                bstr_xappend_asprintf(vf, &s, ",\"rotation\":%d", rotate);
++            // The decoder's own crop rect, in coded coordinates; a frame with
++            // no valid rect has no crop to report.
++            if (mp_image_crop_valid(&p->params))
++                bstr_xappend_asprintf(vf, &s,
++                    ",\"crop\":{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d}",
++                    p->params.crop.x0, p->params.crop.y0,
++                    mp_rect_w(p->params.crop), mp_rect_h(p->params.crop));
++            int num = 0, den = 0;
++            if (status_rate_from_fps(p->fps, &num, &den))
++                bstr_xappend_asprintf(vf, &s, ",\"fps\":{\"num\":%d,\"den\":%d}",
++                                      num, den);
++            const char *csp = mp_imgfmt_to_name(p->params.hw_subfmt);
++            if (csp && csp[0])
++                bstr_xappend_asprintf(vf, &s, ",\"csp\":\"%s\"", csp);
++            // Colour facts exactly as libmpv names them, and only when the
++            // adopted params carry one: "auto"/"unknown" is not a fact.
++            const char *matrix = NULL;
++            if (p->params.repr.sys != PL_COLOR_SYSTEM_UNKNOWN)
++                matrix = m_opt_choice_str(pl_csp_names, p->params.repr.sys);
++            if (matrix && matrix[0])
++                bstr_xappend_asprintf(vf, &s, ",\"matrix\":\"%s\"", matrix);
++            const char *range = NULL;
++            if (p->params.repr.levels != PL_COLOR_LEVELS_UNKNOWN)
++                range = m_opt_choice_str(pl_csp_levels_names, p->params.repr.levels);
++            if (range && range[0])
++                bstr_xappend_asprintf(vf, &s, ",\"range\":\"%s\"", range);
++            const char *siting = NULL;
++            if (p->params.chroma_location != PL_CHROMA_UNKNOWN)
++                siting = m_opt_choice_str(pl_chroma_names, p->params.chroma_location);
++            if (siting && siting[0])
++                bstr_xappend_asprintf(vf, &s, ",\"siting\":\"%s\"", siting);
++            const int depth = p->params.repr.bits.sample_depth;
++            if (depth == 8 || depth == 10 || depth == 12 || depth == 16)
++                bstr_xappend_asprintf(vf, &s, ",\"bitDepth\":%d", depth);
++            bstr_xappend0(vf, &s, "}");
++        }
++        if (have_device) {
++            bstr_xappend0(vf, &s, have_source ? ",\"device\":{" : "\"device\":{");
++            bool first = true;
++            if (p->decoder_uuid[0]) {
++                bstr_xappend_asprintf(vf, &s, "%s\"decoderDeviceUuid\":\"%s\"",
++                                      first ? "" : ",", p->decoder_uuid);
++                first = false;
++            }
++            if (p->adapter_luid[0]) {
++                bstr_xappend_asprintf(vf, &s, "%s\"adapterLuid\":\"%s\"",
++                                      first ? "" : ",", p->adapter_luid);
++                first = false;
++            }
++            if (p->sm_major > 0) {
++                bstr_xappend_asprintf(vf, &s, "%s\"smMajor\":%d,\"smMinor\":%d",
++                                      first ? "" : ",", p->sm_major, p->sm_minor);
++                first = false;
++            }
++            bstr_xappend0(vf, &s, "}");
++        }
++        bstr_xappend0(vf, &s, "}");
++    }
++
++    bstr_xappend_asprintf(vf, &s, ",\"reason\":\"%s\"}", status_reason(vf));
++
++    p->status_json = s.start;
++    p->status_dirty = false;
++    return p->status_json;
++}
++
+ static bool vf_animejanai_command(struct mp_filter *vf,
+                                   struct mp_filter_command *cmd)
+ {
+     struct priv *p = vf->priv;
++    if (cmd->type == MP_FILTER_COMMAND_GET_META) {
++        struct mp_tags **out = cmd->res;
++        if (!out)
++            return false;
++        const char *document = build_status_document(vf);
++        if (!document)
++            return false;
++        // Exactly the four typed tags the NativeStatus parser defines; the
++        // document's own identity is stated inside the snapshot as well.
++        char revision[32];
++        snprintf(revision, sizeof(revision), "%lld",
++                 (long long)p->status_revision);
++        struct mp_tags *tags = talloc_zero(NULL, struct mp_tags);
++        mp_tags_set_str(tags, "schema", "mikai.native.status/1");
++        mp_tags_set_str(tags, "protocol", "1");
++        mp_tags_set_str(tags, "revision", revision);
++        mp_tags_set_str(tags, "snapshot", document);
++        *out = tags;
++        return true;
++    }
+     if (cmd->type != MP_FILTER_COMMAND_TEXT || !cmd->cmd)
+         return false;
+     if (strcmp(cmd->cmd, "poll") == 0) {
+@@ -1864,6 +2192,10 @@ static struct mp_filter *vf_animejanai_create(struct mp_filter *parent,
+     p->opts = talloc_steal(p, options);
+     p->queue = mp_refqueue_alloc(f);
+     p->cur_slot = p->pending_slot = p->opts->slot;
++    // A fresh filter instance is already its own lifecycle, distinct from any
++    // filter it replaces.
++    p->status_epoch = status_next_epoch();
++    p->status_dirty = true;
+ 
+     // Expand mpv path shortcuts (~~/ etc.) so portable configs can point at
+     // files relative to the config directory (suboptions are not expanded

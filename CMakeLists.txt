@@ -7,6 +7,90 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+set(MIKAI_MINGW_RUNTIME_DIR "" CACHE PATH
+  "MinGW runtime DLL directory shared by Qt and the selected mpv module")
+if(MINGW AND MIKAI_MINGW_RUNTIME_DIR)
+  set(MIKAI_COMPILER_RUNTIME_FILES)
+  foreach(runtime IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+    set(runtime_file "${MIKAI_MINGW_RUNTIME_DIR}/${runtime}")
+    if(NOT EXISTS "${runtime_file}")
+      message(FATAL_ERROR "The selected MinGW runtime is missing: ${runtime_file}")
+    endif()
+    list(APPEND MIKAI_COMPILER_RUNTIME_FILES "${runtime_file}")
+  endforeach()
+endif()
+
+# The three DLLs are only deployable when they *are* the compiler runtime the
+# configured Qt links: Qt6Core.dll imports them by name and the executable's
+# directory wins that lookup, so another MinGW generation would replace Qt's
+# thread runtime rather than share it.
+function(mikai_qt_compiler_runtime_dir out_var)
+  set(${out_var} "" PARENT_SCOPE)
+  if(NOT TARGET Qt6::Core)
+    return()
+  endif()
+  set(qt_core_location "")
+  foreach(property IN ITEMS IMPORTED_LOCATION_RELEASE IMPORTED_LOCATION IMPORTED_LOCATION_DEBUG)
+    get_target_property(qt_core_location Qt6::Core "${property}")
+    if(qt_core_location)
+      break()
+    endif()
+    set(qt_core_location "")
+  endforeach()
+  if(NOT qt_core_location)
+    return()
+  endif()
+  get_filename_component(runtime_dir "${qt_core_location}" DIRECTORY)
+  set(${out_var} "${runtime_dir}" PARENT_SCOPE)
+endfunction()
+
+function(mikai_deploy_mingw_runtime_targets)
+  if(NOT MINGW OR NOT MIKAI_MINGW_RUNTIME_DIR)
+    return()
+  endif()
+
+  # A selection that is not Qt's runtime cannot be deployed - it would replace
+  # the compiler runtime Qt's own modules resolve - so refuse it by name.
+  mikai_qt_compiler_runtime_dir(qt_runtime_dir)
+  foreach(runtime_file IN LISTS MIKAI_COMPILER_RUNTIME_FILES)
+    get_filename_component(runtime_name "${runtime_file}" NAME)
+    set(qt_runtime_file "${qt_runtime_dir}/${runtime_name}")
+    set(mismatch "")
+    if(NOT qt_runtime_dir)
+      set(mismatch "the compiler runtime Qt links could not be located")
+    elseif(NOT EXISTS "${qt_runtime_file}")
+      set(mismatch "Qt's runtime directory has no ${runtime_name} at ${qt_runtime_file}")
+    else()
+      file(SHA256 "${runtime_file}" selected_hash)
+      file(SHA256 "${qt_runtime_file}" qt_hash)
+      if(NOT selected_hash STREQUAL qt_hash)
+        set(mismatch "${qt_runtime_file} is a different MinGW generation")
+      endif()
+    endif()
+    if(mismatch)
+      message(FATAL_ERROR
+        "MIKAI_MINGW_RUNTIME_DIR is ${MIKAI_MINGW_RUNTIME_DIR}, but ${runtime_name} is not "
+        "the compiler runtime Qt links: ${mismatch}. Deploying it beside a Qt executable "
+        "would replace the thread runtime Qt was built against. Point the option at the Qt "
+        "MinGW runtime, or leave it unset.")
+    endif()
+  endforeach()
+
+  # POST_BUILD must be attached in the target's defining directory.
+  get_property(directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target IN LISTS directory_targets)
+    get_target_property(target_type "${target}" TYPE)
+    if(target_type STREQUAL "EXECUTABLE")
+      add_custom_command(TARGET "${target}" POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${MIKAI_COMPILER_RUNTIME_FILES}
+          "$<TARGET_FILE_DIR:${target}>"
+        VERBATIM
+      )
+    endif()
+  endforeach()
+endfunction()
+
 # Qt6Widgets pulls in OpenGL; QOpenGLWidget itself lives in Qt6OpenGLWidgets.
 # Test is deliberately not in this list: it is only needed by the QA probes and
 # mikai_tests, so the app itself configures on a Qt install without it.
@@ -68,11 +152,25 @@ add_library(mikai_native_support STATIC
   src/player/native/NativeManifest.cpp
   src/player/native/NativeManifest.hpp
   src/player/native/NativeArtifactStore.cpp
+  src/player/native/NativeBuilder.cpp
+  src/player/native/NativeBuilder.hpp
+  src/player/native/NativePreparationReferences.cpp
+  src/player/native/NativePreparationReferences.hpp
+  src/player/native/NativeWorkLease.cpp
+  src/player/native/NativeWorkLease.hpp
   src/player/native/NativeArtifactStore.hpp
   src/player/native/NativeSpatialAssets.cpp
   src/player/native/NativeSpatialAssets.hpp
   src/player/native/NativeTypes.hpp
   src/player/native/NativeCatalog.hpp
+  src/player/native/NativeFilterCommand.cpp
+  src/player/native/NativeFilterCommand.hpp
+  src/player/native/NativeFrameFixture.cpp
+  src/player/native/NativeModelInventory.cpp
+  src/player/native/NativeModelInventory.hpp
+  src/player/native/NativeFrameFixture.hpp
+  src/player/native/NativePreparedPlan.cpp
+  src/player/native/NativePreparedPlan.hpp
 )
 target_include_directories(mikai_native_support PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player
@@ -85,14 +183,24 @@ add_executable(mikai_bundle EXCLUDE_FROM_ALL native/tools/bundle_tool.cpp)
 target_link_libraries(mikai_bundle PRIVATE mikai_native_support)
 
 option(MIKAI_WITH_MODEL_INSPECTION "Build the owned ONNX model inspector" OFF)
+# The native AnimeJaNai shim (M04) is a second toolchain: MSVC + nvcc, configured
+# standalone per native/build-msvc.md. It is wired in here only so an MSVC host
+# can build it in the same tree; nvcc rejects a MinGW host, so native/ errors
+# out clearly if this is ON under the default MinGW/Qt generator. Default OFF:
+# the default build touches nothing in native/.
+option(MIKAI_WITH_NATIVE "Build optional AnimeJaNai native inference support (requires external source tree + patches)" OFF)
+if(MIKAI_WITH_NATIVE)
+  add_subdirectory(native)
+endif()
 set(ORT_INCLUDE_DIR "" CACHE PATH "Directory containing onnxruntime_c_api.h")
 if(MIKAI_WITH_MODEL_INSPECTION)
   find_path(MIKAI_ORT_HEADERS onnxruntime_c_api.h HINTS ${ORT_INCLUDE_DIR} REQUIRED)
   add_library(mikai_model_inspection STATIC
     src/player/native/NativeModelInspect.cpp
     src/player/native/NativeModelInspect.hpp
-    src/player/native/NativeModelInventory.cpp
-    src/player/native/NativeModelInventory.hpp
+    src/player/native/NativeFrameReference.cpp
+    src/player/native/NativeFrameReference.hpp
+    src/player/native/NativeModelImport.cpp
     src/player/native/NativeInspectedPlan.cpp
     src/player/native/NativeInspectedPlan.hpp
   )
@@ -106,12 +214,17 @@ set(PLAYER_SOURCES
   src/player/MpvApi.cpp
   src/player/native/NativeRuntimeSelection.cpp
   src/player/native/NativeStatus.cpp
+  src/player/native/NativePlaybackController.cpp
+  src/player/native/NativePlaybackController.hpp
   src/player/native/NativePrefs.cpp
+  src/player/native/NativeCapabilities.cpp
+  src/player/NativeToggleShortcut.cpp
   src/player/native/NativeMenu.cpp
   src/player/PresetShortcuts.cpp
   src/player/MpvHandle.cpp
   src/player/MpvRenderContext.cpp
   src/player/VideoSurface.cpp
+  src/player/PlaybackDiagnostics.cpp
   src/player/Anime4K.cpp
   src/player/ShellTheme.cpp
   src/player/ShellWidgets.cpp
@@ -136,6 +249,7 @@ set(PLAYER_HEADERS
   src/player/native/NativeRuntimeSelection.hpp
   src/player/native/NativeStatus.hpp
   src/player/native/NativePrefs.hpp
+  src/player/native/NativeCapabilities.hpp
   src/player/native/NativeMenu.hpp
   src/player/native/NativeRecipe.hpp
   src/player/native/NativePreparationPlan.hpp
@@ -144,6 +258,7 @@ set(PLAYER_HEADERS
   src/player/MpvHandle.hpp
   src/player/MpvRenderContext.hpp
   src/player/VideoSurface.hpp
+  src/player/PlaybackDiagnostics.hpp
   src/player/Anime4K.hpp
   src/player/PresetShortcuts.hpp
   src/player/ShellTheme.hpp
@@ -152,6 +267,7 @@ set(PLAYER_HEADERS
   src/player/PlayerShell.hpp
   src/player/PlayerPopups.hpp
   src/player/PlayerDialog.hpp
+  src/player/ProcessingSettingsIntent.hpp
   src/player/CompareWindow.hpp
   src/player/CompareCanvas.hpp
   src/player/CompareLayout.hpp
@@ -190,12 +306,35 @@ set_target_properties(mpv_loader_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(runtime_selection_probe EXCLUDE_FROM_ALL src/probes/RuntimeSelectionProbe.cpp)
 target_link_libraries(runtime_selection_probe PRIVATE mikai_player)
 set_target_properties(runtime_selection_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+add_executable(runtime_recovery_probe EXCLUDE_FROM_ALL src/probes/RuntimeRecoveryProbe.cpp)
+target_link_libraries(runtime_recovery_probe PRIVATE mikai_player mikai_backend)
+set_target_properties(runtime_recovery_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(native_status_probe EXCLUDE_FROM_ALL src/probes/NativeStatusProbe.cpp)
 target_link_libraries(native_status_probe PRIVATE mikai_player)
 set_target_properties(native_status_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+if(MIKAI_WITH_MODEL_INSPECTION)
+  add_executable(native_builder_probe EXCLUDE_FROM_ALL src/probes/NativeBuilderProbe.cpp)
+  target_link_libraries(native_builder_probe PRIVATE mikai_model_inspection)
+  set_target_properties(native_builder_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
+add_executable(native_prep_probe EXCLUDE_FROM_ALL src/probes/NativePrepProbe.cpp)
+target_link_libraries(native_prep_probe PRIVATE Qt6::Core)
+set_target_properties(native_prep_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+add_executable(native_verification_probe EXCLUDE_FROM_ALL src/probes/NativeVerificationProbe.cpp)
+target_link_libraries(native_verification_probe PRIVATE Qt6::Core)
+set_target_properties(native_verification_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+if(WIN32)
+  add_executable(native_dml_interop_probe EXCLUDE_FROM_ALL src/probes/NativeDmlInteropProbe.cpp)
+  target_link_libraries(native_dml_interop_probe PRIVATE
+    Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets d3d11 dxgi opengl32 gdi32)
+  set_target_properties(native_dml_interop_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+endif()
 add_executable(native_menu_probe EXCLUDE_FROM_ALL src/probes/NativeMenuProbe.cpp)
 target_link_libraries(native_menu_probe PRIVATE mikai_app Qt6::Test)
 set_target_properties(native_menu_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+add_executable(native_hud_probe EXCLUDE_FROM_ALL src/probes/NativeHudProbe.cpp)
+target_link_libraries(native_hud_probe PRIVATE mikai_app Qt6::Widgets)
+set_target_properties(native_hud_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(native_settings_probe EXCLUDE_FROM_ALL src/probes/NativeSettingsProbe.cpp)
 target_link_libraries(native_settings_probe PRIVATE mikai_app Qt6::Test)
 set_target_properties(native_settings_probe PROPERTIES WIN32_EXECUTABLE FALSE)
@@ -306,11 +445,23 @@ add_executable(mikai_tests
   tests/cpp/TestNativePrepPlan.hpp
   tests/cpp/TestNativePrepPlan.cpp
   tests/cpp/TestNativeManifest.hpp
+  tests/cpp/TestNativeBuilder.hpp
+  tests/cpp/TestNativeBuilder.cpp
+  tests/cpp/TestNativePreparationReferences.hpp
+  tests/cpp/TestNativePreparationReferences.cpp
+  tests/cpp/TestNativeStoredModels.hpp
+  tests/cpp/TestNativeStoredModels.cpp
+  tests/cpp/TestNativePreparedPlan.hpp
+  tests/cpp/TestNativePreparedPlan.cpp
+  tests/cpp/TestNativePlaybackController.hpp
+  tests/cpp/TestNativePlaybackController.cpp
   tests/cpp/TestNativeManifest.cpp
   tests/cpp/TestRuntimeSelection.hpp
   tests/cpp/TestRuntimeSelection.cpp
   tests/cpp/TestNativeStatus.hpp
   tests/cpp/TestNativeStatus.cpp
+  tests/cpp/TestPlaybackDiagnostics.hpp
+  tests/cpp/TestPlaybackDiagnostics.cpp
   tests/cpp/TestNativePrefs.hpp
   tests/cpp/TestNativePrefs.cpp
   tests/cpp/TestNativeMenu.hpp
@@ -375,14 +526,15 @@ if(TARGET mikai_backend)
     src/app/theme/Icons.cpp
     src/app/Labels.cpp
     src/app/state/Feeds.cpp
+    src/app/state/NativePlaybackAssembly.cpp
     src/app/state/QualityCache.cpp
     src/app/workers/Runner.cpp
     src/app/widgets/RangePager.cpp
     src/app/widgets/TitleCard.cpp
     src/app/widgets/RateLimitLabel.cpp
     src/app/dialogs/SettingsDialog.cpp
-    src/player/native/NativeAssetsPanel.cpp
-    src/player/native/NativeRifeControls.cpp
+    src/app/dialogs/NativeAssetsPanel.cpp
+    src/app/dialogs/NativeRifeControls.cpp
     src/app/dialogs/CoverViewer.cpp
     src/app/pages/SearchPage.cpp
     src/app/pages/TitlePage.cpp
@@ -399,14 +551,15 @@ if(TARGET mikai_backend)
     src/app/theme/Metrics.hpp
     src/app/theme/Icons.hpp
     src/app/state/Feeds.hpp
+    src/app/state/NativePlaybackAssembly.hpp
     src/app/state/QualityCache.hpp
     src/app/workers/Runner.hpp
     src/app/widgets/RangePager.hpp
     src/app/widgets/TitleCard.hpp
     src/app/widgets/RateLimitLabel.hpp
     src/app/dialogs/SettingsDialog.hpp
-    src/player/native/NativeAssetsPanel.hpp
-    src/player/native/NativeRifeControls.hpp
+    src/app/dialogs/NativeAssetsPanel.hpp
+    src/app/dialogs/NativeRifeControls.hpp
     src/app/dialogs/CoverViewer.hpp
     src/app/pages/SearchPage.hpp
     src/app/pages/TitlePage.hpp
@@ -449,8 +602,16 @@ if(TARGET mikai_backend)
     TS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/translations/mikai_uk.ts
     RESOURCE_PREFIX "/i18n"
     LUPDATE_TARGET update_translations
+    LUPDATE_OPTIONS -no-obsolete
+    LRELEASE_TARGET release_translations
     LRELEASE_OPTIONS -nounfinished
   )
+  if(TARGET mikai_tests)
+    add_dependencies(mikai_tests release_translations)
+    target_compile_definitions(mikai_tests PRIVATE
+      MIKAI_UK_CATALOG_PATH="${CMAKE_CURRENT_BINARY_DIR}/mikai_uk.qm"
+    )
+  endif()
 
   get_filename_component(MIKAI_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
   set(MIKAI_QTBASE_UK_CATALOG "${MIKAI_QT_PREFIX}/translations/qtbase_uk.qm")
@@ -487,9 +648,27 @@ if(TARGET mikai_backend)
     target_link_libraries(rife_settings_probe PRIVATE mikai_app Qt6::Test)
     set_target_properties(rife_settings_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
-    add_executable(spatial_assets_probe EXCLUDE_FROM_ALL src/probes/SpatialAssetsProbe.cpp)
-    target_link_libraries(spatial_assets_probe PRIVATE mikai_app Qt6::Test)
-    set_target_properties(spatial_assets_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+    add_executable(native_playback_assembly_probe EXCLUDE_FROM_ALL src/probes/NativePlaybackAssemblyProbe.cpp)
+    target_link_libraries(native_playback_assembly_probe PRIVATE mikai_app Qt6::Test)
+    set_target_properties(native_playback_assembly_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+    add_executable(native_framebuffer_probe EXCLUDE_FROM_ALL src/probes/NativeFramebufferProbe.cpp)
+    target_link_libraries(native_framebuffer_probe PRIVATE mikai_app)
+    set_target_properties(native_framebuffer_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+    add_executable(native_geometry_probe EXCLUDE_FROM_ALL src/probes/NativeGeometryProbe.cpp)
+    target_link_libraries(native_geometry_probe PRIVATE mikai_app Qt6::Test)
+    set_target_properties(native_geometry_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+    if(MIKAI_WITH_MODEL_INSPECTION)
+      add_executable(native_preparation_references_probe EXCLUDE_FROM_ALL src/probes/NativePreparationReferencesProbe.cpp)
+      target_link_libraries(native_preparation_references_probe PRIVATE mikai_model_inspection)
+      set_target_properties(native_preparation_references_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
+      add_executable(spatial_assets_probe EXCLUDE_FROM_ALL src/probes/SpatialAssetsProbe.cpp)
+      target_link_libraries(spatial_assets_probe PRIVATE mikai_app Qt6::Test)
+      set_target_properties(spatial_assets_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+    endif()
   endif()
 
   # Copy Anime4K shaders next to the executable so libmpv can find them at runtime.
@@ -545,6 +724,8 @@ if(MIKAI_BUILD_PROBES)
     )
   endforeach()
 endif()
+
+mikai_deploy_mingw_runtime_targets()
 
 set(MIKAI_TUNED_TARGETS mikai_player mikai_backend mikai_app mikai)
 foreach(t IN LISTS MIKAI_TUNED_TARGETS)

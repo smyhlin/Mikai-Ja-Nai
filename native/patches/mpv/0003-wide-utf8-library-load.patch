@@ -1,0 +1,101 @@
+diff --git a/video/filter/vf_animejanai.c b/video/filter/vf_animejanai.c
+index 81561cca2..a06409e55 100644
+--- a/video/filter/vf_animejanai.c
++++ b/video/filter/vf_animejanai.c
+@@ -93,23 +93,83 @@
+ #define AJI_DEFAULT_LIB "libaji.so"
+ #endif
+ 
++#ifdef _WIN32
++// UTF-8 to UTF-16 for a path the loader is about to be given.
++//
++// mp_from_utf8() aborts the process on a byte sequence it cannot convert, which
++// is not an acceptable answer for a load that has to fail by name: the caller
++// asked for a module, and a malformed directory name must not end the player.
++// MB_ERR_INVALID_CHARS makes a lone surrogate or a truncated sequence fail here
++// instead of being silently replaced with U+FFFD, which would name a different
++// file than the caller asked for.
++static wchar_t *aji_widen_path(const char *path)
++{
++    if (!path || !path[0])
++        return NULL;
++    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
++    if (n <= 0)
++        return NULL;
++    wchar_t *w = talloc_array(NULL, wchar_t, n);
++    if (!w)
++        return NULL;
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, w, n) <= 0) {
++        talloc_free(w);
++        return NULL;
++    }
++    return w;
++}
++#endif
++
+ static void *aji_lib_open(const char *path)
+ {
+ #ifdef _WIN32
+-    // With an explicit path, resolve the shim's own dependencies (the
+-    // TensorRT runtime) from its directory, so the whole inference runtime
+-    // can live in one self-contained dir instead of next to mpv.exe or on
+-    // PATH. The search flags need a fully qualified, normalized path
+-    // (config expansion produces absolute-but-unnormalized ones).
++    // The shim's own dependencies (the TensorRT runtime, onnxruntime, DirectML)
++    // resolve from its directory, so the whole inference runtime can live in one
++    // self-contained dir instead of next to mpv.exe or on PATH.
++    //
++    // The name arrives as UTF-8 from the managed filter option, so it is
++    // converted once here and every Win32 call below is a wide one. The narrow
++    // A-suffixed calls this replaces took the path in the process ANSI code page,
++    // which mangles any non-ASCII directory, and they resolved it through
++    // GetFullPathNameA with a MAX_PATH buffer, which truncates a long local path
++    // even though the wide loader itself has no such limit.
++    //
++    // The path is only searched for, never opened for writing, and the search
++    // flags keep the resolved closure inside the module's own directory plus the
++    // default Windows directories: PATH and the current directory are never
++    // consulted, so a module already on the machine cannot be substituted for
++    // the one the selection named.
++    wchar_t *wpath = aji_widen_path(path);
++    if (!wpath) {
++        SetLastError(ERROR_NO_UNICODE_TRANSLATION);
++        return NULL;
++    }
++
++    // Config expansion can produce an absolute but unnormalized path, and the
++    // restricted search flags need a fully qualified one. MP_PATH_MAX is the
++    // wide-API limit; a path that does not fit is passed through unchanged, which
++    // makes the loader fail with its own error rather than a truncated one.
++    wchar_t full[MP_PATH_MAX];
++    DWORD n = GetFullPathNameW(wpath, MP_ARRAY_SIZE(full), full, NULL);
++    const wchar_t *load = (n > 0 && n < MP_ARRAY_SIZE(full)) ? full : wpath;
++
++    HMODULE module;
+     if (strpbrk(path, "/\\")) {
+-        char full[MAX_PATH];
+-        DWORD n = GetFullPathNameA(path, sizeof(full), full, NULL);
+-        const char *p = (n > 0 && n < sizeof(full)) ? full : path;
+-        return (void *)LoadLibraryExA(p, NULL,
+-                                      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+-                                      LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+-    }
+-    return (void *)LoadLibraryA(path);
++        module = (HMODULE)LoadLibraryExW(load, NULL,
++                                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
++                                         LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++    } else {
++        // A bare basename keeps the plain search, exactly as before: the
++        // restricted flags above would refuse it outright, and which module it
++        // names is the caller's own configuration decision.
++        module = (HMODULE)LoadLibraryW(load);
++    }
++    // The loader's own error has to survive the free, because aji_lib_error()
++    // reports GetLastError() to the user.
++    DWORD err = module ? ERROR_SUCCESS : GetLastError();
++    talloc_free(wpath);
++    SetLastError(err);
++    return (void *)module;
+ #else
+     return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+ #endif

@@ -1,0 +1,2114 @@
+From 738ce3b3020b3950c48ce3122a08f32af531d4fa Mon Sep 17 00:00:00 2001
+From: Mikai <mikai@local>
+Date: Sat, 4 Oct 2026 00:00:00 +0000
+Subject: [PATCH] aji: managed prepared-plan admission, stream control, source-shape transform and factory capability query
+
+Additive prepared-plan v1 exports (aji_native_create_prepared,
+aji_native_apply_prepared, aji_native_control_on_stream) over the existing
+ABI-8/v2 snapshot/control, plus the managed source-shape transform. A plan
+names owned absolute engine/model paths and their expected SHA-256 digests;
+identity, device, runtime, geometry and cadence are validated and the digests
+are compared BEFORE any deserialize, with no trtexec, cache key, legacy path
+fallback, live build or file deletion. The coded source frame is cropped and
+then rotated on the GPU (aji_run_yuv_crop_rotate) into a display-size frame
+before any pre-resize, tensor binding or pad; odd coded sizes, odd crop
+offsets and odd crop extents are mapped (4:2:0 chroma by whole pairs, ceil on
+an odd extent) rather than refused, and the oriented geometry is what the
+stages and the snapshot output report. Admission is transactional, suspend
+releases the loaded resources and resume revalidates the retained plan, and
+drain orders on the caller's stream.
+
+Additive factory capability query (aji_native_query_factory), a standalone
+optional backend export (aji_native_backend_query_factory) over its own query
+protocol v1. It answers from the actually adopted, borrowed CUDA context and
+never creates one: the real device UUID/SM are read through cuCtxGetDevice /
+cuDeviceGetUuid, and the real TensorRT runtime factory is initialized and
+destroyed, with the exact loaded runtime token and the backend's truly
+compiled roles reported. A failed context, backend or runtime, or a schema
+mismatch, is an observed-unavailable result named in reasonKey/reason and
+never a true claim derived from export presence, preferences, filenames or
+manifests. A backend without the export is refused by name and the legacy
+ABI-8/v2 snapshot/control and prepared-plan calls keep working. No model,
+engine, network, inference, build or cache path is touched.
+
+native/include/aji_native.h is supplied by the build's include path (it is
+not part of this inference source tree); this patch touches src/ only.
+
+Apply after 0001-content-addressed-cache-and-prepared-only.patch and
+0002-native-snapshot-and-control.patch against the pinned source.
+
+---
+diff --git a/src/aji_dispatch.cpp b/src/aji_dispatch.cpp
+index 5d9daa4..5b375e7 100644
+--- a/src/aji_dispatch.cpp
++++ b/src/aji_dispatch.cpp
+@@ -53,6 +53,21 @@ struct aji_backend {
+     void (*destroy)(aji_ctx **);
+     int (*native_snapshot)(aji_ctx *, aji_native_snapshot_v2 *);
+     int (*native_control)(aji_ctx *, uint32_t, uint64_t, uint32_t);
++    /* prepared-plan exports are optional: a backend built before them simply
++       leaves these null and the dispatcher refuses the prepared calls by name
++       instead of failing the whole backend load */
++    aji_ctx *(*native_create_prepared)(const aji_create_params *,
++                                       const aji_native_prepared_plan_v1 *,
++                                       aji_native_snapshot_v2 *);
++    int (*native_apply_prepared)(aji_ctx *,
++                                 const aji_native_prepared_plan_v1 *,
++                                 aji_native_snapshot_v2 *);
++    int (*native_control_on_stream)(aji_ctx *, uint32_t, uint64_t, uint32_t,
++                                    void *);
++    /* factory capability query is optional too: a backend without it is
++       refused by name and keeps serving the legacy and prepared calls */
++    int (*native_query_factory)(const aji_create_params *,
++                                aji_native_factory_capabilities_v1 *);
+ };
+ 
+ /* The dispatcher's aji_ctx wraps the backend's. */
+@@ -176,16 +191,24 @@ static bool load_backend(const char *stem, aji_backend *be,
+     SYM(native_snapshot, "aji_native_backend_snapshot");
+     SYM(native_control, "aji_native_backend_control");
+ #undef SYM
++    *(void **)&be->native_create_prepared =
++        lib_sym(be->lib, "aji_native_backend_create_prepared");
++    *(void **)&be->native_apply_prepared =
++        lib_sym(be->lib, "aji_native_backend_apply_prepared");
++    *(void **)&be->native_control_on_stream =
++        lib_sym(be->lib, "aji_native_backend_control_on_stream");
++    *(void **)&be->native_query_factory =
++        lib_sym(be->lib, "aji_native_backend_query_factory");
+     return true;
+ }
+ 
+-extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
++/* The backend is chosen from the same [global] backend key aji_create uses,
++   so a factory query observes the backend the caller's conf actually selects.
++   The caller's params are never rewritten. */
++static std::string select_backend_stem(const aji_create_params *params,
++                                       std::string *display,
++                                       aji_log_fn log, void *log_opaque)
+ {
+-    if (!params || params->api_version != AJI_API_VERSION)
+-        return nullptr;
+-
+-    /* 3.3.x semantics: backend lives in [global] of animejanai.conf;
+-     * direct mode (no conf) is the TRT harness path */
+     std::string backend = "TensorRT";
+     if (params->conf_path) {
+         AjiConf conf;
+@@ -193,7 +216,7 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+         if (aji_conf_load(params->conf_path, &conf, &err))
+             backend = conf.backend;
+         else
+-            logf_to(params->log, params->log_opaque, 2,
++            logf_to(log, log_opaque, 2,
+                     "conf parse failed (%s), using TensorRT", err.c_str());
+     }
+ 
+@@ -205,20 +228,34 @@ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+     if (lower == "directml") {
+         stem = "aji_dml";
+     } else if (lower == "ncnn") {
+-        logf_to(params->log, params->log_opaque, 2,
++        logf_to(log, log_opaque, 2,
+                 "backend=NCNN is retired; using DirectML instead");
+         stem = "aji_dml";
+     }
++    *display = backend;
++    return stem;
++}
++
++extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
++{
++    if (!params || params->api_version != AJI_API_VERSION)
++        return nullptr;
++
++    /* 3.3.x semantics: backend lives in [global] of animejanai.conf;
++     * direct mode (no conf) is the TRT harness path */
++    std::string backend;
++    const std::string stem = select_backend_stem(params, &backend,
++                                                 params->log, params->log_opaque);
+ 
+     aji_backend be = {};
+     std::string err;
+-    if (!load_backend(stem, &be, &err)) {
++    if (!load_backend(stem.c_str(), &be, &err)) {
+         logf_to(params->log, params->log_opaque, 0,
+-                "backend %s (%s): %s", backend.c_str(), stem, err.c_str());
++                "backend %s (%s): %s", backend.c_str(), stem.c_str(), err.c_str());
+         return nullptr;
+     }
+     logf_to(params->log, params->log_opaque, 3,
+-            "backend: %s (%s)", backend.c_str(), stem);
++            "backend: %s (%s)", backend.c_str(), stem.c_str());
+ 
+     aji_ctx *inner = be.create(params);
+     if (!inner) {
+@@ -423,3 +460,278 @@ extern "C" AJI_EXPORT int aji_native_control(
+     s->result = AJI_NATIVE_OK;
+     return AJI_NATIVE_OK;
+ }
++
++/* ------------------------------------------------------------------ *
++ * Prepared-plan exports. The backend prepared symbols are OPTIONAL
++ * (resolved with lib_sym above): a backend that predates them, or one
++ * that does not implement prepared admission at all, is refused here by
++ * name while the legacy ABI-8 and v2 snapshot/control calls keep working.
++ * ------------------------------------------------------------------ */
++
++static void native_envelope(aji_native_snapshot_v2 *s,
++                            uint32_t requested_protocol)
++{
++    const uint32_t size = s->struct_size;
++    memset(s, 0, sizeof(*s));
++    s->struct_size = size;
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++}
++
++static bool native_load_named_backend(const char *name, aji_backend *be,
++                                      std::string *err)
++{
++    std::string lower;
++    for (const char *p = name; p && *p; ++p)
++        lower.push_back((char)tolower((unsigned char)*p));
++    const char *stem = nullptr;
++    if (lower == "tensorrt")
++        stem = "aji_trt";
++    else if (lower == "directml")
++        stem = "aji_dml";
++    if (!stem) {
++        *err = std::string("unknown prepared backend '") +
++               (name ? name : "") + "'";
++        return false;
++    }
++    return load_backend(stem, be, err);
++}
++
++extern "C" AJI_EXPORT aji_ctx *aji_native_create_prepared(
++    const aji_create_params *params, const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *s)
++{
++    if (!s || s->struct_size != sizeof(*s))
++        return nullptr;
++    native_envelope(s, AJI_NATIVE_PROTOCOL_VERSION);
++    s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++    if (!params) {
++        snprintf(s->error, sizeof(s->error), "create_prepared requires create parameters");
++        s->result = AJI_NATIVE_INVALID_ARGUMENT;
++        return nullptr;
++    }
++    if (!plan || plan->struct_size != sizeof(*plan) ||
++        plan->requested_protocol != AJI_NATIVE_PREPARED_PROTOCOL_VERSION) {
++        snprintf(s->error, sizeof(s->error),
++                 "create_prepared requires a prepared-plan v1 structure");
++        s->result = AJI_NATIVE_INVALID_ARGUMENT;
++        return nullptr;
++    }
++
++    aji_backend be = {};
++    std::string err;
++    if (!native_load_named_backend(plan->backend, &be, &err)) {
++        snprintf(s->error, sizeof(s->error), "%s", err.c_str());
++        s->result = AJI_NATIVE_UNSUPPORTED;
++        return nullptr;
++    }
++    if (!be.native_create_prepared) {
++        lib_close(be.lib);
++        snprintf(s->error, sizeof(s->error),
++                 "backend does not implement prepared admission");
++        s->result = AJI_NATIVE_UNSUPPORTED;
++        return nullptr;
++    }
++    aji_ctx *inner = be.native_create_prepared(params, plan, s);
++    if (!inner) {
++        lib_close(be.lib);
++        if (!s->error[0])
++            snprintf(s->error, sizeof(s->error), "prepared admission refused");
++        if (!s->result)
++            s->result = AJI_NATIVE_OPERATION_FAILED;
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        return nullptr;
++    }
++    aji_ctx *c = new aji_ctx{be, inner};
++    /* The wrapper is only useful with the observed snapshot of what was
++       actually loaded: publish the backend's own view, exactly as
++       apply_prepared does, instead of returning the zeroed envelope. A
++       backend that cannot describe the plan it just loaded is refused by
++       name here rather than left reading as a Prepared plan nothing observed. */
++    const int snap = be.native_snapshot(inner, s);
++    s->struct_size = sizeof(*s);
++    s->requested_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    if (snap != AJI_NATIVE_OK) {
++        be.destroy(&inner);
++        lib_close(be.lib);
++        delete c;
++        native_envelope(s, AJI_NATIVE_PROTOCOL_VERSION);
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        s->result = (uint32_t)snap;
++        snprintf(s->error, sizeof(s->error),
++                 "prepared snapshot unavailable after load");
++        return nullptr;
++    }
++    s->result = AJI_NATIVE_OK;
++    return c;
++}
++
++extern "C" AJI_EXPORT int aji_native_apply_prepared(
++    aji_ctx *c, const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *s)
++{
++    if (!s || s->struct_size != sizeof(*s))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    native_envelope(s, AJI_NATIVE_PROTOCOL_VERSION);
++    if (!c) {
++        snprintf(s->error, sizeof(s->error), "native context is absent");
++        s->result = AJI_NATIVE_NO_CONTEXT;
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++    if (!plan || plan->struct_size != sizeof(*plan)) {
++        snprintf(s->error, sizeof(s->error),
++                 "prepared plan is absent or its struct_size does not match");
++        s->result = AJI_NATIVE_INVALID_ARGUMENT;
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    if (!c->be.native_apply_prepared) {
++        snprintf(s->error, sizeof(s->error),
++                 "backend does not implement prepared admission");
++        s->result = AJI_NATIVE_UNSUPPORTED;
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        return AJI_NATIVE_UNSUPPORTED;
++    }
++    const int rc = c->be.native_apply_prepared(c->inner, plan, s);
++    s->struct_size = sizeof(*s);
++    s->requested_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    s->result = (uint32_t)rc;
++    if (rc != AJI_NATIVE_OK) {
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        if (!s->error[0])
++            snprintf(s->error, sizeof(s->error), "prepared admission refused");
++    }
++    return rc;
++}
++
++extern "C" AJI_EXPORT int aji_native_control_on_stream(
++    aji_ctx *c, uint32_t requested_protocol, uint32_t action, uint64_t epoch,
++    uint32_t timeout_ms, void *stream, aji_native_snapshot_v2 *s)
++{
++    if (!s || s->struct_size != sizeof(*s))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    native_envelope(s, requested_protocol);
++    if (requested_protocol != AJI_NATIVE_PROTOCOL_VERSION) {
++        snprintf(s->error, sizeof(s->error),
++                 "protocol mismatch: caller=%u producer=%u",
++                 requested_protocol, AJI_NATIVE_PROTOCOL_VERSION);
++        s->result = AJI_NATIVE_PROTOCOL_MISMATCH;
++        return AJI_NATIVE_PROTOCOL_MISMATCH;
++    }
++    if (action < AJI_NATIVE_CONTROL_DRAIN ||
++        action > AJI_NATIVE_CONTROL_RESUME) {
++        snprintf(s->error, sizeof(s->error),
++                 "unknown native control action: %u", action);
++        s->result = AJI_NATIVE_INVALID_ARGUMENT;
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    if (!c) {
++        snprintf(s->error, sizeof(s->error), "native context is absent");
++        s->result = AJI_NATIVE_NO_CONTEXT;
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++    if (!c->be.native_control_on_stream) {
++        snprintf(s->error, sizeof(s->error),
++                 "backend does not implement stream-ordered control");
++        s->result = AJI_NATIVE_UNSUPPORTED;
++        s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        return AJI_NATIVE_UNSUPPORTED;
++    }
++    int rc = c->be.native_control_on_stream(c->inner, action, epoch,
++                                            timeout_ms, stream);
++    const int snapshot_rc = c->be.native_snapshot(c->inner, s);
++    if (rc == AJI_NATIVE_OK && snapshot_rc != AJI_NATIVE_OK)
++        rc = snapshot_rc;
++    if (rc != AJI_NATIVE_OK) {
++        const char *msg = c->be.last_error(c->inner);
++        if (msg && msg[0])
++            snprintf(s->error, sizeof(s->error), "%s", msg);
++        reset_native_refusal(s, requested_protocol, AJI_NATIVE_OPERATION_FAILED);
++        return AJI_NATIVE_OPERATION_FAILED;
++    }
++    s->struct_size = sizeof(*s);
++    s->requested_protocol_version = requested_protocol;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    s->result = AJI_NATIVE_OK;
++    return AJI_NATIVE_OK;
++}
++
++/* Factory capability query. The producer's own backend symbol is optional:
++   a backend that predates it, or one that does not implement prepared
++   admission at all, is refused here by name while the legacy ABI-8, v2
++   snapshot/control and prepared-plan calls keep working. params carries the
++   caller's already-adopted CUDA context and is passed through unchanged. */
++extern "C" AJI_EXPORT int aji_native_query_factory(
++    const aji_create_params *params, aji_native_factory_capabilities_v1 *out)
++{
++    if (!out || out->struct_size != sizeof(*out))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    const uint32_t size = out->struct_size;
++    const uint32_t requested = out->requested_protocol;
++    memset(out, 0, sizeof(*out));
++    out->struct_size = size;
++    out->requested_protocol = requested;
++    out->protocol_version = AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION;
++    out->native_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    out->native_schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    out->source_abi = AJI_API_VERSION;
++    out->backend = AJI_NATIVE_FACTORY_BACKEND_NONE;
++
++    if (requested != AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION) {
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.protocol");
++        snprintf(out->reason, sizeof(out->reason),
++                 "factory query protocol mismatch: caller=%u producer=%u",
++                 requested, AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION);
++        out->result = AJI_NATIVE_PROTOCOL_MISMATCH;
++        return AJI_NATIVE_PROTOCOL_MISMATCH;
++    }
++    if (!params || params->api_version != AJI_API_VERSION) {
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.params");
++        snprintf(out->reason, sizeof(out->reason),
++                 "factory query requires create parameters at the current ABI");
++        out->result = AJI_NATIVE_INVALID_ARGUMENT;
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++
++    std::string display;
++    const std::string stem = select_backend_stem(params, &display,
++                                                 params->log, params->log_opaque);
++    aji_backend be = {};
++    std::string err;
++    if (!load_backend(stem.c_str(), &be, &err)) {
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.backend");
++        snprintf(out->reason, sizeof(out->reason), "%s", err.c_str());
++        out->result = AJI_NATIVE_BACKEND_UNAVAILABLE;
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++    if (!be.native_query_factory) {
++        lib_close(be.lib);
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.backend");
++        snprintf(out->reason, sizeof(out->reason),
++                 "backend %s (%s) does not implement the factory capability query",
++                 display.c_str(), stem.c_str());
++        out->result = AJI_NATIVE_UNSUPPORTED;
++        return AJI_NATIVE_UNSUPPORTED;
++    }
++    const int rc = be.native_query_factory(params, out);
++    /* the dispatcher owns the envelope; a backend failure never rewrites it */
++    out->struct_size = size;
++    out->requested_protocol = requested;
++    out->protocol_version = AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION;
++    out->native_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    out->native_schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    out->source_abi = AJI_API_VERSION;
++    lib_close(be.lib);
++    return rc;
++}
+diff --git a/src/aji_trt.cpp b/src/aji_trt.cpp
+index fd0b0b3..b4a4260 100644
+--- a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@ -332,6 +332,30 @@ struct aji_ctx {
+     int scale = 0;
+     int max_w = 0, max_h = 0;
+ 
++    // Managed prepared plan (M8): the admitted conf-free plan of record,
++    // populated only by the prepared exports. It drives configure/infer
++    // with no build, cache or conf-file path; managed_ready is true only
++    // while its whole validated plan is loaded, and managed_plan is kept
++    // across suspend so resume can revalidate it.
++    bool managed = false;
++    bool managed_ready = false;
++    aji_native_prepared_plan_v1 managed_plan = {};
++    uint32_t managed_stage_count = 0;
++    char managed_requested_plan[AJI_NATIVE_TEXT_CAPACITY] = {0};
++    char managed_build_keys[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_BUILD_KEY_CAPACITY] = {};
++
++    // Managed source-shape transform: the decoded frame arrives coded and is
++    // cropped then rotated on the GPU into a display-size scratch frame before
++    // any stage, pre-resize or tensor binding sees it.
++    bool has_source_transform = false;
++    int managed_coded_w = 0, managed_coded_h = 0;
++    int managed_display_w = 0, managed_display_h = 0;
++    int managed_crop_x = 0, managed_crop_y = 0;
++    int managed_crop_w = 0, managed_crop_h = 0;
++    int managed_rotation = 0;
++    void *src_scratch[2] = {nullptr, nullptr};
++    size_t src_scratch_bytes = 0;
++
+     void *buf[2] = {nullptr, nullptr};
+     size_t buf_bytes = 0;
+ 
+@@ -411,6 +435,9 @@ struct aji_ctx {
+     cudaEvent_t tick_ev[TICK_RING] = {};
+     uint64_t tick_next = 1;
+     uint64_t tick_completed = 0;
++    // Epoch recorded when each in-flight ticket was submitted: a ticket from
++    // a superseded epoch must never be acknowledged as this epoch's output.
++    uint64_t tick_epoch[TICK_RING] = {};
+ 
+     char errbuf[512] = {0};
+ 
+@@ -1178,6 +1205,952 @@ std::string fmt_num(double v)
+     return buf;
+ }
+ 
++// --------------------------------------------------------- managed plan (M8)
++//
++// The prepared exports drive a conf-free chain from the caller's plan: the
++// plan names owned absolute engine/model paths and their expected digests, and
++// every fact is validated against the actual adopted device and the actual
++// engine before anything is deserialized. No cache key, legacy path, trtexec,
++// live build or file deletion is reachable from here.
++
++bool mg_bounded(const char *s, size_t cap, size_t *out_len)
++{
++    if (!s || cap == 0)
++        return false;
++    size_t n = 0;
++    while (n < cap && s[n])
++        ++n;
++    if (n == cap)
++        return false; // not NUL-terminated within its capacity
++    if (out_len)
++        *out_len = n;
++    return true;
++}
++
++bool mg_require_text(const char *s, size_t cap, bool nonempty,
++                     std::string *why, const std::string &field)
++{
++    size_t n = 0;
++    if (!mg_bounded(s, cap, &n)) {
++        if (why) *why = field + " is not NUL-terminated within its capacity";
++        return false;
++    }
++    if (nonempty && n == 0) {
++        if (why) *why = field + " is empty";
++        return false;
++    }
++    return true;
++}
++
++bool mg_lower_hex(const char *s, size_t n)
++{
++    for (size_t i = 0; i < n; i++) {
++        const char ch = s[i];
++        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))
++            return false;
++    }
++    return true;
++}
++
++bool mg_sha256_hex(const char *s, std::string *why, const std::string &field)
++{
++    size_t n = 0;
++    if (!mg_bounded(s, AJI_NATIVE_SHA256_CAPACITY, &n) || n != 64 ||
++        !mg_lower_hex(s, n)) {
++        if (why) *why = field + " must be 64 lower-case hex";
++        return false;
++    }
++    return true;
++}
++
++bool mg_absolute_path(const char *s, size_t cap, std::string *why,
++                      const std::string &field)
++{
++    size_t n = 0;
++    if (!mg_bounded(s, cap, &n) || n == 0) {
++        if (why) *why = field + " is empty";
++        return false;
++    }
++    if (!fs::path(s).is_absolute()) {
++        if (why) *why = field + " is not an absolute path";
++        return false;
++    }
++    return true;
++}
++
++char mg_lower(char ch)
++{
++    return (ch >= 'A' && ch <= 'Z') ? (char)(ch - 'A' + 'a') : ch;
++}
++
++bool mg_eq_ci(const char *a, const char *b)
++{
++    if (!a || !b)
++        return false;
++    while (*a && *b) {
++        if (mg_lower(*a) != mg_lower(*b))
++            return false;
++        ++a;
++        ++b;
++    }
++    return *a == 0 && *b == 0;
++}
++
++bool mg_contains_ci(const std::string &hay, const std::string &needle)
++{
++    if (needle.empty() || needle.size() > hay.size())
++        return false;
++    for (size_t i = 0; i + needle.size() <= hay.size(); i++) {
++        size_t j = 0;
++        while (j < needle.size() && mg_lower(hay[i + j]) == mg_lower(needle[j]))
++            ++j;
++        if (j == needle.size())
++            return true;
++    }
++    return false;
++}
++
++bool mg_unresolved_token(const char *s)
++{
++    return mg_eq_ci(s, "auto") || mg_eq_ci(s, "unknown") ||
++           mg_eq_ci(s, "?") || mg_eq_ci(s, "none");
++}
++
++// Centred, rounded down to even: the reference pad for the temporal stage.
++void mg_centred_pad(int content, int geometry, int *pad)
++{
++    *pad = ((geometry - content) / 2) & ~1;
++}
++
++// Display geometry after crop-then-rotate, or nothing for a rotation this
++// build does not model.
++bool mg_display_size(const aji_native_prepared_plan_v1 &p, int *w, int *h)
++{
++    int cw = (int)p.source_coded_width;
++    int ch = (int)p.source_coded_height;
++    if (p.source_crop_width && p.source_crop_height) {
++        cw = (int)p.source_crop_width;
++        ch = (int)p.source_crop_height;
++    }
++    if (cw < 2 || ch < 2)
++        return false;
++    switch (p.source_rotation) {
++    case 0:
++    case 180:
++        *w = cw;
++        *h = ch;
++        return true;
++    case 90:
++    case 270:
++        *w = ch;
++        *h = cw;
++        return true;
++    default:
++        return false;
++    }
++}
++
++bool mg_precision_dtype(const char *precision, uint32_t *dtype)
++{
++    if (mg_eq_ci(precision, "fp16")) { *dtype = AJI_NATIVE_DTYPE_FP16; return true; }
++    if (mg_eq_ci(precision, "fp32")) { *dtype = AJI_NATIVE_DTYPE_FP32; return true; }
++    return false;
++}
++
++bool mg_validate_options(const char *s, std::string *why)
++{
++    size_t n = 0;
++    if (!mg_bounded(s, AJI_NATIVE_BUILD_OPTIONS_CAPACITY, &n)) {
++        if (why) *why = "build_options is not NUL-terminated within its capacity";
++        return false;
++    }
++    size_t i = 0;
++    while (i < n) {
++        while (i < n && (s[i] == ' ' || s[i] == '\t'))
++            ++i;
++        if (i >= n)
++            break;
++        if (s[i] != '-' || i + 1 >= n || s[i + 1] != '-') {
++            if (why) *why = "build_options has a token that is not --name[=value]";
++            return false;
++        }
++        while (i < n && s[i] != ' ' && s[i] != '\t')
++            ++i;
++    }
++    return true;
++}
++
++bool mg_validate_plan(const aji_native_prepared_plan_v1 &p, std::string *why)
++{
++    if (p.struct_size != sizeof(aji_native_prepared_plan_v1)) {
++        if (why) *why = "plan struct_size does not match this producer";
++        return false;
++    }
++    if (p.requested_protocol != AJI_NATIVE_PREPARED_PROTOCOL_VERSION) {
++        if (why) *why = "plan requested_protocol is not prepared-plan v1";
++        return false;
++    }
++    if (p.flags != AJI_NATIVE_PLAN_FLAG_PREPARED_ONLY) {
++        if (why) *why = "plan flags must be exactly PREPARED_ONLY";
++        return false;
++    }
++    if (p.stage_count < 1 || p.stage_count > AJI_NATIVE_MAX_STAGES) {
++        if (why) *why = "plan stage_count is out of range";
++        return false;
++    }
++    if (!mg_require_text(p.requested_plan, sizeof(p.requested_plan), true, why, "requested_plan") ||
++        !mg_require_text(p.recipe_id, sizeof(p.recipe_id), true, why, "recipe_id") ||
++        !mg_require_text(p.backend, sizeof(p.backend), true, why, "backend") ||
++        !mg_require_text(p.device_identity, sizeof(p.device_identity), true, why, "device_identity"))
++        return false;
++    if (p.source_coded_width < 2 || p.source_coded_height < 2) {
++        if (why) *why = "source coded size is not a usable frame";
++        return false;
++    }
++    if (p.source_crop_width || p.source_crop_height) {
++        if (p.source_crop_width < 2 || p.source_crop_height < 2 ||
++            p.source_crop_x + p.source_crop_width > p.source_coded_width ||
++            p.source_crop_y + p.source_crop_height > p.source_coded_height) {
++            if (why) *why = "source crop lies outside the coded frame";
++            return false;
++        }
++    }
++    if (p.source_rotation != 0 && p.source_rotation != 90 &&
++        p.source_rotation != 180 && p.source_rotation != 270) {
++        if (why) *why = "source rotation is not one of 0/90/180/270";
++        return false;
++    }
++    if (p.source_fps_num == 0 || p.source_fps_den == 0) {
++        if (why) *why = "source fps is not a positive rational";
++        return false;
++    }
++    switch (p.source_bit_depth) {
++    case 0: case 8: case 10: case 12: case 14: case 16: break;
++    default:
++        if (why) *why = "source bit depth is not a supported depth";
++        return false;
++    }
++    {
++        const char *tok[4] = {p.source_csp, p.source_matrix, p.source_range,
++                              p.source_siting};
++        const char *name[4] = {"source_csp", "source_matrix", "source_range",
++                               "source_siting"};
++        for (int i = 0; i < 4; i++) {
++            if (!mg_require_text(tok[i], AJI_NATIVE_TEXT_CAPACITY, false, why,
++                                 name[i]))
++                return false;
++            if (tok[i][0] && mg_unresolved_token(tok[i])) {
++                if (why) *why = std::string(name[i]) + " is an unresolved placeholder";
++                return false;
++            }
++        }
++    }
++    if (!mg_require_text(p.decoder_device_uuid, sizeof(p.decoder_device_uuid), true, why, "decoder_device_uuid") ||
++        !mg_require_text(p.compute_device_uuid, sizeof(p.compute_device_uuid), true, why, "compute_device_uuid") ||
++        !mg_require_text(p.adapter_luid, sizeof(p.adapter_luid), false, why, "adapter_luid"))
++        return false;
++    if (p.device_sm_major == 0) {
++        if (why) *why = "device_sm_major is unknown (0)";
++        return false;
++    }
++    if (!mg_require_text(p.build_provider, sizeof(p.build_provider), true, why, "build_provider") ||
++        !mg_require_text(p.build_runtime, sizeof(p.build_runtime), true, why, "build_runtime") ||
++        !mg_require_text(p.build_plugin, sizeof(p.build_plugin), true, why, "build_plugin") ||
++        !mg_require_text(p.build_precision, sizeof(p.build_precision), true, why, "build_precision"))
++        return false;
++    {
++        size_t n = 0;
++        if (!mg_bounded(p.build_core_sha, sizeof(p.build_core_sha), &n) ||
++            (n != 40 && n != 64) || !mg_lower_hex(p.build_core_sha, n)) {
++            if (why) *why = "build_core_sha must be 40 or 64 lower-case hex";
++            return false;
++        }
++    }
++    if (p.build_source_abi == 0) {
++        if (why) *why = "build_source_abi is unknown (0)";
++        return false;
++    }
++    uint32_t precision_dtype = 0;
++    if (!mg_precision_dtype(p.build_precision, &precision_dtype)) {
++        if (why) *why = "build_precision is neither fp16 nor fp32";
++        return false;
++    }
++    if (p.build_tf32 > 1 || p.build_strongly_typed > 1 ||
++        p.build_skip_inference > 1) {
++        if (why) *why = "build boolean facts must be 0 or 1";
++        return false;
++    }
++    if (!mg_validate_options(p.build_options, why))
++        return false;
++
++    int run_w = 0, run_h = 0;
++    if (!mg_display_size(p, &run_w, &run_h)) {
++        if (why) *why = "source geometry does not resolve to a display size";
++        return false;
++    }
++    int temporal_index = -1;
++    for (uint32_t i = 0; i < p.stage_count; i++) {
++        const aji_native_prepared_stage_v1 &st = p.stages[i];
++        const std::string at = "stage " + std::to_string(i);
++        if (st.struct_size != sizeof(aji_native_prepared_stage_v1)) {
++            if (why) *why = at + " struct_size does not match this producer";
++            return false;
++        }
++        if (st.ordinal != i) {
++            if (why) *why = at + " ordinal is not the strictly ascending execution position";
++            return false;
++        }
++        if (st.input_width < 2 || st.input_height < 2 ||
++            st.output_width < 2 || st.output_height < 2 ||
++            (st.input_width & 1) || (st.input_height & 1) ||
++            (st.output_width & 1) || (st.output_height & 1)) {
++            if (why) *why = at + " geometry is not an even frame of at least 2x2";
++            return false;
++        }
++        if (st.input_channels == 0 || st.input_channels > 64 ||
++            st.output_channels == 0 || st.output_channels > 64) {
++            if (why) *why = at + " channel counts are out of range";
++            return false;
++        }
++        if (st.input_dtype != precision_dtype || st.output_dtype != precision_dtype) {
++            if (why) *why = at + " dtype disagrees with the plan build precision";
++            return false;
++        }
++        if (st.input_layout != AJI_NATIVE_LAYOUT_CHW ||
++            st.output_layout != AJI_NATIVE_LAYOUT_CHW) {
++            if (why) *why = at + " layout is not chw";
++            return false;
++        }
++        if (!mg_require_text(st.model_id, sizeof(st.model_id), true, why, at + " model_id") ||
++            !mg_require_text(st.model_content_id, sizeof(st.model_content_id), true, why, at + " model_content_id") ||
++            !mg_require_text(st.build_key, sizeof(st.build_key), true, why, at + " build_key") ||
++            !mg_require_text(st.input_tensor, sizeof(st.input_tensor), false, why, at + " input_tensor") ||
++            !mg_require_text(st.output_tensor, sizeof(st.output_tensor), false, why, at + " output_tensor"))
++            return false;
++        if (!mg_sha256_hex(st.model_sha256, why, at + " model_sha256") ||
++            !mg_sha256_hex(st.engine_sha256, why, at + " engine_sha256"))
++            return false;
++        if (!mg_absolute_path(st.model_path, sizeof(st.model_path), why, at + " model_path") ||
++            !mg_absolute_path(st.engine_path, sizeof(st.engine_path), why, at + " engine_path"))
++            return false;
++
++        if (st.role == AJI_NATIVE_ROLE_SPATIAL) {
++            if (st.order != AJI_NATIVE_ORDER_NONE) {
++                if (why) *why = at + " spatial stage must carry order NONE";
++                return false;
++            }
++            if (st.pad_left || st.pad_top || st.factor_num || st.factor_den ||
++                st.scene_threshold != 0.0) {
++                if (why) *why = at + " spatial stage carries temporal facts";
++                return false;
++            }
++            if (st.content_width != st.input_width ||
++                st.content_height != st.input_height) {
++                if (why) *why = at + " spatial content window is not its input geometry";
++                return false;
++            }
++            // A gap between the running window and this stage's input is a
++            // real resize the executor inserts (Spline36, as the reference
++            // does for a resize-before-upscale); it is not a silent default.
++            run_w = (int)st.output_width;
++            run_h = (int)st.output_height;
++        } else if (st.role == AJI_NATIVE_ROLE_TEMPORAL) {
++            if (temporal_index >= 0) {
++                if (why) *why = at + " is a second temporal stage; this producer admits one RIFE stage";
++                return false;
++            }
++            temporal_index = (int)i;
++            if (st.order != AJI_NATIVE_ORDER_BEFORE_SPATIAL &&
++                st.order != AJI_NATIVE_ORDER_AFTER_SPATIAL) {
++                if (why) *why = at + " temporal stage must carry an explicit order";
++                return false;
++            }
++            if (st.input_channels != 11 || st.output_channels != 3) {
++                if (why) *why = at + " temporal stage must bind an 11-channel RIFE input and 3-channel output";
++                return false;
++            }
++            if (st.input_width != st.output_width ||
++                st.input_height != st.output_height) {
++                if (why) *why = at + " temporal stage must not rescale";
++                return false;
++            }
++            if (st.factor_num == 0 || st.factor_den == 0) {
++                if (why) *why = at + " temporal interpolation factor is not positive";
++                return false;
++            }
++            if (!(st.scene_threshold >= 0.0 && st.scene_threshold <= 1.0)) {
++                if (why) *why = at + " temporal scene threshold is outside [0,1]";
++                return false;
++            }
++            if (st.content_width != (uint32_t)run_w ||
++                st.content_height != (uint32_t)run_h) {
++                if (why) *why = at + " temporal content window does not match the running window";
++                return false;
++            }
++            if (st.content_width > st.input_width ||
++                st.content_height > st.input_height) {
++                if (why) *why = at + " temporal content window exceeds its padded geometry";
++                return false;
++            }
++            int want_l = 0, want_t = 0;
++            mg_centred_pad((int)st.content_width, (int)st.input_width, &want_l);
++            mg_centred_pad((int)st.content_height, (int)st.input_height, &want_t);
++            if (st.pad_left != (uint32_t)want_l || st.pad_top != (uint32_t)want_t) {
++                if (why) *why = at + " temporal padding is not the centred even pad of the content window";
++                return false;
++            }
++        } else {
++            if (why) *why = at + " role is neither spatial nor temporal";
++            return false;
++        }
++    }
++    if (temporal_index >= 0) {
++        const uint32_t ti = (uint32_t)temporal_index;
++        if (p.stages[ti].order == AJI_NATIVE_ORDER_BEFORE_SPATIAL) {
++            if (ti != 0) {
++                if (why) *why = "temporal BEFORE_SPATIAL must precede every spatial stage";
++                return false;
++            }
++        } else if (ti + 1 != p.stage_count) {
++            if (why) *why = "temporal AFTER_SPATIAL must follow every spatial stage";
++            return false;
++        }
++    }
++    if (run_w < 2 || run_h < 2 || (run_w & 1) || (run_h & 1)) {
++        if (why) *why = "chain output geometry is not an even frame of at least 2x2";
++        return false;
++    }
++    return true;
++}
++
++// Actual adopted device identity: computed, never copied from the caller.
++bool mg_observe_device(aji_ctx *c, std::string *why, std::string *uuid_hex,
++                       std::string *identity, int *sm_major, int *sm_minor)
++{
++    CtxGuard guard(c->cu_ctx);
++    if (!guard.ok) {
++        *why = "cuCtxPushCurrent failed";
++        return false;
++    }
++    CUdevice dev;
++    if (cuCtxGetDevice(&dev) != CUDA_SUCCESS) {
++        *why = "cuCtxGetDevice failed";
++        return false;
++    }
++    CUuuid uuid;
++    if (cuDeviceGetUuid(&uuid, dev) != CUDA_SUCCESS) {
++        *why = "cuDeviceGetUuid failed";
++        return false;
++    }
++    char hex[33];
++    static const char digits[] = "0123456789abcdef";
++    for (int i = 0; i < 16; i++) {
++        hex[i * 2] = digits[((unsigned char)uuid.bytes[i]) >> 4];
++        hex[i * 2 + 1] = digits[((unsigned char)uuid.bytes[i]) & 0x0f];
++    }
++    hex[32] = 0;
++    int major = 0, minor = 0;
++    cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev);
++    cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev);
++    *uuid_hex = hex;
++    *identity = std::string("CUDA-UUID:") + hex;
++    *sm_major = major;
++    *sm_minor = minor;
++    return true;
++}
++
++// Plan identity vs the actual adopted device and the actual loaded runtime.
++bool mg_validate_identity(aji_ctx *c, const aji_native_prepared_plan_v1 &p,
++                          std::string *why)
++{
++    if (!mg_eq_ci(p.backend, "TensorRT")) {
++        *why = std::string("plan backend '") + p.backend + "' is not TensorRT";
++        return false;
++    }
++    if (!mg_eq_ci(p.build_provider, "TensorRT")) {
++        *why = std::string("build_provider '") + p.build_provider + "' is not TensorRT";
++        return false;
++    }
++    const std::string actual_runtime = trt_version_token();
++    if (std::string(p.build_runtime) != actual_runtime) {
++        *why = "build_runtime '" + std::string(p.build_runtime) +
++               "' does not match the loaded TensorRT " + actual_runtime;
++        return false;
++    }
++    std::string uuid_hex, identity;
++    int sm_major = 0, sm_minor = 0;
++    if (!mg_observe_device(c, why, &uuid_hex, &identity, &sm_major, &sm_minor))
++        return false;
++    if (!mg_contains_ci(p.device_identity, uuid_hex)) {
++        *why = "device_identity does not name the adopted compute device";
++        return false;
++    }
++    if (!mg_contains_ci(p.compute_device_uuid, uuid_hex)) {
++        *why = "compute_device_uuid does not name the adopted compute device";
++        return false;
++    }
++    if ((int)p.device_sm_major != sm_major || (int)p.device_sm_minor != sm_minor) {
++        *why = "device SM does not match the adopted compute device";
++        return false;
++    }
++    return true;
++}
++
++// Hash the owned engine/model files and compare the digests BEFORE any
++// deserialize; then validate the engine's real tensor names, dtypes and
++// shapes against the declared stage. The file is never deleted or rewritten.
++bool mg_load_engine(aji_ctx *c, const aji_native_prepared_stage_v1 &st,
++                    ModelEngine *me, std::string *why)
++{
++    std::vector<char> blob;
++    if (!read_file_bytes(st.engine_path, &blob)) {
++        *why = std::string("cannot read engine file ") + st.engine_path;
++        return false;
++    }
++    std::string sha;
++    if (!native_sha256(blob.data(), blob.size(), &sha) || sha != st.engine_sha256) {
++        *why = std::string("engine digest mismatch for ") + st.engine_path +
++               " (expected " + st.engine_sha256 + ", actual " + sha + ")";
++        return false;   // refused before deserialize; the file is untouched
++    }
++    std::vector<char> model;
++    if (!read_file_bytes(st.model_path, &model)) {
++        *why = std::string("cannot read model file ") + st.model_path;
++        return false;
++    }
++    std::string msha;
++    if (!native_sha256(model.data(), model.size(), &msha) || msha != st.model_sha256) {
++        *why = std::string("model digest mismatch for ") + st.model_path +
++               " (expected " + st.model_sha256 + ", actual " + msha + ")";
++        return false;
++    }
++    me->engine.reset(c->runtime->deserializeCudaEngine(blob.data(), blob.size()));
++    if (!me->engine) {
++        *why = std::string("engine deserialization failed: ") + st.engine_path;
++        return false;
++    }
++
++    const char *in_name = nullptr, *out_name = nullptr;
++    int inputs = 0, outputs = 0;
++    for (int i = 0; i < me->engine->getNbIOTensors(); i++) {
++        const char *name = me->engine->getIOTensorName(i);
++        if (me->engine->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT) {
++            in_name = name;
++            ++inputs;
++        } else {
++            out_name = name;
++            ++outputs;
++        }
++    }
++    if (inputs != 1 || outputs != 1) {
++        *why = "engine must expose exactly one input and one output tensor";
++        return false;
++    }
++    if (st.input_tensor[0] && strcmp(st.input_tensor, in_name) != 0) {
++        *why = std::string("engine input tensor is '") + in_name +
++               "', not the declared '" + st.input_tensor + "'";
++        return false;
++    }
++    if (st.output_tensor[0] && strcmp(st.output_tensor, out_name) != 0) {
++        *why = std::string("engine output tensor is '") + out_name +
++               "', not the declared '" + st.output_tensor + "'";
++        return false;
++    }
++    me->in_name = in_name;
++    me->out_name = out_name;
++
++    auto dtype_of = [](nvinfer1::DataType t) -> uint32_t {
++        if (t == nvinfer1::DataType::kHALF) return AJI_NATIVE_DTYPE_FP16;
++        if (t == nvinfer1::DataType::kFLOAT) return AJI_NATIVE_DTYPE_FP32;
++        return 0;
++    };
++    if (dtype_of(me->engine->getTensorDataType(in_name)) != st.input_dtype) {
++        *why = "engine input dtype does not match the declared input_dtype";
++        return false;
++    }
++    if (dtype_of(me->engine->getTensorDataType(out_name)) != st.output_dtype) {
++        *why = "engine output dtype does not match the declared output_dtype";
++        return false;
++    }
++
++    me->exec.reset(me->engine->createExecutionContext());
++    if (!me->exec) {
++        *why = "createExecutionContext failed";
++        return false;
++    }
++    if (!me->exec->setInputShape(in_name,
++                                 nvinfer1::Dims4{1, (int64_t)st.input_channels,
++                                                 (int64_t)st.input_height,
++                                                 (int64_t)st.input_width})) {
++        *why = std::string("engine rejects input 1x") +
++               std::to_string(st.input_channels) + "x" +
++               std::to_string(st.input_height) + "x" +
++               std::to_string(st.input_width);
++        return false;
++    }
++    nvinfer1::Dims id = me->exec->getTensorShape(in_name);
++    if (id.nbDims != 4 || id.d[0] != 1 ||
++        (uint32_t)id.d[1] != st.input_channels ||
++        (uint32_t)id.d[2] != st.input_height ||
++        (uint32_t)id.d[3] != st.input_width) {
++        *why = "engine input shape is not the declared 1xCxHxW";
++        return false;
++    }
++    nvinfer1::Dims od = me->exec->getTensorShape(out_name);
++    if (od.nbDims != 4 || od.d[0] != 1 ||
++        (uint32_t)od.d[1] != st.output_channels ||
++        (uint32_t)od.d[2] != st.output_height ||
++        (uint32_t)od.d[3] != st.output_width) {
++        *why = "engine output shape is not the declared 1xCxHxW";
++        return false;
++    }
++    me->in_w = (int)st.input_width;
++    me->in_h = (int)st.input_height;
++    me->out_w = (int)st.output_width;
++    me->out_h = (int)st.output_height;
++    me->engine_sha256 = sha;
++    me->model_sha256 = msha;
++    return true;
++}
++
++// Device resources built for one plan; owns them until commit, so a refusal
++// leaves the previously effective plan and its resources untouched.
++struct ManagedBuild {
++    std::vector<ModelEngine> engines;
++    std::vector<Step> steps;
++    void *buf[2] = {nullptr, nullptr};
++    size_t buf_bytes = 0;
++    int in_w = 0, in_h = 0, out_w = 0, out_h = 0;
++
++    bool has_rife = false;
++    bool rife_before = false;
++    int rw = 0, rh = 0, pw = 0, ph = 0, pad_l = 0, pad_t = 0;
++    int fnum = 1, fden = 1;
++    double scd_threshold = 0.0;
++    ModelEngine rife_engine;
++    void *rife_in = nullptr, *rife_out = nullptr, *rife_scd = nullptr;
++    void *src_scratch[2] = {nullptr, nullptr};
++    size_t src_scratch_bytes = 0;
++
++    void release_plans()
++    {
++        for (Step &s : steps) {
++            aji_plan_destroy(s.plan);
++            s.plan = nullptr;
++        }
++        steps.clear();
++    }
++    void release_device()
++    {
++        release_plans();
++        engines.clear();
++        for (void *&b : buf) {
++            if (b) cudaFree(b);
++            b = nullptr;
++        }
++        buf_bytes = 0;
++        if (rife_in) { cudaFree(rife_in); rife_in = nullptr; }
++        if (rife_out) { cudaFree(rife_out); rife_out = nullptr; }
++        if (rife_scd) { cudaFree(rife_scd); rife_scd = nullptr; }
++        for (void *&b : src_scratch) {
++            if (b) cudaFree(b);
++            b = nullptr;
++        }
++        src_scratch_bytes = 0;
++        rife_engine.exec.reset();
++        rife_engine.engine.reset();
++    }
++    ~ManagedBuild() { release_device(); }
++};
++
++// Release every device resource of the current effective plan (managed or
++// conf) while keeping the managed plan of record so resume can revalidate it.
++void managed_teardown_device(aji_ctx *c)
++{
++    c->engines.clear();
++    for (Step &st : c->steps)
++        aji_plan_destroy(st.plan);
++    c->steps.clear();
++    aji_plan_destroy(c->pre_plan);
++    aji_plan_destroy(c->post_plan);
++    c->pre_plan = c->post_plan = nullptr;
++    memset(c->pre_key, 0, sizeof(c->pre_key));
++    memset(c->post_key, 0, sizeof(c->post_key));
++    aji_plan_destroy(c->pre_resize_plan);
++    aji_plan_destroy(c->pr_pre_plan);
++    aji_plan_destroy(c->pr_post_plan);
++    c->pre_resize_plan = c->pr_pre_plan = c->pr_post_plan = nullptr;
++    c->has_pre_resize = false;
++    c->pre_src_w = c->pre_src_h = 0;
++    c->work_w = c->work_h = 0;
++    rife_teardown(c);
++    if (c->graph_exec) {
++        cudaGraphExecDestroy(c->graph_exec);
++        c->graph_exec = nullptr;
++    }
++    c->graph_ok = true;
++    for (void *&b : c->buf) {
++        if (b) cudaFree(b);
++        b = nullptr;
++    }
++    c->buf_bytes = 0;
++    if (c->stage_in) { cudaFree(c->stage_in); c->stage_in = nullptr; c->stage_in_bytes = 0; }
++    if (c->stage_out) { cudaFree(c->stage_out); c->stage_out = nullptr; c->stage_out_bytes = 0; }
++    for (void *&b : c->src_scratch) {
++        if (b) cudaFree(b);
++        b = nullptr;
++    }
++    c->src_scratch_bytes = 0;
++    c->active = false;
++}
++
++// Validate and load one whole plan, then commit it transactionally.
++int managed_apply(aji_ctx *c, const aji_native_prepared_plan_v1 *plan,
++                  std::string *why)
++{
++    if (!plan) {
++        *why = "plan is absent";
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    if (!mg_validate_plan(*plan, why))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    if (!mg_validate_identity(c, *plan, why))
++        return AJI_NATIVE_INVALID_ARGUMENT;
++
++    CtxGuard guard(c->cu_ctx);
++    if (!guard.ok) {
++        *why = "cuCtxPushCurrent failed";
++        return AJI_NATIVE_OPERATION_FAILED;
++    }
++
++    ManagedBuild mb;
++    if (!mg_display_size(*plan, &mb.in_w, &mb.in_h)) {
++        *why = "source geometry does not resolve to a display size";
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    const int coded_w = (int)plan->source_coded_width;
++    const int coded_h = (int)plan->source_coded_height;
++    int crop_x = 0, crop_y = 0, crop_w = coded_w, crop_h = coded_h;
++    if (plan->source_crop_width && plan->source_crop_height) {
++        crop_x = (int)plan->source_crop_x;
++        crop_y = (int)plan->source_crop_y;
++        crop_w = (int)plan->source_crop_width;
++        crop_h = (int)plan->source_crop_height;
++    }
++    const int rotation = (int)plan->source_rotation;
++    const bool transform = !(crop_x == 0 && crop_y == 0 && crop_w == coded_w &&
++                             crop_h == coded_h && rotation == 0);
++    int run_w = mb.in_w, run_h = mb.in_h;
++    size_t max_bytes = (size_t)3 * run_w * run_h * 2;
++    int temporal_index = -1;
++
++    for (uint32_t i = 0; i < plan->stage_count; i++) {
++        const aji_native_prepared_stage_v1 &st = plan->stages[i];
++        if (st.role == AJI_NATIVE_ROLE_TEMPORAL) {
++            temporal_index = (int)i;
++            continue;
++        }
++        if (run_w != (int)st.input_width || run_h != (int)st.input_height) {
++            Step rs{Step::RESIZE, (int)st.input_width, (int)st.input_height, -1};
++            rs.plan = aji_resize_plan_create(run_w, run_h, (int)st.input_width,
++                                             (int)st.input_height);
++            if (!rs.plan) {
++                *why = "resize plan allocation failed";
++                return AJI_NATIVE_OPERATION_FAILED;
++            }
++            mb.steps.push_back(rs);
++            run_w = (int)st.input_width;
++            run_h = (int)st.input_height;
++        }
++        ModelEngine me;
++        if (!mg_load_engine(c, st, &me, why))
++            return AJI_NATIVE_OPERATION_FAILED;
++        run_w = me.out_w;
++        run_h = me.out_h;
++        mb.steps.push_back(Step{Step::MODEL, run_w, run_h, (int)mb.engines.size()});
++        mb.engines.push_back(std::move(me));
++        max_bytes = std::max(max_bytes, (size_t)3 * (size_t)run_w * run_h * 2);
++    }
++    mb.out_w = run_w;
++    mb.out_h = run_h;
++
++    if (temporal_index >= 0) {
++        const aji_native_prepared_stage_v1 &tst = plan->stages[temporal_index];
++        mb.has_rife = true;
++        mb.rife_before = tst.order == AJI_NATIVE_ORDER_BEFORE_SPATIAL;
++        mb.rw = (int)tst.content_width;
++        mb.rh = (int)tst.content_height;
++        mb.pw = (int)tst.input_width;
++        mb.ph = (int)tst.input_height;
++        mb.pad_l = (int)tst.pad_left;
++        mb.pad_t = (int)tst.pad_top;
++        mb.fnum = (int)tst.factor_num;
++        mb.fden = (int)tst.factor_den;
++        mb.scd_threshold = tst.scene_threshold;
++        if (!mg_load_engine(c, tst, &mb.rife_engine, why))
++            return AJI_NATIVE_OPERATION_FAILED;
++        const size_t plane = (size_t)mb.pw * (size_t)mb.ph;
++        if (cudaMalloc(&mb.rife_in, plane * 11 * 2) != cudaSuccess ||
++            cudaMalloc(&mb.rife_out, plane * 3 * 2) != cudaSuccess ||
++            cudaMalloc(&mb.rife_scd, sizeof(float)) != cudaSuccess) {
++            *why = "RIFE tensor allocation failed";
++            return AJI_NATIVE_OPERATION_FAILED;
++        }
++        char *t = (char *)mb.rife_in;
++        aji_rife_fill_consts(t + plane * 7 * 2, t + plane * 8 * 2,
++                             t + plane * 9 * 2, t + plane * 10 * 2,
++                             mb.pw, mb.ph, nullptr);
++        cudaDeviceSynchronize();
++    }
++
++    if (max_bytes) {
++        if (cudaMalloc(&mb.buf[0], max_bytes) != cudaSuccess ||
++            cudaMalloc(&mb.buf[1], max_bytes) != cudaSuccess) {
++            *why = "chain buffer allocation failed";
++            return AJI_NATIVE_OPERATION_FAILED;
++        }
++        mb.buf_bytes = max_bytes;
++    }
++
++    // Scratch display-size YUV frames (one for aji_infer, two for a RIFE pair),
++    // sized for the widest format the transform may see.
++    if (transform) {
++        const size_t bytes = (size_t)3 * (size_t)mb.in_w * (size_t)mb.in_h * 2;
++        if (cudaMalloc(&mb.src_scratch[0], bytes) != cudaSuccess ||
++            cudaMalloc(&mb.src_scratch[1], bytes) != cudaSuccess) {
++            *why = "source transform scratch allocation failed";
++            return AJI_NATIVE_OPERATION_FAILED;
++        }
++        mb.src_scratch_bytes = bytes;
++    }
++
++    // Commit: only now is the previous effective plan torn down.
++    managed_teardown_device(c);
++    c->engines = std::move(mb.engines);
++    c->steps = std::move(mb.steps);
++    c->buf[0] = mb.buf[0];
++    c->buf[1] = mb.buf[1];
++    c->buf_bytes = mb.buf_bytes;
++    mb.buf[0] = mb.buf[1] = nullptr;
++    mb.buf_bytes = 0;
++    c->rife = {};
++    c->rife.enabled = mb.has_rife;
++    c->rife.before_upscale = mb.rife_before;
++    c->rife.num = mb.fnum;
++    c->rife.den = mb.fden;
++    c->rife.scd_threshold = mb.scd_threshold;
++    c->rife.w = mb.rw;
++    c->rife.h = mb.rh;
++    c->rife.pw = mb.pw;
++    c->rife.ph = mb.ph;
++    c->rife.pad_l = mb.pad_l;
++    c->rife.pad_t = mb.pad_t;
++    c->rife.engine = std::move(mb.rife_engine);
++    c->rife.in_tensor = mb.rife_in;
++    c->rife.out_tensor = mb.rife_out;
++    c->rife.scd = (float *)mb.rife_scd;
++    mb.rife_in = mb.rife_out = mb.rife_scd = nullptr;
++
++    c->managed = true;
++    c->managed_ready = true;
++    c->managed_plan = *plan;
++    c->managed_stage_count = plan->stage_count;
++    snprintf(c->managed_requested_plan, sizeof(c->managed_requested_plan), "%s",
++             plan->requested_plan);
++    memset(c->managed_build_keys, 0, sizeof(c->managed_build_keys));
++    for (uint32_t i = 0; i < plan->stage_count && i < AJI_NATIVE_MAX_STAGES; i++)
++        snprintf(c->managed_build_keys[i], AJI_NATIVE_BUILD_KEY_CAPACITY, "%s",
++                 plan->stages[i].build_key);
++
++    c->src_scratch[0] = mb.src_scratch[0];
++    c->src_scratch[1] = mb.src_scratch[1];
++    c->src_scratch_bytes = mb.src_scratch_bytes;
++    mb.src_scratch[0] = mb.src_scratch[1] = nullptr;
++    mb.src_scratch_bytes = 0;
++    c->has_source_transform = transform;
++    c->managed_coded_w = coded_w;
++    c->managed_coded_h = coded_h;
++    c->managed_display_w = mb.in_w;
++    c->managed_display_h = mb.in_h;
++    c->managed_crop_x = crop_x;
++    c->managed_crop_y = crop_y;
++    c->managed_crop_w = crop_w;
++    c->managed_crop_h = crop_h;
++    c->managed_rotation = rotation;
++
++    c->in_w = mb.in_w;
++    c->in_h = mb.in_h;
++    c->out_w = mb.out_w;
++    c->out_h = mb.out_h;
++    c->active = true;
++    c->native_suspended = false;
++    c->native_output_observed = false;
++    c->native_epoch = plan->epoch;
++    c->prepared_only = true;
++    ++c->native_revision;
++    return AJI_NATIVE_OK;
++}
++
++// Configure the stream geometry for an admitted plan: the caller's dims must
++// be the plan's source display size and cadence, nothing is built or loaded.
++int managed_configure(aji_ctx *c, int w, int h, double fps, int *out_w,
++                      int *out_h)
++{
++    const aji_native_prepared_plan_v1 &p = c->managed_plan;
++    if (!c->managed_ready) {
++        c->set_error("prepared plan is not loaded");
++        return AJI_ERR;
++    }
++    int dw = 0, dh = 0;
++    if (!mg_display_size(p, &dw, &dh)) {
++        c->set_error("prepared source geometry does not resolve");
++        return AJI_ERR_SHAPE;
++    }
++    if (w != dw || h != dh) {
++        c->set_error("configure %dx%d does not match prepared source %dx%d",
++                     w, h, dw, dh);
++        return AJI_ERR_SHAPE;
++    }
++    const double plan_fps = (double)p.source_fps_num / (double)p.source_fps_den;
++    if (!(fps > 0.0)) {
++        c->set_error("configure fps is not positive");
++        return AJI_ERR_SHAPE;
++    }
++    const double diff = fps > plan_fps ? fps - plan_fps : plan_fps - fps;
++    if (plan_fps > 0.0 && diff > plan_fps * 0.01) {
++        c->set_error("configure fps %.6f does not match prepared cadence %.6f",
++                     fps, plan_fps);
++        return AJI_ERR_SHAPE;
++    }
++    if (out_w) *out_w = c->out_w;
++    if (out_h) *out_h = c->out_h;
++    return 1;
++}
++
++void mg_fill_refusal(aji_ctx *c, aji_native_snapshot_v2 *s, int result,
++                     const char *reason)
++{
++    if (!s)
++        return;
++    const uint32_t size = s->struct_size;
++    memset(s, 0, sizeof(*s));
++    s->struct_size = size ? size : (uint32_t)sizeof(*s);
++    s->requested_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++    s->schema_version = AJI_NATIVE_SCHEMA_VERSION;
++    s->aji_abi_version = AJI_API_VERSION;
++    s->result = (uint32_t)result;
++    s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++    s->backend = 1;
++    snprintf(s->provider, sizeof(s->provider), "%s", "TensorRT");
++    snprintf(s->error, sizeof(s->error), "%s",
++             reason && reason[0] ? reason : "prepared admission refused");
++    if (c) {
++        s->revision = c->native_revision;
++        s->epoch = c->native_epoch;
++    }
++}
++
+ } // namespace
+ 
+ extern "C" AJI_EXPORT aji_ctx *aji_create(const aji_create_params *params)
+@@ -1272,6 +2245,9 @@ extern "C" AJI_EXPORT int aji_configure(aji_ctx *c, int w, int h, double fps,
+         return AJI_ERR_SHAPE;
+     c->native_saved_w=w;c->native_saved_h=h;c->native_saved_fps=fps;c->native_output_observed=false;++c->native_revision;
+ 
++    if (c->managed)
++        return managed_configure(c, w, h, fps, out_w, out_h);
++
+     if (!c->conf_mode) {
+         if (w > c->max_w || h > c->max_h) {
+             c->set_error("input %dx%d exceeds direct-mode max %dx%d", w, h,
+@@ -1716,6 +2692,143 @@ static bool infer_via_graph(aji_ctx *c, const aji_frame *in,
+     return true;
+ }
+ 
++// Fill a frame descriptor for a tightly packed scratch surface of the given
++// format and luma dims.
++static void managed_yuv_descriptor(int format, int w, int h, void *base,
++                                   aji_frame *f)
++{
++    memset(f, 0, sizeof(*f));
++    const int bpp = format == AJI_FMT_NV12 ? 1 : 2;
++    const size_t plane = (size_t)w * h * bpp;
++    f->width = w;
++    f->height = h;
++    f->format = format;
++    f->plane[0] = base;
++    f->stride[0] = (ptrdiff_t)((size_t)w * bpp);
++    if (format == AJI_FMT_YUV444P16) {
++        f->plane[1] = (char *)base + plane;
++        f->plane[2] = (char *)base + 2 * plane;
++        f->stride[1] = f->stride[2] = f->stride[0];
++    } else {
++        f->plane[1] = (char *)base + plane;
++        f->plane[2] = nullptr;
++        f->stride[1] = f->stride[0];
++    }
++}
++
++// Observe the caller's coded frame (dims and pitch) and, when the admitted
++// plan crops or rotates, map it on the GPU into the display-size scratch
++// frame. A frame already at the display size is used as-is (the filter feeds
++// the interpolated frames back at that geometry).
++static bool managed_normalize_frame(aji_ctx *c, const aji_frame *in, int slot,
++                                    void *stream, aji_frame *out,
++                                    std::string *why)
++{
++    *out = *in;
++    if (!c->has_source_transform)
++        return true;
++    if (in->width == c->managed_display_w && in->height == c->managed_display_h)
++        return true;
++    if (in->width != c->managed_coded_w || in->height != c->managed_coded_h) {
++        *why = "frame " + std::to_string(in->width) + "x" +
++               std::to_string(in->height) + " is neither the prepared coded " +
++               std::to_string(c->managed_coded_w) + "x" +
++               std::to_string(c->managed_coded_h) + " source nor its display " +
++               std::to_string(c->managed_display_w) + "x" +
++               std::to_string(c->managed_display_h);
++        return false;
++    }
++    const int bpp = in->format == AJI_FMT_NV12 ? 1 : 2;
++    const ptrdiff_t row = (ptrdiff_t)((size_t)in->width * bpp);
++    if (in->stride[0] < row ||
++        (in->format == AJI_FMT_YUV444P16 ? in->stride[2] < row
++                                         : in->stride[1] < row)) {
++        *why = "frame pitch is smaller than the coded row";
++        return false;
++    }
++    // An odd crop extent is a legitimate source property: the kernel maps the
++    // 4:2:0 chroma by whole pairs (ceil) and the chain's first stage geometry
++    // is even, so the initial resize lands on an even tensor.
++    void *scratch = c->src_scratch[slot];
++    if (!scratch) {
++        *why = "source transform scratch is not allocated";
++        return false;
++    }
++    aji_frame dst;
++    managed_yuv_descriptor(in->format, c->managed_display_w,
++                           c->managed_display_h, scratch, &dst);
++    dst.matrix = in->matrix;
++    dst.range = in->range;
++    dst.siting = in->siting;
++    const bool p444 = in->format == AJI_FMT_YUV444P16;
++    const void *sp[3] = {in->plane[0], in->plane[1], in->plane[2]};
++    ptrdiff_t ss[3] = {in->stride[0], in->stride[1], in->stride[2]};
++    void *dp[3] = {dst.plane[0], dst.plane[1], dst.plane[2]};
++    ptrdiff_t ds[3] = {dst.stride[0], dst.stride[1], dst.stride[2]};
++    if (!p444) {
++        sp[2] = nullptr;
++        ss[2] = 0;
++        dp[2] = nullptr;
++        ds[2] = 0;
++    }
++    const int err = aji_run_yuv_crop_rotate(
++        in->format, sp, ss, c->managed_coded_w, c->managed_coded_h,
++        c->managed_crop_x, c->managed_crop_y, c->managed_crop_w,
++        c->managed_crop_h, c->managed_rotation, dp, ds, stream);
++    if (err) {
++        *why = std::string("source crop/rotate kernel failed: ") +
++               cudaGetErrorString((cudaError_t)err);
++        return false;
++    }
++    *out = dst;
++    return true;
++}
++
++// aji_infer for an admitted prepared plan: observe/normalize the coded source
++// frame, then run the planned chain and post-process to the oriented output.
++static int managed_infer(aji_ctx *c, const aji_frame *in,
++                         const aji_frame *out, void *cu_stream)
++{
++    if (!c->managed_ready) {
++        c->set_error("prepared plan is not loaded");
++        return AJI_ERR;
++    }
++    if (in->format != AJI_FMT_NV12 && in->format != AJI_FMT_P010 &&
++        in->format != AJI_FMT_YUV444P16) {
++        c->set_error("unsupported input format %d", in->format);
++        return AJI_ERR_FORMAT;
++    }
++    if (out->format != AJI_FMT_NV12 && out->format != AJI_FMT_P010 &&
++        out->format != AJI_FMT_YUV444P16) {
++        c->set_error("unsupported output format %d (nv12/p010/yuv444p16)",
++                     out->format);
++        return AJI_ERR_FORMAT;
++    }
++    if (out->width != c->out_w || out->height != c->out_h) {
++        c->set_error("output dims %dx%d do not match the prepared %dx%d",
++                     out->width, out->height, c->out_w, c->out_h);
++        return AJI_ERR_SHAPE;
++    }
++    CtxGuard guard(c->cu_ctx);
++    if (!guard.ok) {
++        c->set_error("cuCtxPushCurrent failed");
++        return AJI_ERR_CUDA;
++    }
++    cudaStream_t stream = (cudaStream_t)cu_stream;
++    aji_frame norm;
++    std::string why;
++    if (!managed_normalize_frame(c, in, 0, cu_stream, &norm, &why)) {
++        c->set_error("prepared source geometry refused: %s", why.c_str());
++        return AJI_ERR_SHAPE;
++    }
++    if (c->graph_ok && stream) {
++        int ret;
++        if (infer_via_graph(c, &norm, out, stream, &ret))
++            return ret;
++    }
++    return run_chain(c, &norm, out, stream);
++}
++
+ extern "C" AJI_EXPORT int aji_infer(aji_ctx *c, const aji_frame *in,
+                                     const aji_frame *out, void *cu_stream)
+ {
+@@ -1726,6 +2839,8 @@ extern "C" AJI_EXPORT int aji_infer(aji_ctx *c, const aji_frame *in,
+         c->set_error("aji_infer without an active configuration");
+         return AJI_ERR;
+     }
++    if (c->managed)
++        return managed_infer(c, in, out, cu_stream);
+     if (in->format != AJI_FMT_NV12 && in->format != AJI_FMT_P010 &&
+         in->format != AJI_FMT_YUV444P16) {
+         c->set_error("unsupported input format %d", in->format);
+@@ -1806,7 +2921,9 @@ static int run_chain(aji_ctx *c, const aji_frame *in, const aji_frame *out,
+ 
+     int cw = in->width, ch = in->height;
+ 
+-    if (!c->conf_mode) {
++    // Managed prepared chains are step-driven like conf mode, not the single
++    // direct-mode engine.
++    if (!c->conf_mode && !c->managed) {
+         ModelEngine &me = c->direct;
+         if (!me.exec->setTensorAddress(me.in_name, c->buf[cur]) ||
+             !me.exec->setTensorAddress(me.out_name, c->buf[cur ^ 1])) {
+@@ -2049,6 +3166,7 @@ extern "C" AJI_EXPORT uint64_t aji_flush(aji_ctx *c, void *cu_stream)
+         c->set_error("ticket event record failed");
+         return 0;
+     }
++    c->tick_epoch[c->tick_next % aji_ctx::TICK_RING] = c->native_epoch;
+     return c->tick_next++;
+ }
+ 
+@@ -2066,7 +3184,8 @@ extern "C" AJI_EXPORT int aji_done(aji_ctx *c, uint64_t ticket)
+     cudaError_t e = cudaEventQuery(c->tick_ev[ticket % aji_ctx::TICK_RING]);
+     if (e == cudaSuccess) {
+         c->tick_completed = std::max(c->tick_completed, ticket);
+-        if (c->active && !c->native_output_observed) {
++        if (c->active && !c->native_suspended && !c->native_output_observed &&
++            c->tick_epoch[ticket % aji_ctx::TICK_RING] == c->native_epoch) {
+             c->native_output_observed = true;
+             ++c->native_revision;
+         }
+@@ -2095,7 +3214,8 @@ extern "C" AJI_EXPORT int aji_wait(aji_ctx *c, uint64_t ticket)
+         return AJI_ERR_CUDA;
+     }
+     c->tick_completed = std::max(c->tick_completed, ticket);
+-    if (c->active && !c->native_output_observed) {
++    if (c->active && !c->native_suspended && !c->native_output_observed &&
++        c->tick_epoch[ticket % aji_ctx::TICK_RING] == c->native_epoch) {
+         c->native_output_observed = true;
+         ++c->native_revision;
+     }
+@@ -2149,6 +3269,23 @@ extern "C" AJI_EXPORT int aji_infer_rife(aji_ctx *c, const aji_frame *a,
+     if (!c || !a || !b || !out)
+         return AJI_ERR;
+     if(c->native_suspended)return AJI_ERR;
++    aji_frame na, nb;
++    if (c->managed && c->has_source_transform && c->rife.enabled &&
++        c->rife.before_upscale) {
++        CtxGuard guard(c->cu_ctx);
++        if (!guard.ok) {
++            c->set_error("cuCtxPushCurrent failed");
++            return AJI_ERR_CUDA;
++        }
++        std::string why;
++        if (!managed_normalize_frame(c, a, 0, cu_stream, &na, &why) ||
++            !managed_normalize_frame(c, b, 1, cu_stream, &nb, &why)) {
++            c->set_error("rife source geometry refused: %s", why.c_str());
++            return AJI_ERR_SHAPE;
++        }
++        a = &na;
++        b = &nb;
++    }
+     auto &R = c->rife;
+     if (!R.enabled) {
+         c->set_error("aji_infer_rife without an active RIFE configuration");
+@@ -2419,6 +3556,57 @@ extern "C" AJI_EXPORT int aji_native_backend_snapshot(
+     if (!c || !s) return AJI_NATIVE_INVALID_ARGUMENT;
+     s->backend = 1;
+     snprintf(s->provider, sizeof(s->provider), "%s", "TensorRT");
++
++    if (c->managed) {
++        // Honest managed state: PREPARED only while the whole validated plan
++        // is loaded, ACTIVE only after a completion under the current epoch.
++        s->capability_bits = AJI_NATIVE_CAP_TICKET_DRAIN |
++                             AJI_NATIVE_CAP_PREPARED_ONLY |
++                             AJI_NATIVE_CAP_SUSPEND_RESUME;
++        s->last_submitted_ticket = c->tick_next - 1;
++        s->completed_ticket = c->tick_completed;
++        s->revision = c->native_revision;
++        s->epoch = c->native_epoch;
++        s->requested_slot = 0;
++        s->effective_slot = 0;
++        s->input_width = c->in_w;
++        s->input_height = c->in_h;
++        s->stage_count = c->managed_stage_count;
++        snprintf(s->requested_plan, sizeof(s->requested_plan), "%s",
++                 c->managed_requested_plan);
++        for (uint32_t i = 0; i < c->managed_stage_count && i < AJI_NATIVE_MAX_STAGES; i++) {
++            snprintf(s->engine_sha256[i], AJI_NATIVE_SHA256_CAPACITY, "%s",
++                     c->managed_plan.stages[i].engine_sha256);
++            snprintf(s->model_sha256[i], AJI_NATIVE_SHA256_CAPACITY, "%s",
++                     c->managed_plan.stages[i].model_sha256);
++            snprintf(s->prepared_build_keys[i], AJI_NATIVE_BUILD_KEY_CAPACITY, "%s",
++                     c->managed_build_keys[i]);
++        }
++        if (c->native_suspended) {
++            s->state = AJI_NATIVE_STATE_SUSPENDED;
++        } else if (c->managed_ready) {
++            snprintf(s->effective_plan, sizeof(s->effective_plan), "%s",
++                     c->managed_requested_plan);
++            s->effective_slot = 1;
++            s->output_width = c->out_w;
++            s->output_height = c->out_h;
++            s->state = c->native_output_observed ? AJI_NATIVE_STATE_ACTIVE
++                                                 : AJI_NATIVE_STATE_PREPARED;
++        } else {
++            s->state = AJI_NATIVE_STATE_UNAVAILABLE;
++        }
++        CtxGuard guard(c->cu_ctx);
++        CUdevice device; CUuuid uuid;
++        if (guard.ok && cuCtxGetDevice(&device) == CUDA_SUCCESS &&
++            cuDeviceGetUuid(&uuid, device) == CUDA_SUCCESS) {
++            int pos = snprintf(s->device_identity, sizeof(s->device_identity), "CUDA-UUID:");
++            for (int i = 0; i < 16 && pos < (int)sizeof(s->device_identity) - 2; ++i)
++                pos += snprintf(s->device_identity + pos, sizeof(s->device_identity) - pos, "%02x", (unsigned char)uuid.bytes[i]);
++            s->capability_bits |= AJI_NATIVE_CAP_CU_DEVICE_UUID;
++        }
++        return AJI_NATIVE_OK;
++    }
++
+     s->capability_bits = AJI_NATIVE_CAP_TICKET_DRAIN;
+     if (c->conf_mode && (c->active || c->native_suspended) &&
+         c->native_saved_w >= 2 && c->native_saved_h >= 2)
+@@ -2464,12 +3652,24 @@ extern "C" AJI_EXPORT int aji_native_backend_snapshot(
+     return AJI_NATIVE_OK;
+ }
+ 
+-extern "C" AJI_EXPORT int aji_native_backend_control(
+-    aji_ctx *c, uint32_t action, uint64_t epoch, uint32_t timeout_ms)
++static int backend_control_impl(aji_ctx *c, uint32_t action, uint64_t epoch,
++                                uint32_t timeout_ms, void *stream)
+ {
+     if (!c) return AJI_NATIVE_INVALID_ARGUMENT;
+     if (action == AJI_NATIVE_CONTROL_RESUME) {
+         if (!c->native_suspended) return AJI_NATIVE_OPERATION_FAILED;
++        if (c->managed) {
++            std::string why;
++            const int rc = managed_apply(c, &c->managed_plan, &why);
++            if (rc != AJI_NATIVE_OK) {
++                c->set_error("resume refused: %s", why.c_str());
++                return AJI_NATIVE_OPERATION_FAILED;
++            }
++            c->native_suspended = false;
++            c->native_epoch = epoch;
++            ++c->native_revision;
++            return AJI_NATIVE_OK;
++        }
+         c->slot = (int)c->native_saved_slot;
+         c->native_suspended = false;
+         int out_w = 0, out_h = 0;
+@@ -2477,7 +3677,9 @@ extern "C" AJI_EXPORT int aji_native_backend_control(
+         if (configured <= 0) { c->native_suspended = true; c->set_error("resume found no usable prepared plan"); return AJI_NATIVE_OPERATION_FAILED; }
+         c->native_epoch = epoch; ++c->native_revision; return AJI_NATIVE_OK;
+     }
+-    const uint64_t ticket = aji_flush(c, nullptr);
++    // Drain on the caller's inference stream so the ticket marker orders
++    // after work already enqueued there (nullptr = the default stream).
++    const uint64_t ticket = aji_flush(c, stream);
+     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+     while (ticket) {
+         const int done = aji_done(c, ticket);
+@@ -2487,6 +3689,19 @@ extern "C" AJI_EXPORT int aji_native_backend_control(
+         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+     }
+     if (action == AJI_NATIVE_CONTROL_SUSPEND) {
++        if (c->managed) {
++            if (c->native_suspended) {
++                c->set_error("prepared plan is already suspended");
++                return AJI_NATIVE_OPERATION_FAILED;
++            }
++            CtxGuard guard(c->cu_ctx);
++            if (!guard.ok) return AJI_NATIVE_OPERATION_FAILED;
++            managed_teardown_device(c);
++            c->managed_ready = false;
++            c->native_suspended = true;
++            ++c->native_revision;
++            return AJI_NATIVE_OK;
++        }
+         if (!c->conf_mode || !c->active || c->native_saved_w < 2 ||
+             c->native_saved_h < 2) {
+             c->set_error("suspend requires a configured conf-mode plan");
+@@ -2508,3 +3723,191 @@ extern "C" AJI_EXPORT int aji_native_backend_control(
+     }
+     return AJI_NATIVE_OK;
+ }
++
++extern "C" AJI_EXPORT int aji_native_backend_control(
++    aji_ctx *c, uint32_t action, uint64_t epoch, uint32_t timeout_ms)
++{
++    return backend_control_impl(c, action, epoch, timeout_ms, nullptr);
++}
++
++extern "C" AJI_EXPORT int aji_native_backend_control_on_stream(
++    aji_ctx *c, uint32_t action, uint64_t epoch, uint32_t timeout_ms, void *stream)
++{
++    return backend_control_impl(c, action, epoch, timeout_ms, stream);
++}
++
++extern "C" AJI_EXPORT int aji_native_backend_apply_prepared(
++    aji_ctx *c, const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *s)
++{
++    if (!c) return AJI_NATIVE_INVALID_ARGUMENT;
++    std::string why;
++    const int rc = managed_apply(c, plan, &why);
++    if (rc != AJI_NATIVE_OK) {
++        c->set_error("prepared admission refused: %s", why.c_str());
++        mg_fill_refusal(c, s, rc, ("prepared admission refused: " + why).c_str());
++        return rc;
++    }
++    if (s) aji_native_backend_snapshot(c, s);
++    return AJI_NATIVE_OK;
++}
++
++extern "C" AJI_EXPORT aji_ctx *aji_native_backend_create_prepared(
++    const aji_create_params *params, const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *s)
++{
++    if (!params || params->api_version != AJI_API_VERSION) {
++        mg_fill_refusal(nullptr, s, AJI_NATIVE_INVALID_ARGUMENT,
++                        "create_prepared requires matching aji_create_params");
++        return nullptr;
++    }
++    if (!plan) {
++        mg_fill_refusal(nullptr, s, AJI_NATIVE_INVALID_ARGUMENT,
++                        "create_prepared requires a plan");
++        return nullptr;
++    }
++    auto c = std::make_unique<aji_ctx>();
++    c->logger.fn = params->log;
++    c->logger.opaque = params->log_opaque;
++    c->graph_ok = !getenv("AJI_NO_GRAPH");
++    if (cuInit(0) != CUDA_SUCCESS) {
++        mg_fill_refusal(c.get(), s, AJI_NATIVE_OPERATION_FAILED, "cuInit failed");
++        return nullptr;
++    }
++    if (params->cuda_context) {
++        c->cu_ctx = (CUcontext)params->cuda_context;
++    } else {
++        CUdevice dev;
++        if (cuDeviceGet(&dev, 0) != CUDA_SUCCESS ||
++            cuDevicePrimaryCtxRetain(&c->cu_ctx, dev) != CUDA_SUCCESS) {
++            mg_fill_refusal(c.get(), s, AJI_NATIVE_OPERATION_FAILED,
++                            "failed to retain the primary CUDA context");
++            return nullptr;
++        }
++        c->owns_primary = true;
++    }
++    c->runtime.reset(nvinfer1::createInferRuntime(c->logger));
++    if (!c->runtime) {
++        if (c->owns_primary) {
++            CUdevice d;
++            if (cuDeviceGet(&d, 0) == CUDA_SUCCESS)
++                cuDevicePrimaryCtxRelease(d);
++        }
++        mg_fill_refusal(c.get(), s, AJI_NATIVE_OPERATION_FAILED,
++                        "createInferRuntime failed");
++        return nullptr;
++    }
++    std::string why;
++    const int rc = managed_apply(c.get(), plan, &why);
++    if (rc != AJI_NATIVE_OK) {
++        c->set_error("prepared admission refused: %s", why.c_str());
++        mg_fill_refusal(c.get(), s, rc,
++                        ("prepared admission refused: " + why).c_str());
++        if (c->owns_primary) {
++            CUdevice d;
++            if (cuDeviceGet(&d, 0) == CUDA_SUCCESS)
++                cuDevicePrimaryCtxRelease(d);
++        }
++        return nullptr;
++    }
++    return c.release();
++}
++
++/* Factory capability query (query protocol v1). The answer is observed, not
++   declared: the caller's borrowed CUDA context is adopted (this call never
++   creates one), its actual device identity is read, and the real TensorRT
++   runtime factory is initialized and destroyed. No engine, model, network,
++   inference, build or cache path is touched, and the call holds no state, so
++   an unloadable backend cannot be reported ready from a symbol, a
++   preference, a filename or a manifest. */
++extern "C" AJI_EXPORT int aji_native_backend_query_factory(
++    const aji_create_params *params, aji_native_factory_capabilities_v1 *out)
++{
++    if (!out)
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    out->role_bits = 0;
++
++    if (!params || params->api_version != AJI_API_VERSION) {
++        out->result = AJI_NATIVE_INVALID_ARGUMENT;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.params");
++        snprintf(out->reason, sizeof(out->reason),
++                 "factory query requires aji_create_params at the current ABI");
++        return AJI_NATIVE_INVALID_ARGUMENT;
++    }
++    if (!params->cuda_context) {
++        out->result = AJI_NATIVE_NO_CONTEXT;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.context");
++        snprintf(out->reason, sizeof(out->reason),
++                 "no adopted CUDA context was supplied; the query never creates one");
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++
++    CtxGuard guard((CUcontext)params->cuda_context);
++    if (!guard.ok) {
++        out->result = AJI_NATIVE_NO_CONTEXT;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.context");
++        snprintf(out->reason, sizeof(out->reason),
++                 "cuCtxPushCurrent failed for the supplied context");
++        return AJI_NATIVE_NO_CONTEXT;
++    }
++    CUdevice dev = 0;
++    if (cuCtxGetDevice(&dev) != CUDA_SUCCESS) {
++        out->result = AJI_NATIVE_BACKEND_UNAVAILABLE;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.device");
++        snprintf(out->reason, sizeof(out->reason),
++                 "cuCtxGetDevice failed on the adopted context");
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++    CUuuid uuid;
++    if (cuDeviceGetUuid(&uuid, dev) != CUDA_SUCCESS) {
++        out->result = AJI_NATIVE_BACKEND_UNAVAILABLE;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.device");
++        snprintf(out->reason, sizeof(out->reason),
++                 "cuDeviceGetUuid failed on the adopted device");
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++    int major = 0, minor = 0;
++    cuDeviceGetAttribute(&major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev);
++    cuDeviceGetAttribute(&minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev);
++    if (major < 1 || major > 32 || minor < 0 || minor > 99) {
++        out->result = AJI_NATIVE_BACKEND_UNAVAILABLE;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.device");
++        snprintf(out->reason, sizeof(out->reason),
++                 "the adopted device reported no usable compute capability");
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++
++    Logger logger;
++    logger.fn = params->log;
++    logger.opaque = params->log_opaque;
++    std::unique_ptr<nvinfer1::IRuntime> runtime(
++        nvinfer1::createInferRuntime(logger));
++    if (!runtime) {
++        out->result = AJI_NATIVE_BACKEND_UNAVAILABLE;
++        snprintf(out->reason_key, sizeof(out->reason_key), "native.factory.runtime");
++        snprintf(out->reason, sizeof(out->reason),
++                 "createInferRuntime failed on the adopted context");
++        return AJI_NATIVE_BACKEND_UNAVAILABLE;
++    }
++
++    /* The factory is genuinely usable for this adopted device: publish the
++       observation. Nothing below is filled on any earlier refusal. */
++    out->backend = AJI_NATIVE_FACTORY_BACKEND_TENSORRT;
++    snprintf(out->provider, sizeof(out->provider), "%s", "TensorRT");
++    out->sm_major = (uint32_t)major;
++    out->sm_minor = (uint32_t)minor;
++    {
++        int pos = 0;
++        for (int i = 0; i < 16 && pos < (int)sizeof(out->device_identity) - 2; ++i)
++            pos += snprintf(out->device_identity + pos,
++                            sizeof(out->device_identity) - (size_t)pos,
++                            "%02x", (unsigned char)uuid.bytes[i]);
++    }
++    const std::string runtime_token = trt_version_token();
++    snprintf(out->runtime_version, sizeof(out->runtime_version), "%s",
++             runtime_token.c_str());
++    out->role_bits = AJI_NATIVE_FACTORY_ROLE_SPATIAL |
++                     AJI_NATIVE_FACTORY_ROLE_RIFE;
++    out->result = AJI_NATIVE_OK;
++    return AJI_NATIVE_OK;
++}
+diff --git a/src/kernels.cu b/src/kernels.cu
+index e04a3ff..dda4293 100644
+--- a/src/kernels.cu
++++ b/src/kernels.cu
+@@ -505,6 +505,124 @@ extern "C" int aji_run_resize(aji_plan *p, const void *src_f16, void *dst_f16,
+     return (int)cudaGetLastError();
+ }
+ 
++/* ---------------- source-shape transform (managed prepared path) ---------------- */
++
++// Crop+rotate one plane whose samples are one (bpp=1) or two (bpp=2) bytes
++// wide. Crop and dims are in plane samples; rotation is clockwise and swaps
++// the output dims for 90/270.
++__global__ void k_plane_crop_rotate(const uint8_t *src, ptrdiff_t sstride,
++                                    int bpp, int cx, int cy, int cw, int ch,
++                                    int rotation, uint8_t *dst,
++                                    ptrdiff_t dstride, int dw, int dh)
++{
++    const int dx = blockIdx.x * blockDim.x + threadIdx.x;
++    const int dy = blockIdx.y * blockDim.y + threadIdx.y;
++    if (dx >= dw || dy >= dh)
++        return;
++    int sx, sy;
++    switch (rotation) {
++    case 90:  sx = cx + dy;            sy = cy + (ch - 1 - dx); break;
++    case 180: sx = cx + (cw - 1 - dx); sy = cy + (ch - 1 - dy); break;
++    case 270: sx = cx + (cw - 1 - dy); sy = cy + dx; break;
++    default:  sx = cx + dx;            sy = cy + dy; break;
++    }
++    if (bpp == 2) {
++        ((uint16_t *)(dst + (size_t)dy * dstride))[dx] =
++            ((const uint16_t *)(src + (size_t)sy * sstride))[sx];
++    } else {
++        dst[(size_t)dy * dstride + dx] = src[(size_t)sy * sstride + sx];
++    }
++}
++
++// Crop+rotate the interleaved 4:2:0 chroma plane. The plane holds one sample
++// per luma x (Cb and Cr alternating) and one row per two luma rows, so a crop
++// of any parity maps by whole chroma pairs (ceil on odd extents) with the
++// component alignment preserved. 90/270 move the 2:1 subsampling axis, so the
++// rotated output pairs come from the rotated chroma PAIR grid, not from
++// rotating the byte array. cx/cy are the cropped start in PAIR coordinates;
++// cwp/chp are the cropped pair extents.
++__global__ void k_chroma420_crop_rotate(const uint8_t *src, ptrdiff_t sstride,
++                                        int bpp, int sw, int sh2,
++                                        int cx, int cy, int cwp, int chp,
++                                        int rotation, uint8_t *dst,
++                                        ptrdiff_t dstride, int dw, int dh2)
++{
++    const int ox = blockIdx.x * blockDim.x + threadIdx.x;
++    const int oy = blockIdx.y * blockDim.y + threadIdx.y;
++    if (ox >= dw || oy >= dh2)
++        return;
++    const int comp = ox & 1;      // 0 = Cb, 1 = Cr
++    const int pu = ox >> 1;       // output pair index within the row
++    int a, b;
++    switch (rotation) {
++    case 90:  a = oy;             b = chp - 1 - pu; break;
++    case 180: a = cwp - 1 - pu;   b = chp - 1 - oy; break;
++    case 270: a = cwp - 1 - oy;   b = pu; break;
++    default:  a = pu;             b = oy; break;
++    }
++    const int sx = 2 * (cx + a) + comp;
++    const int sy = cy + b;
++    if (sx < 0 || sx >= sw || sy < 0 || sy >= sh2)
++        return;
++    if (bpp == 2) {
++        ((uint16_t *)(dst + (size_t)oy * dstride))[ox] =
++            ((const uint16_t *)(src + (size_t)sy * sstride))[sx];
++    } else {
++        dst[(size_t)oy * dstride + ox] = src[(size_t)sy * sstride + sx];
++    }
++}
++
++extern "C" int aji_run_yuv_crop_rotate(int format,
++                                       const void *const *src_planes,
++                                       const ptrdiff_t *src_strides,
++                                       int src_w, int src_h,
++                                       int crop_x, int crop_y, int crop_w,
++                                       int crop_h, int rotation,
++                                       void *const *dst_planes,
++                                       const ptrdiff_t *dst_strides,
++                                       void *stream)
++{
++    if (!src_planes || !dst_planes || !src_strides || !dst_strides)
++        return (int)cudaErrorInvalidValue;
++    if (src_w < 1 || src_h < 1 || crop_w < 1 || crop_h < 1)
++        return (int)cudaErrorInvalidValue;
++    if (crop_x < 0 || crop_y < 0 || crop_x + crop_w > src_w ||
++        crop_y + crop_h > src_h)
++        return (int)cudaErrorInvalidValue;
++    const bool swap = rotation == 90 || rotation == 270;
++    const int dw = swap ? crop_h : crop_w;
++    const int dh = swap ? crop_w : crop_h;
++    const int bpp = format == AJI_FMT_NV12 ? 1 : 2;
++    cudaStream_t s = (cudaStream_t)stream;
++
++    if (format == AJI_FMT_YUV444P16) {
++        for (int p = 0; p < 3; p++) {
++            k_plane_crop_rotate<<<GRID(dw, dh, 1), 0, s>>>(
++                (const uint8_t *)src_planes[p], src_strides[p], bpp,
++                crop_x, crop_y, crop_w, crop_h, rotation,
++                (uint8_t *)dst_planes[p], dst_strides[p], dw, dh);
++        }
++        return (int)cudaGetLastError();
++    }
++
++    // 4:2:0: luma plane plus the interleaved chroma below it. Chroma maps by
++    // whole pairs (ceil on an odd extent) and keeps Cb/Cr aligned; the crop
++    // start is aligned down to the containing pair row/column.
++    k_plane_crop_rotate<<<GRID(dw, dh, 1), 0, s>>>(
++        (const uint8_t *)src_planes[0], src_strides[0], bpp,
++        crop_x, crop_y, crop_w, crop_h, rotation,
++        (uint8_t *)dst_planes[0], dst_strides[0], dw, dh);
++    const int sw = src_w;                       // chroma samples per row
++    const int sh2 = (src_h + 1) >> 1;           // chroma rows
++    const int dh2 = (dh + 1) >> 1;
++    if (dh2 > 0 && sw > 0)
++        k_chroma420_crop_rotate<<<GRID(dw, dh2, 1), 0, s>>>(
++            (const uint8_t *)src_planes[1], src_strides[1], bpp, sw, sh2,
++            crop_x >> 1, crop_y >> 1, (crop_w + 1) >> 1, (crop_h + 1) >> 1,
++            rotation, (uint8_t *)dst_planes[1], dst_strides[1], dw, dh2);
++    return (int)cudaGetLastError();
++}
++
+ /* ---------------- RIFE helpers ---------------- */
+ 
+ // The four constant planes of the RIFE v1 input layout (vsmlrt
+diff --git a/src/kernels.h b/src/kernels.h
+index 7fd26d6..dc4dd9e 100644
+--- a/src/kernels.h
++++ b/src/kernels.h
+@@ -97,6 +97,24 @@ int aji_scd_diff(int format, const void *ya, ptrdiff_t stride_a,
+                  const void *yb, ptrdiff_t stride_b, int w, int h,
+                  float *accum_dev, void *stream);
+ 
++/* Source-shape transform for the managed prepared path: crop a luma
++ * rectangle out of a coded YUV frame and rotate the result clockwise
++ * (0/90/180/270; the output dims swap for 90/270). Crop is in luma
++ * coordinates and may be offset oddly; for 4:2:0 the crop width/height must
++ * be even because the interleaved chroma pairs and the output frame must be
++ * whole. src_planes/dst_planes are: 4:2:0 -> [0]=Y, [1]=interleaved CbCr;
++ * 4:4:4 16-bit -> [0]=Y, [1]=Cb, [2]=Cr. Strides are bytes and must describe
++ * the actual pitch of the caller's surfaces. Returns 0 or a cudaError_t. */
++int aji_run_yuv_crop_rotate(int format,
++                            const void *const *src_planes,
++                            const ptrdiff_t *src_strides,
++                            int src_w, int src_h,
++                            int crop_x, int crop_y, int crop_w, int crop_h,
++                            int rotation,
++                            void *const *dst_planes,
++                            const ptrdiff_t *dst_strides,
++                            void *stream);
++
+ #ifdef __cplusplus
+ }
+ #endif

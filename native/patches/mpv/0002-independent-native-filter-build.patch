@@ -1,0 +1,48 @@
+diff --git a/filters/user_filters.c b/filters/user_filters.c
+index dd4102b26..eff5faac5 100644
+--- a/filters/user_filters.c
++++ b/filters/user_filters.c
+@@ -101,7 +101,7 @@ const struct mp_user_filter_entry *vf_list[] = {
+ #if HAVE_D3D_HWACCEL
+     &vf_d3d11vpp,
+ #endif
+-#if HAVE_CUDA_HWACCEL
++#if HAVE_ANIMEJANAI
+     &vf_animejanai,
+ #endif
+ #if HAVE_AMF
+diff --git a/meson.build b/meson.build
+index e4bc9cde0..ea5fe70ed 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1434,8 +1434,16 @@ cuda_hwaccel = get_option('cuda-hwaccel').require(
+ )
+ features += {'cuda-hwaccel': cuda_hwaccel.allowed()}
+ if features['cuda-hwaccel']
+-    sources += files('video/filter/vf_animejanai.c',
+-                     'video/out/hwdec/hwdec_cuda.c')
++    sources += files('video/out/hwdec/hwdec_cuda.c')
++endif
++
++animejanai = get_option('animejanai').require(
++    features['cuda-hwaccel'],
++    error_message: 'AnimeJaNai requires cuda-hwaccel',
++)
++features += {'animejanai': animejanai.allowed()}
++if features['animejanai']
++    sources += files('video/filter/vf_animejanai.c')
+ endif
+ 
+ cuda_interop = get_option('cuda-interop').require(
+diff --git a/meson.options b/meson.options
+index 416ee3b5e..922749a75 100644
+--- a/meson.options
++++ b/meson.options
+@@ -8,6 +8,7 @@ option('fuzzers', type: 'boolean', value: false, description: 'fuzzer binaries')
+ option('disable-packet-pool', type: 'boolean', value: false, description: 'disable packet pool (development only)')
+ 
+ # misc features
++option('animejanai', type: 'feature', value: 'disabled', description: 'AnimeJaNai native inference filter')
+ option('cdda', type: 'feature', value: 'auto', description: 'cdda support (libcdio)')
+ option('cplugins', type: 'feature', value: 'auto', description: 'C plugins')
+ option('dvbin', type: 'feature', value: 'auto', description: 'DVB input module')

@@ -1,0 +1,21 @@
+From ...
+Subject: [PATCH] aji: add preparedOnly option that refuses live configure
+
+When preparedOnly=true, the filter must only accept a pre-built engine
+from the manifest-driven cache. It must not invoke trtexec or build at
+configure time.
+
+This enables the out-of-band preparation path.
+
+diff --git a/include/aji.h b/include/aji.h
+index ...
+--- a/include/aji.h
++++ b/include/aji.h
+@@
++    bool prepared_only;
++
+ /* conf mode options */
+ typedef struct aji_conf_options {
+...
+---
+# Owner determination: proceed.

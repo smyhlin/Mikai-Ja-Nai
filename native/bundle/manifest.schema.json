@@ -70,6 +70,62 @@
       "minItems": 1,
       "description": "The complete inventory. Anything present in the bundle root and not listed here is a file nothing verified, so it makes the bundle invalid.",
       "items": { "$ref": "#/$defs/fileRecord" }
+    },
+
+    "preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types", "source", "tools", "runtime"],
+      "description": "Optional preparation-tool layout and the source-ABI provenance of the inference core this bundle was built from. Present, it must be complete and coherent with the inventory: every tool path is a declared file, and each runtime directory is a real directory inside the root that holds a declared file and is a declared dependency when it carries DLLs. Absent, the bundle is playback-only and preparation is named unavailable. The block is a validated statement about these bytes, pinned by the module and file hashes; it is not an independent measurement, carries no CUDA/TensorRT version, and claims no engine or effective readiness. A Standard bundle must not carry it.",
+      "properties": {
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["tensorrt", "directml"] },
+          "description": "The provider backends this bundle's toolchain can prepare for. Each named type requires its backend library to be a declared file: tensorrt needs aji_trt.dll, directml needs aji_dml.dll."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["coreSha", "sourceAbi"],
+          "description": "The inference core the bundle was built from. A statement pinned by the verified bytes, not re-derived from them.",
+          "properties": {
+            "coreSha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "The full 40-hex source pin of the inference core (animejanai-inference commit), lower-case. Forty zeroes is the reserved placeholder an unsubstituted layout example carries: well-formed so the example parses, and refused by readBundle/validateBundle until the pin is real."
+            },
+            "sourceAbi": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The core's source C ABI version. Zero is the reserved placeholder an unsubstituted example carries and is refused by readBundle/validateBundle; a real bundle's value is checked by the tool against the loaded producer's own aji_native_get_snapshot."
+            }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inspect", "prep", "verifier"],
+          "description": "The three preparation executables, each a declared file in this bundle.",
+          "properties": {
+            "inspect": { "$ref": "#/$defs/toolPath" },
+            "prep": { "$ref": "#/$defs/toolPath" },
+            "verifier": { "$ref": "#/$defs/toolPath" }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ort", "trt", "cuda"],
+          "description": "Provider runtime directories inside the bundle that the tools resolve their own DLLs against. trt and cuda may name the same directory.",
+          "properties": {
+            "ort": { "$ref": "#/$defs/dependencyDirectory" },
+            "trt": { "$ref": "#/$defs/dependencyDirectory" },
+            "cuda": { "$ref": "#/$defs/dependencyDirectory" }
+          }
+        }
+      }
     }
   },
 
@@ -87,6 +143,12 @@
       "description": "A single directory segment inside the bundle root, relative and normalized by the same rules as a file path."
     },
 
+    "toolPath": {
+      "$ref": "#/$defs/relativePath",
+      "pattern": "^.+\\.exe$",
+      "description": "Root-relative path of a preparation executable, ending in .exe. Must appear in 'files'."
+    },
+
     "fileRecord": {
       "type": "object",
       "additionalProperties": false,
@@ -101,7 +163,7 @@
         "sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "Lower-case hex SHA-256 of the file's contents."
+          "description": "Lower-case hex SHA-256 of the file's contents. Sixty-four zeroes is the reserved placeholder an unsubstituted layout example carries (see stock.json and native.json in this directory): it is well-formed so the example parses under this schema, and no file has ever hashed to it, so it can never be mistaken for a measurement. `verify` recomputes every digest and therefore refuses an example until the real bytes are beside it."
         }
       }
     }

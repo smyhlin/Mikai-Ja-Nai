@@ -1,0 +1,3192 @@
+diff --git a/video/filter/aji_native_bridge.h b/video/filter/aji_native_bridge.h
+new file mode 100644
+index 000000000..afdcf7ec3
+--- /dev/null
++++ b/video/filter/aji_native_bridge.h
+@@ -0,0 +1,333 @@
++/* Native status/control ABI v2. Plain C only; AJI ABI-8 is unchanged. */
++#ifndef AJI_NATIVE_H
++#define AJI_NATIVE_H
++
++#include <stddef.h>
++#include <stdint.h>
++
++#if defined(_WIN32)
++#  if defined(AJI_NATIVE_BUILD)
++#    define AJI_NATIVE_EXPORT __declspec(dllexport)
++#  else
++#    define AJI_NATIVE_EXPORT __declspec(dllimport)
++#  endif
++#else
++#  define AJI_NATIVE_EXPORT __attribute__((visibility("default")))
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define AJI_NATIVE_PROTOCOL_VERSION 2u
++#define AJI_NATIVE_SCHEMA_VERSION 2u
++#define AJI_NATIVE_TEXT_CAPACITY 128u
++#define AJI_NATIVE_MAX_STAGES 9u
++#define AJI_NATIVE_SHA256_CAPACITY 65u
++#define AJI_NATIVE_BUILD_KEY_CAPACITY 128u
++
++typedef struct aji_ctx aji_ctx;
++
++typedef enum aji_native_result {
++    AJI_NATIVE_OK = 0,
++    AJI_NATIVE_NO_CONTEXT = 1,
++    AJI_NATIVE_PROTOCOL_MISMATCH = 2,
++    AJI_NATIVE_INVALID_ARGUMENT = 3,
++    AJI_NATIVE_BACKEND_UNAVAILABLE = 4,
++    AJI_NATIVE_OPERATION_FAILED = 5,
++    AJI_NATIVE_UNSUPPORTED = 6
++} aji_native_result;
++
++typedef enum aji_native_state {
++    AJI_NATIVE_STATE_UNAVAILABLE = 0,
++    AJI_NATIVE_STATE_PROBE = 1,
++    AJI_NATIVE_STATE_PREPARED = 2,
++    AJI_NATIVE_STATE_ACTIVE = 3,
++    AJI_NATIVE_STATE_DRAINING = 4,
++    AJI_NATIVE_STATE_SUSPENDED = 5,
++    AJI_NATIVE_STATE_FAILED = 6
++} aji_native_state;
++
++typedef enum aji_native_control_action {
++    AJI_NATIVE_CONTROL_DRAIN = 1,
++    AJI_NATIVE_CONTROL_SUSPEND = 2,
++    AJI_NATIVE_CONTROL_RESUME = 3
++} aji_native_control_action;
++
++typedef enum aji_native_capability {
++    AJI_NATIVE_CAP_PROBE_PASSTHROUGH = 1u << 0,
++    AJI_NATIVE_CAP_CU_DEVICE_UUID = 1u << 1,
++    AJI_NATIVE_CAP_D3D_ADAPTER_LUID = 1u << 2,
++    AJI_NATIVE_CAP_PREPARED_ONLY = 1u << 3,
++    AJI_NATIVE_CAP_TICKET_DRAIN = 1u << 4,
++    AJI_NATIVE_CAP_SUSPEND_RESUME = 1u << 5
++} aji_native_capability;
++
++/* Snapshots are observations, not preparation attestations. A producer must
++   leave effective fields empty and report Unavailable absent verified plan proof. */
++typedef struct aji_native_snapshot_v2 {
++    uint32_t struct_size; /* must exactly match sizeof(aji_native_snapshot_v2) */
++    uint32_t requested_protocol_version;
++    uint32_t protocol_version;
++    uint32_t schema_version;
++    uint32_t aji_abi_version;
++    uint32_t result;
++    uint32_t state;
++    uint32_t capability_bits;
++    uint32_t backend;
++    uint64_t revision;
++    uint64_t epoch;
++    uint64_t last_submitted_ticket;
++    uint64_t completed_ticket;
++    uint32_t requested_slot;
++    uint32_t effective_slot;
++    uint32_t input_width;
++    uint32_t input_height;
++    uint32_t output_width;
++    uint32_t output_height;
++    uint32_t stage_count;
++    uint32_t reserved;
++    char provider[AJI_NATIVE_TEXT_CAPACITY];
++    char requested_plan[AJI_NATIVE_TEXT_CAPACITY];
++    char effective_plan[AJI_NATIVE_TEXT_CAPACITY];
++    char device_identity[AJI_NATIVE_TEXT_CAPACITY];
++    char error[AJI_NATIVE_TEXT_CAPACITY];
++    char engine_sha256[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_SHA256_CAPACITY];
++    char model_sha256[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_SHA256_CAPACITY];
++    char prepared_build_keys[AJI_NATIVE_MAX_STAGES][AJI_NATIVE_BUILD_KEY_CAPACITY]; /* empty unless independently verified */
++} aji_native_snapshot_v2;
++
++AJI_NATIVE_EXPORT int aji_native_get_snapshot(
++    aji_ctx *ctx, uint32_t requested_protocol, aji_native_snapshot_v2 *snapshot);
++
++/* ------------------------------------------------------------------------- *
++ * Prepared plans (protocol v1). Additive: AJI ABI-8, the v2 snapshot layout
++ * and the existing status/control exports are unchanged. A prepared plan is
++ * the caller's complete, ordered description of one admitted chain: the
++ * source, device and build facts it was resolved against, and the exact
++ * stages to load, each naming the digests, owned paths, binding names and
++ * geometry its identity is checked against. A producer that does not
++ * implement the prepared exports exports no backend prepared symbol; the
++ * dispatcher then refuses by name rather than guessing.
++ * ------------------------------------------------------------------------- */
++
++#define AJI_NATIVE_PREPARED_PROTOCOL_VERSION 1u
++#define AJI_NATIVE_PREPARED_SCHEMA_VERSION 1u
++
++#define AJI_NATIVE_BINDING_NAME_CAPACITY 64u
++#define AJI_NATIVE_PATH_CAPACITY 260u
++#define AJI_NATIVE_CONTENT_ID_CAPACITY 128u
++#define AJI_NATIVE_BUILD_OPTIONS_CAPACITY 512u
++
++#define AJI_NATIVE_PLAN_FLAG_PREPARED_ONLY 1u
++
++typedef enum aji_native_stage_role {
++    AJI_NATIVE_ROLE_SPATIAL = 1,
++    AJI_NATIVE_ROLE_TEMPORAL = 2
++} aji_native_stage_role;
++
++typedef enum aji_native_stage_order {
++    AJI_NATIVE_ORDER_NONE = 0,           /* spatial stages */
++    AJI_NATIVE_ORDER_BEFORE_SPATIAL = 1, /* temporal: interpolate first */
++    AJI_NATIVE_ORDER_AFTER_SPATIAL = 2   /* temporal: interpolate last */
++} aji_native_stage_order;
++
++typedef enum aji_native_element_type {
++    AJI_NATIVE_DTYPE_FP16 = 1,
++    AJI_NATIVE_DTYPE_FP32 = 2
++} aji_native_element_type;
++
++typedef enum aji_native_tensor_layout {
++    AJI_NATIVE_LAYOUT_CHW = 1
++} aji_native_tensor_layout;
++
++/* One ordered stage. Every text field is NUL-terminated within its capacity
++   and every numeric field is validated, refused by name rather than
++   defaulted. input/output_width/height are the geometry the engine is bound
++   at; content_width/height is the frame window carried through it (equal for
++   a spatial stage, the unpadded frame for a temporal one). */
++typedef struct aji_native_prepared_stage_v1 {
++    uint32_t struct_size;      /* must equal sizeof(aji_native_prepared_stage_v1) */
++    uint32_t role;             /* aji_native_stage_role */
++    uint32_t order;            /* aji_native_stage_order; spatial = ORDER_NONE */
++    uint32_t ordinal;          /* 0-based execution position, strictly ascending */
++    uint32_t input_width;
++    uint32_t input_height;
++    uint32_t output_width;
++    uint32_t output_height;
++    uint32_t content_width;
++    uint32_t content_height;
++    uint32_t pad_left;         /* temporal centring pad; 0 for spatial */
++    uint32_t pad_top;
++    uint32_t input_channels;
++    uint32_t output_channels;
++    uint32_t input_dtype;      /* aji_native_element_type */
++    uint32_t output_dtype;
++    uint32_t input_layout;     /* aji_native_tensor_layout */
++    uint32_t output_layout;
++    uint32_t factor_num;       /* temporal interpolation ratio; 0/0 spatial */
++    uint32_t factor_den;
++    double scene_threshold;    /* temporal scene-cut threshold, [0,1] */
++    char model_id[AJI_NATIVE_TEXT_CAPACITY];
++    char model_content_id[AJI_NATIVE_CONTENT_ID_CAPACITY];
++    char model_sha256[AJI_NATIVE_SHA256_CAPACITY];
++    char engine_sha256[AJI_NATIVE_SHA256_CAPACITY];
++    char build_key[AJI_NATIVE_BUILD_KEY_CAPACITY];
++    char model_path[AJI_NATIVE_PATH_CAPACITY];
++    char engine_path[AJI_NATIVE_PATH_CAPACITY];
++    char input_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];  /* empty = discover */
++    char output_tensor[AJI_NATIVE_BINDING_NAME_CAPACITY];
++} aji_native_prepared_stage_v1;
++
++/* The whole admitted plan. stages[] is inline and fixed-capacity; stage_count
++   is the number of populated entries, in ordinal order. */
++typedef struct aji_native_prepared_plan_v1 {
++    uint32_t struct_size;       /* must equal sizeof(aji_native_prepared_plan_v1) */
++    uint32_t requested_protocol;/* AJI_NATIVE_PREPARED_PROTOCOL_VERSION */
++    uint32_t stage_count;       /* 1..AJI_NATIVE_MAX_STAGES */
++    uint32_t flags;             /* AJI_NATIVE_PLAN_FLAG_* */
++    uint64_t revision;          /* caller plan revision, echoed for ack correlation */
++    uint64_t epoch;             /* caller source epoch */
++    char requested_plan[AJI_NATIVE_TEXT_CAPACITY];
++    char recipe_id[AJI_NATIVE_TEXT_CAPACITY];
++    char backend[AJI_NATIVE_TEXT_CAPACITY];
++
++    char device_identity[AJI_NATIVE_TEXT_CAPACITY];
++
++    /* source geometry: existing SourceGeometry facts, passed through unchanged */
++    uint32_t source_coded_width;
++    uint32_t source_coded_height;
++    uint32_t source_crop_x;
++    uint32_t source_crop_y;
++    uint32_t source_crop_width;
++    uint32_t source_crop_height;
++    uint32_t source_rotation;   /* 0/90/180/270 */
++    uint32_t source_fps_num;
++    uint32_t source_fps_den;
++    uint32_t source_bit_depth;  /* 8/10/12/...; 0 unknown */
++    char source_csp[AJI_NATIVE_TEXT_CAPACITY];
++    char source_matrix[AJI_NATIVE_TEXT_CAPACITY];
++    char source_range[AJI_NATIVE_TEXT_CAPACITY];
++    char source_siting[AJI_NATIVE_TEXT_CAPACITY];
++
++    /* device facts: existing DeviceIdentity facts, passed through unchanged */
++    char decoder_device_uuid[AJI_NATIVE_TEXT_CAPACITY];
++    char compute_device_uuid[AJI_NATIVE_TEXT_CAPACITY];
++    char adapter_luid[AJI_NATIVE_TEXT_CAPACITY];
++    uint32_t device_sm_major;
++    uint32_t device_sm_minor;
++
++    /* build facts: existing EngineBuildIdentity facts, passed through unchanged */
++    char build_provider[AJI_NATIVE_TEXT_CAPACITY];
++    char build_runtime[AJI_NATIVE_TEXT_CAPACITY];
++    char build_plugin[AJI_NATIVE_TEXT_CAPACITY];
++    char build_core_sha[AJI_NATIVE_TEXT_CAPACITY];
++    uint32_t build_source_abi;
++    char build_precision[AJI_NATIVE_TEXT_CAPACITY];
++    uint32_t build_tf32;
++    uint32_t build_strongly_typed;
++    uint32_t build_skip_inference;
++    char build_options[AJI_NATIVE_BUILD_OPTIONS_CAPACITY];
++
++    aji_native_prepared_stage_v1 stages[AJI_NATIVE_MAX_STAGES];
++} aji_native_prepared_plan_v1;
++
++/* The create-parameter type is declared in <aji.h>; forward-declared here so
++   this header stays usable on its own for the prepared exports. */
++struct aji_create_params;
++
++/* Create a context from caller-supplied parameters and admit the plan in one
++   step: no conf file, no engine-filename/cache inference and no build path is
++   consulted. Returns the new context, or NULL with *snapshot holding the
++   named refusal. */
++AJI_NATIVE_EXPORT aji_ctx *aji_native_create_prepared(
++    const struct aji_create_params *params,
++    const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *snapshot);
++
++/* Admit (or transactionally replace) a prepared plan on an existing context.
++   Validation precedes any deserialize or device work; on refusal the previous
++   effective plan is retained and *snapshot names the reason. */
++AJI_NATIVE_EXPORT int aji_native_apply_prepared(
++    aji_ctx *ctx, const aji_native_prepared_plan_v1 *plan,
++    aji_native_snapshot_v2 *snapshot);
++
++/* Lifecycle control that orders the drain against the caller's inference
++   stream (a NULL stream means the default stream). Same actions as
++   aji_native_control. */
++AJI_NATIVE_EXPORT int aji_native_control_on_stream(
++    aji_ctx *ctx, uint32_t requested_protocol, uint32_t action,
++    uint64_t epoch, uint32_t timeout_ms, void *stream,
++    aji_native_snapshot_v2 *snapshot);
++AJI_NATIVE_EXPORT int aji_native_control(
++    aji_ctx *ctx, uint32_t requested_protocol, uint32_t action,
++    uint64_t epoch, uint32_t timeout_ms, aji_native_snapshot_v2 *snapshot);
++
++/* ------------------------------------------------------------------------- *
++ * Factory capability query (query protocol v1). Additive: AJI ABI-8, the v2
++ * snapshot layout, the prepared-plan v1 ABI and every existing export are
++ * unchanged. A caller that already holds the actually adopted decoder CUDA
++ * context asks the producer what it can really be asked to prepare; the
++ * producer answers by running its real backend factory against that borrowed
++ * context and never from the presence of an export, a preference, a filename
++ * or a manifest. No context, model, engine or network is created here and no
++ * build/cache path is consulted.
++ * ------------------------------------------------------------------------- */
++
++#define AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION 1u
++#define AJI_NATIVE_FACTORY_REASON_KEY_CAPACITY 64u
++#define AJI_NATIVE_FACTORY_REASON_CAPACITY 192u
++
++typedef enum aji_native_factory_backend {
++    AJI_NATIVE_FACTORY_BACKEND_NONE = 0,
++    AJI_NATIVE_FACTORY_BACKEND_TENSORRT = 1,
++    AJI_NATIVE_FACTORY_BACKEND_DIRECTML = 2
++} aji_native_factory_backend;
++
++/* Roles the queried backend can actually be asked to admit as prepared-plan
++   v1 stages. Bit 0 is the generic fp16 spatial upscale/reconstruct stage;
++   bit 1 is the original 11-channel RIFE temporal stage. */
++typedef enum aji_native_factory_role {
++    AJI_NATIVE_FACTORY_ROLE_SPATIAL = 1u << 0,
++    AJI_NATIVE_FACTORY_ROLE_RIFE = 1u << 1
++} aji_native_factory_role;
++
++/* One observation of the actually adopted source. result is AJI_NATIVE_OK only
++   when the answered factory is genuinely usable for the adopted device, and
++   only then do backend, role_bits, device_identity and runtime_version carry
++   values; every other outcome names itself in reason_key/reason and never
++   reports a capability derived from export presence, a preference, a filename
++   or a manifest. device_identity is the actual CUDA UUID as 32 lower-case hex,
++   never a pointer address or a device ordinal. */
++typedef struct aji_native_factory_capabilities_v1 {
++    uint32_t struct_size;        /* must equal sizeof(aji_native_factory_capabilities_v1) */
++    uint32_t requested_protocol; /* AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION */
++    uint32_t protocol_version;   /* AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION */
++    uint32_t result;             /* aji_native_result */
++    uint32_t native_protocol_version; /* AJI_NATIVE_PROTOCOL_VERSION */
++    uint32_t native_schema_version;   /* AJI_NATIVE_SCHEMA_VERSION */
++    uint32_t source_abi;              /* AJI ABI version */
++    uint32_t backend;                 /* aji_native_factory_backend */
++    uint32_t role_bits;               /* aji_native_factory_role */
++    uint32_t sm_major;
++    uint32_t sm_minor;
++    char device_identity[AJI_NATIVE_TEXT_CAPACITY];
++    char provider[AJI_NATIVE_TEXT_CAPACITY];
++    char runtime_version[AJI_NATIVE_TEXT_CAPACITY];
++    char reason_key[AJI_NATIVE_FACTORY_REASON_KEY_CAPACITY];
++    char reason[AJI_NATIVE_FACTORY_REASON_CAPACITY];
++} aji_native_factory_capabilities_v1;
++
++/* Ask the producer what it can actually prepare for the source in params: a
++   borrowed, already-current CUDA context/device it must adopt and never
++   create. The backend export is optional: a producer that does not implement
++   it is refused by name while the legacy ABI-8, v2 snapshot/control and
++   prepared-plan calls keep working. */
++AJI_NATIVE_EXPORT int aji_native_query_factory(
++    const struct aji_create_params *params,
++    aji_native_factory_capabilities_v1 *out);
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/video/filter/vf_animejanai.c b/video/filter/vf_animejanai.c
+index f2efa5945..81561cca2 100644
+--- a/video/filter/vf_animejanai.c
++++ b/video/filter/vf_animejanai.c
+@@ -79,7 +79,13 @@
+ #include "video/mp_image.h"
+ #include "video/mp_image_pool.h"
+ 
++#include "mpv/client.h"
++
+ #include "aji.h"
++#include "aji_native_bridge.h"
++
++#include "misc/json.h"
++#include "osdep/threads.h"
+ 
+ #ifdef _WIN32
+ #define AJI_DEFAULT_LIB "aji.dll"
+@@ -178,8 +184,32 @@ struct aji_api {
+     const char *(*current_log)(aji_ctx *c);
+     const char *(*last_error)(aji_ctx *c);
+     void (*destroy)(aji_ctx **c);
++
++    // Managed prepared-plan admission, resolved from the same already-open shim
++    // handle. All four are optional: a producer built before the prepared
++    // exports leaves them NULL, which is a named refusal, never a silent
++    // fallback to the conf-driven build path.
++    aji_ctx *(*native_create_prepared)(const struct aji_create_params *params,
++                                       const aji_native_prepared_plan_v1 *plan,
++                                       aji_native_snapshot_v2 *snapshot);
++    int (*native_apply_prepared)(aji_ctx *c,
++                                 const aji_native_prepared_plan_v1 *plan,
++                                 aji_native_snapshot_v2 *snapshot);
++    int (*native_control_on_stream)(aji_ctx *c, uint32_t requested_protocol,
++                                    uint32_t action, uint64_t epoch,
++                                    uint32_t timeout_ms, void *stream,
++                                    aji_native_snapshot_v2 *snapshot);
++    int (*native_get_snapshot)(aji_ctx *c, uint32_t requested_protocol,
++                               aji_native_snapshot_v2 *snapshot);
++    // Optional factory-availability query, resolved from the same handle. A
++    // producer without it leaves this NULL; the filter then has no observation
++    // and never derives a capability from the symbol's absence.
++    int (*native_query_factory)(const struct aji_create_params *params,
++                                aji_native_factory_capabilities_v1 *out);
+ };
+ 
++struct admit_job;
++
+ struct priv {
+     struct opts *opts;
+ 
+@@ -262,6 +292,9 @@ struct priv {
+                                 // current pair, in 1/num units (0, num]
+     struct mp_image *rife_prev; // last upscaled frame (left endpoint)
+     struct mp_image *outq[8];
++    // The kind travels with each pending frame so the counters can be taken when
++    // the frame actually reaches the output pin, not when it was created.
++    bool outq_interp[8];
+     int outq_n, outq_pos;
+     // RIFE-first: interpolate the source pair, then upscale every emitted
+     // frame. rife_prev then holds the previous work-res source frame; src_pool
+@@ -291,6 +324,66 @@ struct priv {
+     char decoder_uuid[40];
+     char adapter_luid[24];
+     int sm_major, sm_minor;
++    // The compute device, independently queried from the adopted CUDA context
++    // the shim was created on (never copied from the decoder identity).
++    bool compute_known;
++    char compute_uuid[40];
++    char compute_uuid_hex[33];   // the 32 lower-case hex form the ABI names
++    // The producer's optional factory observation, executed once against the
++    // adopted source context and cached until that context is dropped. It is a
++    // factory-availability fact only: never Prepared/Active/artifactReady, and
++    // never a capability inferred from a symbol, preference, filename or
++    // manifest. `factory_queried` is the execution, `factory_observed` a
++    // well-formed answer; the supported roles are read only from a successful
++    // answer's own bits.
++    bool factory_queried;
++    bool factory_observed;
++    aji_native_factory_capabilities_v1 factory;
++
++    // ---- Managed prepared admission (the mikai.native.admission/1 wire) ----
++    // A stored request is transport state, never an attestation: the plan is
++    // admitted only by the producer's whole-plan load, and the chain is Active
++    // only after a real output completed under it. `admit_plan` is the plan the
++    // producer actually acknowledged; a refused replacement leaves it (and the
++    // effective facts derived from it) untouched.
++    bool admit_stored;
++    char admit_request_id[128];
++    char admit_recipe[128];
++    char admit_backend[32];
++    uint64_t admit_revision;
++    uint64_t admit_epoch;
++    uint64_t admit_generation;
++    aji_native_prepared_plan_v1 *admit_plan;
++    int admit_phase;
++    bool admit_effective;   // a completed output was observed under admit_plan
++    char admit_refusal[160];
++    aji_native_snapshot_v2 admit_snapshot;
++    // Observed cadence under the admitted plan. Every one of these is counted at
++    // the emission boundary by frame kind: framesIn is a source frame taken from
++    // the refqueue, framesOut a frame that reached the output pin, interpolated
++    // a frame this chain synthesised (never a source frame and never a
++    // scene-cut duplicate), sceneCuts a pair the shim refused to interpolate,
++    // dropped a decoded frame the chain discarded before it reached the pin.
++    int64_t cadence_frames_in;
++    int64_t cadence_frames_out;
++    int64_t cadence_interpolated;
++    int64_t cadence_scene_cuts;
++    int64_t cadence_dropped;
++    bool rife_scene;   // the last interpolation was a scene-cut duplicate
++
++    // Admission worker: one job at a time. The filter thread never destroys the
++    // device generation a running job holds; it is handed over instead.
++    mp_thread admit_thread;
++    bool admit_thread_valid;
++    atomic_bool admit_done;
++    struct admit_job *admit_job;
++    mp_mutex admit_lock;
++    bool admit_job_running;
++    bool admit_retire_pending;
++    aji_ctx *admit_retire_ctx;
++    CUstream admit_retire_stream;
++    CUevent admit_retire_evt[MAX_DEPTH];
++    AVBufferRef *admit_retire_device;
+ };
+ 
+ static int check_cu(struct mp_filter *vf, CUresult err, const char *func)
+@@ -365,180 +458,1904 @@ static int map_siting(struct mp_image_params *params)
+     }
+ }
+ 
+-// Wait until every submitted frame's GPU work completed. The ring entries
+-// stay queued for emission; tickets complete in order, so waiting the
+-// newest covers all.
+-static bool drain_ring(struct mp_filter *vf)
++// Wait until every submitted frame's GPU work completed. The ring entries
++// stay queued for emission; tickets complete in order, so waiting the
++// newest covers all.
++static bool drain_ring(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->ring_n)
++        return true;
++    if (p->api.wait(p->aji, p->ring[p->ring_n - 1].ticket) != AJI_OK) {
++        MP_ERR(vf, "pipeline drain failed: %s\n", p->api.last_error(p->aji));
++        return false;
++    }
++    return true;
++}
++
++static void clear_ring(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    drain_ring(vf);
++    for (int i = 0; i < p->ring_n; i++)
++        mp_image_unrefp(&p->ring[i].out);
++    p->ring_n = 0;
++}
++
++static void drain_backend(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->aji)
++        return;
++
++    uint64_t ticket = p->api.flush(p->aji, p->stream);
++    if (ticket && p->api.wait(p->aji, ticket) != AJI_OK) {
++        MP_WARN(vf, "backend drain failed during reset: %s\n",
++                p->api.last_error(p->aji));
++    }
++}
++
++// ---- Native status publication -------------------------------------------
++// The Qt consumer (mplayer::native::NativeStatus) reads one flat string map
++// with exactly `schema`, `protocol`, `revision` and `snapshot`; the snapshot is
++// a compact UTF-8 JSON document whose inner scalars keep their real JSON types.
++// This filter is the producer: the pure Probe passthrough reports only observed
++// source/decoder-device facts, never a plan, counters or Active. The document
++// is cached and rebuilt only when a published fact or the lifecycle changes.
++
++// The filter's monotonic change counter: unchanged state keeps the revision.
++static void status_touch(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    p->status_revision++;
++    p->status_dirty = true;
++}
++
++// Every epoch comes from one process-wide sequence, so a filter recreation (a
++// fresh priv starting from zero) is still a strictly newer lifecycle than the
++// one it replaced, and a consumer that missed the gap never reads the new
++// filter as a stale read of the old one.
++static atomic_int_least64_t status_epoch_seed;
++
++static int64_t status_next_epoch(void)
++{
++    return (int64_t)atomic_fetch_add(&status_epoch_seed, 1);
++}
++
++// A new lifecycle: seek/reset, source or device reinit, or filter recreation.
++// The epoch advances together with the revision so the consumer can tell a
++// restart from a stale read even when the facts themselves did not change.
++static void status_begin_epoch(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    p->status_epoch = status_next_epoch();
++    status_touch(vf);
++}
++
++// Drop the observed device identity: the context it was read from is gone.
++static void clear_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    const bool had = p->device_known || p->decoder_uuid[0] ||
++                     p->adapter_luid[0] || p->sm_major || p->sm_minor ||
++                     p->compute_known || p->compute_uuid[0] || p->factory_queried;
++    p->device_known = false;
++    p->decoder_uuid[0] = '\0';
++    p->adapter_luid[0] = '\0';
++    p->sm_major = p->sm_minor = 0;
++    p->compute_known = false;
++    p->compute_uuid[0] = '\0';
++    p->compute_uuid_hex[0] = '\0';
++    // The factory observation belongs to the context being dropped here; a
++    // different device/context must be re-queried, not answered from a stale
++    // reply that could enable a different core.
++    p->factory_queried = false;
++    p->factory_observed = false;
++    memset(&p->factory, 0, sizeof(p->factory));
++    if (had)
++        status_touch(vf);
++}
++
++// The actual decoder device, read from the CUDA context the incoming
++// AVHWFramesContext lives on. Pushes that context, queries the current CUdevice
++// and its identity, and pops on every successful push. The optional UUID entry
++// points are guarded; the SM is reported when the UUID is unavailable.
++static void query_cuda_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->cu || !p->cuda_ctx)
++        return;
++    CUcontext dummy;
++    if (CHECK_CU(p->cu->cuCtxPushCurrent(p->cuda_ctx)) < 0)
++        return;
++
++    CUdevice dev = 0;
++    bool have_dev = p->cu->cuCtxGetDevice &&
++                    CHECK_CU(p->cu->cuCtxGetDevice(&dev)) >= 0;
++    if (have_dev) {
++        CUuuid uuid;
++        memset(&uuid, 0, sizeof(uuid));
++        bool have_uuid = false;
++        if (p->cu->cuDeviceGetUuid_v2 &&
++            p->cu->cuDeviceGetUuid_v2(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        } else if (p->cu->cuDeviceGetUuid &&
++                   p->cu->cuDeviceGetUuid(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        }
++        if (have_uuid) {
++            snprintf(p->decoder_uuid, sizeof(p->decoder_uuid),
++                     "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
++                     "%02x%02x%02x%02x%02x%02x",
++                     (unsigned char)uuid.bytes[0], (unsigned char)uuid.bytes[1],
++                     (unsigned char)uuid.bytes[2], (unsigned char)uuid.bytes[3],
++                     (unsigned char)uuid.bytes[4], (unsigned char)uuid.bytes[5],
++                     (unsigned char)uuid.bytes[6], (unsigned char)uuid.bytes[7],
++                     (unsigned char)uuid.bytes[8], (unsigned char)uuid.bytes[9],
++                     (unsigned char)uuid.bytes[10], (unsigned char)uuid.bytes[11],
++                     (unsigned char)uuid.bytes[12], (unsigned char)uuid.bytes[13],
++                     (unsigned char)uuid.bytes[14], (unsigned char)uuid.bytes[15]);
++        }
++        int major = 0, minor = 0;
++        if (p->cu->cuDeviceComputeCapability &&
++            p->cu->cuDeviceComputeCapability(&major, &minor, dev) ==
++                CUDA_SUCCESS &&
++            major > 0) {
++            p->sm_major = major;
++            p->sm_minor = minor;
++        }
++    }
++    CHECK_CU(p->cu->cuCtxPopCurrent(&dummy));
++
++    p->device_known = have_dev && (p->decoder_uuid[0] || p->sm_major > 0);
++    status_touch(vf);
++    MP_VERBOSE(vf, "Probe decoder device: uuid=%s sm=%d.%d\n",
++               p->decoder_uuid[0] ? p->decoder_uuid : "(unavailable)",
++               p->sm_major, p->sm_minor);
++}
++
++// The compute device the shim actually runs on: independently queried from the
++// adopted CUDA context the inference context was created with, never copied
++// from the decoder identity. It is recorded in both the ABI's 32-hex form and
++// the dashed form the probe protocol carries.
++static void query_cuda_compute_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->cu || !p->cuda_ctx || p->is_d3d11)
++        return;
++    CUcontext dummy;
++    if (CHECK_CU(p->cu->cuCtxPushCurrent(p->cuda_ctx)) < 0)
++        return;
++
++    CUdevice dev = 0;
++    CUuuid uuid;
++    memset(&uuid, 0, sizeof(uuid));
++    bool ok = p->cu->cuCtxGetDevice &&
++              p->cu->cuCtxGetDevice(&dev) == CUDA_SUCCESS;
++    bool have_uuid = false;
++    if (ok) {
++        if (p->cu->cuDeviceGetUuid_v2 &&
++            p->cu->cuDeviceGetUuid_v2(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        } else if (p->cu->cuDeviceGetUuid &&
++                   p->cu->cuDeviceGetUuid(&uuid, dev) == CUDA_SUCCESS) {
++            have_uuid = true;
++        }
++    }
++    if (have_uuid) {
++        static const char digits[] = "0123456789abcdef";
++        for (int i = 0; i < 16; i++) {
++            p->compute_uuid_hex[i * 2] = digits[(unsigned char)uuid.bytes[i] >> 4];
++            p->compute_uuid_hex[i * 2 + 1] = digits[(unsigned char)uuid.bytes[i] & 0x0f];
++        }
++        p->compute_uuid_hex[32] = '\0';
++        snprintf(p->compute_uuid, sizeof(p->compute_uuid),
++                 "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
++                 "%02x%02x%02x%02x%02x%02x",
++                 (unsigned char)uuid.bytes[0], (unsigned char)uuid.bytes[1],
++                 (unsigned char)uuid.bytes[2], (unsigned char)uuid.bytes[3],
++                 (unsigned char)uuid.bytes[4], (unsigned char)uuid.bytes[5],
++                 (unsigned char)uuid.bytes[6], (unsigned char)uuid.bytes[7],
++                 (unsigned char)uuid.bytes[8], (unsigned char)uuid.bytes[9],
++                 (unsigned char)uuid.bytes[10], (unsigned char)uuid.bytes[11],
++                 (unsigned char)uuid.bytes[12], (unsigned char)uuid.bytes[13],
++                 (unsigned char)uuid.bytes[14], (unsigned char)uuid.bytes[15]);
++    }
++    CHECK_CU(p->cu->cuCtxPopCurrent(&dummy));
++    p->compute_known = have_uuid;
++    if (!have_uuid) {
++        p->compute_uuid[0] = '\0';
++        p->compute_uuid_hex[0] = '\0';
++    }
++    status_touch(vf);
++    MP_VERBOSE(vf, "Probe compute device: uuid=%s\n",
++               p->compute_uuid[0] ? p->compute_uuid : "(unavailable)");
++}
++
++// The backend a factory query actually reported, as the frozen status token.
++// NONE is the honest answer when nothing was checked: DirectML is never claimed
++// because an ORT runtime happens to be present.
++static const char *factory_backend_name(uint32_t backend)
++{
++    switch (backend) {
++    case AJI_NATIVE_FACTORY_BACKEND_TENSORRT:
++        return "tensorrt";
++    case AJI_NATIVE_FACTORY_BACKEND_DIRECTML:
++        return "directml";
++    default:
++        return "none";
++    }
++}
++
++// The optional producer factory query, executed once per adopted device
++// generation and cached. It runs against the context the frames actually live
++// on: the producer adopts that borrowed context (never creating a second one),
++// reads the real device UUID/CC and initialises/checks its own compiled runtime
++// factory. No model, engine, build or cache is touched, and the answer is a
++// factory-availability fact only - never Prepared/Active/artifactReady. A
++// missing export, a missing context or a malformed reply is an observed
++// unavailability, never a capability read off a symbol, preference or manifest.
++static void query_factory_capabilities(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (p->factory_queried || !p->api.native_query_factory)
++        return;
++    const bool have_device = p->is_d3d11
++#if HAVE_D3D11
++                                 ? p->d3d_dev != NULL
++#else
++                                 ? false
++#endif
++                                 : p->cuda_ctx != NULL;
++    if (!have_device)
++        return;
++
++    aji_create_params cp;
++    memset(&cp, 0, sizeof(cp));
++    cp.api_version = AJI_API_VERSION;
++    cp.cuda_context = p->is_d3d11 ? NULL : p->cuda_ctx;
++#if HAVE_D3D11
++    cp.d3d11_device = p->is_d3d11 ? p->d3d_dev : NULL;
++#endif
++
++    aji_native_factory_capabilities_v1 out;
++    memset(&out, 0, sizeof(out));
++    out.struct_size = sizeof(out);
++    out.requested_protocol = AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION;
++
++    const int rc = p->api.native_query_factory(&cp, &out);
++    // The reply must state the whole identity before any field is trusted; a
++    // producer that answers a different protocol/schema/ABI is a named refusal,
++    // not a capability.
++    const bool identified =
++        out.struct_size == sizeof(out) &&
++        out.protocol_version == AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION &&
++        out.native_protocol_version == AJI_NATIVE_PROTOCOL_VERSION &&
++        out.native_schema_version == AJI_NATIVE_SCHEMA_VERSION &&
++        out.source_abi == AJI_API_VERSION;
++
++    p->factory_queried = true;
++    if (identified) {
++        p->factory = out;
++        p->factory_observed = true;
++        // The reply is a borrowed-style C buffer: force termination inside every
++        // capacity before it is ever read as a string.
++        p->factory.device_identity[sizeof(p->factory.device_identity) - 1] = '\0';
++        p->factory.provider[sizeof(p->factory.provider) - 1] = '\0';
++        p->factory.runtime_version[sizeof(p->factory.runtime_version) - 1] = '\0';
++        p->factory.reason_key[sizeof(p->factory.reason_key) - 1] = '\0';
++        p->factory.reason[sizeof(p->factory.reason) - 1] = '\0';
++        if (p->factory.result != AJI_NATIVE_OK && !p->factory.reason_key[0]) {
++            snprintf(p->factory.reason_key, sizeof(p->factory.reason_key), "%s",
++                     "native.factory.unavailable");
++            snprintf(p->factory.reason, sizeof(p->factory.reason), "%s",
++                     "the factory reported unavailable for the adopted source");
++        }
++    } else {
++        memset(&p->factory, 0, sizeof(p->factory));
++        p->factory.struct_size = sizeof(p->factory);
++        p->factory.requested_protocol = AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION;
++        p->factory.protocol_version = AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION;
++        p->factory.native_protocol_version = AJI_NATIVE_PROTOCOL_VERSION;
++        p->factory.native_schema_version = AJI_NATIVE_SCHEMA_VERSION;
++        p->factory.source_abi = AJI_API_VERSION;
++        snprintf(p->factory.reason_key, sizeof(p->factory.reason_key), "%s",
++                 "native.factory.protocol");
++        snprintf(p->factory.reason, sizeof(p->factory.reason), "%s",
++                 "the factory query did not name this build's protocol for the source");
++        p->factory_observed = false;
++    }
++    status_touch(vf);
++    MP_VERBOSE(vf, "Factory query: observed=%d backend=%s roles=0x%x (rc=%d)\n",
++               p->factory_observed, factory_backend_name(p->factory.backend),
++               (unsigned)p->factory.role_bits, rc);
++}
++
++#if HAVE_D3D11
++// The D3D11 source adapter, where supported: queried from the ID3D11Device the
++// incoming AVHWFramesContext borrowed, never inferred from the GUI adapter.
++static void query_d3d11_device_identity(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->d3d_dev)
++        return;
++    IDXGIDevice *dxgi_dev = NULL;
++    IDXGIAdapter *adapter = NULL;
++    if (FAILED(ID3D11Device_QueryInterface(p->d3d_dev, &IID_IDXGIDevice,
++                                           (void **)&dxgi_dev)) ||
++        !dxgi_dev)
++        return;
++    if (SUCCEEDED(IDXGIDevice_GetAdapter(dxgi_dev, &adapter)) && adapter) {
++        DXGI_ADAPTER_DESC desc;
++        if (SUCCEEDED(IDXGIAdapter_GetDesc(adapter, &desc))) {
++            snprintf(p->adapter_luid, sizeof(p->adapter_luid), "%08lx%08lx",
++                     (unsigned long)desc.AdapterLuid.HighPart,
++                     (unsigned long)desc.AdapterLuid.LowPart);
++        }
++        IDXGIAdapter_Release(adapter);
++    }
++    IDXGIDevice_Release(dxgi_dev);
++    p->device_known = p->adapter_luid[0] != '\0';
++    status_touch(vf);
++}
++#endif
++
++// ---- Managed prepared admission -------------------------------------------
++//
++// The Qt serializer sends one compact JSON document per command over the
++// already-working vf-command transport:
++//
++//   vf-command mikai_native admit "<mikai.native.admission/1 document>"
++//   vf-command mikai_native control "<mikai.native.control/1 document>"
++//
++// This filter is the transport and the mpv-side validator, never the source of
++// truth for identity: it checks the plan's source and device facts against the
++// device the frames actually live on and against the CUDA context the shim was
++// created on, then hands the typed plan to the already-open shim's prepared
++// exports from a worker thread so a plan load can never block the playloop. A
++// command returning success is not an acknowledgement; the producer's snapshot
++// and this filter's own post-output facts are. A producer that predates the
++// prepared exports is a named refusal, never a fallback to the conf-driven
++// build path.
++
++static void update_depth(struct mp_filter *vf);
++static void clear_ring(struct mp_filter *vf);
++static void drain_backend(struct mp_filter *vf);
++static bool status_rate_from_fps(double fps, int *num, int *den);
++
++enum {
++    ADMIT_PHASE_NONE = 0,   // no managed plan: the legacy probe/prepare path
++    ADMIT_PHASE_PENDING,    // request stored, the worker is loading it
++    ADMIT_PHASE_PREPARED,   // the producer loaded the plan; no output yet
++    ADMIT_PHASE_ACTIVE,     // a completed output was observed under the plan
++    ADMIT_PHASE_SUSPENDED,  // suspended; the plan and its facts are retained
++    ADMIT_PHASE_FAILED,     // the last admission or control was refused, named
++};
++
++enum {
++    ADMIT_JOB_CREATE = 1,
++    ADMIT_JOB_APPLY = 2,
++    ADMIT_JOB_CONTROL = 3,
++};
++
++struct admit_job {
++    struct mp_filter *vf;
++    uint64_t generation;
++    int kind;
++    uint32_t action;
++    uint32_t timeout_ms;
++    uint64_t epoch;
++    aji_ctx *ctx;
++    CudaFunctions *cu;
++    CUcontext cuda_ctx;
++    void *stream;
++    void *d3d11_dev;
++    uint32_t src_w, src_h;
++    bool is_d3d11;
++    aji_native_prepared_plan_v1 plan;   // read for CREATE and APPLY
++    aji_ctx *created;                   // CREATE only
++    int rc;
++    aji_native_snapshot_v2 snapshot;
++};
++
++static const struct mpv_node *admit_member(const struct mpv_node *map, const char *key)
++{
++    if (!map || map->format != MPV_FORMAT_NODE_MAP || !map->u.list)
++        return NULL;
++    for (int i = 0; i < map->u.list->num; i++) {
++        if (map->u.list->keys && map->u.list->keys[i] &&
++            strcmp(map->u.list->keys[i], key) == 0)
++            return &map->u.list->values[i];
++    }
++    return NULL;
++}
++
++// Strict shape: an unknown member in a fixed-schema object is a refusal, not
++// something to ignore, so a document from a newer producer cannot be read as if
++// it meant this one.
++static bool admit_keys_known(const struct mpv_node *map, const char *const *keys, int count)
++{
++    if (!map || map->format != MPV_FORMAT_NODE_MAP || !map->u.list)
++        return false;
++    for (int i = 0; i < map->u.list->num; i++) {
++        const char *key = map->u.list->keys ? map->u.list->keys[i] : NULL;
++        bool known = false;
++        for (int k = 0; k < count; k++) {
++            if (key && strcmp(key, keys[k]) == 0) {
++                known = true;
++                break;
++            }
++        }
++        if (!known)
++            return false;
++    }
++    return true;
++}
++
++static bool admit_text(const struct mpv_node *map, const char *key, char *dst, size_t cap,
++                       bool required)
++{
++    const struct mpv_node *node = admit_member(map, key);
++    if (!node) {
++        dst[0] = '\0';
++        return !required;
++    }
++    if (node->format != MPV_FORMAT_STRING || !node->u.string)
++        return false;
++    size_t len = strlen(node->u.string);
++    if (len == 0 ? required : len >= cap)
++        return false;
++    memcpy(dst, node->u.string, len + 1);
++    return true;
++}
++
++static bool admit_uint(const struct mpv_node *map, const char *key, uint64_t *out, uint64_t max,
++                       bool required)
++{
++    const struct mpv_node *node = admit_member(map, key);
++    if (!node) {
++        *out = 0;
++        return !required;
++    }
++    if (node->format != MPV_FORMAT_INT64 || node->u.int64 < 0 ||
++        (uint64_t)node->u.int64 > max)
++        return false;
++    *out = (uint64_t)node->u.int64;
++    return true;
++}
++
++// Reads an integer member under either of two accepted spellings. Both are
++// accepted only when they agree; a document that states the same fact twice
++// differently is refused rather than silently preferring one.
++static bool admit_uint_alias(const struct mpv_node *map, const char *primary,
++                             const char *alias, uint64_t *out, uint64_t max, bool required)
++{
++    const struct mpv_node *a = admit_member(map, primary);
++    const struct mpv_node *b = alias ? admit_member(map, alias) : NULL;
++    if (!a && !b) {
++        *out = 0;
++        return !required;
++    }
++    uint64_t va = 0, vb = 0;
++    if (a && !admit_uint(map, primary, &va, max, true))
++        return false;
++    if (b && !admit_uint(map, alias, &vb, max, true))
++        return false;
++    if (a && b && va != vb)
++        return false;
++    *out = a ? va : vb;
++    return true;
++}
++
++static bool admit_text_alias(const struct mpv_node *map, const char *primary, const char *alias,
++                             char *dst, size_t cap, bool required)
++{
++    const struct mpv_node *a = admit_member(map, primary);
++    const struct mpv_node *b = alias ? admit_member(map, alias) : NULL;
++    if (!a && !b)
++        return admit_text(map, primary, dst, cap, required);
++    char other[128];
++    if (a && !admit_text(map, primary, dst, cap, required))
++        return false;
++    if (b && !admit_text(map, alias, other, sizeof(other), required))
++        return false;
++    if (a && b && strcmp(dst, other) != 0)
++        return false;
++    if (!a)
++        memcpy(dst, other, strlen(other) + 1);
++    return true;
++}
++
++static bool admit_number(const struct mpv_node *map, const char *key, double *out, bool required)
++{
++    const struct mpv_node *node = admit_member(map, key);
++    if (!node) {
++        *out = 0;
++        return !required;
++    }
++    if (node->format == MPV_FORMAT_DOUBLE) {
++        *out = node->u.double_;
++        return true;
++    }
++    if (node->format == MPV_FORMAT_INT64) {
++        *out = (double)node->u.int64;
++        return true;
++    }
++    return false;
++}
++
++static bool admit_hex(const char *text, size_t len)
++{
++    if (strlen(text) != len)
++        return false;
++    for (size_t i = 0; i < len; i++) {
++        const char c = text[i];
++        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
++            return false;
++    }
++    return true;
++}
++
++static bool admit_absolute_path(const char *path)
++{
++    if (!path[0])
++        return false;
++#ifdef _WIN32
++    return (path[0] == '\\' && path[1] == '\\') ||
++           (((path[0] >= 'A' && path[0] <= 'Z') ||
++             (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' &&
++            (path[2] == '\\' || path[2] == '/'));
++#else
++    return path[0] == '/';
++#endif
++}
++
++// "[1,C,H,W]" exactly: a positive batch of one, positive channels and extents.
++static bool admit_shape(const struct mpv_node *node, uint32_t *channels, uint32_t *w, uint32_t *h)
++{
++    if (!node || node->format != MPV_FORMAT_NODE_ARRAY || !node->u.list ||
++        node->u.list->num != 4)
++        return false;
++    uint32_t dims[4];
++    for (int i = 0; i < 4; i++) {
++        const struct mpv_node *v = &node->u.list->values[i];
++        if (v->format != MPV_FORMAT_INT64 || v->u.int64 <= 0 || v->u.int64 > 0x7fffffff)
++            return false;
++        dims[i] = (uint32_t)v->u.int64;
++    }
++    if (dims[0] != 1)
++        return false;
++    *channels = dims[1];
++    *h = dims[2];
++    *w = dims[3];
++    return true;
++}
++
++static bool admit_reject(char *reason, size_t rn, const char *key, const char *text)
++{
++    snprintf(reason, rn, "%s: %s", key, text);
++    return false;
++}
++
++static int admit_spatial_count(const aji_native_prepared_plan_v1 *plan)
++{
++    int count = 0;
++    for (uint32_t i = 0; i < plan->stage_count; i++) {
++        if (plan->stages[i].role == AJI_NATIVE_ROLE_SPATIAL)
++            count++;
++    }
++    return count;
++}
++
++static const aji_native_prepared_stage_v1 *admit_temporal_stage(
++    const aji_native_prepared_plan_v1 *plan)
++{
++    for (uint32_t i = 0; i < plan->stage_count; i++) {
++        if (plan->stages[i].role == AJI_NATIVE_ROLE_TEMPORAL)
++            return &plan->stages[i];
++    }
++    return NULL;
++}
++
++static bool admit_parse_source(const struct mpv_node *node, aji_native_prepared_plan_v1 *plan,
++                               char *reason, size_t rn)
++{
++    static const char *const keys[] = {"codedWidth", "codedHeight", "codedW", "codedH", "crop",
++                                       "rotation", "fps", "csp", "matrix", "range", "siting",
++                                       "bitDepth"};
++    if (!node || node->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.admission.source", "not an object");
++    if (!admit_keys_known(node, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.admission.source.unknown.member",
++                            "a key this schema does not define");
++    uint64_t value = 0;
++    if (!admit_uint_alias(node, "codedWidth", "codedW", &value, 0x7fffffff, true) || value == 0)
++        return admit_reject(reason, rn, "native.admission.source.coded",
++                            "codedWidth must be a positive integer");
++    plan->source_coded_width = (uint32_t)value;
++    if (!admit_uint_alias(node, "codedHeight", "codedH", &value, 0x7fffffff, true) || value == 0)
++        return admit_reject(reason, rn, "native.admission.source.coded",
++                            "codedHeight must be a positive integer");
++    plan->source_coded_height = (uint32_t)value;
++
++    const struct mpv_node *crop = admit_member(node, "crop");
++    if (crop) {
++        static const char *const crop_keys[] = {"x", "y", "width", "height", "w", "h"};
++        if (!admit_keys_known(crop, crop_keys, MP_ARRAY_SIZE(crop_keys)))
++            return admit_reject(reason, rn, "native.admission.source.crop.unknown.member",
++                                "a key this schema does not define");
++        uint64_t x = 0, y = 0, cw = 0, ch = 0;
++        if (!admit_uint(crop, "x", &x, 0x7fffffff, true) ||
++            !admit_uint(crop, "y", &y, 0x7fffffff, true) ||
++            !admit_uint_alias(crop, "width", "w", &cw, 0x7fffffff, true) ||
++            !admit_uint_alias(crop, "height", "h", &ch, 0x7fffffff, true))
++            return admit_reject(reason, rn, "native.admission.source.crop",
++                                "x, y, width and height must be non-negative integers");
++        if (cw == 0 || ch == 0 || x + cw > plan->source_coded_width ||
++            y + ch > plan->source_coded_height)
++            return admit_reject(reason, rn, "native.admission.source.crop",
++                                "the crop reaches outside the coded frame");
++        plan->source_crop_x = (uint32_t)x;
++        plan->source_crop_y = (uint32_t)y;
++        plan->source_crop_width = (uint32_t)cw;
++        plan->source_crop_height = (uint32_t)ch;
++    }
++
++    if (!admit_uint(node, "rotation", &value, 270, true) ||
++        (value != 0 && value != 90 && value != 180 && value != 270))
++        return admit_reject(reason, rn, "native.admission.source.rotation",
++                            "rotation must be 0, 90, 180 or 270");
++    plan->source_rotation = (uint32_t)value;
++
++    const struct mpv_node *fps = admit_member(node, "fps");
++    static const char *const fps_keys[] = {"num", "den"};
++    if (!fps || !admit_keys_known(fps, fps_keys, MP_ARRAY_SIZE(fps_keys)))
++        return admit_reject(reason, rn, "native.admission.source.fps",
++                            "fps must be an object with num and den");
++    uint64_t num = 0, den = 0;
++    if (!admit_uint(fps, "num", &num, 1000000, true) || num == 0 ||
++        !admit_uint(fps, "den", &den, 1000000, true) || den == 0)
++        return admit_reject(reason, rn, "native.admission.source.fps",
++                            "num and den must be positive and at most 1000000");
++    plan->source_fps_num = (uint32_t)num;
++    plan->source_fps_den = (uint32_t)den;
++
++    if (!admit_text(node, "csp", plan->source_csp, sizeof(plan->source_csp), true))
++        return admit_reject(reason, rn, "native.admission.source.csp", "missing or too long");
++    if (!admit_text(node, "matrix", plan->source_matrix, sizeof(plan->source_matrix), false) ||
++        !admit_text(node, "range", plan->source_range, sizeof(plan->source_range), false) ||
++        !admit_text(node, "siting", plan->source_siting, sizeof(plan->source_siting), false))
++        return admit_reject(reason, rn, "native.admission.source.colour", "a text member is too long");
++    if (!admit_uint(node, "bitDepth", &value, 32, true) ||
++        (value != 8 && value != 10 && value != 12 && value != 16))
++        return admit_reject(reason, rn, "native.admission.source.bitDepth",
++                            "bitDepth must be 8, 10, 12 or 16");
++    plan->source_bit_depth = (uint32_t)value;
++    return true;
++}
++
++static bool admit_parse_device(const struct mpv_node *node, aji_native_prepared_plan_v1 *plan,
++                               char *reason, size_t rn)
++{
++    static const char *const keys[] = {"decoderDeviceUuid", "computeDeviceUuid", "adapterLuid",
++                                       "smMajor", "smMinor"};
++    if (!node || node->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.admission.device", "not an object");
++    if (!admit_keys_known(node, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.admission.device.unknown.member",
++                            "a key this schema does not define");
++    if (!admit_text(node, "decoderDeviceUuid", plan->decoder_device_uuid,
++                    sizeof(plan->decoder_device_uuid), false) ||
++        !admit_text(node, "computeDeviceUuid", plan->compute_device_uuid,
++                    sizeof(plan->compute_device_uuid), false) ||
++        !admit_text(node, "adapterLuid", plan->adapter_luid, sizeof(plan->adapter_luid), false))
++        return admit_reject(reason, rn, "native.admission.device",
++                            "a device identity member is too long");
++    uint64_t sm_major = 0, sm_minor = 0;
++    if (!admit_uint(node, "smMajor", &sm_major, 1024, true) ||
++        !admit_uint(node, "smMinor", &sm_minor, 1024, true))
++        return admit_reject(reason, rn, "native.admission.device.sm",
++                            "smMajor and smMinor must be integers in [0,1024]");
++    plan->device_sm_major = (uint32_t)sm_major;
++    plan->device_sm_minor = (uint32_t)sm_minor;
++    if (!plan->compute_device_uuid[0] && !plan->adapter_luid[0])
++        return admit_reject(reason, rn, "native.admission.device",
++                            "neither a compute device UUID nor an adapter LUID is stated");
++    return true;
++}
++
++static bool admit_parse_build(const struct mpv_node *node, aji_native_prepared_plan_v1 *plan,
++                              char *reason, size_t rn)
++{
++    static const char *const keys[] = {"provider", "runtime", "runtimeVersion", "plugin",
++                                       "pluginVersion", "coreSha", "sourceAbi", "precision",
++                                       "tf32", "stronglyTyped", "skipInference", "deviceUuid",
++                                       "adapterLuid", "smMajor", "smMinor", "cudaVersion",
++                                       "driverVersion", "canonicalOptions"};
++    if (!node || node->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.admission.build", "not an object");
++    if (!admit_keys_known(node, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.admission.build.unknown.member",
++                            "a key this schema does not define");
++    if (!admit_text(node, "provider", plan->build_provider, sizeof(plan->build_provider), true) ||
++        !admit_text_alias(node, "runtime", "runtimeVersion", plan->build_runtime,
++                          sizeof(plan->build_runtime), true) ||
++        !admit_text_alias(node, "plugin", "pluginVersion", plan->build_plugin,
++                          sizeof(plan->build_plugin), true) ||
++        !admit_text(node, "precision", plan->build_precision, sizeof(plan->build_precision), true))
++        return admit_reject(reason, rn, "native.admission.build",
++                            "provider, runtime, plugin and precision are required and bounded");
++    // The build identity repeats the observed device facts; when present they
++    // must be the same device the device object names, never a second story.
++    char device_uuid[128] = {0}, build_luid[128] = {0}, cuda_version[128] = {0};
++    char driver_version[128] = {0};
++    if (!admit_text(node, "deviceUuid", device_uuid, sizeof(device_uuid), false) ||
++        !admit_text(node, "adapterLuid", build_luid, sizeof(build_luid), false) ||
++        !admit_text(node, "cudaVersion", cuda_version, sizeof(cuda_version), false) ||
++        !admit_text(node, "driverVersion", driver_version, sizeof(driver_version), false))
++        return admit_reject(reason, rn, "native.admission.build.device", "a member is too long");
++    if (device_uuid[0] && plan->compute_device_uuid[0] &&
++        strcmp(device_uuid, plan->compute_device_uuid) != 0)
++        return admit_reject(reason, rn, "native.admission.build.deviceUuid",
++                            "build deviceUuid disagrees with the device object");
++    if (build_luid[0] && plan->adapter_luid[0] && strcmp(build_luid, plan->adapter_luid) != 0)
++        return admit_reject(reason, rn, "native.admission.build.adapterLuid",
++                            "build adapterLuid disagrees with the device object");
++    uint64_t build_sm_major = 0, build_sm_minor = 0;
++    if (!admit_uint(node, "smMajor", &build_sm_major, 1024, false) ||
++        !admit_uint(node, "smMinor", &build_sm_minor, 1024, false))
++        return admit_reject(reason, rn, "native.admission.build.sm", "not an integer in [0,1024]");
++    if (admit_member(node, "smMajor") &&
++        ((uint32_t)build_sm_major != plan->device_sm_major ||
++         (uint32_t)build_sm_minor != plan->device_sm_minor))
++        return admit_reject(reason, rn, "native.admission.build.sm",
++                            "build SM disagrees with the device object");
++    if (strcmp(plan->build_precision, "fp16") != 0 && strcmp(plan->build_precision, "fp32") != 0)
++        return admit_reject(reason, rn, "native.admission.build.precision",
++                            "precision must be fp16 or fp32");
++    if (!admit_text(node, "coreSha", plan->build_core_sha, sizeof(plan->build_core_sha), true) ||
++        !(admit_hex(plan->build_core_sha, 40) || admit_hex(plan->build_core_sha, 64)))
++        return admit_reject(reason, rn, "native.admission.build.coreSha",
++                            "coreSha must be 40 or 64 lower-case hex digits");
++    if (!admit_text(node, "canonicalOptions", plan->build_options, sizeof(plan->build_options),
++                    false))
++        return admit_reject(reason, rn, "native.admission.build.options", "too long");
++    uint64_t value = 0;
++    if (!admit_uint(node, "sourceAbi", &value, 1024, true))
++        return admit_reject(reason, rn, "native.admission.build.sourceAbi", "must be an integer");
++    plan->build_source_abi = (uint32_t)value;
++    if (!admit_uint(node, "tf32", &value, 1, true))
++        return admit_reject(reason, rn, "native.admission.build.tf32", "must be 0 or 1");
++    plan->build_tf32 = (uint32_t)value;
++    if (!admit_uint(node, "stronglyTyped", &value, 1, true))
++        return admit_reject(reason, rn, "native.admission.build.stronglyTyped", "must be 0 or 1");
++    plan->build_strongly_typed = (uint32_t)value;
++    if (!admit_uint(node, "skipInference", &value, 1, true))
++        return admit_reject(reason, rn, "native.admission.build.skipInference", "must be 0 or 1");
++    plan->build_skip_inference = (uint32_t)value;
++    return true;
++}
++
++static bool admit_parse_stage(const struct mpv_node *node, uint32_t index,
++                              aji_native_prepared_plan_v1 *plan, char *reason, size_t rn)
++{
++    static const char *const keys[] = {
++        "ordinal", "role", "order", "modelId", "modelContentId", "modelSha256", "engineSha256",
++        "buildKey", "modelPath", "enginePath", "inputTensor", "outputTensor", "inputDtype",
++        "outputDtype", "layout", "inputShape", "outputShape", "contentSize", "padLeft", "padTop",
++        "factor", "sceneThreshold"};
++    if (!node || node->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.admission.stage", "not an object");
++    if (!admit_keys_known(node, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.admission.stage.unknown.member",
++                            "a key this schema does not define");
++    aji_native_prepared_stage_v1 *stage = &plan->stages[index];
++    memset(stage, 0, sizeof(*stage));
++    stage->struct_size = sizeof(*stage);
++    uint64_t value = 0;
++    if (!admit_uint(node, "ordinal", &value, AJI_NATIVE_MAX_STAGES, true) || value != index)
++        return admit_reject(reason, rn, "native.admission.stage.ordinal",
++                            "ordinals must start at 0 and strictly ascend");
++    stage->ordinal = (uint32_t)value;
++
++    char text[64];
++    if (!admit_text(node, "role", text, sizeof(text), true))
++        return admit_reject(reason, rn, "native.admission.stage.role", "missing or too long");
++    if (strcmp(text, "spatial") == 0) {
++        stage->role = AJI_NATIVE_ROLE_SPATIAL;
++        stage->order = AJI_NATIVE_ORDER_NONE;
++        if (admit_member(node, "factor") || admit_member(node, "sceneThreshold"))
++            return admit_reject(reason, rn, "native.admission.stage.temporalFacts",
++                                "a spatial stage carries temporal facts");
++    } else if (strcmp(text, "temporal") == 0) {
++        stage->role = AJI_NATIVE_ROLE_TEMPORAL;
++    } else {
++        return admit_reject(reason, rn, "native.admission.stage.role",
++                            "role must be spatial or temporal");
++    }
++
++    if (stage->role == AJI_NATIVE_ROLE_TEMPORAL) {
++        if (!admit_text(node, "order", text, sizeof(text), true))
++            return admit_reject(reason, rn, "native.admission.stage.order", "missing or too long");
++        if (strcmp(text, "before_spatial") == 0 || strcmp(text, "beforeSpatial") == 0) {
++            stage->order = AJI_NATIVE_ORDER_BEFORE_SPATIAL;
++        } else if (strcmp(text, "after_spatial") == 0 || strcmp(text, "afterSpatial") == 0) {
++            stage->order = AJI_NATIVE_ORDER_AFTER_SPATIAL;
++        } else {
++            return admit_reject(reason, rn, "native.admission.stage.order",
++                                "a temporal stage needs a before/after-spatial order");
++        }
++        const struct mpv_node *factor = admit_member(node, "factor");
++        static const char *const factor_keys[] = {"num", "den"};
++        if (!factor || !admit_keys_known(factor, factor_keys, MP_ARRAY_SIZE(factor_keys)))
++            return admit_reject(reason, rn, "native.admission.stage.factor",
++                                "a temporal stage needs a factor object");
++        uint64_t num = 0, den = 0;
++        if (!admit_uint(factor, "num", &num, 1024, true) || num == 0 ||
++            !admit_uint(factor, "den", &den, 1024, true) || den == 0)
++            return admit_reject(reason, rn, "native.admission.stage.factor",
++                                "factor num and den must be positive");
++        if (num <= den)
++            return admit_reject(reason, rn, "native.admission.stage.factor",
++                                "a temporal factor must interpolate, so num must exceed den");
++        stage->factor_num = (uint32_t)num;
++        stage->factor_den = (uint32_t)den;
++        double threshold = 0;
++        if (!admit_number(node, "sceneThreshold", &threshold, true) ||
++            !(threshold >= 0.0) || !(threshold <= 1.0))
++            return admit_reject(reason, rn, "native.admission.stage.sceneThreshold",
++                                "sceneThreshold must be a number in [0,1]");
++        stage->scene_threshold = threshold;
++    }
++
++    if (!admit_text(node, "modelId", stage->model_id, sizeof(stage->model_id), true) ||
++        !admit_text(node, "modelContentId", stage->model_content_id,
++                    sizeof(stage->model_content_id), true) ||
++        !admit_text(node, "buildKey", stage->build_key, sizeof(stage->build_key), true))
++        return admit_reject(reason, rn, "native.admission.stage.identity",
++                            "modelId, modelContentId and buildKey are required identities");
++    if (!admit_text(node, "modelSha256", stage->model_sha256, sizeof(stage->model_sha256), true) ||
++        !admit_hex(stage->model_sha256, 64))
++        return admit_reject(reason, rn, "native.admission.stage.modelSha256",
++                            "modelSha256 must be 64 lower-case hex digits");
++    if (!admit_text(node, "engineSha256", stage->engine_sha256, sizeof(stage->engine_sha256),
++                    true) || !admit_hex(stage->engine_sha256, 64))
++        return admit_reject(reason, rn, "native.admission.stage.engineSha256",
++                            "engineSha256 must be 64 lower-case hex digits");
++    if (!admit_text(node, "modelPath", stage->model_path, sizeof(stage->model_path), true) ||
++        !admit_absolute_path(stage->model_path))
++        return admit_reject(reason, rn, "native.admission.stage.modelPath",
++                            "modelPath must be an absolute owned path");
++    if (!admit_text(node, "enginePath", stage->engine_path, sizeof(stage->engine_path), true) ||
++        !admit_absolute_path(stage->engine_path))
++        return admit_reject(reason, rn, "native.admission.stage.enginePath",
++                            "enginePath must be an absolute owned path");
++    if (!admit_text(node, "inputTensor", stage->input_tensor, sizeof(stage->input_tensor), false) ||
++        !admit_text(node, "outputTensor", stage->output_tensor, sizeof(stage->output_tensor),
++                    false))
++        return admit_reject(reason, rn, "native.admission.stage.tensor", "too long");
++
++    char input_dtype[16], output_dtype[16];
++    if (!admit_text(node, "inputDtype", input_dtype, sizeof(input_dtype), true) ||
++        !admit_text(node, "outputDtype", output_dtype, sizeof(output_dtype), true))
++        return admit_reject(reason, rn, "native.admission.stage.dtype", "missing or too long");
++    stage->input_dtype = strcmp(input_dtype, "fp16") == 0 ? AJI_NATIVE_DTYPE_FP16 :
++                         strcmp(input_dtype, "fp32") == 0 ? AJI_NATIVE_DTYPE_FP32 : 0;
++    stage->output_dtype = strcmp(output_dtype, "fp16") == 0 ? AJI_NATIVE_DTYPE_FP16 :
++                          strcmp(output_dtype, "fp32") == 0 ? AJI_NATIVE_DTYPE_FP32 : 0;
++    if (!stage->input_dtype || !stage->output_dtype)
++        return admit_reject(reason, rn, "native.admission.stage.dtype",
++                            "dtypes must be fp16 or fp32");
++
++    if (!admit_text(node, "layout", text, sizeof(text), true) || strcmp(text, "chw") != 0)
++        return admit_reject(reason, rn, "native.admission.stage.layout", "layout must be chw");
++    stage->input_layout = AJI_NATIVE_LAYOUT_CHW;
++    stage->output_layout = AJI_NATIVE_LAYOUT_CHW;
++
++    uint32_t in_channels = 0, out_channels = 0;
++    if (!admit_shape(admit_member(node, "inputShape"), &in_channels, &stage->input_width,
++                     &stage->input_height))
++        return admit_reject(reason, rn, "native.admission.stage.inputShape",
++                            "inputShape must be [1,C,H,W] of positive integers");
++    if (!admit_shape(admit_member(node, "outputShape"), &out_channels, &stage->output_width,
++                     &stage->output_height))
++        return admit_reject(reason, rn, "native.admission.stage.outputShape",
++                            "outputShape must be [1,C,H,W] of positive integers");
++    stage->input_channels = in_channels;
++    stage->output_channels = out_channels;
++    // The producer binds an even frame of at least 2x2 and a temporal stage
++    // never rescales; chain geometry beyond that is the plan's own.
++    if (stage->input_width < 2 || stage->input_height < 2 ||
++        stage->output_width < 2 || stage->output_height < 2 ||
++        (stage->input_width & 1) || (stage->input_height & 1) ||
++        (stage->output_width & 1) || (stage->output_height & 1))
++        return admit_reject(reason, rn, "native.admission.stage.geometry",
++                            "stage geometry must be an even frame of at least 2x2");
++    if (stage->role == AJI_NATIVE_ROLE_TEMPORAL &&
++        (stage->input_width != stage->output_width ||
++         stage->input_height != stage->output_height))
++        return admit_reject(reason, rn, "native.admission.stage.geometry",
++                            "a temporal stage must not rescale");
++
++    const struct mpv_node *content = admit_member(node, "contentSize");
++    static const char *const content_keys[] = {"w", "h"};
++    if (!content || !admit_keys_known(content, content_keys, MP_ARRAY_SIZE(content_keys)))
++        return admit_reject(reason, rn, "native.admission.stage.contentSize",
++                            "contentSize must be an object with w and h");
++    uint64_t cw = 0, ch = 0;
++    if (!admit_uint(content, "w", &cw, 0x7fffffff, true) || cw == 0 ||
++        !admit_uint(content, "h", &ch, 0x7fffffff, true) || ch == 0)
++        return admit_reject(reason, rn, "native.admission.stage.contentSize",
++                            "contentSize w and h must be positive integers");
++    stage->content_width = (uint32_t)cw;
++    stage->content_height = (uint32_t)ch;
++
++    uint64_t pad_left = 0, pad_top = 0;
++    if (!admit_uint(node, "padLeft", &pad_left, 0x7fffffff, true) ||
++        !admit_uint(node, "padTop", &pad_top, 0x7fffffff, true))
++        return admit_reject(reason, rn, "native.admission.stage.pad",
++                            "padLeft and padTop must be non-negative integers");
++    stage->pad_left = (uint32_t)pad_left;
++    stage->pad_top = (uint32_t)pad_top;
++
++    // The pad is the exact centred, even margin of the frame window inside the
++    // engine bind geometry; a spatial stage pads nothing.
++    if (stage->input_width < stage->content_width || stage->input_height < stage->content_height)
++        return admit_reject(reason, rn, "native.admission.stage.geometry",
++                            "the engine input is smaller than the frame window");
++    uint32_t want_left = (stage->input_width - stage->content_width) / 2;
++    uint32_t want_top = (stage->input_height - stage->content_height) / 2;
++    if ((stage->input_width - stage->content_width) % 2 ||
++        (stage->input_height - stage->content_height) % 2 ||
++        stage->pad_left != want_left || stage->pad_top != want_top)
++        return admit_reject(reason, rn, "native.admission.stage.pad",
++                            "padLeft/padTop are not the centred even pad of the frame window");
++    if (stage->role == AJI_NATIVE_ROLE_SPATIAL &&
++        (stage->pad_left || stage->pad_top || stage->input_width != stage->content_width ||
++         stage->input_height != stage->content_height))
++        return admit_reject(reason, rn, "native.admission.stage.geometry",
++                            "a spatial stage cannot pad or reframe the frame window");
++    return true;
++}
++
++static bool admit_parse_plan(const struct mpv_node *root, aji_native_prepared_plan_v1 *plan,
++                             char *reason, size_t rn)
++{
++    static const char *const keys[] = {"schema", "protocol", "requestId", "revision", "epoch",
++                                       "requested", "source", "device", "build", "stages"};
++    if (!root || root->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.admission.malformed", "not a JSON object");
++    if (!admit_keys_known(root, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.admission.unknown.member",
++                            "a key this schema does not define");
++    memset(plan, 0, sizeof(*plan));
++    plan->struct_size = sizeof(*plan);
++    plan->requested_protocol = AJI_NATIVE_PREPARED_PROTOCOL_VERSION;
++    plan->flags = AJI_NATIVE_PLAN_FLAG_PREPARED_ONLY;
++
++    char text[128];
++    if (!admit_text(root, "schema", text, sizeof(text), true) ||
++        strcmp(text, "mikai.native.admission/1") != 0)
++        return admit_reject(reason, rn, "native.admission.schema",
++                            "schema must be mikai.native.admission/1");
++    uint64_t value = 0;
++    if (!admit_uint(root, "protocol", &value, 1024, true) || value != 1)
++        return admit_reject(reason, rn, "native.admission.protocol", "protocol must be 1");
++    if (!admit_text(root, "requestId", plan->requested_plan, sizeof(plan->requested_plan), true))
++        return admit_reject(reason, rn, "native.admission.requestId", "missing or too long");
++    if (!admit_uint(root, "revision", &value, UINT64_MAX, true))
++        return admit_reject(reason, rn, "native.admission.revision", "must be a non-negative integer");
++    plan->revision = value;
++    if (!admit_uint(root, "epoch", &value, UINT64_MAX, true))
++        return admit_reject(reason, rn, "native.admission.epoch", "must be a non-negative integer");
++    plan->epoch = value;
++
++    const struct mpv_node *requested = admit_member(root, "requested");
++    static const char *const requested_keys[] = {"recipe", "backend"};
++    if (!requested || !admit_keys_known(requested, requested_keys,
++                                        MP_ARRAY_SIZE(requested_keys)))
++        return admit_reject(reason, rn, "native.admission.requested",
++                            "requested must be an object with recipe and backend");
++    if (!admit_text(requested, "recipe", plan->recipe_id, sizeof(plan->recipe_id), true))
++        return admit_reject(reason, rn, "native.admission.requested.recipe", "missing or too long");
++    if (!admit_text(requested, "backend", plan->backend, sizeof(plan->backend), true) ||
++        (strcmp(plan->backend, "tensorrt") != 0 && strcmp(plan->backend, "directml") != 0))
++        return admit_reject(reason, rn, "native.admission.requested.backend",
++                            "backend must be tensorrt or directml");
++
++    if (!admit_parse_source(admit_member(root, "source"), plan, reason, rn) ||
++        !admit_parse_device(admit_member(root, "device"), plan, reason, rn) ||
++        !admit_parse_build(admit_member(root, "build"), plan, reason, rn))
++        return false;
++
++    const struct mpv_node *stages = admit_member(root, "stages");
++    if (!stages || stages->format != MPV_FORMAT_NODE_ARRAY || !stages->u.list ||
++        stages->u.list->num < 1 || stages->u.list->num > (int)AJI_NATIVE_MAX_STAGES)
++        return admit_reject(reason, rn, "native.admission.stages",
++                            "stages must be a non-empty array of at most 9 entries");
++    plan->stage_count = (uint32_t)stages->u.list->num;
++    for (uint32_t i = 0; i < plan->stage_count; i++) {
++        if (!admit_parse_stage(&stages->u.list->values[i], i, plan, reason, rn))
++            return false;
++    }
++
++    // Ordering: a before-spatial stage must precede every spatial stage (it is
++    // the first stage), an after-spatial one must follow them all (it is the
++    // last), and only one temporal stage can exist because the consumed status
++    // reports exactly one factor. A temporal-only chain is legal.
++    int temporal_index = -1, temporal_count = 0;
++    for (uint32_t i = 0; i < plan->stage_count; i++) {
++        if (plan->stages[i].role == AJI_NATIVE_ROLE_TEMPORAL) {
++            temporal_count++;
++            temporal_index = (int)i;
++        }
++    }
++    if (temporal_count > 1)
++        return admit_reject(reason, rn, "native.admission.stage.order",
++                            "at most one temporal stage can be admitted");
++    if (temporal_index >= 0) {
++        const aji_native_prepared_stage_v1 *stage = &plan->stages[temporal_index];
++        if (stage->order == AJI_NATIVE_ORDER_BEFORE_SPATIAL && temporal_index != 0)
++            return admit_reject(reason, rn, "native.admission.stage.order",
++                                "a before-spatial stage must precede every spatial stage");
++        if (stage->order == AJI_NATIVE_ORDER_AFTER_SPATIAL &&
++            (uint32_t)(temporal_index + 1) != plan->stage_count)
++            return admit_reject(reason, rn, "native.admission.stage.order",
++                                "an after-spatial stage must follow every spatial stage");
++    }
++
++    const aji_native_prepared_stage_v1 *temporal = admit_temporal_stage(plan);
++    if (temporal) {
++        uint64_t num = temporal->factor_num, den = temporal->factor_den;
++        if (num > 8 * den)
++            return admit_reject(reason, rn, "native.admission.stage.factor",
++                                "the interpolation factor exceeds the eight outputs per pair "
++                                "this pipeline carries");
++    }
++
++    // Stage geometry is the chain's own business: the producer inserts a resize
++    // wherever a stage's input differs from the running window, so an initial
++    // resize (a crop- or rotation-derived display window feeding a larger engine
++    // input) is legitimate and is not refused here. What is checked is the
++    // structural contract the producer also enforces.
++    return true;
++}
++
++static bool admit_parse_control(const struct mpv_node *root, char *action, size_t an,
++                                uint64_t *epoch, uint64_t *revision, uint32_t *timeout_ms,
++                                char *reason, size_t rn)
++{
++    static const char *const keys[] = {"schema", "protocol", "action", "epoch", "revision",
++                                       "timeoutMs"};
++    if (!root || root->format != MPV_FORMAT_NODE_MAP)
++        return admit_reject(reason, rn, "native.control.malformed", "not a JSON object");
++    if (!admit_keys_known(root, keys, MP_ARRAY_SIZE(keys)))
++        return admit_reject(reason, rn, "native.control.unknown.member",
++                            "a key this schema does not define");
++    char schema[128];
++    if (!admit_text(root, "schema", schema, sizeof(schema), true) ||
++        strcmp(schema, "mikai.native.control/1") != 0)
++        return admit_reject(reason, rn, "native.control.schema",
++                            "schema must be mikai.native.control/1");
++    uint64_t value = 0;
++    if (!admit_uint(root, "protocol", &value, 1024, true) || value != 1)
++        return admit_reject(reason, rn, "native.control.protocol", "protocol must be 1");
++    if (!admit_text(root, "action", action, an, true) ||
++        (strcmp(action, "drain") != 0 && strcmp(action, "suspend") != 0 &&
++         strcmp(action, "resume") != 0))
++        return admit_reject(reason, rn, "native.control.action",
++                            "action must be drain, suspend or resume");
++    if (!admit_uint(root, "epoch", epoch, UINT64_MAX, true))
++        return admit_reject(reason, rn, "native.control.epoch", "must be a non-negative integer");
++    if (!admit_uint(root, "revision", revision, UINT64_MAX, true))
++        return admit_reject(reason, rn, "native.control.revision", "must be a non-negative integer");
++    if (!admit_uint(root, "timeoutMs", &value, 3600000, true))
++        return admit_reject(reason, rn, "native.control.timeoutMs",
++                            "timeoutMs must be an integer in [0,3600000]");
++    *timeout_ms = (uint32_t)value;
++    return true;
++}
++
++// The plan's source and device facts are checked against what the filter
++// actually observes on the adopted device, never against the document's own
++// consistency: a plan that describes a different frame or a different device is
++// refused by name before the producer sees it.
++static bool admit_uuid_contains(const char *text, const char *hex32)
++{
++    size_t n = strlen(hex32);
++    if (!n || strlen(text) < n)
++        return false;
++    for (size_t i = 0; text[i]; i++) {
++        size_t j = 0;
++        while (j < n && text[i + j]) {
++            char a = text[i + j], b = hex32[j];
++            if (a >= 'A' && a <= 'F') a += 'a' - 'A';
++            if (a != b)
++                break;
++            j++;
++        }
++        if (j == n)
++            return true;
++    }
++    return false;
++}
++
++// The display geometry the producer resolves the plan to (crop, then
++// rotation). This filter feeds coded frames, so a plan whose display geometry
++// differs from the coded frame is one it cannot execute and refuses by name.
++static bool admit_display_size(const aji_native_prepared_plan_v1 *plan, int *w, int *h)
++{
++    int cw = (int)plan->source_coded_width;
++    int ch = (int)plan->source_coded_height;
++    if (plan->source_crop_width && plan->source_crop_height) {
++        cw = (int)plan->source_crop_width;
++        ch = (int)plan->source_crop_height;
++    }
++    if (cw < 2 || ch < 2)
++        return false;
++    switch (plan->source_rotation) {
++    case 0:
++    case 180:
++        *w = cw;
++        *h = ch;
++        return true;
++    case 90:
++    case 270:
++        *w = ch;
++        *h = cw;
++        return true;
++    default:
++        return false;
++    }
++}
++
++static bool admit_validate_actual(struct mp_filter *vf, aji_native_prepared_plan_v1 *plan,
++                                  char *reason, size_t rn)
++{
++    struct priv *p = vf->priv;
++    if (!p->configured || !p->params.w || !p->params.h)
++        return admit_reject(reason, rn, "native.admission.source",
++                            "no adopted hardware frames context has been observed yet");
++    if ((int)plan->source_coded_width != p->params.w ||
++        (int)plan->source_coded_height != p->params.h)
++        return admit_reject(reason, rn, "native.admission.source.coded",
++                            "the plan's coded size is not the observed frame size");
++    if (plan->source_rotation != (uint32_t)p->params.rotate)
++        return admit_reject(reason, rn, "native.admission.source.rotation",
++                            "the plan's rotation is not the observed rotation");
++    if (mp_image_crop_valid(&p->params)) {
++        if (plan->source_crop_width == 0 ||
++            (int)plan->source_crop_x != p->params.crop.x0 ||
++            (int)plan->source_crop_y != p->params.crop.y0 ||
++            (int)plan->source_crop_width != mp_rect_w(p->params.crop) ||
++            (int)plan->source_crop_height != mp_rect_h(p->params.crop))
++            return admit_reject(reason, rn, "native.admission.source.crop",
++                                "the plan's crop is not the decoded frame's crop");
++    }
++    // An odd crop width or height is NOT refused here: the source's own
++    // dimensions are the decoder's fact and an odd 4:2:0 crop window is a
++    // mapping the producer must resolve (whole chroma pairs with an even tensor
++    // output), not a reason to foreclose the plan. The producer owns that
++    // decision and names any refusal it makes.
++    int num = 0, den = 0;
++    if (!status_rate_from_fps(p->fps, &num, &den) ||
++        (int)plan->source_fps_num != num || (int)plan->source_fps_den != den)
++        return admit_reject(reason, rn, "native.admission.source.fps",
++                            "the plan's cadence is not the observed source cadence");
++    const char *csp = mp_imgfmt_to_name(p->params.hw_subfmt);
++    if (!csp || strcmp(plan->source_csp, csp) != 0)
++        return admit_reject(reason, rn, "native.admission.source.csp",
++                            "the plan's pixel format is not the observed ingest format");
++    const int depth = p->params.repr.bits.sample_depth;
++    if (depth && (int)plan->source_bit_depth != depth)
++        return admit_reject(reason, rn, "native.admission.source.bitDepth",
++                            "the plan's bit depth is not the observed sample depth");
++
++    // Crop and rotation are the producer's: it applies the plan's crop and then
++    // its rotation to the coded frame it is fed, before any pre-resize, tensor
++    // or pad. This filter still feeds the coded frame and only asks that the
++    // plan's transform resolves to a geometry this build models.
++    int dw = 0, dh = 0;
++    if (!admit_display_size(plan, &dw, &dh))
++        return admit_reject(reason, rn, "native.admission.source.rotation",
++                            "the plan's rotation is not one of 0/90/180/270");
++
++    if (p->is_d3d11) {
++        if (strcmp(plan->backend, "directml") != 0)
++            return admit_reject(reason, rn, "native.admission.requested.backend",
++                                "the adopted device is DirectML, not TensorRT");
++        if (!p->adapter_luid[0] || strcmp(plan->adapter_luid, p->adapter_luid) != 0)
++            return admit_reject(reason, rn, "native.admission.device.adapterLuid",
++                                "the plan's adapter LUID is not the adopted device");
++    } else {
++        if (strcmp(plan->backend, "tensorrt") != 0)
++            return admit_reject(reason, rn, "native.admission.requested.backend",
++                                "the adopted device is TensorRT, not DirectML");
++        if (!p->compute_known || !p->compute_uuid[0] || !p->compute_uuid_hex[0])
++            return admit_reject(reason, rn, "native.admission.device.computeDeviceUuid",
++                                "the adopted compute device identity was not observed");
++        if (!p->decoder_uuid[0] || !plan->decoder_device_uuid[0])
++            return admit_reject(reason, rn, "native.admission.device.decoderDeviceUuid",
++                                "the plan states no decoder device identity");
++        if (strcmp(plan->decoder_device_uuid, p->decoder_uuid) != 0)
++            return admit_reject(reason, rn, "native.admission.device.decoderDeviceUuid",
++                                "the plan's decoder device is not the adopted device");
++        if (!admit_uuid_contains(plan->compute_device_uuid, p->compute_uuid_hex))
++            return admit_reject(reason, rn, "native.admission.device.computeDeviceUuid",
++                                "the plan's compute device is not the adopted compute device");
++        if ((int)plan->device_sm_major != p->sm_major ||
++            (int)plan->device_sm_minor != p->sm_minor)
++            return admit_reject(reason, rn, "native.admission.device.sm",
++                                "the plan's compute capability is not the adopted device's");
++        // The ABI names the adopted compute device in its own canonical form;
++        // the validated plan carries that observed value, not the caller's
++        // spelling of it.
++        snprintf(plan->compute_device_uuid, sizeof(plan->compute_device_uuid), "%s",
++                 p->compute_uuid_hex);
++        snprintf(plan->device_identity, sizeof(plan->device_identity), "%s",
++                 p->compute_uuid_hex);
++    }
++
++    const aji_native_prepared_stage_v1 *temporal = admit_temporal_stage(plan);
++    if (temporal && temporal->order == AJI_NATIVE_ORDER_BEFORE_SPATIAL &&
++        temporal->content_width != plan->source_coded_width && (!p->api.pre_resize ||
++        !p->api.resize))
++        return admit_reject(reason, rn, "native.admission.stage.preResize",
++                            "the plan needs a pre-RIFE downscale the loaded shim does not export");
++    return true;
++}
++
++// Adopt the producer's own facts after a whole-plan load. Nothing here invents
++// an output: the geometry comes from the producer's observation, and the Active
++// state still waits for a real emitted frame.
++static void admit_apply_plan_facts(struct mp_filter *vf, const aji_native_snapshot_v2 *snap)
++{
++    struct priv *p = vf->priv;
++    p->out_params = p->params;
++    p->out_params.w = snap->output_width ? (int)snap->output_width : p->params.w;
++    p->out_params.h = snap->output_height ? (int)snap->output_height : p->params.h;
++    // The shim applied the plan's crop and rotation to the frame it was fed, so
++    // the frames this filter emits are already oriented and uncropped: the
++    // output geometry is the whole frame, with no rotation left for the VO.
++    p->out_params.crop = (struct mp_rect){0, 0, p->out_params.w, p->out_params.h};
++    p->out_params.rotate = 0;
++    p->out_params.chroma_location = PL_CHROMA_LEFT;
++
++    p->out_fmt = p->aji_fmt;
++    if (p->opts->output_444 && !p->is_d3d11) {
++        p->out_fmt = AJI_FMT_YUV444P16;
++        p->out_params.hw_subfmt = pixfmt2imgfmt(AV_PIX_FMT_YUV444P16);
++        p->out_params.repr.bits = (struct pl_bit_encoding){
++            .sample_depth = 16, .color_depth = 16, .bit_shift = 0,
++        };
++    }
++
++    // RIFE order and factor come from the shim's own report of the loaded plan,
++    // the same source the conf-driven path reads, never from the descriptor.
++    p->rife_on = false;
++    p->rife_first = false;
++    p->has_pre_resize = false;
++    p->work_w = p->params.w;
++    p->work_h = p->params.h;
++    p->rife_num = p->rife_den = 1;
++    mp_image_unrefp(&p->rife_prev);
++    int rn = 0, rd = 0;
++    if (p->api.rife_factor(p->aji, &rn, &rd) && rd > 0 && rn > rd) {
++        int a = rn, b = rd;
++        while (b) {
++            int t = a % b;
++            a = b;
++            b = t;
++        }
++        rn /= a;
++        rd /= a;
++        if (rn <= 8 * rd) {
++            p->rife_num = rn;
++            p->rife_den = rd;
++            p->rife_on = true;
++        } else {
++            MP_WARN(vf, "Prepared RIFE factor %d/%d exceeds the supported 8x output "
++                        "multiplication\n", rn, rd);
++        }
++    }
++    p->rife_acc = p->rife_den;
++    p->rife_first = p->rife_on && p->api.rife_before_upscale &&
++                    p->api.rife_before_upscale(p->aji);
++    if (p->rife_first && p->api.pre_resize && p->api.resize) {
++        int ww = 0, wh = 0;
++        if (p->api.pre_resize(p->aji, &ww, &wh) && ww > 0 && wh > 0) {
++            p->has_pre_resize = true;
++            p->work_w = ww;
++            p->work_h = wh;
++        }
++    }
++    // RIFE-before-upscale interpolates at the display window the shim resolved
++    // (its own reported input geometry), not at the coded frame: the shim
++    // normalises the coded endpoints itself and the frames it writes there are
++    // what the upscale stages then accept.
++    if (p->rife_first && !p->has_pre_resize && snap->input_width && snap->input_height) {
++        p->work_w = (int)snap->input_width;
++        p->work_h = (int)snap->input_height;
++    }
++    p->aji_active = true;
++    p->cur_slot = p->pending_slot = (int)snap->effective_slot;
++    update_depth(vf);
++}
++
++static void admit_copy_snapshot(aji_native_snapshot_v2 *dst, const aji_native_snapshot_v2 *src)
++{
++    size_t n = src->struct_size;
++    if (n > sizeof(*src))
++        n = sizeof(*src);
++    if (n < sizeof(*dst))
++        memset((char *)dst + n, 0, sizeof(*dst) - n);
++    memcpy(dst, src, n);
++}
++
++// Drop the managed plan entirely: only a device/context generation change does
++// this, because the shim's engines live on the context that just went away.
++static void admit_forget(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (!p->admit_stored && p->admit_phase == ADMIT_PHASE_NONE && !p->admit_effective)
++        return;
++    p->admit_stored = false;
++    p->admit_effective = false;
++    p->admit_phase = ADMIT_PHASE_NONE;
++    p->admit_refusal[0] = '\0';
++    p->admit_request_id[0] = '\0';
++    p->admit_recipe[0] = '\0';
++    p->admit_backend[0] = '\0';
++    p->admit_revision = 0;
++    p->admit_epoch = 0;
++    talloc_free(p->admit_plan);
++    p->admit_plan = NULL;
++    memset(&p->admit_snapshot, 0, sizeof(p->admit_snapshot));
++    // A worker result for the generation that just went away must be discarded.
++    p->admit_generation++;
++    status_touch(vf);
++}
++
++// While the worker exclusively owns the shim, the graph thread keeps frames
++// flowing untouched: it must never call into a context that is being
++// reconfigured. The original output geometry is restored when the job lands.
++static void admit_pause_inference(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    clear_ring(vf);
++    drain_backend(vf);
++    mp_image_unrefp(&p->rife_prev);
++    for (int i = 0; i < p->outq_n; i++)
++        mp_image_unrefp(&p->outq[p->outq_pos + i]);
++    p->outq_n = p->outq_pos = 0;
++    p->rife_acc = 1;
++    p->aji_active = false;
++    p->rife_on = false;
++    p->rife_first = false;
++    p->has_pre_resize = false;
++    p->work_w = p->params.w;
++    p->work_h = p->params.h;
++    p->out_params = p->params;
++    p->out_fmt = p->aji_fmt;
++    update_depth(vf);
++}
++
++// Restore the previously effective plan's own facts after a refusal, so a
++// refused replacement leaves the running chain exactly as it was.
++static void admit_restore_effective(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    if (p->admit_plan && p->aji)
++        admit_apply_plan_facts(vf, &p->admit_snapshot);
++}
++
++// The producer's answer to one job. A refused replacement keeps the previous
++// effective plan and its counters; a superseded generation is discarded whole.
++static void admit_finish_job(struct mp_filter *vf, struct admit_job *job)
++{
++    struct priv *p = vf->priv;
++    if (job->kind == ADMIT_JOB_APPLY || job->kind == ADMIT_JOB_CREATE) {
++        const aji_native_snapshot_v2 *snap = &job->snapshot;
++        bool loaded = job->rc == AJI_NATIVE_OK &&
++                      (snap->state == AJI_NATIVE_STATE_PREPARED ||
++                       snap->state == AJI_NATIVE_STATE_ACTIVE) &&
++                      (job->kind != ADMIT_JOB_CREATE || job->created != NULL);
++        if (!loaded) {
++            if (job->created) {
++                p->api.destroy(&job->created);
++                job->created = NULL;
++            }
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                     "the producer refused the plan: %s",
++                     snap->error[0] ? snap->error : "no prepared plan is reported");
++            MP_ERR(vf, "Managed admission refused: %s\n", p->admit_refusal);
++            admit_restore_effective(vf);
++            status_touch(vf);
++            return;
++        }
++        // The shim resolves the plan's source to its display geometry (crop,
++        // then rotation), so the stream geometry it validates is that one, and
++        // its output is the oriented chain output this filter then publishes.
++        int dw = 0, dh = 0;
++        if (!admit_display_size(&job->plan, &dw, &dh)) {
++            if (job->created) {
++                p->api.destroy(&job->created);
++                job->created = NULL;
++            }
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                     "the plan's rotation is not one this build models");
++            status_touch(vf);
++            return;
++        }
++        int ow = 0, oh = 0;
++        int cret = p->api.configure(job->created ? job->created : p->aji, dw, dh,
++                                    p->fps, &ow, &oh);
++        if (cret <= 0) {
++            const char *err = p->api.last_error(job->created ? job->created : p->aji);
++            if (job->created) {
++                p->api.destroy(&job->created);
++                job->created = NULL;
++            }
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                     "the prepared plan does not match the source geometry: %s",
++                     err && err[0] ? err : "no reason reported");
++            MP_ERR(vf, "%s\n", p->admit_refusal);
++            admit_restore_effective(vf);
++            status_touch(vf);
++            return;
++        }
++        if (job->kind == ADMIT_JOB_CREATE)
++            p->aji = job->created;
++        talloc_free(p->admit_plan);
++        p->admit_plan = talloc_zero(vf, aji_native_prepared_plan_v1);
++        MP_HANDLE_OOM(p->admit_plan);
++        *p->admit_plan = job->plan;
++        admit_copy_snapshot(&p->admit_snapshot, snap);
++        p->admit_effective = false;   // Active waits for a real emitted frame
++        p->admit_phase = ADMIT_PHASE_PREPARED;
++        p->admit_refusal[0] = '\0';
++        p->cadence_frames_in = 0;
++        p->cadence_frames_out = 0;
++        p->cadence_interpolated = 0;
++        p->cadence_scene_cuts = 0;
++        p->cadence_dropped = 0;
++        admit_apply_plan_facts(vf, snap);
++        MP_VERBOSE(vf, "Managed plan prepared: %u stages, output %ux%u\n",
++                   snap->stage_count, (unsigned)ow, (unsigned)oh);
++        status_touch(vf);
++        return;
++    }
++
++    // Control. Success means the producer accepted the transition; the snapshot
++    // it returned names the state it moved to.
++    if (job->rc != AJI_NATIVE_OK) {
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                 "the %s control was refused: %s",
++                 job->action == AJI_NATIVE_CONTROL_DRAIN ? "drain" :
++                 job->action == AJI_NATIVE_CONTROL_SUSPEND ? "suspend" : "resume",
++                 job->snapshot.error[0] ? job->snapshot.error : "no reason reported");
++        MP_ERR(vf, "Managed control refused: %s\n", p->admit_refusal);
++        admit_restore_effective(vf);
++        status_touch(vf);
++        return;
++    }
++    admit_copy_snapshot(&p->admit_snapshot, &job->snapshot);
++    if (job->action == AJI_NATIVE_CONTROL_SUSPEND) {
++        p->admit_phase = ADMIT_PHASE_SUSPENDED;
++        p->aji_active = false;
++        p->rife_on = false;
++        p->rife_first = false;
++        mp_image_unrefp(&p->rife_prev);
++        p->out_params = p->params;
++        p->out_fmt = p->aji_fmt;
++    } else if (job->action == AJI_NATIVE_CONTROL_RESUME) {
++        admit_apply_plan_facts(vf, &job->snapshot);
++        p->admit_phase = p->admit_effective ? ADMIT_PHASE_ACTIVE : ADMIT_PHASE_PREPARED;
++    } else {
++        // Drain only ordered the stream: the chain keeps running untouched.
++        admit_restore_effective(vf);
++    }
++    status_touch(vf);
++}
++
++static bool admit_job_running(struct mp_filter *vf)
++{
++    struct priv *p = vf->priv;
++    mp_mutex_lock(&p->admit_lock);
++    bool running = p->admit_job_running;
++    mp_mutex_unlock(&p->admit_lock);
++    return running;
++}
++
++// The worker itself. It runs the one blocking shim call off the graph thread and
++// publishes nothing: the graph thread reaps it and decides, by generation,
++// whether the result is still current.
++static MP_THREAD_VOID admit_worker(void *arg)
++{
++    struct admit_job *job = arg;
++    struct mp_filter *vf = job->vf;
++    struct priv *p = vf->priv;
++
++    job->snapshot.struct_size = sizeof(job->snapshot);
++    job->snapshot.requested_protocol_version = AJI_NATIVE_PREPARED_PROTOCOL_VERSION;
++
++    CUcontext dummy;
++    bool pushed = false;
++    if (!job->is_d3d11 && job->cu && job->cuda_ctx &&
++        job->cu->cuCtxPushCurrent(job->cuda_ctx) == CUDA_SUCCESS)
++        pushed = true;
++
++    if (job->kind == ADMIT_JOB_CREATE) {
++        // Conf-free creation: the caller's adopted device and log bridge, with
++        // no conf file, engine filename or build path anywhere.
++        aji_create_params cp = {
++            .api_version = AJI_API_VERSION,
++            .cuda_context = job->is_d3d11 ? NULL : job->cuda_ctx,
++#if HAVE_D3D11
++            .d3d11_device = job->is_d3d11 ? job->d3d11_dev : NULL,
++#endif
++            .max_width = (int)job->src_w,
++            .max_height = (int)job->src_h,
++            .log = aji_log_bridge,
++            .log_opaque = vf,
++        };
++        job->created = p->api.native_create_prepared(&cp, &job->plan, &job->snapshot);
++        job->rc = job->created ? AJI_NATIVE_OK :
++                  (int)(job->snapshot.result ? job->snapshot.result : AJI_NATIVE_OPERATION_FAILED);
++    } else if (job->kind == ADMIT_JOB_APPLY) {
++        job->rc = p->api.native_apply_prepared(job->ctx, &job->plan, &job->snapshot);
++    } else {
++        job->rc = p->api.native_control_on_stream(job->ctx, AJI_NATIVE_PROTOCOL_VERSION,
++                                                  job->action, job->epoch, job->timeout_ms,
++                                                  job->stream, &job->snapshot);
++    }
++
++    // A device generation the graph thread released while this job held it is
++    // torn down here, where the adopted context is still current, instead of
++    // racing it on the graph thread.
++    aji_ctx *retire_ctx = NULL;
++    CUstream retire_stream = NULL;
++    CUevent retire_evt[MAX_DEPTH] = {0};
++    AVBufferRef *retire_device = NULL;
++    bool retire = false;
++    mp_mutex_lock(&p->admit_lock);
++    if (p->admit_retire_pending) {
++        retire = true;
++        retire_ctx = p->admit_retire_ctx;
++        retire_stream = p->admit_retire_stream;
++        for (int i = 0; i < MAX_DEPTH; i++)
++            retire_evt[i] = p->admit_retire_evt[i];
++        retire_device = p->admit_retire_device;
++        p->admit_retire_pending = false;
++        p->admit_retire_ctx = NULL;
++        p->admit_retire_stream = NULL;
++        for (int i = 0; i < MAX_DEPTH; i++)
++            p->admit_retire_evt[i] = NULL;
++        p->admit_retire_device = NULL;
++    }
++    p->admit_job_running = false;
++    mp_mutex_unlock(&p->admit_lock);
++
++    if (retire) {
++        if (retire_ctx)
++            p->api.destroy(&retire_ctx);
++        if (!job->is_d3d11 && job->cu && pushed) {
++            if (retire_stream)
++                job->cu->cuStreamSynchronize(retire_stream);
++            for (int i = 0; i < MAX_DEPTH; i++) {
++                if (retire_evt[i])
++                    job->cu->cuEventDestroy(retire_evt[i]);
++            }
++            if (retire_stream)
++                job->cu->cuStreamDestroy(retire_stream);
++        }
++        av_buffer_unref(&retire_device);
++    }
++    if (pushed)
++        job->cu->cuCtxPopCurrent(&dummy);
++
++    atomic_store(&p->admit_done, true);
++    mp_filter_wakeup(vf);
++    MP_THREAD_RETURN();
++}
++
++static bool admit_start_job(struct mp_filter *vf, struct admit_job *job)
+ {
+     struct priv *p = vf->priv;
+-    if (!p->ring_n)
+-        return true;
+-    if (p->api.wait(p->aji, p->ring[p->ring_n - 1].ticket) != AJI_OK) {
+-        MP_ERR(vf, "pipeline drain failed: %s\n", p->api.last_error(p->aji));
++    job->vf = vf;
++    job->generation = p->admit_generation;
++    job->ctx = p->aji;
++    job->cu = p->cu;
++    job->cuda_ctx = p->cuda_ctx;
++    job->stream = p->is_d3d11 ? NULL : p->stream;
++    job->is_d3d11 = p->is_d3d11;
++    job->src_w = (uint32_t)p->params.w;
++    job->src_h = (uint32_t)p->params.h;
++#if HAVE_D3D11
++    job->d3d11_dev = p->d3d_dev;
++#endif
++    p->admit_job = job;
++    atomic_store(&p->admit_done, false);
++    mp_mutex_lock(&p->admit_lock);
++    p->admit_job_running = true;
++    mp_mutex_unlock(&p->admit_lock);
++    if (mp_thread_create(&p->admit_thread, admit_worker, job)) {
++        mp_mutex_lock(&p->admit_lock);
++        p->admit_job_running = false;
++        mp_mutex_unlock(&p->admit_lock);
++        p->admit_job = NULL;
++        MP_ERR(vf, "Failed to start the admission worker\n");
+         return false;
+     }
++    p->admit_thread_valid = true;
+     return true;
+ }
+ 
+-static void clear_ring(struct mp_filter *vf)
++// Called on the graph thread only, before any state that a worker result would
++// update is read. Joining is immediate because the done flag was observed set.
++static void admit_reap(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    drain_ring(vf);
+-    for (int i = 0; i < p->ring_n; i++)
+-        mp_image_unrefp(&p->ring[i].out);
+-    p->ring_n = 0;
++    if (!p->admit_thread_valid || !atomic_load(&p->admit_done))
++        return;
++    mp_thread_join(p->admit_thread);
++    p->admit_thread_valid = false;
++    struct admit_job *job = p->admit_job;
++    p->admit_job = NULL;
++    if (!job)
++        return;
++    if (p->admit_generation == job->generation) {
++        admit_finish_job(vf, job);
++    } else {
++        MP_VERBOSE(vf, "Managed admission result discarded: superseded generation\n");
++        if (job->created)
++            p->api.destroy(&job->created);
++    }
++    talloc_free(job);
+ }
+ 
+-static void drain_backend(struct mp_filter *vf)
++// Transport only: a well-formed request arms the worker. The command's success
++// is not an acknowledgement of anything.
++static bool admit_begin(struct mp_filter *vf, const char *arg)
+ {
+     struct priv *p = vf->priv;
+-    if (!p->aji)
+-        return;
++    char reason[192];
+ 
+-    uint64_t ticket = p->api.flush(p->aji, p->stream);
+-    if (ticket && p->api.wait(p->aji, ticket) != AJI_OK) {
+-        MP_WARN(vf, "backend drain failed during reset: %s\n",
+-                p->api.last_error(p->aji));
++    admit_reap(vf);
++    if (!p->api.handle) {
++        MP_ERR(vf, "No inference shim is loaded for a managed admission\n");
++        return false;
++    }
++    if (!p->api.native_apply_prepared || !p->api.native_create_prepared) {
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                 "native.admission.producer: the loaded shim exports no prepared-plan entry");
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        status_touch(vf);
++        MP_ERR(vf, "%s\n", p->admit_refusal);
++        return false;
++    }
++    if (p->admit_thread_valid) {
++        MP_ERR(vf, "An admission is already in flight\n");
++        return false;
++    }
++    // Pre-flight observation of the producer's own context, so a context that
++    // cannot answer is refused here rather than after a worker round trip.
++    if (p->aji && p->api.native_get_snapshot) {
++        aji_native_snapshot_v2 probe;
++        memset(&probe, 0, sizeof(probe));
++        probe.struct_size = sizeof(probe);
++        int prc = p->api.native_get_snapshot(p->aji, AJI_NATIVE_PROTOCOL_VERSION, &probe);
++        if (prc != AJI_NATIVE_OK) {
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                     "the producer reports no usable context: %s",
++                     probe.error[0] ? probe.error : "no reason reported");
++            status_touch(vf);
++            MP_ERR(vf, "%s\n", p->admit_refusal);
++            return false;
++        }
++        admit_copy_snapshot(&p->admit_snapshot, &probe);
+     }
+-}
+ 
+-// ---- Native status publication -------------------------------------------
+-// The Qt consumer (mplayer::native::NativeStatus) reads one flat string map
+-// with exactly `schema`, `protocol`, `revision` and `snapshot`; the snapshot is
+-// a compact UTF-8 JSON document whose inner scalars keep their real JSON types.
+-// This filter is the producer: the pure Probe passthrough reports only observed
+-// source/decoder-device facts, never a plan, counters or Active. The document
+-// is cached and rebuilt only when a published fact or the lifecycle changes.
++    void *tmp = talloc_new(vf);
++    struct mpv_node root;
++    char *text = talloc_strdup(tmp, arg ? arg : "");
++    char *cursor = text;
++    if (json_parse(tmp, &root, &cursor, MAX_JSON_DEPTH) < 0) {
++        talloc_free(tmp);
++        MP_ERR(vf, "Managed admission payload is not JSON\n");
++        return false;
++    }
++    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' || *cursor == '\r')
++        cursor++;
++    if (*cursor) {
++        talloc_free(tmp);
++        MP_ERR(vf, "Managed admission payload has trailing data\n");
++        return false;
++    }
+ 
+-// The filter's monotonic change counter: unchanged state keeps the revision.
+-static void status_touch(struct mp_filter *vf)
++    struct admit_job *job = talloc_zero(vf, struct admit_job);
++    MP_HANDLE_OOM(job);
++    if (!admit_parse_plan(&root, &job->plan, reason, sizeof(reason))) {
++        talloc_free(tmp);
++        talloc_free(job);
++        MP_ERR(vf, "Managed admission refused: %s\n", reason);
++        return false;
++    }
++    talloc_free(tmp);
++
++    if (!admit_validate_actual(vf, &job->plan, reason, sizeof(reason))) {
++        talloc_free(job);
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal), "%s", reason);
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        status_touch(vf);
++        MP_ERR(vf, "Managed admission refused against the observed device: %s\n", reason);
++        return false;
++    }
++
++    // The request is stored as given; the effective plan is only replaced once
++    // the producer acknowledges a whole-plan load.
++    p->admit_stored = true;
++    snprintf(p->admit_recipe, sizeof(p->admit_recipe), "%s", job->plan.recipe_id);
++    snprintf(p->admit_backend, sizeof(p->admit_backend), "%s", job->plan.backend);
++    snprintf(p->admit_request_id, sizeof(p->admit_request_id), "%s", job->plan.requested_plan);
++    p->admit_revision = job->plan.revision;
++    p->admit_epoch = job->plan.epoch;
++    p->admit_generation++;
++    p->admit_refusal[0] = '\0';
++
++    // The worker gets exclusive use of the shim: stop feeding it frames and
++    // land anything already queued before the job starts.
++    admit_pause_inference(vf);
++
++    // Without a legacy conf/engine context there is nothing to replace: the
++    // adopted device gets a fresh context that the plan itself creates. With
++    // one, the plan replaces the admitted plan on it transactionally.
++    job->kind = p->aji ? ADMIT_JOB_APPLY : ADMIT_JOB_CREATE;
++    if (!admit_start_job(vf, job)) {
++        talloc_free(job);
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                 "the admission worker could not be started");
++        admit_restore_effective(vf);
++        status_touch(vf);
++        return false;
++    }
++    p->admit_phase = ADMIT_PHASE_PENDING;
++    status_touch(vf);
++    return true;
++}
++
++static bool admit_control(struct mp_filter *vf, const char *arg)
+ {
+     struct priv *p = vf->priv;
+-    p->status_revision++;
+-    p->status_dirty = true;
+-}
++    char reason[192];
++    char action[32];
++    uint64_t epoch = 0, revision = 0;
++    uint32_t timeout_ms = 0;
++
++    admit_reap(vf);
++    if (!p->api.handle || !p->api.native_control_on_stream) {
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                 "native.control.producer: the loaded shim exports no stream control");
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        status_touch(vf);
++        MP_ERR(vf, "%s\n", p->admit_refusal);
++        return false;
++    }
++    if (!p->admit_stored || !p->admit_plan || !p->aji) {
++        MP_ERR(vf, "No admitted plan is prepared for control\n");
++        return false;
++    }
++    if (p->admit_thread_valid) {
++        MP_ERR(vf, "An admission or control is already in flight\n");
++        return false;
++    }
+ 
+-// Every epoch comes from one process-wide sequence, so a filter recreation (a
+-// fresh priv starting from zero) is still a strictly newer lifecycle than the
+-// one it replaced, and a consumer that missed the gap never reads the new
+-// filter as a stale read of the old one.
+-static atomic_int_least64_t status_epoch_seed;
++    void *tmp = talloc_new(vf);
++    struct mpv_node root;
++    char *text = talloc_strdup(tmp, arg ? arg : "");
++    char *cursor = text;
++    if (json_parse(tmp, &root, &cursor, MAX_JSON_DEPTH) < 0) {
++        talloc_free(tmp);
++        MP_ERR(vf, "Managed control payload is not JSON\n");
++        return false;
++    }
++    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' || *cursor == '\r')
++        cursor++;
++    if (*cursor) {
++        talloc_free(tmp);
++        MP_ERR(vf, "Managed control payload has trailing data\n");
++        return false;
++    }
+ 
+-static int64_t status_next_epoch(void)
+-{
+-    return (int64_t)atomic_fetch_add(&status_epoch_seed, 1);
++    bool parsed = admit_parse_control(&root, action, sizeof(action), &epoch, &revision,
++                                      &timeout_ms, reason, sizeof(reason));
++    talloc_free(tmp);
++    if (!parsed) {
++        MP_ERR(vf, "Managed control refused: %s\n", reason);
++        return false;
++    }
++    if (epoch != p->admit_epoch || revision != p->admit_revision) {
++        MP_ERR(vf, "Managed control names a superseded plan revision\n");
++        return false;
++    }
++
++    struct admit_job *job = talloc_zero(vf, struct admit_job);
++    MP_HANDLE_OOM(job);
++    job->kind = ADMIT_JOB_CONTROL;
++    job->action = strcmp(action, "drain") == 0 ? AJI_NATIVE_CONTROL_DRAIN :
++                  strcmp(action, "suspend") == 0 ? AJI_NATIVE_CONTROL_SUSPEND :
++                                                   AJI_NATIVE_CONTROL_RESUME;
++    job->epoch = epoch;
++    job->timeout_ms = timeout_ms;
++    p->admit_generation++;
++    admit_pause_inference(vf);
++    if (!admit_start_job(vf, job)) {
++        talloc_free(job);
++        p->admit_phase = ADMIT_PHASE_FAILED;
++        snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                 "the control worker could not be started");
++        admit_restore_effective(vf);
++        status_touch(vf);
++        return false;
++    }
++    return true;
+ }
+ 
+-// A new lifecycle: seek/reset, source or device reinit, or filter recreation.
+-// The epoch advances together with the revision so the consumer can tell a
+-// restart from a stale read even when the facts themselves did not change.
+-static void status_begin_epoch(struct mp_filter *vf)
++// The observed cadence, counted from real emissions. A frame that reaches the
++// output pin under the prepared plan is the only thing that makes the chain
++// Active.
++static void admit_count_input(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    p->status_epoch = status_next_epoch();
++    if (!p->admit_stored || p->admit_phase < ADMIT_PHASE_PREPARED)
++        return;
++    p->cadence_frames_in++;
+     status_touch(vf);
+ }
+ 
+-// Drop the observed device identity: the context it was read from is gone.
+-static void clear_device_identity(struct mp_filter *vf)
++// `interpolated` is the frame's own kind - a frame this chain synthesised
++// between two source frames - determined at the emission site by which image
++// the shim produced, never by subtracting two totals.
++static void admit_observe_output(struct mp_filter *vf, bool interpolated)
+ {
+     struct priv *p = vf->priv;
+-    const bool had = p->device_known || p->decoder_uuid[0] ||
+-                     p->adapter_luid[0] || p->sm_major || p->sm_minor;
+-    p->device_known = false;
+-    p->decoder_uuid[0] = '\0';
+-    p->adapter_luid[0] = '\0';
+-    p->sm_major = p->sm_minor = 0;
+-    if (had)
+-        status_touch(vf);
++    if (!p->admit_stored || p->admit_phase < ADMIT_PHASE_PREPARED)
++        return;
++    if (interpolated)
++        p->cadence_interpolated++;
++    p->cadence_frames_out++;
++    if (p->admit_phase == ADMIT_PHASE_PREPARED) {
++        p->admit_phase = ADMIT_PHASE_ACTIVE;
++        p->admit_effective = true;
++    }
++    status_touch(vf);
+ }
+ 
+-// The actual decoder device, read from the CUDA context the incoming
+-// AVHWFramesContext lives on. Pushes that context, queries the current CUdevice
+-// and its identity, and pops on every successful push. The optional UUID entry
+-// points are guarded; the SM is reported when the UUID is unavailable.
+-static void query_cuda_device_identity(struct mp_filter *vf)
++static void admit_note_scene_cut(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    if (!p->cu || !p->cuda_ctx)
+-        return;
+-    CUcontext dummy;
+-    if (CHECK_CU(p->cu->cuCtxPushCurrent(p->cuda_ctx)) < 0)
++    if (!p->admit_stored)
+         return;
+-
+-    CUdevice dev = 0;
+-    bool have_dev = p->cu->cuCtxGetDevice &&
+-                    CHECK_CU(p->cu->cuCtxGetDevice(&dev)) >= 0;
+-    if (have_dev) {
+-        CUuuid uuid;
+-        memset(&uuid, 0, sizeof(uuid));
+-        bool have_uuid = false;
+-        if (p->cu->cuDeviceGetUuid_v2 &&
+-            p->cu->cuDeviceGetUuid_v2(&uuid, dev) == CUDA_SUCCESS) {
+-            have_uuid = true;
+-        } else if (p->cu->cuDeviceGetUuid &&
+-                   p->cu->cuDeviceGetUuid(&uuid, dev) == CUDA_SUCCESS) {
+-            have_uuid = true;
+-        }
+-        if (have_uuid) {
+-            snprintf(p->decoder_uuid, sizeof(p->decoder_uuid),
+-                     "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+-                     "%02x%02x%02x%02x%02x%02x",
+-                     (unsigned char)uuid.bytes[0], (unsigned char)uuid.bytes[1],
+-                     (unsigned char)uuid.bytes[2], (unsigned char)uuid.bytes[3],
+-                     (unsigned char)uuid.bytes[4], (unsigned char)uuid.bytes[5],
+-                     (unsigned char)uuid.bytes[6], (unsigned char)uuid.bytes[7],
+-                     (unsigned char)uuid.bytes[8], (unsigned char)uuid.bytes[9],
+-                     (unsigned char)uuid.bytes[10], (unsigned char)uuid.bytes[11],
+-                     (unsigned char)uuid.bytes[12], (unsigned char)uuid.bytes[13],
+-                     (unsigned char)uuid.bytes[14], (unsigned char)uuid.bytes[15]);
+-        }
+-        int major = 0, minor = 0;
+-        if (p->cu->cuDeviceComputeCapability &&
+-            p->cu->cuDeviceComputeCapability(&major, &minor, dev) ==
+-                CUDA_SUCCESS &&
+-            major > 0) {
+-            p->sm_major = major;
+-            p->sm_minor = minor;
+-        }
+-    }
+-    CHECK_CU(p->cu->cuCtxPopCurrent(&dummy));
+-
+-    p->device_known = have_dev && (p->decoder_uuid[0] || p->sm_major > 0);
++    p->cadence_scene_cuts++;
+     status_touch(vf);
+-    MP_VERBOSE(vf, "Probe decoder device: uuid=%s sm=%d.%d\n",
+-               p->decoder_uuid[0] ? p->decoder_uuid : "(unavailable)",
+-               p->sm_major, p->sm_minor);
+ }
+ 
+-#if HAVE_D3D11
+-// The D3D11 source adapter, where supported: queried from the ID3D11Device the
+-// incoming AVHWFramesContext borrowed, never inferred from the GUI adapter.
+-static void query_d3d11_device_identity(struct mp_filter *vf)
++// A decoded frame the chain discarded before it could reach the output pin
++// (the hr-seek pre-target drop), counted at the drop itself.
++static void admit_note_dropped(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    if (!p->d3d_dev)
+-        return;
+-    IDXGIDevice *dxgi_dev = NULL;
+-    IDXGIAdapter *adapter = NULL;
+-    if (FAILED(ID3D11Device_QueryInterface(p->d3d_dev, &IID_IDXGIDevice,
+-                                           (void **)&dxgi_dev)) ||
+-        !dxgi_dev)
++    if (!p->admit_stored || p->admit_phase < ADMIT_PHASE_PREPARED)
+         return;
+-    if (SUCCEEDED(IDXGIDevice_GetAdapter(dxgi_dev, &adapter)) && adapter) {
+-        DXGI_ADAPTER_DESC desc;
+-        if (SUCCEEDED(IDXGIAdapter_GetDesc(adapter, &desc))) {
+-            snprintf(p->adapter_luid, sizeof(p->adapter_luid), "%08lx%08lx",
+-                     (unsigned long)desc.AdapterLuid.HighPart,
+-                     (unsigned long)desc.AdapterLuid.LowPart);
+-        }
+-        IDXGIAdapter_Release(adapter);
+-    }
+-    IDXGIDevice_Release(dxgi_dev);
+-    p->device_known = p->adapter_luid[0] != '\0';
++    p->cadence_dropped++;
+     status_touch(vf);
+ }
+-#endif
+ 
+ static void flush_frames(struct mp_filter *vf)
+ {
+@@ -600,8 +2417,29 @@ static void release_device_state(struct mp_filter *vf)
+     p->rife_num = p->rife_den = 1;
+     p->rife_acc = 1;
+ 
+-    if (p->aji)
++    // A worker may still be inside the shim on this device generation. It owns
++    // that generation until it returns, so hand the context and the CUDA objects
++    // created in it over instead of racing the worker here.
++    bool handoff = admit_job_running(vf);
++    if (handoff) {
++        mp_mutex_lock(&p->admit_lock);
++        p->admit_retire_ctx = p->aji;
++        p->admit_retire_stream = p->own_stream;
++        for (int i = 0; i < MAX_DEPTH; i++)
++            p->admit_retire_evt[i] = p->decode_evt[i];
++        p->admit_retire_device = p->av_device_ref;
++        p->admit_retire_pending = true;
++        mp_mutex_unlock(&p->admit_lock);
++        p->aji = NULL;
++        p->own_stream = NULL;
++        p->av_device_ref = NULL;
++        for (int i = 0; i < MAX_DEPTH; i++)
++            p->decode_evt[i] = NULL;
++    } else if (p->aji) {
+         p->api.destroy(&p->aji);
++    }
++    // Any in-flight result belongs to the generation that just went away.
++    p->admit_generation++;
+ 
+ #if HAVE_D3D11
+     for (int i = 0; i < p->d3d_stage_count; i++) {
+@@ -1216,7 +3054,9 @@ static struct mp_image *render_interp(struct mp_filter *vf,
+         return NULL;
+     }
+     int ret = p->api.infer_rife(p->aji, &fa, &fb, t, &fout, p->stream);
++    p->rife_scene = ret == AJI_SCENE;
+     if (ret == AJI_SCENE) {
++        admit_note_scene_cut(vf);
+         talloc_free(out);
+         return mp_image_new_ref(a);
+     }
+@@ -1278,7 +3118,10 @@ static struct mp_image *alloc_src(struct mp_filter *vf)
+ static struct mp_image *alloc_work(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    if (!p->has_pre_resize)
++    // The work geometry is the pre-RIFE downscale output, or (RIFE-first) the
++    // display window the shim interpolates at. Only when it is the source
++    // geometry is a plain source frame the right allocation.
++    if (!p->has_pre_resize && p->work_w == p->params.w && p->work_h == p->params.h)
+         return alloc_src(vf);
+ 
+     bool pool_ok;
+@@ -1429,8 +3272,11 @@ static struct mp_image *interp_source(struct mp_filter *vf,
+     const int mat = map_matrix(&p->params);
+     const int rng = map_range(&p->params);
+     const int sit = map_siting(&p->params);
++    // The endpoints keep their own (source) geometry: the shim normalises them
++    // to the display window itself. The interpolated frame is written at that
++    // display window, which is the geometry the upscale stages then accept.
+     const aji_frame fa = {
+-        .width = p->work_w, .height = p->work_h, .format = p->aji_fmt,
++        .width = a->w, .height = a->h, .format = p->aji_fmt,
+         .matrix = mat, .range = rng, .siting = sit,
+         .plane = {a->planes[0], a->planes[1], a->planes[2]},
+         .stride = {a->stride[0], a->stride[1], a->stride[2]},
+@@ -1442,9 +3288,13 @@ static struct mp_image *interp_source(struct mp_filter *vf,
+         fout.plane[i] = out->planes[i];
+         fout.stride[i] = out->stride[i];
+     }
++    fout.width = p->work_w;
++    fout.height = p->work_h;
+ 
+     int ret = p->api.infer_rife(p->aji, &fa, &fb, t, &fout, p->stream);
++    p->rife_scene = ret == AJI_SCENE;
+     if (ret == AJI_SCENE) {
++        admit_note_scene_cut(vf);
+         talloc_free(out);
+         return mp_image_new_ref(a);
+     }
+@@ -1477,14 +3327,67 @@ static void vf_animejanai_process(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+ 
++    // Land a finished worker result before the state below is consulted.
++    admit_reap(vf);
++
+     struct mp_image *in_fmt = mp_refqueue_execute_reinit(p->queue);
+     if (in_fmt) {
++        // Land a finished worker result before any admission state is read.
++        admit_reap(vf);
++
++        // The device generation, not the input format, decides whether an
++        // admitted engine must be dropped: a reinit on the adopted context
++        // keeps it, a new context/device invalidates it by name.
++        bool same_device = false;
++        if (p->configured && in_fmt->hwctx) {
++            AVHWFramesContext *nfctx = (void *)in_fmt->hwctx->data;
++            AVHWDeviceContext *navhwctx = nfctx->device_ctx;
++            if (navhwctx->type == AV_HWDEVICE_TYPE_CUDA && p->cuda_ctx) {
++                AVCUDADeviceContext *ncu = navhwctx->hwctx;
++                same_device = ncu->cuda_ctx == p->cuda_ctx;
++#if HAVE_D3D11
++            } else if (navhwctx->type == AV_HWDEVICE_TYPE_D3D11VA && p->d3d_dev) {
++                AVD3D11VADeviceContext *nd3d = navhwctx->hwctx;
++                same_device = nd3d->device == p->d3d_dev;
++#endif
++            }
++        }
++
++        // A new lifecycle either way; the epoch makes it visible as such.
++        status_begin_epoch(vf);
++
++        if (same_device && p->admit_stored && p->admit_plan && p->aji) {
++            p->params = in_fmt->params;
++            p->fps = in_fmt->nominal_fps;
++            char reason[192];
++            if (p->params.hw_subfmt &&
++                admit_validate_actual(vf, p->admit_plan, reason, sizeof(reason))) {
++                mp_image_setfmt(&p->layout, p->params.hw_subfmt);
++                mp_image_set_size(&p->layout, p->params.w, p->params.h);
++                MP_VERBOSE(vf, "Input reinit on the adopted device: keeping the "
++                               "admitted plan\n");
++                p->configured = true;
++                goto reinit_done;
++            }
++            MP_ERR(vf, "The admitted plan no longer matches the source: %s\n", reason);
++            admit_forget(vf);
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal), "%s", reason);
++            status_touch(vf);
++        }
++
+         if (p->configured || p->aji || p->av_device_ref)
+             MP_VERBOSE(vf, "Input reinit: rebuilding AnimeJaNai device state\n");
+-        // A new device/context generation: fresh epoch before the old identity
+-        // is cleared by release_device_state() and the new one is adopted.
+-        status_begin_epoch(vf);
++        bool had_plan = p->admit_stored || p->admit_plan || p->admit_phase != ADMIT_PHASE_NONE;
+         release_device_state(vf);
++        if (had_plan) {
++            // The engines live on the context that just went away.
++            admit_forget(vf);
++            p->admit_phase = ADMIT_PHASE_FAILED;
++            snprintf(p->admit_refusal, sizeof(p->admit_refusal),
++                     "the adopted device changed; the admitted plan was invalidated");
++            status_touch(vf);
++        }
+ 
+         p->params = in_fmt->params;
+         p->fps = in_fmt->nominal_fps;
+@@ -1580,8 +3483,19 @@ static void vf_animejanai_process(struct mp_filter *vf)
+         else
+ #endif
+             query_cuda_device_identity(vf);
+-
+-        if (p->api.handle && !p->aji) {
++        // The compute device the prepared plan is resolved against, queried
++        // independently from the context the shim runs on.
++        query_cuda_compute_identity(vf);
++
++        // The producer's own optional factory observation, executed against the
++        // context just adopted, never per frame. An absent export or an absent
++        // device leaves it unobserved; it is never guessed from a symbol.
++        query_factory_capabilities(vf);
++
++        // The conf/engine-driven ABI8 context. Without either path there is
++        // nothing for it to prepare: the managed admission creates its own
++        // context from the plan instead, with no conf file or build route.
++        if (p->api.handle && !p->aji && (p->path.conf || p->path.engine)) {
+             // mpv suboption values cannot contain '=', so the option takes a
+             // plain lib dir and the env assignment is composed here.
+             char *env = p->path.trtexec_libdir
+@@ -1614,7 +3528,10 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             }
+         }
+ 
+-        if (p->aji) {
++        // The ingest format belongs to the source and the adopted backend, not
++        // to the context: the managed path has no context yet when its plan is
++        // admitted, and still has to feed the shim the right frames.
++        if (p->api.handle) {
+             enum AVPixelFormat sw = imgfmt2pixfmt(p->params.hw_subfmt);
+             // x2bgr10 (packed 10-bit RGB) is what mpv hwuploads a 4:4:4 source
+             // to on D3D11 (no planar 4:4:4 DXGI format); the DirectML backend
+@@ -1699,10 +3616,13 @@ static void vf_animejanai_process(struct mp_filter *vf)
+         MP_VERBOSE(vf, "Stream: %dx%d@%.3f subfmt=%s -> %dx%d\n", p->params.w,
+                    p->params.h, p->fps, mp_imgfmt_to_name(p->params.hw_subfmt),
+                    p->out_params.w, p->out_params.h);
++reinit_done: ;
+     }
+ 
+-    // Runtime slot switch (vf-command): reconfigure on the filter thread.
+-    if (p->configured && p->aji && p->pending_slot != p->cur_slot) {
++    // Runtime slot switch (vf-command): reconfigure on the filter thread. An
++    // admitted plan is not slot-driven, so a slot change is refused above.
++    if (p->configured && p->aji && !p->admit_stored &&
++        p->pending_slot != p->cur_slot) {
+         av_buffer_unref(&p->hw_pool);
+         if (!configure_aji(vf)) {
+             mp_filter_internal_mark_failed(vf);
+@@ -1711,8 +3631,9 @@ static void vf_animejanai_process(struct mp_filter *vf)
+     }
+ 
+     // A background engine build finished: reconfigure, and the chain (or
+-    // RIFE) activates mid-playback. Until then frames pass through.
+-    if (p->configured && p->aji && p->api.poll(p->aji)) {
++    // RIFE) activates mid-playback. Until then frames pass through. A prepared
++    // plan builds nothing, so there is nothing to poll for.
++    if (p->configured && p->aji && !p->admit_stored && p->api.poll(p->aji)) {
+         MP_VERBOSE(vf, "background engine build finished; reconfiguring\n");
+         av_buffer_unref(&p->hw_pool);
+         if (!configure_aji(vf)) {
+@@ -1727,11 +3648,15 @@ static void vf_animejanai_process(struct mp_filter *vf)
+     if (p->outq_n) {
+         if (mp_pin_in_needs_data(vf->ppins[1])) {
+             struct mp_image *img = p->outq[p->outq_pos];
++            const bool interp = p->outq_interp[p->outq_pos];
+             p->outq[p->outq_pos] = NULL;
++            p->outq_interp[p->outq_pos] = false;
+             p->outq_pos++;
+             if (--p->outq_n == 0)
+                 p->outq_pos = 0;
+             mp_pin_in_write(vf->ppins[1], MAKE_FRAME(MP_FRAME_VIDEO, img));
++            // Counted here, where the frame actually reached the pin.
++            admit_observe_output(vf, interp);
+             mp_filter_internal_mark_progress(vf);
+         }
+         return;
+@@ -1768,7 +3693,9 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             mp_filter_internal_mark_failed(vf);
+             return;
+         }
++        admit_count_input(vf);
+         struct mp_image *list[8];
++        bool list_interp[8] = {false};
+         int n = 0;
+         bool failed = false;
+         if (p->rife_prev && p->rife_prev->pts != MP_NOPTS_VALUE &&
+@@ -1797,6 +3724,7 @@ static void vf_animejanai_process(struct mp_filter *vf)
+                     frame->nominal_fps = in_fps * p->rife_num / p->rife_den;
+                 MP_DBG(vf, "rife-first: %s pts=%f\n",
+                        p->rife_acc == p->rife_num ? "source" : "interp", pts);
++                list_interp[n] = p->rife_acc != p->rife_num && !p->rife_scene;
+                 list[n++] = frame;
+                 p->rife_acc += p->rife_den;
+             }
+@@ -1821,14 +3749,19 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             u->pts = src->pts;
+             if (in_fps > 0)
+                 u->nominal_fps = in_fps * p->rife_num / p->rife_den;
++            list_interp[n] = false;
+             list[n++] = u;
+         }
+         mp_image_unrefp(&p->rife_prev);
+         p->rife_prev = cur_src;  // previous *source* endpoint (owns the ref)
+-        for (int i = 1; i < n; i++)
++        for (int i = 1; i < n; i++) {
++            p->outq_interp[p->outq_n] = list_interp[i];
+             p->outq[p->outq_n++] = list[i];
++        }
+         p->outq_pos = 0;
+         mp_refqueue_write_out_pin(p->queue, list[0]);
++        // Counted only now, where the frame actually reached the output pin.
++        admit_observe_output(vf, list_interp[0]);
+         return;
+     }
+ 
+@@ -1862,9 +3795,11 @@ static void vf_animejanai_process(struct mp_filter *vf)
+     }
+ 
+     if (out && p->rife_on) {
++        admit_count_input(vf);
+         if (out->nominal_fps > 0)
+             out->nominal_fps = out->nominal_fps * p->rife_num / p->rife_den;
+         struct mp_image *first = out;
++        bool first_interp = false;
+         bool emitted_cur = true;
+         if (p->rife_prev && p->rife_prev->pts != MP_NOPTS_VALUE &&
+             out->pts != MP_NOPTS_VALUE && out->pts > p->rife_prev->pts) {
+@@ -1874,6 +3809,7 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             // with fractional factors some pairs end on an interpolation
+             // and the source frame is never emitted.
+             struct mp_image *list[8];
++            bool list_interp[8] = {false};
+             int n = 0;
+             bool failed = false;
+             emitted_cur = false;
+@@ -1893,6 +3829,7 @@ static void vf_animejanai_process(struct mp_filter *vf)
+                     ip->pts = p->rife_prev->pts +
+                               (out->pts - p->rife_prev->pts) * t;
+                     MP_DBG(vf, "rife: interp t=%f pts=%f\n", t, ip->pts);
++                    list_interp[n] = !p->rife_scene;
+                     list[n++] = ip;
+                 }
+                 p->rife_acc += p->rife_den;
+@@ -1913,8 +3850,11 @@ static void vf_animejanai_process(struct mp_filter *vf)
+             }
+             if (n) {
+                 first = list[0];
+-                for (int i = 1; i < n; i++)
++                first_interp = list_interp[0];
++                for (int i = 1; i < n; i++) {
++                    p->outq_interp[p->outq_n] = list_interp[i];
+                     p->outq[p->outq_n++] = list[i];
++                }
+                 p->outq_pos = 0;
+             }
+         } else {
+@@ -1927,10 +3867,17 @@ static void vf_animejanai_process(struct mp_filter *vf)
+         if (!emitted_cur)
+             mp_image_unrefp(&out);  // endpoint only; rife_prev keeps it
+         mp_refqueue_write_out_pin(p->queue, first);
++        // Counted only now, where the frame actually reached the output pin.
++        admit_observe_output(vf, first_interp);
+         return;
+     }
+ 
++    if (out)
++        admit_count_input(vf);
+     mp_refqueue_write_out_pin(p->queue, out);
++    // Counted only now, where the frame actually reached the output pin.
++    if (out)
++        admit_observe_output(vf, false);
+ }
+ 
+ // The observed cadence as a bounded exact rational. av_d2q recovers the
+@@ -1954,19 +3901,145 @@ static bool status_rate_from_fps(double fps, int *num, int *den)
+ static const char *status_state_name(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    return p->api.handle ? "NeedsPreparation" : "Probe";
++    switch (p->admit_phase) {
++    case ADMIT_PHASE_PENDING:
++        // The plan is being loaded; the consumer must keep polling.
++        return "Preparing";
++    case ADMIT_PHASE_PREPARED:
++        // The producer loaded the whole plan but no frame has completed under
++        // it yet. This build publishes no "Prepared": Preparing plus a reason
++        // is the honest report until an output is observed.
++        return "Preparing";
++    case ADMIT_PHASE_ACTIVE:
++        return "Active";
++    case ADMIT_PHASE_SUSPENDED:
++        return "Suspended";
++    case ADMIT_PHASE_FAILED:
++        return "Failed";
++    default:
++        // A shim attached with no conf and no engine has no legacy plan this
++        // build could prepare and no admitted plan either, so it is the same
++        // Probe passthrough as no shim at all. Only an explicitly configured
++        // conf/engine plan (or an admitted plan, handled above) earns
++        // NeedsPreparation; the loaded factory alone never does.
++        return (p->api.handle && (p->path.conf || p->path.engine))
++                   ? "NeedsPreparation"
++                   : "Probe";
++    }
+ }
+ 
+ static const char *status_reason(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+-    if (p->api.handle)
++    switch (p->admit_phase) {
++    case ADMIT_PHASE_PENDING:
++        return p->admit_refusal[0] ? p->admit_refusal
++                                   : "the admitted plan is being prepared";
++    case ADMIT_PHASE_PREPARED:
++        return "the prepared plan has not completed an output yet";
++    case ADMIT_PHASE_ACTIVE:
++        return "";
++    case ADMIT_PHASE_SUSPENDED:
++        return p->admit_refusal[0] ? p->admit_refusal : "the native chain is suspended";
++    case ADMIT_PHASE_FAILED:
++        return p->admit_refusal[0] ? p->admit_refusal : "native processing failed";
++    default:
++        break;
++    }
++    if (p->api.handle && (p->path.conf || p->path.engine))
+         return "the native engine is not prepared by this build";
+     if (!p->device_known)
+         return "probe passthrough: the decoder device identity is not available";
+     return "probe passthrough: no inference engine is configured";
+ }
+ 
++// A JSON string body carrying free text from the loaded producer: quote and
++// backslash are escaped and control/non-ASCII bytes are dropped, so a reason or
++// a version can never inject members into or truncate the snapshot document.
++static void status_json_escape(struct mp_filter *vf, bstr *s, const char *text)
++{
++    for (const unsigned char *c = (const unsigned char *)text; *c; c++) {
++        switch (*c) {
++        case '"':
++            bstr_xappend(vf, s, bstr0("\\\""));
++            break;
++        case '\\':
++            bstr_xappend(vf, s, bstr0("\\\\"));
++            break;
++        default:
++            if (*c >= 0x20 && *c < 0x7f) {
++                char one[2] = {(char)*c, '\0'};
++                bstr_xappend(vf, s, bstr0(one));
++            }
++            break;
++        }
++    }
++}
++
++// The OPTIONAL factory observation, exactly the frozen members. Emitted only
++// when the loaded producer exports the query; `observed` is true only when the
++// query actually ran against the adopted source context, and `spatial`/`rife`
++// are true only for a successful answer whose own role bits name them. A
++// producer without the export publishes no member, which the reader treats as
++// not-observed, never as a capability. A not-yet-run or unavailable factory
++// always names a reason, so an unavailability can never be read as support.
++static void status_append_factory(struct mp_filter *vf, bstr *s)
++{
++    struct priv *p = vf->priv;
++    if (!p->api.native_query_factory)
++        return;
++    const aji_native_factory_capabilities_v1 *c = &p->factory;
++    const bool observed = p->factory_queried;
++    const bool usable = p->factory_observed && c->result == AJI_NATIVE_OK &&
++                        c->role_bits != 0;
++
++    bstr_xappend_asprintf(vf, s,
++        ",\"factory\":{\"queryProtocol\":%u,\"nativeProtocol\":%u,"
++        "\"nativeSchema\":%u,\"sourceAbi\":%u,\"observed\":%s,"
++        "\"backend\":\"%s\",\"spatial\":%s,\"rife\":%s",
++        AJI_NATIVE_FACTORY_QUERY_PROTOCOL_VERSION, AJI_NATIVE_PROTOCOL_VERSION,
++        AJI_NATIVE_SCHEMA_VERSION, AJI_API_VERSION,
++        observed ? "true" : "false",
++        observed ? factory_backend_name(c->backend) : "none",
++        usable && (c->role_bits & AJI_NATIVE_FACTORY_ROLE_SPATIAL) ? "true" : "false",
++        usable && (c->role_bits & AJI_NATIVE_FACTORY_ROLE_RIFE) ? "true" : "false");
++    if (observed && c->runtime_version[0]) {
++        bstr_xappend0(vf, s, ",\"runtimeVersion\":\"");
++        status_json_escape(vf, s, c->runtime_version);
++        bstr_xappend0(vf, s, "\"");
++    }
++    if (observed && c->device_identity[0]) {
++        bstr_xappend0(vf, s, ",\"deviceIdentity\":\"");
++        status_json_escape(vf, s, c->device_identity);
++        bstr_xappend0(vf, s, "\"");
++    }
++    if (observed && c->sm_major > 0)
++        bstr_xappend_asprintf(vf, s, ",\"smMajor\":%u,\"smMinor\":%u",
++                              c->sm_major, c->sm_minor);
++
++    const char *reason_key;
++    const char *reason;
++    if (!observed) {
++        reason_key = "native.factory.unobserved";
++        reason = "the factory query has not run against an adopted source context";
++    } else if (usable) {
++        reason_key = "";
++        reason = "";
++    } else if (c->reason_key[0]) {
++        reason_key = c->reason_key;
++        reason = c->reason[0] ? c->reason
++                              : "the factory is unavailable for this source";
++    } else {
++        reason_key = "native.factory.unavailable";
++        reason = "the factory is unavailable for this source";
++    }
++    bstr_xappend0(vf, s, ",\"reasonKey\":\"");
++    status_json_escape(vf, s, reason_key);
++    bstr_xappend0(vf, s, "\",\"reason\":\"");
++    status_json_escape(vf, s, reason);
++    bstr_xappend0(vf, s, "\"}");
++}
++
+ // Build (or return the cached) snapshot document. Only re-serialises when a
+ // published fact changed, so polling it does no per-request JSON construction.
+ static const char *build_status_document(struct mp_filter *vf)
+@@ -2043,6 +4116,11 @@ static const char *build_status_document(struct mp_filter *vf)
+                                       first ? "" : ",", p->decoder_uuid);
+                 first = false;
+             }
++            if (p->compute_uuid[0]) {
++                bstr_xappend_asprintf(vf, &s, "%s\"computeDeviceUuid\":\"%s\"",
++                                      first ? "" : ",", p->compute_uuid);
++                first = false;
++            }
+             if (p->adapter_luid[0]) {
+                 bstr_xappend_asprintf(vf, &s, "%s\"adapterLuid\":\"%s\"",
+                                       first ? "" : ",", p->adapter_luid);
+@@ -2058,6 +4136,73 @@ static const char *build_status_document(struct mp_filter *vf)
+         bstr_xappend0(vf, &s, "}");
+     }
+ 
++    // The optional producer factory observation, a sibling of `probe`: an
++    // availability fact about the current source, never a plan or an artifact.
++    status_append_factory(vf, &s);
++
++    if (p->admit_stored && p->admit_backend[0]) {
++        // The caller's own selection, echoed as requested; kept visible even
++        // when the admitted plan differs.
++        bstr_xappend_asprintf(vf, &s, ",\"requested\":{\"recipe\":\"%s\",\"backend\":\"%s\"}",
++                              p->admit_recipe, p->admit_backend);
++    }
++
++    // Effective facts exist only after a frame actually completed under the
++    // admitted plan, and every one of them is read from the observed plan and
++    // the observed frame flow, never from the request.
++    int eff_num = 0, eff_den = 0;
++    bool eff_rate = status_rate_from_fps(p->fps, &eff_num, &eff_den);
++    const aji_native_prepared_stage_v1 *temporal =
++        p->admit_plan ? admit_temporal_stage(p->admit_plan) : NULL;
++    if (p->admit_effective && p->admit_plan && eff_rate) {
++        const aji_native_prepared_plan_v1 *plan = p->admit_plan;
++        int out_num = eff_num, out_den = eff_den;
++        if (temporal) {
++            uint64_t rn = (uint64_t)eff_num * temporal->factor_num;
++            uint64_t rd = (uint64_t)eff_den * temporal->factor_den;
++            uint64_t a = rn, b = rd;
++            while (b) {
++                uint64_t t = a % b;
++                a = b;
++                b = t;
++            }
++            out_num = (int)(rn / a);
++            out_den = (int)(rd / a);
++        }
++        const char *provider = p->admit_snapshot.provider[0] ? p->admit_snapshot.provider
++                                                             : (p->is_d3d11 ? "directml" : "tensorrt");
++        const char *model = plan->stages[plan->stage_count - 1].model_id;
++        bstr_xappend_asprintf(vf, &s,
++            ",\"effective\":{\"recipe\":\"%s\",\"provider\":\"%s\",\"model\":\"%s\","
++            "\"spatialStages\":%d",
++            p->admit_recipe, provider, model, admit_spatial_count(plan));
++        if (temporal) {
++            bstr_xappend_asprintf(vf, &s,
++                ",\"interpolation\":{\"num\":%u,\"den\":%u,\"model\":\"%s\"}",
++                temporal->factor_num, temporal->factor_den, temporal->model_id);
++        }
++        bstr_xappend_asprintf(vf, &s, ",\"order\":\"%s\"",
++            temporal ? (temporal->order == AJI_NATIVE_ORDER_BEFORE_SPATIAL
++                            ? "beforeSpatial" : "afterSpatial")
++                     : "spatial");
++        bstr_xappend_asprintf(vf, &s,
++            ",\"sourceSize\":{\"w\":%d,\"h\":%d},\"outputSize\":{\"w\":%d,\"h\":%d},"
++            "\"sourceFps\":{\"num\":%d,\"den\":%d},\"outputFps\":{\"num\":%d,\"den\":%d},"
++            "\"decoder\":\"%s\",\"csp\":\"%s\"}",
++            p->params.w, p->params.h, p->out_params.w, p->out_params.h,
++            eff_num, eff_den, out_num, out_den,
++            p->is_d3d11 ? "directml" : "tensorrt",
++            mp_imgfmt_to_name(p->out_params.hw_subfmt));
++        // Every counter is the count of frames of that kind that actually
++        // crossed the boundary, never a total derived from another total.
++        bstr_xappend_asprintf(vf, &s,
++            ",\"counters\":{\"framesIn\":%lld,\"framesOut\":%lld,\"dropped\":%lld,"
++            "\"interpolated\":%lld,\"sceneCuts\":%lld}",
++            (long long)p->cadence_frames_in, (long long)p->cadence_frames_out,
++            (long long)p->cadence_dropped, (long long)p->cadence_interpolated,
++            (long long)p->cadence_scene_cuts);
++    }
++
+     bstr_xappend_asprintf(vf, &s, ",\"reason\":\"%s\"}", status_reason(vf));
+ 
+     p->status_json = s.start;
+@@ -2069,6 +4214,9 @@ static bool vf_animejanai_command(struct mp_filter *vf,
+                                   struct mp_filter_command *cmd)
+ {
+     struct priv *p = vf->priv;
++    // The command path is the one place the consumer polls from while playback
++    // is paused, so it also lands a finished admission/control result.
++    admit_reap(vf);
+     if (cmd->type == MP_FILTER_COMMAND_GET_META) {
+         struct mp_tags **out = cmd->res;
+         if (!out)
+@@ -2099,7 +4247,28 @@ static bool vf_animejanai_command(struct mp_filter *vf,
+         mp_filter_wakeup(vf);
+         return true;
+     }
++    if (strcmp(cmd->cmd, "admit") == 0) {
++        // Transport: the payload is validated against the observed source and
++        // device and handed to the worker. Success here means "accepted for
++        // preparation", never "prepared" or "active".
++        if (!cmd->arg || !admit_begin(vf, cmd->arg))
++            return false;
++        mp_filter_wakeup(vf);
++        return true;
++    }
++    if (strcmp(cmd->cmd, "control") == 0) {
++        if (!cmd->arg || !admit_control(vf, cmd->arg))
++            return false;
++        mp_filter_wakeup(vf);
++        return true;
++    }
+     if (strcmp(cmd->cmd, "slot") == 0 && cmd->arg) {
++        // A slot is a conf-chain selector; an admitted plan is driven by its
++        // own stages, so a slot change would silently drop the plan.
++        if (p->admit_stored) {
++            MP_ERR(vf, "A prepared plan is admitted; slot switching is refused\n");
++            return false;
++        }
+         int slot = atoi(cmd->arg);
+         // slot 0 = bypass: the filter stays in the chain but passes frames
+         // through, so on/off toggling never rebuilds the chain (a rebuild
+@@ -2119,6 +4288,31 @@ static void uninit(struct mp_filter *vf)
+ {
+     struct priv *p = vf->priv;
+ 
++    // The worker must be gone before anything it may still be using is freed.
++    if (p->admit_thread_valid) {
++        mp_thread_join(p->admit_thread);
++        p->admit_thread_valid = false;
++        if (p->admit_job) {
++            if (p->admit_job->created)
++                p->api.destroy(&p->admit_job->created);
++            talloc_free(p->admit_job);
++            p->admit_job = NULL;
++        }
++    }
++    // A generation the worker handed back but could not consume (it stopped
++    // between the handover and its teardown).
++    if (p->admit_retire_pending) {
++        aji_ctx *retired = p->admit_retire_ctx;
++        AVBufferRef *retired_device = p->admit_retire_device;
++        p->admit_retire_pending = false;
++        p->admit_retire_ctx = NULL;
++        p->admit_retire_device = NULL;
++        if (retired)
++            p->api.destroy(&retired);
++        av_buffer_unref(&retired_device);
++    }
++    mp_mutex_destroy(&p->admit_lock);
++
+     flush_frames(vf);
+     talloc_free(p->queue);
+     if (p->aji)
+@@ -2173,6 +4367,7 @@ static bool drop_pre_seek_target(void *ctx, struct mp_image *mpi)
+         return false;
+     MP_DBG(vf, "drop pre-seek-target frame pts=%f target=%f\n", mpi->pts,
+            target);
++    admit_note_dropped(vf);
+     return true;
+ }
+ 
+@@ -2191,6 +4386,8 @@ static struct mp_filter *vf_animejanai_create(struct mp_filter *parent,
+     struct priv *p = f->priv;
+     p->opts = talloc_steal(p, options);
+     p->queue = mp_refqueue_alloc(f);
++    mp_mutex_init(&p->admit_lock);
++    p->admit_phase = ADMIT_PHASE_NONE;
+     p->cur_slot = p->pending_slot = p->opts->slot;
+     // A fresh filter instance is already its own lifecycle, distinct from any
+     // filter it replaces.
+@@ -2223,7 +4420,10 @@ static struct mp_filter *vf_animejanai_create(struct mp_filter *parent,
+         MP_VERBOSE(f, "CUDA driver API unavailable (D3D11 input only)\n");
+     }
+ 
+-    bool want_aji = p->path.engine || p->path.conf;
++    // An explicit lib= opens the shim for the managed prepared path even
++    // without a conf or engine: the prepared plan supplies the chain, so no
++    // conf-file or engine-filename build route is ever consulted.
++    bool want_aji = p->path.engine || p->path.conf || p->path.lib;
+     if (want_aji) {
+         // Strict C ABI boundary: the inference backend (TensorRT) is loaded
+         // at runtime and never linked.
+@@ -2264,6 +4464,27 @@ static struct mp_filter *vf_animejanai_create(struct mp_filter *parent,
+                       "(ABI version mismatch?)\n", lib);
+             goto fail;
+         }
++        // Optional prepared-plan exports, resolved from the same handle. A
++        // producer built before them leaves these NULL, and a managed
++        // admission is then refused by name instead of falling back to the
++        // conf-driven path. Never added to the hard symbol list above.
++        p->api.native_create_prepared =
++            aji_lib_sym(p->api.handle, "aji_native_create_prepared");
++        p->api.native_apply_prepared =
++            aji_lib_sym(p->api.handle, "aji_native_apply_prepared");
++        p->api.native_control_on_stream =
++            aji_lib_sym(p->api.handle, "aji_native_control_on_stream");
++        p->api.native_get_snapshot =
++            aji_lib_sym(p->api.handle, "aji_native_get_snapshot");
++        // The optional factory-availability query, on the same loaded producer.
++        // It is deliberately NOT resolved from the mpv process itself: only a
++        // real shim that exports it can answer.
++        p->api.native_query_factory =
++            aji_lib_sym(p->api.handle, "aji_native_query_factory");
++        if (p->api.native_apply_prepared && p->api.native_create_prepared)
++            MP_VERBOSE(f, "Shim exports the prepared-plan admission ABI\n");
++        if (p->api.native_query_factory)
++            MP_VERBOSE(f, "Shim exports the factory-availability query\n");
+         MP_VERBOSE(f, "Loaded inference shim: %s\n", lib);
+     }
+ 

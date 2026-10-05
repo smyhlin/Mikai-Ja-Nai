@@ -1,0 +1,141 @@
+From 738ce3b3020b3950c48ce3122a08f32af531d4fa Mon Sep 17 00:00:00 2001
+From: Mikai <mikai@local>
+Date: Thu, 2 Oct 2026 00:00:00 +0000
+Subject: [PATCH] aji_trt: content-addressed cache, no foreign deletes, preparedOnly
+
+Engines are named from the ONNX bytes, not the basename. clean_stale_engines
+no longer deletes files in model_dir. AJI_PREPARED_ONLY refuses a live
+trtexec build. AJI_ENGINE_CACHE redirects writes out of the model root.
+
+--- a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@ -264,6 +264,7 @@
+     AjiConf conf;
+     int slot = 1;
+     bool engines_cleaned = false;
++    bool prepared_only = false;
+     std::vector<ModelEngine> engines;
+     std::vector<Step> steps;
+     bool active = false;
+@@ -412,12 +413,44 @@
+     return ".trt-" + trt_version_token() + ".gpu-" + gpu_token() + ".engine";
+ }
+ 
++std::string engine_cache_dir(const std::string &model_dir)
++{
++    if (const char *cache = getenv("AJI_ENGINE_CACHE")) {
++        if (cache[0])
++            return cache;
++    }
++    return model_dir;
++}
++
++// FNV-1a over the ONNX bytes plus the length. Two different graphs that
++// share a basename must not share an engine file. This is the cache key,
++// not the manifest pin: the Qt side records SHA-256 separately.
++std::string onnx_content_token(const std::string &onnx_path)
++{
++    std::vector<char> bytes;
++    if (!read_file_bytes(onnx_path, &bytes))
++        return "unread";
++    uint64_t h = 14695981039346656037ull;
++    for (unsigned char b : bytes) {
++        h ^= b;
++        h *= 1099511628211ull;
++    }
++    char buf[40];
++    snprintf(buf, sizeof(buf), "%016llx-%zu",
++             (unsigned long long)h, bytes.size());
++    return buf;
++}
++
+ std::string engine_path_for(const std::string &model_dir,
+                             const std::string &onnx_name,
+                             const std::string &settings)
+ {
+-    return (fs::path(model_dir) /
+-            (onnx_name + "." + std::to_string(crc32_z(settings)) + engine_suffix()))
++    const std::string onnx =
++        (fs::path(model_dir) / (onnx_name + ".onnx")).string();
++    const std::string dir = engine_cache_dir(model_dir);
++    return (fs::path(dir) /
++            (onnx_name + "." + onnx_content_token(onnx) + "." +
++             std::to_string(crc32_z(settings)) + engine_suffix()))
+         .string();
+ }
+ 
+@@ -425,32 +458,30 @@
+                                   const std::string &onnx_name,
+                                   const std::string &settings)
+ {
+-    char model_hash[9];
+-    snprintf(model_hash, sizeof(model_hash), "%08x", crc32_z(onnx_name));
+-    return (fs::path(model_dir) /
+-            ("aji-" + std::string(model_hash) + "." +
++    const std::string onnx =
++        (fs::path(model_dir) / (onnx_name + ".onnx")).string();
++    const std::string dir = engine_cache_dir(model_dir);
++    char model_hash[17];
++    snprintf(model_hash, sizeof(model_hash), "%s",
++             onnx_content_token(onnx).c_str());
++    // Keep the short prefix so portable paths stay under MAX_PATH, but the
++    // token is the file bytes, not the basename.
++    std::string token = onnx_content_token(onnx);
++    if (token.size() > 16)
++        token = token.substr(0, 16);
++    return (fs::path(dir) /
++            ("aji-" + token + "." +
+              std::to_string(crc32_z(settings)) + engine_suffix()))
+         .string();
+ }
+ 
+ void clean_stale_engines(aji_ctx *c)
+ {
+-    const std::string suffix = engine_suffix();
+-    std::error_code ec;
+-    for (const auto &e : fs::directory_iterator(c->model_dir, ec)) {
+-        const std::string name = e.path().filename().string();
+-        if (name.size() < 7 || name.substr(name.size() - 7) != ".engine")
+-            continue;
+-        if (name.size() >= suffix.size() &&
+-            name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+-            continue;
+-        std::error_code rec;
+-        if (fs::remove(e.path(), rec)) {
+-            c->log_steps.push_back(
+-                "Removed stale TensorRT engine (different GPU or TensorRT version): " + name);
+-            c->verbose("removed stale engine %s", name.c_str());
+-        }
+-    }
++    // model_dir is a read-only model root. Deleting every foreign .engine
++    // there removed files this process did not create. Engines this build
++    // writes live under AJI_ENGINE_CACHE when that is set; nothing here
++    // scans or deletes either directory.
++    (void)c;
+ }
+ 
+ // Human-readable build resolution from the trtexec shape flags: the WxH of
+@@ -899,6 +930,14 @@
+     // New builds use a short filename. This avoids MAX_PATH failures for
+     // portable installs while keeping the model/settings/GPU/TRT cache key.
+     const std::string &build_epath = short_epath;
++    if (c->prepared_only) {
++        c->set_error("preparedOnly: refusing a live engine build for %s",
++                     name.c_str());
++        c->log_steps.push_back(
++            "preparedOnly refused a live build for " + name + " (" +
++            build_epath + ")");
++        return -1;
++    }
+     if (c->async_build) {
+         if (c->failed_builds.count(build_epath)) {
+             // permanent (until reconfigure changes the cache key):
+@@ -1122,6 +1161,8 @@
+         c->rife_model_dir =
+             params->rife_model_dir ? params->rife_model_dir : "";
+         c->async_build = params->async_build != 0;
++        if (const char *prep = getenv("AJI_PREPARED_ONLY"))
++            c->prepared_only = prep[0] && prep[0] != '0';
+         return c.release();
+     }
+ 

@@ -39,6 +39,7 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QTextStream>
 
+#include "native/NativeFrameReference.hpp"
 #include "native/NativeInspectedPlan.hpp"
 #include "native/NativeModelInspect.hpp"
 #include "native/NativeModelInventory.hpp"
@@ -71,6 +72,16 @@ struct Options {
     QSize sourceGeometry;
     std::optional<Rational> fps;
     DeviceIdentity device;
+
+    QString referenceDir;
+    QString fixture;
+    struct RawInput {
+        QString name;
+        QString dtype;
+        QVector<qint64> shape;
+        QString path;
+    };
+    QVector<RawInput> rawInputs;
 };
 
 bool readGeometry(const QString& text, QSize* size) {
@@ -156,6 +167,43 @@ QJsonObject resultJson(const QString& path, qint64 bytes, const QString& digest,
     }
     object.insert(QStringLiteral("reference"), reference);
     return object;
+}
+
+bool readDtype(const QString& text, QString* dtype) {
+    if (text == QLatin1String("fp16")) {
+        *dtype = text;
+        return true;
+    }
+    if (text == QLatin1String("fp32")) {
+        *dtype = text;
+        return true;
+    }
+    return false;
+}
+
+bool readTensorShape(const QString& text, QVector<qint64>* shape) {
+    const QStringList parts = text.trimmed().split(QLatin1Char('x'));
+    if (parts.size() != 4) return false;
+    QVector<qint64> dims;
+    dims.reserve(4);
+    for (const QString& part : parts) {
+        if (part.isEmpty()) return false;
+        bool ok = false;
+        const qint64 dim = part.toLongLong(&ok);
+        if (!ok || dim <= 0 || dim > 2147483647) return false;
+        dims.append(dim);
+    }
+    *shape = dims;
+    return true;
+}
+
+bool readReferenceInput(const QStringList& values, Options::RawInput* input) {
+    if (values.size() != 4) return false;
+    if (!readDtype(values.at(1), &input->dtype)) return false;
+    if (!readTensorShape(values.at(2), &input->shape)) return false;
+    input->name = values.at(0);
+    input->path = values.at(3);
+    return !input->name.isEmpty() && !input->path.isEmpty();
 }
 
 /// "N/D" or "N" - the cadence the probe observed. Nothing is assumed.
@@ -285,6 +333,86 @@ QJsonObject planJson(const Recipe& recipe, const SourceGeometry& source, const P
     return object;
 }
 
+QString shapeText(const QJsonArray& shape) {
+    QStringList parts;
+    for (const QJsonValue& dim : shape) {
+        parts.append(QString::number(static_cast<qint64>(dim.toDouble())));
+    }
+    return parts.join(QLatin1Char('x'));
+}
+
+int runReferenceMode(const Options& options, const InspectionRuntime& runtime,
+                     const QByteArray& graphBytes, const QString& graphPath, QTextStream& out,
+                     QTextStream& err) {
+    ReferenceExportRequest request;
+    request.directory = options.referenceDir;
+    request.fixturePath = options.fixture;
+    request.resolveGeometry = options.resolveGeometry;
+    for (const Options::RawInput& raw : options.rawInputs) {
+        RawReferenceInput input;
+        input.name = raw.name;
+        input.dtype = raw.dtype;
+        input.shape = raw.shape;
+        input.filePath = raw.path;
+        request.rawInputs.append(input);
+    }
+
+    ReferenceExport exported;
+    QString reasonKey;
+    QString reason;
+    if (!exportCpuFrameReference(runtime, graphBytes, graphPath, request, &exported, &reasonKey,
+                                 &reason)) {
+        if (options.json) {
+            QJsonObject object;
+            object.insert(QStringLiteral("ok"), false);
+            object.insert(QStringLiteral("exported"), false);
+            object.insert(QStringLiteral("graphPath"), graphPath);
+            object.insert(QStringLiteral("reasonKey"), reasonKey);
+            object.insert(QStringLiteral("reason"), reason);
+            out << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)) << '\n';
+        }
+        err << "native_inspect: reference export refused: " << reasonKey << ": " << reason << '\n';
+        return reasonKey == QLatin1String("inspect.runtime.unavailable") ? kExitRuntimeUnavailable
+                                                                        : kExitRefused;
+    }
+
+    if (options.json) {
+        QJsonObject object = exported.manifest;
+        object.insert(QStringLiteral("ok"), true);
+        object.insert(QStringLiteral("exported"), true);
+        object.insert(QStringLiteral("directory"), exported.directory);
+        object.insert(QStringLiteral("manifestPath"), exported.manifestPath);
+        out << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)) << '\n';
+        return kExitOk;
+    }
+
+    out << "reference: " << exported.directory << '\n'
+        << "  graph " << graphPath << "  sha256 " << exported.manifest.value("graphSha256").toString()
+        << '\n';
+    if (!exported.manifest.value("frameSha256").toString().isEmpty()) {
+        out << "  frame " << exported.manifest.value("framePath").toString() << "  sha256 "
+            << exported.manifest.value("frameSha256").toString() << '\n';
+    }
+    const QJsonArray inputs = exported.manifest.value("inputs").toArray();
+    for (const QJsonValue& value : inputs) {
+        const QJsonObject tensor = value.toObject();
+        out << "  input  " << tensor.value("name").toString() << "  " << tensor.value("dtype").toString()
+            << "  " << shapeText(tensor.value("shape").toArray()) << "  "
+            << tensor.value("file").toString() << "  sha256 "
+            << tensor.value("sha256").toString() << '\n';
+    }
+    const QJsonArray outputs = exported.manifest.value("outputs").toArray();
+    for (const QJsonValue& value : outputs) {
+        const QJsonObject tensor = value.toObject();
+        out << "  output " << tensor.value("name").toString() << "  " << tensor.value("dtype").toString()
+            << "  " << shapeText(tensor.value("shape").toArray()) << "  "
+            << tensor.value("file").toString() << "  sha256 "
+            << tensor.value("sha256").toString() << '\n';
+    }
+    out << "  manifest " << exported.manifestPath << '\n';
+    return kExitOk;
+}
+
 /// `--plan-recipe`: resolve an ordered recipe against the owned, inspected store.
 /// The planner stays Preparing until the source and the device are observed; no
 /// device is invented to make it look Ready.
@@ -405,7 +533,10 @@ int main(int argc, char** argv) {
     QCommandLineParser parser;
     parser.setApplicationDescription(
         QStringLiteral("Inspect ONNX graphs through the official ONNX Runtime C API: declared "
-                       "I/O, spatial eligibility and an optional CPU reference run."));
+                       "I/O, spatial eligibility and an optional CPU reference run.\n"
+                       "--reference-dir additionally reads --reference-input <name> <fp16|fp32> "
+                       "<NxCxHxW> <raw.bin>, repeatable; the set must be exactly the graph's real "
+                       "inputs and the bytes are bound and exported verbatim."));
     parser.addHelpOption();
     const QCommandLineOption runtimeOption(
         QStringLiteral("runtime"),
@@ -457,9 +588,62 @@ int main(int argc, char** argv) {
     parser.addOption(sourceOption);
     parser.addOption(fpsOption);
     parser.addOption(deviceOption);
+    const QCommandLineOption referenceDirOption(
+        QStringLiteral("reference-dir"),
+        QStringLiteral("Run one real CPU reference and write its exact input bytes, output bytes "
+                       "and manifest into this NEW directory. Takes one model argument and no "
+                       "--publish/--plan-recipe. An existing directory is refused."),
+        QStringLiteral("dir"));
+    const QCommandLineOption fixtureOption(
+        QStringLiteral("fixture"),
+        QStringLiteral("A binary P6 PPM frame to feed, for --reference-dir. Supplies the one "
+                       "1x3xHxW fp16 spatial input a spatial graph declares; its geometry must "
+                       "equal --resolve."),
+        QStringLiteral("file"));
+    parser.addOption(referenceDirOption);
+    parser.addOption(fixtureOption);
     parser.addPositionalArgument(QStringLiteral("model"),
                                  QStringLiteral("One or more .onnx files to inspect."));
-    parser.process(app);
+    // Four values per occurrence, which QCommandLineParser cannot bind: it would
+    // take the first as the option value and leave the rest positional.
+    QVector<Options::RawInput> rawInputs;
+    QStringList parserArgs;
+    {
+        const QStringList rawArgs = QCoreApplication::arguments();
+        // argv[0] must be present or QCommandLineParser will treat the first real
+        // argument (the .onnx path) as the program name and drop it.
+        parserArgs.append(rawArgs.value(0));
+        for (qsizetype i = 1; i < rawArgs.size(); ++i) {
+            if (rawArgs.at(i) != QStringLiteral("--reference-input")) {
+                parserArgs.append(rawArgs.at(i));
+                continue;
+            }
+            if (i + 4 >= rawArgs.size()) {
+                QTextStream(stderr) << "native_inspect: --reference-input takes <name> "
+                                       "<fp16|fp32> <NxCxHxW> <raw.bin>\n";
+                return kExitUsage;
+            }
+            Options::RawInput input;
+            if (!readReferenceInput(rawArgs.mid(i + 1, 4), &input)) {
+                QTextStream(stderr) << "native_inspect: --reference-input takes <name> "
+                                       "<fp16|fp32> <NxCxHxW> <raw.bin>, every dimension "
+                                       "strictly positive\n";
+                return kExitUsage;
+            }
+            rawInputs.append(input);
+            i += 4;
+        }
+    }
+    if (!parser.parse(parserArgs)) {
+        if (parser.isSet(QStringLiteral("help"))) {
+            QTextStream out(stdout);
+            out << parser.helpText();
+            out.flush();
+            return kExitOk;
+        }
+        QTextStream(stderr) << parser.errorText() << '\n';
+        return kExitUsage;
+    }
 
     QTextStream out(stdout);
     QTextStream err(stderr);
@@ -505,6 +689,10 @@ int main(int argc, char** argv) {
         err << "native_inspect: --device takes decoderUuid:computeUuid:smMajor[.smMinor]\n";
         return kExitUsage;
     }
+    options.referenceDir = parser.isSet(referenceDirOption) ? parser.value(referenceDirOption)
+                                                             : QString();
+    options.fixture = parser.isSet(fixtureOption) ? parser.value(fixtureOption) : QString();
+    options.rawInputs = rawInputs;
     options.models = parser.positionalArguments();
     if (options.planRecipe.isEmpty() && options.models.isEmpty()) {
         err << "native_inspect: name at least one .onnx file, or pass --plan-recipe\n";
@@ -512,6 +700,38 @@ int main(int argc, char** argv) {
     }
     if (!options.planRecipe.isEmpty() && !options.models.isEmpty()) {
         err << "native_inspect: --plan-recipe resolves the owned store and takes no model arguments\n";
+        return kExitUsage;
+    }
+
+    if (!options.referenceDir.isEmpty()) {
+        if (!options.planRecipe.isEmpty()) {
+            err << "native_inspect: --reference-dir exports one reference and takes no --plan-recipe\n";
+            return kExitUsage;
+        }
+        if (options.publish) {
+            err << "native_inspect: --reference-dir exports one reference and takes no --publish\n";
+            return kExitUsage;
+        }
+        if (options.models.size() != 1) {
+            err << "native_inspect: --reference-dir names exactly one .onnx file\n";
+            return kExitUsage;
+        }
+        if (options.fixture.isEmpty() == options.rawInputs.isEmpty()) {
+            err << "native_inspect: --reference-dir takes either --fixture or one or more "
+                   "--reference-input\n";
+            return kExitUsage;
+        }
+        if (!options.fixture.isEmpty() && !options.resolveRequested) {
+            err << "native_inspect: --fixture needs --resolve WxH, the geometry the frame is read "
+                   "at\n";
+            return kExitUsage;
+        }
+        if (!options.rawInputs.isEmpty() && options.resolveRequested) {
+            err << "native_inspect: --reference-input supplies its own shapes; it takes no --resolve\n";
+            return kExitUsage;
+        }
+    } else if (!options.fixture.isEmpty() || !options.rawInputs.isEmpty()) {
+        err << "native_inspect: --fixture and --reference-input are read only for --reference-dir\n";
         return kExitUsage;
     }
 
@@ -553,6 +773,27 @@ int main(int argc, char** argv) {
         const qint64 byteCount = bytes.size();
         const QString digest = sha256HexOf(bytes);
         file.close();
+
+        if (!options.referenceDir.isEmpty()) {
+            if (!runtimePresent) {
+                if (options.json) {
+                    QJsonObject object;
+                    object.insert(QStringLiteral("ok"), false);
+                    object.insert(QStringLiteral("exported"), false);
+                    object.insert(QStringLiteral("graphPath"), info.absoluteFilePath());
+                    object.insert(QStringLiteral("runtimeUnavailable"), true);
+                    object.insert(QStringLiteral("reasonKey"),
+                                  QStringLiteral("inspect.runtime.unavailable"));
+                    object.insert(QStringLiteral("reason"), runtimeReason);
+                    out << QString::fromUtf8(
+                               QJsonDocument(object).toJson(QJsonDocument::Compact))
+                        << '\n';
+                }
+                err << "native_inspect: ONNX Runtime unavailable: " << runtimeReason << '\n';
+                return kExitRuntimeUnavailable;
+            }
+            return runReferenceMode(options, runtime, bytes, info.absoluteFilePath(), out, err);
+        }
 
         if (!runtimePresent) {
             // A named absence is the whole answer: no metadata is invented.

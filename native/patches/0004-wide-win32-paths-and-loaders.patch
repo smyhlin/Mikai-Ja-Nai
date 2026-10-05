@@ -1,0 +1,258 @@
+diff --git a/src/aji_conf.cpp b/src/aji_conf.cpp
+index 36b5dfc..e5d699c 100644
+--- a/src/aji_conf.cpp
++++ b/src/aji_conf.cpp
+@@ -29,6 +29,16 @@
+ #include <set>
+ #include <sstream>
+ 
++#ifdef _WIN32
++#  ifndef WIN32_LEAN_AND_MEAN
++#    define WIN32_LEAN_AND_MEAN
++#  endif
++#  ifndef NOMINMAX
++#    define NOMINMAX
++#  endif
++#  include <windows.h>
++#endif
++
+ namespace {
+ 
+ const char *LEGACY_DEFAULT_TRT_ENGINE_SETTINGS =
+@@ -86,9 +96,36 @@ struct IniFile {
+     std::map<std::string, Section> sections;  // section names lowered
+ };
+ 
++#ifdef _WIN32
++/* Opens the conf through a strict UTF-8 -> UTF-16 conversion and the wide
++ * CRT, instead of std::ifstream's const char * overload.
++ *
++ * That overload takes the path in the *process ANSI code page*, so a conf under
++ * a non-ASCII directory was either not found or, worse, found at a path that
++ * is not the one the caller named. MB_ERR_INVALID_CHARS makes an unconvertible
++ * name fail here rather than be read as U+FFFD.
++ */
++static std::ifstream open_conf_stream(const char *path)
++{
++    if (!path || !path[0])
++        return std::ifstream();
++    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
++    if (n <= 0)
++        return std::ifstream();
++    std::wstring wpath((size_t)n - 1, L'\0');
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, &wpath[0], n) <= 0)
++        return std::ifstream();
++    return std::ifstream(wpath.c_str());
++}
++#endif
++
+ bool read_ini(const char *path, IniFile *out)
+ {
++#ifdef _WIN32
++    std::ifstream f = open_conf_stream(path);
++#else
+     std::ifstream f(path);
++#endif
+     if (!f)
+         return false;
+     std::string line, cur;
+diff --git a/src/aji_dispatch.cpp b/src/aji_dispatch.cpp
+index 64df32f..46650dd 100644
+--- a/src/aji_dispatch.cpp
++++ b/src/aji_dispatch.cpp
+@@ -19,6 +19,7 @@
+ #include <cstdio>
+ #include <cstring>
+ #include <string>
++#include <vector>
+ 
+ #ifdef _WIN32
+ #  define WIN32_LEAN_AND_MEAN
+@@ -89,6 +90,29 @@ static void logf_to(aji_log_fn log, void *opaque, int level,
+     log(opaque, level, buf);
+ }
+ 
++#ifdef _WIN32
++/* Strict UTF-8 -> UTF-16 for a path this DLL is about to open or load.
++ *
++ * aji_dml's `widen` uses MultiByteToWideChar without MB_ERR_INVALID_CHARS,
++ * which replaces an unconvertible byte sequence with U+FFFD instead of
++ * failing: the caller would then be handed a path naming a *different* file
++ * than the one that was asked for. Every conversion here refuses instead, so
++ * a malformed name is a load that fails and names itself.
++ */
++static std::wstring widen_utf8_strict(const std::string &s)
++{
++    if (s.empty())
++        return std::wstring();
++    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), -1, NULL, 0);
++    if (n <= 0)
++        return std::wstring();
++    std::wstring w((size_t)n - 1, L'\0');
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), -1, &w[0], n) <= 0)
++        return std::wstring();
++    return w;
++}
++#endif
++
+ static std::string own_dir(void)
+ {
+ #ifdef _WIN32
+@@ -96,12 +120,26 @@ static std::string own_dir(void)
+     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        (LPCSTR)&own_dir, &self);
+-    char path[MAX_PATH] = {0};
+-    GetModuleFileNameA(self, path, sizeof(path));
+-    char *slash = strrchr(path, '\\');
+-    if (slash)
+-        *slash = 0;
+-    return path;
++    /* The wide call and a heap buffer, not GetModuleFileNameA into a MAX_PATH
++     * char array: this module may legitimately live under a non-ASCII or long
++     * path, and the ANSI form of a UTF-8 name is not that name. */
++    std::vector<wchar_t> buf(32768, L'\0');
++    DWORD n = GetModuleFileNameW(self, buf.data(), (DWORD)buf.size());
++    if (n == 0 || n >= buf.size())
++        return std::string();
++    std::wstring wpath(buf.data(), n);
++    size_t slash = wpath.find_last_of(L'\\');
++    if (slash != std::wstring::npos)
++        wpath.erase(slash);
++    /* Back to narrow only for the string this build's own internals use; it is
++     * a lossless UTF-8 spelling, not the process ANSI code page. */
++    int m = WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, NULL, 0, NULL, NULL);
++    if (m <= 0)
++        return std::string();
++    std::string out((size_t)m - 1, '\0');
++    if (WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, &out[0], m, NULL, NULL) <= 0)
++        return std::string();
++    return out;
+ #else
+     Dl_info info = {};
+     if (!dladdr((void *)&own_dir, &info) || !info.dli_fname)
+@@ -115,9 +153,16 @@ static std::string own_dir(void)
+ static aji_lib lib_open(const std::string &path)
+ {
+ #ifdef _WIN32
+-    /* full path + search-own-dir flags so the backend's dependencies
+-     * (nvinfer_*, onnxruntime, DirectML) resolve from the same dir */
+-    return LoadLibraryExA(path.c_str(), NULL,
++    /* Full path + search-own-dir flags so the backend's dependencies
++     * (nvinfer_*, onnxruntime, DirectML) resolve from the same dir, and a
++     * wide LoadLibraryExW so the name reaches the loader exactly as it was
++     * spelled rather than through the process ANSI code page. The path is the
++     * one this DLL's own directory produces, so a non-ASCII install directory
++     * loads the right DLL instead of the mangled-name failure. */
++    std::wstring wpath = widen_utf8_strict(path);
++    if (wpath.empty())
++        return NULL;
++    return LoadLibraryExW(wpath.c_str(), NULL,
+                           LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                           LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+ #else
+@@ -146,10 +191,21 @@ static void lib_close(aji_lib lib)
+ static bool load_backend(const char *stem, aji_backend *be,
+                          std::string *err)
+ {
++    /* An own directory that could not be determined is refused here rather
++     * than composed into a bare relative name: "" + "\\aji_trt.dll" would
++     * resolve against the process working directory and could pick up a DLL
++     * that merely happens to sit there. The backend must come from beside
++     * this one, or not at all. */
++    const std::string dir = own_dir();
++    if (dir.empty()) {
++        *err = "cannot determine this module's own directory, so no backend "
++               "would be loaded from a known location";
++        return false;
++    }
+ #ifdef _WIN32
+-    std::string path = own_dir() + "\\" + stem + ".dll";
++    std::string path = dir + "\\" + stem + ".dll";
+ #else
+-    std::string path = own_dir() + "/lib" + stem + ".so";
++    std::string path = dir + "/lib" + stem + ".so";
+ #endif
+     be->lib = lib_open(path);
+     if (!be->lib) {
+diff --git a/src/aji_dml.cpp b/src/aji_dml.cpp
+index b52cc75..460131a 100644
+--- a/src/aji_dml.cpp
++++ b/src/aji_dml.cpp
+@@ -65,18 +65,24 @@ const OrtDmlApi *g_dml_api = nullptr;
+ HRESULT(WINAPI *g_dml_create_device)(ID3D12Device *, DML_CREATE_DEVICE_FLAGS,
+                                      REFIID, void **) = nullptr;
+ 
+-std::string own_dir(void)
++std::wstring own_dir(void)
+ {
+     HMODULE self = NULL;
+     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        (LPCSTR)&own_dir, &self);
+-    char path[MAX_PATH] = {0};
+-    GetModuleFileNameA(self, path, sizeof(path));
+-    char *slash = strrchr(path, '\\');
+-    if (slash)
+-        *slash = 0;
+-    return path;
++    /* Wide call, heap buffer: this module may sit under a non-ASCII or long
++     * path, and GetModuleFileNameA would report the process ANSI code page's
++     * mangling of it rather than the directory it is actually in. */
++    std::vector<wchar_t> buf(32768, L'\0');
++    DWORD n = GetModuleFileNameW(self, buf.data(), (DWORD)buf.size());
++    if (n == 0 || n >= buf.size())
++        return std::wstring();
++    std::wstring wpath(buf.data(), n);
++    size_t slash = wpath.find_last_of(L'\\');
++    if (slash != std::wstring::npos)
++        wpath.erase(slash);
++    return wpath;
+ }
+ 
+ // Loads DirectML.dll then onnxruntime.dll from our own directory (the
+@@ -86,16 +92,21 @@ bool load_ort(std::string *err)
+ {
+     if (g_ort && g_dml_api && g_dml_create_device)
+         return true;
+-    const std::string dir = own_dir();
++    const std::wstring dir = own_dir();
++    if (dir.empty()) {
++        *err = "cannot determine this module's own directory, so DirectML.dll "
++               "would be resolved against the process working directory";
++        return false;
++    }
+     const DWORD flags = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                         LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
+-    HMODULE dml = LoadLibraryExA((dir + "\\DirectML.dll").c_str(), NULL, flags);
++    HMODULE dml = LoadLibraryExW((dir + L"\\DirectML.dll").c_str(), NULL, flags);
+     if (!dml) {
+         *err = "DirectML.dll not found next to aji_dml.dll (error " +
+                std::to_string(GetLastError()) + ")";
+         return false;
+     }
+-    HMODULE ort = LoadLibraryExA((dir + "\\onnxruntime.dll").c_str(), NULL,
++    HMODULE ort = LoadLibraryExW((dir + L"\\onnxruntime.dll").c_str(), NULL,
+                                  flags);
+     if (!ort) {
+         *err = "onnxruntime.dll not found next to aji_dml.dll (error " +
+@@ -129,10 +140,15 @@ bool load_ort(std::string *err)
+ 
+ std::wstring widen(const std::string &s)
+ {
+-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, NULL, 0);
+-    std::wstring w(n ? n - 1 : 0, L'\0');
+-    if (n)
+-        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
++    /* MB_ERR_INVALID_CHARS: without it an unconvertible sequence becomes
++     * U+FFFD and this returns a path naming a *different* file, which is
++     * worse than failing. Callers treat an empty result as unreadable. */
++    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), -1, NULL, 0);
++    if (n <= 0)
++        return std::wstring();
++    std::wstring w((size_t)n - 1, L'\0');
++    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.c_str(), -1, &w[0], n) <= 0)
++        return std::wstring();
+     return w;
+ }
+ 
