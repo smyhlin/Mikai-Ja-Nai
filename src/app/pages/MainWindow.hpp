@@ -5,6 +5,8 @@
 #include <QPointer>
 #include <QString>
 #include <QWidget>
+#include <optional>
+#include <player/ProcessingSettingsIntent.hpp>
 
 class QStackedWidget;
 
@@ -46,18 +48,42 @@ protected:
 
 private:
     void openSettings();
+    /// The processing-failure remedy surface. `intent` is what the viewer
+    /// actually asked for: an explicit Prepare runs the existing preparation
+    /// command once the live context callbacks are installed, Providers only
+    /// focuses the existing choice. Opening settings plain starts nothing.
+    void openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
+                               QPointer<mplayer::shell::PlayerDialog> core);
+    /// The one settings surface. `intent` is present only when the viewer
+    /// pressed a processing-failure remedy, and `preferredCore` then names the
+    /// dialog that raised it; it is consulted only while it still owns a
+    /// stream, so preparation facts are never read off a dead core.
+    void openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
+                          QPointer<mplayer::shell::PlayerDialog> preferredCore);
     void chooseMediaFile();
     void chooseMediaUrl();
-    void openMedia(const QString& source);
-    void closeMedia();
+    /// Opens `source` in a fresh player. Refuses, keeping the current player,
+    /// when that player has not acknowledged its own native stop yet.
+    bool openMedia(const QString& source);
+    /// Closes the media player, honouring its own close barrier. False when the
+    /// player refused because native work is still stopping: nothing is deleted
+    /// and `mediaPlayer_` is kept so the close can be retried. `forced` is the
+    /// destructor path, where destruction cannot be refused; it names the forced
+    /// stop and still takes the player through its own close first, so the core
+    /// dies before the widget releases what it held.
+    bool closeMedia(bool forced = false);
     /// The standalone player's version of the title page's runtime request: it
     /// provisions the mpv runtime when the core could not be created, then
     /// starts the player again.
     void requestMediaRuntime();
-    void openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
+    /// False only when the previous page's own shutdown was refused, in which
+    /// case the page is kept and the navigation does not happen.
+    bool openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
     void openRelated(const QString& ref, const QString& poster);
     void goSearch();
-    void disposeTitle();
+    /// Disposes the title page and every player it owns. False when a player
+    /// refused its close: the page and its sessions are kept for a retry.
+    bool disposeTitle();
 
     backend::MikaiClient& client_;
     Runner* runner_ = nullptr;

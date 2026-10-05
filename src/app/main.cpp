@@ -8,9 +8,6 @@
 
 #include <QApplication>
 #include <QDebug>
-#include <QLibraryInfo>
-#include <QLocale>
-#include <QTranslator>
 
 namespace {
 
@@ -20,16 +17,31 @@ namespace {
 /// core rather than when an episode opens. A missing or refused runtime is one
 /// clear log line here: home, search and the settings dialog all work without
 /// it, and the player reports the same named reason when it is asked to play.
+///
+/// Every outcome is named, and none of them is silent. A Native request that
+/// fell back to Standard says so on its own line even though playback works,
+/// because "the app started" is not evidence that the chosen runtime ran.
 void selectPlayerRuntime() {
     const mplayer::native::RuntimeSelection selection = mplayer::native::selectStartupRuntime();
     if (selection.loaded) {
         qInfo().noquote() << "mikai: player runtime" << mplayer::native::runtimeStatusText();
-        if (selection.nativeNotApplied) {
-            qWarning().noquote() << "mikai: native runtime not applied:" << selection.reason;
-        }
-        return;
     }
-    qWarning().noquote() << "mikai: mpv runtime unavailable:" << selection.reason;
+    if (selection.nativeNotApplied) {
+        // The native half of the answer rides alongside Standard's, and it is
+        // the one that names what the user asked for and did not get.
+        qWarning().noquote() << "mikai: native runtime not applied:" << selection.reason;
+    }
+    if (selection.restartRequired) {
+        qInfo().noquote() << "mikai: runtime choice pending" << selection.reason;
+    }
+    if (!selection.loaded) {
+        // Startup selected nothing and provisioned nothing; the first play runs
+        // the provisioning attempt on the pool. Naming it here is what stops a
+        // missing runtime from reading as a black player with no cause.
+        qWarning().noquote()
+            << "mikai: mpv runtime unavailable:" << selection.reason
+            << "- the first playback will retry provisioning";
+    }
 }
 
 }  // namespace
@@ -44,33 +56,16 @@ int main(int argc, char** argv) {
     app.setApplicationVersion(QStringLiteral("0.1.0"));
     app.setOrganizationName(QStringLiteral("Mikai"));
 
-    const QLocale locale(mikai::app::resolvedLanguageCode());
-    QLocale::setDefault(locale);
-    QTranslator qtTranslator;
-    QTranslator appTranslator;
-    if (locale.language() == QLocale::Ukrainian) {
-        const QString translationsPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
-        if (qtTranslator.load(locale, QStringLiteral("qtbase"), QStringLiteral("_"),
-                              translationsPath)) {
-            app.installTranslator(&qtTranslator);
-        } else {
-            qWarning("mikai: Ukrainian Qt platform translations were not found");
-        }
-
-        if (appTranslator.load(QStringLiteral(":/i18n/mikai_uk.qm"))) {
-            app.installTranslator(&appTranslator);
-        } else {
-            qWarning("mikai: embedded Ukrainian application translations were not found");
-        }
+    // After the identity, which the preference and catalog paths resolve through,
+    // and before the runtime selection whose log lines go through these
+    // translators. The manager owns them for the life of the application.
+    if (!mikai::app::applyInterfaceLanguage(mikai::app::languagePreference())) {
+        qWarning("mikai: continuing in English; the requested interface language is unavailable");
     }
 
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
 
-    // After the application identity and the translators, and before any
-    // widget can reach an mpv core: the selection reads QSettings, which needs
-    // the organization name, and its strings reach the log through the same
-    // translators.
     selectPlayerRuntime();
 
     mikai::backend::MikaiClient client;

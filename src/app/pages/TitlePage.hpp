@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
+#include <player/ProcessingSettingsIntent.hpp>
 #include <QWidget>
 
 #include <functional>
@@ -66,12 +67,24 @@ public:
               const backend::AnimeDetail& detailHint = {}, QWidget* parent = nullptr);
     ~TitlePage() override;
 
-    /// Save the quality cache and close every open player. Safe to call twice.
-    void shutdown();
+    /// Save the quality cache and close every open player. False when a player
+    /// refused its close because native work is still stopping: nothing is
+    /// forgotten or deleted and the page stays usable for a retry. Safe to call
+    /// twice. `forced` is the destructor path, where destruction cannot be
+    /// refused; it still takes every player through its own close first, so each
+    /// core dies before its widget releases what it held.
+    bool shutdown(bool forced = false);
 
 Q_SIGNALS:
     void backRequested();
     void settingsRequested();
+    /// One of this page's open players raised a processing-failure remedy that needs the
+    /// application's Settings surface. `player` is the dialog that raised it, and the
+    /// owner answers only while that dialog still owns a stream: the page never keeps it
+    /// alive and never reads anything off it itself. Nothing here re-extracts a URL or
+    /// re-probes a quality.
+    void playerProcessingSettingsRequested(mplayer::shell::PlayerDialog* player,
+                                          mplayer::shell::ProcessingSettingsIntent intent);
     void relatedOpenRequested(const QString& ref, const QString& poster);
     void recentTitleLoaded(const QString& ref, const QString& title, const QString& poster);
 
@@ -183,7 +196,13 @@ private:
     QVector<QVariantMap> tabPlaylist(int stateIndex, const QString& number, int* currentIndex);
 
     void openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualities);
-    void closeSession(PlayerSession* session);
+    /// False when the session's player refused its close because native work is
+    /// still stopping: the session stays registered so the removal can be
+    /// retried, and nothing of it is deleted or forgotten.
+    bool closeSession(PlayerSession* session);
+    /// Disposes a session that is still registered. Idempotent: a session the
+    /// player's own `playerClosed()` already disposed is left alone.
+    void disposeSession(PlayerSession* session);
     void requestRuntime(PlayerSession* session);
     void recoverStream(PlayerSession* session);
     void switchPlayerVariant(PlayerSession* session, const QString& embed, const QString& label);

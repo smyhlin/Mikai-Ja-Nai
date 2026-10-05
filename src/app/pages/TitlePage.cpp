@@ -5,6 +5,7 @@
 #include "Clipboard.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
+#include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
@@ -21,6 +22,7 @@
 
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QtCore/QDebug>
 #include <QDesktopServices>
 #include <QEvent>
 #include <QFileDialog>
@@ -255,7 +257,11 @@ TitlePage::TitlePage(Runner& runner, backend::MikaiClient& client, QualityCache&
     load();
 }
 
-TitlePage::~TitlePage() { shutdown(); }
+TitlePage::~TitlePage() {
+    // Destruction cannot be refused: the players are taken through their own
+    // close and released anyway, with each forced stop named.
+    shutdown(/*forced=*/true);
+}
 
 void TitlePage::buildUi() {
     auto* root = new QVBoxLayout(this);
@@ -1602,25 +1608,64 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
     // provisions the runtime and then retries playback for real.
     connect(session->dialog, &mplayer::shell::PlayerDialog::runtimeRequested, this,
             [this, session] { requestRuntime(session); });
+    // A processing-failure remedy needs the application's Settings surface, which
+    // only the window owns. The page re-emits it with the dialog that raised it and
+    // nothing else: no URL work, no quality probe, no episode or hostless control
+    // is added here. The session registration is checked on every use, so a
+    // remedy from a player this page has already disposed is dropped instead of
+    // being forwarded for a core that no longer exists.
+    connect(session->dialog, &mplayer::shell::PlayerDialog::processingSettingsRequested, this,
+            [this, session](mplayer::shell::ProcessingSettingsIntent intent) {
+                if (!sessions_.contains(session) || session->dialog == nullptr) {
+                    return;
+                }
+                emit playerProcessingSettingsRequested(session->dialog, intent);
+            });
+    // The app-owned assembly answers this episode player's native requests: it
+    // reads the owned model store, the requested recipe and the measured machine
+    // identity off the GUI thread and submits the whole request back through the
+    // dialog. Every episode player gets its own binding, exactly as the
+    // standalone media player does.
+    bindNativePlaybackAssembly(runner_, *session->dialog);
     session->dialog->setPlaylist(session->playlist, currentIndex);
     session->dialog->setVariants(episodeVariants(entry->number), entry->embedUrl);
     session->dialog->show();
     session->dialog->startPlayer();
 }
 
-void TitlePage::closeSession(PlayerSession* session) {
+bool TitlePage::closeSession(PlayerSession* session) {
     if (session == nullptr) {
+        return true;
+    }
+    // The player has to acknowledge its own stop first: a refused close means
+    // native work is still stopping, so the session stays exactly as it is and
+    // the removal can be retried.
+    if (session->dialog != nullptr && !session->dialog->close()) {
+        qWarning().noquote() << "mikai: session removal refused (native stop unsettled)";
+        return false;
+    }
+    disposeSession(session);
+    return true;
+}
+
+void TitlePage::disposeSession(PlayerSession* session) {
+    // The player's own playerClosed() may already have disposed this session
+    // while close() was running, so this is only ever a pointer comparison until
+    // the session is known to still be registered.
+    if (session == nullptr || !sessions_.contains(session)) {
         return;
     }
-    sessions_.removeAll(session);
     auto* dialog = session->dialog;
+    if (dialog != nullptr) {
+        // The dialog carries WA_DeleteOnClose, so an accepted close has already
+        // scheduled this same deferred delete; it is never a second deletion.
+        dialog->deleteLater();
+    }
     delete session->host;
     session->host = nullptr;
     session->dialog = nullptr;
+    sessions_.removeAll(session);
     delete session;
-    if (dialog != nullptr) {
-        dialog->deleteLater();
-    }
 }
 
 void TitlePage::requestRuntime(PlayerSession* session) {
@@ -1910,9 +1955,36 @@ void TitlePage::flashStatus(const QString& text) {
     });
 }
 
-void TitlePage::shutdown() {
+bool TitlePage::shutdown(bool forced) {
     if (closed_) {
-        return;
+        return true;
+    }
+    // Every player acknowledges its own stop before anything is disposed. A
+    // refusal keeps the page, its sessions and its dialogs exactly as they are,
+    // so the shutdown can be retried; only the destructor, which cannot refuse
+    // destruction, disposes a refused session anyway - and even then each
+    // widget's destructor releases what it held only after the core has died.
+    const QVector<PlayerSession*> open = sessions_;
+    for (PlayerSession* session : open) {
+        if (!sessions_.contains(session)) {
+            // The player's own playerClosed() already disposed this one while an
+            // earlier close was running; this is only a pointer comparison.
+            continue;
+        }
+        if (closeSession(session)) {
+            continue;
+        }
+        if (!forced) {
+            qWarning().noquote() << "mikai: title shutdown refused (native stop unsettled)";
+            return false;
+        }
+        // Destruction cannot be refused, so the forced stop is named rather than
+        // probed; each dialog's destructor still releases what it held only after
+        // its core has synchronously died.
+        qWarning().noquote()
+            << "mikai: forced title teardown (destruction cannot be refused; native claims are "
+               "released only after the core is destroyed)";
+        disposeSession(session);
     }
     closed_ = true;
     fetchWaiters_.clear();
@@ -1921,19 +1993,6 @@ void TitlePage::shutdown() {
     // Bumping the sequence makes any release probe still in flight a no-op.
     releaseProbeSeq_ += 1;
     qualityCache_.flushNow();
-    const QVector<PlayerSession*> open = sessions_;
-    for (PlayerSession* session : open) {
-        mplayer::shell::PlayerDialog* dialog = session->dialog;
-        delete session->host;
-        session->host = nullptr;
-        session->dialog = nullptr;
-        sessions_.removeAll(session);
-        delete session;
-        if (dialog != nullptr) {
-            dialog->close();
-            dialog->deleteLater();
-        }
-    }
     if (coverViewer_ != nullptr) {
         // close() destroys it via WA_DeleteOnClose, which fires destroyed and
         // clears the pointer. A deleteLater() on top of that is a double free.
@@ -1943,6 +2002,7 @@ void TitlePage::shutdown() {
     }
     qDeleteAll(ownedEntries_);
     ownedEntries_.clear();
+    return true;
 }
 
 }  // namespace mikai::app
