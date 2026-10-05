@@ -8,6 +8,7 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QTimer>
 
 namespace {
 
@@ -66,10 +67,13 @@ int main(int argc, char** argv) {
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
 
-    selectPlayerRuntime();
-
     mikai::backend::MikaiClient client;
     mikai::app::MainWindow window(client);
     window.show();
+    // After the first paint, never before it: selecting the runtime validates
+    // the bundle on disk (hashing ~100MB on a cold cache), and the app is fully
+    // usable without a runtime — home, search and settings never touch mpv.
+    // Blocking show() on it is what made launch take half a minute.
+    QTimer::singleShot(0, &selectPlayerRuntime);
     return app.exec();
 }
