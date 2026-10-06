@@ -3,6 +3,15 @@ project(mikai LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Warnings on, and kept on. The tree had none configured, and a single sweep with
+# them turned up a buffer overrun, an unreachable suite and two functions that
+# were never called - all of which compiled silently. The two suppressions are
+# deliberate: Qt's signal/slot signatures leave unused parameters everywhere, and
+# the GetProcAddress cast is the only way to load a symbol by name.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type)
+endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -737,6 +746,28 @@ if(TARGET mikai_backend)
       $<TARGET_FILE_DIR:mikai>/shaders
     COMMENT "Deploying Anime4K shaders to output directory"
   )
+
+  # The self-contained dist folder: the app, its Qt runtime, the shaders, the
+  # translations, and an mpv runtime when one is available locally.
+  option(MIKAI_DIST_NATIVE "Copy the installed Native bundle into the dist folder" OFF)
+  set(MIKAI_DIST_DIR "${CMAKE_SOURCE_DIR}/dist-mikai" CACHE PATH
+    "Where the deploy target assembles the app")
+  get_target_property(MIKAI_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+  if(MIKAI_QMAKE_EXECUTABLE)
+    get_filename_component(MIKAI_QT_BIN_DIR "${MIKAI_QMAKE_EXECUTABLE}" DIRECTORY)
+    set(MIKAI_WINDEPLOYQT "${MIKAI_QT_BIN_DIR}/windeployqt.exe")
+  endif()
+  add_custom_target(dist
+    COMMAND ${CMAKE_COMMAND}
+      -DDIST_DIR=${MIKAI_DIST_DIR}
+      -DEXE=$<TARGET_FILE:mikai>
+      -DWINDEPLOYQT=${MIKAI_WINDEPLOYQT}
+      -DSHADERS=${CMAKE_CURRENT_SOURCE_DIR}/shaders
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -DMIKAI_DIST_NATIVE=${MIKAI_DIST_NATIVE}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dist.cmake
+    DEPENDS mikai
+    COMMENT "Assembling the self-contained dist folder")
 else()
   message(STATUS "mikai_backend not present: skipping the mikai app targets")
 endif()
