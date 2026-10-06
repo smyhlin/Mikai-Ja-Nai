@@ -307,7 +307,7 @@ QString nativeRoot() {
 QStringList nativeSubdirectoryNames() {
     return {QStringLiteral("runtime"), QStringLiteral("models"),  QStringLiteral("assets"),
             QStringLiteral("artifacts"), QStringLiteral("recipes"), QStringLiteral("scratch"),
-            QStringLiteral("logs")};
+            QStringLiteral("logs"), QStringLiteral("components")};
 }
 
 QString nativeSubdirectory(const QString& name, QString* reason) {

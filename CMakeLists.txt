@@ -149,6 +149,8 @@ add_library(mikai_backend STATIC
   src/backend/MikaiClient.hpp
   src/backend/Runtime.cpp
   src/backend/Runtime.hpp
+  src/backend/Downloads.cpp
+  src/backend/Downloads.hpp
 )
 # No AUTOMOC: src/backend declares no Q_OBJECT/Q_GADGET, so the autogen step
 # would scan all nine headers and moc each one into nothing.
@@ -210,6 +212,16 @@ add_library(mikai_native_support STATIC
   src/player/native/status/NativeFilterCommand.cpp
   src/player/native/status/NativeFilterCommand.hpp
   src/player/native/status/NativeTypes.hpp
+  src/player/native/components/NativeComponentCatalog.cpp
+  src/player/native/components/NativeComponentCatalog.hpp
+  src/player/native/components/NativeGpuProbe.cpp
+  src/player/native/components/NativeGpuProbe.hpp
+  src/player/native/components/NativeComponentStore.cpp
+  src/player/native/components/NativeComponentStore.hpp
+  src/player/native/components/NativeComponentToolchain.cpp
+  src/player/native/components/NativeComponentToolchain.hpp
+  src/player/native/components/NativeComponentProvisioning.cpp
+  src/player/native/components/NativeComponentProvisioning.hpp
 )
 # Grouped as native/{bundle,models,prepare,status}. Consumers include the
 # domain: #include "native/bundle/NativeBundle.hpp".

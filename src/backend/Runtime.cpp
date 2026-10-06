@@ -1,21 +1,16 @@
 #include "Runtime.hpp"
 
+#include "Downloads.hpp"
+
 #include <QCoreApplication>
 #include <QDirIterator>
-#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QProcess>
 #include <QSet>
-#include <QStandardPaths>
-#include <QTimer>
 #include <QUrl>
 #include <QVector>
 
@@ -34,41 +29,6 @@ const QUrl& releasesApi() {
     static const QUrl url(
         QStringLiteral("https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"));
     return url;
-}
-
-const QUrl& sevenZipUrl() {
-    static const QUrl url(QStringLiteral("https://www.7-zip.org/a/7zr.exe"));
-    return url;
-}
-
-QByteArray download(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs) {
-    QNetworkAccessManager manager;
-    QNetworkRequest request(url);
-    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
-    }
-    QNetworkReply* reply = manager.get(request);
-    QEventLoop loop;
-    QTimer timer;
-    timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    timer.start(timeoutMs);
-    loop.exec();
-    if (reply->isRunning()) {
-        reply->abort();
-        loop.exec();
-    }
-    timer.stop();
-    const QByteArray body = reply->readAll();
-    const QString error =
-        reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
-    reply->deleteLater();
-    if (!error.isEmpty()) {
-        throw std::runtime_error(
-            QStringLiteral("GET %1 failed: %2").arg(url.toString(), error).toStdString());
-    }
-    return body;
 }
 
 // libmpv ships with FFmpeg and other DLLs beside it, so the extracted tree
@@ -125,39 +85,6 @@ QVector<QDir> candidateDirs(const QString& hint) {
     return candidates;
 }
 
-QString findSevenZip() {
-    const QString found = QStandardPaths::findExecutable(QStringLiteral("7z.exe"));
-    if (!found.isEmpty()) {
-        return found;
-    }
-    for (const QString& candidate : {QStringLiteral("C:/Program Files/7-Zip/7z.exe"),
-                                     QStringLiteral("C:/Program Files (x86)/7-Zip/7z.exe")}) {
-        if (QFileInfo::exists(candidate)) {
-            return candidate;
-        }
-    }
-    const QString cached = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zr.exe")));
-    return QFileInfo::exists(cached) ? cached : QString{};
-}
-
-QString ensureSevenZip() {
-    const QString found = findSevenZip();
-    if (!found.isEmpty()) {
-        return found;
-    }
-    const QString tool = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zr.exe")));
-    QDir().mkpath(QFileInfo(tool).absolutePath());
-    const QByteArray binary =
-        download(sevenZipUrl(), {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}}, 60000);
-    QFile file(tool);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        throw std::runtime_error("could not write " + tool.toStdString());
-    }
-    file.write(binary);
-    file.close();
-    return tool;
-}
-
 }  // namespace
 
 QDir cacheDir() {
@@ -199,7 +126,7 @@ QDir provisionRuntime(const QString& destination) {
                 .toStdString());
     }
 
-    const QByteArray releases = download(
+    const QByteArray releases = fetchUrlBytes(
         releasesApi(),
         {{QStringLiteral("Accept"), QStringLiteral("application/vnd.github+json")},
          {QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
@@ -234,8 +161,9 @@ QDir provisionRuntime(const QString& destination) {
         if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             throw std::runtime_error("could not write " + archive.toStdString());
         }
-        file.write(download(QUrl(downloadUrl),
-                            {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}}, 120000));
+        file.write(fetchUrlBytes(QUrl(downloadUrl),
+                                 {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
+                                 120000));
     }
 
     // The mpv dev archive uses the BCJ2 filter, so extraction needs the
@@ -243,15 +171,9 @@ QDir provisionRuntime(const QString& destination) {
     const QString sevenZip = ensureSevenZip();
     const QDir extracted = QDir(temp.filePath(QStringLiteral("extracted")));
     extracted.mkpath(QStringLiteral("."));
-    QProcess process;
-    process.start(sevenZip, {QStringLiteral("x"), QStringLiteral("-o%1").arg(extracted.absolutePath()),
-                             QStringLiteral("-y"), archive});
-    if (!process.waitForFinished(300000) || process.exitCode() != 0) {
-        const QString tail = QString::fromUtf8(process.readAllStandardError()).right(500);
-        throw std::runtime_error(QStringLiteral("7-Zip extraction failed (exit %1): %2")
-                                     .arg(process.exitCode())
-                                     .arg(tail)
-                                     .toStdString());
+    QString extractReason;
+    if (!extractArchive(sevenZip, archive, extracted.absolutePath(), &extractReason)) {
+        throw std::runtime_error(extractReason.toStdString());
     }
 
     if (!folderWithLibrary(extracted).has_value()) {
