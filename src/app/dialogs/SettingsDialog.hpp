@@ -33,6 +33,8 @@ class MikaiClient;
 namespace mikai::app {
 
 class Runner;
+class NativeComponentProvisioner;
+class ComponentStoreTab;
 
 /// API key, live quota readout, the home-page feed switches, the Anime4K preset
 /// hotkeys and the native processing preferences, in tabs: the General tab is
@@ -95,6 +97,19 @@ public:
     /// installed, preparation refuses by name rather than guessing.
     void setNativePreparationContextProvider(NativePreparationContextProvider provider);
 
+    /// The TensorRT component provisioner the Processing tab's assets panel
+    /// drives. Optional and null-safe; forwarded to the panel after construction.
+    void setComponentProvisioner(NativeComponentProvisioner* provisioner);
+
+    /// Brings the Components tab into view: the downloadable backend elements,
+    /// their install state and the manual Verify. Changes nothing by itself.
+    void showComponentsTab();
+
+    /// Asks the in-flight engine build to stop. False when nothing was running.
+    /// The request reaches the worker's own cancellation gate; the GUI thread
+    /// never waits for it.
+    bool cancelNativePreparation();
+
     /// True when an actual playing or paused video surface exists that a
     /// preparation job may probe and capture from. The application owner wires
     /// it; it is what lets Prepare be armed before any device fact is observed.
@@ -122,6 +137,15 @@ public:
                                        quint64 sourceEpoch, double observedPosition);
     void failNativePreparationFrame(int frameIndex, const QString& reasonKey,
                                     const QString& reason);
+
+signals:
+    /// The engine build the Processing tab started, forwarded so a surface that
+    /// outlives this dialog - the player's preparation window - can follow it.
+    /// The dialog owns no build of its own; these are the panel's own events.
+    void nativePreparationStarted();
+    void nativePreparationProgress(int stageIndex, int stageCount, const QString& phase,
+                                   const QString& detail);
+    void nativePreparationFinished(bool ok);
 
 private:
     /// One editable preset binding: the stable catalogue id the shortcut is
@@ -157,6 +181,7 @@ private:
     QWidget* buildGeneralTab();
     QWidget* buildPresetsTab();
     QWidget* buildProcessingTab();
+    QWidget* buildComponentsTab();
     void testToken();
     void refreshQuota();
 
@@ -255,9 +280,11 @@ private:
     QWidget* generalTab_ = nullptr;
     QWidget* presetsTab_ = nullptr;
     QWidget* processingTab_ = nullptr;
+    QWidget* componentsTab_ = nullptr;
     QScrollArea* generalScroll_ = nullptr;
     QScrollArea* presetsScroll_ = nullptr;
     QScrollArea* processingScroll_ = nullptr;
+    QScrollArea* componentsScroll_ = nullptr;
     QLabel* tokenHeading_ = nullptr;
     QLabel* tokenDescription_ = nullptr;
     QLabel* tokenLink_ = nullptr;
@@ -317,6 +344,8 @@ private:
     /// The assets panel this dialog owns. The preparation providers are
     /// forwarded to it live, so one installed after construction still takes.
     NativeAssetsPanel* assetsPanel_ = nullptr;
+    NativeComponentProvisioner* componentProvisioner_ = nullptr;
+    ComponentStoreTab* componentStoreTab_ = nullptr;
     NativePreparationContextProvider preparationContextProvider_;
     NativePreparationSourcePresence preparationSourcePresence_;
     NativePreparationContextRequest preparationContextRequest_;

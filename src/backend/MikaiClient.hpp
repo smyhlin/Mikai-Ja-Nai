@@ -86,8 +86,11 @@ public:
     AnimeDetail getAnime(const QString& ref) const;
     PlayerResult getPlayer(const QString& ref) const;
 
-    // Artwork download: bypasses the rate limiter, 20s timeout.
-    QByteArray fetchBytes(const QString& url) const;
+    // Artwork download: bypasses the rate limiter, 20s timeout by default. This
+    // is the one transport callers use for large non-artwork payloads (a model
+    // graph, for instance, needs far more than the artwork budget); a negative
+    // timeout keeps the artwork default.
+    QByteArray fetchBytes(const QString& url, int timeoutMs = -1) const;
 
     QString apiKey() const;
     void setApiKey(const QString& apiKey);

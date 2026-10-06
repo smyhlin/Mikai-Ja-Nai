@@ -56,6 +56,11 @@
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <native/models/NativeUserRecipes.hpp>
+#include <native/components/NativeComponentCatalog.hpp>
+#include <native/components/NativeComponentStore.hpp>
+#include <native/components/NativeComponentToolchain.hpp>
+#include <native/components/NativeGpuProbe.hpp>
+#include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
 #include "theme/Metrics.hpp"
 
@@ -74,6 +79,12 @@ QString humanBytes(qint64 bytes) {
     return QLocale().formattedDataSize(bytes, 1, QLocale::DataSizeTraditionalFormat);
 }
 
+// The describe/identity path below is reached only from the inspection-guarded
+// preparation worker, so it is compiled only when that worker is: a default build
+// that carried it would carry functions nothing can call. This first block is the
+// UUID vocabulary that path alone speaks.
+#ifdef MIKAI_WITH_MODEL_INSPECTION
+
 /// Case and punctuation must never make the same adapter look like a different
 /// one; this normalization is used only to compare observed spellings, never to
 /// record one.
@@ -90,6 +101,8 @@ QString normalizedUuid(const QString& uuid) {
 /// to the CUDA-only describe helper or compared against its measurement; a D3D
 /// adapter LUID is a different, shorter vocabulary and is left to the plan.
 bool isCudaDeviceUuid(const QString& uuid) { return normalizedUuid(uuid).size() == 32; }
+
+#endif  // MIKAI_WITH_MODEL_INSPECTION
 
 QString backendList(const QVector<Backend>& backends) {
     if (backends.isEmpty()) return QStringLiteral("—");
@@ -112,6 +125,8 @@ QString statusCell(const NativeModelView& view) {
 // copied from a cache and never assembled from plausible constants. The document
 // is the helper's own observation: every member this consumer needs is required,
 // and a missing one refuses the whole document rather than completing it.
+
+#ifdef MIKAI_WITH_MODEL_INSPECTION
 
 /// The child environment the toolchain needs: its own directory first, then the
 /// provider runtime directories, then the system directories. The ambient PATH is
@@ -472,6 +487,8 @@ bool identityFromDescribe(const QJsonObject& document, Backend provider, const Q
     return true;
 }
 
+#endif  // MIKAI_WITH_MODEL_INSPECTION
+
 }  // namespace
 
 NativeModelView describeStoredModel(const StoredModel& model) {
@@ -613,8 +630,32 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     toolchain.tools.prepExecutable = QDir(bundleRoot).filePath(preparation.tools.prep);
     toolchain.tools.verifierExecutable = QDir(bundleRoot).filePath(preparation.tools.verifier);
     toolchain.tools.ortRuntimeDir = QDir(bundleRoot).filePath(preparation.runtime.ort);
-    toolchain.tools.trtBinDir = QDir(bundleRoot).filePath(preparation.runtime.trt);
-    toolchain.tools.cudaBinDir = QDir(bundleRoot).filePath(preparation.runtime.cuda);
+
+    // The TensorRT and CUDA bin directories are the bundle's own, unless this
+    // machine's GPU needs a builder resource the bundle does not carry: then
+    // both come from the app-owned component store, so the runtime and the
+    // resource are always the same upstream pack set.
+    QStringList declaredTrtFiles;
+    const QString trtPrefix = preparation.runtime.trt + QLatin1Char('/');
+    for (const BundleFile& file : validated->files) {
+        if (file.path.startsWith(trtPrefix)) {
+            declaredTrtFiles.append(file.path);
+        }
+    }
+    const ComponentBinDirs componentDirs = componentBinDirs(
+        bundleRoot, preparation.runtime.trt, preparation.runtime.cuda, declaredTrtFiles,
+        observeComputeCapability(), componentStore());
+    if (!componentDirs.reasonKey.isEmpty()) {
+        return refuse(componentDirs.reasonKey, componentDirs.reason);
+    }
+    toolchain.tools.trtBinDir = componentDirs.trtBinDir;
+    toolchain.tools.cudaBinDir = componentDirs.cudaBinDir;
+    toolchain.componentFromStore = componentDirs.fromStore;
+    toolchain.componentPackName = componentDirs.packName;
+    if (const ComponentPack* pack = tensorRtResourcePackFor(observeComputeCapability().smMajor,
+                                                            observeComputeCapability().smMinor)) {
+        toolchain.componentPackBytes = pack->assetBytes;
+    }
     toolchain.coreSha = preparation.coreSha;
     toolchain.sourceAbi = preparation.sourceAbi;
     // The block's declared provider types are the bundle's own statement of which
@@ -918,6 +959,59 @@ void NativeAssetsPanel::buildUi() {
     sourceStatus_->setMinimumHeight(mikai::app::theme::kSecondaryControlSize);
     root->addWidget(sourceStatus_);
 
+    componentHeading_ = new QLabel(tr("TensorRT components"), this);
+    componentHeading_->setObjectName(QStringLiteral("sectionHeading"));
+    root->addWidget(componentHeading_);
+
+    componentGpuLabel_ = new QLabel(this);
+    componentGpuLabel_->setObjectName(QStringLiteral("descriptionPanel"));
+    componentGpuLabel_->setWordWrap(true);
+    root->addWidget(componentGpuLabel_);
+
+    componentPackLabel_ = new QLabel(this);
+    componentPackLabel_->setObjectName(QStringLiteral("descriptionPanel"));
+    componentPackLabel_->setWordWrap(true);
+    root->addWidget(componentPackLabel_);
+
+    auto* componentRow = new QHBoxLayout();
+    componentRow->setSpacing(mikai::app::theme::kSpacingSmall);
+    componentDownloadButton_ = new QPushButton(tr("Download components"), this);
+    componentDownloadButton_->setObjectName(QStringLiteral("nativeComponentDownloadButton"));
+    componentDownloadButton_->setEnabled(false);
+    componentRow->addWidget(componentDownloadButton_);
+    componentCancelButton_ = new QPushButton(tr("Cancel"), this);
+    componentCancelButton_->setObjectName(QStringLiteral("nativeComponentCancelButton"));
+    componentCancelButton_->setEnabled(false);
+    componentRow->addWidget(componentCancelButton_);
+    componentRow->addStretch();
+    root->addLayout(componentRow);
+
+    connect(componentDownloadButton_, &QPushButton::clicked, this, [this] {
+        if (componentProvisioner_ == nullptr) return;
+        QString reason;
+        if (!componentProvisioner_->ensure(&reason)) {
+            componentStatus_->setText(reason);
+            return;
+        }
+        componentProgress_->show();
+        componentProgress_->setValue(0);
+    });
+    connect(componentCancelButton_, &QPushButton::clicked, this, [this] {
+        if (componentProvisioner_ != nullptr) componentProvisioner_->cancel();
+    });
+
+    componentProgress_ = new QProgressBar(this);
+    componentProgress_->setObjectName(QStringLiteral("nativeComponentProgress"));
+    componentProgress_->setRange(0, 100);
+    componentProgress_->setTextVisible(false);
+    componentProgress_->hide();
+    root->addWidget(componentProgress_);
+
+    componentStatus_ = new QLabel(this);
+    componentStatus_->setObjectName(QStringLiteral("muted"));
+    componentStatus_->setWordWrap(true);
+    root->addWidget(componentStatus_);
+
     preparationHeading_ = new QLabel(tr("Preparation"), this);
     preparationHeading_->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(preparationHeading_);
@@ -1212,6 +1306,13 @@ void NativeAssetsPanel::retranslateUi() {
     downloadHint_->setText(tr("Download and verify the selected pinned source asset."));
     licenseLabel_->setText(licenseCaption());
 
+    componentHeading_->setText(tr("TensorRT components"));
+    componentDownloadButton_->setText(tr("Download components"));
+    componentDownloadButton_->setAccessibleName(
+        tr("Download the TensorRT builder resource this GPU needs"));
+    componentCancelButton_->setText(tr("Cancel"));
+    componentCancelButton_->setAccessibleName(tr("Cancel the running component download"));
+
     preparationHeading_->setText(tr("Preparation"));
     cancelPrepareButton_->setText(tr("Cancel"));
     cancelPrepareButton_->setAccessibleName(tr("Cancel the running preparation"));
@@ -1242,6 +1343,7 @@ void NativeAssetsPanel::retranslateUi() {
     updateImportControls();
     updateDownloadControls();
     updatePrepareControls();
+    updateComponentControls();
 }
 
 void NativeAssetsPanel::resizeEvent(QResizeEvent* event) {
@@ -1283,6 +1385,40 @@ void NativeAssetsPanel::setClient(mikai::backend::MikaiClient* client) {
     updateDownloadControls();
 }
 
+void NativeAssetsPanel::setComponentProvisioner(
+    mikai::app::NativeComponentProvisioner* provisioner) {
+    if (componentProvisioner_ == provisioner) {
+        refreshComponents();
+        return;
+    }
+    if (componentProvisioner_ != nullptr) {
+        disconnect(componentProvisioner_, nullptr, this, nullptr);
+    }
+    componentProvisioner_ = provisioner;
+    if (componentProvisioner_ != nullptr) {
+        connect(componentProvisioner_, &mikai::app::NativeComponentProvisioner::progress, this,
+                [this](const QString& pack, qint64 received, qint64 total) {
+                    if (componentProgress_ == nullptr) return;
+                    componentProgress_->setRange(0, 100);
+                    componentProgress_->setValue(
+                        total > 0 ? static_cast<int>(received * 100 / total) : 0);
+                    componentStatus_->setText(tr("Downloading %1: %2 of %3")
+                                                  .arg(pack, QLocale().formattedDataSize(received),
+                                                       QLocale().formattedDataSize(total)));
+                });
+        connect(componentProvisioner_, &mikai::app::NativeComponentProvisioner::finished, this,
+                [this](bool ok, bool cancelled, const QString& summary) {
+                    if (componentProgress_ != nullptr) componentProgress_->hide();
+                    if (componentStatus_ != nullptr) {
+                        componentStatus_->setText(cancelled ? tr("Component download cancelled")
+                                                            : summary);
+                    }
+                    refreshComponents();
+                });
+    }
+    refreshComponents();
+}
+
 void NativeAssetsPanel::refresh() {
     refreshModels();
     refreshCache();
@@ -1293,6 +1429,44 @@ void NativeAssetsPanel::refresh() {
     observedToolchain_ = observeNativePreparationToolchain();
     updateImportControls();
     updateDownloadControls();
+    refreshComponents();
+}
+
+void NativeAssetsPanel::refreshComponents() {
+    if (componentHeading_ == nullptr) return;
+    const GpuComputeCapability& gpu = observeComputeCapability();
+    componentGpuLabel_->setText(tr("GPU: %1").arg(computeCapabilityText(gpu)));
+
+    const ComponentPack* pack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+    if (pack == nullptr) {
+        componentPackLabel_->setText(
+            tr("No builder resource pack is published for this GPU."));
+    } else {
+        componentPackLabel_->setText(tr("Builder resource: %1 (%2)")
+                                         .arg(pack->name,
+                                              QLocale().formattedDataSize(pack->assetBytes)));
+    }
+
+    QString status;
+    if (!observedToolchain_.available) {
+        status = observedToolchain_.reason;
+    } else if (observedToolchain_.componentFromStore) {
+        status = tr("Component store");
+    } else if (gpu.smMajor > 0) {
+        status = tr("Bundle resource");
+    } else {
+        status = tr("Not installed");
+    }
+    componentStatus_->setText(status);
+    updateComponentControls();
+}
+
+void NativeAssetsPanel::updateComponentControls() {
+    if (componentDownloadButton_ == nullptr) return;
+    const bool satisfied = observedToolchain_.available;
+    const bool busy = componentProvisioner_ != nullptr && componentProvisioner_->running();
+    componentDownloadButton_->setEnabled(!satisfied && !busy && componentProvisioner_ != nullptr);
+    componentCancelButton_->setEnabled(busy);
 }
 
 void NativeAssetsPanel::refreshModels() {
@@ -2229,6 +2403,11 @@ bool NativeAssetsPanel::prepareArtifact() {
     ++prepareGeneration_;
     if (prepareProgress_ != nullptr) prepareProgress_->clear();
     updatePrepareControls();
+    // Announced the moment the request is accepted, not when the first stage
+    // reports: resolving the plan and probing the core happen before any build
+    // event, and a listener that only opened on the first event would show
+    // nothing for that whole stretch.
+    emit preparationStarted();
 
     // The context the core already observed, or - only now, because the user
     // actually clicked Prepare - an explicit request that arms the live core's own
@@ -2403,18 +2582,21 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             }
 
             // The progress sink is shared by the lineage builder and the build.
+            // The plan's own stage count travels with every event, so a listener
+            // can say "stage 2 of 3" without a percentage nobody measured.
+            const int stageCount = static_cast<int>(plan.stages.size());
             const BuilderProgressCallback progress =
-                [panelGuard, generation](const BuilderProgress& event) {
+                [panelGuard, generation, stageCount](const BuilderProgress& event) {
                     if (panelGuard.isNull()) return;
                     const int stageIndex = event.stageIndex;
                     const QString phase = event.phase;
                     const QString detail = event.detail;
                     QMetaObject::invokeMethod(
                         panelGuard.data(),
-                        [panelGuard, generation, stageIndex, phase, detail] {
+                        [panelGuard, generation, stageIndex, stageCount, phase, detail] {
                             if (panelGuard.isNull()) return;
                             if (panelGuard->prepareGeneration_ != generation) return;
-                            panelGuard->applyPrepareProgress(stageIndex, phase, detail);
+                            panelGuard->applyPrepareProgress(stageIndex, stageCount, phase, detail);
                         },
                         Qt::QueuedConnection);
                 };
@@ -2517,13 +2699,13 @@ void NativeAssetsPanel::cancelPrepare() {
     updatePrepareControls();
 }
 
-void NativeAssetsPanel::applyPrepareProgress(int stageIndex, const QString& phase,
+void NativeAssetsPanel::applyPrepareProgress(int stageIndex, int stageCount, const QString& phase,
                                              const QString& detail) {
     if (!prepareInFlight_ || prepareProgress_ == nullptr) return;
     QString text = tr("Preparing stage %1: %2").arg(stageIndex).arg(phase);
     if (!detail.isEmpty()) text += QStringLiteral(" — ") + detail;
     prepareProgress_->setText(text);
-    emit preparationProgress(stageIndex, phase, detail);
+    emit preparationProgress(stageIndex, stageCount, phase, detail);
 }
 
 void NativeAssetsPanel::finishPrepare(const std::shared_ptr<PrepareResult>& result,

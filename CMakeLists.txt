@@ -558,6 +558,7 @@ if(TARGET mikai_backend)
     src/app/theme/Icons.cpp
     src/app/Labels.cpp
     src/app/state/Feeds.cpp
+    src/app/state/NativeComponentProvisioner.cpp
     src/app/state/NativePlaybackAssembly.cpp
     src/app/state/QualityCache.cpp
     src/app/workers/Runner.cpp
@@ -565,6 +566,7 @@ if(TARGET mikai_backend)
     src/app/widgets/TitleCard.cpp
     src/app/widgets/RateLimitLabel.cpp
     src/app/dialogs/SettingsDialog.cpp
+    src/app/dialogs/ComponentStoreTab.cpp
     src/app/dialogs/NativeAssetsPanel.cpp
     src/app/dialogs/NativeRifeControls.cpp
     src/app/dialogs/CoverViewer.cpp
@@ -583,6 +585,7 @@ if(TARGET mikai_backend)
     src/app/theme/Metrics.hpp
     src/app/theme/Icons.hpp
     src/app/state/Feeds.hpp
+    src/app/state/NativeComponentProvisioner.hpp
     src/app/state/NativePlaybackAssembly.hpp
     src/app/state/QualityCache.hpp
     src/app/workers/Runner.hpp
@@ -590,6 +593,7 @@ if(TARGET mikai_backend)
     src/app/widgets/TitleCard.hpp
     src/app/widgets/RateLimitLabel.hpp
     src/app/dialogs/SettingsDialog.hpp
+    src/app/dialogs/ComponentStoreTab.hpp
     src/app/dialogs/NativeAssetsPanel.hpp
     src/app/dialogs/NativeRifeControls.hpp
     src/app/dialogs/CoverViewer.hpp

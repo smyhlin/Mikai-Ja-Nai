@@ -8,6 +8,7 @@
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -243,14 +244,15 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     // width: a tab the bar cannot show is an unreachable action, and QTabBar
     // answers an over-wide row with scroll arrows rather than by eliding the
     // caption. The captions are translated, so the padding is the part that
-    // yields - the glyph and the whole caption stay. kSpacingMedium is the tab
+    // yields - the glyph and the whole caption stay. kSpacingSmall is the tab
     // padding at this width rather than the wider kSpacingLarge the bar carries
-    // by default, which three tabs could not afford inside 560 logical pixels.
+    // by default, which four tabs could not afford inside 560 logical pixels.
     tabs_->setStyleSheet(
-        QStringLiteral("QTabBar::tab { padding: 7px %1px; }").arg(theme::kSpacingMedium));
+        QStringLiteral("QTabBar::tab { padding: 7px %1px; }").arg(theme::kSpacingSmall));
     generalTab_ = buildGeneralTab();
     presetsTab_ = buildPresetsTab();
     processingTab_ = buildProcessingTab();
+    componentsTab_ = buildComponentsTab();
     tabs_->addTab(generalTab_, theme::gearIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
                   tr("General"));
     tabs_->addTab(presetsTab_, theme::keyboardIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
@@ -260,6 +262,8 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     // glyph here.
     tabs_->addTab(processingTab_, theme::gearIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
                   tr("Processing"));
+    tabs_->addTab(componentsTab_, theme::gearIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
+                  tr("Components"));
     if (!presetError_->isHidden()) {
         tabs_->setCurrentWidget(presetError_->parentWidget());
     }
@@ -281,6 +285,24 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 }
 
 SettingsDialog::~SettingsDialog() = default;
+
+void SettingsDialog::setComponentProvisioner(NativeComponentProvisioner* provisioner) {
+    // The panels read this live, so installing it after construction reaches the
+    // component section even though they were built in the constructor.
+    componentProvisioner_ = provisioner;
+    if (assetsPanel_ != nullptr) assetsPanel_->setComponentProvisioner(provisioner);
+    if (componentStoreTab_ != nullptr) componentStoreTab_->setComponentProvisioner(provisioner);
+}
+
+void SettingsDialog::showComponentsTab() {
+    if (tabs_ != nullptr && componentsTab_ != nullptr) tabs_->setCurrentWidget(componentsTab_);
+}
+
+bool SettingsDialog::cancelNativePreparation() {
+    if (assetsPanel_ == nullptr || !assetsPanel_->prepareInFlight()) return false;
+    assetsPanel_->cancelPrepare();
+    return true;
+}
 
 void SettingsDialog::setNativePreparationContextProvider(NativePreparationContextProvider provider) {
     // The assets panel reads this live, so installing it after construction (the
@@ -961,6 +983,15 @@ QWidget* SettingsDialog::buildProcessingTab() {
         if (preparationFrameRequest_) preparationFrameRequest_(frameIndex, generation);
     });
     assetsPanel_ = assetsPanel;
+    // Forwarded rather than re-derived: the panel is the only thing that knows
+    // when a build starts, which stage it is on and how it settled, and it dies
+    // with this dialog while the player's window outlives both.
+    connect(assetsPanel, &mikai::app::NativeAssetsPanel::preparationStarted, this,
+            &SettingsDialog::nativePreparationStarted);
+    connect(assetsPanel, &mikai::app::NativeAssetsPanel::preparationProgress, this,
+            &SettingsDialog::nativePreparationProgress);
+    connect(assetsPanel, &mikai::app::NativeAssetsPanel::preparationFinished, this,
+            &SettingsDialog::nativePreparationFinished);
     // The desired backend the core is probed for is the UNSAVED combo selection,
     // pulled fresh whenever it is asked for so a change made while a job is being
     // armed is the one the probe is asked about.
@@ -1029,6 +1060,30 @@ QWidget* SettingsDialog::buildProcessingTab() {
     root->addStretch();
     scroll->setWidget(page);
     processingScroll_ = scroll;
+    return scroll;
+}
+
+QWidget* SettingsDialog::buildComponentsTab() {
+    // The tab owns its own scroll area: the element table must keep a usable
+    // height rather than be squeezed into whatever is left of the dialog.
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+
+    auto* page = new QWidget(scroll);
+    auto* root = new QVBoxLayout(page);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    auto* tab = new mikai::app::ComponentStoreTab(page);
+    tab->setRunner(&runner_);
+    tab->setClient(&client_);
+    componentStoreTab_ = tab;
+    if (componentProvisioner_ != nullptr) tab->setComponentProvisioner(componentProvisioner_);
+    root->addWidget(tab);
+
+    scroll->setWidget(page);
+    componentsScroll_ = scroll;
     return scroll;
 }
 
@@ -1357,6 +1412,8 @@ void SettingsDialog::retranslateUi() {
             tabs_->setTabText(index, tr("Presets"));
         } else if (page == processingTab_) {
             tabs_->setTabText(index, tr("Processing"));
+        } else if (page == componentsTab_) {
+            tabs_->setTabText(index, tr("Components"));
         }
     }
     cancelButton_->setText(tr("Cancel"));

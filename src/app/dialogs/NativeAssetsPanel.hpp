@@ -66,6 +66,7 @@ class QTableWidget;
 
 namespace mikai::app {
 class Runner;
+class NativeComponentProvisioner;
 }
 
 namespace mikai::backend {
@@ -107,6 +108,13 @@ struct NativePreparationToolchain {
   /// worker refuses by name rather than inventing a digest.
   QString coreSha;
   int sourceAbi = 0;
+  /// Where the TensorRT builder resource this machine needs came from: the
+  /// bundle's own `trt` directory, or the app-owned component store when the
+  /// bundle carries no resource for this GPU. `componentFromStore` is the one
+  /// fact the panel renders differently; `componentPackName` names the pack.
+  bool componentFromStore = false;
+  QString componentPackName;
+  qint64 componentPackBytes = 0;
   QString reasonKey;
   QString reason;
 };
@@ -216,6 +224,11 @@ public:
   /// The off-GUI executor imports are submitted to. Without one, importing is
   /// refused by name: this widget never runs an import on the GUI thread.
   void setRunner(mikai::app::Runner* runner);
+
+  /// The TensorRT component provisioner this panel drives. Optional and
+  /// null-safe: without one the component section reports the observed state and
+  /// offers no download. The caller owns the provisioner.
+  void setComponentProvisioner(NativeComponentProvisioner* provisioner);
 
   /// Re-reads the owned store and the artifact cache. Creates neither root.
   void refresh();
@@ -399,7 +412,14 @@ signals:
   /// Delivered on the GUI thread as the real builder reports a stage/phase, so a
   /// surface can show the work actually happening rather than a synthesised
   /// percentage.
-  void preparationProgress(int stageIndex, const QString& phase, const QString& detail);
+  /// One real build event. `stageCount` is the resolved plan's stage count, so a
+  /// listener can show "stage 2 of 3" without inventing a percentage; it is 0
+  /// before the plan resolves.
+  void preparationProgress(int stageIndex, int stageCount, const QString& phase,
+                           const QString& detail);
+  /// A preparation request was accepted and is now in flight. Emitted before the
+  /// plan resolves, so a progress surface can open immediately.
+  void preparationStarted();
 
   /// Delivered on the GUI thread once the submitted preparation settled - the
   /// whole recipe published, or it was refused or cancelled. `ok` is the
@@ -456,11 +476,16 @@ private:
   /// observed context, toolchain, recipe and owned models. Called on every
   /// selection change and refresh; it never starts work.
   void updatePrepareControls();
+  /// Re-renders the GPU/component status line and the download controls from the
+  /// observed device, the needed pack and the component store. Never downloads.
+  void refreshComponents();
+  void updateComponentControls();
   /// The named reason preparation cannot be submitted, or both empty when every
   /// prerequisite is observed.
   void prepareRefusal(QString* reasonKey, QString* reason) const;
   /// Applies one builder progress report on the GUI thread.
-  void applyPrepareProgress(int stageIndex, const QString& phase, const QString& detail);
+  void applyPrepareProgress(int stageIndex, int stageCount, const QString& phase,
+                            const QString& detail);
   QString inspectionRuntimeReason() const;
   /// True when this translation unit is compiled with the model inspector.
   bool inspectorBuilds() const;
@@ -533,6 +558,7 @@ private:
   QLabel* sourceHint_ = nullptr;
   QLabel* preparationHeading_ = nullptr;
   QLabel* cacheHeading_ = nullptr;
+  QLabel* componentHeading_ = nullptr;
   QLabel* stagingHeading_ = nullptr;
   QLabel* downloadHint_ = nullptr;
   QLabel* cacheDeleteHint_ = nullptr;
@@ -544,6 +570,8 @@ private:
   QLabel* preparationReason_ = nullptr;
   QLabel* cacheStatus_ = nullptr;
   QLabel* stagingStatus_ = nullptr;
+  QLabel* componentGpuLabel_ = nullptr;
+  QLabel* componentPackLabel_ = nullptr;
   QPushButton* importButton_ = nullptr;
   QPushButton* cancelImportButton_ = nullptr;
   QPushButton* selectRecipeButton_ = nullptr;
@@ -562,6 +590,11 @@ private:
   QProgressBar* downloadProgress_ = nullptr;
   QPushButton* downloadCancelButton_ = nullptr;
   QPushButton* importSourceButton_ = nullptr;
+  QPushButton* componentDownloadButton_ = nullptr;
+  QPushButton* componentCancelButton_ = nullptr;
+  QProgressBar* componentProgress_ = nullptr;
+  QLabel* componentStatus_ = nullptr;
+  mikai::app::NativeComponentProvisioner* componentProvisioner_ = nullptr;
 };
 
 }  // namespace mikai::app

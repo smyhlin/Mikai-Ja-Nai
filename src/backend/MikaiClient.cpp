@@ -543,10 +543,11 @@ PlayerResult MikaiClient::getPlayer(const QString& ref) const {
                            .toObject());
 }
 
-QByteArray MikaiClient::fetchBytes(const QString& url) const {
+QByteArray MikaiClient::fetchBytes(const QString& url, int timeoutMs) const {
     QNetworkRequest request{QUrl(url)};
     request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
-    const HttpResult result = runBlocking(managerForThread(), request, kArtworkTimeoutMs);
+    const int timeout = timeoutMs > 0 ? timeoutMs : kArtworkTimeoutMs;
+    const HttpResult result = runBlocking(managerForThread(), request, timeout);
     if (!result.error.isEmpty() || result.status >= 400) {
         throw MikaiApiError(QStringLiteral("network_error"),
                             result.error.isEmpty() ? reasonFor(result.status) : result.error,
