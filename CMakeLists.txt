@@ -508,6 +508,8 @@ add_executable(mikai_tests
   tests/cpp/TestNativeUserRecipes.cpp
   tests/cpp/TestNativeAssets.hpp
   tests/cpp/TestNativeAssets.cpp
+  tests/cpp/TestNativeComponents.hpp
+  tests/cpp/TestNativeComponents.cpp
   tests/cpp/TestModels.hpp
   tests/cpp/TestModels.cpp
   tests/cpp/TestReleases.hpp

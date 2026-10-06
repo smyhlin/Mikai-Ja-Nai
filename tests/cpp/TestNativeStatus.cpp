@@ -1156,13 +1156,9 @@ void TestNativeStatus::detachingClearsTheViewSoNoPlanOutlivesItsCore() {
 }
 
 void TestNativeStatus::aRefusedSnapshotHaltsThePollInsteadOfRepeatingIt() {
-  NativeStatusConsumer consumer;
-  NativeStatusView view;
-  view.availability = unavailableAvailability(QStringLiteral("native.status.missing"),
-                                             QStringLiteral("no filter"));
-  // Simulate callback seeing it.
-  int haltedFlag = 0;
-  // We can't access nativeStatusHalted_ directly; instead verify the predicate.
+  // The halt is a property of the refusal key rather than of a hidden member, so
+  // the decision the consumer makes is what is asserted here; the predicate is
+  // the whole of it, and a consumer that is never driven proves nothing extra.
   QVERIFY(statusRefusalHaltsPolling(QStringLiteral("native.status.missing")));
   QVERIFY(statusRefusalHaltsPolling(QStringLiteral("native.status.request")));
   QVERIFY(statusRefusalHaltsPolling(QStringLiteral("native.status.schema.unknown")));

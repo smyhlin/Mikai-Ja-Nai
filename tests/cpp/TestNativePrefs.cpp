@@ -308,8 +308,8 @@ void TestNativePrefs::anOfferedRecipeOnAnUnavailableBackendStaysRequested() {
   NativeAvailability available;
   available.engineAvailable = true;
   available.backends = {Backend::TensorRT};
-  available.recipes.append(
-      {QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"), readyAvailability()});
+  available.recipes.append({QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"),
+                            readyAvailability(), QString()});
 
   NativePreferences request;
   request.enabled = true;
@@ -327,8 +327,8 @@ void TestNativePrefs::anAvailableRecipeOnItsBackendIsRequestedButNeverActive() {
   NativeAvailability available;
   available.engineAvailable = true;
   available.backends = allBackends();
-  available.recipes.append(
-      {QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"), readyAvailability()});
+  available.recipes.append({QStringLiteral("janai.spatial.hd2x.v1"), QStringLiteral("HD 2x"),
+                            readyAvailability(), QString()});
 
   NativePreferences request;
   request.enabled = true;
@@ -749,4 +749,12 @@ void TestNativePrefs::anEmptySequenceIsRefusedAsReserved() {
   const ShortcutConflict conflict = findShortcutConflict(QKeySequence(), claims);
   QVERIFY(conflict.blocked);
   QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Reserved);
+}
+
+void TestNativePrefs::theComponentsPromptStartsUndismissedAndStaysDismissed() {
+  // Hermetic: main.cpp points QSettings at a throwaway directory for the whole
+  // run, so this never touches the viewer's registry.
+  QVERIFY(!mplayer::native::nativeComponentsPromptDismissed());
+  mplayer::native::dismissNativeComponentsPrompt();
+  QVERIFY(mplayer::native::nativeComponentsPromptDismissed());
 }

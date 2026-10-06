@@ -43,4 +43,5 @@ class TestNativePrefs : public QObject {
   void theSharedCheckRefusesADuplicateAndNamesTheOwner();
   void aNativeClaimBlocksAPresetAndNamesTheNativeOwner();
   void anEmptySequenceIsRefusedAsReserved();
+  void theComponentsPromptStartsUndismissedAndStaysDismissed();
 };

@@ -19,6 +19,7 @@
 #include "TestNativeUserRecipes.hpp"
 #include "TestNativeBundle.hpp"
 #include "TestNativeBuilder.hpp"
+#include "TestNativeComponents.hpp"
 #include "TestNativePreparationReferences.hpp"
 #include "TestNativeStoredModels.hpp"
 #include "TestNativePreparedPlan.hpp"
@@ -41,6 +42,7 @@
 #include <cstdio>
 
 #include <QtCore/QFile>
+#include <QtCore/QSet>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
@@ -53,7 +55,7 @@ namespace {
 constexpr const char* kSuites[] = {
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
-    "TestNativePreparationReferences", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
+    "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync",
@@ -154,6 +156,7 @@ int main(int argc, char** argv) {
   TestNativeManifest nativeManifest;
   TestNativeBuilder nativeBuilder;
   TestNativePreparationReferences nativePreparationReferences;
+  TestNativeComponents nativeComponents;
   TestNativeStoredModels nativeStoredModels;
   TestNativePreparedPlan nativePreparedPlan;
   TestNativePlaybackController nativePlaybackController;
@@ -212,7 +215,9 @@ int main(int argc, char** argv) {
   int failures = 0;
   // `admitted` carries a suite's own gate: false means the suite is about to
   // skip itself, and the verdict has to say so rather than claim a pass.
+  QSet<QString> executed;
   const auto run = [&](const char* name, QObject* suite, bool admitted) {
+    executed.insert(QString::fromLatin1(name));
     if (!filtered || wantsSuite(arguments, name)) {
       failures |= runOne(name, suite, qtestArgs, admitted);
     }
@@ -226,6 +231,7 @@ int main(int argc, char** argv) {
   run("TestNativePrepPlan", &nativePrepPlan, true);
   run("TestNativeManifest", &nativeManifest, true);
   run("TestNativePreparationReferences", &nativePreparationReferences, true);
+  run("TestNativeComponents", &nativeComponents, true);
   run("TestNativeStoredModels", &nativeStoredModels, true);
   run("TestNativeBuilder", &nativeBuilder, true);
   run("TestNativePreparedPlan", &nativePreparedPlan, true);
@@ -253,5 +259,18 @@ int main(int argc, char** argv) {
   // Last, and off unless MIKAI_LIVE=1 with a key: it needs the network and the
   // quota, and a hermetic run must not be recorded as having exercised either.
   run("TestLiveOracle", &liveOracle, liveOracleAdmitted());
+
+  // Every name the filter knows must have been handed a suite. A name in
+  // `kSuites` with no `run()` call is invisible - it is stripped from QTest's
+  // arguments and then never executed - which is how a whole suite can stop
+  // running without a single failing line. Reported as a failure rather than a
+  // warning, because a suite nobody runs is a suite nobody can trust.
+  if (!filtered) {
+    for (const char* suite : kSuites) {
+      if (executed.contains(QString::fromLatin1(suite))) continue;
+      std::fprintf(stderr, "[mikai_tests] %s: registered but never executed\n", suite);
+      failures |= 1;
+    }
+  }
   return failures;
 }

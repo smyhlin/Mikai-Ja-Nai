@@ -455,6 +455,97 @@ void TestNativeBundle::aValidStandardBundleIsReadAndValidated() {
     QVERIFY(descriptor.deps.isEmpty());
 }
 
+void TestNativeBundle::aValidationVerdictIsRememberedUntilTheTreeChanges() {
+    QTemporaryDir temp;
+    QTemporaryDir cache;
+    QVERIFY(temp.isValid());
+    QVERIFY(cache.isValid());
+    qputenv("MIKAI_NATIVE_CACHE", cache.filePath(QStringLiteral("verified.json")).toUtf8());
+    QVERIFY(writeFixture(temp.path(), standardFixture()));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+    QVERIFY2(validateBundleCached(*bundle, &reason), qPrintable(reason));
+    QVERIFY(QFileInfo::exists(cache.filePath(QStringLiteral("verified.json"))));
+    // The second call is answered from the cache: nothing about the tree moved.
+    QVERIFY2(validateBundleCached(*bundle, &reason), qPrintable(reason));
+
+    // A module replaced with different bytes moves both its size and its
+    // modification time, so the fingerprint no longer matches and the bytes are
+    // proved again rather than trusted.
+    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("libmpv-2.dll"));
+    QVERIFY(writeFile(modulePath, QByteArray(64, 'z')));
+    QVERIFY(!validateBundleCached(*bundle, &reason));
+    QVERIFY(!reason.isEmpty());
+
+    qunsetenv("MIKAI_NATIVE_CACHE");
+}
+
+void TestNativeBundle::aFailedValidationIsNeverRemembered() {
+    QTemporaryDir temp;
+    QTemporaryDir cache;
+    QVERIFY(temp.isValid());
+    QVERIFY(cache.isValid());
+    qputenv("MIKAI_NATIVE_CACHE", cache.filePath(QStringLiteral("verified.json")).toUtf8());
+    QVERIFY(writeFixture(temp.path(), standardFixture()));
+
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
+
+    // Corrupt it, refuse it, then repair it: the refusal must not have been
+    // written down, or a repaired bundle would stay refused until the cache was
+    // deleted by hand.
+    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("libmpv-2.dll"));
+    QByteArray original;
+    QVERIFY(readFile(modulePath, &original));
+    QVERIFY(writeFile(modulePath, QByteArray(64, 'z')));
+    QVERIFY(!validateBundleCached(*bundle, &reason));
+
+    QVERIFY(writeFile(modulePath, original));
+    QVERIFY2(validateBundleCached(*bundle, &reason), qPrintable(reason));
+
+    // Dropping the verdict explicitly has the same effect as a first run.
+    invalidateBundleValidation(bundle->root);
+    QVERIFY2(validateBundleCached(*bundle, &reason), qPrintable(reason));
+
+    qunsetenv("MIKAI_NATIVE_CACHE");
+}
+
+void TestNativeBundle::invalidatingARootAlsoDropsItsCachedDescriptor() {
+    const QString module = stockModulePath();
+    if (module.isEmpty()) QSKIP("this machine has no stock runtime to describe");
+    QTemporaryDir cache;
+    QVERIFY(cache.isValid());
+    qputenv("MIKAI_NATIVE_CACHE", cache.filePath(QStringLiteral("verified.json")).toUtf8());
+
+    QString reason;
+    const std::optional<Bundle> first = describeStandardRuntimeCached(module, &reason);
+    QVERIFY2(first.has_value(), qPrintable(reason));
+    QVERIFY(QFileInfo::exists(cache.filePath(QStringLiteral("verified.json"))));
+
+    // Answered from the cache while the tree is unchanged, and identical to what
+    // the bytes described.
+    const std::optional<Bundle> second = describeStandardRuntimeCached(module, &reason);
+    QVERIFY(second.has_value());
+    QCOMPARE(second->descriptorId, first->descriptorId);
+
+    // A stock runtime that stops loading is invalidated by its root. The
+    // descriptor has to go with the verdict: keeping it would answer the next
+    // start with the description the loader just refused.
+    invalidateBundleValidation(first->root);
+
+    QFile file(cache.filePath(QStringLiteral("verified.json")));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    QVERIFY(object.value(QStringLiteral("stock")).toArray().isEmpty());
+    QVERIFY(object.value(QStringLiteral("validations")).toArray().isEmpty());
+
+    qunsetenv("MIKAI_NATIVE_CACHE");
+}
+
 void TestNativeBundle::anUnknownSchemaIsRefusedNotGuessed() {
     QTemporaryDir temp;
     Fixture fixture = standardFixture();
@@ -1497,7 +1588,7 @@ void TestNativeBundle::theNativeLayoutResolvesUnderOneAppLocalHierarchy() {
     QCOMPARE(runtimeStorageRoot(), QDir::cleanPath(QDir(storage).filePath(QStringLiteral("runtime"))));
 
     const QStringList names = nativeSubdirectoryNames();
-    QCOMPARE(names.size(), 7);
+    QCOMPARE(names.size(), 8);
     for (const QString& name : names) {
         const QString resolved = nativeSubdirectory(name);
         QCOMPARE(resolved, QDir::cleanPath(QDir(storage).filePath(name)));

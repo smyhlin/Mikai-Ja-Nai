@@ -229,7 +229,19 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   if (runtimeIndex >= 0) {
     runtime->setCurrentIndex(runtimeIndex);
   }
-  tabs->setCurrentIndex(tabs->count() - 1);
+  // The Processing tab is found by identity, not by being last: a fourth tab
+  // added after it would otherwise be selected while the assertions below still
+  // describe the processing surface, and the scroll comparison would then be
+  // reading a page the test never meant to open.
+  int processingIndex = -1;
+  for (int index = 0; index < tabs->count(); ++index) {
+    if (tabs->widget(index) == scroll) {
+      processingIndex = index;
+      break;
+    }
+  }
+  QVERIFY2(processingIndex >= 0, "the processing scroll area is the page of exactly one tab");
+  tabs->setCurrentIndex(processingIndex);
   scroll->verticalScrollBar()->setValue(40);
   const QString englishStatus = status->text();
   const QString englishSaveText = storeButton->text();
@@ -269,8 +281,8 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
                        backend->currentData().toString(),
                        recipe->currentData().toString(),
                        runtime->currentData().toString(),
-                       tabs->currentIndex() == tabs->count() - 1 ? QStringLiteral("processing")
-                                                                 : QStringLiteral("other")};
+                       tabs->currentIndex() == processingIndex ? QStringLiteral("processing")
+                                                               : QStringLiteral("other")};
   };
   const QStringList before = capture();
   QVERIFY2(qAbs(thresholdValue() - 0.375) < 1e-12,

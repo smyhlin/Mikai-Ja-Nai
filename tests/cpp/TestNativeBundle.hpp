@@ -11,6 +11,14 @@ class TestNativeBundle : public QObject {
   void malformedExportsNeverClassifyAnImageAsTheCore();
   void aForwardedClientApiIsRefusedWithoutResolvingIt();
   void aValidStandardBundleIsReadAndValidated();
+
+  // The startup cache: a verdict is remembered while the tree's fingerprint is
+  // unchanged, a changed tree is hashed again, and a failure is never
+  // remembered - which is what lets a start trust the first check and still
+  // notice a bundle that was replaced or repaired.
+  void aValidationVerdictIsRememberedUntilTheTreeChanges();
+  void aFailedValidationIsNeverRemembered();
+  void invalidatingARootAlsoDropsItsCachedDescriptor();
   void anUnknownSchemaIsRefusedNotGuessed();
   void anUnknownMemberIsRefusedNotIgnored();
   void aMissingRequiredMemberIsRefused();
