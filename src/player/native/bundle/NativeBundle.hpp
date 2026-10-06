@@ -147,6 +147,23 @@ std::optional<Bundle> readBundle(const QString& root, QString* reason = nullptr)
 /// undeclared in the root. A statement about files, never about a loaded module.
 bool validateBundle(const Bundle& bundle, QString* reason = nullptr);
 
+/// `validateBundle` with a trust-on-unchanged fast path.
+///
+/// A full validation hashes every declared file, which on a native bundle is
+/// most of a gigabyte; doing that on every start is what made a launch take half
+/// a minute. This computes a stat-only fingerprint of the tree first - every
+/// file's relative path, size and modification time - and when it matches a
+/// previously validated fingerprint, the earlier verdict is trusted.
+///
+/// Only a *valid* verdict is remembered: a failure is re-probed on the next call
+/// so a repaired bundle or a reconnected disk is never remembered as broken.
+/// `invalidateBundleValidation` drops a remembered verdict, which is what the
+/// load-failure path does so a bundle that stops working is re-hashed.
+bool validateBundleCached(const Bundle& bundle, QString* reason = nullptr);
+
+/// Drops the remembered verdict for `root`, so the next check hashes again.
+void invalidateBundleValidation(const QString& root);
+
 /// Valid bundles under `roots`, best first. Defaults to the app-owned runtime
 /// storage plus `native/runtime` beside the executable; within each root the
 /// `current-<kind>` pointer outranks versioned directories, newest first.
@@ -162,6 +179,13 @@ QList<Bundle> discoverBundles(const QStringList& roots = {}, QStringList* reject
 /// by name, because that is the shape of a runtime that fails at load for
 /// reasons the user can act on.
 std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString* reason = nullptr);
+
+/// `describeStandardRuntime` with the same trust-on-unchanged cache: describing a
+/// stock runtime hashes every file beside the module and reads each DLL's
+/// imports, so the descriptor is remembered against the tree's stat-only
+/// fingerprint and rebuilt from the cache when nothing moved.
+std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath,
+                                                    QString* reason = nullptr);
 
 /// Stages into a same-volume `.staging-*` directory, copies only the verified
 /// inventory plus the manifest, re-validates the staged payload from disk,

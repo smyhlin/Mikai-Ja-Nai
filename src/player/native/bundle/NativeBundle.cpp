@@ -8,6 +8,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -1100,6 +1101,252 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
     return bundle;
 }
 
+// --------------------------------------------------------- validation cache
+
+namespace {
+
+constexpr const char* kCacheFileName = "verified.json";
+// Bumped when the entry shape changes, so a cache written by an older build is
+// ignored rather than half-read: version 2 records the root on a stock entry so
+// an invalidation can drop it.
+constexpr const char* kCacheSchema = "mikai.native.cache/2";
+
+QString cachePath() {
+    // MIKAI_NATIVE_CACHE lets a test point the cache at its own temporary
+    // directory instead of the one the installed app uses.
+    const QString override = qEnvironmentVariable("MIKAI_NATIVE_CACHE");
+    if (!override.isEmpty()) return override;
+    return QDir(nativeStorageRoot()).filePath(QString::fromLatin1(kCacheFileName));
+}
+
+QJsonObject readCacheObject() {
+    QFile file(cachePath());
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) return {};
+    const QJsonObject object = document.object();
+    if (object.value(QStringLiteral("schema")).toString() != QLatin1String(kCacheSchema)) return {};
+    return object;
+}
+
+bool writeCacheObject(const QJsonObject& object) {
+    QDir().mkpath(nativeStorageRoot());
+    QSaveFile file(cachePath());
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    const QByteArray payload = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    return file.write(payload) == payload.size() && file.commit();
+}
+
+/// A stat-only fingerprint of a directory tree: every file's relative path, size
+/// and modification time. It answers "has anything changed", never "are the
+/// bytes right", and that is exactly what makes trusting an earlier full check
+/// bounded - a file rewritten with different content still moves its mtime, so
+/// the next start re-hashes it.
+QString treeFingerprint(const QString& root) {
+    QStringList files;
+    QString reason;
+    if (!listFilesRelative(root, &files, &reason)) return {};
+    files.sort(Qt::CaseInsensitive);
+    // A one-byte separator between fields, so ("ab", 1) and ("a", 1, "b") cannot
+    // hash the same. Held as a QByteArray because the const-char* overload is
+    // deprecated.
+    const QByteArray separator(1, '\0');
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    for (const QString& relative : files) {
+        const QFileInfo info(QDir(root).filePath(relative));
+        hash.addData(relative.toUtf8());
+        hash.addData(separator);
+        hash.addData(QByteArray::number(info.size()));
+        hash.addData(separator);
+        hash.addData(QByteArray::number(info.lastModified().toMSecsSinceEpoch()));
+        hash.addData(separator);
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QJsonObject descriptorToJson(const Bundle& bundle) {
+    QJsonArray files;
+    for (const BundleFile& file : bundle.files) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("path"), file.path);
+        entry.insert(QStringLiteral("bytes"), file.bytes);
+        entry.insert(QStringLiteral("sha256"), file.sha256);
+        files.append(entry);
+    }
+    QJsonObject object;
+    object.insert(QStringLiteral("root"), bundle.root);
+    object.insert(QStringLiteral("modulePath"), bundle.modulePath);
+    object.insert(QStringLiteral("descriptorId"), bundle.descriptorId);
+    object.insert(QStringLiteral("version"), bundle.version);
+    object.insert(QStringLiteral("deps"), QJsonArray::fromStringList(bundle.deps));
+    object.insert(QStringLiteral("files"), files);
+    return object;
+}
+
+std::optional<Bundle> descriptorFromJson(const QJsonObject& object) {
+    Bundle bundle;
+    bundle.kind = BundleKind::Standard;
+    bundle.root = object.value(QStringLiteral("root")).toString();
+    bundle.modulePath = object.value(QStringLiteral("modulePath")).toString();
+    bundle.descriptorId = object.value(QStringLiteral("descriptorId")).toString();
+    bundle.version = object.value(QStringLiteral("version")).toString();
+    for (const QJsonValue& value : object.value(QStringLiteral("deps")).toArray())
+        bundle.deps.append(value.toString());
+    for (const QJsonValue& value : object.value(QStringLiteral("files")).toArray()) {
+        const QJsonObject entry = value.toObject();
+        BundleFile file;
+        file.path = entry.value(QStringLiteral("path")).toString();
+        file.bytes = static_cast<qint64>(entry.value(QStringLiteral("bytes")).toDouble());
+        file.sha256 = entry.value(QStringLiteral("sha256")).toString();
+        if (file.path.isEmpty() || file.sha256.isEmpty()) return std::nullopt;
+        bundle.files.append(file);
+    }
+    if (bundle.root.isEmpty() || bundle.files.isEmpty()) return std::nullopt;
+    return bundle;
+}
+
+}  // namespace
+
+bool validateBundleCached(const Bundle& bundle, QString* reason) {
+    const QString key = QDir::cleanPath(bundle.root);
+    const QString fingerprint = treeFingerprint(bundle.root);
+    QJsonObject cache = readCacheObject();
+    const QJsonArray validations = cache.value(QStringLiteral("validations")).toArray();
+
+    if (!fingerprint.isEmpty()) {
+        for (const QJsonValue& value : validations) {
+            const QJsonObject entry = value.toObject();
+            if (entry.value(QStringLiteral("root")).toString().compare(key, pathCaseSensitivity()) ==
+                    0 &&
+                entry.value(QStringLiteral("fingerprint")).toString() == fingerprint) {
+                setReason(reason, QString{});
+                return true;
+            }
+        }
+    }
+
+    if (!validateBundle(bundle, reason)) {
+        // A failure is never cached: a bundle that was just repaired, or a disk
+        // that was just reconnected, must be re-probed rather than remembered as
+        // broken.
+        QJsonArray kept;
+        for (const QJsonValue& value : validations) {
+            if (value.toObject().value(QStringLiteral("root")).toString().compare(
+                    key, pathCaseSensitivity()) != 0) {
+                kept.append(value);
+            }
+        }
+        cache.insert(QStringLiteral("schema"), QString::fromLatin1(kCacheSchema));
+        cache.insert(QStringLiteral("validations"), kept);
+        writeCacheObject(cache);
+        return false;
+    }
+
+    if (!fingerprint.isEmpty()) {
+        QJsonArray kept;
+        for (const QJsonValue& value : validations) {
+            if (value.toObject().value(QStringLiteral("root")).toString().compare(
+                    key, pathCaseSensitivity()) != 0) {
+                kept.append(value);
+            }
+        }
+        QJsonObject entry;
+        entry.insert(QStringLiteral("root"), key);
+        entry.insert(QStringLiteral("fingerprint"), fingerprint);
+        entry.insert(QStringLiteral("checkedAt"),
+                     QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        kept.append(entry);
+        cache.insert(QStringLiteral("schema"), QString::fromLatin1(kCacheSchema));
+        cache.insert(QStringLiteral("validations"), kept);
+        writeCacheObject(cache);
+    }
+    return true;
+}
+
+std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, QString* reason) {
+    const QString canonical = QFileInfo(modulePath).canonicalFilePath();
+    const QString root =
+        canonical.isEmpty() ? QString{} : QFileInfo(canonical).absolutePath();
+    const QString fingerprint = root.isEmpty() ? QString{} : treeFingerprint(root);
+    QJsonObject cache = readCacheObject();
+    const QJsonArray stock = cache.value(QStringLiteral("stock")).toArray();
+
+    if (!fingerprint.isEmpty()) {
+        for (const QJsonValue& value : stock) {
+            const QJsonObject entry = value.toObject();
+            if (entry.value(QStringLiteral("modulePath")).toString().compare(
+                    canonical, pathCaseSensitivity()) == 0 &&
+                entry.value(QStringLiteral("fingerprint")).toString() == fingerprint) {
+                const std::optional<Bundle> restored =
+                    descriptorFromJson(entry.value(QStringLiteral("descriptor")).toObject());
+                if (restored.has_value()) {
+                    setReason(reason, QString{});
+                    return restored;
+                }
+            }
+        }
+    }
+
+    const std::optional<Bundle> bundle = describeStandardRuntime(modulePath, reason);
+
+    // Whatever this module had recorded is dropped either way: a describe that
+    // succeeded replaces it, and one that failed because the module is no longer
+    // a usable image leaves nothing worth remembering. A stale entry could not
+    // be trusted anyway - its fingerprint no longer matches - but leaving it
+    // behind means a cache that only ever grows.
+    QJsonArray kept;
+    for (const QJsonValue& value : stock) {
+        if (value.toObject().value(QStringLiteral("modulePath")).toString().compare(
+                canonical, pathCaseSensitivity()) != 0) {
+            kept.append(value);
+        }
+    }
+    if (bundle.has_value() && !fingerprint.isEmpty()) {
+        QJsonObject entry;
+        entry.insert(QStringLiteral("modulePath"), canonical);
+        // The root is recorded so an invalidation can drop this descriptor too:
+        // a stock runtime that stops loading must be described again from its
+        // bytes, not answered from the descriptor it just failed under.
+        entry.insert(QStringLiteral("root"), QDir::cleanPath(bundle->root));
+        entry.insert(QStringLiteral("fingerprint"), fingerprint);
+        entry.insert(QStringLiteral("descriptor"), descriptorToJson(*bundle));
+        kept.append(entry);
+    }
+    cache.insert(QStringLiteral("schema"), QString::fromLatin1(kCacheSchema));
+    cache.insert(QStringLiteral("stock"), kept);
+    writeCacheObject(cache);
+    return bundle;
+}
+
+void invalidateBundleValidation(const QString& root) {
+    const QString key = QDir::cleanPath(root);
+    QJsonObject cache = readCacheObject();
+
+    QJsonArray kept;
+    for (const QJsonValue& value : cache.value(QStringLiteral("validations")).toArray()) {
+        if (value.toObject().value(QStringLiteral("root")).toString().compare(
+                key, pathCaseSensitivity()) != 0) {
+            kept.append(value);
+        }
+    }
+    cache.insert(QStringLiteral("schema"), QString::fromLatin1(kCacheSchema));
+    cache.insert(QStringLiteral("validations"), kept);
+
+    // A described stock runtime is cached under the same root as the bundle
+    // built from it, so both have to go: keeping the descriptor would answer the
+    // next start with the very description the loader just refused.
+    QJsonArray keptStock;
+    for (const QJsonValue& value : cache.value(QStringLiteral("stock")).toArray()) {
+        if (value.toObject().value(QStringLiteral("root")).toString().compare(
+                key, pathCaseSensitivity()) != 0) {
+            keptStock.append(value);
+        }
+    }
+    cache.insert(QStringLiteral("stock"), keptStock);
+    writeCacheObject(cache);
+}
+
 // --------------------------------------------------------------- discovery
 
 QList<Bundle> discoverBundles(const QStringList& roots, QStringList* rejections) {
@@ -1133,7 +1380,7 @@ QList<Bundle> discoverBundles(const QStringList& roots, QStringList* rejections)
             return;
         }
         QString validateReason;
-        if (!validateBundle(*bundle, &validateReason)) {
+        if (!validateBundleCached(*bundle, &validateReason)) {
             if (rejections) rejections->append(QStringLiteral("%1: %2").arg(root, validateReason));
             return;
         }

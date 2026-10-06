@@ -99,7 +99,7 @@ RuntimeSelection describeLegacyStandard(const QString& hint) {
     QStringList rejections;
     for (const QString& module : modules) {
         QString reason;
-        const std::optional<Bundle> bundle = describeStandardRuntime(module, &reason);
+        const std::optional<Bundle> bundle = describeStandardRuntimeCached(module, &reason);
         if (bundle.has_value()) {
             return describe(*bundle, RuntimeChoice::Standard);
         }
@@ -400,7 +400,10 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
     // was replaced or edited since resolve is refused by name here instead of
     // being loaded stale. This is the check the resolve half deliberately skips.
     QString reason;
-    if (!validateBundle(bundle, &reason)) {
+    if (!validateBundleCached(bundle, &reason)) {
+        // A bundle that stops validating is dropped from the cache as well, so
+        // the next start re-hashes it rather than trusting a stale verdict.
+        invalidateBundleValidation(bundle.root);
         RuntimeSelection stale = resolved;
         stale.loaded = false;
         stale.runtimeUnavailable = true;
@@ -415,6 +418,10 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
     // directories and protocol travel with it, so nothing the resolve checked is
     // reconstructed or lost on the way here.
     if (!MpvApi::instance().load(bundle.toMpvBundleDescriptor(), &reason)) {
+        // This is the "something broke in the flow" case: the bundle passed its
+        // checks but the loader refused it, so the remembered verdict is dropped
+        // and the next start proves the bytes again instead of trusting them.
+        invalidateBundleValidation(bundle.root);
         RuntimeSelection failed = resolved;
         failed.loaded = false;
         failed.runtimeUnavailable = true;
