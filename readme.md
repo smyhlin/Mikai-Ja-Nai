@@ -102,6 +102,22 @@ writes `mikai-crash-<timestamp>.txt` carrying the exception code, the faulting
 module, and the tail of the session log. A session that starts with an old
 crash report still on disk says so in the log.
 
+The `dist` target assembles a self-contained folder into `dist-mikai/` instead:
+
+```sh
+cmake --build build/release --target dist
+```
+
+That runs `windeployqt` (so a manual `windeployqt` call is not needed), copies
+the 49 shaders and the translations, and writes `run.bat` and `VERSION`. A local
+mpv runtime is copied in when one is present; when it is not, the first playback
+logs the provisioning line and downloads one. `MIKAI_DIST_NATIVE` (OFF by
+default) additionally copies the installed `native/runtime`. The dist never
+ships the downloadable elements - the GPU-specific TensorRT packs and the
+licence-restricted model graphs are fetched per machine and proved by digest
+there - and any `components/` or `assets/` tree a copied native bundle carried
+is removed, because a folder handed to someone else must not carry them.
+
 ## Tests
 
 ```sh
@@ -166,7 +182,14 @@ what the retry phase needs.
 `mikai_tests` also carries the runtime-loader and native-contract suites
 (`TestRuntimeSelection`, `TestMpvAsync`, `TestNative*`); they run hermetically,
 exercising a real core only when `MIKAI_MPV_MODULE` names one and skipping
-otherwise. Adding `-DMIKAI_WITH_MODEL_INSPECTION=ON -DORT_INCLUDE_DIR=<onnxruntime>/include`
+otherwise. `TestNativeComponents` covers the pinned catalogue, the store record
+round-trip, digest re-verification that catches a same-length replacement, and
+the toolchain's four source rules. The harness also records every suite name it
+was handed and fails the run when a registered suite was never executed: a name
+without a `run()` call is stripped from QTest's arguments and then silently
+skipped, which is how the component suite itself was invisible rather than
+failing. Current observed state is **31 suites PASS** with `TestLiveOracle`
+deliberately skipped (no key), in ~15 s, with zero compiler warnings. Adding `-DMIKAI_WITH_MODEL_INSPECTION=ON -DORT_INCLUDE_DIR=<onnxruntime>/include`
 builds a CPU-only ONNX model inspector and its `TestNativeCatalog` suite; it is
 not a GPU/DirectML/TensorRT path, and the default build has no ONNX Runtime
 dependency. These probes and the suite are hand-run checks, not a CI pipeline.
@@ -216,7 +239,18 @@ real picker, HTTP, same-URL retry and file URL). `native_settings_probe`,
 `rife_settings_probe` (both languages),
 `native_menu_probe`, `native_status_probe`, `runtime_selection_probe`,
 `spatial_assets_probe` and the ORT-backed `native_assets_probe`
-(`MIKAI_ORT_RUNTIME_DIR` naming the runtime directory) pass either way. The
+(`MIKAI_ORT_RUNTIME_DIR` naming the runtime directory) pass either way.
+`native_component_probe` is the falsifiable check for the TensorRT pack choice:
+`--print` reads the real device and the resolved bin directories, `--fetch`
+pre-populates the store and prints every installed file's size and digest, and
+`--from-sdk` stages a same-release runtime+resource pair and runs the real
+builder — with the GPU's own pack it builds (`RESULT: PASS`), and with another
+generation's it fails naming the missing resource (exit 4), which is what proves
+the selection decides the outcome. `engine_popup_probe` drives the player's
+preparation window through its public API and reports 13 requirements PASS,
+including that nothing shows before a build is announced, that Cancel reaches
+the host, that a failure stays up naming its reason, and that a finished build
+dismisses its own window. The
 `compare_probe` accepts an optional media file argument. A failed direct-media
 stream shows its error with a Retry chip that survives chrome auto-hide;
 replacing the player deletes the old dialog synchronously, so no parked core
@@ -245,7 +279,8 @@ Labels shown in these examples use Ukrainian; the interface can also run in Engl
 - **Player** — a player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. It opens full screen, and the `><` / `<>` buttons beside the PiP icon — or a double click on the picture, or `F` / `F11` — toggle a real decorated native window, so leaving full screen restores the previous windowed geometry and the OS titlebar handles dragging, resizing, snap layouts and moving the window to another monitor. The toggle is scoped to the player; the app's main window is unaffected. The picture fills the window edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports network throughput, decoded FPS and, while enhancement is active, the source-to-output resolution. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float drops the video into a small always-on-top window with its own overlaid controls — click to pause, hold and drag to move it.
 - **Anime4K** — the dock's sparkle button opens **Покращення**, whose **Anime4K** row opens a tree on hover: resting on a row opens the level under it as a panel beside the one it sits in, so the four categories - *Швидкість* (Fast A/B/C), *Якість* (HQ A/B/C), *Максимум* (the double-restore chains) and *Експериментальні* (3D Graphics, Old Film Restore, Deblur, plus single-file Noise Reduction, Thin Lines, Texture Enhancement and Darken presets). **Вимкнено** turns enhancement off. The choice is applied to the running mpv core, so it lands on the next rendered frame without reopening the episode, and it is remembered across runs. The same tree lists **RIFE**, **RealESRGAN** and **Інші моделі** as panels of their own, each holding a disabled *В планах* leaf: they have no engine yet, no model in them executes, and nothing can be chosen — RIFE because its producer is unavailable (ESC-1), RealESRGAN and Інші моделі simply planned. The presets live in `shaders/` and are deployed next to the executable; the enhancement control hides itself if that folder did not ship.
 - **External video** — the home-page **Відкрити відео** menu opens a local file or a media/stream URL in the built-in mpv player. Standalone playback keeps seeking, volume, speed, PiP, **Enhancements → Anime4K**, and the picture's right-click **Порівняти якість** action, but has no anime quality selector, episode list, or release picker. URLs go directly to mpv; anime-provider page extraction is not used. A failed source displays an error, and **Повторити** retries that same file or URL.
-- **Settings** — the API token with its live quota, a checklist of home blocks, and an **Interface language** selector for system, English, or Ukrainian. A disabled block is never requested. The **Presets** tab assigns a one-keypress shortcut to every Anime4K preset; duplicate assignments are rejected and built-in player keys remain reserved.
+- **Settings** — the API token with its live quota, a checklist of home blocks, and an **Interface language** selector for system, English, or Ukrainian. A disabled block is never requested. The **Presets** tab assigns a one-keypress shortcut to every Anime4K preset; duplicate assignments are rejected and built-in player keys remain reserved. The **Processing** tab carries the native pipeline (owned-model inventory, prepared-artifact cache, pinned source graphs, the TensorRT toolchain readout and one-shot preparation); the **Components** tab lists every downloadable backend element with its install state, a manual digest re-check and a downloader. On startup with the Native runtime selected and this GPU's packs missing from both the bundle and the store, a warning offers **Download / Skip for now / Skip and never ask**; the prompt is the gate, so nothing is downloaded before the viewer chooses.
+- **Backend components** — the TensorRT builder packs are GPU-specific and are not shipped: on startup and in the Components tab the app selects the exact `trt-sm{MA}{MI}` pack for the observed compute capability (or `trt-ptx` when the release publishes no pack for that generation), downloads it on this machine, proves every file by digest and stores it in the app-owned `%LOCALAPPDATA%` component store. A bundle that already declares this GPU's resource is used as-is and nothing is downloaded. A TensorRT build is minutes long, so while it runs the player shows an always-on-top preparation window that steps over the plan's own stage count and invents no percentage; a failure stays up until dismissed, a success leaves on its own.
 
 ### Anime4K handoff
 
@@ -362,6 +397,20 @@ candidate plays real 320×180 HEVC video through the owned runtime with Native
 off (0 decoder and 0 VO drops), but the bundle candidate still aborts
 verification on a `GGML` initializer (fix in flight, no PASS yet). It is not on
 this build path and no native SDK is needed to build the app.
+
+Alongside that track, the GPU-adaptive TensorRT components are fetched at run
+time rather than shipped: the pinned AnimeJaNai `3.6.3` packs (`trt-runtime`,
+one builder resource per published generation, and `trt-ptx`) carry pinned
+asset byte counts and SHA-256; the app reads the compute capability from the
+installed driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx`
+when the release publishes none for that generation), downloads the missing
+set on this machine, and proves every file by digest into the app-owned
+`%LOCALAPPDATA%` component store. A bundle that already declares this GPU's
+resource is used as-is and nothing is downloaded. Bundle validation is served
+from a stat-only cache (`verified.json` under the app-owned native root): the
+first start after a change re-hashes (about 18 s here), every start after lands
+in about half a second. The tree compiles with zero warnings under `-Wall
+-Wextra -Wno-unused-parameter -Wno-cast-function-type`.
 
 The `mikai_tests` target and shader-using probes deploy `shaders/` beside their
 executables during their own builds; building only the test target in a fresh

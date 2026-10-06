@@ -8,9 +8,14 @@ C++/Qt6 desktop client for the Mikai public anime API
 carousels (recently opened / ongoing / popular) plus updates and schedule rows;
 search with a format filter bar; a title page with detail, related titles,
 per-release tabs, and a compact episode grid where a click fetches that
-episode's qualities once and opens the built-in player. `docs.md` is the
-authoritative API contract; `.env` holds the optional key; `skills/design-ui/`
-carries OS-native UI guidance.
+episode's qualities once and opens the built-in player. Settings carries four
+tabs — General, Presets, Processing and **Components** — and the Components tab
+lists every downloadable backend element (the GPU-specific TensorRT packs and the
+pinned model graphs) with its install state, a manual digest re-check, and a
+download that fills in what the machine lacks. `docs.md` is the authoritative API
+contract; `.env` holds the optional key; `skills/design-ui/` carries OS-native UI
+guidance. `cmake/dist.cmake` assembles a self-contained folder behind the `dist`
+target; it never ships the downloadable elements.
 
 ## Architecture & Data Flow
 
@@ -29,12 +34,13 @@ Layering is strict and enforced by tests:
 - `src/app/` is the only widget layer and talks to the domain through
   `mikai::backend::MikaiClient` (blocking calls; threads via `Runner`).
 - UI never blocks the GUI thread: pages submit work to `Runner`
-  (`src/app/workers/Runner.hpp`) with three `QThreadPool`s — shared (4),
+  (`src/app/workers/Runner.hpp`) with four `QThreadPool`s — shared (4),
   bulk (3) for feed fan-out so a title the user just opened is not queued
-  behind the whole feed, and image (12) for artwork only. `fetchBytes`
-  bypasses the client's rate limiter entirely, so posters cost no API budget
-  and are pure latency. `waitForDone(ms)` drains bulk and image pools first,
-  then the shared one.
+  behind the whole feed, stream (2) for stream extraction, which is
+  latency-critical and holds its thread across two sequential GETs, and image
+  (12) for artwork only. `fetchBytes` bypasses the client's rate limiter
+  entirely, so posters cost no API budget and are pure latency. `waitForDone(ms)`
+  drains the bulk, stream and image pools first, then the shared one.
   The owning widget parents `Runner`, which parents its pools. Its dispatcher
   has no QObject parent: only `shared_ptr` owns that allocation, including
   while completions are queued.
@@ -140,6 +146,37 @@ Layering is strict and enforced by tests:
   one, and Qt sends none by default.
 - Identity: `{ref}` is a bare Mikai id or `mal:21` / `al:21` / `hikka:…` /
   `slug:…`. Incremental sync via `/updates`, never full-catalog polling.
+- **Bundle validation is cached, because re-hashing it on every start cost half a
+  minute.** `validateBundleCached` and `describeStandardRuntimeCached` compute a
+  stat-only fingerprint first — every file's relative path, size and modification
+  time — and answer from a previously validated verdict while nothing moved. Only
+  a *valid* verdict is remembered: a failure is re-probed on every call, so a
+  repaired bundle or a reconnected disk is never remembered as broken, and
+  `invalidateBundleValidation` drops a verdict outright — `commitRuntime` calls it
+  when the loader refuses the bundle, and the stock descriptor goes with it. The
+  cache is `verified.json` under the app-owned native root (schema
+  `mikai.native.cache/2`), a derived artefact that is ignored rather than
+  half-read when its schema does not match. Measured from the app's own log: 23.8 s
+  before, 18.1 s on a cold cache, ~0.6 s on every start after.
+- **The downloadable elements live outside the app and outside any dist.** The
+  component store (`<nativeRoot>/components/tensorrt/3.6.3`) and the model asset
+  store are per-machine download caches under `%LOCALAPPDATA%`; each element is
+  GPU-specific or licence-restricted, so it is fetched where it runs and proved by
+  digest before it is stored. Nothing in `dist-mikai/` carries them.
+- **The startup component check asks before it fetches.** `MainWindow` runs it
+  after the runtime selection: when the Native runtime is chosen and this GPU's
+  packs are absent from both the bundle and the store, a warning offers
+  **Download / Skip for now / Skip and never ask**. The prompt is the gate, so
+  nothing is downloaded before the viewer chooses — running the check earlier made
+  a Native start pull hundreds of megabytes before the first paint. "Skip and
+  never ask" persists `componentsPromptDismissed` in the `player/native` settings
+  group and deliberately survives a preferences reset, so clearing the Processing
+  tab's request fields cannot re-arm a muted prompt.
+- **An engine build is visible while it runs.** A TensorRT build takes minutes and
+  starts from a modal dialog, so the player shows `ProcessingOverlay` — a native
+  always-on-top tool window rather than an in-window child, which would sit behind
+  the dialog. Its bar steps over the plan's own stage count and invents no
+  percentage; a failure stays up until dismissed, a success leaves on its own.
 
 ## Key Directories
 
@@ -148,6 +185,10 @@ Layering is strict and enforced by tests:
     `browsePopular`, `getAnime`, `getPlayer`, `getUpdates`, `getSchedule`,
     `fetchBytes`, `apiKey`, `setApiKey`, `validateApiKey`,
     `rateLimitState`) plus `RateLimiter` and `.env` persistence.
+    `fetchBytes(url, timeoutMs = -1)` is the one transport callers use for large
+    non-artwork payloads: a negative value keeps the artwork default, and the
+    model downloader asks for its own budget, because 20 s is an artwork figure
+    that aborts a graph download on a slow link.
   - `Models.hpp/cpp` — structs (`AnimeSummary`, `AnimeDetail`, `Release`,
     `Episode`, `Source`, `Team`, `SearchResult`, `UpdatesResult`,
     `ScheduleResult`, `PlayerResult`, …) with `displayName`, `thumbUrl`
@@ -155,9 +196,18 @@ Layering is strict and enforced by tests:
   - `Releases.hpp/cpp` — `playableEpisodeCount`, `sortReleases`.
   - `Errors.hpp` — only `MikaiApiError{code, message, status}`.
   - `Streams.hpp/cpp` — HLS extraction per site; `NoSourceError`.
-  - `Runtime.hpp/cpp` — stock mpv discovery at runtime (`findRuntime`) and the
-    auto-download provisioning (`ensureRuntime`) the recovery path may run
+  - `Runtime.hpp/cpp` — stock mpv discovery at runtime (`runtimeCandidates`) and
+    the auto-download provisioning (`provisionRuntime`) the recovery path may run
     (`%LOCALAPPDATA%/MPVBackend/runtime`). It finds a DLL; it never loads one.
+  - `Downloads.hpp/cpp` — the one transport every downloader shares:
+    `fetchUrlBytes` (one GET, whole body in memory), `downloadToFile` (streams to
+    a file, hashes as it writes, refuses a size or digest mismatch, removes the
+    partial file on every failure path including cancellation, and bounds silence
+    with a 60 s stall watchdog restarted per chunk while polling cancellation
+    every 200 ms), `ensureSevenZip`, `extractArchive`. Progress is throttled to
+    one report per 100 ms plus a guaranteed terminal one: a per-chunk report
+    posts a GUI update for every few kilobytes of a 400 MB asset.
+    `provisionRuntime()` is cut over to it, so the 7z invocation exists once.
 - `src/app/` — the Qt Widgets frontend, namespace `mikai::app`:
   - `main.cpp` — entrypoint (application/organization names, locale translators,
     Fusion style and one `setStyleSheet`, then `selectPlayerRuntime()` and
@@ -176,8 +226,16 @@ Layering is strict and enforced by tests:
     `RateLimitLabel` (RPM indicator).
   - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles, preset
     shortcuts, and the Standard/Native **Runtime module** choice),
+    `ComponentStoreTab` (the Components tab: the compatible component packs plus
+    the five pinned model graphs, each with install state, a Verify that re-hashes
+    the bytes, and a Download-missing), `NativeAssetsPanel` (the Processing tab's
+    owned-model inventory, artifact cache and source-asset store),
     `CoverViewer` (chromeless full-screen cover with zoom/pan).
-  - `state/` — `Feeds` (home-block toggles), `QualityCache`.
+  - `state/` — `Feeds` (home-block toggles), `QualityCache`,
+    `NativeComponentProvisioner` (the app-side component driver: `ensure()` is the
+    bundle-aware path, `ensureStore()` the tab's explicit autofix,
+    `needsDownload()` a side-effect-free question, and one single-flight worker
+    with a cancellation gate).
   - `workers/` — `Runner` (pools 4/3/12).
   - `theme/` — `Colors.hpp`, `Metrics.hpp`, `Theme.hpp/cpp`
     (`buildStylesheet()`), `Icons.hpp/cpp` (painted glyphs, never emoji).
@@ -257,6 +315,24 @@ Layering is strict and enforced by tests:
   `NativePrefs`/`NativeMenu` carry the profile and recipe model. Compiled into
   the app unconditionally; `MIKAI_WITH_MODEL_INSPECTION` only adds the optional
   CPU inspector.
+  - `components/` — the GPU-adaptive TensorRT components. `NativeComponentCatalog`
+    pins the AnimeJaNai `3.6.3` packs by asset byte count and SHA-256 and selects
+    the exact `trt-sm{MA}{MI}` pack when the release publishes one, otherwise
+    `trt-ptx`, and `nullptr` for a shape the name cannot express rather than an
+    approximation onto a neighbour; `trtexec.exe` is deliberately absent.
+    `NativeGpuProbe` reads the compute capability from the installed driver's
+    NVML, loading `nvml.dll` only from System32 and returning a named refusal
+    (`native.gpu.nvmlMissing` / `deviceMissing` / `capabilityUnreported`) rather
+    than a default. `NativeComponentStore` installs a verified pack into the
+    app-owned `<nativeRoot>/components/tensorrt/3.6.3` and records what it proved
+    (`component.json`, schema `mikai.native.components/1`); `storedPack` trusts the
+    recorded size while `verifyPack` re-hashes, and `installPack` streams
+    source→target hashing as it copies, so a copy that does not reproduce the
+    source digest is refused instead of recorded. `NativeComponentToolchain`
+    decides which directory the builder's PATH gets: the bundle's own trt/cuda
+    dirs when the bundle declares this GPU's resource, else the store's matched
+    runtime+resource pair, else a named refusal. `NativeComponentProvisioning`
+    downloads, extracts and installs a pack set, single-flight per process.
 - `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
   by POST_BUILD rules on `mikai`, `mikai_tests` and shader-using probes.
   `Anime4K::findShadersDir` looks beside the
@@ -271,9 +347,19 @@ Layering is strict and enforced by tests:
   selection and native-panel ones are `mpv_loader_probe`,
   `runtime_selection_probe`, `resolver_probe`, `native_status_probe`,
   `native_menu_probe`, `native_settings_probe`, `rife_settings_probe`,
-  `spatial_assets_probe`, `native_prep_probe` and, only under
+  `spatial_assets_probe`, `native_prep_probe`, `native_component_probe`,
+  `engine_popup_probe` and, only under
   `MIKAI_WITH_MODEL_INSPECTION`,
-  `native_assets_probe`. `native_prep_probe` links only `Qt6::Core` and takes
+  `native_assets_probe`.
+  `native_component_probe` is the falsifiable check for the pack choice: `--print`
+  reads the real device and the resolved bin directories, `--fetch` pre-populates
+  the store and prints every installed file's size and digest, and `--from-sdk`
+  stages a same-release runtime+resource pair and runs the real builder — with the
+  GPU's own pack it builds, and with another generation's it fails naming the
+  resource that is missing, which is what proves the selection decides the
+  outcome. `engine_popup_probe` drives the player's preparation window through its
+  public API and reports 13 requirements, including that a second build reopens
+  the window and can still be cancelled. `native_prep_probe` links only `Qt6::Core` and takes
   `<helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>`, driving the
   native preparation helper against a real CUDA device; it is Windows-only and
   needs no interactive session. The
@@ -330,8 +416,13 @@ Layering is strict and enforced by tests:
   `TestMpvAsync`, `TestNativeTypes`, `TestNativeRecipe`, `TestNativeProfiles`,
   `TestNativeRife`, `TestNativeBundle`, `TestNativePrepPlan`,
   `TestNativeManifest`, `TestNativeStatus`, `TestNativePrefs`,
-  `TestNativeMenu`, `TestNativeUserRecipes`, `TestNativeAssets`, plus
-  `TestNativeCatalog` only when `MIKAI_WITH_MODEL_INSPECTION=ON`. The live
+  `TestNativeMenu`, `TestNativeUserRecipes`, `TestNativeAssets`,
+  `TestNativeComponents`, plus
+  `TestNativeCatalog` only when `MIKAI_WITH_MODEL_INSPECTION=ON`.
+  `main.cpp` also records every suite name it was handed and fails the run when a
+  name in the filter was never executed: a suite registered without a `run()` call
+  has its name stripped from QTest's arguments and then never runs, which is how
+  `TestNativeComponents` was invisible rather than failing. The live
   oracle `TestLiveOracle` is gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`
   (BLACK TORCH → ref `7428`, 7 releases with 4 dubs / 3 subs, one dub carrying
   episodes 1–12, and a 480 / 720 / 1080 ladder) and is a deliberate skip, not a
@@ -358,6 +449,23 @@ curl "https://api.mikai.me/public/v1/meta"   # API sanity check
 
 Presets (`CMakePresets.json`): `release` (default), `debug`, `native`
 (inspection ON). Build presets: `app`, `tests`, `app-native`, `tests-native`.
+
+Warnings are on for GNU/Clang — `-Wall -Wextra -Wno-unused-parameter
+-Wno-cast-function-type`, set once in `CMakeLists.txt` — and the tree builds with
+zero of them. The two suppressions are deliberate: Qt's signal/slot signatures
+leave unused parameters everywhere, and the `GetProcAddress` cast is the only way
+to load a symbol by name. Turning them on is what found a buffer overrun, a test
+suite that never ran and four functions nothing called, all of which had been
+compiling quietly.
+
+`cmake --build build/release --target dist` assembles a self-contained folder
+(`cmake/dist.cmake`, into `dist-mikai/`): the exe, its Qt runtime via
+`windeployqt`, the 49 shaders, the translations, `run.bat`, `VERSION`, and a local
+mpv runtime when one is present. It never ships the downloadable elements — the
+GPU-specific TensorRT packs and the licence-restricted model graphs are fetched per
+machine and proved by digest there — and it removes any `components/` or `assets/`
+tree a copied native bundle happened to carry. `MIKAI_DIST_NATIVE` (OFF by
+default) additionally copies `native/runtime`.
 
 `mikai.exe` links Qt dynamically, so the Qt runtime has to sit beside it or be
 on `PATH`; a fresh tree needs `windeployqt build/release/mikai.exe`. The mpv DLL
@@ -425,7 +533,22 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - `src/app/main.cpp` — entrypoint; `selectPlayerRuntime()` runs after
   `QApplication`, application identity, translators and theme setup, before any
   widget can reach an mpv core. It resolves the stored runtime choice and loads
-  the module through `MpvApi` — no load-time libmpv import, no `PATH` edit.
+  the module through `MpvApi` — no load-time libmpv import, no `PATH` edit. The
+  same first-paint turn then runs `window.ensureNativeComponents()`, which is the
+  startup component check.
+- `src/app/dialogs/ComponentStoreTab.cpp` — the Components tab. Availability is
+  the toolchain's verdict rather than the store's contents: asking the store alone
+  reported a resource the installed bundle already carries as "Not installed" and
+  made Download-missing fetch hundreds of megabytes it did not need.
+- `src/app/state/NativeComponentProvisioner.cpp` — the component driver, and the
+  only place the app starts a component download.
+- `src/backend/Downloads.cpp` — the one transport; `downloadToFile` is where the
+  stall watchdog, the cancellation poll, the digest proof and the throttled
+  progress all live.
+- `src/player/native/components/` — the pinned catalogue, the NVML probe, the
+  component store, the toolchain decision and the single-flight provisioner.
+- `cmake/dist.cmake` — the `dist` assembly, including the rule that no
+  downloadable element is ever shipped.
 - `src/backend/MikaiClient.hpp` — `RateLimiter` + `MikaiClient`; header
   documents the Cloudflare notes (lowercased headers, mandatory User-Agent).
 - `CMakeLists.txt` — targets `mikai_native_support` (STATIC, always),
@@ -492,13 +615,42 @@ ctest --test-dir build/release -R mikai_tests
 
 These are observed results, not a claim that everything is green:
 
-- A fresh isolated inspection-off build (the default,
-  `MIKAI_WITH_MODEL_INSPECTION=OFF`) built `mikai` and `mikai_tests` (exit 0),
-  and `ctest --test-dir build/release -R mikai_tests` passed in **14.82 s**
-  (14.83 s wall; one ctest entry, 24 suites PASS + `LiveOracle` SKIP). The
-  isolated inspection-on matrix built the app, tests and the listed
-  probes/helpers, and its ctest run passed in **15.17 s** (25 suites PASS +
-  `LiveOracle` SKIP). Compiler GNU 16.2, Qt 6.8.3; no linter is configured.
+- The default inspection-off build (`MIKAI_WITH_MODEL_INSPECTION=OFF`) builds
+  `mikai` and `mikai_tests` with **zero warnings and zero errors** under
+  `-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type`, and
+  `ctest --test-dir build/release -R mikai_tests` passes in ~**15 s**: one ctest
+  entry, **31 suites PASS** + `LiveOracle` SKIP. Compiler GNU 16.2, Qt 6.8.3; no
+  linter is configured. The inspection-on matrix needs `ORT_INCLUDE_DIR` and is
+  not configurable in an ordinary tree.
+- **The component path is proved end to end on the real device**, not inferred
+  from a green build:
+  - `native_component_probe --print` reports `NVIDIA GeForce RTX 5090 - SM 12.0`
+    and selects `trt-sm120` (229 417 183 B). Pointed at the installed bundle it
+    resolves the bundle's own `trt` directory with `fromStore=0`, which is the
+    fast path a machine with a fitted bundle must take.
+  - `--fetch trt-runtime,trt-sm120` downloads both pinned packs and prints every
+    installed file's size and SHA-256. The three the bundle also carries match the
+    project SDK exactly — `nvinfer_11.dll` `ab5148bc…`, `nvonnxparser_11.dll`
+    `823f7d6e…` and `nvinfer_builder_resource_sm120_11.dll` `7b616872…` — which is
+    the strongest available confirmation that the `3.6.3` packs are this project's
+    SDK.
+  - The choice is load-bearing, not incidental: `--from-sdk` with the GPU's own
+    `trt-sm120` pack builds a real engine (`RESULT: PASS`, 3 078 580 bytes of raw
+    plan, exit 0), and the same command with `trt-sm75` fails, exit 4, naming
+    `Unable to load library: nvinfer_builder_resource_sm120_11.dll: 126`.
+  - `engine_popup_probe` reports **13/13 requirements PASS**, including that no
+    window exists before a build is announced, that the bar is indeterminate
+    before a stage count exists, that Cancel reaches the host, that a failure
+    stays up naming its reason, and that a finished build dismisses its own
+    window.
+- **Startup cost, measured from the app's own log** (`mikai started` → the
+  runtime line): **23.8 s before the validation cache, 18.1 s on a cold cache,
+  and ~0.6 s on every start after.** The first start after a redeploy re-hashes
+  once, because `dist.cmake` re-copies the tree and every modification time moves.
+- **The dist folder was assembled and inspected**: `mikai.exe`, its Qt runtime and
+  plugin folders, 49 shaders, `translations/`, `run.bat`, `VERSION` (git revision +
+  UTC date) and `mpv/` from a local runtime — and **zero** `components/` or
+  `assets/` directories, which is the rule that no downloadable element is shipped.
 - `objdump -p` on the current-tree `mikai.exe` from both the default/OFF and
   review/ON builds lists imports of exactly `Qt6Core`, `Qt6Gui`, `Qt6Network`,
   `Qt6OpenGLWidgets`, `Qt6Widgets`, `KERNEL32`, `msvcrt` and `SHELL32` — **no**
@@ -577,8 +729,19 @@ The project owner granted unrestricted use of this project's own native integrat
 The guide is `native/README.md`; acquisition records are
 `native/sdk-acquisition.md`, `native/rife-acquisition.md`,
 `native/spatial-acquisition.md` and `native/videojanai-acquisition.md`. Digests,
-pins and licence reasoning live in those files and in `native/manifest/` — do
-not copy hash tables into this file. Components with no verified upstream licence must be recorded as "upstream terms not verified" (not "OpenSource", not "blocked").
+pins and licence reasoning live in those files and in `native/manifest/` — do not copy hash tables into this file. Components with no verified upstream licence must be recorded as "upstream terms not verified" (not "OpenSource", not "blocked").
+
+The installed bundle carries only the sm120 TensorRT builder resource, so on any
+other GPU `createInferBuilder` fails. That gap is closed by **provisioning rather
+than by shipping**: the app downloads the pinned AnimeJaNai `3.6.3` packs on the
+machine that needs them, proves each by digest, and stores them in the app-owned
+`%LOCALAPPDATA%` component store. It redistributes nothing — no dist folder, no
+installer and no repository content carries those bytes — and the same is true of
+the pinned model graphs. The digests and the corroborating measurements are in
+`native/manifest/animejanai-release.json`; the bundle-inventory gap entry in
+`native/manifest/components.json` now names this path instead of leaving an open
+gap. This resolves the *packaging* question only, and leaves ESC-1/ESC-2/ESC-3
+untouched.
 
 The findings live in
 `native/manifest/components.json`; read its `escalations` there rather than a

@@ -1665,7 +1665,9 @@ These are durable and checked at every task; the full acceptance catalog is in
   snapshot (§6.11) — never guessed, never defaulted to device 0; probe state is
   never `Active`; no CUDA call or hardware-context pointer crosses the Qt thread.
 - [ ] Every native storage path resolves to the single
-  `AppLocalDataLocation()/native/{runtime,models,artifacts,scratch,logs}`
-  hierarchy (§6.6).
+  `AppLocalDataLocation()/native/{runtime,models,assets,artifacts,recipes,scratch,logs,components}`
+  hierarchy (§6.6). The set grew as the work did - `assets` and `recipes` with
+  the model stores, `components` with the per-machine GPU component packs - and
+  the check is the containment itself, not the count.
 - [ ] No feature is deferred, narrowed or renamed; DirectML ships
   disabled-with-reason when unproven, never as a claim.
