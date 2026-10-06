@@ -19,6 +19,7 @@ class QAction;
 class QKeyEvent;
 class QLabel;
 class QMenu;
+class QProgressBar;
 class QPushButton;
 class QVBoxLayout;
 QT_END_NAMESPACE
@@ -152,6 +153,47 @@ protected:
 private:
     QVBoxLayout* rowsLayout_ = nullptr;
     QVector<QPushButton*> rows_;
+};
+
+/// The engine-preparation window: what the player shows while a TensorRT engine
+/// is being built.
+///
+/// It is a native tool window rather than an in-window child, unlike every other
+/// popover here, because a build is started from the settings dialog and that
+/// dialog is modal: a child of the player would sit behind it and the work would
+/// be invisible for the whole build. Staying on top of the player is what makes
+/// a long compile visible while the viewer keeps watching.
+///
+/// No percentage is invented. The bar steps over the plan's own stage count -
+/// `BuilderProgress::stageIndex` against `PreparationPlan::stages` - and a stage
+/// count of zero leaves it indeterminate rather than guessing.
+class ProcessingOverlay : public QFrame {
+    Q_OBJECT
+public:
+    explicit ProcessingOverlay(QWidget* parent = nullptr);
+
+    /// Titles the window and starts the indeterminate phase, before the plan has
+    /// resolved and therefore before any stage count exists.
+    void begin(const QString& title);
+    /// One real progress event. `stageCount` is the plan's stage count; 0 means
+    /// it is not known yet and the bar stays indeterminate.
+    void setStage(int stageIndex, int stageCount, const QString& phase, const QString& detail);
+    /// The build settled. `summary` is shown; a failure keeps the window up so a
+    /// refusal cannot vanish unread.
+    void finish(bool ok, const QString& summary);
+
+    /// Centres the window near the top of `anchor`'s screen.
+    void anchorTo(const QWidget* anchor);
+
+signals:
+    void cancelRequested();
+
+private:
+    QLabel* title_ = nullptr;
+    QLabel* detail_ = nullptr;
+    QProgressBar* progress_ = nullptr;
+    QPushButton* cancel_ = nullptr;
+    bool settled_ = false;
 };
 
 }  // namespace shell

@@ -3066,6 +3066,32 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
 
 bool PlayerDialog::isPipActive() const { return pip_ != nullptr; }
 
+void PlayerDialog::beginEnginePreparation(const QString& title) {
+    if (closed_) return;
+    if (processingOverlay_ == nullptr) {
+        processingOverlay_ = new ProcessingOverlay(this);
+        connect(processingOverlay_, &ProcessingOverlay::cancelRequested, this,
+                [this] { emit enginePreparationCancelRequested(); });
+    }
+    processingOverlay_->anchorTo(this);
+    processingOverlay_->begin(title);
+}
+
+void PlayerDialog::updateEnginePreparation(int stageIndex, int stageCount, const QString& phase,
+                                           const QString& detail) {
+    if (closed_ || processingOverlay_ == nullptr) return;
+    processingOverlay_->setStage(stageIndex, stageCount, phase, detail);
+}
+
+void PlayerDialog::endEnginePreparation(bool ok, const QString& summary) {
+    if (closed_ || processingOverlay_ == nullptr) return;
+    processingOverlay_->finish(ok, summary);
+}
+
+bool PlayerDialog::enginePreparationVisible() const {
+    return processingOverlay_ != nullptr && processingOverlay_->isVisible();
+}
+
 void PlayerDialog::togglePip() {
     // Float the video in a borderless always-on-top window. The float decodes
     // the same url in its own surface: mpv gives one core per surface, and

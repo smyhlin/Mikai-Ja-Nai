@@ -49,6 +49,7 @@ class CompareWindow;
 
 class PlayerShell;
 class MenuPopup;
+class ProcessingOverlay;
 class SeriesDrawer;
 struct MenuEntry;
 
@@ -305,7 +306,26 @@ public:
     void openSubtitlesMenu();
     void togglePip();
 
+    /// The engine-preparation window, driven by whatever is building an engine
+    /// for this core. A TensorRT build is minutes long and starts from a modal
+    /// settings dialog, so the progress has to be visible somewhere the viewer
+    /// can still see: this is a top-level always-on-top window, not a child of
+    /// the player.
+    ///
+    /// The player owns nothing about the build and never starts one; it only
+    /// renders the progress it is handed, so a build that fails to start leaves
+    /// no window behind.
+    void beginEnginePreparation(const QString& title);
+    void updateEnginePreparation(int stageIndex, int stageCount, const QString& phase,
+                                 const QString& detail);
+    void endEnginePreparation(bool ok, const QString& summary);
+    /// True while the preparation window is up.
+    bool enginePreparationVisible() const;
+
 signals:
+    /// The viewer pressed Cancel on the preparation window. The host owns the
+    /// build, so it is the host that decides whether the cancellation reaches it.
+    void enginePreparationCancelRequested();
     /// The engine could not be created at all: the host should provision the
     /// mpv runtime and call startPlayer() again.
     void runtimeRequested();
@@ -515,6 +535,7 @@ private:
     MenuPopup* audioPopup_ = nullptr;
     MenuPopup* subtitlesPopup_ = nullptr;
     SeriesDrawer* seriesDrawer_ = nullptr;
+    ProcessingOverlay* processingOverlay_ = nullptr;
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;

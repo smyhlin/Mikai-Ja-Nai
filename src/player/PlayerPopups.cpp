@@ -1,13 +1,17 @@
 #include "PlayerPopups.hpp"
 
 #include <QAction>
+#include <QCursor>
 #include <QHash>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QPainter>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QScreen>
 #include <QScrollArea>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace mplayer {
@@ -479,6 +483,117 @@ void SeriesDrawer::setEntries(const QStringList& labels, int current) {
 
 int SeriesDrawer::contentHeight() const {
     return rows_.size() * (kRowHeight + 2) + 3 * kSpacingXs + 20;
+}
+
+ProcessingOverlay::ProcessingOverlay(QWidget* parent)
+    : QFrame(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
+    setAttribute(Qt::WA_ShowWithoutActivating);
+    setObjectName(QStringLiteral("processingOverlay"));
+    setStyleSheet(QStringLiteral("QFrame#processingOverlay {"
+                                 "  background-color: #14141a;"
+                                 "  border: 1px solid rgba(189, 172, 255, 0.35);"
+                                 "  border-radius: 10px; }"));
+    setFixedWidth(360);
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 14, 16, 14);
+    layout->setSpacing(kSpacingSmall);
+
+    title_ = new QLabel(this);
+    title_->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kText));
+    title_->setWordWrap(true);
+    layout->addWidget(title_);
+
+    detail_ = new QLabel(this);
+    detail_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    detail_->setWordWrap(true);
+    layout->addWidget(detail_);
+
+    progress_ = new QProgressBar(this);
+    progress_->setTextVisible(false);
+    progress_->setFixedHeight(6);
+    progress_->setRange(0, 0);
+    progress_->setStyleSheet(QStringLiteral("QProgressBar {"
+                                            "  background-color: rgba(255, 255, 255, 0.10);"
+                                            "  border: none; border-radius: 3px; }"
+                                            "QProgressBar::chunk {"
+                                            "  background-color: #bdacff; border-radius: 3px; }"));
+    layout->addWidget(progress_);
+
+    cancel_ = new QPushButton(this);
+    cancel_->setStyleSheet(rowQss(kText, "rgba(255, 255, 255, 0.08)"));
+    // One connection for the window's whole life, dispatched on what the window
+    // is showing: rewiring it per run is how a second build inherited the
+    // previous failure's Dismiss handler and could no longer be cancelled.
+    connect(cancel_, &QPushButton::clicked, this, [this] {
+        if (settled_) {
+            hide();
+            return;
+        }
+        cancel_->setEnabled(false);
+        cancel_->setText(QStringLiteral("…"));
+        emit cancelRequested();
+    });
+    layout->addWidget(cancel_);
+}
+
+void ProcessingOverlay::begin(const QString& title) {
+    settled_ = false;
+    title_->setText(title);
+    detail_->clear();
+    progress_->setRange(0, 0);
+    cancel_->setEnabled(true);
+    cancel_->setText(tr("Cancel"));
+    adjustSize();
+    show();
+    raise();
+}
+
+void ProcessingOverlay::setStage(int stageIndex, int stageCount, const QString& phase,
+                                 const QString& detail) {
+    if (settled_) return;
+    if (stageCount > 0 && stageIndex >= 0) {
+        progress_->setRange(0, stageCount);
+        progress_->setValue(qBound(0, stageIndex, stageCount));
+    } else {
+        progress_->setRange(0, 0);
+    }
+    QString text = phase;
+    if (stageIndex >= 0) {
+        text = stageCount > 0 ? tr("Stage %1 of %2: %3").arg(stageIndex).arg(stageCount).arg(phase)
+                              : tr("Stage %1: %2").arg(stageIndex).arg(phase);
+    }
+    if (!detail.isEmpty()) text += QStringLiteral(" — ") + detail;
+    detail_->setText(text);
+}
+
+void ProcessingOverlay::finish(bool ok, const QString& summary) {
+    settled_ = true;
+    cancel_->setEnabled(false);
+    progress_->setRange(0, ok ? 1 : 0);
+    if (ok) progress_->setValue(1);
+    detail_->setText(summary);
+    title_->setText(ok ? tr("Engine ready") : tr("Engine build stopped"));
+    // A success has nothing left to read, so it leaves on its own; a failure
+    // stays until the viewer dismisses it, because a refusal that disappears is
+    // a refusal nobody saw.
+    if (ok) {
+        QTimer::singleShot(1500, this, [this] { hide(); });
+    } else {
+        cancel_->setText(tr("Dismiss"));
+        cancel_->setEnabled(true);
+    }
+}
+
+void ProcessingOverlay::anchorTo(const QWidget* anchor) {
+    if (anchor == nullptr) return;
+    const QRect area = anchor->screen() != nullptr ? anchor->screen()->availableGeometry()
+                                                   : QRect();
+    adjustSize();
+    const QPoint centre = area.isNull() ? QCursor::pos() : area.center();
+    const int x = area.isNull() ? centre.x() : area.x() + (area.width() - width()) / 2;
+    const int y = area.isNull() ? centre.y() : area.y() + 80;
+    move(qMax(0, x), qMax(0, y));
 }
 
 }  // namespace shell
