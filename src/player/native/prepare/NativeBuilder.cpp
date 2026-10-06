@@ -791,15 +791,6 @@ bool reqString(const QJsonObject& object, const char* key, QString* out) {
   return true;
 }
 
-bool reqBool(const QJsonObject& object, const char* key, bool* out) {
-  const QJsonValue value = object.value(QString::fromLatin1(key));
-  if (!value.isBool()) {
-    return false;
-  }
-  *out = value.toBool();
-  return true;
-}
-
 bool reqInt(const QJsonObject& object, const char* key, qint64* out) {
   const QJsonValue value = object.value(QString::fromLatin1(key));
   if (!value.isDouble()) {
@@ -932,7 +923,6 @@ bool parseDeviceEvent(const QJsonObject& event, MeasuredPrep* measured, QString*
   qint64 cudaRuntime = 0;
   qint64 cudaDriverApi = 0;
   qint64 trtLib = 0;
-  qint64 workspaceRequested = 0;
   if (!reqInt(event, "deviceOrdinal", &ordinal)) {
     return fail("deviceOrdinal");
   }
@@ -1623,13 +1613,6 @@ bool preflight(const BuilderRequest& request, Preflight* out, QString* key,
     return false;
   }
   return true;
-}
-
-QString modelPathFor(const BuilderRequest& request, int index) {
-  if (index < 0 || index >= request.models.size()) {
-    return {};
-  }
-  return request.models.at(index).storedPath;
 }
 
 bool validateCallerRef(const BuilderStageReference& ref, const ResolvedStage& stage,

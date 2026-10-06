@@ -254,11 +254,6 @@ QStringList probeDeviceKeys() {
           QStringLiteral("adapterLuid"), QStringLiteral("smMajor"), QStringLiteral("smMinor")};
 }
 
-QStringList innerTagKeys() {
-  return {QStringLiteral("schema"), QStringLiteral("protocol"), QStringLiteral("revision"),
-          QStringLiteral("snapshot")};
-}
-
 bool rateComponentOk(int value) {
   return value > 0 && value <= kNativeStatusMaxRateComponent;
 }

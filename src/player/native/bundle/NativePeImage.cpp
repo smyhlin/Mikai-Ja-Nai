@@ -31,11 +31,6 @@ constexpr qsizetype kExportNumberOfFunctionsOffset = 20; // NumberOfFunctions
 
 /// Little-endian readers over a buffer that is never trusted. A short read
 /// yields 0, and the caller checks the length separately before using a value.
-quint8 u8(const QByteArray& b, qsizetype at) {
-    if (at < 0 || at + 1 > b.size()) return 0;
-    return static_cast<quint8>(b.at(at));
-}
-
 quint16 u16(const QByteArray& b, qsizetype at) {
     if (at < 0 || at + 2 > b.size()) return 0;
     return quint16(quint8(b.at(at))) | (quint16(quint8(b.at(at + 1))) << 8);
