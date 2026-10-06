@@ -42,6 +42,10 @@ inline constexpr char kNativeBackendKey[] = "backend";
 inline constexpr char kNativeRecipeKey[] = "recipe";
 inline constexpr char kNativeCustomModelsDirKey[] = "customModelsDir";
 inline constexpr char kNativeToggleProcessingKey[] = "toggleProcessing";
+/// Set when the viewer dismissed the startup missing-components prompt with
+/// "Skip and never ask". Read-only by convention: the only writer is the
+/// startup prompt itself, and clearing it means asking again.
+inline constexpr char kNativeComponentsPromptDismissedKey[] = "componentsPromptDismissed";
 
 /// One key that did not load as stored, and the fact that explains it.
 struct NativePreferenceIssue {
@@ -130,8 +134,16 @@ struct NativePreferencePatch {
 bool saveNativePreferences(const NativePreferencePatch& patch, QString* reason = nullptr);
 
 /// Removes every key this module owns, leaving the rest of the group - the runtime
-/// choice included - alone.
+/// choice included - alone. The startup prompt's dismissal is not among them: a
+/// muted prompt stays muted through a preferences reset.
 void clearNativePreferences();
+
+/// True once the viewer chose "Skip and never ask" on the startup
+/// missing-components prompt.
+bool nativeComponentsPromptDismissed();
+
+/// Records the "Skip and never ask" dismissal.
+void dismissNativeComponentsPrompt();
 
 /// One recipe the catalogue producer vouches for, with its own availability.
 struct NativeRecipeOption {

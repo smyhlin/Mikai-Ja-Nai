@@ -317,6 +317,28 @@ bool saveNativePreferences(const NativePreferencePatch& patch, QString* reason) 
     return true;
 }
 
+/// True once the viewer chose "Skip and never ask" on the startup
+/// missing-components prompt. Any truthy stored form counts: the flag is a
+/// deliberate opt-out, never a value the code needs to parse back.
+bool nativeComponentsPromptDismissed() {
+    QSettings settings;
+    settings.beginGroup(nativeSettingsGroup());
+    const QVariant stored = settings.value(QLatin1String(kNativeComponentsPromptDismissedKey));
+    settings.endGroup();
+    return stored.toBool();
+}
+
+/// Records the "Skip and never ask" dismissal. The flag outlives a preferences
+/// reset on purpose: clearing the Processing tab's request fields must not
+/// silently re-arm a prompt the viewer explicitly muted.
+void dismissNativeComponentsPrompt() {
+    QSettings settings;
+    settings.beginGroup(nativeSettingsGroup());
+    settings.setValue(QLatin1String(kNativeComponentsPromptDismissedKey), true);
+    settings.endGroup();
+    settings.sync();
+}
+
 void clearNativePreferences() {
     QSettings settings;
     settings.beginGroup(nativeSettingsGroup());

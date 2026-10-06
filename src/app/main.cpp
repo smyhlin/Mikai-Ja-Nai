@@ -74,6 +74,9 @@ int main(int argc, char** argv) {
     // the bundle on disk (hashing ~100MB on a cold cache), and the app is fully
     // usable without a runtime — home, search and settings never touch mpv.
     // Blocking show() on it is what made launch take half a minute.
-    QTimer::singleShot(0, &selectPlayerRuntime);
+    QTimer::singleShot(0, &window, [&window] {
+        selectPlayerRuntime();
+        window.ensureNativeComponents();
+    });
     return app.exec();
 }

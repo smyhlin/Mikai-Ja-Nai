@@ -20,6 +20,7 @@ class PlayerDialog;
 
 namespace mikai::app {
 
+class NativeComponentProvisioner;
 class QualityCache;
 class Runner;
 class SearchPage;
@@ -43,11 +44,20 @@ public:
     /// than guessing it from child order.
     mplayer::shell::PlayerDialog* currentMediaPlayer() const;
 
+    /// The first-run TensorRT component check. A no-op unless the Native runtime
+    /// is selected and the bundle does not carry the builder resource this GPU
+    /// needs; a machine whose bundle already fits downloads nothing. The named
+    /// refusal is logged when nothing is needed.
+    void ensureNativeComponents();
+
 protected:
     void closeEvent(QCloseEvent* event) override;
 
 private:
     void openSettings();
+    /// Opens Settings on the Components tab, landing on the element the startup
+    /// prompt warned about. Plain dialog, no intent: nothing is armed.
+    void openComponentSettings();
     /// The processing-failure remedy surface. `intent` is what the viewer
     /// actually asked for: an explicit Prepare runs the existing preparation
     /// command once the live context callbacks are installed, Providers only
@@ -58,8 +68,11 @@ private:
     /// pressed a processing-failure remedy, and `preferredCore` then names the
     /// dialog that raised it; it is consulted only while it still owns a
     /// stream, so preparation facts are never read off a dead core.
+    /// `showComponentsFirst` lands on the Components tab for the startup
+    /// prompt; it changes nothing else about the dialog.
     void openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
-                          QPointer<mplayer::shell::PlayerDialog> preferredCore);
+                          QPointer<mplayer::shell::PlayerDialog> preferredCore,
+                          bool showComponentsFirst = false);
     void chooseMediaFile();
     void chooseMediaUrl();
     /// Opens `source` in a fresh player. Refuses, keeping the current player,
@@ -87,6 +100,7 @@ private:
 
     backend::MikaiClient& client_;
     Runner* runner_ = nullptr;
+    NativeComponentProvisioner* componentProvisioner_ = nullptr;
     QualityCache* qualityCache_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     SearchPage* search_ = nullptr;

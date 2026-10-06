@@ -3,6 +3,10 @@
 #include "dialogs/SettingsDialog.hpp"
 #include "pages/SearchPage.hpp"
 #include "pages/TitlePage.hpp"
+#include "state/NativeComponentProvisioner.hpp"
+
+#include <native/components/NativeComponentCatalog.hpp>
+#include <native/components/NativeGpuProbe.hpp>
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
 #include "workers/Runner.hpp"
@@ -26,6 +30,7 @@
 #include <QUrl>
 #include <QVariant>
 #include <QCloseEvent>
+#include <QMessageBox>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -86,6 +91,7 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     resize(1080, 760);
 
     runner_ = new Runner(this);
+    componentProvisioner_ = new NativeComponentProvisioner(*runner_, this);
     qualityCache_ = new QualityCache(this);
     qualityCache_->load();
 
@@ -296,8 +302,87 @@ void MainWindow::requestMediaRuntime() {
         });
 }
 
+void MainWindow::ensureNativeComponents() {
+    // The device is observed before the runtime check, so the one line naming
+    // what this machine actually has is written even when the selected runtime
+    // is Standard and the component check returns immediately. Without it, a
+    // "no GPU" report has nothing behind it in the log.
+    const mplayer::native::GpuComputeCapability& gpu = mplayer::native::observeComputeCapability();
+    // The pack this device resolves to is what the Components tab lists; naming
+    // it here is what makes the selection checkable without opening the dialog.
+    const mplayer::native::ComponentPack* resource =
+        mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+    qInfo().noquote() << "mikai: tensorrt component" << (resource == nullptr
+                                                             ? QStringLiteral("none")
+                                                             : resource->name);
+    if (componentProvisioner_ == nullptr) return;
+    // The prompt is the gate: ensure() may submit work only after the viewer
+    // chose Download. Running it before the question made a Native startup
+    // pull hundreds of megabytes before the first paint - the prompt then
+    // appeared beside a download already in flight, or never appeared once
+    // the store had filled.
+    if (mplayer::native::nativeComponentsPromptDismissed()) {
+        // "Skip and never ask" bought this viewer silence: no question and no
+        // download. ensure() is deliberately not called - even for its log
+        // line - so a muted prompt can never be the branch that starts work.
+        qInfo() << "mikai: native components prompt muted by the viewer";
+        return;
+    }
+    QString missing;
+    const bool needs = componentProvisioner_->needsDownload(&missing);
+    if (!needs) {
+        // Nothing to ask, but the startup check stays diagnosable: this call
+        // is what writes "notNative"/"satisfied"/"noGpu"/"noBundle" into
+        // mikai.log. Every path that answers "no download needed" is a path
+        // that refuses before the submit, so it is log-only in practice too.
+        QString reason;
+        if (!componentProvisioner_->ensure(&reason)) {
+            qInfo().noquote() << "mikai: native components:" << reason;
+        }
+        return;
+    }
+    // The one warning the viewer asked for at startup: when the GPU's own packs
+    // are missing from the store, offer to fetch them, this run only, or stay
+    // quiet forever. Only the muted dismissal is persisted; everything else is
+    // re-decided on the next launch from the store's actual contents.
+    QMessageBox prompt(QMessageBox::Warning, tr("GPU components missing"),
+                       tr("The TensorRT packs this GPU needs are not installed:\n%1\n\n"
+                          "Without them, preparing a TensorRT engine fails.")
+                           .arg(missing),
+                       QMessageBox::NoButton, this);
+    QPushButton* download = prompt.addButton(tr("Download"), QMessageBox::AcceptRole);
+    prompt.addButton(tr("Skip for now"), QMessageBox::RejectRole);
+    prompt.addButton(tr("Skip and never ask"), QMessageBox::DestructiveRole);
+    prompt.setDefaultButton(download);
+    prompt.exec();
+    // Roles, not pointers: only QAbstractButton is declared here, and the role
+    // is exactly the viewer's choice rather than which widget instance it was.
+    switch (prompt.buttonRole(prompt.clickedButton())) {
+        case QMessageBox::DestructiveRole:
+            mplayer::native::dismissNativeComponentsPrompt();
+            qInfo() << "mikai: native components prompt dismissed by the viewer";
+            break;
+        case QMessageBox::AcceptRole: {
+            // The one call that may submit work: the viewer just chose it.
+            QString downloadReason;
+            if (!componentProvisioner_->ensure(&downloadReason)) {
+                qInfo().noquote() << "mikai: native components:" << downloadReason;
+            }
+            openComponentSettings();
+            break;
+        }
+        default:
+            qInfo() << "mikai: native components download skipped for this run";
+            break;
+    }
+}
+
 void MainWindow::openSettings() {
     openSettingsImpl(std::nullopt, {});
+}
+
+void MainWindow::openComponentSettings() {
+    openSettingsImpl(std::nullopt, {}, true);
 }
 
 void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
@@ -306,8 +391,13 @@ void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent 
 }
 
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
-                                  QPointer<mplayer::shell::PlayerDialog> preferredCore) {
+                                  QPointer<mplayer::shell::PlayerDialog> preferredCore,
+                                  bool showComponentsFirst) {
     SettingsDialog dialog(client_, *runner_, this);
+    dialog.setComponentProvisioner(componentProvisioner_);
+    if (showComponentsFirst) {
+        dialog.showComponentsTab();
+    }
 
     // Every preparation fact is resolved live at the moment it is asked for. A
     // captured pointer, a visibility test or a cached context would answer for
@@ -502,6 +592,43 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             // first.
             player->requestNativeReferenceFrame(frameIndex);
         });
+
+    // A TensorRT build runs for minutes inside this modal dialog, so its progress
+    // is mirrored into the player's own always-on-top preparation window: the
+    // viewer keeps seeing the picture and the work at the same time, and the
+    // window outlives the dialog because the core it belongs to does.
+    //
+    // The core is resolved at each event rather than captured once: the dialog is
+    // modal, but PiP can hand the float the stream while it is open, and the
+    // window must follow whichever surface owns playback.
+    connect(&dialog, &SettingsDialog::nativePreparationStarted, this, [owningCore] {
+        if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+            core->beginEnginePreparation(
+                QCoreApplication::translate("MainWindow", "Preparing TensorRT engine"));
+        }
+    });
+    connect(&dialog, &SettingsDialog::nativePreparationProgress, this,
+            [owningCore](int stageIndex, int stageCount, const QString& phase,
+                         const QString& detail) {
+                if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+                    core->updateEnginePreparation(stageIndex, stageCount, phase, detail);
+                }
+            });
+    connect(&dialog, &SettingsDialog::nativePreparationFinished, this, [owningCore](bool ok) {
+        if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+            core->endEnginePreparation(
+                ok, ok ? QCoreApplication::translate("MainWindow", "The engine is ready.")
+                       : QCoreApplication::translate(
+                             "MainWindow", "The build stopped; the Processing tab names the reason."));
+        }
+    });
+
+    // The window's Cancel reaches the build's own cancellation gate through the
+    // dialog that owns it. The core on screen is the one that raised it.
+    if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+        connect(core, &mplayer::shell::PlayerDialog::enginePreparationCancelRequested, &dialog,
+                &SettingsDialog::cancelNativePreparation, Qt::UniqueConnection);
+    }
 
     // A remedy is dispatched only after every provider above is installed, so the
     // existing preparation command runs with the live context callbacks already
