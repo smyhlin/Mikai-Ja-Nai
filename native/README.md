@@ -32,7 +32,190 @@ about processed GUI playback.
 the final UI-cleanup tree. The production source pass was finished before the
 following verification; no probes ran during that implementation pass.
 
-### Source-first follow-up
+### Latest observed player and Compare acceptance
+
+The normal API-module contract is unchanged: the official published
+`2026-10-07-d6d93599d5` `libmpv-2.dll` is loaded in-process through the C/render
+APIs; no new module, external player, IPC, backend cutover or CPU fallback was
+used to fix the captioned image. Public Aji downloads remain v0.9.0; the
+selected-model runs use the explicitly imported local custom ABI-8 closure.
+
+The reproduced lower-half stripes are fixed at the Qt → libmpv state boundary,
+not by relaxing a pixel oracle. Before the fix, actual entry-state logging
+observed `GL_BLEND` enabled and the first separated-chroma texture contained
+378/740/474/959 non-finite R/G/B/A values. `VideoSurface::paintGL` now disables
+blending before rendering. The same published DLL, NVDEC decoder, backend and
+cached engine produce a clean held captioned frame with finite color/chroma
+intermediates, including after subtitles are restored. Exact before/after
+logs and images are preserved in the source-first chronology below.
+
+Latest fresh menu-driven builds on uncached source geometries:
+
+| Selected model | Source → output | Paused hold | Pause / FBO samples |
+| --- | --- | --- | --- |
+| AnimeJaNai HD V3.1 Balanced SPAN | 544×320 → 1088×640 | 17.767 s | 69 / 68 |
+| RIFE v4.14 lite | 640×352 → 640×352, observed 2/1 interpolation | 34.511 s | 139 / 138 |
+
+Both observe request-bound new engines and passed builder logs, stable source,
+media time and native framebuffer during the hold, advancing elapsed progress,
+successful visible completion and automatic resume. Logs are
+`.probe-out/ui-audit-final-cold-spatial-544-1791656532391.log` and
+`.probe-out/ui-audit-final-cold-rife-640-owned-1791656532391.log`; inspected
+player/FBO images are `.probe-out/final-cold-{spatial,rife}-{player,fbo}-1791656532391.png`.
+Clean captioned natural-player and finite-intermediate checks are separately
+recorded in `.probe-out/ui-audit-natural-{spatial,rife}-gl-blend-fix-1791656532391.log`.
+These are selected-model build/playback observations, not numerical fidelity,
+all-47 inference, private Native Ready/Active or an FPS-improvement claim.
+
+Final Compare acceptance passes **464/464**, covering all 24 Anime4K presets
+and five spatial models on both sides, immutable Original, exact live-player
+pixels/timestamp/preferences, cross-family changes, rapid selection, source
+replacement, named backend failure and close/reopen behavior. The production
+pooled-close fix clears the frozen source and both outputs; the original
+frozen-frame-null regression is restored. The authoritative log is
+`.probe-out/ui-audit-final-original-close-regression-all-models-1791656532391.log`,
+not an intermediate run with that check removed. Native `SC_CLOSE` independently
+passes **9/9** and observes no pending capture/build/release or retained plan
+lock/source/outputs
+(`.probe-out/ui-audit-final-close-cleanup-native-manager-1791656532391.log`).
+The pre-isolation close-cleanup CTest entry passed in 16.65 s
+(`.probe-out/ui-audit-final-close-cleanup-hermetic-1791656532391.log`);
+that result is not proof that installed component assets are safe.
+
+Other composed post-blend observations remain: H.264 operation 93/93,
+real-pointer/PiP interactions 180/180, isolated Settings 129, RIFE settings 56,
+NativeMenu 33, missing-runtime refusal 52, external media 22 and HLS recovery
+45. Earlier failures remain historical below; none of these passes establishes
+numerical fidelity, private Ready/Active or redistribution clearance.
+
+### Installed test-fixture incident and recovery
+
+`nativeRoot()` resolves `<applicationDir>/native`, independent of CWD,
+application name or `QStandardPaths`. Copying `mikai_tests.exe` into a
+DLL-complete installed directory is therefore unsafe. The direct installed
+run logged 32 suites PASS plus `TestLiveOracle` SKIP, exit 0
+(`.probe-out/verify-dist-hermetic-resolved-1791675034866.log`), but
+`TestAnimeJanaiRuntime` fixtures removed/replaced Aji data under that same
+installed native root. The incident inventory records 17 synthetic payload/
+record files: ten TensorRT payloads were 90-byte fixture data, its `install.json`
+was the 36-byte plaintext `prior installation remains untouched`, and DirectML
+was left with five 90-byte files plus a 735-byte synthetic record. A visible
+Ukrainian feed and normal application exit did not prove component preservation.
+
+The authorized recovery copied an existing **1400-byte local custom ABI-8
+TensorRT manifest** byte-for-byte from
+`.probe-out/menu-spatial-smoke/native/components/aji/v0.9.0/trt/install.json`
+and restored all ten matching payloads (721,542,477 bytes total) from
+`.probe-out/aji-local-runtime-trt/`. Every restored size/SHA-256 matches that
+manifest. Its SHA-256 is
+`7e0e65b049dee8c6170e758d848d86de479bf0af3acec0ad47e81a7a40aff490`;
+the recovered 622,592-byte backend remains
+`cda06b490141655c7f0401f7d0d895a4c9216d6c551354f58e663baa2a08b6d3`.
+The recovery report verifies that the app executable, published API DLL,
+RIFE install record and TensorRT component descriptor stayed unchanged.
+
+This is **not** byte-exact restoration of the unavailable prior 2138-byte
+install record (SHA-256
+`55a012c1db36c8c26686d75c743c35c30381994b917d5e612d5dfec96ceacda0`).
+That record's validity remains unknown. The earlier fixture-restoration report
+checked 90-byte `build/release` payloads against a preserved installed record;
+it does not prove the old installed record or payloads were fake.
+The six DirectML files were proven synthetic fixtures and were removed, along
+with their empty directory, only after matching the preserved snapshot by
+checksum. Removal was file-specific and directory removal nonrecursive; no
+DirectML installation was published. Exact evidence is
+`.probe-out/installed-aji-recovery-1791675481383/synthetic-directml-cleanup.json`.
+Genuine installed DirectML presence before the run is **unobserved**: there is
+no pre-run DML snapshot. Do not infer that a real DirectML installation was destroyed or that
+restoring one is required. Local SDK/NuGet payload candidates do not establish
+an authentic intended installed manifest; no guessed package or reconstructed
+record is published as a restoration. The exact bounded evidence is
+`.probe-out/installed-aji-recovery-1791675481383/directml-local-source-audit.json`.
+
+Exact damaged snapshots, per-file inventories, protected hashes and recovery
+outcome are in
+`.probe-out/installed-aji-recovery-1791675481383/recovery-report.json`.
+An independent audit of all ten restored TensorRT payloads and the installed
+manifest is recorded in
+`.probe-out/verify-restored-installed-baseline-1791675034866.json`.
+Matched physical license texts are not redistribution permission, and digest
+recovery is not runtime inference or private Ready/Active acceptance.
+
+After temporary test files were removed, the actual cleaned installed app
+started, displayed a visible Ukrainian feed with readable posters/text and
+closed normally, exit 0
+(`.probe-out/verify-clean-installed-app-1791675034866.log`).
+Its inspected 2186×1591 image is `dist-mikai/packaged-app-startup.png`.
+The final post-smoke report
+`.probe-out/verify-cleanup-final-1791675034866.json` confirms all 15 protected
+installed files match the adopted recovered baseline, all 33 retained screenshot
+files match the cleanup mapping by bytes/hash, zero owned scratch directories
+remain and the temporary test executable/library/platform plugin are absent.
+These observations establish clean startup and the recorded integrity boundary,
+not processed inference or restoration of the unavailable original metadata.
+
+### Isolated hermetic execution and artifact locations
+
+Use the application README's [Tests](../readme.md#tests) commands. CTest keeps
+the name `mikai_tests` but launches `mikai_test_launcher`, which stages only
+the test executable, shaders and the configured pinned API DLL into a unique
+`build/release/_test-runs/mikai-tests-XXXXXX/` directory. It runs with a fresh
+native root and removes that owned directory after success or failure.
+Direct `mikai_tests.exe` invocation refuses an existing nonempty or unsafe
+adjacent native tree before starting suites; a renamed app or changed CWD is
+not an isolation substitute.
+
+The matching configured Qt runtime `bin` supplies `Qt6Test.dll` through
+`PATH`: it is a test library, not a plugin. `qoffscreen.dll` is the platform
+plugin under Qt `plugins/platforms`. The launcher supplies those exact plugin
+directories through `QT_PLUGIN_PATH` and `QT_QPA_PLATFORM_PLUGIN_PATH`, pins
+`MIKAI_MPV_MODULE` to its staged DLL and defaults an empty QPA selection to
+`offscreen`. Explicit inherited QPA and live-oracle opt-in remain deliberate
+inputs; unset `MIKAI_LIVE` for hermetic runs. Neither test-only Qt dependency
+belongs permanently in `dist-mikai/`.
+
+After source integration, the composed isolation build exits 0 with no errors
+or warnings (`.probe-out/verify-fixture-isolation-build-1791675034866.log`).
+Verbose CTest exits 0 in **19.40 s**, with 33 suite lines: 32 PASS plus
+`TestLiveOracle` SKIP
+(`.probe-out/verify-isolated-hermetic-1791675034866.log`).
+That run includes the destructive-fixture guard regression and observes the
+unique executable directory and owned cleanup. Actual suite filtering/
+forwarding with `TestStreams` passes, exit 0
+(`.probe-out/verify-isolated-suite-filter-1791675034866.log`).
+A deliberately unknown QTest function correctly fails, exit 1
+(`.probe-out/verify-isolated-failure-propagation-1791675034866.log`), proving
+child failure propagation rather than a false green launcher. Both cases leave
+zero owned scratch directories. These results do not retroactively make the
+earlier installed-folder suite safe or prove installed inference.
+
+The corrected runner was also exercised physically beside the actual installed
+native assets, targeting `cancelledImportDoesNotPublish`. It refuses with exit
+**2 before any suite runs**, and all 15 protected files (ten TensorRT payloads,
+three records, app executable and API DLL) retain their SHA-256 values
+(`.probe-out/verify-installed-direct-test-refusal-1791675034866.log` and
+`.json`). Temporary `dist-mikai/mikai_tests.exe`, `Qt6Test.dll` and
+`platforms/qoffscreen.dll` were then removed. This verifies refusal and the
+adopted recovered 1400-byte baseline, not restoration of the old 2138-byte
+metadata or inference acceptance.
+
+Probe logs, screenshots and owned staging/recovery evidence belong under
+`.probe-out/`, not the repository root. Existing archived screenshots remain
+evidence, not trash. Run screenshot-producing probes with an owned artifact
+directory as their working directory; relative screenshot names otherwise
+pollute the root. The completed cleanup removed all 32 root PNGs: 14 unique
+images were moved unchanged into `.probe-out/root-screenshots/`, and 18 root
+duplicates were removed only after exact-byte matching to existing archived
+copies. One legacy `build-cmake/native_menu_probe.png` duplicate is retained at
+`.probe-out/menu-spatial-smoke/build-cmake/native_menu_probe.png`; the now-empty
+`build-cmake/` scratch directory and empty `$env` file were removed
+nonrecursively. The exact old→new paths, sizes and digests for all 33 images are
+in `.probe-out/root-screenshots/cleanup-manifest.json`. Existing probe evidence,
+staging/backups, media and installed native assets were not cleanup targets.
+Installed `dist-mikai/packaged-app-startup.png` remains a separate installed-app
+artifact, not a root screenshot.
+
+### Source-first follow-up (chronology; later results above supersede open gates)
 
 The initial source-freeze build passed with zero warnings/errors
 (`.probe-out/ui-audit-final-reachable-build.log`). The subsequent desktop-OpenGL
@@ -40,13 +223,13 @@ and PiP fixes are compiled into the app, tests and relevant probes. The parallel
 build ran out of compiler memory at `dialog_probe`; the remaining targets
 completed with `--parallel 1`, zero warnings/errors
 (`.probe-out/ui-audit-desktop-player-build.log` and
-`.probe-out/ui-audit-desktop-player-remaining-build.log`). Final CTest passes in
+`.probe-out/ui-audit-desktop-player-remaining-build.log`). That CTest passed in
 15.92 s (`.probe-out/ui-audit-desktop-final-hermetic.log`). `lupdate` found 997
 existing strings and no new strings at source freeze.
 
 The isolated Settings run passes 129 checks
 (`.probe-out/ui-audit-final-isolated-settings.log`); the inspected
-`native-processing-uk-compact.png` shows the single Runtime module selector and
+`.probe-out/menu-spatial-smoke/native-processing-uk-compact.png` shows the single Runtime module selector and
 no redundant Native checkbox or private controls under Standard. RIFE settings
 passes 56 checks (`.probe-out/ui-audit-sourcefreeze-rife_settings_probe.log`).
 Missing-runtime refusal passes 52 checks with no skips
@@ -93,8 +276,9 @@ above other apps and uses the monitor's native DPR. At 1366×975 logical / DPR 2
 5/5 requirements: 4,196,051 of 4,196,352 reference-lit pixels remain visible
 (99.99%). The inspected image is clean
 (`.probe-out/ui-audit-resumed-visible-canonical-1791635749077.log` and
-`ui-audit-resumed-visible-screen-1791635749077.png`). This reference mode disables
-subtitles, so the original captioned main/Compare corruption remains open.
+`.probe-out/ui-audit-resumed-visible-screen-1791635749077.png`). This reference mode disables
+subtitles, so at that historical stage it left captioned main/Compare corruption
+open; the later blending fix and final Compare passes above supersede that status.
 The earlier disconnected all-black capture's cause is still unproven.
 
 Both required fresh engines now build through the actual PlayerDialog →
@@ -125,9 +309,10 @@ frame 765). Independent CPU decoding of the exact same input produces clean
 frames at both timestamps: `.probe-out/source-reference-512-frame765-1791635749077.png`
 and `.probe-out/source-reference-512-frame776-1791635749077.png`.
 The existing smoke's nonblack/moving predicate did not catch this corruption.
-The fresh engine/build hold is proved; correct spatial pixels are not. This is
-an active reproduced defect, not an attribution to numerics, CUDA, Qt or a
-driver. The RIFE player image was inspected clean at its recorded timestamp.
+That run proved the fresh engine/build hold, not correct spatial pixels. The
+stripes were a reproduced defect at that stage, not then attributable to
+numerics, CUDA, Qt or a driver. The later GL-state captures and blending fix
+below resolve this defect. The RIFE image was clean at its recorded timestamp.
 
 The exact live Aji backend and cached spatial engine were also exercised without
 mpv or Qt using the existing upstream harness, built without changing backend
@@ -142,8 +327,9 @@ corresponding `plain-closure` log. Backend and engine hashes stayed unchanged.
 This isolates neither a cause nor live-path acceptance: the harness uses packed
 planes, a primary CUDA context and per-frame synchronization, while playback
 uses decoder pitches, an adopted context and an asynchronous depth-three queue.
-Live context, stride, ordering, lifetime and CUDA-to-GL publication remain under
-investigation. A later GUI no-graph attempt failed its foreground/input guard
+At that stage live context, stride, ordering, lifetime and CUDA-to-GL publication
+were still candidates. The later GL-state proof identifies the stripe cause.
+A GUI no-graph attempt failed its foreground/input guard
 before model selection and therefore supplies no graph-versus-plain evidence.
 
 The later active-frame triplet observes the actual paused spatial playback at
@@ -218,7 +404,8 @@ existing playback/PiP flows pass all 178 interaction requirements
 (`.probe-out/ui-audit-context-menu-interactions-1791656532391.log`).
 The app and tests build without warnings/errors, CTest passes in 18.32 s, and
 the rebuilt Ukrainian catalogue has 998 finished strings and none unfinished.
-These results do not clear the processed spatial pixel or Compare gates.
+Those context-menu results alone did not clear spatial pixels or Compare;
+the later blending and final restored-close evidence above does.
 
 The preceding 512×288 RIFE build did complete and process, but its probe exited
 1: a stale prior stats file prematurely satisfied the effect predicate, so the
@@ -229,20 +416,20 @@ backend-observed processing before accepting that stats evidence. The passing
 Engine-to-active-model identity remains inferred from the exact live config,
 fresh artifact and backend report because Core emits no engine-ID event.
 These selected-model results do not establish numerical fidelity, all-47
-inference, private Native Ready/Active, or redistribution clearance. Final
-captioned-player and Compare acceptance remain open.
+inference, private Native Ready/Active, or redistribution clearance. Captioned
+player and final Compare acceptance are now covered by the later results above.
 
 An actual rebuilt app's URL menu opened its modal dialog, but synchronous UIA
 invocation timed out; native-input acceptance is not asserted. Only that owned
 app and dialog were closed, exit 0; no user processes were stopped.
 
-Only `dist-mikai/mikai.exe` was updated; no `dist` target was run. Its digest
-matches the verified build and the RIFE, Aji and TensorRT install-record digests
-are unchanged (`.probe-out/ui-audit-desktop-installed-update.json`). The final
-installed app paints a visible Ukrainian feed and closes normally, exit 0,
-without a `QT_OPENGL` environment override
-(`.probe-out/ui-audit-desktop-installed-startup.log`). This startup observation
-does not assert processed playback or the remaining screen/input gates.
+At that earlier executable-only update, no `dist` target was run. The executable
+matched the build and the three recorded component digests were unchanged
+(`.probe-out/ui-audit-desktop-installed-update.json`). The installed app painted
+a visible Ukrainian feed and closed normally, exit 0, without a `QT_OPENGL`
+override (`.probe-out/ui-audit-desktop-installed-startup.log`). This historical
+preservation/startup observation does not cover the later installed test-fixture
+incident or establish processed playback; recovery is documented above.
 
 ### Earlier cleanup observations
 
@@ -287,7 +474,7 @@ also needs a readable font surface: with `C:/Windows/Fonts` on its font path the
 readable-surface run passes
 (`.probe-out/ui-audit-title-browser-refusal-fonts.log`).
 
-Current parent gates on the same post-fix binaries:
+Historical parent gates on those post-cause-fix binaries:
 
 - `InteractionProbe` passes 172/172 with 0 skips and exit 0
   (`.probe-out/ui-audit-free-pip-live-intent-final.log`). M4's PiP change, which
@@ -314,14 +501,15 @@ SearchPage browser and clipboard outcomes are superseded by the after-fix gates
 above; only the clipboard gates run under Windows QPA, and the browser gates run
 offscreen.
 
-The player-flow items that remain open, and their exact state:
+Later evidence supersedes the player-flow open gates recorded at this stage:
 
 - The fresh-build gate is closed for the selected RIFE and spatial models by the
   current natural-player runs above. The earlier 384×224 poll-argument stall
   and 512×288 pre-selection cursor refusal are historical failures, not the
   latest engine outcome.
-- The original main-window and Compare black blocks, which remain open after the
-  pixel correction below.
+- The original captioned main-window/Compare stripe defect stayed open after
+  the pixel-clock correction below; it is now closed by the blending fix and
+  final restored-close acceptance above.
 
 The pixel clock-0 defect is diagnosed and fixed: the capture deferred **one** seek
 until `hasVideo` and `duration > 0`, cycled subtitles to none only for the existing
@@ -335,13 +523,14 @@ captures with 0 unavailable
 inspected image is clean. The user's first full-screen Alt-Tab occlusion is
 acknowledged and excluded. The later full-screen all-black-screen run with a clean
 FBO has an **unproven** cause and must not be attributed to DWM or GDI as fact;
-the main/Compare windowed diagnostic run remains pending. No source or probe
-worker is still running; the GPU-backed desktop is the missing prerequisite.
+the main/Compare diagnostic was pending at that historical stage. The later
+attached-console GL-state investigation and final Compare runs are recorded
+above; this is no longer the current desktop prerequisite.
 
 The original 6.333 s / frame 152 lower-half-block report was reproduced against a
 known fresh CPU-decoded reference at that canonical file, so the input file is not
-corrupt. Hardware decode, rendering and on-screen compositing all remain candidate
-causes and none has been separated.
+corrupt. Hardware decode, rendering and on-screen compositing were then candidate
+causes; the later GL-entry-state/texture captures separate the stripe cause.
 
 The earlier production catalogue rebuild extracted 997 source strings with
 `lupdate` (7 new, 2 obsolete removed); 7 curated translations followed
@@ -352,8 +541,9 @@ and full CTest is 100% in 15.71 s
 (`.probe-out/ui-audit-current-catalog-hermetic.log`).
 
 That earlier gated application was copied **in place** into
-`dist-mikai/mikai.exe` only, with a matching digest; no `dist` target was run. The three
-install records — Rife 3.7, Aji 0.9 trt and TensorRt 3.7 — have unchanged hashes.
+`dist-mikai/mikai.exe` only, with a matching digest; no `dist` target was run. At that time the three
+install records — Rife 3.7, Aji 0.9 trt and TensorRt 3.7 — had unchanged hashes;
+this does not cover the later test-fixture incident.
 The actually installed executable starts, paints a visible Ukrainian feed and
 closes normally (`.probe-out/ui-audit-installed-app-startup-current.log`, with the
 inspected startup image at `dist-mikai/packaged-app-startup.png`).
@@ -370,11 +560,14 @@ or hidden by a weaker threshold. A subsequent canonical startup exited 5 after
 only its CLI line, so that invocation supplied no further rendering acceptance.
 That exit-5 startup is retained as a historical, unexplained result: a later
 normal canonical startup ran under GDB and reported `RESULT: PASS`, which is the
-latest known startup outcome. Neither run closes the 416×240 rendering gate, and
-the Off-restoration residual is untouched by either.
+startup outcome at that stage. Neither startup resolved the Off-restoration
+failure or established its cause. The later final Compare run passes 464 checks
+at the unchanged tolerance; the failed observation remains historical rather
+than becoming a retroactive pass.
 
-Final build, CTest, catalogue, PiP resize/reentry, refused-action, runtime and
-packaged-executable verification still require their integrated gates.
+Subsequent composed build/CTest, PiP, refused-action and runtime results are
+recorded above. Installed startup is separate from component integrity, and
+the later installed test-fixture recovery has its own explicit evidence boundary.
 
 The earlier menu-driven runs use the packaged fork's libmpv API, the embedded
 Qt player, and an explicitly imported local custom TensorRT Aji closure.
@@ -423,18 +616,19 @@ PiP retains its own playback core and controls, with only one player core
 playing at a time. The GPU-safe float is pooled rather than destroyed; arbitrary
 drops do not snap to corners, and hide/reentry preserves position and size.
 Only an unreachable placement is recovered into a monitor work area. These are
-implementation descriptions; the current interaction gate passes 172/172 on the
-post-fix binaries, covering two non-corner free placements at different sizes and
-pooled reentry, and it leaves the fresh-engine completion/pause gate open.
+implementation descriptions; the earlier 172/172 interaction run covered two
+non-corner free placements and pooled reentry, and the later real-pointer run
+passes 180/180. Actual fresh-engine completion/pause proof is separately recorded
+in the latest selected-model runs above.
 
 Engine builds use the always-on-top operation window for real phases, elapsed
 time and visible completion/failure. With no backend-reported measurable
 progress, TensorRT stays indeterminate: recipe stages are not build percentages.
 The actual playback owner stays paused throughout official or private engine
 work, retaining explicit Play/Pause intent until terminal acknowledgement;
-source replacement clears the old hold. This is the implementation contract,
-not completed fresh-engine runtime acceptance; the observed paused but stalled
-build and pending post-poll-fix run are distinguished above.
+source replacement clears the old hold. This implementation contract now has
+selected-model fresh-build hold/completion/resume evidence above. Earlier
+paused-but-stalled and pre-selection-refusal runs remain historical failures.
 The public filter's external backend builder and the private preparation
 helper's in-process builder are distinct operations, not interchangeable proof.
 
@@ -808,7 +1002,7 @@ real-builder results apply to historical 3.6.3 pack measurements, not the 3.7.0 
 | `native_prep_probe` over the real in-process helper | seven behaviours pass (see `build-msvc.md`) |
 | Earlier self-built bundle candidate verify | **passed** after static export classification and isolated per-dependency loads: 270 files, 139 DLLs, 138 restricted-search child-process dependency loads, one mpv module accepting `@mikai_native`. Evidence: `.probe-out/bundle-isolated-dll-load-verify-stdout.log`. This is **not** M05 completion, not prepared inference, and not acceptance of the newly selected author release |
 | Native bundle | **`0.1.0-dev.2` installed and load-verified**. `current-native` points at `native-0.1.0-dev.2`; `.1` remains for rollback. Installed verify exit `0`: 83 files, client API `131077`, core accepts `@mikai_native` (`.probe-out/native-crt-closure-verify-installed.log`). Current `mpv_surface_smoke` also passes through this exact installed module with processing off: inspected 1280×720 framebuffer, 921600/921600 non-black samples, 297305/921600 motion, 24 fps, zero decoder/VO drops, zero live filters (`.probe-out/native-bundle-dev2-off-surface.log` and `.png`). Not startup discovery, prepared readiness or inference. Stored runtime choice was not written. The old `.2` closure that failed `Win32 127` is superseded |
-| Native-off GUI surface through the owned runtime | **passes** (exit `0`) after full candidate hash validation: the Native-kind candidate is explicitly selected as `0.41.0-native.1`, a real 320×180 HEVC 24 fps video plays with `contextReady` true, position `0.542 → 2.542` over a 12 s duration, **921600/921600** non-black samples and **290264/921600** motion, **0** decoder and **0** VO drops, and **0** live `vf` chain entries with Native off. The inspected `mpv_surface_smoke.png` (1280×720) is a visibly colored motion test pattern |
+| Native-off GUI surface through the owned runtime | **passes** (exit `0`) after full candidate hash validation: the Native-kind candidate is explicitly selected as `0.41.0-native.1`, a real 320×180 HEVC 24 fps video plays with `contextReady` true, position `0.542 → 2.542` over a 12 s duration, **921600/921600** non-black samples and **290264/921600** motion, **0** decoder and **0** VO drops, and **0** live `vf` chain entries with Native off. The inspected `.probe-out/mpv_surface_smoke.png` (1280×720) is a visibly colored motion test pattern |
 | Widget/lifecycle probe on that candidate | `widget_pixel_probe` **PASS 21/21**, 0 skips, exit `0`; inspected 640×360 PNG is colored; GL 4.6 with 32 live GL-logger messages, 0 `ErrorType`, `glGetError` 0, motion 30.44%. Late events after close remain unknown and the 256×144 15 fps reopen refreshes metrics and the `vf`-absence check. Descriptor digest changed intentionally (NOTICE); the module core digest is unchanged |
 | What those surface proofs cover | **real Qt/OpenGL through the owned native runtime with Native off** — they are **not** the native filter, **not** CUDA interop, **not** active inference and **not** task completion. Nothing is `Prepared` or `Ready` |
 | Qt preparation runner, GPU work lease, recipe publication | **do not exist yet** |
@@ -1133,7 +1327,7 @@ pieces:
 ## Verification status
 The per-suite counts and engine outcomes in this section are **historical**
 isolated-build ledgers, separate from the selected-model spatial/RIFE results
-and pending final UI-cleanup proof (see *Current observed integration state*
+and the later player/Compare acceptance (see *Current observed integration state*
 above). The earlier
 complete CPU matrices were inspection-ON exit `0` in **21.48 s**
 and inspection-OFF exit `0` in **15.92 s**
@@ -1247,7 +1441,7 @@ not supply a prepared engine or inference result.
   24 fps video plays with `contextReady` true, position `0.542 → 2.542` over a
   12 s duration, **921600/921600** non-black samples and **290264/921600** motion,
   **0** decoder and **0** VO drops, and **0** live `vf` chain entries with Native
-  off. The inspected `mpv_surface_smoke.png` (1280×720) is a visibly colored
+  off. The inspected `.probe-out/mpv_surface_smoke.png` (1280×720) is a visibly colored
   motion test pattern. On the same candidate, `widget_pixel_probe` passes
   **21/21** with 0 skips, 0 instrumentation-unavailable markers and exit `0`; the
   inspected 640×360 PNG is colored, GL 4.6 with 32 live GL-logger messages,

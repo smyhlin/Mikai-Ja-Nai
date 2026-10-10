@@ -186,7 +186,7 @@ plan locking and Anime4K composition into the framebuffer proof),
 
 <a id="status"></a>
 
-**Current local integration snapshot (2026-10-09; milestones remain open).**
+**Current local integration snapshot (2026-10-11; milestones remain open).**
 Latest reports supersede older dated status for the observations below; they do
 not complete any M-task, mark private Native `Ready`/`Active`, or clear
 redistribution. Current release API versions remain mpv
@@ -197,20 +197,81 @@ plan-only run are recorded in `native/manifest/sources.json` and
 `native/README.md`.
 
 - **Source-first follow-up:** production implementation finished before probes
-  resumed. Subsequent desktop-OpenGL and held-Play PiP fixes are compiled; the
-  interrupted parallel build completed at `--parallel 1`, without compiler
-  warnings. Final CTest passes in 15.92 s. Real-core operation checks pass 93/93
-  on lavfi, and player interactions pass 172/172. Earlier isolated Settings
-  129, RIFE settings 56 and runtime-refusal 52 checks passed. Only the verified
-  executable was replaced in `dist-mikai`; protected records are unchanged and
-  the installed Ukrainian home feed starts/closes normally, exit 0, without a
-  GL environment override. Exact logs and failed attempts are in `native/README.md`.
+  resumed. Earlier desktop-OpenGL and held-Play PiP fixes compiled without
+  warnings after the interrupted parallel build completed at `--parallel 1`.
+  That historical CTest passed in 15.92 s; later composed close-cleanup CTest
+  passed in 16.65 s. Real-core H.264 operation passes 93/93, real-pointer/PiP
+  interactions 180/180, isolated Settings 129, RIFE settings 56, NativeMenu 33,
+  runtime-refusal 52, external media 22 and HLS recovery 45. Earlier installed
+  executable-only updates preserved component digests and the Ukrainian feed
+  started/closed normally; those checks do not cover later test-fixture damage.
+  Exact logs, historical failures and current proof boundaries are in
+  `native/README.md`.
+- **Installed test safety and recovery:** the direct test run inside
+  `dist-mikai` returned 32 suite PASS plus LiveOracle SKIP but overwrote Aji
+  fixtures because nativeRoot resolves `<applicationDir>/native`, not CWD or
+  a renamed app's data directory. The authorized recovery restored ten matching
+  local custom ABI-8 TensorRT payloads and an existing valid 1400-byte manifest;
+  it did not recover the prior 2138-byte metadata. The app/API/RIFE/TensorRT
+  protected files stayed unchanged during recovery. All six proven synthetic
+  DirectML files and their empty directory were removed after exact snapshot/
+  checksum matching; no DML installation was published. Genuine pre-incident
+  presence remains unobserved. No authentic intended install manifest/closure
+  is available, so neither destruction of a real DML installation nor required
+  restoration is asserted. An independent audit confirms all ten restored TRT
+  payloads and the installed record. Installed startup is not component-
+  preservation proof. The exact reports and digest ledger are in
+  `native/README.md`, not duplicated here.
+- **Final cleaned installed app:** the actual executable starts, paints a
+  readable Ukrainian feed with clear posters/text and closes normally, exit 0
+  (`.probe-out/verify-clean-installed-app-1791675034866.log`). The post-smoke
+  `.probe-out/verify-cleanup-final-1791675034866.json` confirms all 15 protected
+  files match the adopted recovered baseline, all 33 retained screenshot
+  files preserve bytes/hashes, zero owned scratch directories remain and all
+  three temporary installed test files are absent. This is clean startup and
+  integrity evidence, not inference or original 2138-byte metadata restoration.
+- **Isolated test execution:** CTest still exposes `mikai_tests`, now through
+  `mikai_test_launcher`. It stages the executable/shaders/pinned API DLL in a
+  unique `build/release/_test-runs/mikai-tests-XXXXXX/` with a fresh native root,
+  uses the matching configured Qt DLL/plugin paths and removes its owned run
+  directory afterward. Direct execution refuses a nonempty or unsafe adjacent
+  native tree before suites run. `Qt6Test.dll` is a library; `qoffscreen.dll`
+  is the platform plugin. Neither belongs permanently in `dist-mikai`.
+  Reproducible hermetic commands and inherited-environment limits are in
+  `readme.md`. The composed isolation build exits 0 with zero errors/warnings
+  and verbose CTest exits 0 in 19.40 s, with 32 suites PASS plus LiveOracle
+  SKIP, including the destructive-fixture guard regression and unique
+  executable-directory/cleanup observation
+  (`.probe-out/verify-fixture-isolation-build-1791675034866.log`,
+  `.probe-out/verify-isolated-hermetic-1791675034866.log`). Actual `TestStreams`
+  filtering/forwarding passes, exit 0; an unknown QTest function correctly fails,
+  exit 1. Both leave zero owned scratch directories
+  (`.probe-out/verify-isolated-suite-filter-1791675034866.log`,
+  `.probe-out/verify-isolated-failure-propagation-1791675034866.log`).
+  Direct execution physically beside the actual installed native assets,
+  targeting `cancelledImportDoesNotPublish`, refuses with exit 2 before any
+  suite runs; all 15 protected hashes are unchanged
+  (`.probe-out/verify-installed-direct-test-refusal-1791675034866.log` and
+  `.json`). The temporary installed test executable, Qt6Test library and
+  offscreen platform plugin were removed. These checks cover refusal and the
+  adopted recovered baseline, not old 2138-byte metadata restoration or
+  installed-inference acceptance.
+- **Root artifact cleanup:** 32 root PNGs are removed from the root: 14 unique
+  images were moved unchanged under `.probe-out/root-screenshots/`, while 18
+  exact-byte duplicates retain their existing archived evidence paths. The
+  generated legacy `build-cmake/native_menu_probe.png` duplicate, its empty
+  scratch directory and the empty `$env` file were also removed. Exact retained
+  paths and the operation ledger are in
+  `.probe-out/root-screenshots/cleanup-manifest.json`. Existing evidence,
+  staging/backups, probe configuration, media, installed/native/SDK assets and
+  source were outside that cleanup.
 - **Attached-console player evidence:** production startup requires desktop
   OpenGL. The H.264 operation gate now passes 93/93. At frame 152 the
   native-DPR screen-first reference oracle passes 5/5 with 99.99% lit coverage.
   Both fresh RIFE and spatial TensorRT builds pass through the actual native
-  player menus, with stable paused media/FBO throughout the build, visible
-  elapsed progress and completion, then automatic resume. The probe keeps only
+  player menus: latest spatial 544×320 holds for 17.767 s (69 pause/68 FBO
+  samples), and RIFE 640×352 for 34.511 s (139/138), with stable paused
+  media/FBO, visible elapsed progress/completion, then automatic resume. The probe keeps only
   its own window above other apps and rejects stale RIFE stats as engine-use
   proof. The captioned main/Compare corruption is closed by the
   `paintGL` blending fix: natural spatial and RIFE selections render clean
@@ -218,12 +279,16 @@ plan-only run are recorded in `native/manifest/sources.json` and
   acceptance passes 464 checks covering all 24 Anime4K presets and five
   spatial models on both sides with immutable-source and live-player
   preservation; pooled Compare snapshots now clear on close with the
-  frozen-frame regression restored, and the native SC_CLOSE route is covered.
+  frozen-frame regression restored; the native SC_CLOSE route passes 9 checks.
+  The authoritative Compare log is
+  `.probe-out/ui-audit-final-original-close-regression-all-models-1791656532391.log`,
+  not an intermediate run with that regression removed. The published API
+  module and normal in-process C/render contract remain unchanged.
   Exact logs and failed attempts are in `native/README.md`. No private
   Ready/Active, all-model inference, numerical fidelity or redistribution
   clearance follows.
 
-- **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
+- **Earlier GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
   five spatial selections passed; live catalog Save/refusal passed. Verify
   success preserved missing selected DirectML and inactive corrupt TensorRT
   states; selection survived refresh; Review Yes was actually clicked; backend
@@ -267,7 +332,7 @@ plan-only run are recorded in `native/manifest/sources.json` and
   `prepareAnimeJanaiPlan` inputs, including v4.26 heavy. No engine build was
   requested. ABI-code notes and the fixed catalog lifetime defect are recorded
   in the acquisition record.
-- **Fresh spatial attempt (artifact 340):** TensorRT 11.3.0 `[b99]` built the
+- **Historical fresh spatial attempt (artifact 340):** TensorRT 11.3.0 `[b99]` built the
   fresh engine in 18.527 seconds (3.01755 MiB) for graph SHA-256
   `b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c`.
   Engine SHA-256:
@@ -285,7 +350,7 @@ plan-only run are recorded in `native/manifest/sources.json` and
   output/render logs were observed, but the probe failed CRC filename filtering
   and an early raw-output read of 320 before configured-slot Core property
   reconfiguration. The corrected spatial run superseded these false gates.
-- **Fresh spatial run (artifact 367, a46):** FULL PASS in 66.47 seconds on stage
+- **Earlier fresh spatial run (artifact 367, a46):** FULL PASS in 66.47 seconds on stage
   7. The selected-engine directory began empty; the raw engine built in 15.7249
   seconds (2.98863 MiB). The exact spatial HD Balanced
   graph SHA-256 was
@@ -309,7 +374,7 @@ plan-only run are recorded in `native/manifest/sources.json` and
   loaded; the probe failed because its request-bound scan searched spatial
   `plan.modelDir`/wrong model identity and `time-pos` transitions were not
   presentation-frame evidence. This failure was corrected in the fresh run.
-- **Fresh RIFE run (artifact 366):** FULL PASS in 88.63 seconds on stage 7.
+- **Earlier fresh RIFE run (artifact 366):** FULL PASS in 88.63 seconds on stage 7.
   The selected-engine directory began empty. The exact v4.14 lite graph was
   5,986,311 bytes (SHA-256
   `948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7`),
@@ -333,13 +398,13 @@ plan-only run are recorded in `native/manifest/sources.json` and
 - **Still pending:** numerical model fidelity, all-47-model inference, private
   Ready/Active, and ESC-1/2/3 clearance. The described RIFE and spatial selected-
   model runs passed their fresh build/render/control checks; neither establishes
-  other models, private Native capability, or an FPS improvement. The latest
+  other models, private Native capability, or an FPS improvement. That earlier
   union build had zero errors/warnings, CTest passed in 13.78 seconds, Ukrainian
   translations were 999 finished/0 unfinished, and `dist` was rebuilt at stage
-  7. Artifact 361 passed the current GUI/settings gate. Do not upgrade broad
+  7. Artifact 361 passed its historical GUI/settings gate. Do not upgrade broad
   milestones based on the two selected-model runs.
 
-**Latest complete CPU matrices (2026-10-04).** The newest full `ctest` is green:
+**Historical complete CPU matrices (2026-10-04).** Those full matrices were green:
 inspection-ON exit `0` in **21.48 s** and inspection-OFF exit `0` in **15.92 s**
 (`.probe-out/native-batch-on-epoch-guard-ctest.log`,
 `.probe-out/native-batch-off-epoch-guard-ctest.log`), with ON/OFF app/tests/

@@ -135,21 +135,119 @@ tree a copied native bundle carried is removed.
 
 This target recreates `dist-mikai/`. Do not run it over a user's installed
 folder: an executable-only UI update copies the verified `mikai.exe` in place
-and preserves downloaded assets and install records. The most recent such update
-followed that rule — the gated application was copied in place into
-`dist-mikai/mikai.exe` only, with a matching digest and no `dist` run, the three
-install records (Rife 3.7, Aji 0.9 trt, TensorRt 3.7) kept their hashes, and the
-actually installed executable started, painted a visible Ukrainian feed and
-closed normally (`.probe-out/ui-audit-installed-app-startup-current.log`,
-`dist-mikai/packaged-app-startup.png`). That is one observed packaged update, not
-final acceptance; the fresh-engine, black block and Compare gates are open.
+without replacing downloaded assets or install records. Earlier such updates
+preserved the three recorded component digests and the installed app painted a
+visible Ukrainian feed and closed normally
+(`.probe-out/ui-audit-installed-app-startup-current.log`,
+`dist-mikai/packaged-app-startup.png`). Those historical preservation checks do
+not cover the later test incident: running `mikai_tests.exe` physically inside
+`dist-mikai/` overwrote Aji component data despite a green suite result.
+The authorized recovery restored a digest-verified local custom ABI-8 TensorRT
+closure, not the unavailable original install-record bytes. The six proven
+synthetic DirectML files and their empty directory were subsequently removed
+after snapshot/checksum matching; no DirectML installation was published.
+Genuine pre-run DirectML presence and an authentic intended install record
+remain unobserved. See [the native evidence guide](native/README.md#installed-test-fixture-incident-and-recovery)
+for the exact incident, recovery boundary and protected-file evidence.
+
+The final cleaned installed app starts, paints a visible Ukrainian feed with
+clear posters/text and closes normally, exit 0
+(`.probe-out/verify-clean-installed-app-1791675034866.log`;
+inspected `dist-mikai/packaged-app-startup.png`, 2186×1591).
+The post-smoke integrity report
+`.probe-out/verify-cleanup-final-1791675034866.json` confirms all 15 protected
+installed files match the adopted recovered baseline, all 33 retained screenshot
+paths preserve their bytes/hashes, zero owned test scratch directories remain,
+and the three temporary installed test files are absent. This is startup and
+integrity evidence, not processed inference or original-metadata restoration.
 
 ## Tests
 
 ```sh
 cmake --build --preset tests --parallel
-ctest --test-dir build/release -R mikai_tests
+ctest --test-dir build/release -R "^mikai_tests$" --output-on-failure
 ```
+
+CTest's `mikai_tests` entry uses `mikai_test_launcher`, built as a dependency of
+the test target. It copies the test executable, shaders and the configured
+pinned `mpv/libmpv-2.dll` into a unique
+`build/release/_test-runs/mikai-tests-XXXXXX/` directory, then runs that copy
+with no installed `native/` tree. The owned run directory is removed after
+success or failure; the empty `_test-runs/` parent may remain. The public
+`build/release/mikai_tests.exe` path and suite/QTest arguments remain available,
+but direct execution refuses a nonempty or unsafe adjacent `native/` tree
+with exit 2 before any suite runs. Do not copy tests into `dist-mikai/`.
+
+For an explicitly hermetic Windows PowerShell invocation:
+
+```powershell
+Remove-Item Env:MIKAI_LIVE -ErrorAction SilentlyContinue
+$env:QT_QPA_PLATFORM = 'offscreen'
+ctest --test-dir build/release -R "^mikai_tests$" --output-on-failure
+```
+
+CTest supplies the configured Qt runtime `bin` on `PATH` so the launcher can
+start. The launcher prepends that same directory to the test child's `PATH`,
+sets `QT_PLUGIN_PATH` to the configured Qt `plugins` directory and
+`QT_QPA_PLATFORM_PLUGIN_PATH` to its `platforms` subdirectory, and pins
+`MIKAI_MPV_MODULE` to the staged DLL. An empty `QT_QPA_PLATFORM` defaults to
+`offscreen`; an explicit inherited platform is retained. Other environment,
+including deliberate live-oracle opt-in, is inherited.
+
+To forward a specific suite and optional QTest arguments through the same
+isolated launcher, use its six positional inputs: test executable, shaders,
+pinned API DLL, Qt runtime `bin`, Qt plugins and scratch parent. This
+PowerShell invocation matches the configured default release preset; run it
+from the repository root (use your configured Qt paths for a different preset):
+
+```powershell
+$repo = (Get-Location).Path
+$qt = 'C:\temp\qt6\6.8.3\mingw_64'
+$env:PATH = "$qt\bin;$env:PATH"
+$env:QT_QPA_PLATFORM = 'offscreen'
+Remove-Item Env:MIKAI_LIVE -ErrorAction SilentlyContinue
+& "$repo\build\release\mikai_test_launcher.exe" `
+  "$repo\build\release\mikai_tests.exe" `
+  "$repo\shaders" `
+  "$repo\build\release\_dist-cache\mpv\headers\libmpv-2.dll" `
+  "$qt\bin" `
+  "$qt\plugins" `
+  "$repo\build\release\_test-runs" `
+  TestStreams
+```
+
+Arguments after the scratch parent are forwarded unchanged to `mikai_tests`;
+the observed `TestStreams` pass and expected unknown-function failure are
+recorded below. Do not bypass isolation by moving the executable beside
+installed assets.
+
+`Qt6Test.dll` is a Qt test **library** resolved from the matching Qt runtime
+`bin`, not a plugin. `qoffscreen.dll` is the **platform plugin** under
+`plugins/platforms`; pointing a plugin variable at `bin` does not supply it.
+Both must match the configured Qt/MinGW build, and neither belongs permanently
+in the installed application distribution.
+
+Changing the working directory, application name or `QStandardPaths` settings
+does not isolate native component fixtures: `nativeRoot()` resolves
+`<applicationDir>/native`. The launcher isolates the executable's directory,
+not just its CWD. The recorded installed-folder suite pass is therefore not
+asset-safety proof; the incident and partial recovery are documented in the
+native guide. After the isolation cutover, the composed build exits 0 with no
+errors/warnings and verbose CTest exits 0 in 19.40 s: 32 suites PASS plus
+`TestLiveOracle` SKIP, including the destructive-fixture guard regression
+(`.probe-out/verify-fixture-isolation-build-1791675034866.log`,
+`.probe-out/verify-isolated-hermetic-1791675034866.log`). Suite forwarding also
+passes for `TestStreams`, exit 0; a deliberately unknown QTest function fails
+with exit 1, proving failure propagation. Both leave zero owned scratch
+directories (`.probe-out/verify-isolated-suite-filter-1791675034866.log`,
+`.probe-out/verify-isolated-failure-propagation-1791675034866.log`). These
+observed isolated results are not blanket installed-component or inference
+acceptance claims. The corrected runner's actual installed-folder negative case
+also exits 2 before any suite runs and preserves all 15 protected file hashes
+(`.probe-out/verify-installed-direct-test-refusal-1791675034866.log` and `.json`).
+The temporary installed test executable, `Qt6Test.dll` and
+`platforms/qoffscreen.dll` were removed afterward; only the adopted recovered
+1400-byte Aji baseline, not the missing original metadata, is covered.
 
 ### Behavioural probes (JSON manifests)
 
@@ -218,13 +316,14 @@ clipboard mode:
 
 The two title scenarios use the real API/title session and active player's
 warning dialog. They must run separately under their respective QPA platforms;
-the combined `--host-refusal-only` mode is removed. These new scenarios are
-documented invocation contracts, not observed passes; final runs are pending.
+the combined `--host-refusal-only` mode is removed. Their observed refused-action
+passes and platform/font requirements are recorded in the native evidence guide.
 
 `mikai_tests` also carries the runtime-loader and native-contract suites
-(`TestRuntimeSelection`, `TestMpvAsync`, `TestNative*`); they run hermetically,
-exercising a real core only when `MIKAI_MPV_MODULE` names one and skipping
-otherwise. `TestNativeComponents` covers the pinned catalogue, the store record
+(`TestRuntimeSelection`, `TestMpvAsync`, `TestNative*`). The isolated launcher
+pins `MIKAI_MPV_MODULE` to the staged configured DLL for real-core transport and
+packaged-runtime checks. Individual optional SDK/asset gates retain their own
+documented prerequisites; this is not Native inference acceptance. `TestNativeComponents` covers the pinned catalogue, the store record
 round-trip, digest re-verification that catches a same-length replacement, and
 the toolchain's four source rules.
 An earlier reported union build had zero errors or warnings, CTest passed in
@@ -236,26 +335,33 @@ it is not the current tree either.
 
 The source-first follow-up compiled the app, tests and relevant probes with no
 compiler warnings; an interrupted parallel build completed at `--parallel 1`.
-Final CTest passes in 15.92 s
+That earlier CTest passed in 15.92 s
 (`.probe-out/ui-audit-desktop-final-hermetic.log`). Real-core engine-operation
 checks pass 93/93, and player interactions pass 172/172. Settings, RIFE settings
 and missing-runtime refusal checks also passed. The attached-console H.264
 operation gate now also passes 93/93. Exact evidence, failed attempts and
 remaining gates are in `native/README.md`.
 
-Only the verified executable was replaced in `dist-mikai`; the three protected
-component records have unchanged hashes. The installed app paints its Ukrainian
-home feed and closes normally, exit 0
-(`.probe-out/ui-audit-desktop-installed-startup.log`). Startup now requires
-desktop OpenGL rather than Qt's unsupported automatic software selection;
-hardware surface playback works. With the console attached, the native-DPR
-frame-152 screen-first oracle passes 5/5 with 99.99% reference-lit coverage.
-Fresh RIFE v4.14 lite and AnimeJaNai upscale TensorRT builds now pass through the
-actual player menu, including the paused build hold, visible elapsed progress,
-completion and automatic resume. This is selected-model proof, not private
-Native Ready/Active or numerical fidelity. The reference mode excludes
-subtitles; original captioned-player corruption and final Compare acceptance
-remain open.
+The earlier executable-only installed update and normal Ukrainian home-feed
+startup are recorded in `.probe-out/ui-audit-desktop-installed-startup.log`;
+the later Aji test-fixture damage and verified recovery are separate events.
+Production startup requires desktop OpenGL rather than Qt's unsupported
+automatic software selection. The attached-console native-DPR frame-152
+screen-first oracle passes 5/5 with 99.99% reference-lit coverage, but that
+uncaptioned reference alone was not proof of the captioned path.
+
+The captioned corruption is now closed by disabling `GL_BLEND` before libmpv
+renders: the unchanged published API DLL, NVDEC and TensorRT path produce clean
+captioned frames and finite color/chroma intermediates. Latest fresh menu-driven
+builds hold spatial 544×320 playback for 17.767 s (69 pause/68 FBO samples) and
+RIFE 640×352 for 34.511 s (139/138), then show completion and automatic resume.
+Final Compare acceptance passes 464 checks with the original frozen-frame close
+regression restored, plus 9 native `SC_CLOSE` checks; all 24 Anime4K presets and
+five spatial models are covered on both sides without changing the live player.
+Exact before/after and final logs are in
+[the native guide](native/README.md#current-observed-integration-state).
+These selected-model observations do not establish numerical fidelity,
+all-47-model inference, private Native Ready/Active or redistribution clearance.
 Tests and probes are hand-run, not CI.
 
 ```sh
@@ -304,9 +410,10 @@ A later composition binary passed the full PiP interaction probe 171/171, but
 that binary also predates the native traversal correction and the runtime-cause
 fix, and its reentry check still only compared position, so it is neither
 acceptance of the new isolated Compare nor of pooled PiP resize/reentry. The
-current post-fix interaction gate passes 172/172 with two non-corner free
-placements at different sizes and pooled reentry; it still does not close the
-Compare, pixel or fresh-engine gates. The current external-media, HLS, CTest,
+earlier post-fix interaction gate passed 172/172 with two non-corner free
+placements at different sizes and pooled reentry. The later real-pointer
+interaction run passes 180/180; captioned pixels, fresh selected engines and
+final Compare have their own later evidence. The current external-media, HLS, CTest,
 refused-action, Settings and operation outcomes are recorded in
 [the native guide](native/README.md#current-observed-integration-state).
 `native_settings_probe`, `rife_settings_probe` (both languages),
@@ -345,19 +452,21 @@ at DPR 2 (a 2732×1950 screen) at 6.333 s / frame 152 with NVDEC (`cuda[nv12]`)
 then took the screen surface first and matched the FBO on 5 of 5 captures with 0
 unavailable, covering 4,196,051 of 4,196,352 reference-lit pixels (99.99%) with a
 clean inspected image (`.probe-out/ui-audit-canonical-screen-first-windowed.log`).
-The original main-window and Compare black blocks remain open, the user's first
-full-screen Alt-Tab occlusion is acknowledged and excluded, and the later
-full-screen all-black-screen run with a clean FBO has an unproven cause that must
-not be attributed to DWM or GDI as fact. The main/Compare windowed diagnostic run
-is owned by the source owner and still in progress. The original 6.333 s /
-frame 152 report was reproduced against a known fresh CPU-decoded reference at
-that canonical file, so the input file is not corrupt, and hardware decode versus
-rendering versus on-screen compositing remains unseparated.
+At that historical stage the original main/Compare block report was still open.
+The user's first full-screen Alt-Tab occlusion is acknowledged and excluded;
+the later disconnected all-black-screen run with a clean FBO retains an
+unproven cause, not a factual attribution to DWM or GDI. Subsequent actual
+GL-entry-state and texture captures separated the captioned stripe defect:
+blending into an undefined floating-point chroma target produced non-finite
+values. Disabling blending before libmpv rendering fixes that defect with the
+same API DLL, decoder, backend and engine; the natural-player and final Compare
+passes supersede the earlier open-gate status, without retroactively explaining
+every historical capture failure.
 
 `mikai_tests` is hermetic except the live oracle, which runs only with both set:
 
 ```sh
-set MIKAI_LIVE=1 & set MIKAI_API_KEY=mk_... & ctest --test-dir build/release -R mikai_tests
+set "MIKAI_LIVE=1" && set "MIKAI_API_KEY=mk_..." && ctest --test-dir build/release -R "^mikai_tests$" --output-on-failure
 ```
 
 ## What it does
@@ -391,12 +500,12 @@ for a later Native session. RIFE selection belongs to
 using the selected backend and verified model. A refused choice explains the
 missing or unsupported requirement; it never substitutes another model.
 
-Earlier GUI/component evidence and selected-model fresh-engine runs are recorded
-in [the native guide](native/README.md#current-observed-integration-state).
-They do not certify the latest cleanup. The handoff's cached selected-RIFE
-selection/render observation also does not prove a fresh build with the new
+GUI/component history and the latest selected-model fresh-engine runs are
+recorded in [the native guide](native/README.md#current-observed-integration-state).
+The cached selected-RIFE handoff is historical, not fresh-build proof; the later
+uncached 544×320 spatial and 640×352 RIFE runs supply that proof with the real
 pause/progress UI. No all-model inference, numerical fidelity, private
-Ready/Active, or redistribution clearance is implied.
+Ready/Active or redistribution clearance is implied.
 
 Engine preparation/building uses an always-on-top operation window with the
 actual phase, elapsed time and visible completion or failure. TensorRT's public
@@ -409,9 +518,9 @@ stalled before completion because its filter poll command omitted a mandatory
 empty argument. That argument is fixed, and the traversal correction landed since.
 The current attached-console natural-player runs complete fresh RIFE and spatial
 engines, verify their request-bound artifacts, retain the pause hold until visible
-completion, and restore Play afterward. The spatial source is 512×288; the RIFE
-proof uses an uncached 576×320 shape without deleting the earlier completed
-512×288 engine. The separate real-core operation gate also passes 93/93 on
+completion, and restore Play afterward. The latest spatial source is 544×320;
+RIFE uses an uncached 640×352 shape, without deleting earlier completed engines.
+The separate real-core operation gate also passes 93/93 on
 H.264, including latest-intent and PiP transfers; exact evidence is in
 `native/README.md`.
 
@@ -535,18 +644,20 @@ are kept, and identical choices share one render. Failures name the affected
 choice rather than relabelling stale output or blanking the unaffected side.
 Closing, cancellation and source replacement invalidate pending work. Each
 opening captures a fresh source rather than falling back to an earlier frame.
-Canonical shader and spatial probe runs have passed. A fresh 416×240 run,
-however, failed an early live-surface Off restoration check — 0.676/255 against
-an unchanged 0.05 tolerance — despite passing 462 of its checks, and a
-subsequent canonical startup exited 5 after only its CLI line; that exit-5
-startup is a historical, unexplained result, since a later normal canonical
-startup ran under GDB and reported `RESULT: PASS`, which is the latest known
-startup outcome. Neither startup closes the 416×240 rendering gate. The
-residual's cause remains unproven; no dithering explanation or relaxed tolerance
-is justified. Exact outcomes and unresolved runtime gates are recorded in
-[the native guide](native/README.md#current-observed-integration-state).
-These observations do not constitute blanket acceptance of the integrated tree;
-earlier live-render Compare results are not proof of this isolated implementation.
+Final isolated Compare acceptance passes all 464 requirements, covering all
+24 Anime4K presets and five spatial models on both sides, immutable Original,
+pixel-identical live-player preservation, rapid selection, source replacement,
+failure and close/reopen behavior. The original frozen-frame-null close check
+is restored, and the pooled production close clears source and outputs;
+the native `SC_CLOSE` path independently passes 9 requirements.
+
+An earlier 416×240 run failed an Off-restoration check (0.676/255 against the
+unchanged 0.05 tolerance) despite 462 passing checks, and an earlier startup
+exited 5 after only its CLI line. Those failures remain historical; their exact
+causes are not retroactively attributed to dithering or erased by later passes.
+The final restored-close run, not an intermediate run with a removed check, is
+authoritative. Exact logs and unresolved numerical/private-runtime/release gates
+are recorded in [the native guide](native/README.md#current-observed-integration-state).
 
 ## API limits
 
@@ -564,6 +675,16 @@ project-owned integration permission does not clear upstream terms. Exact
 digests and model-rights reasoning belong in the acquisition records and
 manifests rather than a duplicate acceptance ledger here.
 
+Generated probe screenshots and logs belong in `.probe-out/`. The completed
+root cleanup moved 14 unique PNGs to `.probe-out/root-screenshots/` and removed
+18 root duplicates only after exact-byte matching to retained archived copies.
+A further generated `build-cmake/native_menu_probe.png` duplicate, its empty
+scratch directory and the empty `$env` file were removed. The per-file retained
+paths are in `.probe-out/root-screenshots/cleanup-manifest.json`; referenced
+probe evidence, staging/backups, media and installed native assets are preserved.
+Run screenshot-producing probes with an owned artifact directory as CWD so
+their relative output names do not repopulate the repository root.
+
 Alongside that track, the GPU-adaptive TensorRT components are fetched at run
 time rather than shipped: the pinned AnimeJaNai `3.7.0` packs (`trt-runtime`,
 one builder resource per published generation, and `trt-ptx`) carry pinned
@@ -571,7 +692,7 @@ asset byte counts and SHA-256; the app reads the compute capability from the
 installed driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx`
 when the release publishes none for that generation), downloads the missing
 set on this machine, and proves every file by digest into the app-owned
-`%LOCALAPPDATA%` component store. A bundle that already declares this GPU's
+`<applicationDir>/native/components` store. A bundle that already declares this GPU's
 resource is used as-is and nothing is downloaded. Bundle validation is served
 from a stat-only cache (`verified.json` under the app-owned native root): the
 first start after a change re-hashes (about 18 s here), every start after lands

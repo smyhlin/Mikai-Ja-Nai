@@ -654,11 +654,26 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 ctest --test-dir build/release -R mikai_tests
 ```
 
+CTest runs a physical test-executable copy through `mikai_test_launcher` in a
+unique `build/release/_test-runs/mikai-tests-XXXXXX` directory and removes it
+after success or failure. Direct test execution refuses a nonempty or unsafe
+adjacent `native/` tree before any suite runs. Never run mutating test/probe
+binaries from `dist-mikai`: changing CWD or the application name does not change
+the executable-local native root. Supply Qt DLLs/plugins through the configured
+Qt paths instead; see `readme.md` for the isolated commands.
+
+Keep diagnostic outputs under `.probe-out/<run>/`, not the repository root.
+The root screenshot batch is archived or deduplicated with exact retained paths
+in `.probe-out/root-screenshots/cleanup-manifest.json`; maintained probe sources
+and scenario manifests remain in place.
+
 - `tests/cpp/main.cpp` drives every suite in turn, prints one
   `[mikai_tests] <Suite>: PASS/FAIL/SKIP (rc=…)` line per suite to stderr (QTest
-  itself stays silent on success), and accepts a suite name to run just one:
-  `build/release/mikai_tests.exe TestStreams`. `MIKAI_SOURCE_DIR` lets the
-  layer guards read the sources they police instead of passing vacuously.
+  itself stays silent on success), and accepts a suite name to run just one.
+  Use the isolated launcher's suite/QTest arguments documented in `readme.md`;
+  direct execution is safe only beside an absent or empty native tree.
+  `MIKAI_SOURCE_DIR` lets the layer guards read the sources they police instead
+  of passing vacuously.
 - Hermetic suites: `TestModels` (parse fixtures: ref fallback
   `mikai/mal/al/hikka/slug:`, `displayName`, thumb/poster/cover order,
   `externalLinks`, episode int/double/string/null), `TestReleases`
@@ -682,7 +697,26 @@ ctest --test-dir build/release -R mikai_tests
 
 ### Observed acceptance state
 
-**Player-flow observations (latest observed; not acceptance of the tree):** the
+**Latest composed evidence (2026-10-10):** the captioned chroma corruption was
+diagnosed as Qt blending left enabled before libmpv rendering. The current
+natural player builds fresh spatial 544×320 and RIFE 640×352 engines while
+holding playback paused through visible completion, then resumes cleanly.
+Compare passes 464 checks with the original frozen-frame close regression,
+plus 9 native-window-close checks. Exact evidence and remaining private Native,
+numerical-fidelity and licensing limits are in `native/README.md`.
+
+The isolated test cutover builds without warnings/errors and passes 32 suites
+with LiveOracle deliberately skipped in 19.40 s. Actual direct installed
+invocation now refuses with exit 2 before any suite or fixture mutation.
+The earlier unsafe installed test run required a verified local custom ABI-8
+TensorRT closure recovery; its unavailable original install-record metadata
+was not restored byte-for-byte. The recovered baseline remains unchanged after
+the guard and actual installed-app startup/shutdown. Test-only files and
+checksum-proven synthetic DirectML fixtures were removed. These current notes
+supersede the earlier player/Compare gate and install-preservation snapshots
+below; the native guide records the incident and exact boundaries.
+
+**Earlier player-flow observations (historical baseline):** the
 build recorded at `.probe-out/ui-audit-playback-failure-cause-build.log` compiled
 `mikai` plus the test and probe tree with exit 0, zero errors and zero warnings.
 
