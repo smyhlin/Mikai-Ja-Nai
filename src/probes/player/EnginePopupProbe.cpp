@@ -636,6 +636,16 @@ int main(int argc, char** argv) {
     });
     verdict.require(loaded, QStringLiteral("real media is playing before preparation"));
     if (!loaded) {
+        std::fprintf(stderr,
+                     "startup: surface=%d visible=%d context=%d video=%d playing=%d "
+                     "position=%.3f size=%dx%d status=%s\n",
+                     surface != nullptr, surface != nullptr && surface->isVisible(),
+                     surface != nullptr && surface->isContextReady(),
+                     surface != nullptr && surface->hasVideo(),
+                     surface != nullptr && surface->isPlaying(),
+                     surface != nullptr ? surface->position() : -1.0,
+                     surface != nullptr ? surface->width() : 0,
+                     surface != nullptr ? surface->height() : 0, qPrintable(statusText(dialog)));
         dialog->close();
         return verdict.report("engine_popup_probe");
     }
@@ -740,6 +750,37 @@ int main(int argc, char** argv) {
     verdict.require(waitFor([surface] { return corePaused(surface, false); }),
                     QStringLiteral("source replacement leaves no stale engine pause hold"));
 
+    dialog->beginEnginePreparation(QStringLiteral("Reload while Play is held"));
+    const uint64_t reloadEpoch = surface->sourceEpoch();
+    dialog->applyRefreshedStreams(qualities, 360);
+    verdict.require(waitFor([surface, reloadEpoch] {
+        return surface->sourceEpoch() != reloadEpoch && surface->hasVideo();
+    }), QStringLiteral("public stream refresh replaces the held source"));
+    requireHeld(verdict, surface, QStringLiteral("replacement remains paused during preparation"));
+    verdict.require(!surface->playbackPauseIntent(),
+                    QStringLiteral("held Play survives source replacement"));
+    dialog->endEnginePreparation(true, QStringLiteral("Replacement complete"));
+    verdict.require(waitFor([surface] {
+        return corePaused(surface, false) && surface->isPlaying();
+    }), QStringLiteral("terminal acknowledgement resumes the replacement's retained Play"));
+
+    surface->setPaused(true);
+    waitFor([surface] { return corePaused(surface, true); });
+    dialog->beginEnginePreparation(QStringLiteral("Reload before newer Play"));
+    const uint64_t pausedReloadEpoch = surface->sourceEpoch();
+    dialog->applyRefreshedStreams(qualities, 360);
+    surface->setPaused(false);
+    verdict.require(waitFor([surface, pausedReloadEpoch] {
+        return surface->sourceEpoch() != pausedReloadEpoch && surface->hasVideo();
+    }), QStringLiteral("paused source refresh finishes after a newer Play request"));
+    requireHeld(verdict, surface, QStringLiteral("newer Play waits for operation acknowledgement"));
+    verdict.require(!surface->playbackPauseIntent(),
+                    QStringLiteral("deferred load cannot overwrite newer Play with recorded Pause"));
+    dialog->endEnginePreparation(true, QStringLiteral("Newer Play complete"));
+    verdict.require(waitFor([surface] {
+        return corePaused(surface, false) && surface->isPlaying();
+    }), QStringLiteral("terminal applies Play requested during the replacement load"));
+
     dialog->beginEnginePreparation(QStringLiteral("Owner handoff"));
     dialog->togglePip();
     PipFloat* pip = nullptr;
@@ -751,8 +792,9 @@ int main(int argc, char** argv) {
     if (floated) {
         requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP receives active preparation hold"));
         dialog->endEnginePreparation(true, QStringLiteral("Complete"));
-        verdict.require(corePaused(pip->videoSurface(), true) && corePaused(surface, true),
-                        QStringLiteral("owner replacement cannot inherit an automatic original-owner resume"));
+        verdict.require(waitFor([pip, surface] {
+            return corePaused(pip->videoSurface(), false) && corePaused(surface, true);
+        }), QStringLiteral("held Play resumes only the float after preparation handoff"));
         dialog->beginEnginePreparation(QStringLiteral("PiP preparation"));
         pip->videoSurface()->setPaused(false);
         requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP Play during preparation"));
@@ -760,9 +802,17 @@ int main(int argc, char** argv) {
         dialog->endEnginePreparation(true, QStringLiteral("Complete"));
         verdict.require(corePaused(pip->videoSurface(), true) && corePaused(surface, true),
                         QStringLiteral("PiP newer Pause survives completion; parked main stays paused"));
+        dialog->beginEnginePreparation(QStringLiteral("PiP held Play returns"));
         pip->videoSurface()->setPaused(false);
-        waitFor([pip] { return corePaused(pip->videoSurface(), false); });
+        requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP Play awaiting hand-back"));
         dialog->togglePip();
+        requireHeld(verdict, surface, QStringLiteral("main receives PiP's held Play"));
+        verdict.require(!surface->playbackPauseIntent(),
+                        QStringLiteral("hand-back preserves Play before releasing the float hold"));
+        dialog->endEnginePreparation(true, QStringLiteral("Hand-back complete"));
+        verdict.require(waitFor([pip, surface] {
+            return corePaused(surface, false) && corePaused(pip->videoSurface(), true);
+        }), QStringLiteral("hand-back terminal resumes main while pooled float stays paused"));
         surface->setPaused(true);
         pump(350);
         verdict.require(corePaused(surface, true),

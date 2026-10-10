@@ -1641,6 +1641,7 @@ void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
         if (owner != playbackSurface()) return;
         if (animeJanaiBuildingSurface_ != owner) {
             beginEnginePreparation(tr("Building TensorRT engine"));
+            animeJanaiBuildGeneration_ = enginePreparationGeneration_;
             animeJanaiBuildingSurface_ = owner;
         }
         updateEnginePreparation(-1, 0, tr("Preparing model"), detail);
@@ -1648,6 +1649,12 @@ void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
     }
     if (animeJanaiBuildingSurface_ != owner) return;
     animeJanaiBuildingSurface_.clear();
+    // A superseded build reports itself but cannot end the operation owning the
+    // window now: whatever superseded it already released the hold it held.
+    if (animeJanaiBuildGeneration_ != enginePreparationGeneration_) {
+        flashStatus(detail, !succeeded);
+        return;
+    }
     endEnginePreparation(succeeded, detail);
     flashStatus(detail, !succeeded);
 }
@@ -2129,30 +2136,52 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     // A new source supersedes the remedies too: they described the previous
     // source's processing. The media chip and its loop are untouched above.
     retireProcessingRow();
+    // A running engine operation keeps the replaced source paused as its owner:
+    // open() drops the previous hold, so the hold is re-armed for the new one.
+    const bool rearmPreparationAfterOpen = enginePreparationActive_;
+    // The old source's pause as the VIEWER asked for it: under a hold the
+    // physical paused state is the operation's own, not the viewer's.
+    const bool carriedPausedIntent = surface_->playbackPauseIntent();
     // A swap carries the position, the pause and the rate across so playback
     // continues where it was instead of restarting.
     resumePending_ = resume && surface_->hasVideo();
     if (resumePending_) {
         resumePosition_ = surface_->position();
-        resumePaused_ = !surface_->isPlaying();
+        resumePaused_ = carriedPausedIntent;
     } else {
         // A restart resets the position but not the viewer's intent: mpv
         // always brings a fresh file up playing, so a swap away from a paused
         // player would start the next episode loudly. Recorded here and applied
         // when the new stream reports itself - a core with no file loaded
         // cannot hold a pause for it.
-        pauseAfterLoad_ = surface_->hasVideo() && !surface_->isPlaying();
+        pauseAfterLoad_ = surface_->hasVideo() && carriedPausedIntent;
     }
     if (height > 0) {
         currentHeight_ = height;
         shell_->setQuality(QStringLiteral("%1p").arg(height));
     }
+    // open() discards the hold, so the intent it kept is saved and handed back
+    // to the re-established hold below.
+    const auto rearmCarriedIntent = rearmPreparationAfterOpen
+        ? std::optional<bool>(carriedPausedIntent)
+        : std::nullopt;
     url_ = url;
     // open() reports false only when the engine itself could not be created, so
     // this is the one place that knows whether a retry is worth offering.
     // The real MpvError reason was already emitted synchronously through
     // onEngineError before this returns, so the failure chip names the cause.
     engineReady_ = surface_->open(url);
+    if (rearmPreparationAfterOpen && engineReady_) {
+        // Same operation, so its terminal still ends this hold; the hold is
+        // re-established with the intent saved before the load.
+        moveEnginePreparationPause(surface_, rearmCarriedIntent);
+    }
+    if (engineReady_) {
+        // The generation this load's pause is recorded under: a viewer request
+        // that lands while the file loads supersedes it, and the deferred
+        // restore then drops the recorded value rather than overriding them.
+        resumePauseGeneration_ = surface_->pauseRequestGeneration();
+    }
     if (!resumePending_) {
         // Volume, mute and rate live on the core across a load, but the shell
         // and the float still need to hear the new state.
@@ -2184,6 +2213,12 @@ void PlayerDialog::restoreResumePoint() {
     const double position = std::clamp(resumePosition_, 0.0, surface_->duration());
     surface_->seek(position);
     shell_->setPosition(position);
+    if (resumePauseGeneration_ != surface_->pauseRequestGeneration()) {
+        // A newer explicit request already answered this load, and the live
+        // signal that carried it updated the shell: neither the recorded pause
+        // nor the recorded playing glyph may overwrite it.
+        return;
+    }
     if (resumePaused_) {
         // Assert the desired pause, not a toggle: restoreResumePoint runs from
         // the duration/playing callbacks, and a toggle inverts whatever the
@@ -2200,6 +2235,11 @@ void PlayerDialog::applyPendingPause() {
         return;
     }
     pauseAfterLoad_ = false;
+    if (resumePauseGeneration_ != surface_->pauseRequestGeneration()) {
+        // The viewer already answered this load explicitly: a pause recorded
+        // before the file was up must not overwrite the newer request.
+        return;
+    }
     surface_->setPaused(true);
     shell_->setPlaying(false);
 }
@@ -3325,18 +3365,36 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
 
 bool PlayerDialog::isPipActive() const { return pip_ != nullptr; }
 
-void PlayerDialog::moveEnginePreparationPause(VideoSurface* owner) {
-    if (!enginePreparationActive_ || owner == enginePreparationSurface_) return;
-    if (enginePreparationSurface_ != nullptr) {
+void PlayerDialog::moveEnginePreparationPause(VideoSurface* owner,
+                                              std::optional<bool> carriedIntent) {
+    if (!enginePreparationActive_) return;
+    // Read the intent while the hold is still in place: releasing it first
+    // collapses playbackPauseIntent() onto the physical pause the hold forced.
+    const bool savedIntent = carriedIntent.has_value()
+        ? *carriedIntent
+        : (enginePreparationSurface_ != nullptr
+               ? enginePreparationSurface_->playbackPauseIntent()
+               : owner != nullptr ? owner->playbackPauseIntent() : true);
+    if (enginePreparationSurface_ != nullptr && enginePreparationSurface_ != owner) {
+        // A hold left behind is released outright: it named a core that no
+        // longer plays, and restoring its intent there would resume or un-pause
+        // media this operation no longer owns.
         enginePreparationSurface_->setEnginePreparationPaused(false, false);
     }
     enginePreparationSurface_ = owner;
     enginePreparationSourceEpoch_ = owner != nullptr ? owner->sourceEpoch() : 0;
-    if (owner != nullptr) owner->setEnginePreparationPaused(true);
+    if (owner != nullptr) {
+        owner->setEnginePreparationPaused(true);
+        if (owner->playbackPauseIntent() != savedIntent) {
+            owner->setPaused(savedIntent);
+        }
+    }
 }
 
 void PlayerDialog::beginEnginePreparation(const QString& title) {
     if (closed_) return;
+    // Supersedes any earlier operation, including one never completed.
+    ++enginePreparationGeneration_;
     enginePreparationActive_ = true;
     moveEnginePreparationPause(playbackSurface());
     if (processingOverlay_ == nullptr) {
@@ -3363,10 +3421,9 @@ void PlayerDialog::endEnginePreparation(bool ok, const QString& summary) {
     if (closed_ || animeJanaiBuildingSurface_ != nullptr) return;
     enginePreparationActive_ = false;
     if (enginePreparationSurface_ != nullptr) {
-        const bool restore = enginePreparationSurface_ == playbackSurface() &&
-                             (enginePreparationSourceEpoch_ == 0 ||
-                              enginePreparationSourceEpoch_ ==
-                                  enginePreparationSurface_->sourceEpoch());
+        // The terminal applies the LATEST viewer intent, but only to the core
+        // that still plays.
+        const bool restore = enginePreparationSurface_ == playbackSurface();
         enginePreparationSurface_->setEnginePreparationPaused(false, restore);
     }
     enginePreparationSurface_.clear();
@@ -3473,6 +3530,8 @@ void PlayerDialog::enterPip() {
         window->videoSurface()->setAnime4KChain(floatChain);
     }
 
+    // The float opens from the main core's viewer-level pause intent - a hold
+    // means the intent, not the physical state.
     const bool enteringPaused = enginePreparationActive_ || surface_->playbackPauseIntent();
     window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
@@ -3504,8 +3563,8 @@ void PlayerDialog::enterPip() {
         }
     }
     pip_ = window;
+    // The hold moves to the float's own core, carrying the held intent.
     moveEnginePreparationPause(window->videoSurface());
-    if (enginePreparationActive_) window->videoSurface()->setPaused(enteringPaused);
     // The owning core changes here, so a capture asked of the main core can no
     // longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
@@ -3583,10 +3642,13 @@ void PlayerDialog::leavePip(bool closing) {
     // float's live pause intent, not to the entry record. A viewer who paused
     // the float comes back paused; one who left it running comes back
     // running. The entry flag only covers a missing window.
-    const bool returningPaused = enginePreparationActive_ || (window != nullptr
-        ? window->videoSurface()->playbackPauseIntent() : !pipResumePlaying_);
+    const bool returningPaused = window != nullptr
+        ? window->videoSurface()->playbackPauseIntent()
+        : !pipResumePlaying_;
     surface_->setAnimeJanaiPlan(animeJanaiPlan_);
     pip_ = nullptr;
+    // The hold moves BEFORE the explicit request is applied: with the hold in
+    // place the request only records the intent.
     moveEnginePreparationPause(closing || closed_ ? nullptr : surface_);
     if (!closing && !closed_) surface_->setPaused(returningPaused);
     shell_->setAnimeJanaiSelection(animeJanaiPresetId_, surface_->animeJanaiStatus());
@@ -3641,6 +3703,8 @@ void PlayerDialog::leavePip(bool closing) {
     // availability go back to its own observation instead of the float's. The
     // announcement is left to the resume that follows, exactly as before.
     pushNativeInputs();
+    // Deferred one turn: the hold, if any, has already moved onto the main core.
+    // The pause generation drops a request a newer viewer intent overtook.
     const uint64_t returnEpoch = surface_->sourceEpoch();
     const quint64 returnPauseGeneration = surface_->pauseRequestGeneration();
     QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen, returnEpoch,

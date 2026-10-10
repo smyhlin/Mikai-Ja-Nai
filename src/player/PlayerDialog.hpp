@@ -567,10 +567,26 @@ private:
     SeriesDrawer* seriesDrawer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
     QPointer<VideoSurface> animeJanaiBuildingSurface_;
+    /// The core the running engine operation holds paused, and the source epoch
+    /// that hold was taken under: 0 means the hold predates any source, so a
+    /// completion restores the intent instead of being treated as stale.
     QPointer<VideoSurface> enginePreparationSurface_;
     uint64_t enginePreparationSourceEpoch_ = 0;
     bool enginePreparationActive_ = false;
-    void moveEnginePreparationPause(VideoSurface* owner);
+    /// Identifies a REAL operation: only beginEnginePreparation() bumps it, so a
+    /// source replacement keeps the same generation and the same operation's
+    /// terminal still ends the hold it re-established. A genuinely newer
+    /// operation supersedes an older one's terminal this way.
+    quint64 enginePreparationGeneration_ = 0;
+    /// The generation the surface's own engine build was started under, so its
+    /// completion is applied only while it is still the operation on screen.
+    quint64 animeJanaiBuildGeneration_ = 0;
+    /// Moves the pause hold to the core playing now, releasing the hold it
+    /// leaves behind outright and carrying the viewer intent the hold kept to
+    /// the incoming owner. `carriedIntent` overrides the read-back intent, which
+    /// is the only way to name it once the outgoing hold is already gone.
+    void moveEnginePreparationPause(VideoSurface* owner,
+                                    std::optional<bool> carriedIntent = std::nullopt);
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;
@@ -675,6 +691,10 @@ private:
     // they set. A freshly loaded stream always comes up playing, so the pause
     // is re-asserted once the load lands rather than carried as a resume point.
     bool pauseAfterLoad_ = false;
+    // The pause generation `resumePaused_`/`pauseAfterLoad_` were recorded
+    // under, so a newer explicit Play/Pause on the loading stream is never
+    // overwritten by the pause recorded before it was up.
+    quint64 resumePauseGeneration_ = 0;
     // False while the surface has no mpv core at all: a retry then asks the
     // host to provision the runtime instead of reloading a dead url.
     bool engineReady_ = false;
