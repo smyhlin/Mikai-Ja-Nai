@@ -1472,6 +1472,10 @@ void VideoSurface::resizeGL(int width, int height) {
     // has to render even though no frame has been decoded since.
     forceRender_ = true;
     if (contextReady_) render_->update();
+    // Ask for that paint rather than hoping Qt repaints on its own: the fresh
+    // buffer has no defined content, and with a paused core nothing else will
+    // schedule one, so the widget would composite undefined pixels.
+    update();
 }
 
 void VideoSurface::showEvent(QShowEvent* event) {
@@ -1480,6 +1484,10 @@ void VideoSurface::showEvent(QShowEvent* event) {
     // float) cannot assume its framebuffer still holds the last frame, and
     // with a paused core there may never be another one.
     forceRender_ = true;
+    if (contextReady_ && render_) {
+        render_->update();
+        update();
+    }
 }
 
 void VideoSurface::paintGL() {
@@ -1508,8 +1516,10 @@ void VideoSurface::paintGL() {
     const qreal ratio = devicePixelRatioF();
     const int targetWidth = std::max(1, static_cast<int>(width() * ratio));
     const int targetHeight = std::max(1, static_cast<int>(height() * ratio));
-    // Clear reused Qt buffers before rendering, including pixels outside the video rectangle.
+    // QOpenGLWidget guarantees its own context is current here, so the render
+    // context and this FBO are the ones these entry points act on.
     QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
+    // Clear reused Qt buffers before rendering, including pixels outside the video rectangle.
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     gl->glViewport(0, 0, targetWidth, targetHeight);
     gl->glDisable(GL_SCISSOR_TEST);
