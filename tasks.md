@@ -196,20 +196,24 @@ membership, model inventory correction, explicit custom Aji import, and
 plan-only run are recorded in `native/manifest/sources.json` and
 `native/README.md`.
 
-- **Source-first follow-up:** all production implementation slices were frozen
-  before probes resumed. The final app/tests/probes build exits 0 with zero
-  warnings/errors; full CTest passes in 26.53 s. Isolated Settings 129, RIFE
-  settings 56 and missing-runtime refusal 52 checks pass. Only the verified
-  executable was replaced in `dist-mikai`; protected component records are
-  unchanged and the installed Ukrainian home feed starts/closes normally,
-  exit 0. Logs and limits are recorded in `native/README.md`.
-- **Current GPU blocker:** session 1 is disconnected. Fresh Qt contexts use
-  Mesa llvmpipe OpenGL 3.0, and mpv refuses the render context; an independent
-  NVIDIA OpenGL 4.6 surface passed before disconnection. Cold TensorRT
-  completion/pause/intent, the original lower-half corruption and final
-  PiP/Compare acceptance remain open. New public-API transition regressions
-  compile but cannot reach playback in this session. No private Ready/Active,
-  all-model inference, numerical fidelity or redistribution clearance follows.
+- **Source-first follow-up:** production implementation finished before probes
+  resumed. Subsequent desktop-OpenGL and held-Play PiP fixes are compiled; the
+  interrupted parallel build completed at `--parallel 1`, without compiler
+  warnings. Final CTest passes in 15.92 s. Real-core operation checks pass 93/93
+  on lavfi, and player interactions pass 172/172. Earlier isolated Settings
+  129, RIFE settings 56 and runtime-refusal 52 checks passed. Only the verified
+  executable was replaced in `dist-mikai`; protected records are unchanged and
+  the installed Ukrainian home feed starts/closes normally, exit 0, without a
+  GL environment override. Exact logs and failed attempts are in `native/README.md`.
+- **Current screen/input blocker:** `QT_OPENGL=desktop` permits hardware
+  rendering despite session 1 being disconnected; production startup now sets
+  `AA_UseDesktopOpenGL`. At frame 152 the FBO is clean but the screen-first
+  capture is entirely black (oracle 2/5 failures). The captioned main/Compare
+  corruption report, actual cold TensorRT completion and final Compare
+  acceptance remain open; real-core operation tests are not cold-build proof.
+  The H.264 operation rerun also failed initial readiness, despite independent
+  surface/shell playback passing. No private Ready/Active, all-model inference,
+  numerical fidelity or redistribution clearance follows.
 
 - **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
   five spatial selections passed; live catalog Save/refusal passed. Verify

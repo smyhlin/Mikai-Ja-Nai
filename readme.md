@@ -234,20 +234,23 @@ Native inference proof. A later composition binary's hermetic CTest passed in
 18.22 seconds, but that binary also predates the native traversal correction, so
 it is not the current tree either.
 
-The source-first follow-up build compiles the app, tests and relevant probes with
-exit 0, zero warnings and zero errors
-(`.probe-out/ui-audit-final-reachable-build.log`). Full CTest passes in 26.53 s
-(`.probe-out/ui-audit-final-reachable-hermetic.log`); `lupdate` finds 997 existing
-strings and no new strings. Settings, RIFE settings and missing-runtime refusal
-checks pass; exact evidence and remaining gates are in `native/README.md`.
+The source-first follow-up compiled the app, tests and relevant probes with no
+compiler warnings; an interrupted parallel build completed at `--parallel 1`.
+Final CTest passes in 15.92 s
+(`.probe-out/ui-audit-desktop-final-hermetic.log`). Real-core engine-operation
+checks pass 93/93, and player interactions pass 172/172. Settings, RIFE settings
+and missing-runtime refusal checks also passed. Exact evidence, the failed
+H.264 operation startup and remaining gates are in `native/README.md`.
 
 Only the verified executable was replaced in `dist-mikai`; the three protected
 component records have unchanged hashes. The installed app paints its Ukrainian
 home feed and closes normally, exit 0
-(`.probe-out/ui-audit-final-installed-app-startup.log`). This is not GPU-playback
-acceptance: Windows session 1 is disconnected, fresh Qt contexts receive Mesa
-software OpenGL, and mpv refuses that context. Cold-engine pause/completion,
-black-block playback and final Compare checks require the NVIDIA-backed desktop.
+(`.probe-out/ui-audit-desktop-installed-startup.log`). Startup now requires
+desktop OpenGL rather than Qt's unsupported automatic software selection;
+hardware surface playback works in the disconnected session. This is not full
+acceptance: the frame-152 FBO is clean but its screen capture is black.
+Cold-engine completion, the original visible corruption and final Compare
+checks still require the interactive desktop.
 Tests and probes are hand-run, not CI.
 
 ```sh

@@ -187,12 +187,16 @@ Layering is strict and enforced by tests:
   the hold and latest intent; only the actual owner resumes on completion.
   The filter poll command's mandatory fourth empty argument is fixed, but a
   fresh completed 512×288 engine run remains open. After source-first
-  implementation, the final build/CTest, isolated Settings and runtime-refusal
-  checks pass. Real-core hold and pixel checks are blocked by session 1 being
-  disconnected: fresh Qt contexts use Mesa llvmpipe OpenGL 3.0 and mpv refuses
-  them, rather than receiving the NVIDIA desktop. Current runtime evidence and
-  unresolved gates are recorded in `native/README.md`, not inferred from this
-  implementation contract.
+  implementation, real-core operation checks pass 93/93 on lavfi and player
+  interactions pass 172/172. Parking main must not overwrite the intent copied
+  into PiP; capture it before requesting main's physical pause.
+  `main()` requires desktop OpenGL before constructing `QApplication`: Qt's
+  automatic software selection produced a refused Mesa context while the
+  desktop was disconnected, whereas forced desktop OpenGL renders normally.
+  This does not establish screen/input acceptance: the frame-152 FBO is clean
+  but the screen-first capture is black. Current runtime evidence, the failed
+  H.264 operation startup and unresolved gates are in `native/README.md`, not
+  inferred from this implementation contract.
 
 ## Key Directories
 

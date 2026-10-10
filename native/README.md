@@ -34,10 +34,15 @@ following verification; no probes ran during that implementation pass.
 
 ### Source-first follow-up
 
-The app, tests and relevant probes build with exit 0, zero warnings and zero
-errors (`.probe-out/ui-audit-final-reachable-build.log`). Full CTest passes in
-26.53 s (`.probe-out/ui-audit-final-reachable-hermetic.log`). `lupdate` finds 997
-existing strings and no new strings.
+The initial source-freeze build passed with zero warnings/errors
+(`.probe-out/ui-audit-final-reachable-build.log`). The subsequent desktop-OpenGL
+and PiP fixes are compiled into the app, tests and relevant probes. The parallel
+build ran out of compiler memory at `dialog_probe`; the remaining targets
+completed with `--parallel 1`, zero warnings/errors
+(`.probe-out/ui-audit-desktop-player-build.log` and
+`.probe-out/ui-audit-desktop-player-remaining-build.log`). Final CTest passes in
+15.92 s (`.probe-out/ui-audit-desktop-final-hermetic.log`). `lupdate` found 997
+existing strings and no new strings at source freeze.
 
 The isolated Settings run passes 129 checks
 (`.probe-out/ui-audit-final-isolated-settings.log`); the inspected
@@ -56,27 +61,51 @@ failure was a fixture precondition failure; the corrected isolated run passes.
 The source changes re-arm an active engine operation's pause hold on the current
 source and owner, retain the latest explicit Play/Pause intent across PiP and
 source changes, and prevent late load completions from replaying older intent.
-Public-API regressions cover these transitions, but their real-core scenarios
-have not run: initial playback is refused in the disconnected desktop session.
+The resumed real-core gate caught one further defect: parking the main core
+overwrote held Play before PiP inherited it. PiP now receives the intent captured
+before parking. The existing gate failed that handoff before the fix; afterward
+all 93 operation checks pass on its real lavfi source
+(`.probe-out/ui-audit-desktop-engine-intent-lavfi.log`). All 172 player interaction
+checks also pass (`.probe-out/ui-audit-desktop-interaction.log`), including pooled
+PiP geometry and pause restoration. These are not actual TensorRT-build proof.
 
-An independent canonical H.264/NVDEC surface smoke passed with NVIDIA OpenGL 4.6
-before disconnection
-(`.probe-out/ui-audit-sourcefreeze-isolated-surface.log`). Subsequently `quser`
-reports session 1 disconnected; fresh Qt contexts use `WinDisc`, Mesa 11.2.2
-OpenGL 3.0 / llvmpipe rather than NVIDIA. Both the player and an independent
-surface fail with `mpv_render_context_create: not supported`
-(`.probe-out/ui-audit-gl-driver-dialog.log` and
-`.probe-out/ui-audit-gl-driver-standalone.log`). No software fallback or weaker
-pixel tolerance was added. The cold-engine, lower-half corruption, pooled PiP
-and final Compare acceptance gates remain open until the GPU desktop reconnects.
+The H.264 operation rerun after the fix failed before reaching its scenarios:
+`context=1`, `video=0`, `playing=1`, position 0
+(`.probe-out/ui-audit-desktop-engine-intent-fixed.log`). Its decoder startup cause
+is unproven. The same clip passes independent surface/shell playback; the shell
+passes 10 checks (`.probe-out/ui-audit-desktop-shell.log`). The lavfi result does
+not silently replace that failed H.264 run.
+
+Qt's automatic OpenGL selection used Mesa 11.2.2 / llvmpipe OpenGL 3.0 after
+session 1 disconnected, and mpv refused that context. Forcing
+`QT_OPENGL=desktop` supersedes the blanket rendering blocker: the canonical clip
+renders with NVDEC, moving nonblack pixels and zero decoder/VO drops
+(`.probe-out/ui-audit-final-forced-desktop-opengl.log`); its inspected image also
+shows the subtitle normally. Production `main()` now sets
+`Qt::AA_UseDesktopOpenGL` before constructing `QApplication`. No software
+fallback or weaker pixel tolerance was added.
+
+Physical-screen proof remains blocked. At 6.333 s / frame 152 the current
+framebuffer is visibly clean and all sampled picture pixels are lit, but the
+screen-first capture is entirely black; the oracle fails 2 of 5 checks
+(`.probe-out/ui-audit-desktop-canonical.log`, `ui-audit-desktop-canonical-fbo.png`
+and `ui-audit-desktop-canonical-screen.png`). The reference scenario disables
+subtitles and does not clear the original captioned main/Compare corruption
+report. The cause of the black screen capture is not established by a clean
+FBO. Native foreground/pointer tests, a completed cold TensorRT player build
+and final Compare acceptance remain pending the interactive desktop.
+
+An actual rebuilt app's URL menu opened its modal dialog, but synchronous UIA
+invocation timed out; native-input acceptance is not asserted. Only that owned
+app and dialog were closed, exit 0; no user processes were stopped.
 
 Only `dist-mikai/mikai.exe` was updated; no `dist` target was run. Its digest
 matches the verified build and the RIFE, Aji and TensorRT install-record digests
-are unchanged (`.probe-out/ui-audit-final-installed-update.json`). The installed
-app paints a visible Ukrainian feed and closes normally, exit 0
-(`.probe-out/ui-audit-final-installed-app-startup.log`). The earlier build-root
-startup harness misread PowerShell's unavailable `Process.ExitCode`; the owned
-child itself exited 0. The installed run uses the child exit result and passes.
+are unchanged (`.probe-out/ui-audit-desktop-installed-update.json`). The final
+installed app paints a visible Ukrainian feed and closes normally, exit 0,
+without a `QT_OPENGL` environment override
+(`.probe-out/ui-audit-desktop-installed-startup.log`). This startup observation
+does not assert processed playback or the remaining screen/input gates.
 
 ### Earlier cleanup observations
 
@@ -156,8 +185,8 @@ The player-flow items that remain open, and their exact state:
   filter poll command omitted its mandatory fourth empty argument. That argument
   is fixed in source. The fresh natural-shape 512 attempt aborted at the cursor
   before any preset was selected, so no engine was built. The implementation pass
-  is complete; the rerun is blocked by the disconnected Mesa desktop described
-  above, not by an active implementation or probe worker.
+  is complete; desktop OpenGL permits rendering, but the natural-player rerun
+  still needs interactive foreground/pointer input. No worker remains running.
 - The original main-window and Compare black blocks, which remain open after the
   pixel correction below.
 
