@@ -85,9 +85,9 @@ shows the subtitle normally. Production `main()` now sets
 `Qt::AA_UseDesktopOpenGL` before constructing `QApplication`. No software
 fallback or weaker pixel tolerance was added.
 
-The console is now attached. A resumed capture with an extra `--dpr 2` ran at
-DPR 4 and captured Explorer rather than the video; its failed oracle is not
-playback-corruption evidence. The reference probe now keeps only its own window
+The resumed reference run used the attached console. Its first capture with an
+extra `--dpr 2` ran at DPR 4 and captured Explorer rather than the video; its
+failed oracle is not playback-corruption evidence. The reference probe now keeps only its own window
 above other apps and uses the monitor's native DPR. At 1366×975 logical / DPR 2,
 6.333 s / frame 152, the physical screen is captured before the FBO and passes
 5/5 requirements: 4,196,051 of 4,196,352 reference-lit pixels remain visible
@@ -98,7 +98,8 @@ subtitles, so the original captioned main/Compare corruption remains open.
 The earlier disconnected all-black capture's cause is still unproven.
 
 Both required fresh engines now build through the actual PlayerDialog →
-packaged libmpv fork → public Aji v0.9.0 TensorRT menu flow. The native foreground,
+packaged libmpv fork → locally imported custom ABI-8 Aji TensorRT menu flow.
+This local package is separate from the default public v0.9.0 downloads. The native foreground,
 cursor and hit-target guards remain enabled. The probe's own player is kept
 above other apps; no other application's window or install records are changed.
 
@@ -117,15 +118,33 @@ Evidence: `.probe-out/ui-audit-current-rife-cold-576-1791635749077.log` and
 `.probe-out/ui-audit-current-spatial-cold-512-1791635749077.log`.
 
 Visual inspection after those operation checks reproduced horizontal black
-stripes in the spatial player's lower picture band, both in
-`menu-spatial-smoke/native/animejanai-probe-player-dialog.png` (frame 776) and
-`animejanai-probe-processed.png` (native FBO, frame 765). Independently decoding
-frame 776 from the same 512×288 input produces a clean PNG
-(`.probe-out/source-reference-512-frame776-1791635749077.png`).
+stripes in the spatial player's lower picture band. Frozen images are
+`.probe-out/spatial-artifact-before-graph-player-1791635749077.png` (frame 776)
+and `.probe-out/spatial-artifact-before-graph-fbo-1791635749077.png` (native FBO,
+frame 765). Independent CPU decoding of the exact same input produces clean
+frames at both timestamps: `.probe-out/source-reference-512-frame765-1791635749077.png`
+and `.probe-out/source-reference-512-frame776-1791635749077.png`.
 The existing smoke's nonblack/moving predicate did not catch this corruption.
 The fresh engine/build hold is proved; correct spatial pixels are not. This is
 an active reproduced defect, not an attribution to numerics, CUDA, Qt or a
 driver. The RIFE player image was inspected clean at its recorded timestamp.
+
+The exact live Aji backend and cached spatial engine were also exercised without
+mpv or Qt using the existing upstream harness, built without changing backend
+bytes. It processed the CPU-decoded NV12 frame 765 twelve times under the same
+configuration, slot and color tags. Both CUDA graph and plain inference exited
+0; their final 1024×576 NV12 frames were byte-identical, and the graph's first
+and last frames were identical. The inspected
+`.probe-out/spatial-frame765-graph-1791635749077.png` is clean. Logs are
+`.probe-out/ui-audit-spatial-headless-graph-closure-1791635749077.log` and the
+corresponding `plain-closure` log. Backend and engine hashes stayed unchanged.
+
+This isolates neither a cause nor live-path acceptance: the harness uses packed
+planes, a primary CUDA context and per-frame synchronization, while playback
+uses decoder pitches, an adopted context and an asynchronous depth-three queue.
+Live context, stride, ordering, lifetime and CUDA-to-GL publication remain under
+investigation. A later GUI no-graph attempt failed its foreground/input guard
+before model selection and therefore supplies no graph-versus-plain evidence.
 
 The preceding 512×288 RIFE build did complete and process, but its probe exited
 1: a stale prior stats file prematurely satisfied the effect predicate, so the
