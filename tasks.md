@@ -186,6 +186,132 @@ plan locking and Anime4K composition into the framebuffer proof),
 
 <a id="status"></a>
 
+**Current local integration snapshot (2026-10-09; milestones remain open).**
+Latest reports supersede older dated status for the observations below; they do
+not complete any M-task, mark private Native `Ready`/`Active`, or clear
+redistribution. Current release API versions remain mpv
+`2026-10-07-d6d93599d5`, AnimeJaNai `3.7.0`, Aji `v0.9.0`. The exact API
+archive and locally observed DLL hashes, upstream component query, archive
+membership, model inventory correction, explicit custom Aji import, and
+plan-only run are recorded in `native/manifest/sources.json` and
+`native/README.md`.
+
+- **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
+  five spatial selections passed; live catalog Save/refusal passed. Verify
+  success preserved missing selected DirectML and inactive corrupt TensorRT
+  states; selection survived refresh; Review Yes was actually clicked; backend
+  persistence passed.
+- **Earlier default component download attempt:** **failed**, before creating a DirectML record,
+  with `The verified runtime archive listing could not be read`. The root cause
+  was the existing 7zr fallback's `.7z`-only support; Aji setup needs ZIP and
+  NuGet. An official 7-Zip 26.03 x64 installer and verified 7zr bootstrap were
+  acquired; bootstrap extracts the installer payload. The helper removes the
+  bootstrap and installer after success and retains `7z.exe`, `7z.dll` and other
+  extracted payload in the app tools cache, not `dist`; exact license-file
+  contents were not inspected. Bootstrap SHA-256
+  `ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d`;
+  installer SHA-256
+  `0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd`.
+  Artifact 351 initially rejected a valid Windows archive member path as unsafe.
+  After separator normalization, artifact 357 completed actual DirectML
+  download/install/verification after Review Yes; selected DirectML remained
+  selected and inactive corrupt TensorRT was ignored. The ABI-8 install-record
+  SHA-256 is
+  `24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10`.
+  Artifact 357's overall GUI probe failed four false shortcut/hidden-tab
+  assertions. After the QTabWidget page-ancestry and preset-locator corrections,
+  artifact 361 passed the complete current GUI/settings gate with zero failures
+  in 13.68 seconds. Native and Presets shortcuts opened their actual pages;
+  Ctrl+Alt+Shift+F12 glyph and clear-inside checks passed; Save/Cancel passed at
+  760x780, DPR 2; English/Ukrainian access to all 47 RIFE and five spatial
+  choices, live language Save/refusal, selected-missing DirectML versus inactive
+  corrupt TensorRT Verify, and Review Yes followed by default DirectML
+  download/install/verify passed. The install record remained ABI 8 with four
+  DirectML DLLs and SHA-256
+  `24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10`.
+  `dist` stage 6 was rebuilt; application/Core remained identical to stage 5.
+- **Runtime/UI:** packaged `mikai.exe` window launch and normal shutdown were
+  observed. A genuine 320×180 H.264 24 fps, two-audio-track/subtitle fixture
+  played through Wasapi/multitrack before the first Aji request; it is not
+  processed-playback evidence and implies no FPS claim. An earlier settings
+  shortcut 2DIP probe overran; artifact 361 later passed its reported shortcut
+  visibility/clear-inside checks and Save/Cancel geometry at 760x780, DPR 2.
+- **Plan-only:** all 47 verified graph choices resolved exact
+  `prepareAnimeJanaiPlan` inputs, including v4.26 heavy. No engine build was
+  requested. ABI-code notes and the fixed catalog lifetime defect are recorded
+  in the acquisition record.
+- **Fresh spatial attempt (artifact 340):** TensorRT 11.3.0 `[b99]` built the
+  fresh engine in 18.527 seconds (3.01755 MiB) for graph SHA-256
+  `b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c`.
+  Engine SHA-256:
+  `a122bc35c163740a3eedb1221c72e289c296682594bc580ac5faa5676a6f74a8`;
+  engine/logs are under
+  `.probe-out/natural-spatial-a43/native/animejanai/models/spatial/`.
+  The overall spatial probe was marked FAIL after a 600-second wait expected
+  incidental status `filter accepted`; actual status was `filter retained
+  (inference not observed)`. The status gate is now corrected, but this run does
+  not become PASS retroactively. The shim/TRT backend and engine loaded, slot
+  2001 configured (`320x180→640x360`, depth 3), CUDA-graph chain captured and
+  `vo=libmpv` reported 640×360 CUDA NV12. This is build/configuration evidence,
+  not pixel correctness, processed playback, or Ready/Active.
+- **Previous spatial attempt (a44):** a fresh raw engine build and 640×
+  output/render logs were observed, but the probe failed CRC filename filtering
+  and an early raw-output read of 320 before configured-slot Core property
+  reconfiguration. The corrected spatial run superseded these false gates.
+- **Fresh spatial run (artifact 367, a46):** FULL PASS in 66.47 seconds on stage
+  7. The selected-engine directory began empty; the raw engine built in 15.7249
+  seconds (2.98863 MiB). The exact spatial HD Balanced
+  graph SHA-256 was
+  `b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c`.
+  Its fresh engine was 3,133,804 bytes, SHA-256
+  `0a3fd65a1de1abe5507a996ee571abfebef8eda3294046a195b91b4648c759c9`;
+  the PASSED raw build log tied the exact `--onnx` graph to the `--saveEngine`
+  output and actual engine CRC, with all request-bound components present;
+  full Qt/render/control/shutdown trace:
+  `.probe-out/natural-spatial-a46/qt-flow-proof.log`.
+  Core video-out params were 640x360 from 320x180 NVDEC input, configured
+  spatial slot 2001 GPU 320→640, followed by four successful render flags.
+  Postfilter count was 73 rendered frames/3 seconds (24 fps unchanged), raw
+  estimate 24, decoder/VO drops zero. The nonblack, changed/moving OpenGL frame
+  and owned PlayerDialog capture passed; Space pause, Right seek, volume 37/
+  mute, audio/subtitle cycle, Off restoring hwdec, source reopen and shutdown
+  surface checks passed. This passes the described selected spatial playback
+  run, not all-47 inference, numerical fidelity, private Ready/Active, or an
+  FPS improvement claim.
+- **Initial RIFE attempt (artifact 349):** the v4.14 lite engine built and
+  loaded; the probe failed because its request-bound scan searched spatial
+  `plan.modelDir`/wrong model identity and `time-pos` transitions were not
+  presentation-frame evidence. This failure was corrected in the fresh run.
+- **Fresh RIFE run (artifact 366):** FULL PASS in 88.63 seconds on stage 7.
+  The selected-engine directory began empty. The exact v4.14 lite graph was
+  5,986,311 bytes (SHA-256
+  `948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7`),
+  model code 4141. Qt worker → vf → local custom ABI-8 → `trtexec` produced a fresh
+  request-bound engine in 38.932 seconds (9.12264 MiB; 9,565,780 bytes, SHA-256
+  `e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22`); the
+  PASSED footer matched the exact ONNX and `saveEngine`, all request-bound
+  components were present, and no prebuilt engine was used; full trace:
+  `.probe-out/natural-rife-a45/qt-flow-proof.log`. RIFE reported
+  active `2/1`, `NewVideoFPS48`, padding to 320x192 then crop to 320x180, with
+  actual NVDEC output 320x180. Successful `MPV_RENDER_UPDATE_FRAME` outputs
+  over 3 seconds were 73 baseline versus 145 processed at equal resolution;
+  the 1.5x threshold passed. `time-pos` events were 70 vs 72 and were not used.
+  The nonblack/changed/moving processed image passed (SHA-256
+  `91ede513739640d2dacb86e3dbdfa48cabb8c4ecb6d99e194344b9f6fac40111`);
+  pause/seek, volume 37/mute, audio/subtitle cycling, Off restoring hwdec,
+  source reopen, and shutdown-surface checks passed; decoder/VO drops were 0.
+  Engine-to-active-model identity remains inferred because Core has no
+  engine-ID event. This is not numerical-fidelity/all-47 proof, private
+  Ready/Active, or FPS improvement evidence.
+- **Still pending:** numerical model fidelity, all-47-model inference, private
+  Ready/Active, and ESC-1/2/3 clearance. The described RIFE and spatial selected-
+  model runs passed their fresh build/render/control checks; neither establishes
+  other models, private Native capability, or an FPS improvement. The latest
+  union build had zero errors/warnings, CTest passed in 13.78 seconds, Ukrainian
+  translations were 999 finished/0 unfinished, and `dist` was rebuilt at stage
+  7. Artifact 361 passed the current GUI/settings gate. Do not upgrade broad
+  milestones based on the two selected-model runs.
+
 **Latest complete CPU matrices (2026-10-04).** The newest full `ctest` is green:
 inspection-ON exit `0` in **21.48 s** and inspection-OFF exit `0` in **15.92 s**
 (`.probe-out/native-batch-on-epoch-guard-ctest.log`,
@@ -597,7 +723,10 @@ status summary is §1.6.
   `0.000785205742`) against the **unchanged** `0.02`/`0.005` bounds. M12 is
   **partial, not done**: the curated RIFE requests now resolve the four exact
   pinned original graphs to owned content-addressed records (§1.7), while the
-  full/ensemble numerics still exceed the unchanged bounds. No model is `Ready`
+  full/ensemble numerics still exceed the unchanged bounds. Artifact 349 later
+  built and loaded a v4.14 lite raw TensorRT engine through Qt/libmpv, but failed
+  overall and did not establish pixel correctness, output cadence, or Ready.
+  No model is `Ready`
   or `Active`. The separate Native RIFE controls exist, but the old
   `rife/planned` leaf remains in `Anime4K.cpp`; replacing that leaf as requested
   in this task's Purpose is still unmet.
@@ -1272,10 +1401,12 @@ status summary is §1.6.
   (`.probe-out/native-factory-corrected-locale-geometry-en-dpr{1,2}.log`,
   `.probe-out/native-factory-corrected-installed-geometry-uk-dpr{1,2}.log`).
   Older logs erroneously tagged `EN lang --language uk` are **not** UK proof and
-  are not cited. Final placeholder checks and English min-size/HiDPI proof remain
-  open; the RIFE-specific changed-path probe has **no current run yet**, and the
-  actual UK RIFE settings consumer run now exits `0` (§1.7). Live language
-  updates are not implemented: Settings saves `ui/language` and explicitly
+  are not cited. Artifact 361 passed English/Ukrainian access to all 47 RIFE
+  and five spatial choices, language Save/refusal, and Save/Cancel at 760x780,
+  DPR 2; the latest catalog has 999 finished and zero unfinished translations.
+  The actual UK RIFE settings consumer run exits `0` (§1.7). M38 remains partial:
+  final placeholder/in-context checks and live language updates are not
+  implemented; Settings saves `ui/language` and explicitly
   requires a restart, contrary to this task's live-update acceptance.
 
 <a id="ws-f"></a>
@@ -1441,7 +1572,11 @@ status summary is §1.6.
 - **Depends:** M43, M24. **Status:** blocked — requires M12's numerical
   acceptance (full/ensemble rejected on `maxAbsoluteError`) and the real licensed
   runtime; the RIFE assets are present, so this is not a missing-asset blocker.
-  The RIFE-specific changed-path probe has **no current run yet**.
+  Artifact 366 passed one selected v4.14 lite run's fresh build/render and
+  relative presentation-output count (145 versus baseline 73 over 3 seconds;
+  1.5x minimum passed), with pause/seek and audio/subtitle control checks. It
+  does not prove exact rational output rate over a long clip, cut behavior,
+  padding/edge behavior, EOF, or A/V sync; M44 remains incomplete.
 
 <a id="m45"></a>
 

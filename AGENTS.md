@@ -8,11 +8,12 @@ C++/Qt6 desktop client for the Mikai public anime API
 carousels (recently opened / ongoing / popular) plus updates and schedule rows;
 search with a format filter bar; a title page with detail, related titles,
 per-release tabs, and a compact episode grid where a click fetches that
-episode's qualities once and opens the built-in player. Settings carries four
-tabs — General, Presets, Processing and **Components** — and the Components tab
-lists every downloadable backend element (the GPU-specific TensorRT packs and the
-pinned model graphs) with its install state, a manual digest re-check, and a
-download that fills in what the machine lacks. `docs.md` is the authoritative API
+episode's qualities once and opens the built-in player. Settings carries four tabs — General, Presets, Processing and **Components** —
+and the Components tab lists the pinned GPU-specific TensorRT packs and RIFE
+model archive with install state, digest verification and explicit
+user-initiated downloads. Public Aji component downloads remain pinned to
+upstream v0.9.0; a locally imported custom ABI-8 package is separate and is not
+the default download source. `docs.md` is the authoritative API
 contract; `.env` holds the optional key; `skills/design-ui/` carries OS-native UI
 guidance. `cmake/dist.cmake` assembles a self-contained folder behind the `dist`
 target; it never ships the downloadable elements.
@@ -31,8 +32,10 @@ Layering is strict and enforced by tests:
   `qualityUrl`, `qualityStreams`; `NoSourceError` marks a provider with no
   video). The layering tests (`TestLayering`) assert it includes no Qt GUI
   headers and never names the app layer.
-- `src/app/` is the only widget layer and talks to the domain through
+- `src/app/` owns the application widgets and talks to the domain through
   `mikai::backend::MikaiClient` (blocking calls; threads via `Runner`).
+  Shared GUI helpers live in `src/gui/`, including `Clipboard.hpp` in
+  `mikai::gui`; player widgets remain in `src/player/`.
 - UI never blocks the GUI thread: pages submit work to `Runner`
   (`src/app/workers/Runner.hpp`) with four `QThreadPool`s — shared (4),
   bulk (3) for feed fan-out so a title the user just opened is not queued
@@ -111,8 +114,11 @@ Layering is strict and enforced by tests:
   watched by the shell's event filter), the panels above it stay on screen, and the
   levels below it close. So there is no **‹ Назад** row, and a click on a category row
   opens the same panel while a click on a preset applies it and closes the tree. A
-  top-left `MIKAI` chip shows `cache-speed`, `estimated-vf-fps`, and, while a
-  preset is active, source → output resolution.
+  top-left `MIKAI` chip shows `cache-speed`, `estimated-vf-fps`, and available
+  source → output resolution. Official Aji status distinguishes a requested or
+  retained filter from the backend's observed processing report, clearing stale
+  evidence on Off/source changes. Standard never paints unread private Native
+  status; a configured selection is not proof of inference.
   The upscalers are gated by `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`: Anime4K
   declines to upscale a video mpv is already displaying at or above source
   size. A 480p source in a 1080p window is what actually triggers it, which is
@@ -158,25 +164,31 @@ Layering is strict and enforced by tests:
   `mikai.native.cache/2`), a derived artefact that is ignored rather than
   half-read when its schema does not match. Measured from the app's own log: 23.8 s
   before, 18.1 s on a cold cache, ~0.6 s on every start after.
-- **The downloadable elements live outside the app and outside any dist.** The
-  component store (`<nativeRoot>/components/tensorrt/3.6.3`) and the model asset
-  store are per-machine download caches under `%LOCALAPPDATA%`; each element is
-  GPU-specific or licence-restricted, so it is fetched where it runs and proved by
-  digest before it is stored. Nothing in `dist-mikai/` carries them.
-- **The startup component check asks before it fetches.** `MainWindow` runs it
-  after the runtime selection: when the Native runtime is chosen and this GPU's
-  packs are absent from both the bundle and the store, a warning offers
-  **Download / Skip for now / Skip and never ask**. The prompt is the gate, so
-  nothing is downloaded before the viewer chooses — running the check earlier made
-  a Native start pull hundreds of megabytes before the first paint. "Skip and
-  never ask" persists `componentsPromptDismissed` in the `player/native` settings
-  group and deliberately survives a preferences reset, so clearing the Processing
-  tab's request fields cannot re-arm a muted prompt.
-- **An engine build is visible while it runs.** A TensorRT build takes minutes and
-  starts from a modal dialog, so the player shows `ProcessingOverlay` — a native
-  always-on-top tool window rather than an in-window child, which would sit behind
-  the dialog. Its bar steps over the plan's own stage count and invents no
-  percentage; a failure stays up until dismissed, a success leaves on its own.
+- **Native assets are per-machine, not part of the app or dist.** Official
+  AnimeJaNai 3.7.0 TensorRT packs and the 47-model RIFE archive are explicit
+  user-requested components. Public Aji downloads stay pinned to v0.9.0; a
+  separate local custom ABI-8 import can carry v4.26 heavy mapping and is never
+  silently substituted or auto-downloaded. Acquisition and plan-only checks
+  establish neither private Ready/Active inference nor redistribution rights.
+  Acquisition records and exact evidence belong in `native/README.md` and
+  `native/manifest/`, not a second ledger here.
+- **Engine building is a paused, visible operation.** `ProcessingOverlay` is a
+  native always-on-top tool window, so modal Settings cannot obscure it. Show
+  the actual preparation/build phase and elapsed time; use an indeterminate bar
+  when the backend supplies no measurable stage count. A plan's stage count is
+  not TensorRT build progress, and no percentage is invented. Completion is
+  visible before automatic dismissal; failure stays until dismissed. Hold video
+  paused on the actual playback owner throughout official or private engine
+  work. Retain explicit Play/Pause intent until terminal acknowledgement, and
+  clear the old hold on source replacement. The filter's poll command was
+  missing its mandatory fourth empty argument, so a real cold 384×224 player
+  build paused correctly and then never reported completion; that argument is
+  fixed in source, and the latest fresh attempt still reports **no engine built**
+  because activation fails in the foreground before any menu selection; a
+  source-side activation fix is complete and its gate is pending, so a fresh
+  512×288 engine run proving completion, pause hold and intent restoration is
+  still open. Current runtime evidence and unresolved gates are recorded in
+  `native/README.md`, not inferred from this implementation contract.
 
 ## Key Directories
 
@@ -196,9 +208,9 @@ Layering is strict and enforced by tests:
   - `Releases.hpp/cpp` — `playableEpisodeCount`, `sortReleases`.
   - `Errors.hpp` — only `MikaiApiError{code, message, status}`.
   - `Streams.hpp/cpp` — HLS extraction per site; `NoSourceError`.
-  - `Runtime.hpp/cpp` — stock mpv discovery at runtime (`runtimeCandidates`) and
-    the auto-download provisioning (`provisionRuntime`) the recovery path may run
-    (`%LOCALAPPDATA%/MPVBackend/runtime`). It finds a DLL; it never loads one.
+  - `Runtime.hpp/cpp` — packaged libmpv module discovery and runtime selection.
+    It never downloads mpv or falls back to a stock cache; a missing packaged
+    module is unavailable.
   - `Downloads.hpp/cpp` — the one transport every downloader shares:
     `fetchUrlBytes` (one GET, whole body in memory), `downloadToFile` (streams to
     a file, hashes as it writes, refuses a size or digest mismatch, removes the
@@ -207,7 +219,8 @@ Layering is strict and enforced by tests:
     every 200 ms), `ensureSevenZip`, `extractArchive`. Progress is throttled to
     one report per 100 ms plus a guaranteed terminal one: a per-chunk report
     posts a GUI update for every few kilobytes of a 400 MB asset.
-    `provisionRuntime()` is cut over to it, so the 7z invocation exists once.
+    The component download helpers are for explicit native/model assets only;
+    there is no app-launch mpv download path.
 - `src/app/` — the Qt Widgets frontend, namespace `mikai::app`:
   - `main.cpp` — entrypoint (application/organization names, locale translators,
     Fusion style and one `setStyleSheet`, then `selectPlayerRuntime()` and
@@ -226,10 +239,10 @@ Layering is strict and enforced by tests:
     `RateLimitLabel` (RPM indicator).
   - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles, preset
     shortcuts, and the Standard/Native **Runtime module** choice),
-    `ComponentStoreTab` (the Components tab: the compatible component packs plus
-    the five pinned model graphs, each with install state, a Verify that re-hashes
-    the bytes, and a Download-missing), `NativeAssetsPanel` (the Processing tab's
-    owned-model inventory, artifact cache and source-asset store),
+    `ComponentStoreTab` (the Components tab: AnimeJaNai 3.7.0 TensorRT packs and the
+    47-model RIFE archive, with install state, digest verification and
+    user-initiated download), `NativeAssetsPanel` (the Processing tab's
+    lazily refreshed owned-model inventory, artifact cache and source-asset store),
     `CoverViewer` (chromeless full-screen cover with zoom/pan).
   - `state/` — `Feeds` (home-block toggles), `QualityCache`,
     `NativeComponentProvisioner` (the app-side component driver: `ensure()` is the
@@ -239,7 +252,11 @@ Layering is strict and enforced by tests:
   - `workers/` — `Runner` (pools 4/3/12).
   - `theme/` — `Colors.hpp`, `Metrics.hpp`, `Theme.hpp/cpp`
     (`buildStylesheet()`), `Icons.hpp/cpp` (painted glyphs, never emoji).
-  - `Clipboard.hpp`, `Labels.hpp/cpp` (status labels).
+  - `Labels.hpp/cpp` — status labels.
+- `src/gui/Clipboard.hpp` — canonical text/image clipboard helper, namespace
+  `mikai::gui`. Success requires the actual write/readback, not just an attempted
+  action. Player refusals use visible status plus an accessibility alert; hosted
+  title actions report failures in a warning parented to the active player.
 - `src/player/` — the player: `MpvApi` (the one dynamic module loader and its
   function table; `MpvHandle` is the only place calling `mpv_*`) →
   `MpvRenderContext` → `VideoSurface`; `ShellTheme`, `ShellWidgets`,
@@ -247,7 +264,7 @@ Layering is strict and enforced by tests:
   always fitted, there is no zoom or pan);
   `PlayerPopups` (`MenuPopup`, `QualityPopup`, `TrackPopup`,
   `SeriesDrawer`); `PlayerDialog` (composition root + `PipFloat`).
-  Picture-in-picture has three rules that each cost a real bug, and all three
+  Picture-in-picture has four rules that each cost a real bug, and all four
   are exercised in `InteractionProbe` (a description, not a green run — see the
   probe note below):
   - **The float owns its playback.** Every control - the scrubber, the play
@@ -265,6 +282,16 @@ Layering is strict and enforced by tests:
     instant. `setPaused` writes unconditionally: a version that short-circuited
     on the cached `playing_` flag silently dropped the call when the cache was
     stale, leaving a surface the caller believed it had resumed frozen.
+  - **The float is placed freely.** A drag drops it exactly where the pointer
+    leaves it — no snap-to-corner on release, no re-pin on resize, show, or
+    re-entry. The single placement rule is *reachability*: some part of the
+    float must share pixels with a work area, or it cannot be clicked or dragged
+    back (`overlapsAnyWorkArea()` / `pullIntoWorkArea()`). A pooled float
+    re-enters at the exact position and size the viewer last left it; only an
+    unreachable position (a monitor that went away) is corrected, once, in
+    `showEvent`. `moveToCorner()` is the *first* placement of a brand-new float
+    only. An earlier snap-to-corner-on-release was removed: it defeated the
+    whole point of a draggable float by forcing every drop to a fixed corner.
   Progress follows the float's own `positionChanged`, and `setTime` shows the
   position whenever it is known - blanking it because the *duration* was not
   threw away the only number a viewer can read.
@@ -272,41 +299,47 @@ Layering is strict and enforced by tests:
   chain) in `Anime4K.cpp` plus the menu tree above it: ten built-in presets
   (`Mode::Off`..`HqCA`, ids frozen), fourteen experiments grouped under
   Anime4K's own family names (Noise Reduction, Thin Lines, Texture
-  Enhancement, Darken), and three planned-model submenus (RIFE, RealESRGAN,
-  Інші моделі) each holding a disabled В планах leaf. `menuRows(parent)` is
-  what the shell paints, one level per panel; a category row only opens the panel
-  beside it and a placeholder row is disabled, so neither can change the chain. `shaderStringForCandidate(id)`
+  Enhancement, Darken). `menuRows(parent)` is what the shell paints, one level
+  per panel; a category row only opens the panel beside it and cannot change
+  the chain. Standard exposes Anime4K and official AnimeJaNai; the latter owns
+  the working spatial and RIFE model selectors. Private prepared-model menus
+  require a loaded Native runtime. Processing's private editor/import/preparation
+  controls appear only when Native is deliberately selected or already loaded;
+  Standard keeps the official Aji/RIFE and Anime4K flows. Hidden private requests
+  are preserved. No redundant Native checkbox, toggle shortcut, or planned
+  nonfunctional menu leaves are offered. `shaderStringForCandidate(id)`
   is the only chain resolver, used for a mode and for a loose `.glsl` alike.
-  `CompareWindow` — the shader comparison, reached from the picture's
-  right-click menu. Its badge chooser mirrors the player menu's Anime4K tree:
-  exactly the 24 preset ids and labels from `availableModes()`, under the same
-  categories and experiment families. Loose `.glsl` files are not extra choices,
-  so every compared model is selectable in the player, and it lets the
-  viewer pick two and shows them in
-  one of three layouts: side by side, one image with a draggable divide, or
-  the amplified per-pixel difference.
-  Four things about it are load-bearing, each found the same way the
-  Anime4K pixel check was:
-  - **A side is a chain applied to the live core, not a re-implementation.**
-    `renderWithChain` writes the chain through `VideoSurface::setAnime4KChain`
-    and grabs what comes back. Drawing the same image twice would look like a
-    comparison and measure nothing.
-  - **A comparison leaves the player as it found it.** The surface's own chain
-    is read before the two sides render and written back afterwards, so the
-    window never leaves the live core - or the stored setting it would be
-    compared against - running a preview chain.
-  - **The frame is frozen before it is compared.** Re-seeking to one
-    timestamp does not reproduce the same pixels, so the window takes one
-    frame and both sides render from it; two settled frames of a still picture
-    differ by 0.000/255, and that is the noise floor a difference is read
-    against. `compare_probe` asserts exactly that number.
-  - **A chain is named by id, never by ordinal.** A single `.glsl` has no
-    `Mode` at all, so `player/anime4k` stores the candidate id and the enum is
-    only the menu's shorthand. A preset added later cannot repoint a choice
-    the viewer already made.
-  The window is non-blocking on purpose, and the float is barred from
-  opening it: the float owns a second mpv core, and the window swaps the
-  chain on whichever surface it is given.
+  `CompareWindow` — source-isolated image comparison from the picture's
+  right-click menu. Its two corner badges are the only model choosers; their
+  menus close before expensive rendering. Choices are the player's 24 stable-ID
+  Anime4K presets (including Off) plus five public AnimeJaNai spatial models.
+  Loose `.glsl` files and temporal RIFE models are excluded. Unsupported or
+  missing backend/model closure is named, never silently substituted.
+  `CompareRenderer` owns a separate libmpv core, offscreen GL context, surface
+  and framebuffer. It captures one lossless source PNG at the held playback
+  timestamp and loads that immutable input once; actual shader/filter processing
+  renders both sides there. It does not swap or restore the live player's shader
+  chain, Aji plan, or pixels. The main source/pause hold and private plan lock
+  protect the captured epoch; closing releases them.
+  Only the two current outputs are retained, with the unchanged side reused on
+  a model switch; identical choices share one output and Off is the canonical
+  source image. A failure names the affected choice without mislabelling stale
+  output or clearing the other side. Source replacement, close, or cancelled
+  work invalidates pending results.
+  Five layouts are exposed: Split H, Split V, Side-by-side, Flicker, Difference.
+  Controls appear only for the relevant mode, including on initial display.
+  Fit uses the active canvas or side-by-side grid geometry; wheel zoom works in
+  both, with pan/divider gestures handled by the respective image view.
+  Compare remains non-blocking and is not opened from the PiP float.
+  Canonical shader/spatial checks have passed, but the fresh 416×240 run still
+  reported an early live-surface Off restoration residual (0.676/255 against the
+  unchanged 0.05 tolerance) and its cause is unproven; do not call it dithering or
+  weaken the pixel tolerance. A canonical startup also ended with exit 5 after
+  only its CLI line, so that invocation carries no rendering acceptance; it is
+  retained here as a historical, unexplained result. A later normal canonical
+  startup ran under GDB and reported `RESULT: PASS`, so the exit-5 line is not
+  the latest known startup outcome — and neither run closes the 416×240 rendering
+  gate. See `native/README.md` for exact observed outcomes and remaining gates.
 - `src/player/native/` — runtime selection and the native vocabulary:
   `selectStartupRuntime()`/`resolveRuntime()`/`commitRuntime()` pick and pin
   one module per process (a later choice is refused in place with a restart
@@ -316,7 +349,7 @@ Layering is strict and enforced by tests:
   the app unconditionally; `MIKAI_WITH_MODEL_INSPECTION` only adds the optional
   CPU inspector.
   - `components/` — the GPU-adaptive TensorRT components. `NativeComponentCatalog`
-    pins the AnimeJaNai `3.6.3` packs by asset byte count and SHA-256 and selects
+    pins the AnimeJaNai `3.7.0` packs by asset byte count and SHA-256 and selects
     the exact `trt-sm{MA}{MI}` pack when the release publishes one, otherwise
     `trt-ptx`, and `nullptr` for a shape the name cannot express rather than an
     approximation onto a neighbour; `trtexec.exe` is deliberately absent.
@@ -324,7 +357,7 @@ Layering is strict and enforced by tests:
     NVML, loading `nvml.dll` only from System32 and returning a named refusal
     (`native.gpu.nvmlMissing` / `deviceMissing` / `capabilityUnreported`) rather
     than a default. `NativeComponentStore` installs a verified pack into the
-    app-owned `<nativeRoot>/components/tensorrt/3.6.3` and records what it proved
+    app-owned `<nativeRoot>/components/tensorrt/3.7.0` and records what it proved
     (`component.json`, schema `mikai.native.components/1`); `storedPack` trusts the
     recorded size while `verifyPack` re-hashes, and `installPack` streams
     source→target hashing as it copies, so a copy that does not reproduce the
@@ -336,8 +369,9 @@ Layering is strict and enforced by tests:
 - `shaders/` — the 49 Anime4K `.glsl` presets, copied next to the executable
   by POST_BUILD rules on `mikai`, `mikai_tests` and shader-using probes.
   `Anime4K::findShadersDir` looks beside the
-  exe and in the cwd; when it finds nothing the SHADERS section hides itself
-  rather than offering rows that cannot work.
+  exe and in the cwd; when it finds nothing Anime4K controls hide rather than
+  offering rows that cannot work. Loose shader files are resolver inputs, not
+  additional player/Compare menu leaves.
 - `src/probes/` — hand-run CMake targets (`EXCLUDE_FROM_ALL`; nothing in
   `tests/` runs them). The GUI ones build a real window and check pixels:
   `mpv_surface_smoke`, `headless_pixel_probe`, `widget_pixel_probe`,
@@ -358,8 +392,9 @@ Layering is strict and enforced by tests:
   GPU's own pack it builds, and with another generation's it fails naming the
   resource that is missing, which is what proves the selection decides the
   outcome. `engine_popup_probe` drives the player's preparation window through its
-  public API and reports 13 requirements, including that a second build reopens
-  the window and can still be cancelled. `native_prep_probe` links only `Qt6::Core` and takes
+  public API, including completion/failure visibility and a second build
+  reopening the window with working cancellation. `native_prep_probe` links only
+  `Qt6::Core` and takes
   `<helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>`, driving the
   native preparation helper against a real CUDA device; it is Windows-only and
   needs no interactive session. The
@@ -369,6 +404,14 @@ Layering is strict and enforced by tests:
   cover open/close loop pins the use-after-free) and `external_media_probe`
   needs a 320×180 clip plus its HTTP fixture; `crash_probe` installs the app's
   logging then faults on purpose, to prove a report is actually written.
+  Action-refusal probes are independent: `external_media_probe
+  --player-clipboard-failure <localclip>` checks a real hostless player under
+  Windows QPA with a separate clipboard-lock holder; `title_page_probe
+  --host-copy-refusal-only` checks the actual title host under Windows QPA,
+  while `--host-browser-refusal-only` uses offscreen QPA for browser refusal.
+  The title scenarios exercise real API sessions and active-player warnings;
+  do not combine the platform-specific failure mechanisms. These new scenarios
+  still require the parent's final run.
   `widget_pixel_probe` takes a PNG path argument and otherwise runs one fixed
   lavfi source, so it does not exercise alternate-media or dialog flows; its
   only observed failure mode is a refused PNG save (FAIL, exit code 1).
@@ -400,14 +443,12 @@ Layering is strict and enforced by tests:
   is already displaying at source; on a small surface only the ungated restore
   half runs. The check asserts the chain runs, not that it is worth enabling.
 
-  **A description is not a pass.** These paragraphs say what each probe
-  *measures*; describe the behaviour a probe checks, never a specific string,
-  theme number or default it happens to pin: those pin the implementation
-  instead of the user-visible result. The desktop runs that are green are the
-  ones with an observed `RESULT: PASS` line on a current-tree binary —
-  `interaction_probe` 149/149, `compare_probe` 30/30, and `hls_recovery_probe`
-  and `external_media_probe` — and pixel proofs additionally need the session
-  attached (detached: every count reads black with `hasVideo=0`).
+  **A description is not a pass.** These paragraphs describe what probes
+  measure, not a green run of the current tree. Older desktop results are
+  historical; post-integration checks must cover both Compare families without
+  black model switches, exact live-player preservation, engine pause/progress,
+  pooled PiP geometry, and real refused actions. Pixel proofs need the
+  interactive session attached; detached results read black with `hasVideo=0`.
 - `tests/cpp/` — `mikai_tests` (one exe, one ctest entry; `main.cpp` drives
   each suite and prints a per-suite PASS/FAIL/SKIP line). Domain and UI suites:
   `TestModels`, `TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`,
@@ -431,13 +472,15 @@ Layering is strict and enforced by tests:
 
 ## Development Commands
 
-Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`), Qt 6.8.x
-(`C:/temp/qt6/6.8.3/mingw_64`), and an mpv header directory holding
-`mpv/client.h` and `mpv/render_gl.h` (`MPV_INCLUDE_DIR`, cached as `MIKAI_MPV_HEADERS`; no
-default, and CMake hard-fails without it). The headers are build-only — the app never links libmpv
-— and the optional native SDK is not needed for an ordinary build. This Qt
-build needs `QT_PLUGIN_PATH=<qt>/plugins` in the environment or TLS reports 0
-and every HTTPS call fails.
+Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`) and Qt 6.8.x
+(`C:/temp/qt6/6.8.3/mingw_64`). CMake acquires the pinned Windows x64 mpv
+developer archive or validates `MIKAI_DIST_MPV_ARCHIVE` against its pinned
+SHA-256, extracts matching headers, and compiles against them; no manual
+`MPV_INCLUDE_DIR` is used. The app uses the libmpv C/render API in its existing
+Qt `QOpenGLWidget` GUI, with no `mpv.exe` or IPC. The build output and
+`dist-mikai/mpv/` carry only `libmpv-2.dll`. The optional native SDK is not
+needed for an ordinary build. This Qt build needs `QT_PLUGIN_PATH=<qt>/plugins`
+in the environment or TLS reports 0 and every HTTPS call fails.
 
 ```sh
 cmake --preset release
@@ -451,8 +494,8 @@ Presets (`CMakePresets.json`): `release` (default), `debug`, `native`
 (inspection ON). Build presets: `app`, `tests`, `app-native`, `tests-native`.
 
 Warnings are on for GNU/Clang — `-Wall -Wextra -Wno-unused-parameter
--Wno-cast-function-type`, set once in `CMakeLists.txt` — and the tree builds with
-zero of them. The two suppressions are deliberate: Qt's signal/slot signatures
+-Wno-cast-function-type`, set once in `CMakeLists.txt` — and zero warnings is
+the build expectation. The two suppressions are deliberate: Qt's signal/slot signatures
 leave unused parameters everywhere, and the `GetProcAddress` cast is the only way
 to load a symbol by name. Turning them on is what found a buffer overrun, a test
 suite that never ran and four functions nothing called, all of which had been
@@ -460,18 +503,24 @@ compiling quietly.
 
 `cmake --build build/release --target dist` assembles a self-contained folder
 (`cmake/dist.cmake`, into `dist-mikai/`): the exe, its Qt runtime via
-`windeployqt`, the 49 shaders, the translations, `run.bat`, `VERSION`, and a local
-mpv runtime when one is present. It never ships the downloadable elements — the
-GPU-specific TensorRT packs and the licence-restricted model graphs are fetched per
-machine and proved by digest there — and it removes any `components/` or `assets/`
-tree a copied native bundle happened to carry. `MIKAI_DIST_NATIVE` (OFF by
-default) additionally copies `native/runtime`.
+`windeployqt`, the 49 shaders, translations, `libmpv-2.dll` under `mpv/`,
+`run.bat`, and `VERSION`. That API DLL is the only mpv runtime artifact; the
+app never downloads a replacement, and playback is unavailable without the
+packaged module. It never ships the downloadable elements — the AnimeJaNai
+3.7.0 TensorRT packs and 47-model RIFE archive remain per-machine assets —
+and removes any `components/` or `assets/` tree a copied native bundle carried.
+`MIKAI_DIST_NATIVE` (OFF by default) additionally copies `native/runtime`.
+
+The `dist` target recreates its output directory. Do not run it over a user's
+installed `dist-mikai`: preserve components/assets and install records, and copy
+only the verified executable in place for a UI-only update.
 
 `mikai.exe` links Qt dynamically, so the Qt runtime has to sit beside it or be
 on `PATH`; a fresh tree needs `windeployqt build/release/mikai.exe`. The mpv DLL
-is not a load-time import: the app resolves a stock runtime by discovery
-(beside the exe or in `%LOCALAPPDATA%/MPVBackend/runtime`), so copy a runtime
-tree into one of those places for playback. `mikai.exe` is `WIN32_EXECUTABLE`
+is not a load-time import: the app loads the packaged `mpv/libmpv-2.dll`
+through libmpv's C/render API in its existing `QOpenGLWidget` UI. Runtime
+discovery never downloads mpv or falls back to a stock cache; without the
+packaged module playback is unavailable. `mikai.exe` is `WIN32_EXECUTABLE`
 (no console); diagnostics go to `mikai.log` beside the exe (see the crash-log
 note above).
 
@@ -533,9 +582,19 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - `src/app/main.cpp` — entrypoint; `selectPlayerRuntime()` runs after
   `QApplication`, application identity, translators and theme setup, before any
   widget can reach an mpv core. It resolves the stored runtime choice and loads
-  the module through `MpvApi` — no load-time libmpv import, no `PATH` edit. The
-  same first-paint turn then runs `window.ensureNativeComponents()`, which is the
-  startup component check.
+  the module through `MpvApi` — no load-time libmpv import, no `PATH` edit.
+  Component archives are downloaded only after an explicit user request from
+  the Components tab; startup performs no component download. The packaged API
+  DLL contains ABI-8 `vf_animejanai`, faster ASS changes and display-rate-match.
+  The official filter path is separate from private Native admission; selecting
+  a preset requires verified Aji/backend/model closure and does not establish
+  inference or Active status. Subtitle GPU blur/compositing/rasterization needs
+  gpu-next and forklibass and is not claimed on this OpenGL surface.
+  Display-rate-match is default-off and local seekable mkv/lavf only. The DML-to-Qt
+  OpenGL path lacks direct D3D11 interop; hardware `d3d11va` → Aji filtering →
+  mpv downstream download is the intended path, never CPU-ahead fallback, and
+  hardware playback through it remains unobserved. Local runtime installation
+  requires an explicit directory/backend, is cancellable and is not auto-imported.
 - `src/app/dialogs/ComponentStoreTab.cpp` — the Components tab. Availability is
   the toolchain's verdict rather than the store's contents: asking the store alone
   reported a resource the installed bundle already carries as "Not installed" and
@@ -567,13 +626,13 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - The API key is optional and only raises limits. Resolution order in
   `MikaiClient`: explicit argument → `MIKAI_API_KEY` env var → repo-root
   `.env`. `setApiKey` writes the `X-API-Key:` line back to `.env`.
-- Windows-first: `%LOCALAPPDATA%/MPVBackend/runtime` is where a provisioned
-  stock mpv runtime lands, and discovery also looks beside the exe; a probe or
-  test can name one DLL with `MIKAI_MPV_MODULE`. The app does not link libmpv:
-  `selectStartupRuntime()` resolves the module and `MpvApi` loads it
-  explicitly, once, and pins it for the process. Many core handles (main plus
-  the PiP float) share that one module; swapping to a different runtime is
-  refused in place and needs a restart. Non-Windows hosts rely on a system mpv.
+- Windows-first: the packaged `mpv/libmpv-2.dll` is the app's only mpv runtime;
+  a probe or test can name one DLL with `MIKAI_MPV_MODULE`. The app does not
+  link libmpv at load time: `selectStartupRuntime()` resolves the module and
+  `MpvApi` loads it explicitly, once, and pins it for the process. Many core
+  handles (main plus the PiP float) share that module; swapping runtime needs a
+  restart. Missing package means unavailable playback; app-launch discovery
+  does not download mpv or use an arbitrary stock cache.
 - The repo is a git repository. The root `.gitignore` covers `.env`,
   `__pycache__/` (leftover bytecode only, untracked), `.venv/` (removed),
   `*.png`, and `build/`; there is no CI pipeline, no
@@ -613,17 +672,170 @@ ctest --test-dir build/release -R mikai_tests
 
 ### Observed acceptance state
 
+**Player-flow observations (latest observed; not acceptance of the tree):** the
+build recorded at `.probe-out/ui-audit-playback-failure-cause-build.log` compiled
+`mikai` plus the test and probe tree with exit 0, zero errors and zero warnings.
+
+The root fix behind it: a synchronous `MpvError` thrown by the surface's own open
+was being overwritten by failed-open callers' generic "Could not play" text. All
+eight callers now go through one central helper that preserves the named cause,
+and no Aji plan is applied from a core that failed to open. A player refusal now
+raises an accessible alert (`QAccessible::Alert`) in addition to the visible
+status. On the baseline that alert did not exist at all — the gate observed 0 of
+them and failed — and the real missing-runtime consumer then hit heap
+`c0000374`; under GDB the fault came from `VideoSurface::~detach` emitting to an
+already-destructing `PlayerDialog`, so the destructor now disconnects early and
+guards on `closed_`.
+
+Observed after the fix, at `.probe-out/ui-audit-runtime-refusal-cause-after.log`
+(52 requirements, 0 skips, exit 0): the actual missing Root/DLL cause is named,
+the request is actually dropped, and the close is clean. Real external-media
+file-picker, HTTP, same-URL retry and file-URI playback passed 22/22
+(`.probe-out/ui-audit-real-playback-after-failure-fix.log`, exit 0). Real
+expired-signature HLS recovery passed 45 requirements
+(`.probe-out/ui-audit-hls-recovery-after-failure-fix.log`, exit 0). The full
+hermetic CTest suite after the same fix is 100% in 15.69 s
+(`.probe-out/ui-audit-failure-cause-hermetic-after.log`).
+
+The real refused-action gates also pass after the cause fix, on the current
+binaries. The player clipboard gate covers 16 checks and the Search clipboard
+gate 1 under the corrected hidden-HWND Windows-QPA proof; the Search browser gate
+passes 1 check under `QT_QPA_PLATFORM=offscreen`. The title browser gate
+(`.probe-out/ui-audit-title-browser-refusal-after.log`, exit 0) passes actual
+action, visible warning, parent, accessible `Alert`, screenshot and
+no-false-success checks with the session intact, and the title copy gate under
+Windows QPA passes the same flags
+(`.probe-out/ui-audit-title-clipboard-refusal-after.log`). Giving the offscreen
+browser a readable font surface needs `C:/Windows/Fonts` on its font path; with
+it the readable-surface run passes
+(`.probe-out/ui-audit-title-browser-refusal-fonts.log`).
+
+Current parent gates on the same post-fix binaries:
+
+- `InteractionProbe` passes 172/172 with 0 skips and exit 0
+  (`.probe-out/ui-audit-free-pip-live-intent-final.log`). M4's PiP change, which
+  made an unrequested change to the live float, was reverted; the original
+  behaviour is preserved: after entering the float playing, the probe explicitly
+  pauses the float, captures its live state before `Restore`, and checks
+  positions, controls, two non-corner free placements at different sizes, pooled
+  reentry, and pass-through. The earlier 169/2 paused-restore result was a stale
+  probe expectation, not a production bug. The chrome-idle wait now drives a real
+  `QTest::mouseMove` with a bounded wait instead of a synthetic `QMouseEvent`
+  followed by a 2800 ms sleep.
+- The real operation-window API passes 69/69
+  (`.probe-out/ui-audit-engine-operation-pause-after-cause-fix.log`).
+- Settings passes 129 checks
+  (`.probe-out/ui-audit-native-settings-catalog-after-cause-fix.log`, which needs
+  the translation catalogue in the environment), RifeSettings 56
+  (`.probe-out/ui-audit-rife-settings-catalog-after-cause-fix.log`) and
+  NativeMenu 33 (`.probe-out/ui-audit-native-menu-after-cause-fix.log`).
+
+Earlier composition binaries, which predate that fix, recorded the
+operation-window gate at 66/66 requirements, the full PiP interaction probe at
+171/171, and the hermetic CTest suite in 18.22 s. Their SearchPage browser and
+clipboard outcomes are superseded by the after-fix gates above; Windows QPA is
+used only by the clipboard gates, and the browser gates run offscreen.
+
+Still open, and not closed by any of the above: a fresh 512×288 engine run
+proving real completion, the pause hold and user-intent restoration. The latest
+fresh attempt aborted at the cursor before any preset was selected, so no engine
+was built; the natural-shape 512 run is being redone in a separate Qt
+visible-widget mode with its own owner. The refused-action probe's own selector
+defect is fixed and its gate now passes: it had used `findChild<QPushButton*>`
+while the real control is a typed `PillButton`, so the probe now finds a
+`PillButton` parent and drives it with `QTest::mouseClick`.
+
+The pixel clock-0 defect is diagnosed and fixed: the capture deferred **one** seek
+until `hasVideo` and `duration > 0`, cycled subtitles to none only for the
+existing reference fixture, and waited for `QOpenGLWidget::frameSwapped` at the
+target timestamp with the window active before capturing. On that basis a
+windowed 1366×975 logical run at DPR 2 (a 2732×1950 screen) at 6.333 s /
+frame 152 with NVDEC (`cuda[nv12]`) took the screen surface first and matched the
+FBO on 5 of 5 captures with 0 unavailable
+(`.probe-out/ui-audit-canonical-screen-first-windowed.log` and its PNG).
+4,196,051 of 4,196,352 reference-lit pixels were covered — 99.99% — and the
+inspected image is clean. The original main-window and Compare black blocks are
+**still open**, and the user's first full-screen Alt-Tab occlusion is
+acknowledged and excluded. The later full-screen all-black-screen run with a clean
+FBO has an **unproven** cause; it must not be attributed to DWM or GDI as fact.
+The main/Compare windowed diagnostic run is owned by the source owner and still
+in progress.
+
+The older 6.333 s / frame 152 report was reproduced against a known fresh
+CPU-decoded reference at that canonical file, so the input file is not corrupt.
+That leaves hardware decode versus rendering versus on-screen compositing
+unproven, and no stage has been named as the cause.
+
+The translation catalogue is rebuilt from production sources: `lupdate` extracted
+997 source strings (7 new, 2 obsolete removed), 7 curated translations followed
+`lrelease`, and the catalogues finished 997 / unfinished 0
+(`.probe-out/ui-audit-catalog-production-build.log`). With that catalogue,
+`mikai`, `mikai_tests` and `widget_pixel_probe` build with exit 0 and no
+warnings or errors, and full CTest is 100% in 15.71 s
+(`.probe-out/ui-audit-current-catalog-hermetic.log`).
+
+The gated application was copied **in place** into `dist-mikai/mikai.exe` only, as
+a frozen/gated source with a matching digest; no `dist` target was run. The three
+install records — Rife 3.7, Aji 0.9 trt and TensorRt 3.7 — have unchanged hashes.
+The actually installed executable starts, paints a visible Ukrainian feed and
+closes normally (`.probe-out/ui-audit-installed-app-startup-current.log`, with the
+inspected startup image at `dist-mikai/packaged-app-startup.png`).
+
+Source corrections behind the pending runs: GUI-local `QPointer` completion
+guards for player and settings work, a failed-open but truthful processing error
+path that names the actual reason, an idempotent engine-pause restore that keeps
+explicit Play/Pause intent, `ProcessingOverlay` hidden on an accepted close, and
+`TitlePage` session/page lifetime plus named stream-recovery errors. The
+runtime-cause and destructor-disconnect fixes above are runtime-proved; the rest
+of these are source-complete without a fresh composed-binary proof.
+
+**Earlier integration observations (2026-10-09; not final cleanup acceptance):** earlier
+reports record the upstream component query (not an install), local custom Aji
+import, 47-model plan-only smoke, and GUI evidence in artifacts 343/351/357/361.
+Artifact 351's ZIP/NuGet-capable extractor initially rejected a valid Windows
+archive path; artifact 357 completed DirectML download/install/verification.
+Artifact 361 passed its then-current GUI/settings gate with zero failures in
+13.68 seconds. That earlier union build had zero errors/warnings, CTest passed in
+13.78 seconds, the Ukrainian catalog had 999 finished and zero unfinished,
+and `dist` was rebuilt at stage 7. Packaged `mikai.exe` startup/shutdown and
+unprocessed H.264 multitrack playback were observed; that baseline itself is
+not processed-playback evidence. RIFE v4.14 lite artifact 366 and spatial
+artifact 367 both passed their described fresh-build/render/control playback
+runs for the selected models. RIFE's successful surface updates were 145
+processed versus 73 baseline in three seconds at equal resolution; the 1.5x
+threshold passed. Spatial output was 73 frames over three seconds (24 fps
+unchanged), with a nonblack changed/moving OpenGL frame and controls passing.
+The active-engine/model identity link remains inferred because Core has no
+engine-ID event; numerical fidelity, all-47 inference, private Ready/Active,
+and FPS improvement are not established. Spatial attempt a44 was a failed
+probe on CRC filename filtering/early raw-output timing, corrected by the
+passing artifact-367 run. ESC-1/2/3 clearance remains open. See `native/README.md` and `tasks.md` §1.6. The detailed
+checks include historical results and must not be read as current acceptance.
+
+The UI-cleanup handoff additionally records Settings 129, RifeSettings 57,
+NativeMenu 33 and a cached selected-RIFE run with 23 checks, plus an isolated
+five-spatial Compare run with 107 checks. Those precede the final every-preset
+switching, engine-pause/progress, PiP resize/reentry and refused-action checks.
+The operation gate (66/66) and the PiP interaction gate (171/171) were observed
+on composition binaries that predate the native traversal correction, so they do
+not close the fresh-engine completion/pause gate either; the current post-fix
+gates (172/172 and 69/69) still leave that engine gate open. No final cleanup
+count or current-tree acceptance is asserted here.
+
 These are observed results, not a claim that everything is green:
 
-- The default inspection-off build (`MIKAI_WITH_MODEL_INSPECTION=OFF`) builds
-  `mikai` and `mikai_tests` with **zero warnings and zero errors** under
-  `-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type`, and
-  `ctest --test-dir build/release -R mikai_tests` passes in ~**15 s**: one ctest
-  entry, **31 suites PASS** + `LiveOracle` SKIP. Compiler GNU 16.2, Qt 6.8.3; no
-  linter is configured. The inspection-on matrix needs `ORT_INCLUDE_DIR` and is
-  not configurable in an ordinary tree.
-- **The component path is proved end to end on the real device**, not inferred
-  from a green build:
+- Historical inspection-off result: `MIKAI_WITH_MODEL_INSPECTION=OFF` built
+  `mikai` and `mikai_tests` with zero warnings/errors under
+  `-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type`; CTest reported
+  31 suites PASS plus `LiveOracle` SKIP in about 15 seconds (GNU 16.2, Qt
+  6.8.3). The earlier full union build/CTest report is recorded above and in
+  `native/README.md`; no new checks are implied here. No linter is configured.
+  Inspection-on requires `ORT_INCLUDE_DIR`.
+- The upstream AnimeJaNaiManager Chains/Presets handoff is a reference for its
+  chain/default-profile vocabulary, not a request or claim that Mikai ports the
+  full custom-profile editor or its shortcuts.
+- **Historical 3.6.3 component-path exercise (not current 3.7.0 default-download
+  evidence):** an earlier real-device probe observed the following:
   - `native_component_probe --print` reports `NVIDIA GeForce RTX 5090 - SM 12.0`
     and selects `trt-sm120` (229 417 183 B). Pointed at the installed bundle it
     resolves the bundle's own `trt` directory with `fromStore=0`, which is the
@@ -632,7 +844,7 @@ These are observed results, not a claim that everything is green:
     installed file's size and SHA-256. The three the bundle also carries match the
     project SDK exactly — `nvinfer_11.dll` `ab5148bc…`, `nvonnxparser_11.dll`
     `823f7d6e…` and `nvinfer_builder_resource_sm120_11.dll` `7b616872…` — which is
-    the strongest available confirmation that the `3.6.3` packs are this project's
+    the strongest available confirmation that the historical `3.6.3` packs were this project's
     SDK.
   - The choice is load-bearing, not incidental: `--from-sdk` with the GPU's own
     `trt-sm120` pack builds a real engine (`RESULT: PASS`, 3 078 580 bytes of raw
@@ -647,16 +859,17 @@ These are observed results, not a claim that everything is green:
   runtime line): **23.8 s before the validation cache, 18.1 s on a cold cache,
   and ~0.6 s on every start after.** The first start after a redeploy re-hashes
   once, because `dist.cmake` re-copies the tree and every modification time moves.
-- **The dist folder was assembled and inspected**: `mikai.exe`, its Qt runtime and
+  - **The dist folder was assembled and inspected**: `mikai.exe`, its Qt runtime and
   plugin folders, 49 shaders, `translations/`, `run.bat`, `VERSION` (git revision +
-  UTC date) and `mpv/` from a local runtime — and **zero** `components/` or
+  UTC date), and `mpv/libmpv-2.dll` only — and **zero** `components/` or
   `assets/` directories, which is the rule that no downloadable element is shipped.
-- `objdump -p` on the current-tree `mikai.exe` from both the default/OFF and
+- Historical `objdump -p` inspection of `mikai.exe` from both the default/OFF and
   review/ON builds lists imports of exactly `Qt6Core`, `Qt6Gui`, `Qt6Network`,
   `Qt6OpenGLWidgets`, `Qt6Widgets`, `KERNEL32`, `msvcrt` and `SHELL32` — **no**
   `libmpv-2.dll`, ONNX Runtime, CUDA, TensorRT or DirectML import. The app
-  carries neither the mpv DLL nor the native GPU stack; this supersedes the
-  earlier `dumpbin /imports` observation.
+  dynamically loads its packaged `mpv/libmpv-2.dll` at runtime; it does not
+  carry the native GPU stack. This supersedes the earlier `dumpbin /imports`
+  observation.
 - A real **640×360** colored moving frame (`testsrc2` + motion) rendered through
   the explicitly loaded module with the GL debug logger active: **32 messages,
   no `ErrorType` message, `glGetError` 0**. Perf-warning messages remain — this
@@ -711,15 +924,19 @@ These are observed results, not a claim that everything is green:
   install a bundle and nothing is `Ready`. With Ninja this build must be configured
   `-DCMAKE_BUILD_TYPE=Release`; `--config Release` alone leaves a Debug cache and
   the helper fails with `0xC0000135`.
-- With the session attached, the desktop probes pass on current-tree binaries:
+- Earlier attached-session desktop probes passed on their recorded binaries:
   `interaction_probe` 149/149 (`RESULT: PASS`), `hls_recovery_probe`
   (`RESULT: PASS`, real expired-signature recovery), `external_media_probe`
   (`RESULT: PASS`, real picker, HTTP, same-URL retry and file-URL paths), and
   `compare_probe` 30/30 (`RESULT: PASS`, frozen-frame proof, 0.000/255 noise
-  floor). `anime4k_menu_probe` was rebuilt on semantic locators (no
+  floor). Later composition binaries passed `InteractionProbe` 171/171 and then
+  172/172. `anime4k_menu_probe` was rebuilt on semantic locators (no
   `objectName`/tooltip selectors) and reran as full PASS with 0 failures: all
   24 preset leaves selectable, effect 1.027/255 against a 0.0000 floor, and a
-  reopen restore of 0.999/255. Pixel proofs additionally need the session
+  reopen restore of 0.999/255. Those binaries all predate the native traversal
+  correction and the runtime-cause fix, so none of them is the current tree;
+  the current external-media, HLS and refused-action outcomes are recorded in
+  the player-flow block above. Pixel proofs additionally need the session
   attached (detached: every count reads black with `hasVideo=0`).
 
 ### Native track: owner grant for project-owned integration (2026-10-04); third-party terms not verified; built locally, not shipped
@@ -733,7 +950,7 @@ pins and licence reasoning live in those files and in `native/manifest/` — do 
 
 The installed bundle carries only the sm120 TensorRT builder resource, so on any
 other GPU `createInferBuilder` fails. That gap is closed by **provisioning rather
-than by shipping**: the app downloads the pinned AnimeJaNai `3.6.3` packs on the
+than by shipping**: the app downloads the pinned AnimeJaNai `3.7.0` packs on the
 machine that needs them, proves each by digest, and stores them in the app-owned
 `%LOCALAPPDATA%` component store. It redistributes nothing — no dist folder, no
 installer and no repository content carries those bytes — and the same is true of
@@ -760,28 +977,29 @@ TensorRT builder API and never invokes `trtexec` at all — it is neither a
 build-time input nor a run-time dependency — and that resolution would lapse if
 the design ever shelled out to `trtexec` at run time.
 
-A grant is not a capability, and local work is not a shipment. **No
-redistributable native bundle is shipped, installed, published or distributed**,
-and no engine is `Ready` or `Active`. That is a shipping/clearance boundary, not
-a claim that nothing is built: the optional MSVC `native/` project is under
-active **private, local** development and its own tools build Release from the
-pinned, patched source, and it has produced raw TensorRT plans on a real GPU,
-while private bundle factory/staging work continues locally. None of that
-redistributes the shim or any third-party component. Two RIFE engines (lite and lite ensemble) verify
-numerically against the CPU reference; the spatial HD Performance engine and RIFE
-full and ensemble are rejected on `maxAbsoluteError`. Nothing is published and no
-complete prepared recipe exists. The pinned mpv fork core now builds (273 steps,
-Release) and its isolated core loads in the matching stage closure (exit `0`);
-the original `Win127` missing symbol is unresolved. Bundle candidate verification
-still **aborts on a `GGML` initializer** after the load/unload-all-helpers sweep
-(fix in flight, no PASS yet, no M05 completion). A Lua-enabled candidate
-(LuaJIT `2.1.1788460057-2`) does pass a real **Native-off GUI surface** after
-full candidate hash validation — a 320×180 HEVC video playing through the owned
-runtime with 0 decoder/VO drops and an inspected colored motion PNG — but that
-is the **runtime surface with Native off**, not the native filter, CUDA interop
-or active inference. No native frame is rendered, no validated bundle is
-installed, and nothing is `Ready`. The **RIFE / RealESRGAN / Інші моделі**
-menu panels remain placeholders and no model in them executes, so the app
-performs no native processing. Nothing in the native track is on the Qt/MinGW
-build path: the Standard build and the optional CPU-only model inspector do not
-depend on any of it.
+A grant is not a capability, and local work is not a shipment. ESC-1/2/3
+remain open. Current evidence does not establish private Native `Ready` or
+`Active`, numerical model fidelity, all-47 inference, or engine-to-active-model
+identity beyond the observed configuration (Core has no engine-ID event).
+Artifact 366 passed the selected RIFE v4.14 lite fresh-build/render/interactions
+and relative presentation-output-count gate; artifact 367 passed the selected
+spatial fresh-build/render/control run. These specific-model results do not
+prove all models or private Ready/Active.
+The optional native tools and private runtime/bundle work are local research
+artifacts; their existence does not clear third-party redistribution. Older
+RIFE numerical verification/rejection and Native-off surface runs are
+historical, not outcomes for the current engine attempts. The current official
+filter UI exposes spatial and RIFE selections; artifact 343 passed language
+access, verification preservation, refresh, review and backend persistence.
+Artifact 351 initially failed DirectML extraction on an unsafe-path rejection;
+artifact 357 passed DirectML download/install/verification; artifact 361
+passed its then-current GUI/settings gate. The selected spatial a46 pixel/control
+run later passed as artifact 367;
+private Ready/Active is not established. Final UI-cleanup verification is pending.
+The 47-model planner passed a plan-only smoke including v4.26 heavy; it did not
+request an engine build. Public Aji downloads remain pinned to upstream v0.9.0;
+the explicit local custom ABI-8 import is not the default download. A genuine
+H.264 Wasapi/multitrack playback baseline preceded the first Aji request and
+does not itself establish processing; artifacts 366/367 later passed selected-
+model Aji Qt playback runs. Keep the standard application build
+distinct from the optional Native SDK/build path.

@@ -4,35 +4,409 @@ Everything the native (AnimeJaNai) track needs in order to be *permitted* and
 *reproducible* to exist, plus the acquisition records for what has actually been
 obtained, and what each acquisition does and does not prove.
 
-**Nothing here is on the Qt/MinGW build path.** The root `CMakeLists.txt` binds
-mpv **headers only** — a header-only API loader (`find_path` for `mpv/client.h`
-and `mpv/render_gl.h`) — and links no mpv import library; the application
-resolves `libmpv-2.dll` at run time through `LoadLibraryExW`/`GetProcAddress`.
-The plain application takes no native-SDK dependency, and a machine without the
-native SDK configures and builds the app unchanged.
+**The Qt/MinGW app build uses the pinned official Windows mpv developer
+archive.** CMake acquires or validates `MIKAI_DIST_MPV_ARCHIVE` against the
+release SHA-256, extracts the matching headers, and compiles against them. The
+build output and `dist-mikai/mpv/` contain only `libmpv-2.dll`, loaded
+explicitly through `LoadLibraryExW`/`GetProcAddress`; the app uses libmpv's C
+and render APIs in its existing Qt `QOpenGLWidget` GUI, not `mpv.exe` or IPC.
+Runtime discovery never downloads mpv or falls back to an arbitrary stock
+cache; without the packaged module playback is unavailable. No native SDK is
+needed for this ordinary application build.
 
-**The Qt application carries the player-side Native surfaces but performs no
-Native execution.** It owns the Native contracts and typed vocabulary
-(`NativeTypes`, `NativeCatalog`, `NativeRecipe`, `NativeProfiles`,
-`NativePreparationPlan`, `NativeManifest`, `NativeArtifactStore`,
-`NativeSpatialAssets`, `NativeRuntimeSelection`, `NativePrefs`, `NativeMenu`,
-`NativeStatus`) plus the `NativeAssetsPanel` / `NativeRifeControls` request
-paths. It does not load an engine and does not run an inference chain. The
-**requested** preference, the **effective** selection and every **disabled**
-entry are kept apart, and anything this build cannot run is disabled with its
-**named** reason (`native.disabled`, the recipe's refusal keys, the menu's
-"Not available: " reason), never swapped for a silent substitute. Native
-execution needs a bundle and a runtime inference path, and **neither exists
-yet** — see *What exists and what does not*.
+**The Qt application has two distinct enhancement contracts.** The official
+AnimeJaNai ABI-8 filter path uses the packaged API DLL plus an Aji/backend/model
+closure; the project's separate private prepared-Native protocol is a different
+capability. Neither a component install, a plan-only smoke, nor a configured
+choice establishes prepared inference. Keep requested, effective and disabled
+states distinct; no fallback/substitution is implied.
 
-**The mpv AnimeJaNai fork builds here, and its isolated core now loads.** Its
-source pin is recorded below, `patches/mpv/` holds an applicable `GET_META` diff
-against it, and the pinned fork builds from this repository. Loading that core
-as an isolated module **passes** once the stage closure matches the Qt/GNU
-cohort — matching client/header API `131077`, mpv `v0.41.0-UNKNOWN`, and every
-swap/transport/correlation case reporting `RESULT: PASS`. A full bundle
-candidate is being assembled but is **not validated or installed**, and no GUI
-pixel run has happened.
+**The separate patched Native fork remains a different runtime artifact.**
+Its source pin and `GET_META` patch are recorded below; prior isolated-core
+load evidence is not evidence about the currently packaged official API DLL or
+about processed GUI playback.
+
+## Current observed integration state
+
+**Evidence boundary:** implementation descriptions below are not blanket
+acceptance of the final UI-cleanup tree. Current observed Compare runs recorded
+343 shader checks and 460 spatial checks, each exiting 0. Settings 129 and
+RifeSettings 57 checks were also observed. Earlier handoff observations include
+NativeMenu 33, a cached selected-RIFE run with 23 checks and a five-spatial
+source-isolated Compare run with 107 checks; those are not fresh-engine proof.
+
+The latest player-flow build (`.probe-out/ui-audit-playback-failure-cause-build.log`)
+compiled the app, tests and probes with exit 0, zero errors and zero warnings. Its
+root fix: a synchronous `MpvError` from the surface's own open was overwritten by
+failed-open callers' generic "Could not play" text. All eight callers now share
+one central helper that preserves the named cause, no Aji plan is applied from a
+core that failed to open, and a refusal raises `QAccessible::Alert`. On the
+baseline that alert did not exist at all — the gate observed 0 of them and failed
+— and the real missing-runtime consumer then hit heap `c0000374`, which GDB
+traced to `VideoSurface::~detach` emitting to an already-destructing
+`PlayerDialog`; the destructor now disconnects early and guards on `closed_`.
+
+Observed after that fix: the runtime-refusal cause gate passed 52 requirements
+with 0 skips and exit 0 (`.probe-out/ui-audit-runtime-refusal-cause-after.log`),
+naming the actual missing Root/DLL cause, actually dropping the request and
+closing cleanly. Real external-media file-picker, HTTP, same-URL retry and
+file-URI playback passed 22/22 with exit 0
+(`.probe-out/ui-audit-real-playback-after-failure-fix.log`). Real
+expired-signature HLS recovery passed 45 requirements with exit 0
+(`.probe-out/ui-audit-hls-recovery-after-failure-fix.log`). The full hermetic
+CTest suite after the same fix is 100% in 15.69 s
+(`.probe-out/ui-audit-failure-cause-hermetic-after.log`).
+
+The real refused-action gates also pass after the cause fix, on the current
+binaries. The player clipboard gate covers 16 checks and the Search clipboard gate
+1 under the corrected hidden-HWND Windows-QPA proof; the Search browser gate
+passes 1 check under `QT_QPA_PLATFORM=offscreen`. The title browser gate
+(`.probe-out/ui-audit-title-browser-refusal-after.log`, exit 0) passes actual
+action, visible warning, parent, accessible `Alert`, screenshot and
+no-false-success checks with the session intact, and the title copy gate under
+Windows QPA passes the same flags
+(`.probe-out/ui-audit-title-clipboard-refusal-after.log`). An offscreen browser
+also needs a readable font surface: with `C:/Windows/Fonts` on its font path the
+readable-surface run passes
+(`.probe-out/ui-audit-title-browser-refusal-fonts.log`).
+
+Current parent gates on the same post-fix binaries:
+
+- `InteractionProbe` passes 172/172 with 0 skips and exit 0
+  (`.probe-out/ui-audit-free-pip-live-intent-final.log`). M4's PiP change, which
+  made an unrequested change to the live float, is reverted; the original
+  behaviour stands: after entering the float playing, the probe explicitly pauses
+  the float, captures its live state before `Restore`, and checks positions,
+  controls, two non-corner free placements at different sizes, pooled reentry and
+  pass-through. The earlier 169/2 paused-restore result was a stale probe
+  expectation, not a production bug. The chrome-idle wait drives a real
+  `QTest::mouseMove` with a bounded wait instead of a synthetic `QMouseEvent`
+  plus a 2800 ms sleep.
+- The real operation-window API passes 69/69
+  (`.probe-out/ui-audit-engine-operation-pause-after-cause-fix.log`).
+- Settings passes 129 checks
+  (`.probe-out/ui-audit-native-settings-catalog-after-cause-fix.log`, which needs
+  the translation catalogue in the environment), RifeSettings 56
+  (`.probe-out/ui-audit-rife-settings-catalog-after-cause-fix.log`) and
+  NativeMenu 33 (`.probe-out/ui-audit-native-menu-after-cause-fix.log`).
+
+Earlier composition binaries — predating both the native traversal correction and
+the runtime-cause fix — recorded the operation-window gate 66/66, the full PiP
+interaction probe 171/171, and the hermetic CTest suite in 18.22 s. Their
+SearchPage browser and clipboard outcomes are superseded by the after-fix gates
+above; only the clipboard gates run under Windows QPA, and the browser gates run
+offscreen.
+
+The player-flow items that remain open, and their exact state:
+
+- A fresh 512×288 TensorRT engine run proving real completion, the pause hold
+  through the build, and restoration of explicit Play/Pause intent. A real cold
+  384×224 player engine build did pause playback, but it never completed: the
+  filter poll command omitted its mandatory fourth empty argument. That argument
+  is fixed in source. The latest fresh natural-shape 512 attempt aborted at the
+  cursor before any preset was selected, so no engine was built; that run is
+  being redone in a separate Qt visible-widget mode with its own owner.
+- The original main-window and Compare black blocks, which remain open after the
+  pixel correction below.
+
+The pixel clock-0 defect is diagnosed and fixed: the capture deferred **one** seek
+until `hasVideo` and `duration > 0`, cycled subtitles to none only for the existing
+reference fixture, and waited for `QOpenGLWidget::frameSwapped` at the target
+timestamp with the window active before capturing. On that basis a windowed
+1366×975 logical run at DPR 2 (a 2732×1950 screen) at 6.333 s / frame 152 with
+NVDEC (`cuda[nv12]`) took the screen surface first and matched the FBO on 5 of 5
+captures with 0 unavailable
+(`.probe-out/ui-audit-canonical-screen-first-windowed.log` and its PNG);
+4,196,051 of 4,196,352 reference-lit pixels were covered (99.99%) and the
+inspected image is clean. The user's first full-screen Alt-Tab occlusion is
+acknowledged and excluded. The later full-screen all-black-screen run with a clean
+FBO has an **unproven** cause and must not be attributed to DWM or GDI as fact;
+the main/Compare windowed diagnostic run is owned by the source owner and still
+in progress.
+
+The original 6.333 s / frame 152 lower-half-block report was reproduced against a
+known fresh CPU-decoded reference at that canonical file, so the input file is not
+corrupt. Hardware decode, rendering and on-screen compositing all remain candidate
+causes and none has been separated.
+
+The translation catalogue is rebuilt from production sources: `lupdate` extracted
+997 source strings (7 new, 2 obsolete removed), 7 curated translations followed
+`lrelease`, and the catalogues finished 997 / unfinished 0
+(`.probe-out/ui-audit-catalog-production-build.log`). With that catalogue, `mikai`,
+`mikai_tests` and `widget_pixel_probe` build with exit 0 and no warnings or errors,
+and full CTest is 100% in 15.71 s
+(`.probe-out/ui-audit-current-catalog-hermetic.log`).
+
+The gated application was copied **in place** into `dist-mikai/mikai.exe` only, as
+a frozen/gated source with a matching digest; no `dist` target was run. The three
+install records — Rife 3.7, Aji 0.9 trt and TensorRt 3.7 — have unchanged hashes.
+The actually installed executable starts, paints a visible Ukrainian feed and
+closes normally (`.probe-out/ui-audit-installed-app-startup-current.log`, with the
+inspected startup image at `dist-mikai/packaged-app-startup.png`).
+
+The refused-action probe's own selector defect is fixed and its gate now passes:
+it had used `findChild<QPushButton*>` while the real control is a typed
+`PillButton`, so the probe now finds a `PillButton` parent and drives it with
+`QTest::mouseClick`.
+
+The fresh 416×240 Compare run recorded 462 passing checks but overall **FAIL**:
+an early live-surface Off restoration measured 0.676/255 against the unchanged
+0.05 tolerance. The cause remains unproven; it must not be explained as dithering
+or hidden by a weaker threshold. A subsequent canonical startup exited 5 after
+only its CLI line, so that invocation supplied no further rendering acceptance.
+That exit-5 startup is retained as a historical, unexplained result: a later
+normal canonical startup ran under GDB and reported `RESULT: PASS`, which is the
+latest known startup outcome. Neither run closes the 416×240 rendering gate, and
+the Off-restoration residual is untouched by either.
+
+Final build, CTest, catalogue, PiP resize/reentry, refused-action, runtime and
+packaged-executable verification still require their integrated gates.
+
+The earlier menu-driven runs use the packaged fork's libmpv API, the embedded
+Qt player, and an explicitly imported local custom TensorRT Aji closure.
+Both selected-engine directories began empty. RIFE v4.14 lite built a fresh
+9,313,340-byte engine and rendered 145 successful output-frame updates over
+three seconds against 73 at baseline (24→48 fps, unchanged 320×180 resolution).
+The AnimeJaNai HD Balanced graph built a fresh 3,083,884-byte engine and rendered
+320×180 NVDEC input as 640×360 output. The recorded logs are
+`.probe-out/menu-rife-smoke/final-observed-cold-proof.log` and
+`.probe-out/menu-spatial-smoke/final-observed-cold-proof.log`.
+
+These runs selected the preset through the visible enhancement menu with
+`MIKAI_MPV_VERBOSE=0`, exercised playback controls, Off, source reopening and
+shutdown, and captured visibly moving Qt/OpenGL output. The HUD now separates
+filter acceptance from the pinned backend's processing report and clears that
+report on Off/source changes. A stale private Native request neither attaches
+the private filter nor paints its status on Standard. Backend log reports are
+not numerical verification or private Native admission. The runs contain VO
+drop counts and render-stall warnings; they do not establish performance
+improvement, numerical fidelity, all-model execution, or private `Ready`/`Active`.
+The default downloader still selects upstream Aji v0.9.0, not the local custom
+backend used here.
+
+Standard exposes Anime4K and the official AnimeJaNai spatial/RIFE selectors,
+not private prepared-Native status or menus. Processing keeps runtime selection
+and official entry points; its private recipe/backend editor, model import,
+preparation/cancellation, artifact cleanup and exact private RIFE request
+controls appear only when Native is deliberately selected or already loaded.
+The private inventory refresh is lazy, rather than scanning the store on a
+normal Standard settings open. There is no redundant Native checkbox or toggle
+shortcut, planned nonfunctional menu leaf, or duplicate provenance/status panel.
+Saving visible backend/recipe edits preserves the hidden private enabled request
+and unrelated settings; Cancel and live language changes preserve their
+respective saved/unsaved state. Components owns explicit downloads.
+
+Compare offers the player's 24 Anime4K presets (including Off) and five public
+spatial models, excluding loose shaders and temporal RIFE. Its separate
+offscreen libmpv/GL renderer loads one immutable lossless source PNG at the held
+timestamp; side processing does not mutate the live player's pipeline. Only
+two corner badges choose models, closing their menus before rendering. Model
+switches retain the unchanged side; failures name the affected side without
+stale labels. Five layouts have mode-specific controls and grid-aware Fit/wheel
+zoom. See the application README for the full UI/rendering contract.
+
+PiP retains its own playback core and controls, with only one player core
+playing at a time. The GPU-safe float is pooled rather than destroyed; arbitrary
+drops do not snap to corners, and hide/reentry preserves position and size.
+Only an unreachable placement is recovered into a monitor work area. These are
+implementation descriptions; the current interaction gate passes 172/172 on the
+post-fix binaries, covering two non-corner free placements at different sizes and
+pooled reentry, and it leaves the fresh-engine completion/pause gate open.
+
+Engine builds use the always-on-top operation window for real phases, elapsed
+time and visible completion/failure. With no backend-reported measurable
+progress, TensorRT stays indeterminate: recipe stages are not build percentages.
+The actual playback owner stays paused throughout official or private engine
+work, retaining explicit Play/Pause intent until terminal acknowledgement;
+source replacement clears the old hold. This is the implementation contract,
+not completed fresh-engine runtime acceptance; the observed paused but stalled
+build and pending post-poll-fix run are distinguished above.
+The public filter's external backend builder and the private preparation
+helper's in-process builder are distinct operations, not interchangeable proof.
+
+Earlier verification (before this cleanup): 32 CTest suites PASS plus LiveOracle SKIP;
+`native_settings_probe` 102 checks, `rife_settings_probe` 55, and
+`native_menu_probe` 86, all exit 0. The English/Ukrainian Processing surfaces
+were inspected at minimum and wide sizes, including a live language switch.
+`dist-mikai` was rebuilt; its app and API DLL hashes match the build outputs,
+and no component/model/inference payload is packaged. Its actual Ukrainian
+main window launched with only Windows directories on PATH and the packaged Qt
+plugins, then closed normally with exit 0. The compiler build had no warnings;
+the translation extractor still reports its existing qualified-`tr()` warnings.
+
+Latest release APIs were rechecked: the official mpv developer archive remains
+`2026-10-07-d6d93599d5` (32,830,217 bytes, SHA-256
+`077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`), with
+the extracted API DLL locally observed at 122,146,816 bytes and SHA-256
+`90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649`.
+AnimeJaNai remains `3.7.0`; Aji remains `v0.9.0`. The generic descriptor label
+`stock-20c…` is not evidence of a stock mpv binary: the package contains the
+verified custom-fork libmpv DLL. Mikai continues to use `vo=libmpv` in its Qt
+OpenGL widget.
+
+The upstream portable AnimeJaNai updater's `--components --json` query exited
+0 and reported RTX 5090 SM 12.0, recommended `trt-runtime` and
+`trt-sm120`, with `trt-sm120` preselected for a new install. This query
+installed nothing. The TensorRT component archive was actually downloaded and
+verified (SHA-256 `282cb9…`); it contains exactly seven members:
+`CUDA_LICENSE`, `DirectML_LICENSE`, `cudart13`, `nvinfer11`,
+`nvinfer_plugin11`, `nvonnxparser11`, and `trtexec.exe`. It has no mandatory
+package-wide notice members; the installer preserves optional notice files
+already present. The upstream source is GPLv3; the application adapts the
+existing transport and component protocol, without verbatim unsafe HTTP-copy
+code or a standalone-player updater.
+
+All 47 RIFE archive graphs and metadata were imported and compared by hash.
+The v4.18 ensemble's malformed 55-character compiled pin was corrected to the
+observed full SHA-256 digest
+`69c46eb0cf3c1874ca5278758a8e7c4df1b70d0feaa682ce895459b7a6fa9716`
+(10,785,406 bytes); the other 46 names, sizes and hashes match the acquired
+archive. Full-package inference-folder models use the official hash dispatcher
+without querying; custom models require the observed ABI 8. DirectML's actual
+closure is four DLLs plus `DirectML_LICENSE`; optional notice files are
+preserved.
+
+The local custom Aji import record at
+`.probe-out/natural-rife-a42/native/components/aji/v0.9.0/trt/install.json`
+is schema 2, ABI 8, provenance `local`, `heavyRifeSupported: true`;
+the dispatcher is 313,344 bytes (SHA-256
+`59a06a64985465b94dbcea9aedfa131bfecf538c5fa809b77f6b0b976941d859`) and
+selected TensorRT backend 622,592 bytes (SHA-256
+`cda06b490141655c7f0401f7d0d895a4c9216d6c551354f58e663baa2a08b6d3`).
+This is a local import, not the public default download. No backend source
+substituted the heavy model.
+
+The 47-model plan-only smoke (artifact 339) prepared plans for all 47 actual
+`prepareAnimeJanaiPlan` combinations, including heavy RIFE v4.26. The exact
+backend, model code, ensemble flag and verified graph were present; the
+filename-versus-extensionless `rifeModelName` boundary was corrected. ABI
+codes decode two-digit suffixes correctly (47/48/49), while code 407 is
+incorrectly decoded as 4.07. A temporary catalog lifetime issue that had
+crashed a heavy test was fixed. This smoke did not request or build an engine.
+A fresh spatial TensorRT engine build succeeded in the earlier attempt
+(artifact 340). The raw build log records a TensorRT 11.3.0 `[b99]` engine
+build in 18.527 seconds, producing 3.01755 MiB for graph SHA-256
+`b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c`;
+engine SHA-256 is
+`a122bc35c163740a3eedb1221c72e289c296682594bc580ac5faa5676a6f74a8`.
+File: `.probe-out/natural-spatial-a43/native/animejanai/models/spatial/aji-1f13ce41.3460285348.trt-11.3.0.gpu-NVIDIA-GeForce-RTX-5090-sm12.engine`
+(with the adjacent `.build.log`). Runtime logs show the engine loaded and
+640×360 output; slot 2001 was configured for `320x180→640x360` (depth 3),
+CUDA-graph chain capture occurred, and `vo=libmpv` reported 640×360 CUDA NV12.
+The overall spatial probe was marked FAIL after a 600-second wait expected the
+incidental text `filter accepted`; actual status was `filter retained (inference
+not observed)`. The false status-predicate gate is now fixed, but this original
+run remains failed; later successful runs are recorded above. This engine build
+and configuration alone do not establish an
+overall probe PASS, pixel correctness, end-to-end processed-playback acceptance,
+or private `Ready`/`Active`.
+
+Artifact 349's initial fresh RIFE v4.14 lite probe failed because its
+request-bound scan searched the spatial `plan.modelDir`/wrong model identity
+and used `time-pos` transitions instead of rendered-frame counts. The corrected
+fresh run (artifact 366, 88.63 seconds, stage 7) passed. Its selected-engine
+directory began with zero engines/logs; Qt worker → vf → local custom ABI-8 →
+`trtexec` built a request-bound TensorRT engine in 38.932 seconds (9.12264 MiB;
+9,565,780 bytes), SHA-256
+`e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22`, retained under
+`.probe-out/natural-rife-a45/native/animejanai/models/rife/`; the full log is
+`.probe-out/natural-rife-a45/qt-flow-proof.log`. The engine used the
+5,986,311-byte graph (SHA-256
+`948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7`). The
+PASSED build footer matched exact ONNX and `saveEngine`; all request-bound
+components were present, with no prebuilt engine. Engine-to-active-model
+identity is inferred from exact configuration/fresh artifacts because Core
+does not emit an engine-ID event.
+RIFE reported active at `2/1`, `NewVideoFPS48`, padded to 320x192 then cropped
+to 320x180, with actual NVDEC output 320x180. Successful
+`MPV_RENDER_UPDATE_FRAME` outputs over three seconds measured 73 baseline
+versus 145 processed at equal resolution; the 1.5x threshold passed. The old
+`time-pos` event counts (70 vs 72) were not used. The processed PNG was
+nonblack, changed, and moving (SHA-256
+`91ede513739640d2dacb86e3dbdfa48cabb8c4ecb6d99e194344b9f6fac40111`); PlayerDialog
+image, pause/seek, volume/mute, audio/subtitle cycle, Off/hwdec restore,
+source reopen and shutdown-surface checks passed; decoder/VO drops were zero.
+This passes only the described selected-model RIFE run; it does not establish
+numerical fidelity, all-47-model inference, private Ready/Active, or FPS
+improvement. No FPS performance claim is made.
+
+The default downloader's investigation found the extraction-closure root cause:
+the existing 7zr fallback supports only `.7z`, while the Aji closure requires
+ZIP and NuGet handling. The source correction now selects the official
+[7-Zip 26.03 release](https://github.com/ip7z/7zip/releases/tag/26.03)
+assets [`7z2603-x64.exe`](https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe)
+and [`7zr.exe`](https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe)
+instead of the old `tools/7zr.exe` fallback. Both digest values come from the
+[official release asset listing](https://github.com/ip7z/7zip/releases/expanded_assets/26.03);
+the helper checks fetched bytes before writing them, and checks the installer
+before executing it with the bootstrap. On successful extraction, the bootstrap
+and installer are removed; `7z.exe`, `7z.dll` and other extracted payload
+files remain in `cacheDir()/../tools/7zip-26.03`, not `dist`. Upstream
+[licensing guidance](https://www.7-zip.org/faq.html) identifies the GNU LGPL;
+the unRAR restriction does not apply to this ZIP/7z usage. The exact extracted
+license-file name/content was not inspected, so no per-file notice is asserted.
+Bootstrap SHA-256:
+`ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d`;
+installer SHA-256:
+`0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd`.
+Artifact 351 passed selection, verification and review but DirectML extraction
+rejected a valid Windows archive path as unsafe. After the separator-
+normalization correction, artifact 357 completed actual DirectML download,
+install and verification after Review Yes. The selected DirectML backend
+remained selected; inactive corrupt TensorRT was ignored. Its ABI-8 install
+record SHA-256 was
+`24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10`;
+the observed closure contained four DirectML DLLs. Artifact 357's overall GUI
+probe still failed four shortcut/hidden-tab checks caused by false predicates,
+unrelated to the successful installer flow. Subsequent source fixes use
+`QTabWidget` registered-page ancestry and the Presets tab caption for the
+shortcut locator. That initial run did not pass the GUI gate; the later
+corrected run is recorded below.
+
+That earlier full union build reportedly had zero errors/warnings, CTest passed
+in 13.78 seconds, and the Ukrainian catalog had 999 finished, zero unfinished
+entries; `dist` was rebuilt at stage 7. GUI artifact 343 passed English and Ukrainian access to all 47 RIFE and
+five spatial selections, live catalog Save/refusal, Verify preservation of
+missing selected DirectML and inactive corrupt TensorRT, refresh persistence,
+Review Yes, and backend persistence. The earlier default download attempt
+failed before DirectML record creation with `The verified runtime archive
+listing could not be read`; artifact 357 later passed actual DirectML
+download/install/verification. Artifact 357's four false shortcut/hidden-tab
+predicates were fixed, then artifact 361 passed the full GUI/settings gate with
+zero failures in 13.68 seconds: visible preset-shortcut editing and clearing,
+Save/Cancel,
+English/Ukrainian all-47/five-spatial access, live language Save/refusal,
+Verify preservation, and Review Yes followed by default DirectML
+download/install/verify. The ABI-8 four-DLL record SHA-256 is
+`24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10`.
+The seven-member TensorRT archive does not include the separately needed Aji
+ZIP or NuGet inputs for a full install closure. Artifact 361 supersedes the
+earlier 2DIP overrun for the documented shortcut and geometry checks. The
+packaged `mikai.exe` window launched and shut down normally; an inspected
+startup PNG is recorded at
+`.probe-out/packaged-aji-test2/packaged-app-startup.png`. A genuine 320×180
+H.264 24 fps fixture with two audio tracks and subtitles played through the
+Wasapi/multitrack baseline before the first Aji request (artifacts 331/333);
+that baseline itself was not processed playback. Later, artifact 366 passed a
+fresh selected RIFE v4.14 lite run: 145 successful surface updates versus 73
+baseline in three seconds at equal resolution, with the 1.5x threshold passed;
+the processed image changed/moved, and player interactions/source reopen/
+shutdown-surface checks passed. This specific run does not establish numerical
+fidelity, all-47-model inference, private Ready/Active, or FPS improvement.
+The spatial engine build succeeded in artifact 340; its overall probe failed on
+the now-corrected incidental-status gate. Spatial attempt a44 observed raw
+build and 640× output/render logs, but its probe failed CRC filename filtering
+and an early raw-output read of 320 before configured-slot Core property reconfiguration. Corrected spatial run a46 (artifact 367, 66.47 seconds) passed for the selected
+model; the 3,133,804-byte raw engine built in 15.7249 seconds (2.98863 MiB),
+SHA-256
+`0a3fd65a1de1abe5507a996ee571abfebef8eda3294046a195b91b4648c759c9`. Its
+full log is `.probe-out/natural-spatial-a46/qt-flow-proof.log`. Four
+post-geometry render flags, nonblack changed/moving
+OpenGL output, and controls/source-reopen/shutdown checks passed. Postfilter
+output was 73 frames/3 seconds (24 fps unchanged), decoder/VO drops zero. This does
+not establish all-47 inference, numerical fidelity, private Ready/Active, or
+an FPS improvement. ESC-1/2/3 remain open, private Ready/Active are not
+established, and public redistribution remains uncleared.
 
 ## Contents
 
@@ -84,6 +458,46 @@ validated prepared-plan attachment producer or native controller/preflight.
 Therefore configured legacy and resize-only chains remain `Unavailable`, with
 no effective slot/plan or Prepared/Active claim. Drain and resource
 suspend/resume remain real diagnostic operations, not readiness attestations.
+
+## Official API DLL and separate patched Native core
+
+The application build uses the official developer archive
+[`mpv-dev-x86_64-20261007-git-d6d93599d5.7z`](https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/mpv-dev-x86_64-20261007-git-d6d93599d5.7z)
+from [`the-database/mpv-winbuild` tag `2026-10-07-d6d93599d5`](https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-07-d6d93599d5),
+release commit `6ac50ae6b135c5c9b484c37cc47e5368d1f8b613`, pinned by SHA-256
+`077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`. CMake
+extracts and uses its matching headers and copies only `libmpv-2.dll` into the
+app output and `dist-mikai/mpv/`; the runtime package contains no `mpv.exe`.
+This is distinct from the project-patched Native core described below: that
+separately built core uses the older
+`63d127174d8f70336c82a22408929e2bc301edcb` base and its project-specific
+`GET_META` patch. Do not treat its probes, patch or status protocol as contents
+of the official release DLL.
+
+The official release contains the ABI-8 `vf_animejanai` filter, faster ASS
+changes and display-rate-match, but not this project's private
+status/admission protocol. Upstream latest-release APIs were rechecked and still
+resolve to mpv-winbuild `2026-10-07-d6d93599d5`, AnimeJaNai `3.7.0`, and Aji
+`v0.9.0`. The official v0.9.0 Aji path cannot encode RIFE v4.26 heavy; that
+mapping is present only in the explicitly local custom ABI-8 import, which is
+not the public downloader's default. The actual current 47-model plan-only
+smoke resolves verified graph records and calls the exact plan backend/model
+codes, but did not request an engine build. That smoke makes no filter-inference,
+fresh-build, Ready/Active or FPS claim; selected-model official-filter playback
+runs are recorded separately above.
+The DLL alone does not supply Aji or models and does not change their legal
+status. Faster ASS is included. Subtitle GPU blur/compositing/rasterization
+requires gpu-next and forklibass and is not claimed on this OpenGL surface.
+Display-rate-match remains default-off, limited to local seekable mkv/lavf.
+DirectML's required shared-NTHANDLE interop with this Qt OpenGL surface remains
+unproven; no gpu-next-only subtitle rendering or CPU-ahead fallback is claimed.
+The observed genuine H.264 playback was a Wasapi/multitrack baseline before the
+first Aji request, not evidence of processed playback. No FPS measurement is
+claimed. Local runtime installation requires an explicit directory
+and backend selection, is cancellable, and is not auto-imported.
+The API DLL package is local/private only: public
+redistribution is not cleared until complete corresponding source, dependency
+licences, and relink obligations for the prebuilt release are satisfied.
 
 ## Scope of use and licence basis
 
@@ -160,7 +574,11 @@ These points must not be lost in that summary:
 | That core loaded as an isolated module | **passes** (exit `0`) once the stage closure matches the Qt/GNU cohort, with matching client/header API `131077` and mpv `v0.41.0-UNKNOWN`; swap refusal, transport, correlation, `pending 0` and error-end-file all `RESULT: PASS` |
 | The original `Win127` load failure | **UNRESOLVED** as to the missing symbol; completing the stage closure fixed this scenario, but no particular missing export has been identified |
 | Preparation helper `mikai_native_prep` | built and working; builds a plan **in-process** through the TensorRT builder API — no `--trtexec`, no child process |
-| TensorRT components the app needs (per machine) | **provisioned, not shipped** — the AnimeJaNai 3.6.3 packs are pinned by asset byte count and SHA-256; the app reads the compute capability from the driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx` when the release publishes none for that generation), downloads the missing set on this machine, proves every file by digest into the app-owned store, and uses the bundle's own resource as-is when the bundle already declares it. With the GPU's own pack a real build succeeds; with another generation's it fails naming the missing resource. Evidence: `native_component_probe` `--print`/`--fetch`/`--from-sdk`. This closes the sm120-only bundle gap by provisioning. It redistributes nothing |
+| TensorRT components the app needs (per machine) | **provisioned, not shipped** — the AnimeJaNai 3.7.0 pack sizes and SHA-256 digests are pinned; the app reads the compute capability from the driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx` when the release publishes none for that generation), downloads the missing set on this machine, proves every file by digest into the app-owned store, and uses the bundle's own resource as-is when the bundle already declares it. This closes the sm120-only bundle gap by provisioning and redistributes nothing. The 3.7.0 archive store is installed per machine by explicit user request; its
+SHA-256 is checked before install and can be rechecked with **Verify**. No
+inference binaries or model payloads are shipped. The recorded `--fetch` and
+real-builder results apply to historical 3.6.3 pack measurements, not the 3.7.0 payloads |
+| RIFE component archive | **47-model store** — the official 3.7.0 `component-rife.7z` archive is SHA-256 checked, manually verifiable, and downloaded only on user request. The upstream v0.9.0 filter lacks the v4.26 heavy mapping; a separate local verified import maps it, but missing metadata/ref-inspection proof leaves it not Ready. |
 | Spatial raw engine | **produced** (1 380 548 bytes, `input:1x3x64x64`, RTX 5090 `GPU-f76e436f-…`, exit `0`); the source graph's digest was unchanged by that run |
 | Spatial CPU reference export | **passes** (fp16 in `1x3x64x64` → out `1x3x128x128`, declared output `N=-1` retained); a non-finite output is refused with `reference.output.nonFinite` |
 | RIFE CPU references, all four graphs | **pass** on the original graphs, using one genuine 64×64 PPM pair with the source 11-channel packing and `t = 0.5`; 5 451 samples differ between the two frames |
@@ -251,14 +669,18 @@ tree, so nothing can be committed or accidentally vendored.
 
 - **mpv fork core** — licence cleared (GPL-2.0-or-later or LGPL-2.1-or-later per
   build options, see ESC-6), and **built by this repository** from the pinned
-  commit. The root CMake still binds only its headers, so this is a separate,
-  opt-in build. The built core loads in isolation once the stage closure matches
+  commit. It is a separate opt-in build from the packaged official API DLL
+  and uses its own older headers and patched source. The built core loads in
+  isolation once the stage closure matches
   the Qt/GNU cohort; the earlier `Win127` failure is explained as a closure
   mismatch in that scenario, not by an identified missing export. The
   corresponding-source, licence-text and relinkability obligations attach to the
   build that actually exists.
-- **Stock core** — external and untouched. The application provisions plain mpv
-  at run time from `shinchiro/mpv-winbuild-cmake`; M03 does not vendor it.
+- **Official API DLL** — the pinned release and SHA-256 are recorded above.
+  This is the app's packaged libmpv module, not the separate patched Native
+  core. The release asset's build options, full dependency/license closure,
+  complete corresponding source and relinkability obligations are not
+  established; package use remains local/private, not publicly redistributed.
 - **Native SDKs — acquired, isolated.** Official Windows SDK, CUDA, TensorRT,
   ONNX Runtime and DirectML packages were obtained into
   **`F:\ZKS\mikai-native-sdks\`** with no admin rights, no installer, no driver
@@ -272,7 +694,7 @@ tree, so nothing can be committed or accidentally vendored.
   from it. A later build drove the in-process TensorRT builder on a real GPU
   through that helper (see *What exists and what does not*), which is a further
   step, not a playback result.
-- **Five spatial ONNX graphs — acquired and CPU-reference verified.** Downloaded
+- **Five spatial ONNX graphs — historical 3.6.3 acquisition and CPU-reference evidence.** Downloaded
   anonymously from `the-database/mpv-AnimeJaNai` at pinned commit
   `d9cbaae5e92a56e71fdf4da5e063ae3e2611e5f7` (tag 3.6.3), digest- and
   size-matched to the manifest. Read once each through `native_inspect`: every
@@ -348,6 +770,12 @@ tree, so nothing can be committed or accidentally vendored.
 | Spatial graphs | `the-database/mpv-AnimeJaNai` commit `d9cbaae5…` (tag 3.6.3) — see `spatial-acquisition.md` |
 | RIFE graphs | `animejanai-inference` release `models-rife-fp16-1` — see `rife-acquisition.md` |
 
+The historical 3.6.3 spatial graph acquisition and CPU-reference observations
+above describe those pinned files and measurements only; they do not describe
+the current 3.7.0 RIFE component store or establish current filter runtime
+readiness.
+*** End patch code
+*** Begin Patch patch
 The CUDA architecture list must always be passed explicitly: the upstream
 CMakeLists fallback is guarded by `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)`
 and CMake pre-defines that variable during `project()`, so the fallback never
@@ -397,7 +825,7 @@ Evidence: `.probe-out/author-runtime-full-manifest-check.log`.
 This checks declared source/component identities, not undeclared dependency
 source, bundle redistribution readiness, or prepared inference.
 
-The current-tree `ctest -R mikai_tests` run also passes (14.65 s test time);
+The historical `ctest -R mikai_tests` run also passed (14.65 s test time);
 the live oracle remains disabled. No linter is configured.
 Evidence: `.probe-out/author-runtime-ctest.log`.
 
@@ -460,12 +888,12 @@ manifest. Reading their layout:
 mikai_bundle manifest native/bundle/native.json
 ```
 
-The Standard example is the single stock `libmpv-2.dll` the app already
-provisions: at the recorded ~120 MB the FFmpeg closure is statically linked
-into it, so it has no companion DLLs to declare. The Native example adds the
-fork core, the three ABI-8 shim DLLs, and the TensorRT/CUDA and
-ONNX Runtime/DirectML closures in `trt/` and `ort/` — the layout that removes
-the `AddDllDirectory`-into-an-existing-TensorRT-folder dependency the research
+The Standard example describes the packaged official `libmpv-2.dll` API
+module, not an app-launch download or stock-cache fallback. The Native example
+describes a separate fork core, the three ABI-8 shim DLLs, and the
+TensorRT/CUDA and ONNX Runtime/DirectML closures in `trt/` and `ort/` — the
+layout that removes the
+`AddDllDirectory`-into-an-existing-TensorRT-folder dependency the research
 harness needed, and that leaves nothing to Conda, torch, Python or any other
 ambient install.
 
@@ -474,9 +902,12 @@ ambient install.
 The root build is deliberately free of any native-SDK dependency. The relevant
 pieces:
 
-- **mpv**: `MIKAI_MPV_HEADERS` is a header-only `find_path` (guarded by a
-  `FATAL_ERROR` if `mpv/render_gl.h` is missing). No mpv import library is
-  linked; the header-only loader resolves the DLL at run time.
+- **mpv**: CMake acquires or validates `MIKAI_DIST_MPV_ARCHIVE` against the
+  pinned official release SHA-256, extracts matching headers and compiles
+  against them. The app uses the libmpv C/render API through its existing
+  `QOpenGLWidget`; no `mpv.exe`, IPC, or load-time DLL import is used. Build
+  output and `dist-mikai/mpv/` contain only `libmpv-2.dll`. It is local/private
+  only pending the complete source, dependency-license and relink obligations.
 - **`MIKAI_WITH_MODEL_INSPECTION`** (`option`, default **OFF**): when ON it
   `find_path`s `onnxruntime_c_api.h` under **`-DORT_INCLUDE_DIR`** and adds the
   `mikai_model_inspection` static library and the `native_inspect` executable
@@ -486,8 +917,11 @@ pieces:
   `mikai_backend`, probes, tests) needs no native SDK.
 
 ## Verification status
-The per-suite counts in this section are **historical** isolated-build ledgers.
-The latest complete CPU matrices are green: inspection-ON exit `0` in **21.48 s**
+The per-suite counts and engine outcomes in this section are **historical**
+isolated-build ledgers, separate from the selected-model spatial/RIFE results
+and pending final UI-cleanup proof (see *Current observed integration state*
+above). The earlier
+complete CPU matrices were inspection-ON exit `0` in **21.48 s**
 and inspection-OFF exit `0` in **15.92 s**
 (`.probe-out/native-batch-on-epoch-guard-ctest.log`,
 `.probe-out/native-batch-off-epoch-guard-ctest.log`); an earlier settled-source
@@ -505,7 +939,7 @@ a Qt-framebuffer proof (`.probe-out/native-batch-prepared-snapshot-proof.log`).
   (`testsrc2` + motion) rendered through the explicitly loaded module with the
   GL debug logger active: **32 messages, no `ErrorType` message, `glGetError`
   0**. Perf-warning messages remain, so this is not a warning-free run.
-- **Current-tree import inspection is clean.** `objdump -p` on `mikai.exe` from
+- **Historical import inspection was clean.** `objdump -p` on `mikai.exe` from
   both the default/OFF and review/ON builds lists only `Qt6Core`, `Qt6Gui`,
   `Qt6Network`, `Qt6OpenGLWidgets`, `Qt6Widgets`, `KERNEL32`, `msvcrt` and
   `SHELL32` — no mpv, ONNX Runtime, CUDA, TensorRT or DirectML DLL. mpv is
@@ -532,10 +966,11 @@ a Qt-framebuffer proof (`.probe-out/native-batch-prepared-snapshot-proof.log`).
   `0.000591099329`, `0` outside tolerance, bounds unchanged
   (`.probe-out/numerical-boundary-spatial-verify.log`, exit `0`). The earlier
   `maxAbsoluteError` `0.02734375` rejection was measured against the malformed
-  interleaved tensor and is **historical for this engine/input boundary**. RIFE
-  full and ensemble remain rejected (see below). **No engine is published,
-  `Prepared` or `Active`; no frame of native inference has been rendered; no
-  bundle has been assembled; and `mikai_manifest_check` still loads no DLL.**
+  interleaved tensor and is **historical for this engine/input boundary**. RIFE full and ensemble remain rejected in this historical run (see below).
+**No engine was published, `Prepared` or `Active`, and no frame of native
+inference was rendered in that run; `mikai_manifest_check` still loads no DLL.**
+A separate private `0.1.0-dev.2` bundle installation is recorded below; it does
+not supply a prepared engine or inference result.
 - **Two RIFE engines verify numerically; two do not.** All four original graphs
   run a **real CPU reference** against one genuine 64×64 PPM pair (5 451 samples
   differ between the frames) with the source 11-channel packing and `t = 0.5`,
@@ -554,9 +989,10 @@ a Qt-framebuffer proof (`.probe-out/native-batch-prepared-snapshot-proof.log`).
   `Active`**. The RIFE full/ensemble rejections are **unresolved** and the bounds
   are not to be widened to make them pass. M12 is partially satisfied and **not
   done**: the spatial HD Performance engine now verifies, but RIFE full/ensemble
-  do not, so no complete prepared recipe and no native processing is claimed.
-- **The native-facing test suites are unchanged and hermetic.** The current full
-  suite exits `0` in **15.05 s**, with `TestLiveOracle` skipped by design and the
+  do not, so M12 remains incomplete. These numerical/raw-engine observations
+  do not establish end-to-end processed-playback acceptance.
+- **An earlier native-facing suite run was hermetic.** That historical
+  inspection-on suite exited `0` in **15.05 s**, with `TestLiveOracle` skipped by design and the
   junction-permission and missing-`MIKAI_NATIVE_ASSETS` suites still skipping.
   Those suites exercise contracts and vocabulary, not a native chain.
 - **The pinned mpv fork core builds and its isolated core loads; the bundle
@@ -607,8 +1043,8 @@ a Qt-framebuffer proof (`.probe-out/native-batch-prepared-snapshot-proof.log`).
   with Native off** — it is **not** the native filter, **not** CUDA interop,
   **not** active inference and **not** task completion. No native frame has been
   rendered, no public bundle is shipped, and nothing is `Ready`.
-- **Not a full release, but the desktop probes are green again on current-tree
-  binaries:** with the session attached, `interaction_probe` is 149/149
+- **Earlier desktop probe results, not final UI-cleanup acceptance:** with the
+  session attached, `interaction_probe` is 149/149
   `RESULT: PASS` and `compare_probe` 30/30 `RESULT: PASS` (frozen-frame proof,
   0.000/255 noise floor); `hls_recovery_probe` and `external_media_probe` report
   `RESULT: PASS` (real expired-signature recovery; real picker, HTTP, same-URL

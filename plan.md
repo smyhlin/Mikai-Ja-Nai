@@ -276,6 +276,27 @@ and no CI. CPU-only tests plus real-desktop probes are the available proof
 channel; **no offscreen-GPU proof exists**.
 
 ### Baseline status
+As of 2026-10-09, the current integration snapshot and pending gates are
+summarized in [tasks.md §1.6](./tasks.md#status): artifact 361 passed the
+complete current GUI/settings gate with zero failures in 13.68 seconds,
+including the DirectML download/install/verify flow. Earlier attempt artifact
+351 rejected a valid Windows archive path; artifact 357's four false shortcut/
+hidden-tab predicates were corrected before artifact 361. The genuine
+unprocessed playback baseline preceded Aji; later, artifact 349 built and loaded
+a fresh RIFE v4.14 lite engine and saved a nonblack processed-frame PNG, but its
+initial probe failed its artifact-scope/time-position gates; the corrected
+artifact-366 v4.14 lite run passed fresh build/render/interactions and relative
+presentation-output counting (145 surface updates vs. 73 baseline over three
+seconds; minimum 1.5x passed). This does not establish numerical fidelity,
+all-47 inference, or FPS improvement. The fresh spatial engine built/loaded in
+a44 with 640× output/render logs, but its probe failed CRC filename filtering
+and an early raw-output read before configured-slot Core property
+reconfiguration; the corrected a46 run (artifact 367) passed for the selected
+spatial model, with a nonblack changed/moving frame and playback controls. It
+does not establish all-47 inference, numerical fidelity, private Ready/Active,
+or an FPS improvement.
+This section intentionally does not duplicate the execution ledger or claim
+milestone completion.
 
 Current build/run status, the isolated suite ledgers and the observed native
 probes are tracked in **[tasks.md §1.6](./tasks.md#status)** and in each task's

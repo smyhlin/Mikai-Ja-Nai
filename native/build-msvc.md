@@ -484,10 +484,15 @@ rather than producing a mixed-toolchain tree:
 
 ```bat
 cmake -S . -B build-native -G "Visual Studio 17 2022" -DMIKAI_WITH_NATIVE=ON ^
-  -DCMAKE_PREFIX_PATH=<qt6-msvc> -DMPV_INCLUDE_DIR=<mpv include> ^
+  -DCMAKE_PREFIX_PATH=<qt6-msvc> ^
   -DAJI_SOURCE_DIR=... -DAJI_TRT_ROOT=... -DAJI_NVINFER=nvinfer_11
 ```
 
+The root application build obtains its mpv headers from the pinned developer
+archive through `MIKAI_DIST_MPV_ARCHIVE`; do not pass the obsolete
+`MPV_INCLUDE_DIR`. This optional MSVC native project builds a separate,
+project-patched Native core from its older base; it is not the official API DLL
+packaged by the root app.
 The standalone route is preferred: one toolchain per build directory.
 
 ## Effect on the MinGW/Qt build
