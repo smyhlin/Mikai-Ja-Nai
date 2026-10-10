@@ -212,10 +212,16 @@ plan-only run are recorded in `native/manifest/sources.json` and
   player menus, with stable paused media/FBO throughout the build, visible
   elapsed progress and completion, then automatic resume. The probe keeps only
   its own window above other apps and rejects stale RIFE stats as engine-use
-  proof. The captioned main/Compare corruption and final Compare acceptance
-  remain open; the reference scenario disables subtitles. Exact logs and
-  failed attempts are in `native/README.md`. No private Ready/Active, all-model
-  inference, numerical fidelity or redistribution clearance follows.
+  proof. The captioned main/Compare corruption is closed by the
+  `paintGL` blending fix: natural spatial and RIFE selections render clean
+  captioned frames with finite chroma/color intermediates. Full Compare
+  acceptance passes 464 checks covering all 24 Anime4K presets and five
+  spatial models on both sides with immutable-source and live-player
+  preservation; pooled Compare snapshots now clear on close with the
+  frozen-frame regression restored, and the native SC_CLOSE route is covered.
+  Exact logs and failed attempts are in `native/README.md`. No private
+  Ready/Active, all-model inference, numerical fidelity or redistribution
+  clearance follows.
 
 - **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
   five spatial selections passed; live catalog Save/refusal passed. Verify
