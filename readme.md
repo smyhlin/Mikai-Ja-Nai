@@ -239,18 +239,23 @@ compiler warnings; an interrupted parallel build completed at `--parallel 1`.
 Final CTest passes in 15.92 s
 (`.probe-out/ui-audit-desktop-final-hermetic.log`). Real-core engine-operation
 checks pass 93/93, and player interactions pass 172/172. Settings, RIFE settings
-and missing-runtime refusal checks also passed. Exact evidence, the failed
-H.264 operation startup and remaining gates are in `native/README.md`.
+and missing-runtime refusal checks also passed. The attached-console H.264
+operation gate now also passes 93/93. Exact evidence, failed attempts and
+remaining gates are in `native/README.md`.
 
 Only the verified executable was replaced in `dist-mikai`; the three protected
 component records have unchanged hashes. The installed app paints its Ukrainian
 home feed and closes normally, exit 0
 (`.probe-out/ui-audit-desktop-installed-startup.log`). Startup now requires
 desktop OpenGL rather than Qt's unsupported automatic software selection;
-hardware surface playback works in the disconnected session. This is not full
-acceptance: the frame-152 FBO is clean but its screen capture is black.
-Cold-engine completion, the original visible corruption and final Compare
-checks still require the interactive desktop.
+hardware surface playback works. With the console attached, the native-DPR
+frame-152 screen-first oracle passes 5/5 with 99.99% reference-lit coverage.
+Fresh RIFE v4.14 lite and AnimeJaNai upscale TensorRT builds now pass through the
+actual player menu, including the paused build hold, visible elapsed progress,
+completion and automatic resume. This is selected-model proof, not private
+Native Ready/Active or numerical fidelity. The reference mode excludes
+subtitles; original captioned-player corruption and final Compare acceptance
+remain open.
 Tests and probes are hand-run, not CI.
 
 ```sh
@@ -391,11 +396,13 @@ Explicit Play/Pause intent is retained until terminal acknowledgement; source
 replacement clears the old hold. A cold player build was observed paused but
 stalled before completion because its filter poll command omitted a mandatory
 empty argument. That argument is fixed, and the traversal correction landed since.
-The latest fresh natural-shape 512 attempt aborted at the cursor before any preset
-was selected, so no engine was built, and that run is being redone in a separate
-Qt visible-widget mode with its own owner. So a fresh 512×288 completed-player
-proof of pause, progress, completion and intent restoration is still open, and the
-real operation-window API gate (69/69) does not close it.
+The current attached-console natural-player runs complete fresh RIFE and spatial
+engines, verify their request-bound artifacts, retain the pause hold until visible
+completion, and restore Play afterward. The spatial source is 512×288; the RIFE
+proof uses an uncached 576×320 shape without deleting the earlier completed
+512×288 engine. The separate real-core operation gate also passes 93/93 on
+H.264, including latest-intent and PiP transfers; exact evidence is in
+`native/README.md`.
 
 Refused copy/open actions report the actual failure rather than a success
 message. The canonical text/image helper is `src/gui/Clipboard.hpp`,

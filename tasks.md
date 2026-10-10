@@ -205,15 +205,17 @@ plan-only run are recorded in `native/manifest/sources.json` and
   executable was replaced in `dist-mikai`; protected records are unchanged and
   the installed Ukrainian home feed starts/closes normally, exit 0, without a
   GL environment override. Exact logs and failed attempts are in `native/README.md`.
-- **Current screen/input blocker:** `QT_OPENGL=desktop` permits hardware
-  rendering despite session 1 being disconnected; production startup now sets
-  `AA_UseDesktopOpenGL`. At frame 152 the FBO is clean but the screen-first
-  capture is entirely black (oracle 2/5 failures). The captioned main/Compare
-  corruption report, actual cold TensorRT completion and final Compare
-  acceptance remain open; real-core operation tests are not cold-build proof.
-  The H.264 operation rerun also failed initial readiness, despite independent
-  surface/shell playback passing. No private Ready/Active, all-model inference,
-  numerical fidelity or redistribution clearance follows.
+- **Attached-console player evidence:** production startup requires desktop
+  OpenGL. The H.264 operation gate now passes 93/93. At frame 152 the
+  native-DPR screen-first reference oracle passes 5/5 with 99.99% lit coverage.
+  Both fresh RIFE and spatial TensorRT builds pass through the actual native
+  player menus, with stable paused media/FBO throughout the build, visible
+  elapsed progress and completion, then automatic resume. The probe keeps only
+  its own window above other apps and rejects stale RIFE stats as engine-use
+  proof. The captioned main/Compare corruption and final Compare acceptance
+  remain open; the reference scenario disables subtitles. Exact logs and
+  failed attempts are in `native/README.md`. No private Ready/Active, all-model
+  inference, numerical fidelity or redistribution clearance follows.
 
 - **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
   five spatial selections passed; live catalog Save/refusal passed. Verify

@@ -185,18 +185,20 @@ Layering is strict and enforced by tests:
   does not manufacture a new operation generation, and delayed load completions
   cannot replay intent older than a viewer's Play/Pause action. PiP transfers
   the hold and latest intent; only the actual owner resumes on completion.
-  The filter poll command's mandatory fourth empty argument is fixed, but a
-  fresh completed 512×288 engine run remains open. After source-first
-  implementation, real-core operation checks pass 93/93 on lavfi and player
-  interactions pass 172/172. Parking main must not overwrite the intent copied
-  into PiP; capture it before requesting main's physical pause.
+  The filter poll command's mandatory fourth empty argument is fixed. Current
+  attached-console natural-player runs complete fresh RIFE and spatial engines,
+  keep playback paused until visible completion, and resume afterward; the
+  spatial source is 512×288 and the RIFE proof uses an uncached 576×320 shape.
+  Real-core operation checks pass 93/93 on H.264 and player interactions pass
+  172/172. Parking main must not overwrite the intent copied into PiP; capture
+  it before requesting main's physical pause.
   `main()` requires desktop OpenGL before constructing `QApplication`: Qt's
   automatic software selection produced a refused Mesa context while the
   desktop was disconnected, whereas forced desktop OpenGL renders normally.
-  This does not establish screen/input acceptance: the frame-152 FBO is clean
-  but the screen-first capture is black. Current runtime evidence, the failed
-  H.264 operation startup and unresolved gates are in `native/README.md`, not
-  inferred from this implementation contract.
+  With the console attached, the native-DPR frame-152 screen-first reference
+  check passes 5/5. That mode excludes subtitles and does not close the original
+  captioned-player/Compare corruption gate. Exact current and failed runtime
+  evidence is in `native/README.md`, not inferred from this contract.
 
 ## Key Directories
 
@@ -744,12 +746,13 @@ operation-window gate at 66/66 requirements, the full PiP interaction probe at
 clipboard outcomes are superseded by the after-fix gates above; Windows QPA is
 used only by the clipboard gates, and the browser gates run offscreen.
 
-Still open, and not closed by any of the above: a fresh 512×288 engine run
-proving real completion, the pause hold and user-intent restoration. The latest
-fresh attempt aborted at the cursor before any preset was selected, so no engine
-was built; the natural-shape 512 run is being redone in a separate Qt
-visible-widget mode with its own owner. The refused-action probe's own selector
-defect is fixed and its gate now passes: it had used `findChild<QPushButton*>`
+The later attached-console runs close the selected-model fresh-build gate:
+RIFE v4.14 lite at 576×320 and AnimeJaNai upscale at 512×288 both complete,
+hold the real source paused with stable media/FBO until visible completion, and
+resume afterward. The H.264 operation API gate passes 93/93. These results do not
+close the original captioned-player or Compare corruption gates; exact evidence
+is in `native/README.md`. The refused-action probe's own selector defect is fixed
+and its gate now passes: it had used `findChild<QPushButton*>`
 while the real control is a typed `PillButton`, so the probe now finds a
 `PillButton` parent and drives it with `QTest::mouseClick`.
 

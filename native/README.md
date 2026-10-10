@@ -69,12 +69,12 @@ all 93 operation checks pass on its real lavfi source
 checks also pass (`.probe-out/ui-audit-desktop-interaction.log`), including pooled
 PiP geometry and pause restoration. These are not actual TensorRT-build proof.
 
-The H.264 operation rerun after the fix failed before reaching its scenarios:
-`context=1`, `video=0`, `playing=1`, position 0
-(`.probe-out/ui-audit-desktop-engine-intent-fixed.log`). Its decoder startup cause
-is unproven. The same clip passes independent surface/shell playback; the shell
-passes 10 checks (`.probe-out/ui-audit-desktop-shell.log`). The lavfi result does
-not silently replace that failed H.264 run.
+The earlier disconnected H.264 operation rerun failed initial readiness
+(`.probe-out/ui-audit-desktop-engine-intent-fixed.log`); its startup cause remains
+unproven. With the console attached, the same H.264 operation gate passes all
+93 checks (`.probe-out/ui-audit-resumed-h264-operation-1791635749077.log`).
+The independent surface/shell result also passes; the shell covers 10 checks
+(`.probe-out/ui-audit-desktop-shell.log`).
 
 Qt's automatic OpenGL selection used Mesa 11.2.2 / llvmpipe OpenGL 3.0 after
 session 1 disconnected, and mpv refused that context. Forcing
@@ -85,15 +85,59 @@ shows the subtitle normally. Production `main()` now sets
 `Qt::AA_UseDesktopOpenGL` before constructing `QApplication`. No software
 fallback or weaker pixel tolerance was added.
 
-Physical-screen proof remains blocked. At 6.333 s / frame 152 the current
-framebuffer is visibly clean and all sampled picture pixels are lit, but the
-screen-first capture is entirely black; the oracle fails 2 of 5 checks
-(`.probe-out/ui-audit-desktop-canonical.log`, `ui-audit-desktop-canonical-fbo.png`
-and `ui-audit-desktop-canonical-screen.png`). The reference scenario disables
-subtitles and does not clear the original captioned main/Compare corruption
-report. The cause of the black screen capture is not established by a clean
-FBO. Native foreground/pointer tests, a completed cold TensorRT player build
-and final Compare acceptance remain pending the interactive desktop.
+The console is now attached. A resumed capture with an extra `--dpr 2` ran at
+DPR 4 and captured Explorer rather than the video; its failed oracle is not
+playback-corruption evidence. The reference probe now keeps only its own window
+above other apps and uses the monitor's native DPR. At 1366×975 logical / DPR 2,
+6.333 s / frame 152, the physical screen is captured before the FBO and passes
+5/5 requirements: 4,196,051 of 4,196,352 reference-lit pixels remain visible
+(99.99%). The inspected image is clean
+(`.probe-out/ui-audit-resumed-visible-canonical-1791635749077.log` and
+`ui-audit-resumed-visible-screen-1791635749077.png`). This reference mode disables
+subtitles, so the original captioned main/Compare corruption remains open.
+The earlier disconnected all-black capture's cause is still unproven.
+
+Both required fresh engines now build through the actual PlayerDialog →
+packaged libmpv fork → public Aji v0.9.0 TensorRT menu flow. The native foreground,
+cursor and hit-target guards remain enabled. The probe's own player is kept
+above other apps; no other application's window or install records are changed.
+
+| Selected model | Natural source | Observed paused build hold | Processed output |
+| --- | --- | --- | --- |
+| RIFE v4.14 lite | 576×320 / 24 fps | 26.021 s | 576×320; 146 rendered updates over 3 s versus 73 baseline |
+| AnimeJaNai HD V3.1 Balanced SPAN | 512×288 / 24 fps | 15.569 s | 1024×576; lower-half stripes reproduced |
+
+Both runs exit 0, verify a new nonempty engine and changed passed builder log
+bound to the exact selected ONNX/saveEngine, observe stable media time/source
+and framebuffer throughout the hold, then observe visible completion and
+automatic resume. The operation is on top, indeterminate, with advancing elapsed
+time; no stage percentage is invented. Off clears the filter and its processing
+observation; the real playback controls and clean shutdown pass.
+Evidence: `.probe-out/ui-audit-current-rife-cold-576-1791635749077.log` and
+`.probe-out/ui-audit-current-spatial-cold-512-1791635749077.log`.
+
+Visual inspection after those operation checks reproduced horizontal black
+stripes in the spatial player's lower picture band, both in
+`menu-spatial-smoke/native/animejanai-probe-player-dialog.png` (frame 776) and
+`animejanai-probe-processed.png` (native FBO, frame 765). Independently decoding
+frame 776 from the same 512×288 input produces a clean PNG
+(`.probe-out/source-reference-512-frame776-1791635749077.png`).
+The existing smoke's nonblack/moving predicate did not catch this corruption.
+The fresh engine/build hold is proved; correct spatial pixels are not. This is
+an active reproduced defect, not an attribution to numerics, CUDA, Qt or a
+driver. The RIFE player image was inspected clean at its recorded timestamp.
+
+The preceding 512×288 RIFE build did complete and process, but its probe exited
+1: a stale prior stats file prematurely satisfied the effect predicate, so the
+pause assertions ran before build completion. The probe now requires current
+backend-observed processing before accepting that stats evidence. The passing
+576×320 run uses an uncached shape without deleting the completed 512 engine.
+
+Engine-to-active-model identity remains inferred from the exact live config,
+fresh artifact and backend report because Core emits no engine-ID event.
+These selected-model results do not establish numerical fidelity, all-47
+inference, private Native Ready/Active, or redistribution clearance. Final
+captioned-player and Compare acceptance remain open.
 
 An actual rebuilt app's URL menu opened its modal dialog, but synchronous UIA
 invocation timed out; native-input acceptance is not asserted. Only that owned
@@ -179,14 +223,10 @@ offscreen.
 
 The player-flow items that remain open, and their exact state:
 
-- A fresh 512×288 TensorRT engine run proving real completion, the pause hold
-  through the build, and restoration of explicit Play/Pause intent. A real cold
-  384×224 player engine build did pause playback, but it never completed: the
-  filter poll command omitted its mandatory fourth empty argument. That argument
-  is fixed in source. The fresh natural-shape 512 attempt aborted at the cursor
-  before any preset was selected, so no engine was built. The implementation pass
-  is complete; desktop OpenGL permits rendering, but the natural-player rerun
-  still needs interactive foreground/pointer input. No worker remains running.
+- The fresh-build gate is closed for the selected RIFE and spatial models by the
+  current natural-player runs above. The earlier 384×224 poll-argument stall
+  and 512×288 pre-selection cursor refusal are historical failures, not the
+  latest engine outcome.
 - The original main-window and Compare black blocks, which remain open after the
   pixel correction below.
 
