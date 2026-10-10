@@ -951,7 +951,10 @@ int main(int argc, char** argv) {
             mplayer::native::describeAnimeJanaiInstallation(inactiveBackend);
         bool corruptFixtureReady = false;
         if (!selectedBefore.root.isEmpty() && !inactiveBefore.root.isEmpty() &&
-            !selectedBefore.installed && QDir().mkpath(inactiveBefore.root)) {
+            selectedBefore.root != inactiveBefore.root &&
+            selectedBefore.reasonKey == QLatin1String("animejanai.installation.recordMissing") &&
+            inactiveBefore.reasonKey == QLatin1String("animejanai.installation.recordMissing") &&
+            QDir().mkpath(inactiveBefore.root)) {
             const QString corruptRecord =
                 QDir(inactiveBefore.root).filePath(QStringLiteral("install.json"));
             QFile record(corruptRecord);
@@ -960,7 +963,8 @@ int main(int argc, char** argv) {
                                   record.write(invalidJson) == invalidJson.size();
             record.close();
         }
-        check(corruptFixtureReady, "the isolated Verify fixture has a missing selected record and corrupt inactive record");
+        check(corruptFixtureReady,
+              "Verify isolation requires an executable stage with no existing backend records");
         if (corruptFixtureReady) {
             SettingsDialog dialog(client, runner);
             exerciseVerifyBackendIsolation(dialog, selectedBackend, inactiveBackend,
