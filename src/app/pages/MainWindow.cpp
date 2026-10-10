@@ -190,9 +190,7 @@ bool MainWindow::openMedia(const QString& source) {
     // its retry chip alive until the deferred delete, and any later lookup
     // reads the old window's state instead of the new stream's.
     mediaPlayer_ = new mplayer::shell::PlayerDialog(caption, media, this);
-    // The dialog is the only place an mpv failure surfaces, so the connect
-    // precedes startPlayer(): "runtimeRequested" means the core could not be
-    // created at all, and the host provisions and retries for real.
+    // Core creation can report failure synchronously from startPlayer().
     connect(mediaPlayer_, &mplayer::shell::PlayerDialog::runtimeRequested, this,
             [this] { requestMediaRuntime(); });
     // A processing-failure remedy from the standalone player opens this app's
@@ -216,39 +214,22 @@ bool MainWindow::openMedia(const QString& source) {
 
 bool MainWindow::closeMedia(bool forced) {
     if (mediaPlayer_) {
-        // A refused close keeps the player, so nothing about it is retired yet:
-        // its runtime sequence and pending flag still belong to it.
-        if (!mediaPlayer_->close() && !forced) {
+        const bool accepted = mediaPlayer_->close();
+        if (!accepted && !forced) {
             return false;
         }
         // A runtime reply for this dialog must not reach the next one: bump the
         // sequence and drop the pending flag so the replacement can ask anew.
         ++runtimeSeq_;
         runtimePending_ = false;
-        // Deleted, not merely closed: the dialog carries WA_DeleteOnClose, so
-        // close() only hides it, and a hidden window still answers
-        // findChildren and still holds its mpv core. The next open must find
-        // no player at all, and a failed stream's parked core must not decode
-        // behind the stream that replaced it.
-        //
-        // Taken through its own close path first, though: closeEvent stops the
-        // core and hides the GL surface, so the widget is deleted hidden.
-        // Deleting a still-visible QOpenGLWidget destroys its context while the
-        // driver is presenting it - the DrvPresentBuffers fault the PiP pool
-        // already guards against - and a poisoned context can leave the next
-        // dialog's render context uncreated, which reads as a second player
-        // that never plays. The explicit delete still runs, so no hidden window
-        // or parked core survives it.
-        //
-        // Only the destructor, which cannot refuse destruction, deletes through
-        // a refusal - and even then the widget's own destructor releases what it
-        // held only after the core has synchronously died. The forced stop is
-        // named rather than probed: nothing here may claim an acknowledgement.
-        if (forced) {
+        if (!accepted) {
+            // Visible GL teardown has faulted the driver; forced destruction must hide first.
+            if (mediaPlayer_) mediaPlayer_->hide();
             qWarning().noquote()
                 << "mikai: forced media teardown (destruction cannot be refused; native claims "
                    "are released only after the core is destroyed)";
         }
+        // Release the old core before another player is created.
         delete mediaPlayer_.data();
         mediaPlayer_.clear();
     }
@@ -262,16 +243,6 @@ void MainWindow::requestMediaRuntime() {
     auto* dialog = mediaPlayer_.data();
     dialog->show();
     if (mplayer::native::runtimeSelected()) {
-        // A module is already pinned, so startPlayer() is the only thing that
-        // may run again. It emits `runtimeRequested` synchronously when the
-        // core still cannot be created, so the second entry from inside it is
-        // dropped rather than retried for ever.
-        if (runtimeRetrying_) {
-            return;
-        }
-        runtimeRetrying_ = true;
-        dialog->startPlayer();
-        runtimeRetrying_ = false;
         return;
     }
     if (runtimePending_ || !mplayer::native::beginRecovery()) {
@@ -281,8 +252,7 @@ void MainWindow::requestMediaRuntime() {
     const int seq = ++runtimeSeq_;
     const QPointer<MainWindow> self(this);
     const QPointer<mplayer::shell::PlayerDialog> target(dialog);
-    // Resolution may download, so it runs on the pool; the load happens back on
-    // the GUI thread, where a core is about to be created.
+    // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_->run(
         [] {
             return QVariant::fromValue(

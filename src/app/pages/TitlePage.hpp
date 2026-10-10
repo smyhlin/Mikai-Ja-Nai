@@ -205,7 +205,7 @@ private:
     bool closeSession(PlayerSession* session);
     /// Disposes a session that is still registered. Idempotent: a session the
     /// player's own `playerClosed()` already disposed is left alone.
-    void disposeSession(PlayerSession* session);
+    void disposeSession(PlayerSession* session, bool forced);
     void requestRuntime(PlayerSession* session);
     void recoverStream(PlayerSession* session);
     void switchPlayerVariant(PlayerSession* session, const QString& embed, const QString& label);

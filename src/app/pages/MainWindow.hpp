@@ -89,9 +89,6 @@ private:
     /// stop and still takes the player through its own close first, so the core
     /// dies before the widget releases what it held.
     bool closeMedia(bool forced = false);
-    /// The standalone player's version of the title page's runtime request: it
-    /// provisions the mpv runtime when the core could not be created, then
-    /// starts the player again.
     void requestMediaRuntime();
     /// False only when the previous page's own shutdown was refused, in which
     /// case the page is kept and the navigation does not happen.
@@ -115,7 +112,6 @@ private:
     /// superseded dialog is dropped instead of starting the new one.
     int runtimeSeq_ = 0;
     bool runtimePending_ = false;
-    bool runtimeRetrying_ = false;
     bool setupDeclined_ = false;
     bool setupPromptOffered_ = false;
     QString titleRef_;
