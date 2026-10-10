@@ -28,14 +28,65 @@ about processed GUI playback.
 
 ## Current observed integration state
 
-**Evidence boundary:** implementation descriptions below are not blanket
-acceptance of the final UI-cleanup tree. Current observed Compare runs recorded
-343 shader checks and 460 spatial checks, each exiting 0. Settings 129 and
-RifeSettings 57 checks were also observed. Earlier handoff observations include
-NativeMenu 33, a cached selected-RIFE run with 23 checks and a five-spatial
-source-isolated Compare run with 107 checks; those are not fresh-engine proof.
+**Evidence boundary:** implementation descriptions are not blanket acceptance of
+the final UI-cleanup tree. The production source pass was finished before the
+following verification; no probes ran during that implementation pass.
 
-The latest player-flow build (`.probe-out/ui-audit-playback-failure-cause-build.log`)
+### Source-first follow-up
+
+The app, tests and relevant probes build with exit 0, zero warnings and zero
+errors (`.probe-out/ui-audit-final-reachable-build.log`). Full CTest passes in
+26.53 s (`.probe-out/ui-audit-final-reachable-hermetic.log`). `lupdate` finds 997
+existing strings and no new strings.
+
+The isolated Settings run passes 129 checks
+(`.probe-out/ui-audit-final-isolated-settings.log`); the inspected
+`native-processing-uk-compact.png` shows the single Runtime module selector and
+no redundant Native checkbox or private controls under Standard. RIFE settings
+passes 56 checks (`.probe-out/ui-audit-sourcefreeze-rife_settings_probe.log`).
+Missing-runtime refusal passes 52 checks with no skips
+(`.probe-out/ui-audit-final-runtime-refusal.log`).
+
+Settings isolation uses a fresh executable directory, because `nativeRoot()`
+resolves `<exeDir>/native`, not a different `QStandardPaths` location when the
+application name changes. The Verify fixture now refuses to overwrite existing
+selected or inactive Aji records. The earlier direct-build-root run's one Verify
+failure was a fixture precondition failure; the corrected isolated run passes.
+
+The source changes re-arm an active engine operation's pause hold on the current
+source and owner, retain the latest explicit Play/Pause intent across PiP and
+source changes, and prevent late load completions from replaying older intent.
+Public-API regressions cover these transitions, but their real-core scenarios
+have not run: initial playback is refused in the disconnected desktop session.
+
+An independent canonical H.264/NVDEC surface smoke passed with NVIDIA OpenGL 4.6
+before disconnection
+(`.probe-out/ui-audit-sourcefreeze-isolated-surface.log`). Subsequently `quser`
+reports session 1 disconnected; fresh Qt contexts use `WinDisc`, Mesa 11.2.2
+OpenGL 3.0 / llvmpipe rather than NVIDIA. Both the player and an independent
+surface fail with `mpv_render_context_create: not supported`
+(`.probe-out/ui-audit-gl-driver-dialog.log` and
+`.probe-out/ui-audit-gl-driver-standalone.log`). No software fallback or weaker
+pixel tolerance was added. The cold-engine, lower-half corruption, pooled PiP
+and final Compare acceptance gates remain open until the GPU desktop reconnects.
+
+Only `dist-mikai/mikai.exe` was updated; no `dist` target was run. Its digest
+matches the verified build and the RIFE, Aji and TensorRT install-record digests
+are unchanged (`.probe-out/ui-audit-final-installed-update.json`). The installed
+app paints a visible Ukrainian feed and closes normally, exit 0
+(`.probe-out/ui-audit-final-installed-app-startup.log`). The earlier build-root
+startup harness misread PowerShell's unavailable `Process.ExitCode`; the owned
+child itself exited 0. The installed run uses the child exit result and passes.
+
+### Earlier cleanup observations
+
+Earlier Compare runs recorded 343 shader checks and 460 spatial checks, each
+exiting 0. Settings 129 and RifeSettings 57 checks were also observed. Earlier
+handoff observations include NativeMenu 33, a cached selected-RIFE run with 23
+checks and a five-spatial source-isolated Compare run with 107 checks; these are
+not fresh-engine proof or final-source acceptance.
+
+The earlier player-flow build (`.probe-out/ui-audit-playback-failure-cause-build.log`)
 compiled the app, tests and probes with exit 0, zero errors and zero warnings. Its
 root fix: a synchronous `MpvError` from the surface's own open was overwritten by
 failed-open callers' generic "Could not play" text. All eight callers now share
@@ -103,9 +154,10 @@ The player-flow items that remain open, and their exact state:
   through the build, and restoration of explicit Play/Pause intent. A real cold
   384×224 player engine build did pause playback, but it never completed: the
   filter poll command omitted its mandatory fourth empty argument. That argument
-  is fixed in source. The latest fresh natural-shape 512 attempt aborted at the
-  cursor before any preset was selected, so no engine was built; that run is
-  being redone in a separate Qt visible-widget mode with its own owner.
+  is fixed in source. The fresh natural-shape 512 attempt aborted at the cursor
+  before any preset was selected, so no engine was built. The implementation pass
+  is complete; the rerun is blocked by the disconnected Mesa desktop described
+  above, not by an active implementation or probe worker.
 - The original main-window and Compare black blocks, which remain open after the
   pixel correction below.
 
@@ -121,24 +173,24 @@ captures with 0 unavailable
 inspected image is clean. The user's first full-screen Alt-Tab occlusion is
 acknowledged and excluded. The later full-screen all-black-screen run with a clean
 FBO has an **unproven** cause and must not be attributed to DWM or GDI as fact;
-the main/Compare windowed diagnostic run is owned by the source owner and still
-in progress.
+the main/Compare windowed diagnostic run remains pending. No source or probe
+worker is still running; the GPU-backed desktop is the missing prerequisite.
 
 The original 6.333 s / frame 152 lower-half-block report was reproduced against a
 known fresh CPU-decoded reference at that canonical file, so the input file is not
 corrupt. Hardware decode, rendering and on-screen compositing all remain candidate
 causes and none has been separated.
 
-The translation catalogue is rebuilt from production sources: `lupdate` extracted
-997 source strings (7 new, 2 obsolete removed), 7 curated translations followed
+The earlier production catalogue rebuild extracted 997 source strings with
+`lupdate` (7 new, 2 obsolete removed); 7 curated translations followed
 `lrelease`, and the catalogues finished 997 / unfinished 0
 (`.probe-out/ui-audit-catalog-production-build.log`). With that catalogue, `mikai`,
 `mikai_tests` and `widget_pixel_probe` build with exit 0 and no warnings or errors,
 and full CTest is 100% in 15.71 s
 (`.probe-out/ui-audit-current-catalog-hermetic.log`).
 
-The gated application was copied **in place** into `dist-mikai/mikai.exe` only, as
-a frozen/gated source with a matching digest; no `dist` target was run. The three
+That earlier gated application was copied **in place** into
+`dist-mikai/mikai.exe` only, with a matching digest; no `dist` target was run. The three
 install records — Rife 3.7, Aji 0.9 trt and TensorRt 3.7 — have unchanged hashes.
 The actually installed executable starts, paints a visible Ukrainian feed and
 closes normally (`.probe-out/ui-audit-installed-app-startup-current.log`, with the

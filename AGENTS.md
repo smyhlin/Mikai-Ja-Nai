@@ -179,16 +179,20 @@ Layering is strict and enforced by tests:
   not TensorRT build progress, and no percentage is invented. Completion is
   visible before automatic dismissal; failure stays until dismissed. Hold video
   paused on the actual playback owner throughout official or private engine
-  work. Retain explicit Play/Pause intent until terminal acknowledgement, and
-  clear the old hold on source replacement. The filter's poll command was
-  missing its mandatory fourth empty argument, so a real cold 384×224 player
-  build paused correctly and then never reported completion; that argument is
-  fixed in source, and the latest fresh attempt still reports **no engine built**
-  because activation fails in the foreground before any menu selection; a
-  source-side activation fix is complete and its gate is pending, so a fresh
-  512×288 engine run proving completion, pause hold and intent restoration is
-  still open. Current runtime evidence and unresolved gates are recorded in
-  `native/README.md`, not inferred from this implementation contract.
+  work. Retain explicit Play/Pause intent until terminal acknowledgement. Clear
+  the old source's hold on replacement; if the operation remains active, re-arm
+  it on the current playback owner with the saved intent. Source replacement
+  does not manufacture a new operation generation, and delayed load completions
+  cannot replay intent older than a viewer's Play/Pause action. PiP transfers
+  the hold and latest intent; only the actual owner resumes on completion.
+  The filter poll command's mandatory fourth empty argument is fixed, but a
+  fresh completed 512×288 engine run remains open. After source-first
+  implementation, the final build/CTest, isolated Settings and runtime-refusal
+  checks pass. Real-core hold and pixel checks are blocked by session 1 being
+  disconnected: fresh Qt contexts use Mesa llvmpipe OpenGL 3.0 and mpv refuses
+  them, rather than receiving the NVIDIA desktop. Current runtime evidence and
+  unresolved gates are recorded in `native/README.md`, not inferred from this
+  implementation contract.
 
 ## Key Directories
 

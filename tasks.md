@@ -196,6 +196,21 @@ membership, model inventory correction, explicit custom Aji import, and
 plan-only run are recorded in `native/manifest/sources.json` and
 `native/README.md`.
 
+- **Source-first follow-up:** all production implementation slices were frozen
+  before probes resumed. The final app/tests/probes build exits 0 with zero
+  warnings/errors; full CTest passes in 26.53 s. Isolated Settings 129, RIFE
+  settings 56 and missing-runtime refusal 52 checks pass. Only the verified
+  executable was replaced in `dist-mikai`; protected component records are
+  unchanged and the installed Ukrainian home feed starts/closes normally,
+  exit 0. Logs and limits are recorded in `native/README.md`.
+- **Current GPU blocker:** session 1 is disconnected. Fresh Qt contexts use
+  Mesa llvmpipe OpenGL 3.0, and mpv refuses the render context; an independent
+  NVIDIA OpenGL 4.6 surface passed before disconnection. Cold TensorRT
+  completion/pause/intent, the original lower-half corruption and final
+  PiP/Compare acceptance remain open. New public-API transition regressions
+  compile but cannot reach playback in this session. No private Ready/Active,
+  all-model inference, numerical fidelity or redistribution clearance follows.
+
 - **GUI evidence (artifact 343):** English/Ukrainian access to all 47 RIFE and
   five spatial selections passed; live catalog Save/refusal passed. Verify
   success preserved missing selected DirectML and inactive corrupt TensorRT

@@ -234,14 +234,21 @@ Native inference proof. A later composition binary's hermetic CTest passed in
 18.22 seconds, but that binary also predates the native traversal correction, so
 it is not the current tree either.
 
-With the production catalogue rebuild — `lupdate` extracted 997 source strings
-(7 new, 2 obsolete removed), 7 curated translations followed `lrelease`, and the
-catalogues finished 997 / unfinished 0
-(`.probe-out/ui-audit-catalog-production-build.log`) — `mikai`, `mikai_tests` and
-`widget_pixel_probe` build with exit 0 and no warnings or errors, and full CTest
-is 100% in 15.71 s (`.probe-out/ui-audit-current-catalog-hermetic.log`). Those are
-current observations, not cleanup acceptance: the remaining fresh-engine, black
-block and Compare gates are pending. Tests and probes are hand-run, not CI.
+The source-first follow-up build compiles the app, tests and relevant probes with
+exit 0, zero warnings and zero errors
+(`.probe-out/ui-audit-final-reachable-build.log`). Full CTest passes in 26.53 s
+(`.probe-out/ui-audit-final-reachable-hermetic.log`); `lupdate` finds 997 existing
+strings and no new strings. Settings, RIFE settings and missing-runtime refusal
+checks pass; exact evidence and remaining gates are in `native/README.md`.
+
+Only the verified executable was replaced in `dist-mikai`; the three protected
+component records have unchanged hashes. The installed app paints its Ukrainian
+home feed and closes normally, exit 0
+(`.probe-out/ui-audit-final-installed-app-startup.log`). This is not GPU-playback
+acceptance: Windows session 1 is disconnected, fresh Qt contexts receive Mesa
+software OpenGL, and mpv refuses that context. Cold-engine pause/completion,
+black-block playback and final Compare checks require the NVIDIA-backed desktop.
+Tests and probes are hand-run, not CI.
 
 ```sh
 native_prep_probe <helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>
