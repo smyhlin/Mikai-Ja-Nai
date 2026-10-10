@@ -11,7 +11,9 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtCore/QStandardPaths>
+#include <QtCore/QLibraryInfo>
+#include <QtCore/QProcessEnvironment>
+#include <QtCore/QScopeGuard>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QProcess>
 
@@ -19,10 +21,14 @@ using namespace mplayer::native;
 
 namespace {
 
+QString fixtureRoot() {
+    return QDir(nativeSubdirectory(QStringLiteral("components")))
+        .filePath(QStringLiteral("aji/v0.9.0"));
+}
+
 QString runtimePath(Backend backend = Backend::TensorRT) {
     const QString name = backend == Backend::TensorRT ? QStringLiteral("trt") : QStringLiteral("dml");
-    return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.9.0/") + name);
+    return QDir(fixtureRoot()).filePath(name);
 }
 
 bool writeFile(const QString& path, const QByteArray& data) {
@@ -101,10 +107,83 @@ bool updateRecordFile(const QString& root, const QString& name, const QByteArray
 
 } // namespace
 
+void TestAnimeJanaiRuntime::initTestCase() {
+    // main() already refused any pre-existing nonempty native tree. Claim only
+    // this suite's version directory, never an installation left by a caller.
+    QVERIFY2(!QFileInfo::exists(fixtureRoot()), "AnimeJaNai fixture root is already occupied");
+    QVERIFY(QDir().mkpath(fixtureRoot()));
+    ownsFixture_ = true;
+}
+
+void TestAnimeJanaiRuntime::init() {
+    QVERIFY(ownsFixture_);
+    QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
+    QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+}
+
+void TestAnimeJanaiRuntime::cleanup() {
+    if (!ownsFixture_) return;
+    QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
+    QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+}
+
+void TestAnimeJanaiRuntime::cleanupTestCase() {
+    if (!ownsFixture_) return;
+    QVERIFY(QDir(fixtureRoot()).removeRecursively());
+    ownsFixture_ = false;
+}
+
+void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() {
+    QTemporaryDir installed;
+    QVERIFY(installed.isValid());
+    const QString executable = QDir(installed.path())
+        .filePath(QFileInfo(QCoreApplication::applicationFilePath()).fileName());
+    QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(), executable));
+    const QString recordPath = QDir(installed.path())
+        .filePath(QStringLiteral("native/components/aji/v0.9.0/trt/install.json"));
+    const QString dependencyPath = QDir(installed.path())
+        .filePath(QStringLiteral("native/components/aji/v0.9.0/trt/aji.dll"));
+    const QByteArray recordBefore = QByteArrayLiteral("owned installed record: must not be overwritten");
+    const QByteArray dependencyBefore = QByteArrayLiteral("owned installed dependency");
+    QVERIFY(writeFile(recordPath, recordBefore));
+    QVERIFY(writeFile(dependencyPath, dependencyBefore));
+
+    QProcess child;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("PATH"),
+        QLibraryInfo::path(QLibraryInfo::BinariesPath) + QDir::listSeparator() +
+        environment.value(QStringLiteral("PATH")));
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+    environment.insert(QStringLiteral("QT_PLUGIN_PATH"),
+        QLibraryInfo::path(QLibraryInfo::PluginsPath));
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
+        QDir(QLibraryInfo::path(QLibraryInfo::PluginsPath)).filePath(QStringLiteral("platforms")));
+    child.setProcessEnvironment(environment);
+    child.setWorkingDirectory(installed.path());
+    // This real test function writes the exact install.json that triggered the
+    // incident if the entry guard regresses. Do not recursively run this test.
+    child.start(executable, {QStringLiteral("TestAnimeJanaiRuntime"),
+                            QStringLiteral("cancelledImportDoesNotPublish")});
+    QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
+    if (!child.waitForFinished(30000)) {
+        child.kill();
+        child.waitForFinished();
+        QFAIL("direct test invocation did not finish");
+    }
+    QCOMPARE(child.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(child.exitCode(), 2);
+    QVERIFY(child.readAllStandardError().contains("refusing native fixture mutation"));
+    QFile record(recordPath);
+    QVERIFY(record.open(QIODevice::ReadOnly));
+    QCOMPARE(record.readAll(), recordBefore);
+    QFile dependency(dependencyPath);
+    QVERIFY(dependency.open(QIODevice::ReadOnly));
+    QCOMPARE(dependency.readAll(), dependencyBefore);
+    QCOMPARE(QDir(installed.path()).entryList(QDir::Dirs | QDir::NoDotAndDotDot),
+             QStringList{QStringLiteral("native")});
+}
+
 void TestAnimeJanaiRuntime::missingInstallIsNotReady() {
-    QCoreApplication::setApplicationName(QStringLiteral("AnimeJanaiRuntimeTests"));
-    QStandardPaths::setTestModeEnabled(true);
-    QDir(runtimePath(Backend::DirectML)).removeRecursively();
     const auto result = describeAnimeJanaiInstallation(Backend::DirectML);
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.recordMissing"));
@@ -203,13 +282,15 @@ void TestAnimeJanaiRuntime::reparseDependencyIsRejected() {
         QStringLiteral("/J"), junction, outside.path()});
     if (!create.waitForStarted() || !create.waitForFinished() || create.exitCode() != 0)
         QSKIP("Windows did not permit creating a temporary directory junction.");
+    const auto removeJunction = qScopeGuard([&] {
+        QProcess remove;
+        remove.start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), QStringLiteral("rmdir"), junction});
+        remove.waitForFinished();
+    });
     const auto result = describeAnimeJanaiInstallation(Backend::DirectML);
     QVERIFY(!result.installed);
     QVERIFY(result.reasonKey == QStringLiteral("animejanai.installation.fileInvalid") ||
             result.reasonKey == QStringLiteral("animejanai.installation.pathInvalid"));
-    QProcess remove;
-    remove.start(QStringLiteral("cmd.exe"), {QStringLiteral("/c"), QStringLiteral("rmdir"), junction});
-    remove.waitForFinished();
 #else
     QSKIP("The AnimeJaNai runtime is Windows-only.");
 #endif

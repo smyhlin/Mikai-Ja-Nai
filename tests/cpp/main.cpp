@@ -42,14 +42,21 @@
 
 #include <cstdio>
 
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QFile>
 #include <QtCore/QSet>
 #include <QtCore/QSettings>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
 #include <QtTest/QTest>
 #include <QtWidgets/QApplication>
+
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 namespace {
 
@@ -66,6 +73,37 @@ constexpr const char* kSuites[] = {
 #endif
     "TestModels", "TestReleases", "TestAnime4K", "TestI18n", "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestLayering", "TestClipboard", "TestLiveOracle"};
+
+bool nativeFixtureRootIsSafe() {
+  const QString path = QDir(QCoreApplication::applicationDirPath())
+                           .filePath(QStringLiteral("native"));
+#ifdef Q_OS_WIN
+  const DWORD attributes = GetFileAttributesW(
+      reinterpret_cast<LPCWSTR>(path.utf16()));
+  if (attributes == INVALID_FILE_ATTRIBUTES) {
+    const DWORD error = GetLastError();
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return true;
+  } else if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+             (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+    const QDir directory(path);
+    if (directory.isReadable() &&
+        directory.entryList(QDir::AllEntries | QDir::Hidden | QDir::System |
+                            QDir::NoDotAndDotDot).isEmpty()) return true;
+  }
+#else
+  const QFileInfo info(path);
+  if (!info.exists() && !info.isSymLink()) return true;
+  const QDir directory(path);
+  if (info.isDir() && !info.isSymLink() && directory.isReadable() &&
+      directory.entryList(QDir::AllEntries | QDir::Hidden | QDir::System |
+                          QDir::NoDotAndDotDot).isEmpty()) return true;
+#endif
+  std::fprintf(stderr,
+               "[mikai_tests] refusing native fixture mutation beside an existing or unsafe "
+               "native tree: %s; run through CTest's isolated launcher instead\n",
+               qPrintable(path));
+  return false;
+}
 
 bool liveOracleAdmitted() {
   return qEnvironmentVariableIntValue("MIKAI_LIVE") == 1 &&
@@ -127,8 +165,13 @@ int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
   }
   QApplication app(argc, argv);
+  // Application names, settings paths and cwd do not change nativeRoot().
+  // Refuse before constructing any suite or creating/writing any fixture.
+  if (!nativeFixtureRootIsSafe()) return 2;
   QApplication::setApplicationName(QStringLiteral("mikai_tests"));
   QApplication::setOrganizationName(QStringLiteral("Mikai"));
+  // This belongs to the runner, not whichever suite happens to run first.
+  QStandardPaths::setTestModeEnabled(true);
   QTemporaryDir settingsDirectory;
   if (!settingsDirectory.isValid()) {
     std::fprintf(stderr, "[mikai_tests] cannot create isolated settings directory\n");
@@ -139,8 +182,8 @@ int main(int argc, char** argv) {
   QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDirectory.path());
 
 
-  // Whatever ctest passes past the test name is forwarded to QTest, so a single
-  // suite can still be run by name: ctest -R / `./mikai_tests TestStreams`.
+  // The isolated launcher forwards suite/QTest arguments unchanged. A safe
+  // direct invocation can also select a suite: `./mikai_tests TestStreams`.
   QStringList arguments;
   arguments.reserve(argc + 1);
   arguments << QString::fromLocal8Bit(argv[0]);

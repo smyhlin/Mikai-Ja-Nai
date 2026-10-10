@@ -6,6 +6,11 @@ class TestAnimeJanaiRuntime : public QObject {
   Q_OBJECT
 
  private slots:
+  void initTestCase();
+  void init();
+  void cleanup();
+  void cleanupTestCase();
+  void directRunRefusesExistingNativeTreeWithoutMutation();
   void missingInstallIsNotReady();
   void missingRequiredBackendDependencyIsNotReady();
   void backendMismatchIsNotReady();
@@ -17,4 +22,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void cancelledReplacementPreservesPriorInstall();
   void unsupportedDispatcherIsNotReady();
   void unknownModelAndDefaultPlanRemainPure();
+
+ private:
+  bool ownsFixture_ = false;
 };

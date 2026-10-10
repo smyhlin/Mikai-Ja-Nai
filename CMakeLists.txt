@@ -615,7 +615,26 @@ target_compile_definitions(mikai_tests PRIVATE
 )
 target_link_libraries(mikai_tests PRIVATE mikai_player mikai_app mikai_backend Qt6::Test Qt6::Widgets)
 
-add_test(NAME mikai_tests COMMAND mikai_tests)
+# nativeRoot() is intentionally executable-local in production and in tests.
+# Run a physical copy, never a cwd/environment illusion or the app's output
+# directory: runtime fixtures are allowed to mutate only this owned scratch.
+add_executable(mikai_test_launcher cmake/MikaiTestLauncher.cpp)
+target_link_libraries(mikai_test_launcher PRIVATE Qt6::Core)
+add_dependencies(mikai_tests mikai_test_launcher)
+get_filename_component(MIKAI_TEST_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+add_test(NAME mikai_tests COMMAND mikai_test_launcher
+  "$<TARGET_FILE:mikai_tests>"
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  "${MIKAI_MPV_DLL}"
+  "$<TARGET_FILE_DIR:Qt6::Core>"
+  "${MIKAI_TEST_QT_PREFIX}/plugins"
+  "${CMAKE_CURRENT_BINARY_DIR}/_test-runs"
+)
+# The launcher itself links QtCore, so its DLL search path must be set before
+# it starts; it supplies the same exact Qt runtime/plugin paths to the child.
+set_tests_properties(mikai_tests PROPERTIES
+  ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+)
 endif() # MIKAI_BUILD_PROBES
 
 
