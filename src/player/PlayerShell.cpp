@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -14,6 +15,7 @@
 #include <QPainterPath>
 #include <QShowEvent>
 #include <QStyle>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "ShellSliders.hpp"
@@ -340,7 +342,7 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     for (QWidget* widget : {static_cast<QWidget*>(windowControls_), static_cast<QWidget*>(titleBar_),
                             static_cast<QWidget*>(btnPrev_), static_cast<QWidget*>(btnNext_),
                             static_cast<QWidget*>(dock_), static_cast<QWidget*>(footerLeft_),
-                            static_cast<QWidget*>(footerRight_), static_cast<QWidget*>(hud_),
+                            static_cast<QWidget*>(hud_),
                             static_cast<QWidget*>(center_)}) {
         widget->raise();
     }
@@ -642,49 +644,9 @@ void PlayerShell::buildFooter() {
     info->addWidget(lblAnimeJanai_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
 
-    footerRight_ = new Panel(blackSoft(), 8.0, w15(), this);
-    auto* h = new QHBoxLayout(footerRight_);
-    h->setContentsMargins(4, 4, 4, 4);
-    h->setSpacing(4);
-
-    btnKeys_ = new IconButton(IconPainter::keyboard, tr("Keyboard shortcuts  (?)"), 28,
-                              15, footerRight_);
-    connect(btnKeys_, &QPushButton::clicked, this, &PlayerShell::openKeys);
-    h->addWidget(btnKeys_);
-
-    btnMore_ = new IconButton(IconPainter::more, tr("Open more menu"), 28, 16,
-                              footerRight_);
-    connect(btnMore_, &QPushButton::clicked, this, &PlayerShell::openMenu);
-    h->addWidget(btnMore_);
-
     QWidget* overlayHost = parentWidget() != nullptr ? parentWidget() : this;
     keys_ = new KeyHints(overlayHost);
-    morePopup_ = new MenuPopup(tr("MORE"), overlayHost);
-    morePopup_->setObjectName(QStringLiteral("playerMorePopup"));
     registerOverlay(keys_);
-    registerOverlay(morePopup_);
-    QVector<MenuEntry> entries;
-    const auto addEntry = [&entries](const QString& text, const QString& action) {
-        MenuEntry entry;
-        entry.text = text;
-        entry.payload = action;
-        entries.append(entry);
-    };
-    addEntry(tr("Copy link"), QStringLiteral("copy"));
-    addEntry(tr("Open containing folder"), QStringLiteral("open"));
-    addEntry(tr("Exit  (Esc)"), QStringLiteral("exit"));
-    morePopup_->setEntries(entries);
-    connect(morePopup_, &MenuPopup::picked, this, [this](const QVariant& payload) {
-        morePopup_->close();
-        const QString action = payload.toString();
-        if (action == QStringLiteral("copy")) {
-            toast_->flash(tr("URL copied"));
-        } else if (action == QStringLiteral("open")) {
-            toast_->flash(path_.isEmpty() ? QStringLiteral("—") : path_);
-        } else if (action == QStringLiteral("exit")) {
-            exitViewer();
-        }
-    });
 }
 
 void PlayerShell::buildPictureMenu() {
@@ -695,18 +657,6 @@ void PlayerShell::buildPictureMenu() {
     pictureMenu_->setObjectName(QStringLiteral("playerPictureMenu"));
     pictureMenu_->hide();
     registerOverlay(pictureMenu_);
-    QVector<MenuEntry> entries;
-    const auto add = [&entries](const QString& text, const QString& action) {
-        MenuEntry entry;
-        entry.text = text;
-        entry.payload = action;
-        entries.append(entry);
-    };
-    add(tr("Copy frame"), QStringLiteral("frame"));
-    add(tr("Compare quality"), QStringLiteral("compare"));
-    add(tr("Copy link"), QStringLiteral("copy"));
-    add(tr("Exit  (Esc)"), QStringLiteral("exit"));
-    pictureMenu_->setEntries(entries);
     connect(pictureMenu_, &MenuPopup::picked, this, [this](const QVariant& payload) {
         pictureMenu_->close();
         const QString action = payload.toString();
@@ -716,10 +666,61 @@ void PlayerShell::buildPictureMenu() {
             emit compareRequested();
         } else if (action == QStringLiteral("copy")) {
             emit copyLinkRequested();
+        } else if (action == QStringLiteral("folder")) {
+            emit openFolderRequested();
+        } else if (action == QStringLiteral("keys")) {
+            openKeys();
         } else if (action == QStringLiteral("exit")) {
             exitViewer();
         }
     });
+    updatePictureMenu();
+}
+
+void PlayerShell::updatePictureMenu() {
+    if (pictureMenu_ == nullptr) {
+        return;
+    }
+    QVector<MenuEntry> entries;
+    const auto add = [&entries](const QString& text, const QString& action,
+                               const QString& tooltip = QString()) {
+        MenuEntry entry;
+        entry.text = text;
+        entry.payload = action;
+        entry.tooltip = tooltip;
+        entries.append(entry);
+    };
+    add(tr("Copy frame"), QStringLiteral("frame"));
+    add(tr("Compare quality"), QStringLiteral("compare"));
+    add(tr("Copy link"), QStringLiteral("copy"));
+    const QString folder = localMediaFolder();
+    if (!folder.isEmpty()) {
+        add(tr("Open containing folder"), QStringLiteral("folder"), folder);
+    }
+    add(tr("Keyboard shortcuts  (?)"), QStringLiteral("keys"));
+    add(tr("Exit  (Esc)"), QStringLiteral("exit"));
+    pictureMenu_->setEntries(entries);
+}
+
+QString PlayerShell::localMediaFolder() const {
+    if (path_.isEmpty()) {
+        return QString();
+    }
+    QString local = path_;
+    // Native filenames can contain '#', which URL parsing treats as a fragment.
+    if (!QDir::isAbsolutePath(local)) {
+        const QUrl url = QUrl::fromUserInput(local);
+        if (!url.isLocalFile()) {
+            return QString();
+        }
+        local = url.toLocalFile();
+    }
+    const QFileInfo info(local);
+    if (!info.isFile()) {
+        return QString();
+    }
+    const QString folder = info.absolutePath();
+    return QFileInfo(folder).isDir() ? folder : QString();
 }
 
 void PlayerShell::openPictureMenu(const QPoint& position) {
@@ -776,7 +777,6 @@ void PlayerShell::applyState() {
     btnNext_->setVisible(!hidden && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
-    footerRight_->setVisible(!hidden);
     if (hidden) {
         dismissOverlay();
     }
@@ -963,11 +963,9 @@ void PlayerShell::layoutChrome() {
     const int dw = std::min(kDockMaxWidth, w - 2 * kDockHorizontalInset);
     dock_->setGeometry((w - dw) / 2, h - kDockBottomInset - kDockHeight, dw, kDockHeight);
 
-    // ── status and secondary actions ───────────────────────────────
+    // ── status chip ───────────────────────────────────────────────
     footerLeft_->adjustSize();
     footerLeft_->move(12, 8);
-    footerRight_->adjustSize();
-    footerRight_->move(w - footerRight_->width() - 12, h - footerRight_->height() - 8);
 
     // ── overlays ───────────────────────────────────────────────────
     // The HUD is hidden by default and holds a 7-row label tree, so measuring
@@ -1007,6 +1005,9 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
     updateInfoChip();
+    // The folder row is only offered for a source that is a file on disk, so
+    // the rows follow the media rather than being frozen at build time.
+    updatePictureMenu();
     layoutChrome();
 }
 
@@ -1538,13 +1539,7 @@ void PlayerShell::openSettings() {
 void PlayerShell::openKeys() {
     dismissOverlay();
     wake();
-    keys_->popupNear(btnKeys_->mapToGlobal(QPoint(0, 0)));
-}
-
-void PlayerShell::openMenu() {
-    dismissOverlay();
-    wake();
-    morePopup_->popupNear(btnMore_->mapToGlobal(QPoint(btnMore_->width(), 0)));
+    keys_->popupNear(mapToGlobal(QPoint(width() / 2, height() / 2)));
 }
 
 void PlayerShell::exitViewer() {
@@ -1880,26 +1875,9 @@ void PlayerShell::retranslateUi() {
     btnSubs_->setToolTip(tr("Subtitles — choose a track  (C)"));
     btnEnhance_->setToolTip(tr("Open enhancements"));
     btnSettings_->setToolTip(tr("Quality and speed"));
-    btnKeys_->setToolTip(tr("Keyboard shortcuts  (?)"));
-    btnMore_->setToolTip(tr("Open more menu"));
     btnWindowMode_->setToolTip(fullscreen_ ? tr("Windowed mode") : tr("Fullscreen mode"));
 
-    morePopup_->setTitle(tr("MORE"));
-    for (MenuPopup* popup : {morePopup_, pictureMenu_}) {
-        QVector<MenuEntry> entries;
-        entries.reserve(popup->rowCount());
-        for (int row = 0; row < popup->rowCount(); ++row) {
-            MenuEntry entry = popup->entryAt(row);
-            const QString action = entry.payload.toString();
-            if (action == QLatin1String("copy")) entry.text = tr("Copy link");
-            else if (action == QLatin1String("open")) entry.text = tr("Open containing folder");
-            else if (action == QLatin1String("exit")) entry.text = tr("Exit  (Esc)");
-            else if (action == QLatin1String("frame")) entry.text = tr("Copy frame");
-            else if (action == QLatin1String("compare")) entry.text = tr("Compare quality");
-            entries.append(std::move(entry));
-        }
-        popup->setEntries(entries);
-    }
+    updatePictureMenu();
     refreshEnhancementTree();
     updateInfoChip();
     updateTimeLabels();

@@ -466,6 +466,7 @@ private:
     void onMediaDropped(const QString& path);
     /// Puts the frame currently on screen on the clipboard as an image.
     void copyCurrentFrame();
+    void openMediaFolder();
     /// Opens (or raises) the shader comparison window.
     void openCompareWindow();
     void onShellStateChanged(const QString& state);

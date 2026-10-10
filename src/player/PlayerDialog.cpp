@@ -33,6 +33,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QDir>
 #include <QEasingCurve>
 #include <QFileInfo>
 #include <QFrame>
@@ -1291,6 +1292,7 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::closeRequested, this, &PlayerDialog::close);
     connect(shell_, &PlayerShell::copyLinkRequested, this, &PlayerDialog::copyStreamUrl);
     connect(shell_, &PlayerShell::frameRequested, this, &PlayerDialog::copyCurrentFrame);
+    connect(shell_, &PlayerShell::openFolderRequested, this, &PlayerDialog::openMediaFolder);
     connect(shell_, &PlayerShell::compareRequested, this, &PlayerDialog::openCompareWindow);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
@@ -1987,6 +1989,33 @@ void PlayerDialog::copyStreamUrl() {
         return;
     }
     flashStatus(tr("Video link copied"));
+}
+
+void PlayerDialog::openMediaFolder() {
+    if (closed_) {
+        return;
+    }
+    QString local = url_;
+    // Native filenames can contain '#', which URL parsing treats as a fragment.
+    if (!QDir::isAbsolutePath(local)) {
+        const QUrl source = QUrl::fromUserInput(local);
+        if (!source.isLocalFile()) {
+            flashStatus(tr("This source is a stream — it has no folder"), true);
+            return;
+        }
+        local = source.toLocalFile();
+    }
+    const QFileInfo media(local);
+    if (!media.isFile()) {
+        flashStatus(tr("The video file is no longer there"), true);
+        return;
+    }
+    const QString folder = media.absolutePath();
+    if (!QFileInfo(folder).isDir() || !QDesktopServices::openUrl(QUrl::fromLocalFile(folder))) {
+        flashStatus(tr("Could not open the containing folder"), true);
+        return;
+    }
+    flashStatus(tr("Containing folder opened"));
 }
 
 void PlayerDialog::connectEngine() {

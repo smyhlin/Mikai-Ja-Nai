@@ -192,6 +192,7 @@ signals:
     /// preference would be stored.
     void compareRequested();
     void copyLinkRequested();
+    void openFolderRequested();
     void stateChanged(const QString& state);
     /// A native row was chosen. The action is typed rather than spelled, and
     /// the value is the backend stable name or the recipe id, empty for
@@ -256,8 +257,9 @@ private:
     void updateInfoChip();
     void retranslateUi();
     void openKeys();
-    void openMenu();
     void buildPictureMenu();
+    void updatePictureMenu();
+    QString localMediaFolder() const;
     void exitViewer();
     void updateTimeLabels();
 
@@ -324,11 +326,7 @@ private:
     /// The native branch's inputs. Default-constructed to the truth of this
     /// build: nothing requested, no engine available.
     native::menu::Inputs nativeInputs_;
-    Panel* footerRight_ = nullptr;
-    IconButton* btnKeys_ = nullptr;
-    IconButton* btnMore_ = nullptr;
     KeyHints* keys_ = nullptr;
-    MenuPopup* morePopup_ = nullptr;
 
     StateHUD* hud_ = nullptr;
     Toast* toast_ = nullptr;

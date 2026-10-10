@@ -16,8 +16,11 @@
 // never asserted: the checks state the behaviour, not the theme's numbers.
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QFile>
 #include <QImage>
 #include <QGraphicsOpacityEffect>
+#include <QKeyEvent>
 #include <QPointer>
 #include <QTest>
 #include <QGuiApplication>
@@ -1231,28 +1234,107 @@ int main(int argc, char** argv) {
         if (shell == nullptr) return;
         shell->dismissOverlay();
 
-        QPushButton* keysButton = buttonWithGlyph(shell, IconPainter::keyboard);
-        QPushButton* moreButton = buttonWithGlyph(shell, IconPainter::more);
+        check(buttonWithGlyph(shell, IconPainter::keyboard) == nullptr,
+              "the footer keyboard button is gone");
+        check(buttonWithGlyph(shell, IconPainter::more) == nullptr,
+              "the footer ellipsis button is gone");
 
-        check(keysButton != nullptr, "the keyboard hints button exists");
-        if (keysButton != nullptr) keysButton->click();
+        QPoint picture;
+        if (surface != nullptr) {
+            for (const QPoint& candidate :
+                 {QPoint(surface->width() / 4, surface->height() / 2),
+                  QPoint(surface->width() / 2, surface->height() / 3), QPoint(60, 60)}) {
+                if (!surface->rect().contains(candidate)) continue;
+                if (shell->childAt(candidate) == surface) {
+                    picture = candidate;
+                    break;
+                }
+            }
+        }
+        check(!picture.isNull(), "the right-click has a spot on the picture to land on");
+        if (picture.isNull()) return;
         auto* hints = dialog->findChild<KeyHints*>(QStringLiteral("playerKeyHints"));
-        check(hints != nullptr && hints->isVisible(), "the keyboard hints opened");
-        if (hints != nullptr) {
-            check(!hints->isWindow() && hints->parentWidget() == dialog,
-                  "the keyboard hints use the fullscreen overlay plane");
+        QTest::mouseClick(surface, Qt::RightButton, Qt::NoModifier, picture);
+        auto* menu = dialog->findChild<MenuPopup*>(QStringLiteral("playerPictureMenu"));
+        waitFor([&menu] { return menu != nullptr && menu->isVisible(); }, 2000);
+        check(menu != nullptr && menu->isVisible(),
+              "a right-click on the picture opens the picture menu");
+        if (menu == nullptr) {
+            shell->dismissOverlay();
+            return;
         }
+        check(!menu->isWindow() && menu->parentWidget() == dialog,
+              "the picture menu uses the fullscreen overlay plane");
+        check(buttonsFitWithoutOverlap(menu), "the picture menu rows fit without overlap");
 
-        check(moreButton != nullptr, "the extended menu button exists");
-        if (moreButton != nullptr) moreButton->click();
-        auto* more = dialog->findChild<MenuPopup*>(QStringLiteral("playerMorePopup"));
-        check(more != nullptr && more->isVisible(), "the extended menu opened");
-        if (more != nullptr) {
-            check(!more->isWindow() && more->parentWidget() == dialog,
-                  "the extended menu uses the fullscreen overlay plane");
-            check(buttonsFitWithoutOverlap(more), "the extended menu rows fit without overlap");
+        QPushButton* keysRow = nullptr;
+        for (int spot = 0; spot < menu->rowCount() && keysRow == nullptr; ++spot) {
+            if (menu->entryAt(spot).payload.toString() != QLatin1String("keys")) continue;
+            keysRow = qobject_cast<QPushButton*>(menu->rowWidget(spot));
         }
+        check(keysRow != nullptr && keysRow->isEnabled(),
+              "the picture menu carries the keyboard shortcuts action");
+        if (keysRow == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
+        {
+            const QPointF at = keysRow->rect().center();
+            const QPointF global = keysRow->mapToGlobal(at.toPoint());
+            QMouseEvent press(QEvent::MouseButtonPress, at, global, Qt::LeftButton, Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(keysRow, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, at, global, Qt::LeftButton,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(keysRow, &release);
+        }
+        check(hints != nullptr && hints->isVisible(),
+              "the picture menu's keyboard row opens the hints");
+        if (hints == nullptr) {
+            shell->dismissOverlay();
+            return;
+        }
+        check(!hints->isWindow() && hints->parentWidget() == dialog,
+              "the keyboard hints use the fullscreen overlay plane");
+        QKeyEvent escapePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QCoreApplication::sendEvent(hints, &escapePress);
+        check(!hints->isVisible(), "Esc closes the hints the menu opened");
+        QKeyEvent questionPress(QEvent::KeyPress, Qt::Key_Question, Qt::NoModifier);
+        QCoreApplication::sendEvent(shell, &questionPress);
+        check(hints->isVisible(), "the ? shortcut still opens the hints");
         shell->dismissOverlay();
+
+        QTemporaryDir folderFixture;
+        if (!folderFixture.isValid()) {
+            check(false, "the folder fixture directory was created");
+            return;
+        }
+        const QString clip = folderFixture.filePath(QStringLiteral("probe clip #1.mp4"));
+        QFile seed(clip);
+        if (!seed.open(QIODevice::WriteOnly) || seed.write("0", 1) != 1) {
+            check(false, "the fixture clip was written");
+            return;
+        }
+        seed.close();
+        auto folderRowOffered = [](PlayerShell* shell) {
+            if (shell == nullptr) return false;
+            auto* panel = shell->findChild<MenuPopup*>(QStringLiteral("playerPictureMenu"));
+            if (panel == nullptr) return false;
+            for (int spot = 0; spot < panel->rowCount(); ++spot) {
+                if (panel->entryAt(spot).payload.toString() == QLatin1String("folder")) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QPointer<PlayerShell> isolated(new PlayerShell(nullptr, /*frameless=*/false));
+        isolated->setMedia(clip);
+        check(folderRowOffered(isolated.data()), "a local file offers its containing folder");
+        isolated->setMedia(QStringLiteral("https://example.invalid/video.mkv"));
+        check(!folderRowOffered(isolated.data()), "a streamed source offers no folder");
+        delete isolated.data();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
     });
 
     runner.add(11500, [&] {
