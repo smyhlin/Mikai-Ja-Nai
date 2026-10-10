@@ -5,6 +5,7 @@
 # Build output
 build/
 dist/
+/assets/
 
 # Local scratch / UI review screenshots
 *.png
