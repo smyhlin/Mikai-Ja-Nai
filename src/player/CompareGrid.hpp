@@ -47,8 +47,6 @@ private slots:
     void reconcile();
 
 private:
-    ComparePane* paneAt(int index) const;
-
     QGridLayout* grid_ = nullptr;
     std::vector<ComparePane*> panes_;
     QStringList ids_;

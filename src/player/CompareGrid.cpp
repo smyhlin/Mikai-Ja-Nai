@@ -24,8 +24,10 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
         panes_.pop_back();
     }
     for (int i = 0; i < count; ++i) {
-        ComparePane* pane = paneAt(i);
-        if (pane == nullptr) {
+        ComparePane* pane = nullptr;
+        if (i < static_cast<int>(panes_.size())) {
+            pane = panes_.at(static_cast<size_t>(i));
+        } else {
             pane = new ComparePane(this);
             connect(pane, &ComparePane::viewChanged, this, &CompareGrid::reconcile);
             connect(pane, &ComparePane::choiceChosen, this, [this, i](const QString& id) {
@@ -55,13 +57,6 @@ void CompareGrid::fitToContent() {
         pane->fit();
         pane->setLocalView(zoom_, center_);
     }
-}
-
-ComparePane* CompareGrid::paneAt(int index) const {
-    if (index < 0 || index >= static_cast<int>(panes_.size())) {
-        return nullptr;
-    }
-    return panes_.at(index);
 }
 
 void CompareGrid::reconcile() {

@@ -10,6 +10,7 @@
 #include "native/status/NativePlaybackController.hpp"
 
 #include <QCloseEvent>
+#include <QKeyEvent>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDoubleSpinBox>
@@ -157,6 +158,18 @@ void CompareWindow::showEvent(QShowEvent* event) {
     if (surface_ != nullptr && surface_->hasVideo()) {
         captureNow();
     }
+}
+
+void CompareWindow::keyPressEvent(QKeyEvent* event) {
+    // Both the title bar's own close and the keyboard go through the same
+    // release path: closing is all either does, so nothing here answers with a
+    // dialog result or acts on any other key.
+    if (event->key() == Qt::Key_Escape) {
+        close();
+        event->accept();
+        return;
+    }
+    QDialog::keyPressEvent(event);
 }
 
 void CompareWindow::closeEvent(QCloseEvent* event) {
@@ -871,20 +884,22 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         const bool captured = renderer->capture(surface_->sourceUrl(), *frozenPlaybackTimestamp_,
                                                 frame_.size(), cancelled, progress);
         if (self == nullptr) return {};
-        if (!captured || cancelled()) {
+        if (!captured) {
             pendingAjiId_.clear();
             if (!cancelled()) ajiErrors_.insert(id, renderer->error());
-            renderer->stop();
-            if (isolatedRenderer_ == renderer) isolatedRenderer_.reset();
+            abandonIsolatedRenderer();
             return {};
         }
         isolatedOriginal_ = renderer->render(QStringLiteral("off"), {}, cancelled, progress);
-        if (self == nullptr || cancelled()) return {};
+        if (self == nullptr) return {};
+        if (cancelled()) {
+            finishIsolatedRetry();
+            return {};
+        }
         if (isolatedOriginal_.isNull()) {
             pendingAjiId_.clear();
             ajiErrors_.insert(id, renderer->error());
-            renderer->stop();
-            if (isolatedRenderer_ == renderer) isolatedRenderer_.reset();
+            abandonIsolatedRenderer();
             return {};
         }
     }
@@ -910,10 +925,7 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         if (self != nullptr) preparationTask_.reset();
         if (cancelled()) {
             task->cancelled.store(true, std::memory_order_release);
-            if (self != nullptr) {
-                pendingAjiId_.clear();
-                pendingAjiPreparation_ = false;
-            }
+            finishIsolatedRetry();
             return {};
         }
         pendingAjiPreparation_ = false;
@@ -933,19 +945,41 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     updateInfo();
     const QImage image = renderer->render(id, plan, cancelled, progress);
     const bool stopped = cancelled();
-    if (stopped || image.isNull()) renderer->stop();
+    if (stopped || image.isNull()) abandonIsolatedRenderer();
     if (self == nullptr) return {};
+    if (!stopped && image.isNull()) {
+        ajiErrors_.insert(id, renderer->error());
+        settleIsolatedBuild(false, tr("Comparison engine build failed: %1").arg(renderer->error()));
+    } else if (image.isNull()) {
+        settleIsolatedBuild(false, tr("Comparison engine build cancelled."));
+    } else {
+        settleIsolatedBuild(true, tr("Comparison engine ready."));
+    }
+    pendingAjiId_.clear();
+    return stopped ? QImage() : image;
+}
+
+void CompareWindow::abandonIsolatedRenderer() {
+    if (const auto renderer = isolatedRenderer_) {
+        // Keeping the shared copy alive across stop() leaves the GL release on
+        // this call's stack, so the context is still current for it.
+        renderer->stop();
+        isolatedRenderer_.reset();
+    }
+}
+
+void CompareWindow::finishIsolatedRetry() {
+    pendingAjiPreparation_ = false;
+    pendingAjiId_.clear();
+    settleIsolatedBuild(false, tr("Comparison engine build cancelled."));
+}
+
+void CompareWindow::settleIsolatedBuild(bool ok, const QString& summary) {
     if (buildOperationActive_) {
         buildOperationActive_ = false;
-        processingOverlay_->finish(!stopped && !image.isNull(),
-            stopped ? tr("Comparison engine build cancelled.")
-                    : (image.isNull() ? tr("Comparison engine build failed: %1").arg(renderer->error())
-                                      : tr("Comparison engine ready.")));
+        processingOverlay_->finish(ok, summary);
     }
     if (!isVisible()) processingOverlay_->hide();
-    pendingAjiId_.clear();
-    if (!stopped && image.isNull()) ajiErrors_.insert(id, renderer->error());
-    return stopped ? QImage() : image;
 }
 
 void CompareWindow::render() {

@@ -75,6 +75,7 @@ private slots:
     void onHoverPixel(int x, int y, bool valid);
 
 protected:
+    void keyPressEvent(QKeyEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -98,6 +99,9 @@ private:
     void render();
     void renderOnce();
     QImage renderIsolated(const QString& id);
+    void abandonIsolatedRenderer();
+    void finishIsolatedRetry();
+    void settleIsolatedBuild(bool ok, const QString& summary);
     void dismissCandidateMenus();
     void updateInfo();
     void updateFlickerTimer();

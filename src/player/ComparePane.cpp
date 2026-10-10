@@ -193,12 +193,17 @@ QSize ComparePane::imageSize() const {
 }
 
 void ComparePane::refreshBadge() {
-    QString shown = name_.isEmpty() ? current_ : name_;
+    // The registry's own label for what this pane is showing is the truth; the
+    // handed-in name is only the fallback for an id the registry does not carry.
+    QString shown = name_;
     for (const ChoiceEntry& entry : choices_) {
         if (entry.id == current_) {
             shown = entry.label;
             break;
         }
+    }
+    if (shown.isEmpty()) {
+        shown = current_;
     }
     badge_->setText(shown);
     badge_->adjustSize();

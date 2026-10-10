@@ -10,6 +10,7 @@
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
+#include <QOpenGLFunctions>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -65,7 +66,7 @@ struct CompareRenderer::State {
     QOffscreenSurface target;
     QTemporaryDir files;
     std::unique_ptr<QOpenGLFramebufferObject> framebuffer;
-    std::unique_ptr<MpvHandle> core;
+    std::shared_ptr<MpvHandle> core;
     std::unique_ptr<MpvRenderContext> rendering;
     QImage sourceFrame;
     QString error;
@@ -111,7 +112,7 @@ struct CompareRenderer::State {
             return false;
         }
         if (!core) {
-            core = std::make_unique<MpvHandle>(
+            core = std::make_shared<MpvHandle>(
                 std::vector<std::pair<std::string, std::string>>{
                     {"vo", "libmpv"}, {"hwdec", "nvdec"}, {"pause", "yes"},
                     {"audio", "no"}, {"sub", "no"}, {"keep-open", "yes"},
@@ -138,9 +139,9 @@ struct CompareRenderer::State {
                 if (!prefix.contains(QLatin1String("animejanai"))) return;
                 if (text.contains(QStringLiteral("Configured slot %1:").arg(requestedSlot)) &&
                     text.contains(QLatin1String(" -> "))) processingObserved = true;
-                if (text.contains(QLatin1String("Building TensorRT engine"), Qt::CaseInsensitive) ||
-                    text.contains(QLatin1String("building engine:"), Qt::CaseInsensitive) ||
-                    text.contains(QLatin1String("background engine build:"), Qt::CaseInsensitive))
+                if (text.contains(QStringLiteral("Building TensorRT engine"), Qt::CaseInsensitive) ||
+                    text.contains(QStringLiteral("building engine:"), Qt::CaseInsensitive) ||
+                    text.contains(QStringLiteral("background engine build:"), Qt::CaseInsensitive))
                     buildDetail = QCoreApplication::translate("CompareRenderer", "Building the comparison TensorRT engine");
                 if (message->log_level <= MPV_LOG_LEVEL_ERROR ||
                     text.contains(QLatin1String("build failed"), Qt::CaseInsensitive))
@@ -177,6 +178,17 @@ struct CompareRenderer::State {
             }
             rendering->update();
             framebuffer->bind();
+            // The same defined black the live surface paints before mpv draws
+            // into it, and the same viewport: an FBO that was never cleared
+            // keeps the previous frame's pixels around whatever the new picture
+            // covers, which reads as a stale or half-lit frame after a model
+            // switch whose output size did not change with the filter.
+            if (QOpenGLFunctions* gl = context.functions()) {
+                gl->glViewport(0, 0, framebuffer->width(), framebuffer->height());
+                gl->glDisable(GL_SCISSOR_TEST);
+                gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+                gl->glClear(GL_COLOR_BUFFER_BIT);
+            }
             const int result = rendering->render(framebuffer->handle(), framebuffer->width(),
                                                  framebuffer->height(), 0);
             rendering->reportSwap();
@@ -294,9 +306,18 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         const QString chain = plan.enabled ? QString() : anime4k::shaderStringForCandidate(shaderId);
         // Re-decode the immutable PNG under the new pipeline, never accept the
         // old paused frame or an empty reconfiguration framebuffer.
+        //
+        // The whole vf chain is cleared before the new one goes in: `set vf ""`
+        // drops the filter the previous candidate left in the core, so a switch
+        // between two AnimeJaNai models cannot leave the first one running and
+        // answering for the second. The attach is then `vf add`, exactly as the
+        // live surface submits its own plan - whose spec carries the @mikai_aji
+        // label and therefore replaces by label.
         if (!state.waitForCommand(state.command({"stop"}), cancelled) ||
-            !state.waitForCommand(state.command({"set", "vf", filter.toStdString()}), cancelled) ||
+            !state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
+        if (!filter.isEmpty() &&
+            !state.waitForCommand(state.command({"vf", "add", filter.toStdString()}), cancelled)) return {};
         state.requestedSlot = plan.enabled ? plan.slot : 0;
         state.processingObserved = false;
         state.restarted = false;
@@ -310,10 +331,23 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
 
 void CompareRenderer::stop() {
     // Called only after render/capture has unwound, while its owner still keeps
-    // the renderer alive. Filter destruction terminates and joins its builder.
+    // the renderer alive. The filter is detached first: its destruction
+    // terminates and joins a builder thread, and an anakin/TRT engine is torn
+    // down while its own core still answers. The scoped context keeps that call
+    // off the driver's deallocation path.
     State& state = *state_;
     if (!state.core) return;
     const ScopedCurrent current(state.context, &state.target);
+    const std::string label = "@" + std::string(native::kAnimeJanaiFilterLabel);
+    try {
+        state.core->commandAsync({"vf", "remove", label}, [](const AsyncReply&) {});
+        // One drain so the request reaches the core before it is destroyed: the
+        // reply itself is discarded, because a detached filter has nothing left
+        // to say that this caller needs.
+        state.core->drainEvents();
+    } catch (const MpvError&) {
+        // A core that can no longer answer a removal has nothing to remove from.
+    }
     state.rendering.reset();
     state.core.reset();
 }

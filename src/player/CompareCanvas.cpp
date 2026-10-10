@@ -191,8 +191,11 @@ void CompareCanvas::applyLayout() {
     } else {
         divider_->hide();
     }
-    badgeA_->setVisible(layout.a.visible);
-    badgeB_->setVisible(layout.b.visible);
+    // The badges are the chooser, not the picture: a mode that shows one side or
+    // only the difference still lets either side be repicked, so they are shown
+    // on the layout's own terms rather than the items it drew.
+    badgeA_->setVisible(true);
+    badgeB_->setVisible(true);
     scene()->setSceneRect(QRectF(QPointF(0, 0), layout.scene));
     placeBadges();
     if (!viewTouched_) {
@@ -241,14 +244,14 @@ void CompareCanvas::placeBadges() {
     }
     badgeA_->adjustSize();
     badgeB_->adjustSize();
-    const QPointF rightEdge = mode_ == CompareMode::SideBySide
-                                  ? QPointF(imageSize_.width() * 2 + kSideBySideGap, 0)
-                                  : QPointF(imageSize_.width(), 0);
+    // The layout names the scene, so the badges ride its own right edge rather
+    // than a second copy of the width arithmetic.
+    const qreal right = scene()->sceneRect().right();
     const QPoint left = mapFromScene(QPointF(0, 0)) + QPoint(kBadgeInset, kBadgeInset);
-    const QPoint right =
-        mapFromScene(rightEdge) + QPoint(-badgeB_->width() - kBadgeInset, kBadgeInset);
+    const QPoint rightEdge =
+        mapFromScene(QPointF(right, 0)) + QPoint(-badgeB_->width() - kBadgeInset, kBadgeInset);
     badgeA_->move(left);
-    badgeB_->move(right);
+    badgeB_->move(rightEdge);
     badgeA_->raise();
     badgeB_->raise();
 }
