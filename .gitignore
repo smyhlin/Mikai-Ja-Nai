@@ -1,5 +1,6 @@
 # Secrets — never commit the API key
 .env
+/.mcp.json
 
 # Build output
 build/
@@ -19,3 +20,4 @@ _*.log
 dist-mikai/
 .probe-out/
 .omp/
+/$env
