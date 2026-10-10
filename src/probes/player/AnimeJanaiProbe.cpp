@@ -1730,6 +1730,7 @@ int main(int argc, char** argv) {
     if (parser.isSet(naturalOption)) {
         naturalDialog = new PlayerDialog(QStringLiteral("AnimeJaNai natural-player probe"),
                                          QFileInfo(file).absoluteFilePath());
+        naturalDialog->setWindowFlag(Qt::WindowStaysOnTopHint, true);
         naturalDialog->resize(800, 450);
         naturalDialog->show();
         surface = naturalDialog->findChild<VideoSurface*>(QStringLiteral("videoSurface"));
@@ -2201,7 +2202,8 @@ int main(int argc, char** argv) {
                     }
                     for (const QString& line : capturedLogsSince(requestLogStart))
                         if (selectedEngineUseLogLine(line, successPrefix, rifePreset)) return true;
-                    return rifePreset && !selectedRifeStatsEvidence(livePlan).isEmpty();
+                    return rifePreset && surface->animeJanaiProcessingObserved() &&
+                        !selectedRifeStatsEvidence(livePlan).isEmpty();
                 }, 300000);
                 QStringList selectedEngineUseLogs;
                 for (const QString& line : capturedLogsSince(requestLogStart))
