@@ -161,6 +161,17 @@ The running author core is `d6d93599d59069b715013a6e77e898056499b905`, not the
 separate private SDK/fork source; its decode-event ordering, ticket wait before
 publication and full CUDA-to-GL copy synchronization are present.
 
+The exact-author SDK core initially refused loading with Win32 126 despite its
+staged dependency closure. A direct Windows discriminator loaded and unloaded
+the same core, GGML, FreeType and curl bytes when only `/` changed to `\`.
+`MpvApi` now converts validated module and dependency paths to native separators
+at the `LoadLibraryExW`/`AddDllDirectory` boundaries without widening the search.
+The previously refused core passes the real loader/async/swap-refusal gate
+(`.probe-out/ui-audit-exact-author-unpatched-loader-after-native-path-1791656532391.log`).
+This resolves that error-126 scenario, not the historical unresolved error 127.
+The app/test rebuild has zero warnings/errors and full CTest passes in 16.32 s
+(`.probe-out/ui-audit-native-loader-boundary-hermetic-1791656532391.log`).
+
 The keyboard and three-dot footer buttons are removed. Their supported actions
 now live in the video's right-click menu, with the local containing-folder action
 offered only for an existing file. Actual right-click, keyboard-row activation,

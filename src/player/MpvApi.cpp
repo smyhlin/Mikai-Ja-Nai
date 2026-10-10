@@ -199,8 +199,9 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
         if (registeredDeps.contains(canonicalDep, Qt::CaseInsensitive)) continue;
         // The module's own imports resolve through these. The process PATH is
         // never read and never written.
+        const QString nativeDep = QDir::toNativeSeparators(canonicalDep);
         const HANDLE cookie =
-            AddDllDirectory(reinterpret_cast<LPCWSTR>(canonicalDep.utf16()));
+            AddDllDirectory(reinterpret_cast<LPCWSTR>(nativeDep.utf16()));
         if (cookie == nullptr) {
             // Silently dropping it would leave the restricted search answering
             // for this module's dependencies from somewhere else, or fail later
@@ -222,8 +223,9 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     // no default Windows folders.
     constexpr DWORD kSearch = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 |
                               LOAD_LIBRARY_SEARCH_USER_DIRS;
+    const QString nativeModule = QDir::toNativeSeparators(canonicalModule);
     const HMODULE module =
-        LoadLibraryExW(reinterpret_cast<LPCWSTR>(canonicalModule.utf16()), nullptr, kSearch);
+        LoadLibraryExW(reinterpret_cast<LPCWSTR>(nativeModule.utf16()), nullptr, kSearch);
     if (module == nullptr) {
         const DWORD code = GetLastError();
         unregisterAll();
