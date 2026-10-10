@@ -3532,7 +3532,8 @@ void PlayerDialog::enterPip() {
 
     // The float opens from the main core's viewer-level pause intent - a hold
     // means the intent, not the physical state.
-    const bool enteringPaused = enginePreparationActive_ || surface_->playbackPauseIntent();
+    const bool enteringPauseIntent = surface_->playbackPauseIntent();
+    const bool enteringPaused = enginePreparationActive_ || enteringPauseIntent;
     window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
     window->setMuted(muted_);
@@ -3563,8 +3564,7 @@ void PlayerDialog::enterPip() {
         }
     }
     pip_ = window;
-    // The hold moves to the float's own core, carrying the held intent.
-    moveEnginePreparationPause(window->videoSurface());
+    moveEnginePreparationPause(window->videoSurface(), enteringPauseIntent);
     // The owning core changes here, so a capture asked of the main core can no
     // longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
