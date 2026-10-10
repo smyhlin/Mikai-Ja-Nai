@@ -37,6 +37,7 @@ public:
     /// What every badge's menu offers, ahead of (or refreshed between)
     /// setItems calls.
     void setChoices(const QVector<ChoiceEntry>& choices);
+    void fitToContent();
 
 signals:
     /// A badge chose another candidate for pane `index`.

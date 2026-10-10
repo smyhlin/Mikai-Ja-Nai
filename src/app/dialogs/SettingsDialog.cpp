@@ -7,6 +7,8 @@
 #include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
 
+#include <initializer_list>
+
 #include <backend/MikaiClient.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
 #include <dialogs/NativeAssetsPanel.hpp>
@@ -24,6 +26,7 @@
 #include <QEvent>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
@@ -31,13 +34,16 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QPushButton>
+#include <QPointer>
 #include <QScrollArea>
+#include <QScreen>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QStyleOptionFrame>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace mikai::app {
@@ -89,36 +95,32 @@ int shortcutFieldWidth(const QKeySequenceEdit* edit) {
 
     const QStyle* style = field->style();
     int width = QFontMetrics(field->fontMetrics())
-                    .horizontalAdvance(QStringLiteral("Ctrl+Shift+Alt+F12"));
+                    .horizontalAdvance(QStringLiteral("Ctrl+Alt+Shift+F12"));
 
-    // The styled border and padding. The field has no laid-out width while the
-    // dialog is still being built, so the insets are read off a rect wide enough
-    // that its transient geometry cannot skew them.
+    // The styled border and padding. The field has no laid-out geometry while
+    // the dialog is still being built, so measure against its polished size hint
+    // rather than the transient zero-height child geometry.
     QStyleOptionFrame frame;
     frame.initFrom(field);
-    frame.rect = QRect(0, 0, width + theme::kSpacingLarge, frame.rect.height());
+    frame.rect = QRect(0, 0, width + theme::kSpacingLarge, field->sizeHint().height());
     const QRect contents = style->subElementRect(QStyle::SE_LineEditContents, &frame, field);
     width += frame.rect.width() - contents.width();
     width += 2 * style->pixelMetric(QStyle::PM_FocusFrameHMargin, nullptr, field);
 
-    // The clear action is drawn inside the field, so its glyph and the margin the
-    // style keeps around it are width the binding has to fit beside.
+    // The clear action is drawn inside the field, so its actual child widget
+    // geometry is the space unavailable to text. The style's nominal icon size
+    // can be smaller than the QToolButton QLineEdit creates for this action,
+    // especially when the field is disabled.
     if (field->isClearButtonEnabled()) {
-        width += style->pixelMetric(QStyle::PM_LineEditIconSize, nullptr, field);
-        width += style->pixelMetric(QStyle::PM_LineEditIconMargin, nullptr, field);
+        if (auto* clearButton = field->findChild<QToolButton*>()) {
+            clearButton->ensurePolished();
+            width += clearButton->sizeHint().width();
+        } else {
+            width += style->pixelMetric(QStyle::PM_LineEditIconSize, nullptr, field);
+            width += style->pixelMetric(QStyle::PM_LineEditIconMargin, nullptr, field);
+        }
     }
-    return width + theme::kSpacingMedium;
-}
-
-/// The claim the native toggle holds. There is one native action, so this is the
-/// only native claim a map ever holds, and it is built the same way everywhere.
-mplayer::shell::ShortcutClaim nativeToggleClaim() {
-    mplayer::shell::ShortcutClaim claim;
-    claim.ownerId = QLatin1String(mplayer::native::kNativeToggleProcessingKey);
-    claim.ownerLabel =
-        QCoreApplication::translate("SettingsDialog", "Processing toggle");
-    claim.kind = mplayer::shell::ShortcutOwnerKind::Native;
-    return claim;
+    return width + theme::kSpacingMedium + theme::kSpacingSmall;
 }
 
 mplayer::shell::ShortcutClaim presetClaim(const QString& id, const QString& label) {
@@ -136,9 +138,6 @@ QString shortcutOwnerName(const mplayer::shell::ShortcutConflict& conflict) {
         case mplayer::shell::ShortcutOwnerKind::Preset:
             return QCoreApplication::translate("SettingsDialog", "preset “%1”")
                 .arg(conflict.ownerLabel);
-        case mplayer::shell::ShortcutOwnerKind::Native:
-            return QCoreApplication::translate("SettingsDialog", "the native action “%1”")
-                .arg(conflict.ownerLabel);
         case mplayer::shell::ShortcutOwnerKind::Reserved:
             break;
     }
@@ -150,14 +149,6 @@ QString shortcutOwnerName(const mplayer::shell::ShortcutConflict& conflict) {
 /// the user's selection is never moved by a language switch.
 QString unavailableRecipeCaption(const QString& selection) {
     return QCoreApplication::translate("SettingsDialog", "%1 (not available)").arg(selection);
-}
-
-/// The caption a Processing row carries, looked up by the key its label was
-/// built with. Rows are never rebuilt to translate them - a rebuild discards
-/// whatever the field in the row currently holds - so this is the one place that
-/// turns a row key back into the current language's caption.
-QString processingRowCaption(const QString& key) {
-    return QCoreApplication::translate("SettingsDialog", key.toUtf8().constData());
 }
 
 bool isReservedConflict(const mplayer::shell::ShortcutConflict& conflict) {
@@ -195,38 +186,35 @@ QString presetLoadMessage(const mplayer::shell::ShortcutConflict& conflict,
         .arg(portable, shortcutOwnerName(conflict), label);
 }
 
-QString nativeConflictMessage(const mplayer::shell::ShortcutConflict& conflict,
-                              const QString& portable) {
-    if (isReservedConflict(conflict)) {
-        return QCoreApplication::translate(
-                   "SettingsDialog",
-                   "Key %1 is reserved by the player and cannot be assigned to native "
-                   "processing.")
-            .arg(portable);
-    }
-    return QCoreApplication::translate("SettingsDialog",
-                                       "Combination %1 is already assigned to %2.")
-        .arg(portable, shortcutOwnerName(conflict));
-}
-
 }  // namespace
 
 SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent)
     : QDialog(parent), client_(client), runner_(runner) {
     setWindowTitle(tr("Settings"));
-    setMinimumSize(theme::kSettingsDialogMinWidth, theme::kSettingsDialogMinHeight);
-    resize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
+    QScreen* targetScreen = parent != nullptr ? parent->screen() : QGuiApplication::primaryScreen();
+    QSize initialSize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
+    int minimumWidth = theme::kSettingsDialogMinWidth;
+    int minimumHeight = theme::kSettingsDialogMinHeight;
+    if (targetScreen != nullptr) {
+        const QSize available = targetScreen->availableGeometry().size();
+        // The tab pages scroll, so a work area narrower or shorter than the
+        // preferred floors shrinks the dialog instead of pushing the fixed
+        // Save/Cancel dock outside the screen.
+        minimumWidth = qMin(minimumWidth, available.width());
+        minimumHeight = qMin(minimumHeight, available.height());
+        initialSize = initialSize.boundedTo(available);
+    }
+    setMinimumSize(minimumWidth, minimumHeight);
+    resize(initialSize);
 
-    // Read the native request before any tab is built: the Presets tab has to
-    // know the native binding, so a stored preset that collides with it is
-    // skipped on load the same way a reserved one is.
     // What the running application is already speaking. Save compares the choice
     // against this rather than against the stored preference, because the
     // question is whether the translator has to be reloaded, not whether the key
     // would change.
-    appliedLanguagePreference_ = languagePreference();
+    appliedLanguagePreference_ = activeInterfaceLanguage();
     languagePreferenceWasStored_ =
         QSettings().contains(QString::fromLatin1(kUiLanguageSettingKey));
+    storedLanguagePreference_ = languagePreference();
     nativePreferences_ = mplayer::native::loadNativePreferences();
     // Cold: no core and no observation exists while the dialog is being built, so
     // the availability starts from the no-factory default. The application's
@@ -267,6 +255,9 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     if (!presetError_->isHidden()) {
         tabs_->setCurrentWidget(presetError_->parentWidget());
     }
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
+        if (tabs_->widget(index) == componentsTab_) emit componentsTabOpened(this);
+    });
     root->addWidget(tabs_, 1);
 
     buttonBox_ = new QDialogButtonBox(this);
@@ -287,15 +278,19 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 SettingsDialog::~SettingsDialog() = default;
 
 void SettingsDialog::setComponentProvisioner(NativeComponentProvisioner* provisioner) {
-    // The panels read this live, so installing it after construction reaches the
-    // component section even though they were built in the constructor.
+    // The Components tab owns every download, so the provisioner lands there.
+    // The assets panel shows a pointer row instead and takes a tab-switch
+    // callback (wired in buildProcessingTab).
     componentProvisioner_ = provisioner;
-    if (assetsPanel_ != nullptr) assetsPanel_->setComponentProvisioner(provisioner);
     if (componentStoreTab_ != nullptr) componentStoreTab_->setComponentProvisioner(provisioner);
 }
 
 void SettingsDialog::showComponentsTab() {
     if (tabs_ != nullptr && componentsTab_ != nullptr) tabs_->setCurrentWidget(componentsTab_);
+}
+
+void SettingsDialog::installRecommended() {
+    if (componentStoreTab_ != nullptr) componentStoreTab_->installRecommended();
 }
 
 bool SettingsDialog::cancelNativePreparation() {
@@ -569,13 +564,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
 
     QSettings settings;
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
-    // Seeded with the native binding so a stored preset that collides with it is
-    // skipped exactly as one that collides with a reserved key is; the native
-    // claim also names the native owner in the message.
     QMap<QString, mplayer::shell::ShortcutClaim> claims;
-    if (!nativePreferences_.toggleProcessingShortcut.isEmpty()) {
-        claims.insert(nativePreferences_.toggleProcessingShortcut, nativeToggleClaim());
-    }
     QString loadError;
     QString headingForCategory;
     for (const mplayer::anime4k::ModeInfo& mode : mplayer::anime4k::availableModes()) {
@@ -676,17 +665,6 @@ QMap<QString, mplayer::shell::ShortcutClaim> SettingsDialog::shortcutClaims(
     const QKeySequenceEdit* exclude) const {
     QMap<QString, mplayer::shell::ShortcutClaim> claims;
 
-    // The native binding first, so a refusal names the native owner even while a
-    // preset field is the one being edited. Before the Processing tab is built
-    // the field does not exist yet, and the stored request answers instead.
-    const QString nativeStored =
-        nativeToggleEdit_ != nullptr
-            ? mplayer::shell::shortcutClaimKey(nativeToggleEdit_->keySequence())
-            : nativePreferences_.toggleProcessingShortcut;
-    if (nativeToggleEdit_ != exclude && !nativeStored.isEmpty()) {
-        claims.insert(nativeStored, nativeToggleClaim());
-    }
-
     for (const PresetRow& row : presetRows_) {
         if (row.edit == exclude) {
             continue;
@@ -718,13 +696,13 @@ QWidget* SettingsDialog::buildProcessingTab() {
                              theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    nativeHeading_ = new QLabel(tr("Native processing"), page);
+    nativeHeading_ = new QLabel(tr("Processing runtime"), page);
     nativeHeading_->setObjectName(QStringLiteral("heading"));
     root->addWidget(nativeHeading_);
 
     nativeDescription_ = new QLabel(
-        tr("Native processing runs the AnimeJaNai engine on the GPU. It is a separate track "
-           "from the Anime4K presets and never changes or clears them."),
+        tr("Standard uses official AnimeJaNai choices from the player menu and Components. "
+           "Select Native to configure the separate private Native workflow."),
         page);
     nativeDescription_->setObjectName(QStringLiteral("muted"));
     nativeDescription_->setWordWrap(true);
@@ -742,41 +720,16 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // belongs to another version and must survive being looked at.
     const bool editable = nativePreferences_.schemaRecognised;
 
-    auto addRow = [&](const QString& label, QWidget* field, const QString& captionKey) {
+    auto addRow = [&](const QString& label, QWidget* field) {
         auto* row = new QHBoxLayout();
         row->setSpacing(theme::kSpacingMedium);
         auto* name = new QLabel(label, page);
-        // The label is the field's accessible name source and its keyboard
-        // mnemonic host; every native row is labelled, so the association is
-        // set rather than inferred from the field's own accessible name.
         name->setBuddy(field);
-        // The field takes the row and the label sits at its own width. A field
-        // that reserved its caption as a minimum would set the page's minimum
-        // width, but a field that yields all of its width to a stretched label
-        // can be laid out at zero: the recipe combo did exactly that, because
-        // its own size hint is deliberately ignored to keep the page narrow.
-        // Giving the field the growth keeps it measurable without adding a
-        // caption width to the page's floor.
         row->addWidget(name, 0);
         row->addWidget(field, 1, Qt::AlignVCenter);
         root->addLayout(row);
-        // The caption key travels with the label so a retranslation can restate
-        // the row in place. Rebuilding the row instead would discard whatever
-        // the field currently holds, which for this tab is the whole point.
-        processingRowCaptions_.append({name, captionKey});
+        return name;
     };
-
-    nativeEnabled_ = new QCheckBox(tr("Enable native processing"), page);
-    nativeEnabled_->setObjectName(QStringLiteral("nativeEnabledCheck"));
-    nativeEnabled_->setAccessibleName(tr("Enable native processing"));
-    // The global stylesheet reserves a minimum height for fields and buttons but
-    // not for a check box; without one this row is shorter than the 24 px
-    // desktop hit target. Matching the settings control height keeps the row
-    // measurable and consistent with the fields around it.
-    nativeEnabled_->setMinimumHeight(theme::kSettingsControlSize);
-    nativeEnabled_->setChecked(nativePreferences_.enabled);
-    nativeEnabled_->setEnabled(editable);
-    root->addWidget(nativeEnabled_);
 
     nativeBackend_ = new QComboBox(page);
     nativeBackend_->setObjectName(QStringLiteral("nativeBackendCombo"));
@@ -784,15 +737,14 @@ QWidget* SettingsDialog::buildProcessingTab() {
     for (const mplayer::native::Backend backend : nativeAvailability_.backends) {
         nativeBackend_->addItem(backendLabel(backend), static_cast<int>(backend));
     }
-    if (nativeBackend_->count() == 0) {
-        for (const mplayer::native::Backend backend : mplayer::native::allBackends()) {
-            nativeBackend_->addItem(backendLabel(backend), static_cast<int>(backend));
-        }
+    if (nativeBackend_->findData(static_cast<int>(nativePreferences_.backend)) < 0) {
+        nativeBackend_->addItem(backendLabel(nativePreferences_.backend),
+                                static_cast<int>(nativePreferences_.backend));
     }
     nativeBackend_->setCurrentIndex(
         nativeBackend_->findData(static_cast<int>(nativePreferences_.backend)));
     nativeBackend_->setEnabled(editable);
-    addRow(tr("Backend"), nativeBackend_, QStringLiteral("Backend"));
+    backendRowLabel_ = addRow(tr("Backend"), nativeBackend_);
 
     nativeRecipe_ = new QComboBox(page);
     nativeRecipe_->setObjectName(QStringLiteral("nativeRecipeCombo"));
@@ -810,35 +762,8 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // in full.
     nativeRecipe_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     populateRecipeChoices(nativePreferences_.recipeId);
-    addRow(tr("Recipe"), nativeRecipe_, QStringLiteral("Recipe"));
+    recipeRowLabel_ = addRow(tr("Recipe"), nativeRecipe_);
 
-    customModelsDir_ = new QLineEdit(page);
-    customModelsDir_->setObjectName(QStringLiteral("nativeModelsDirEdit"));
-    customModelsDir_->setReadOnly(true);
-    customModelsDir_->setText(nativePreferences_.customModelsDir);
-    customModelsDir_->setPlaceholderText(tr("Not set"));
-    customModelsDir_->setAccessibleName(tr("Custom models directory"));
-    customModelsDir_->setToolTip(
-        tr("A validated, read-only model directory. Mikai never writes to it."));
-    addRow(tr("Custom models directory"), customModelsDir_,
-            QStringLiteral("Custom models directory"));
-
-    nativeToggleEdit_ = new QKeySequenceEdit(page);
-    nativeToggleEdit_->setObjectName(QStringLiteral("nativeToggleShortcutEdit"));
-    nativeToggleEdit_->setMaximumSequenceLength(1);
-    nativeToggleEdit_->setClearButtonEnabled(true);
-    nativeToggleEdit_->setMinimumHeight(theme::kSettingsControlSize);
-    nativeToggleEdit_->setFixedWidth(shortcutFieldWidth(nativeToggleEdit_));
-    if (auto* input = nativeToggleEdit_->findChild<QLineEdit*>()) {
-        input->setPlaceholderText(tr("Press a key"));
-    }
-    nativeToggleEdit_->setAccessibleName(tr("Shortcut to toggle native processing"));
-    nativeToggleEdit_->setToolTip(tr("A single key or combination; it must not collide with a "
-                                     "reserved player key or an Anime4K preset."));
-    nativeToggleEdit_->setEnabled(editable);
-
-    // A block this build does not read is shown, not edited; naming it here is
-    // what makes the disabled fields legible instead of mysterious.
     QString nativeLoadError;
     if (!nativePreferences_.schemaRecognised) {
         for (const mplayer::native::NativePreferenceIssue& issue : nativePreferences_.issues) {
@@ -848,58 +773,16 @@ QWidget* SettingsDialog::buildProcessingTab() {
             }
         }
     }
-    if (!nativePreferences_.toggleProcessingShortcut.isEmpty()) {
-        const QKeySequence sequence = QKeySequence::fromString(
-            nativePreferences_.toggleProcessingShortcut, QKeySequence::PortableText);
-        if (!sequence.isEmpty()) {
-            const mplayer::shell::ShortcutConflict conflict =
-                mplayer::shell::findShortcutConflict(sequence, shortcutClaims(nativeToggleEdit_));
-            if (conflict.blocked) {
-                // Skipped, never installed over a key the player or a preset
-                // already acts on, and reported.
-                nativeLoadError =
-                    nativeConflictMessage(conflict, mplayer::shell::shortcutClaimKey(sequence));
-            } else {
-                nativeToggleEdit_->setKeySequence(sequence);
-            }
-        }
-    }
-    addRow(tr("Toggle shortcut"), nativeToggleEdit_, QStringLiteral("Toggle shortcut"));
-
-    connect(nativeEnabled_, &QCheckBox::toggled, this, [this](bool) { refreshNativeStatus(); });
     connect(nativeBackend_, &QComboBox::currentIndexChanged, this,
             [this](int) { refreshNativeStatus(); });
     connect(nativeRecipe_, &QComboBox::currentIndexChanged, this,
             [this](int) { refreshNativeStatus(); });
-    connect(nativeToggleEdit_, &QKeySequenceEdit::keySequenceChanged, this,
-            [this, previous = nativeToggleEdit_->keySequence()](
-                const QKeySequence& sequence) mutable {
-                if (!sequence.isEmpty()) {
-                    const mplayer::shell::ShortcutConflict conflict =
-                        mplayer::shell::findShortcutConflict(sequence,
-                                                             shortcutClaims(nativeToggleEdit_));
-                    if (conflict.blocked) {
-                        QSignalBlocker blocker(nativeToggleEdit_);
-                        nativeToggleEdit_->setKeySequence(previous);
-                        showNativeError(nativeConflictMessage(
-                            conflict, mplayer::shell::shortcutClaimKey(sequence)));
-                        return;
-                    }
-                }
-                previous = sequence;
-                nativeError_->clear();
-                nativeError_->hide();
-            });
 
     nativeStatus_ = new QLabel(page);
     nativeStatus_->setObjectName(QStringLiteral("descriptionPanel"));
     nativeStatus_->setAccessibleName(tr("Native processing status"));
     nativeStatus_->setWordWrap(true);
     root->addWidget(nativeStatus_);
-
-    runtimeHeading_ = new QLabel(tr("mpv runtime"), page);
-    runtimeHeading_->setObjectName(QStringLiteral("sectionHeading"));
-    root->addWidget(runtimeHeading_);
 
     runtimeChoice_ = new QComboBox(page);
     runtimeChoice_->setObjectName(QStringLiteral("runtimeChoiceCombo"));
@@ -913,7 +796,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
     if (runtimeIndex >= 0) {
         runtimeChoice_->setCurrentIndex(runtimeIndex);
     }
-    addRow(tr("Runtime module"), runtimeChoice_, QStringLiteral("Runtime module"));
+    runtimeModuleRowLabel_ = addRow(tr("Runtime module"), runtimeChoice_);
 
     runtimeHint_ = new QLabel(page);
     runtimeHint_->setObjectName(QStringLiteral("muted"));
@@ -927,12 +810,6 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // hot swap that the loader refuses.
     connect(runtimeChoice_, &QComboBox::currentIndexChanged, this,
             [this](int) { refreshRuntimeHint(); });
-
-    runtimeStatus_ = new QLabel(page);
-    runtimeStatus_->setObjectName(QStringLiteral("muted"));
-    runtimeStatus_->setAccessibleName(tr("mpv runtime status"));
-    runtimeStatus_->setWordWrap(true);
-    root->addWidget(runtimeStatus_);
 
     refreshNativeStatus();
     refreshRuntimeStatus();
@@ -952,7 +829,6 @@ QWidget* SettingsDialog::buildProcessingTab() {
     assetsPanel->setObjectName(QStringLiteral("nativeAssetsPanel"));
     assetsPanel->setAccessibleName(tr("Native model assets"));
     assetsPanel->setRunner(&runner_);
-    assetsPanel->setClient(&client_);
     // The panel registers a recipe for the backend the user is asking for here,
     // and hands the id back; the combo shows it and Save is the only writer.
     assetsPanel->setRequestedBackend(
@@ -983,9 +859,8 @@ QWidget* SettingsDialog::buildProcessingTab() {
         if (preparationFrameRequest_) preparationFrameRequest_(frameIndex, generation);
     });
     assetsPanel_ = assetsPanel;
-    // Forwarded rather than re-derived: the panel is the only thing that knows
-    // when a build starts, which stage it is on and how it settled, and it dies
-    // with this dialog while the player's window outlives both.
+    // The panel owns preparation state and reports its lifecycle to the player,
+    // which outlives this settings dialog.
     connect(assetsPanel, &mikai::app::NativeAssetsPanel::preparationStarted, this,
             &SettingsDialog::nativePreparationStarted);
     connect(assetsPanel, &mikai::app::NativeAssetsPanel::preparationProgress, this,
@@ -1013,49 +888,52 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // second scrollbar inside the tab would only trap the wheel.
     root->addWidget(assetsPanel);
 
-    // The RIFE configuration surface. Naming a request is legal on its own:
-    // every capability is Unavailable while the original weight hop and a
-    // prepared native pipeline are open, and that fact must not block describing
-    // the request. The panel runs nothing; it stores the exact recipe through the
-    // user recipe store and hands the id back for the combo and the existing
-    // Save, which is the only writer of the requested preference.
     rifeHeading_ = new QLabel(tr("RIFE interpolation"), page);
     rifeHeading_->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(rifeHeading_);
-
-    rifeHint_ = new QLabel(
-        tr("Describe the interpolation request: the v4.14 variant, the ensemble flag, the exact "
-           "frame factor, the scene threshold and the order - on its own or combined with a "
-           "stored spatial recipe. Every variant is unavailable while the original weight hop "
-           "and a prepared native pipeline are open; the request is stored, and the picture "
-           "keeps using the original pipeline."),
-        page);
-    rifeHint_->setObjectName(QStringLiteral("muted"));
-    rifeHint_->setWordWrap(true);
-    rifeHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    root->addWidget(rifeHint_);
 
     nativeRife_ = new mikai::app::NativeRifeControls(page);
     nativeRife_->setObjectName(QStringLiteral("nativeRifePanel"));
     nativeRife_->setAccessibleName(tr("RIFE interpolation"));
     nativeRife_->setRequestedBackend(
         static_cast<mplayer::native::Backend>(nativeBackend_->currentData().toInt()));
-    // The pinned owned rows the panel read, handed over before the stored request
-    // is loaded so the loaded variant's availability is resolved, not assumed.
+    connect(assetsPanel, &mikai::app::NativeAssetsPanel::catalogRefreshed, this,
+            &SettingsDialog::refreshRifeCatalog);
     nativeRife_->setCatalog(ownedModelCatalog());
     nativeRife_->loadStoredRecipe(nativePreferences_.recipeId);
     connect(nativeRife_, &mikai::app::NativeRifeControls::recipeRequested, this,
             &SettingsDialog::applyRequestedRecipe);
-    // An import can add the exact pinned temporal graph a variant resolves to, so
-    // the RIFE surface re-resolves instead of keeping a stale "missing" note. The
-    // panel has already re-read the store by the time this is delivered.
-    connect(assetsPanel, &mikai::app::NativeAssetsPanel::importFinished, this,
-            [this](bool) { refreshRifeCatalog(); });
     connect(nativeBackend_, &QComboBox::currentIndexChanged, this, [this](int) {
         nativeRife_->setRequestedBackend(
             static_cast<mplayer::native::Backend>(nativeBackend_->currentData().toInt()));
     });
     root->addWidget(nativeRife_);
+
+    const bool showPrivateWorkflow =
+        runtimeChoice_->currentData().toInt() ==
+            static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
+        mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
+    for (QWidget* widget : std::initializer_list<QWidget*>{
+             nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
+             nativeStatus_, nativeError_, assetsPanel, rifeHeading_, nativeRife_}) {
+        if (widget != nullptr) widget->setVisible(showPrivateWorkflow);
+    }
+    connect(runtimeChoice_, &QComboBox::currentIndexChanged, this, [this](int) {
+        refreshRuntimeHint();
+        const bool showPrivateWorkflow =
+            runtimeChoice_->currentData().toInt() ==
+                static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
+            mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
+        const bool assetsWereRefreshed =
+            assetsPanel_ != nullptr && assetsPanel_->hasRefreshed();
+        for (QWidget* widget : std::initializer_list<QWidget*>{
+                 nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
+                 nativeStatus_, nativeError_, assetsPanel_, rifeHeading_, nativeRife_}) {
+            if (widget != nullptr) widget->setVisible(showPrivateWorkflow);
+        }
+        if (showPrivateWorkflow && assetsWereRefreshed) assetsPanel_->refresh();
+        refreshNativeStatus();
+    });
 
     root->addStretch();
     scroll->setWidget(page);
@@ -1091,44 +969,52 @@ void SettingsDialog::refreshNativeStatus() {
     if (nativeStatus_ == nullptr) {
         return;
     }
-    // The requested state is what the widgets say; the effective state and the
-    // reason come from the producer, so a requested-but-unrunnable choice shows
-    // as requested and not active instead of looking applied.
+    const bool privateRuntimeSelected =
+        runtimeChoice_ != nullptr &&
+        (runtimeChoice_->currentData().toInt() ==
+             static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
+         mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard));
+    if (!privateRuntimeSelected) {
+        nativeStatus_->clear();
+        nativeStatus_->hide();
+        return;
+    }
+    // The enabled request is retained from storage; backend and recipe come from
+    // the editable choices. The producer supplies availability, so an
+    // unavailable request remains visible as requested and not active.
     mplayer::native::NativePreferences request = nativePreferences_;
-    request.enabled = nativeEnabled_->isChecked();
     request.backend =
         static_cast<mplayer::native::Backend>(nativeBackend_->currentData().toInt());
     request.recipeId = nativeRecipe_->currentData().toString();
 
     const mplayer::native::NativeSelectionView view =
         mplayer::native::evaluateNativeSelection(request, nativeAvailability_);
-    if (view.requestAvailable) {
-        nativeStatus_->setText(
-            tr("Requested, and available on this runtime. It is applied while the engine "
-               "runs; until then the picture uses the original pipeline."));
-    } else if (!view.requestedEnabled) {
-        nativeStatus_->setText(tr("Off. The picture uses the original pipeline."));
+    if (view.requestedEnabled && !view.requestAvailable &&
+        nativePreferences_.schemaRecognised) {
+        nativeStatus_->setText(tr("Unavailable: %1").arg(view.availability.reason));
+        nativeStatus_->show();
     } else {
-        nativeStatus_->setText(
-            tr("Requested, but not available: %1 The picture uses the original pipeline.")
-                .arg(view.availability.reason));
+        nativeStatus_->clear();
+        nativeStatus_->hide();
     }
 }
 
 void SettingsDialog::refreshRuntimeStatus() {
-    if (runtimeStatus_ == nullptr) {
+    if (runtimeHint_ == nullptr) {
         return;
     }
-    const QString status = mplayer::native::runtimeStatusText();
-    runtimeStatus_->setText(status.isEmpty() ? tr("The runtime has not been selected yet.")
-                                             : status);
     refreshRuntimeHint();
     // The preparation toolchain and provider runtimes follow the selected
     // runtime, so the assets panel re-observes them whenever this status is
     // refreshed rather than keeping a stale observation. That is a store read,
     // so a retranslation does not do it: `retranslateProcessingTab` restates the
     // runtime sentences itself and leaves the panel's rows exactly as they are.
-    if (assetsPanel_ != nullptr && !retranslating_) {
+    const bool privateRuntimeSelected =
+        runtimeChoice_ != nullptr &&
+        (runtimeChoice_->currentData().toInt() ==
+             static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
+         mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard));
+    if (assetsPanel_ != nullptr && privateRuntimeSelected && !retranslating_) {
         assetsPanel_->refresh();
     }
 }
@@ -1173,19 +1059,15 @@ void SettingsDialog::refreshRuntimeHint() {
     }
     const auto chosen =
         static_cast<mplayer::native::RuntimeChoice>(runtimeChoice_->currentData().toInt());
-    // What the pending choice costs, named before Save rather than after. Both
-    // branches say the same thing about timing - one module per launch - and
-    // differ only in whether a restart is already owed for the running one.
-    if (mplayer::native::restartRequiredFor(chosen)) {
+    const bool restartRequired = mplayer::native::restartRequiredFor(chosen);
+    runtimeHint_->setVisible(restartRequired);
+    if (restartRequired) {
         runtimeHint_->setText(
-            tr("%1 is loaded. The change to %2 is saved and applied after restarting Mikai.")
-                .arg(mplayer::native::runtimeStatusText(),
-                     runtimeChoice_->currentText()));
+            tr("Runtime will change to %1 after restarting Mikai.")
+                .arg(runtimeChoice_->currentText()));
         return;
     }
-    runtimeHint_->setText(
-        tr("The runtime module is chosen once per launch. Changing it takes effect after "
-           "restarting Mikai."));
+    runtimeHint_->clear();
 }
 
 void SettingsDialog::populateRecipeChoices(const QString& selection) {
@@ -1263,39 +1145,45 @@ void SettingsDialog::testToken() {
     const QString candidate = token_->text().trimmed();
     status_->setText(tr("Checking token…"));
     testButton_->setEnabled(false);
+    QPointer<SettingsDialog> self(this);
+    backend::MikaiClient* client = &client_;
     runner_.run(
-        [this, candidate] {
-            const QMap<QString, QVariant> result = client_.validateApiKey(candidate);
+        [client, candidate] {
+            const QMap<QString, QVariant> result = client->validateApiKey(candidate);
             return QVariant::fromValue(result);
         },
-        [this](const QVariant& raw) {
-            testButton_->setEnabled(true);
+        [self](const QVariant& raw) {
+            if (!self) return;
+            self->testButton_->setEnabled(true);
             const QMap<QString, QVariant> result = raw.toMap();
             if (result.value(QStringLiteral("valid")).toBool()) {
                 const bool authenticated = result.value(QStringLiteral("authenticated")).toBool();
                 const int limit = result.value(QStringLiteral("rate_limit"), 60).toInt();
                 const QString name = result.value(QStringLiteral("name")).toString();
                 if (authenticated && !name.isEmpty()) {
-                    status_->setText(
+                    self->status_->setText(
                         tr("Key is valid (user: %1, limit: %2/min)").arg(name).arg(limit));
                 } else if (authenticated) {
-                    status_->setText(tr("Key is valid (limit: %1/min)").arg(limit));
+                    self->status_->setText(tr("Key is valid (limit: %1/min)").arg(limit));
                 } else {
-                    status_->setText(tr("Anonymous access (limit: %1/min)").arg(limit));
+                    self->status_->setText(
+                        tr("Anonymous access (limit: %1/min)").arg(limit));
                 }
             } else {
                 const QString code = result.value(QStringLiteral("error_code")).toString();
                 const QString error = result.value(QStringLiteral("error")).toString();
                 const QString translatedError = localizedApiError(code);
                 const QString displayError =
-                    translatedError.isEmpty() ? (error.isEmpty() ? tr("Invalid token") : error)
-                                              : translatedError;
-                status_->setText(tr("Error: %1").arg(displayError));
+                    translatedError.isEmpty()
+                        ? (error.isEmpty() ? tr("Invalid token") : error)
+                        : translatedError;
+                self->status_->setText(tr("Error: %1").arg(displayError));
             }
         },
-        [this](const QString& message) {
-            testButton_->setEnabled(true);
-            status_->setText(tr("Connection error: %1").arg(message));
+        [self](const QString& message) {
+            if (!self) return;
+            self->testButton_->setEnabled(true);
+            self->status_->setText(tr("Connection error: %1").arg(message));
         });
 }
 
@@ -1323,19 +1211,9 @@ void SettingsDialog::refreshQuota() {
 }
 
 QString SettingsDialog::collectPresetShortcuts(QMap<QString, QString>* presets) const {
-    // The native binding is checked first, so a preset that would take the
-    // native combination is refused and the message names the native owner. The
-    // map is then built up as presets validate, so a duplicate inside the preset
+    // The map is built up as presets validate, so a duplicate inside the preset
     // space is caught by the same shared check.
     QMap<QString, mplayer::shell::ShortcutClaim> claims;
-    const QString nativeStored =
-        nativeToggleEdit_ != nullptr
-            ? mplayer::shell::shortcutClaimKey(nativeToggleEdit_->keySequence())
-            : nativePreferences_.toggleProcessingShortcut;
-    if (!nativeStored.isEmpty()) {
-        claims.insert(nativeStored, nativeToggleClaim());
-    }
-
     for (const PresetRow& row : presetRows_) {
         const QKeySequence sequence = row.edit->keySequence();
         if (sequence.isEmpty()) {
@@ -1350,40 +1228,6 @@ QString SettingsDialog::collectPresetShortcuts(QMap<QString, QString>* presets) 
         claims.insert(portable, presetClaim(row.id, row.label));
         presets->insert(row.id, portable);
     }
-    return {};
-}
-
-QString SettingsDialog::collectNativeShortcuts(QString* toggleProcessing) const {
-    toggleProcessing->clear();
-    if (nativeToggleEdit_ == nullptr) {
-        return {};
-    }
-    const QKeySequence sequence = nativeToggleEdit_->keySequence();
-    if (sequence.isEmpty()) {
-        return {};
-    }
-    const QString portable = mplayer::shell::shortcutClaimKey(sequence);
-
-    // Every preset is a claim here; the native field is the one being checked,
-    // and there is no other native action to collide with.
-    QMap<QString, mplayer::shell::ShortcutClaim> claims;
-    for (const PresetRow& row : presetRows_) {
-        const QKeySequence other = row.edit->keySequence();
-        if (other.isEmpty()) {
-            continue;
-        }
-        const QString key = mplayer::shell::shortcutClaimKey(other);
-        if (!claims.contains(key)) {
-            claims.insert(key, presetClaim(row.id, row.label));
-        }
-    }
-
-    const mplayer::shell::ShortcutConflict conflict =
-        mplayer::shell::findShortcutConflict(sequence, claims);
-    if (conflict.blocked) {
-        return nativeConflictMessage(conflict, portable);
-    }
-    *toggleProcessing = portable;
     return {};
 }
 
@@ -1503,16 +1347,14 @@ void SettingsDialog::retranslatePresetsTab() {
 }
 
 void SettingsDialog::retranslateProcessingTab() {
-    nativeHeading_->setText(tr("Native processing"));
+    nativeHeading_->setText(tr("Processing runtime"));
     nativeDescription_->setText(
-        tr("Native processing runs the AnimeJaNai engine on the GPU. It is a separate track "
-           "from the Anime4K presets and never changes or clears them."));
-    for (const ProcessingRowCaption& row : processingRowCaptions_) {
-        row.label->setText(processingRowCaption(row.captionKey));
-    }
+        tr("Standard uses official AnimeJaNai choices from the player menu and Components. "
+           "Select Native to configure the separate private Native workflow."));
+    backendRowLabel_->setText(tr("Backend"));
+    recipeRowLabel_->setText(tr("Recipe"));
+    runtimeModuleRowLabel_->setText(tr("Runtime module"));
 
-    nativeEnabled_->setText(tr("Enable native processing"));
-    nativeEnabled_->setAccessibleName(tr("Enable native processing"));
     // Backend names are proper nouns the stored document also carries, so the
     // combo's entries are left exactly as they are.
     nativeBackend_->setAccessibleName(tr("Native backend"));
@@ -1531,19 +1373,7 @@ void SettingsDialog::retranslateProcessingTab() {
     if (!nativeRecipe_->isEnabled()) {
         nativeRecipe_->setToolTip(tr("No native recipe is available in this build."));
     }
-    customModelsDir_->setPlaceholderText(tr("Not set"));
-    customModelsDir_->setAccessibleName(tr("Custom models directory"));
-    customModelsDir_->setToolTip(
-        tr("A validated, read-only model directory. Mikai never writes to it."));
-    nativeToggleEdit_->setAccessibleName(tr("Shortcut to toggle native processing"));
-    nativeToggleEdit_->setToolTip(tr("A single key or combination; it must not collide with a "
-                                     "reserved player key or an Anime4K preset."));
-    if (auto* input = nativeToggleEdit_->findChild<QLineEdit*>()) {
-        input->setPlaceholderText(tr("Press a key"));
-    }
-    nativeStatus_->setAccessibleName(tr("Native processing status"));
-
-    runtimeHeading_->setText(tr("mpv runtime"));
+    nativeStatus_->setAccessibleName(tr("Native processing availability"));
     const int standardIndex =
         runtimeChoice_->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard));
     const int nativeIndex =
@@ -1551,7 +1381,6 @@ void SettingsDialog::retranslateProcessingTab() {
     if (standardIndex >= 0) runtimeChoice_->setItemText(standardIndex, tr("Standard"));
     if (nativeIndex >= 0) runtimeChoice_->setItemText(nativeIndex, tr("Native"));
     runtimeChoice_->setAccessibleName(tr("mpv runtime"));
-    runtimeStatus_->setAccessibleName(tr("mpv runtime status"));
 
     rifeHeading_->setText(tr("RIFE interpolation"));
     // The RIFE surface and the assets panel are QWidget children of this page,
@@ -1564,9 +1393,6 @@ void SettingsDialog::retranslateProcessingTab() {
         nativeRife_->setAccessibleName(tr("RIFE interpolation"));
     }
 
-    // The two native status sentences are recomposed from the current request
-    // rather than translated as literal text: they name an availability reason
-    // that belongs to the runtime selection's own context.
     refreshNativeStatus();
     refreshRuntimeStatus();
 }
@@ -1606,20 +1432,25 @@ void SettingsDialog::showProcessingTab() {
 
 void SettingsDialog::focusNativeProviderChoice() {
     showProcessingTab();
-    if (nativeBackend_ != nullptr) {
+    if (nativeBackend_ != nullptr && nativeBackend_->isVisible()) {
         nativeBackend_->setFocus();
+    } else if (runtimeChoice_ != nullptr) {
+        runtimeChoice_->setFocus();
     }
 }
 
 void SettingsDialog::triggerNativePrepare() {
     showProcessingTab();
+    if (assetsPanel_ == nullptr) return;
+    if (!assetsPanel_->isVisible()) {
+        if (runtimeChoice_ != nullptr) runtimeChoice_->setFocus();
+        return;
+    }
     // The panel's own command, invoked once. A request it cannot submit states
     // its named refusal in the panel's own status line; nothing is added here,
     // because a second truth about the same refusal would only ever disagree
     // with the first.
-    if (assetsPanel_ != nullptr) {
-        assetsPanel_->prepareArtifact();
-    }
+    assetsPanel_->prepareArtifact();
 }
 
 void SettingsDialog::applyProcessingIntent(mplayer::shell::ProcessingSettingsIntent intent) {
@@ -1640,19 +1471,13 @@ void SettingsDialog::showNativeError(const QString& message) {
 }
 
 void SettingsDialog::save() {
-    // Every binding, preset and native, is checked before anything is written: a
-    // rejected shortcut must not leave the token, feeds or native request saved
-    // while the dialog stays open.
+    // Every preset binding is checked before anything is written: a rejected
+    // shortcut must not leave the token, feeds or native request saved while the
+    // dialog stays open.
     QMap<QString, QString> presets;
     const QString presetProblem = collectPresetShortcuts(&presets);
     if (!presetProblem.isEmpty()) {
         showPresetError(presetProblem);
-        return;
-    }
-    QString toggleProcessing;
-    const QString nativeProblem = collectNativeShortcuts(&toggleProcessing);
-    if (!nativeProblem.isEmpty()) {
-        showNativeError(nativeProblem);
         return;
     }
     presetError_->clear();
@@ -1695,18 +1520,12 @@ void SettingsDialog::save() {
     mplayer::native::NativePreferencePatch patch;
     const mplayer::native::Backend chosenBackend =
         static_cast<mplayer::native::Backend>(nativeBackend_->currentData().toInt());
-    if (nativeEnabled_->isChecked() != nativePreferences_.enabled) {
-        patch.enabled = nativeEnabled_->isChecked();
-    }
     if (chosenBackend != nativePreferences_.backend) {
         patch.backend = chosenBackend;
     }
     const QString chosenRecipe = nativeRecipe_->currentData().toString();
     if (chosenRecipe != nativePreferences_.recipeId) {
         patch.recipeId = chosenRecipe;
-    }
-    if (toggleProcessing != nativePreferences_.toggleProcessingShortcut) {
-        patch.toggleProcessingShortcut = toggleProcessing;
     }
     if (!patch.isEmpty()) {
         QString nativeReason;
@@ -1752,7 +1571,7 @@ void SettingsDialog::save() {
         // a later run reads exactly what it read before.
         if (languagePreferenceWasStored_) {
             settings.setValue(QString::fromLatin1(kUiLanguageSettingKey),
-                              appliedLanguagePreference_);
+                              storedLanguagePreference_);
         } else {
             settings.remove(QString::fromLatin1(kUiLanguageSettingKey));
         }
@@ -1762,6 +1581,7 @@ void SettingsDialog::save() {
         return;
     }
     appliedLanguagePreference_ = chosenLanguage;
+    storedLanguagePreference_ = chosenLanguage;
 
     accept();
 }

@@ -139,6 +139,7 @@ private:
     void showSearchResults();
     void onResults(const backend::SearchResult& result, int requestedPage);
     void onError(const QString& message);
+    void reportFailure(const QString& message);
     void rebuildFormatBar();
     void applyFormatFilter();
     void populateRows();

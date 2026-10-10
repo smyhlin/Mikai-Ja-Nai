@@ -34,6 +34,21 @@ constexpr qint64 kDiagnosticsRequestTimeoutMs = 5000;
 constexpr qint64 kRestoreSettleTimeoutMs = 5000;
 constexpr int kRestoreSettleMaxAttempts = 5;
 
+const char* nativePlaybackStateName(native::NativePlaybackController::State state) {
+    using State = native::NativePlaybackController::State;
+    switch (state) {
+        case State::Idle: return "Idle";
+        case State::Attached: return "Attached";
+        case State::Admitting: return "Admitting";
+        case State::Active: return "Active";
+        case State::Draining: return "Draining";
+        case State::Suspended: return "Suspended";
+        case State::Off: return "Off";
+        case State::Failed: return "Failed";
+    }
+    return "Unknown";
+}
+
 constexpr const char* kDecoderDropProperty = "decoder-frame-drop-count";
 // Current mpv: "frame-drop-count" is the VO drop counter (the old
 // vo-drop-frame-count is gone), so it is never read as the decoder's.
@@ -79,6 +94,14 @@ QVector<native::NativeFilterOption> provedNativeAttachOptions() {
         return {native::NativeFilterOption{QStringLiteral("lib"), absolute}};
     }
     return {};
+}
+
+QString privateNativeRuntimeUnavailableReason() {
+    const native::RuntimeSelection& selection = native::currentSelection();
+    if (selection.loaded && selection.kind == native::BundleKind::Native) return {};
+    return selection.reason.isEmpty()
+               ? QStringLiteral("Private Native playback requires a loaded Native runtime.")
+               : selection.reason;
 }
 
 // A captured frame larger than this is refused by name rather than allocated:
@@ -253,6 +276,9 @@ void VideoSurface::ensureEngine() {
         {"screenshot-sw", "yes"},
     };
     mpv_ = std::make_unique<MpvHandle>(options);
+    // A plan may have been selected before the core existed. Request its backend
+    // reports before any source or official filter command reaches this core.
+    mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
     // The filter opens its inference shim only for an explicitly named producer
     // library, so the binding an admission is later loaded into has to name the
     // one this core's own bundle ships; without it every admission is refused
@@ -266,6 +292,30 @@ void VideoSurface::ensureEngine() {
     // A fresh core, so any raw number a previous one left reads as unknown.
     resetDiagnostics();
     mpv_->setEventSink([this](mpv_event* event) {
+        if (event->event_id == MPV_EVENT_LOG_MESSAGE && event->data != nullptr) {
+            const auto* message = static_cast<const mpv_event_log_message*>(event->data);
+            const QString line = QString::fromUtf8(message->text == nullptr ? "" : message->text).trimmed();
+            const QString prefix = QString::fromUtf8(message->prefix == nullptr ? "" : message->prefix);
+            if (message->log_level <= MPV_LOG_LEVEL_WARN) qWarning().noquote() << "[mpv]" << prefix << line;
+            else qInfo().noquote() << "[mpv]" << prefix << line;
+            const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
+            observeAnimeJanaiBackendLog(prefix, line);
+            const bool ajiMessage = lower.contains(QStringLiteral("aji")) ||
+                                    lower.contains(QStringLiteral("animejanai")) ||
+                                    lower.contains(QStringLiteral("inference shim")) ||
+                                    (animeJanaiFilterBound_ &&
+                                     (lower.contains(QStringLiteral("inference")) ||
+                                      lower.contains(QStringLiteral("model")) ||
+                                      lower.contains(QStringLiteral("backend")) ||
+                                      lower.contains(QStringLiteral("engine"))));
+            if (ajiMessage &&
+                (lower.contains(QStringLiteral("error")) ||
+                 lower.contains(QStringLiteral("failed")) ||
+                 lower.contains(QStringLiteral("failure")))) {
+                animeJanaiFail(QStringLiteral("animejanai.backend.failed"), line);
+            }
+            return;
+        }
         if (event->event_id != MPV_EVENT_END_FILE || event->data == nullptr) return;
         const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
         if (ended->reason != MPV_END_FILE_REASON_ERROR) return;
@@ -289,6 +339,7 @@ void VideoSurface::ensureEngine() {
 }
 
 void VideoSurface::setAnime4KChain(const QString& candidateId) {
+    ++anime4KRequestGeneration_;
     if (candidateId == anime4kChainId_) {
         return;
     }
@@ -315,6 +366,7 @@ void VideoSurface::setAnime4KChain(const QString& candidateId) {
     update();
 }
 void VideoSurface::setAnime4KMode(anime4k::Mode mode) {
+    ++anime4KRequestGeneration_;
     // The id is compared too: an override the compare window applied must be
     // taken back when the same mode is picked again.
     const QString id = anime4k::modeId(mode);
@@ -348,6 +400,600 @@ QString VideoSurface::effectiveShaderChain() const {
     // mpv only echoes this back - it does not validate a shader path list - so
     // no answer separates a working chain from a preset naming a deleted file.
     return shaderChain_;
+}
+
+void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
+    const uint64_t currentSourceEpoch = mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
+    const bool samePlan =
+        animeJanaiPlan_.enabled == plan.enabled &&
+        animeJanaiPlan_.available == plan.available &&
+        animeJanaiPlan_.presetId == plan.presetId &&
+        animeJanaiPlan_.reasonKey == plan.reasonKey &&
+        animeJanaiPlan_.reason == plan.reason &&
+        animeJanaiPlan_.backend == plan.backend &&
+        animeJanaiPlan_.slot == plan.slot &&
+        animeJanaiPlan_.libraryPath == plan.libraryPath &&
+        animeJanaiPlan_.configPath == plan.configPath &&
+        animeJanaiPlan_.modelDir == plan.modelDir &&
+        animeJanaiPlan_.rifeModelDir == plan.rifeModelDir &&
+        animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
+        animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir &&
+        animeJanaiPlan_.statsPath == plan.statsPath &&
+        animeJanaiPlan_.filterSpec == plan.filterSpec;
+    const bool preserveProcessingObservation =
+        mpv_ != nullptr && samePlan && animeJanaiPlan_.enabled &&
+        animeJanaiPlan_.available && animeJanaiFilterBound_ && !animeJanaiBusy_ &&
+        !animeJanaiReportPending_ && animeJanaiObserved_ &&
+        animeJanaiObservedEpoch_ == currentSourceEpoch &&
+        animeJanaiEpoch_ == currentSourceEpoch &&
+        animeJanaiObservedGeneration_ == animeJanaiGeneration_;
+    const QString preservedObservedStatus = animeJanaiObservedStatus_;
+    const bool sameConfiguration =
+        animeJanaiPlan_.backend == plan.backend &&
+        animeJanaiPlan_.libraryPath == plan.libraryPath &&
+        animeJanaiPlan_.configPath == plan.configPath &&
+        animeJanaiPlan_.modelDir == plan.modelDir &&
+        animeJanaiPlan_.rifeModelDir == plan.rifeModelDir &&
+        animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
+        animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir;
+    const bool slotOnlyChange = animeJanaiFilterBound_ && plan.enabled &&
+                                sameConfiguration && animeJanaiPlan_.slot != plan.slot;
+    const bool configurationChange = animeJanaiFilterBound_ && plan.enabled &&
+                                     !sameConfiguration;
+    cancelAnimeJanaiOperation();
+    animeJanaiPlan_ = plan;
+    if (preserveProcessingObservation) {
+        animeJanaiObserved_ = true;
+        animeJanaiObservedEpoch_ = currentSourceEpoch;
+        animeJanaiObservedGeneration_ = animeJanaiGeneration_;
+        animeJanaiObservedStatus_ = preservedObservedStatus;
+    }
+    if (!mpv_) {
+        if (!plan.enabled) {
+            setAnimeJanaiStatus(QStringLiteral("Off"));
+            return;
+        }
+        if (!plan.available) {
+            animeJanaiFail(plan.reasonKey.isEmpty() ? QStringLiteral("animejanai.plan.unavailable")
+                                                    : plan.reasonKey,
+                           plan.reason.isEmpty() ? QStringLiteral("AnimeJaNai plan is unavailable")
+                                                 : plan.reason);
+            return;
+        }
+        setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a source"));
+        return;
+    }
+    animeJanaiEpoch_ = mpv_->sourceEpoch();
+    try {
+        mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
+    } catch (const MpvError& error) {
+        animeJanaiFail(QStringLiteral("animejanai.backend.failed"),
+                       QString::fromUtf8(error.what()));
+        return;
+    }
+    if (!plan.enabled) {
+        const quint64 generation = animeJanaiGeneration_;
+        const uint64_t epoch = animeJanaiEpoch_;
+        if (!animeJanaiFilterBound_ && !animeJanaiEngineBuildActive_) {
+            restoreAnimeJanaiHwdec(epoch, generation);
+            return;
+        }
+        animeJanaiBusy_ = true;
+        animeJanaiRequest_ = mpv_->commandAsync(
+            {"vf", "remove", std::string("@") + native::kAnimeJanaiFilterLabel},
+            [this, epoch, generation](const AsyncReply& reply) {
+                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                    generation != animeJanaiGeneration_) return;
+                animeJanaiRequest_ = {};
+                animeJanaiBusy_ = false;
+                if (!reply.ok()) {
+                    animeJanaiFail(QStringLiteral("animejanai.filter.removeRefused"),
+                                   QString::fromStdString(mpv_->describeError(reply.error)));
+                    return;
+                }
+                animeJanaiFilterBound_ = false;
+                finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build cancelled."));
+                restoreAnimeJanaiHwdec(epoch, generation);
+            });
+        if (!animeJanaiRequest_.valid()) {
+            animeJanaiBusy_ = false;
+            animeJanaiFail(QStringLiteral("animejanai.filter.removeNotSubmitted"),
+                           QStringLiteral("mpv did not accept the AnimeJaNai filter removal request"));
+        }
+        return;
+    }
+    if (!plan.available) {
+        animeJanaiFail(plan.reasonKey.isEmpty() ? QStringLiteral("animejanai.plan.unavailable")
+                                                : plan.reasonKey,
+                       plan.reason.isEmpty() ? QStringLiteral("AnimeJaNai plan is unavailable")
+                                             : plan.reason);
+        return;
+    }
+    const QByteArray expectedFilterPrefix =
+        QByteArray("@") + native::kAnimeJanaiFilterLabel + QByteArray(":");
+    if (plan.filterSpec.isEmpty() || !plan.filterSpec.startsWith(expectedFilterPrefix)) {
+        animeJanaiFail(QStringLiteral("animejanai.plan.filterSpecInvalid"),
+                       QStringLiteral("available AnimeJaNai plan has no mikai_aji filter specification"));
+        return;
+    }
+    if (plan.slot == 0) {
+        animeJanaiFail(QStringLiteral("animejanai.slot.bypass"),
+                       QStringLiteral("AnimeJaNai slot 0 is passthrough and cannot be reported as processing"));
+        return;
+    }
+    if (configurationChange) {
+        const uint64_t epoch = mpv_->sourceEpoch();
+        const quint64 generation = animeJanaiGeneration_;
+        animeJanaiBusy_ = true;
+        setAnimeJanaiStatus(QStringLiteral("Switching AnimeJaNai configuration"));
+        animeJanaiRequest_ = mpv_->commandAsync(
+            {"vf", "remove", std::string("@") + native::kAnimeJanaiFilterLabel},
+            [this, epoch, generation](const AsyncReply& reply) {
+                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                    generation != animeJanaiGeneration_) return;
+                animeJanaiRequest_ = {};
+                animeJanaiBusy_ = false;
+                if (!reply.ok()) {
+                    animeJanaiFail(QStringLiteral("animejanai.backend.removeRefused"),
+                                   QString::fromStdString(mpv_->describeError(reply.error)));
+                    return;
+                }
+                animeJanaiFilterBound_ = false;
+                finishAnimeJanaiEngineBuild(false, tr("Previous TensorRT engine build stopped."));
+                animeJanaiReconfigureAfterRestore_ = true;
+                restoreAnimeJanaiHwdec(epoch, generation);
+            });
+        if (!animeJanaiRequest_.valid()) {
+            animeJanaiBusy_ = false;
+            animeJanaiFail(QStringLiteral("animejanai.backend.removeNotSubmitted"),
+                           QStringLiteral("mpv did not accept removing the old backend filter"));
+        }
+        return;
+    }
+    const native::NativePlaybackController::Status nativeStatus = nativePlayback_.status();
+    const native::NativePlaybackController::State nativeState = nativeStatus.state;
+    // Controller states are not, by themselves, proof that the filter is in the
+    // core: Idle is the normal unrequested state, and Attached can remain after
+    // a refused add. The surface's bound bit includes an add/remove in flight
+    // and is cleared only by a refused add or an observed removal.
+    const bool stateCanBeUnbound =
+        nativeState == native::NativePlaybackController::State::Idle ||
+        nativeState == native::NativePlaybackController::State::Attached ||
+        nativeState == native::NativePlaybackController::State::Off ||
+        nativeState == native::NativePlaybackController::State::Failed;
+    const bool noPrivateFilterOrTransition = !nativeFilterBound_ && stateCanBeUnbound;
+    if (nativeFilterBound_ || !noPrivateFilterOrTransition) {
+        const QString details =
+            QStringLiteral("private mikai_native state=%1 bound=%2 reason=%3: %4; "
+                           "AnimeJaNai cannot run concurrently")
+                .arg(QString::fromLatin1(nativePlaybackStateName(nativeState)))
+                .arg(nativeFilterBound_ ? QStringLiteral("true") : QStringLiteral("false"))
+                .arg(nativeStatus.reasonKey.isEmpty() ? QStringLiteral("none") : nativeStatus.reasonKey,
+                     nativeStatus.reason.isEmpty() ? QStringLiteral("no additional detail")
+                                                   : nativeStatus.reason);
+        animeJanaiFail(QStringLiteral("animejanai.privateNativeConflict"), details);
+        return;
+    }
+    const native::RuntimeSelection& selection = native::currentSelection();
+    if (!native::isAnimeJanaiForkRuntime(selection)) {
+        animeJanaiFail(QStringLiteral("animejanai.core.unsupported"),
+                       QStringLiteral("AnimeJaNai requires the official Standard fork d6d93599d5; "
+                                      "the loaded libmpv core is not that supported fork"));
+        return;
+    }
+    if (slotOnlyChange) {
+        const uint64_t epoch = mpv_->sourceEpoch();
+        setAnimeJanaiStatus(QStringLiteral("Switching AnimeJaNai slot"));
+        const quint64 generation = animeJanaiGeneration_;
+        animeJanaiBusy_ = true;
+        animeJanaiReportPending_ = true;
+        animeJanaiRequest_ = mpv_->commandAsync(
+            {"vf-command", native::kAnimeJanaiFilterLabel, "slot", std::to_string(plan.slot)},
+            [this, epoch, generation](const AsyncReply& reply) {
+                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                    generation != animeJanaiGeneration_) return;
+                animeJanaiRequest_ = {};
+                animeJanaiBusy_ = false;
+                if (!reply.ok()) {
+                    animeJanaiFail(QStringLiteral("animejanai.slot.refused"),
+                                   QString::fromStdString(mpv_->describeError(reply.error)));
+                    return;
+                }
+                animeJanaiReportPending_ = false;
+                setAnimeJanaiStatus(QStringLiteral(
+                    "Configured; filter accepted (inference not observed)"));
+                publishPendingAnimeJanaiObservation(epoch, generation);
+            });
+        if (!animeJanaiRequest_.valid()) {
+            animeJanaiReportPending_ = false;
+            animeJanaiBusy_ = false;
+            animeJanaiFail(QStringLiteral("animejanai.slot.notSubmitted"),
+                           QStringLiteral("mpv did not accept the AnimeJaNai slot request"));
+        }
+        return;
+    }
+    processAnimeJanaiPlan();
+}
+
+bool VideoSurface::animeJanaiProcessingObserved() const {
+    return animeJanaiObserved_ && animeJanaiFilterBound_ && animeJanaiEpoch_ != 0 &&
+           mpv_ != nullptr && animeJanaiObservedEpoch_ == mpv_->sourceEpoch() &&
+           animeJanaiObservedGeneration_ == animeJanaiGeneration_;
+}
+
+void VideoSurface::resetAnimeJanaiObservation() {
+    animeJanaiObserved_ = false;
+    animeJanaiObservedEpoch_ = 0;
+    animeJanaiObservedGeneration_ = 0;
+    animeJanaiObservedStatus_.clear();
+    animeJanaiPendingObservedStatus_.clear();
+    animeJanaiPendingObservedEpoch_ = 0;
+    animeJanaiPendingObservedGeneration_ = 0;
+}
+
+// libmpv has one client-level log threshold, so verbose delivery is scoped to
+// the active official plan that consumes these backend reports.
+bool VideoSurface::animeJanaiBackendLogsNeeded() const {
+    return mpv_ != nullptr && animeJanaiSourceRequested_ && !pendingOpen_ &&
+           animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
+           native::isAnimeJanaiForkRuntime(native::currentSelection());
+}
+
+void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QString& line) {
+    if (!animeJanaiBackendLogsNeeded() ||
+        (!animeJanaiFilterBound_ && !animeJanaiReportPending_) ||
+        (animeJanaiBusy_ && !animeJanaiReportPending_) || animeJanaiEpoch_ == 0 ||
+        animeJanaiEpoch_ != mpv_->sourceEpoch()) return;
+
+    const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
+    if (animeJanaiPlan_.backend == native::Backend::TensorRT &&
+        (lower.contains(QStringLiteral("building tensorrt engine for ")) ||
+         lower.contains(QStringLiteral("building engine:")) ||
+         lower.contains(QStringLiteral("background engine build:")))) {
+        if (!animeJanaiEngineBuildActive_) {
+            animeJanaiBuildPollingRefused_ = false;
+            animeJanaiBuildNextPollMs_ = 0;
+            beginEnginePause();
+        }
+        animeJanaiEngineBuildActive_ = true;
+        const QString detail = tr("Compiling the selected model for this video resolution.");
+        setAnimeJanaiStatus(tr("Building TensorRT engine…"));
+        emit animeJanaiEngineBuildChanged(true, false, detail);
+    }
+    QString observed;
+    if (animeJanaiPlan_.presetId.startsWith(QStringLiteral("rife:"), Qt::CaseInsensitive) &&
+        lower.contains(QStringLiteral("rife active:")) &&
+        lower.contains(QStringLiteral("interpolation"))) {
+        observed = tr("Backend reports RIFE interpolation processing");
+    } else {
+        const QString marker = QStringLiteral("configured slot %1:").arg(animeJanaiPlan_.slot);
+        if (lower.contains(marker) && lower.contains(QStringLiteral(" -> "))) {
+            observed = tr("Backend reports spatial upscale processing");
+        }
+    }
+    if (observed.isEmpty()) return;
+
+    if (animeJanaiFilterBound_ && !animeJanaiReportPending_) {
+        publishAnimeJanaiObservation(observed, animeJanaiEpoch_, animeJanaiGeneration_);
+    } else {
+        animeJanaiPendingObservedStatus_ = std::move(observed);
+        animeJanaiPendingObservedEpoch_ = animeJanaiEpoch_;
+        animeJanaiPendingObservedGeneration_ = animeJanaiGeneration_;
+    }
+}
+
+void VideoSurface::publishAnimeJanaiObservation(const QString& status, uint64_t epoch,
+                                                quint64 generation) {
+    if (!animeJanaiBackendLogsNeeded() || !animeJanaiFilterBound_ ||
+        epoch == 0 || epoch != mpv_->sourceEpoch() || epoch != animeJanaiEpoch_ ||
+        generation != animeJanaiGeneration_) return;
+    animeJanaiObserved_ = true;
+    animeJanaiObservedEpoch_ = epoch;
+    animeJanaiObservedGeneration_ = generation;
+    animeJanaiObservedStatus_ = status;
+    setAnimeJanaiStatus(status);
+    finishAnimeJanaiEngineBuild(true, tr("TensorRT engine ready; processing started."));
+}
+
+void VideoSurface::publishPendingAnimeJanaiObservation(uint64_t epoch, quint64 generation) {
+    const QString reported = std::move(animeJanaiPendingObservedStatus_);
+    const uint64_t reportEpoch = animeJanaiPendingObservedEpoch_;
+    const quint64 reportGeneration = animeJanaiPendingObservedGeneration_;
+    animeJanaiPendingObservedEpoch_ = 0;
+    animeJanaiPendingObservedGeneration_ = 0;
+    if (!reported.isEmpty() && reportEpoch == epoch && reportGeneration == generation) {
+        publishAnimeJanaiObservation(reported, reportEpoch, reportGeneration);
+    }
+}
+
+void VideoSurface::setAnimeJanaiStatus(const QString& status) {
+    if (animeJanaiObserved_ && animeJanaiObservedEpoch_ == (mpv_ ? mpv_->sourceEpoch() : 0) &&
+        animeJanaiObservedGeneration_ == animeJanaiGeneration_ &&
+        status != animeJanaiObservedStatus_) return;
+    if (animeJanaiStatus_ == status) return;
+    animeJanaiStatus_ = status;
+    emit animeJanaiStatusChanged(status);
+}
+
+bool VideoSurface::enginePauseHeld() const {
+    return enginePauseEpoch_ != 0 && mpv_ != nullptr &&
+           enginePauseEpoch_ == mpv_->sourceEpoch() &&
+           (enginePreparationPaused_ || animeJanaiEngineBuildActive_);
+}
+
+bool VideoSurface::playbackPauseIntent() const {
+    return enginePauseHeld() ? enginePauseIntent_ : !isPlaying();
+}
+
+void VideoSurface::beginEnginePause() {
+    if (enginePauseHeld()) return;
+    enginePauseIntent_ = !isPlaying();
+    enginePauseRequestGeneration_ = pauseRequestGeneration_;
+    if (mpv_ == nullptr || mpv_->sourceEpoch() == 0) return;
+    enginePauseEpoch_ = mpv_->sourceEpoch();
+    reassertPaused();
+    setPlaying(false);
+}
+
+void VideoSurface::endEnginePause(bool restoreIntent) {
+    if (enginePreparationPaused_ || animeJanaiEngineBuildActive_) return;
+    const bool sameSource = mpv_ != nullptr && enginePauseEpoch_ != 0 &&
+                            enginePauseEpoch_ == mpv_->sourceEpoch();
+    const bool paused = enginePauseIntent_;
+    enginePauseEpoch_ = 0;
+    if (!restoreIntent || !sameSource) return;
+    try {
+        mpv_->setPaused(paused);
+        setPlaying(!paused);
+    } catch (const MpvError& error) {
+        emit errorOccurred(QString::fromUtf8(error.what()));
+    }
+}
+
+void VideoSurface::discardEnginePause() {
+    enginePauseEpoch_ = 0;
+    enginePreparationPaused_ = false;
+}
+
+void VideoSurface::setEnginePreparationPaused(bool active, bool restoreIntent) {
+    if (active == enginePreparationPaused_) return;
+    if (active) beginEnginePause();
+    enginePreparationPaused_ = active;
+    if (!active) endEnginePause(restoreIntent);
+}
+
+void VideoSurface::pollAnimeJanaiEngineBuild() {
+    if (!animeJanaiEngineBuildActive_ || !animeJanaiFilterBound_ || animeJanaiBusy_ ||
+        animeJanaiBuildPollingRefused_ || mpv_ == nullptr ||
+        animeJanaiBuildPollRequest_.valid() ||
+        nativeStatusClock_.elapsed() < animeJanaiBuildNextPollMs_) return;
+    animeJanaiBuildNextPollMs_ = nativeStatusClock_.elapsed() + 500;
+    const uint64_t epoch = mpv_->sourceEpoch();
+    const quint64 generation = animeJanaiGeneration_;
+    // The official filter's poll command wakes completion without advancing playback.
+    // The payload is required by the transport and ignored by the filter.
+    animeJanaiBuildPollRequest_ = mpv_->commandAsync(
+        {"vf-command", native::kAnimeJanaiFilterLabel, "poll", ""},
+        [this, epoch, generation](const AsyncReply& reply) {
+            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                generation != animeJanaiGeneration_) return;
+            animeJanaiBuildPollRequest_ = {};
+            if (!reply.ok() && animeJanaiEngineBuildActive_) {
+                animeJanaiBuildPollingRefused_ = true;
+                emit animeJanaiFailure(QStringLiteral("animejanai.build.pollRefused: ") +
+                                      QString::fromStdString(mpv_->describeError(reply.error)));
+            }
+        });
+    if (!animeJanaiBuildPollRequest_.valid()) {
+        animeJanaiBuildPollingRefused_ = true;
+        emit animeJanaiFailure(QStringLiteral("animejanai.build.pollNotSubmitted"));
+    }
+}
+
+void VideoSurface::finishAnimeJanaiEngineBuild(bool succeeded, const QString& detail) {
+    if (!animeJanaiEngineBuildActive_) return;
+    animeJanaiEngineBuildActive_ = false;
+    endEnginePause(true);
+    emit animeJanaiEngineBuildChanged(false, succeeded, detail);
+}
+
+void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reason) {
+    animeJanaiReportPending_ = false;
+    resetAnimeJanaiObservation();
+    if (mpv_ != nullptr) {
+        try {
+            mpv_->setBackendLogObservationEnabled(false);
+        } catch (const MpvError& error) {
+            emit errorOccurred(QString::fromUtf8(error.what()));
+        }
+    }
+    const QString detail = reasonKey + QStringLiteral(": ") + reason;
+    finishAnimeJanaiEngineBuild(false, detail);
+    setAnimeJanaiStatus(QStringLiteral("Processing failed — ") + detail);
+    emit animeJanaiFailure(detail);
+}
+
+void VideoSurface::cancelAnimeJanaiOperation() {
+    if (mpv_ != nullptr && animeJanaiBuildPollRequest_.valid()) {
+        mpv_->cancelAsync(animeJanaiBuildPollRequest_);
+    }
+    animeJanaiBuildPollRequest_ = {};
+    ++animeJanaiGeneration_;
+    animeJanaiReportPending_ = false;
+    resetAnimeJanaiObservation();
+    if (mpv_ != nullptr && animeJanaiRequest_.valid()) {
+        mpv_->cancelAsync(animeJanaiRequest_);
+    }
+    animeJanaiRequest_ = {};
+    animeJanaiBusy_ = false;
+    animeJanaiReconfigureAfterRestore_ = false;
+}
+
+void VideoSurface::processAnimeJanaiPlan() {
+    if (!mpv_ || !animeJanaiPlan_.enabled || !animeJanaiPlan_.available) return;
+    try {
+        mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
+    } catch (const MpvError& error) {
+        animeJanaiFail(QStringLiteral("animejanai.backend.failed"),
+                       QString::fromUtf8(error.what()));
+        return;
+    }
+    if (animeJanaiBusy_) return;
+    if (!animeJanaiSourceRequested_ || url_.isEmpty() || pendingOpen_) {
+        setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
+        return;
+    }
+    if (animeJanaiFilterBound_) {
+        setAnimeJanaiStatus(QStringLiteral("Configured; filter retained (inference not observed)"));
+        return;
+    }
+    const uint64_t epoch = mpv_->sourceEpoch();
+    const quint64 generation = animeJanaiGeneration_;
+    animeJanaiBusy_ = true;
+    setAnimeJanaiStatus(QStringLiteral("Configuring"));
+    // Read and retain the user's decoder choice before temporarily aligning it.
+    animeJanaiRequest_ = mpv_->getPropertyAsync(
+        "hwdec", MPV_FORMAT_STRING,
+        [this, epoch, generation](const AsyncReply& prior) {
+            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                generation != animeJanaiGeneration_) return;
+            animeJanaiRequest_ = {};
+            if (!prior.ok() || prior.format != MPV_FORMAT_STRING) {
+                animeJanaiBusy_ = false;
+                animeJanaiFail(QStringLiteral("animejanai.hwdec.previousUnavailable"),
+                               QStringLiteral("could not read the current hwdec setting"));
+                return;
+            }
+            if (animeJanaiPreviousHwdec_.isEmpty()) {
+                animeJanaiPreviousHwdec_ = QString::fromStdString(prior.text);
+            }
+            const QString required = animeJanaiPlan_.backend == native::Backend::TensorRT
+                                         ? QStringLiteral("nvdec")
+                                         : QStringLiteral("d3d11va");
+            const auto write = mpv_->commandAsync(
+                {"set", "hwdec", required.toStdString()},
+                [this, epoch, generation, required](const AsyncReply& written) {
+                    if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                        generation != animeJanaiGeneration_) return;
+                    animeJanaiRequest_ = {};
+                    if (!written.ok()) {
+                        animeJanaiBusy_ = false;
+                        animeJanaiFail(QStringLiteral("animejanai.hwdec.writeRefused"),
+                                       QString::fromStdString(mpv_->describeError(written.error)));
+                        return;
+                    }
+                    animeJanaiRequest_ = mpv_->getPropertyAsync(
+                        "hwdec", MPV_FORMAT_STRING,
+                        [this, epoch, generation, required](const AsyncReply& observed) {
+                            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                                generation != animeJanaiGeneration_) return;
+                            animeJanaiRequest_ = {};
+                            if (!observed.ok() || observed.format != MPV_FORMAT_STRING) {
+                                animeJanaiBusy_ = false;
+                                animeJanaiFail(QStringLiteral("animejanai.hwdec.readbackFailed"),
+                                               QStringLiteral("could not read the decoder setting back"));
+                                restoreAnimeJanaiHwdec(epoch, generation);
+                                return;
+                            }
+                            const QString decoder = QString::fromStdString(observed.text);
+                            if (decoder.compare(required, Qt::CaseInsensitive) != 0) {
+                                animeJanaiBusy_ = false;
+                                animeJanaiFail(QStringLiteral("animejanai.hwdec.incompatible"),
+                                               QStringLiteral("the core reports hwdec='%1'; required '%2'")
+                                                   .arg(decoder, required));
+                                restoreAnimeJanaiHwdec(epoch, generation);
+                                return;
+                            }
+                            const std::string spec(animeJanaiPlan_.filterSpec.constData(),
+                                                   static_cast<size_t>(animeJanaiPlan_.filterSpec.size()));
+                            animeJanaiReportPending_ = true;
+                            animeJanaiRequest_ = mpv_->commandAsync(
+                                {"vf", "add", spec},
+                                [this, epoch, generation](const AsyncReply& attached) {
+                                    if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                                        generation != animeJanaiGeneration_) return;
+                                    animeJanaiRequest_ = {};
+                                    animeJanaiBusy_ = false;
+                                    if (!attached.ok()) {
+                                        animeJanaiFail(QStringLiteral("animejanai.filter.attachRefused"),
+                                                       QString::fromStdString(
+                                                           mpv_->describeError(attached.error)));
+                                        restoreAnimeJanaiHwdec(epoch, generation);
+                                        return;
+                                    }
+                                    animeJanaiFilterBound_ = true;
+                                    animeJanaiReportPending_ = false;
+                                    setAnimeJanaiStatus(QStringLiteral(
+                                        "Configured; filter accepted (inference not observed)"));
+                                    publishPendingAnimeJanaiObservation(epoch, generation);
+                                    if (contextReady_ && render_) render_->update();
+                                    update();
+                                });
+                            if (!animeJanaiRequest_.valid()) {
+                                animeJanaiReportPending_ = false;
+                                animeJanaiBusy_ = false;
+                                animeJanaiFail(QStringLiteral("animejanai.filter.attachNotSubmitted"),
+                                               QStringLiteral("mpv did not accept the AnimeJaNai "
+                                                              "filter request"));
+                                restoreAnimeJanaiHwdec(epoch, generation);
+                            }
+                        });
+                    if (!animeJanaiRequest_.valid()) {
+                        animeJanaiBusy_ = false;
+                        animeJanaiFail(QStringLiteral("animejanai.hwdec.readbackNotSubmitted"),
+                                       QStringLiteral("mpv did not accept the hwdec readback request"));
+                        restoreAnimeJanaiHwdec(epoch, generation);
+                    }
+                });
+            if (!write.valid()) {
+                animeJanaiBusy_ = false;
+                animeJanaiFail(QStringLiteral("animejanai.hwdec.writeNotSubmitted"),
+                               QStringLiteral("mpv did not accept the hwdec write request"));
+            }
+        });
+    if (!animeJanaiRequest_.valid()) {
+        animeJanaiBusy_ = false;
+        animeJanaiFail(QStringLiteral("animejanai.hwdec.readNotSubmitted"),
+                       QStringLiteral("mpv did not accept the previous hwdec read request"));
+    }
+}
+
+void VideoSurface::restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation) {
+    if (!mpv_ || animeJanaiPreviousHwdec_.isNull() || animeJanaiPreviousHwdec_.isEmpty()) {
+        if (animeJanaiReconfigureAfterRestore_) {
+            animeJanaiReconfigureAfterRestore_ = false;
+            processAnimeJanaiPlan();
+        } else if (!animeJanaiPlan_.enabled) {
+            setAnimeJanaiStatus(QStringLiteral("Off"));
+        }
+        return;
+    }
+    const QString previous = animeJanaiPreviousHwdec_;
+    animeJanaiPreviousHwdec_.clear();
+    animeJanaiRequest_ = mpv_->commandAsync(
+        {"set", "hwdec", previous.toStdString()},
+        [this, epoch, generation](const AsyncReply& reply) {
+            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                generation != animeJanaiGeneration_) return;
+            animeJanaiRequest_ = {};
+            if (!reply.ok()) {
+                animeJanaiReconfigureAfterRestore_ = false;
+                animeJanaiFail(QStringLiteral("animejanai.hwdec.restoreRefused"),
+                               QString::fromStdString(mpv_->describeError(reply.error)));
+                return;
+            }
+            if (animeJanaiReconfigureAfterRestore_) {
+                animeJanaiReconfigureAfterRestore_ = false;
+                processAnimeJanaiPlan();
+            } else if (!animeJanaiPlan_.enabled) {
+                setAnimeJanaiStatus(QStringLiteral("Off"));
+            }
+        });
+    if (!animeJanaiRequest_.valid()) {
+        animeJanaiReconfigureAfterRestore_ = false;
+        animeJanaiFail(QStringLiteral("animejanai.hwdec.restoreNotSubmitted"),
+                       QStringLiteral("mpv did not accept restoring the previous hwdec setting"));
+    }
 }
 
 void VideoSurface::applyShaderChain(const QString& shaders) {
@@ -436,6 +1082,7 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
 }
 
 VideoSurface::~VideoSurface() {
+    cancelAnimeJanaiOperation();
     // The render context holds a pointer to the mpv core, so it has to go first,
     // unconditionally. Members are destroyed in reverse declaration order, which
     // would do that anyway - but resetting mpv_ in the body destroys the core
@@ -473,6 +1120,15 @@ VideoSurface::~VideoSurface() {
 }
 
 bool VideoSurface::open(const QString& url) {
+    discardEnginePause();
+    finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
+    animeJanaiSourceRequested_ = !url.isEmpty();
+    pendingOpen_ = false;
+    cancelAnimeJanaiOperation();
+    animeJanaiEpoch_ = 0;
+    if (animeJanaiPlan_.enabled) {
+        setAnimeJanaiStatus(QStringLiteral("Configured; waiting for a loaded source"));
+    }
     url_ = url;
     networkBytesPerSecond_ = 0.0;
     streamFramesPerSecond_ = 0.0;
@@ -481,6 +1137,9 @@ bool VideoSurface::open(const QString& url) {
     observedContainerFps_ = 0.0;
     emit streamStatsChanged(0.0, 0.0, StreamFpsSource::Unknown);
     try {
+        if (mpv_ != nullptr) {
+            mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
+        }
         ensureEngine();
     } catch (const MpvError& e) {
         // No core could be created - the selected runtime refused, or none was
@@ -488,8 +1147,15 @@ bool VideoSurface::open(const QString& url) {
         // caller that only asked whether the open worked: this function is the
         // first thing that touches the loader on the GUI thread.
         url_.clear();
+        animeJanaiSourceRequested_ = false;
         pendingOpen_ = false;
         diagnosticsActive_ = false;
+        if (mpv_ != nullptr) {
+            try {
+                mpv_->setBackendLogObservationEnabled(false);
+            } catch (const MpvError&) {
+            }
+        }
         emit errorOccurred(QString::fromUtf8(e.what()));
         return false;
     }
@@ -512,6 +1178,11 @@ bool VideoSurface::open(const QString& url) {
     // surface. Callers legitimately open before the widget is ever shown.
     if (!contextReady_) {
         pendingOpen_ = true;
+        try {
+            mpv_->setBackendLogObservationEnabled(false);
+        } catch (const MpvError& e) {
+            emit errorOccurred(QString::fromUtf8(e.what()));
+        }
         return true;
     }
     return startPendingUrl();
@@ -520,11 +1191,18 @@ bool VideoSurface::open(const QString& url) {
 bool VideoSurface::startPendingUrl() {
     pendingOpen_ = false;
     if (url_.isEmpty() || mpv_ == nullptr) {
+        animeJanaiSourceRequested_ = false;
         return false;
     }
     try {
+        mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
         mpv_->loadFile(url_.toStdString());
     } catch (const MpvError& e) {
+        animeJanaiSourceRequested_ = false;
+        try {
+            mpv_->setBackendLogObservationEnabled(false);
+        } catch (const MpvError&) {
+        }
         emit errorOccurred(QString::fromUtf8(e.what()));
         return false;
     }
@@ -533,19 +1211,42 @@ bool VideoSurface::startPendingUrl() {
     // one frame, hands it over and stops, which reads as a black surface and a
     // frozen clock rather than as an obvious failure.
     try {
-        mpv_->setPaused(false);
+        if (enginePreparationPaused_) {
+            enginePauseEpoch_ = mpv_->sourceEpoch();
+            mpv_->setPaused(true);
+            setPlaying(false);
+        } else {
+            mpv_->setPaused(false);
+        }
     } catch (const MpvError&) {
         // The host may intend to open paused and unpause itself.
     }
+
     // The load advanced the core's source epoch. Binding it here means the epoch
     // a caller reads is the one the admission is requested under, instead of the
     // two racing a rebind on the next pump.
     syncNativeSource();
+    animeJanaiEpoch_ = mpv_->sourceEpoch();
+    if (animeJanaiPlan_.enabled) processAnimeJanaiPlan();
     return true;
 }
 
 void VideoSurface::close() {
+    discardEnginePause();
+    finishAnimeJanaiEngineBuild(false, tr("Playback closed during engine preparation."));
+    animeJanaiSourceRequested_ = false;
+    pendingOpen_ = false;
+    cancelAnimeJanaiOperation();
+    animeJanaiEpoch_ = 0;
+    setAnimeJanaiStatus(animeJanaiPlan_.enabled
+                            ? QStringLiteral("Configured; waiting for a loaded source")
+                            : QStringLiteral("Off"));
     if (!mpv_) return;
+    try {
+        mpv_->setBackendLogObservationEnabled(false);
+    } catch (const MpvError& e) {
+        emit errorOccurred(QString::fromUtf8(e.what()));
+    }
     // Nothing is loaded after this: drop the reader before the source ends so
     // no request in flight can describe a file that is gone, and clear the halt
     // that belonged to the old source.
@@ -555,9 +1256,12 @@ void VideoSurface::close() {
     diagnosticsActive_ = false;
     try {
         mpv_->stop();
+        animeJanaiEpoch_ = mpv_->sourceEpoch();
+        emit sourceEpochChanged(mpv_->sourceEpoch());
     } catch (const MpvError&) {
         // A stop on an already-dead core is not worth reporting.
     }
+    animeJanaiEpoch_ = 0;
     // Emitted before the reset so the chrome falls back to its play glyph
     // while the surface still reports a loaded file.
     if (playing_) {
@@ -584,29 +1288,29 @@ void VideoSurface::close() {
 }
 
 void VideoSurface::togglePause() {
+    setPaused(enginePauseHeld() ? !enginePauseIntent_ : !observedPaused_);
+}
+
+void VideoSurface::setPaused(bool paused) {
+    ++pauseRequestGeneration_;
+    const bool held = enginePauseHeld();
+    if ((held || enginePreparationPaused_) &&
+        pauseRequestGeneration_ > enginePauseRequestGeneration_) {
+        enginePauseIntent_ = paused;
+    }
     if (!mpv_) return;
     try {
-        // The observed pause state, not a synchronous read: this is a control
-        // the user is waiting on, and a slow native operation must not hold the
-        // HUD behind the core lock.
-        const bool paused = observedPaused_;
-        mpv_->setPaused(!paused);
-        setPlaying(!paused);
+        mpv_->setPaused(held || paused);
+        setPlaying(!held && !paused);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
 }
 
-void VideoSurface::setPaused(bool paused) {
+void VideoSurface::reassertPaused() {
     if (!mpv_) return;
     try {
-        // Unconditional, deliberately. An earlier version short-circuited on
-        // the cached playing_ flag, and when that flag was out of step with
-        // the core the call was silently dropped - the caller believed it had
-        // resumed a surface that stayed frozen. Asking mpv costs one property
-        // write; guessing wrong costs a video that will not play.
-        mpv_->setPaused(paused);
-        setPlaying(!paused);
+        mpv_->setPaused(true);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
@@ -668,10 +1372,41 @@ std::optional<ProbePropertyValue> VideoSurface::probeMpvProperty(const QString& 
     } catch (const MpvError&) {
         return std::nullopt;
     }
-    ProbePropertyValue value;
-    value.kind = ProbePropertyValue::Kind::Double;
-    value.number = mpv_->getNumber(property);
-    return value;
+    try {
+        ProbePropertyValue value;
+        value.kind = ProbePropertyValue::Kind::Double;
+        value.number = mpv_->getNumber(property);
+        return value;
+    } catch (const MpvError&) {
+        return std::nullopt;
+    }
+}
+
+AsyncRequestId VideoSurface::requestPlaybackTimestamp(
+    std::function<void(uint64_t, std::optional<double>)> callback) {
+    if (mpv_ == nullptr || !callback) {
+        return {};
+    }
+    const uint64_t epoch = mpv_->sourceEpoch();
+    return mpv_->getPropertyAsync(
+        "time-pos", MPV_FORMAT_DOUBLE,
+        [this, epoch, callback = std::move(callback)](const AsyncReply& reply) mutable {
+            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() || !reply.ok() ||
+                reply.format != MPV_FORMAT_DOUBLE) {
+                callback(epoch, std::nullopt);
+                return;
+            }
+            callback(epoch, reply.number);
+        });
+}
+
+bool VideoSurface::probeCycleMpvTrack(const QString& property) {
+    if (mpv_ == nullptr ||
+        (property != QStringLiteral("aid") && property != QStringLiteral("sid"))) {
+        return false;
+    }
+    return mpv_->commandAsync({"cycle", property.toStdString()},
+                              [](const AsyncReply&) {}).valid();
 }
 
 void VideoSurface::setPlaying(bool playing) {
@@ -692,6 +1427,9 @@ double VideoSurface::duration() const { return duration_; }
 int VideoSurface::videoWidth() const { return videoWidth_; }
 int VideoSurface::videoHeight() const { return videoHeight_; }
 bool VideoSurface::hasVideo() const { return hasVideo_; }
+uint64_t VideoSurface::sourceEpoch() const {
+    return mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
+}
 
 // ── GL lifecycle ──────────────────────────────────────────────────────────
 
@@ -753,15 +1491,14 @@ void VideoSurface::paintGL() {
     // when there is a frame, so a paused core - which produces none - would
     // otherwise freeze the clock and every HUD value with the last picture.
     //
-    // update() flags a redraw only when the decoder actually produced a frame,
-    // so it doubles as the frame-available check and the keep-going signal.
-    const uint64_t generation = render_->update();
+    // MPV_RENDER_UPDATE_FRAME marks a new output frame, independent of UI paints.
+    const uint64_t updateFlags = render_->update();
+    const bool newOutputFrame = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
     // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no new frame is coming,
     // so grabFramebuffer() - which reads that buffer instead of repainting -
     // would otherwise read a buffer nothing has drawn into.
-    const bool haveFrame = framePending_ || generation != lastGeneration_ || forceRender_;
-    lastGeneration_ = generation;
+    const bool haveFrame = framePending_ || newOutputFrame || forceRender_;
 
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
     // make mpv bind the window's default framebuffer and paint nothing. The FBO
@@ -771,10 +1508,27 @@ void VideoSurface::paintGL() {
     const qreal ratio = devicePixelRatioF();
     const int targetWidth = std::max(1, static_cast<int>(width() * ratio));
     const int targetHeight = std::max(1, static_cast<int>(height() * ratio));
-    render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
+    // Clear reused Qt buffers before rendering, including pixels outside the video rectangle.
+    QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
+    gl->glViewport(0, 0, targetWidth, targetHeight);
+    gl->glDisable(GL_SCISSOR_TEST);
+    gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    gl->glClear(GL_COLOR_BUFFER_BIT);
+    const int renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
     render_->reportSwap();
+    if (newOutputFrame && renderResult == 0) ++diagnostics_.renderedOutputFrames;
+    if (renderResult < 0 && mpv_ != nullptr) {
+        // A refused render leaves only the defined black above behind, so it is
+        // named instead of being presented as a frame.
+        const QString message =
+            tr("Video render failed (mpv: %1)")
+                .arg(QString::fromStdString(mpv_->describeError(renderResult)));
+        QMetaObject::invokeMethod(this, [this, message] { emit errorOccurred(message); },
+                                  Qt::QueuedConnection);
+    }
     // mpv unbinds; Qt invalidates next.
-    QOpenGLContext::currentContext()->functions()->glBindFramebuffer(GL_FRAMEBUFFER, target);
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     framePending_ = false;
     forceRender_ = false;
 
@@ -844,7 +1598,7 @@ void VideoSurface::publishObservedState() {
     // Compare like with like: the property is "pause", the cached state is
     // "playing". Guarding on `paused != playing_` means a playing video
     // (false vs false) never updates, so isPlaying() stays false forever.
-    const bool playing = !observedPaused_;
+    const bool playing = !observedPaused_ && !enginePauseHeld();
     if (playing != playing_) {
         playing_ = playing;
         emit playingChanged(playing_);
@@ -856,6 +1610,13 @@ void VideoSurface::pumpEvents() {
     // Before the drain, so an observation dispatched from it is read under the
     // epoch the controller is currently bound to.
     syncNativeSource();
+    if (animeJanaiEpoch_ != 0 && animeJanaiEpoch_ != mpv_->sourceEpoch()) {
+        discardEnginePause();
+        finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
+        cancelAnimeJanaiOperation();
+        animeJanaiEpoch_ = mpv_->sourceEpoch();
+        if (animeJanaiPlan_.enabled) processAnimeJanaiPlan();
+    }
     try {
         mpv_->drainEvents();
     } catch (const MpvError&) {
@@ -869,6 +1630,7 @@ void VideoSurface::pumpEvents() {
     // inside the tick that issued it.
     pollNativeStatus();
     pollDiagnostics();
+    pollAnimeJanaiEngineBuild();
     // Bounded deadline for the native transition in flight: a command the core
     // accepted but the filter never acknowledged ends in a named non-Active
     // verdict rather than hanging the transition forever.
@@ -972,6 +1734,7 @@ void VideoSurface::syncNativeSource() {
     const uint64_t epoch = mpv_->sourceEpoch();
     if (epoch == nativeBoundEpoch_) return;
     nativeBoundEpoch_ = epoch;
+    emit sourceEpochChanged(epoch);
     // A capture in flight belonged to the source being replaced: the core drops
     // its reply, so the caller is told now instead of waiting forever.
     abandonNativeReferenceFrame(
@@ -1010,6 +1773,11 @@ void VideoSurface::armNativeObservation() {
 }
 
 void VideoSurface::armNativeProbe(native::Backend backend) {
+    const QString unavailable = privateNativeRuntimeUnavailableReason();
+    if (!unavailable.isEmpty()) {
+        emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
+        return;
+    }
     if (mpv_ == nullptr) return;
     syncNativeSource();
     const native::NativePlaybackController::State state = nativePlayback_.state();
@@ -1123,6 +1891,13 @@ void VideoSurface::finishNativeProbeAlignment(bool accepted,
     const std::optional<NativeProbeAlignment> alignment = nativeProbeAlign_;
     nativeProbeAlign_.reset();
     if (mpv_ == nullptr || !alignment.has_value()) return;
+    if (accepted) {
+        const QString unavailable = privateNativeRuntimeUnavailableReason();
+        if (!unavailable.isEmpty()) {
+            emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
+            return;
+        }
+    }
     if (!accepted) {
         emit nativeProcessingFailure(reasonKey != nullptr && !reasonKey->isEmpty()
                                          ? *reasonKey
@@ -1151,6 +1926,11 @@ void VideoSurface::cancelNativeProbeAlignment(const QString& reasonKey, const QS
 }
 
 void VideoSurface::requestNativeAdmission(const native::PreparedAdmissionRequest& request) {
+    const QString unavailable = privateNativeRuntimeUnavailableReason();
+    if (!unavailable.isEmpty()) {
+        emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
+        return;
+    }
     syncNativeSource();
     // The plan names a backend, and the frames it will run on come from whichever
     // decoder this core is using. Without a confirmed alignment there is no
@@ -1327,7 +2107,22 @@ void VideoSurface::releaseNativePlanLock() {
 }
 
 void VideoSurface::deliverNativeCommand(const native::NativePlaybackCommand& command) {
+    if (command.kind == native::NativePlaybackCommandKind::Attach ||
+        command.kind == native::NativePlaybackCommandKind::Admit) {
+        const QString unavailable = privateNativeRuntimeUnavailableReason();
+        if (!unavailable.isEmpty()) {
+            emit nativeProcessingFailure(QStringLiteral("native.runtimeUnavailable"), unavailable);
+            return;
+        }
+    }
     if (mpv_ == nullptr) return;
+    if (command.kind == native::NativePlaybackCommandKind::Attach &&
+        (animeJanaiFilterBound_ || animeJanaiBusy_)) {
+        emit nativeProcessingFailure(QStringLiteral("native.playback.animeJanaiConflict"),
+                                     QStringLiteral("AnimeJaNai processing is present or transitioning; "
+                                                    "private mikai_native cannot be attached concurrently"));
+        return;
+    }
     // The controller models attach as a state transition; the core's filter chain
     // survives a source change, and mpv's `vf add` replaces an entry with the same
     // label - which would reset the filter's observed state. So a label already in
@@ -1367,18 +2162,19 @@ void VideoSurface::deliverNativeCommand(const native::NativePlaybackCommand& com
     // What the chain is about to hold, so a reply the core drops cannot leave the
     // flag stuck; the transport answers below and a refused add clears it.
     if (kind == native::NativePlaybackCommandKind::Attach) nativeFilterBound_ = true;
-    if (kind == native::NativePlaybackCommandKind::Off) nativeFilterBound_ = false;
     const QString requestId = command.requestId;
     // The reply is only the transport's word: it never activates anything. The
     // controller turns an accepted transport into progress and a refusal into a
     // named decision.
     mpv_->commandAsync(std::move(args), [this, requestId, kind](const AsyncReply& reply) {
         const bool accepted = reply.ok();
-        // A refused add means the filter is not in the chain. A refused remove is
-        // left as "not bound" too: re-adding a label that turned out to be there
-        // replaces it, which is harmless, while the opposite mistake would leave
-        // the surface believing in a filter it can never add again.
+        // A refused add means the filter is not in the chain. A refused remove
+        // is not evidence of absence, so the bound bit stays set and the
+        // AnimeJaNai mutual-exclusion guard remains closed.
         if (!accepted && kind == native::NativePlaybackCommandKind::Attach) nativeFilterBound_ = false;
+        // A successful `vf remove` transport reply is not the observed absence
+        // required by the controller's teardown contract; keep the bound bit
+        // set until the status observation returns Outcome::Removed.
         // The filter is in the chain NOW, so this is the one point where the
         // absence a poll may be reading is about to stop being true. Re-arming
         // here is what separates status-before-attachment noise - the refusal a
@@ -1405,6 +2201,9 @@ void VideoSurface::deliverNativeCommand(const native::NativePlaybackCommand& com
 }
 
 void VideoSurface::applyNativeDecision(const native::NativePlaybackController::Decision& decision) {
+    if (decision.outcome == native::NativePlaybackController::Outcome::Removed) {
+        nativeFilterBound_ = false;
+    }
     if (decision.outcome == native::NativePlaybackController::Outcome::Refused ||
         decision.outcome == native::NativePlaybackController::Outcome::TimedOut) {
         emit nativeProcessingFailure(decision.reasonKey, decision.reason);

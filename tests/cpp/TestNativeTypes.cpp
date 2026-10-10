@@ -1,6 +1,7 @@
 #include "TestNativeTypes.hpp"
 
 #include "native/models/NativeCatalog.hpp"
+#include "native/models/NativeRife.hpp"
 #include "native/status/NativeTypes.hpp"
 
 #include <optional>
@@ -68,8 +69,12 @@ void TestNativeTypes::enumNamesRoundTripAndRefuseUnknownValues() {
   QCOMPARE(stableName(Availability::Preparing), QStringLiteral("preparing"));
   QCOMPARE(stableName(SpatialRelation::Identity), QStringLiteral("identity"));
   QCOMPARE(stableName(TemporalOrder::BeforeSpatial), QStringLiteral("beforeSpatial"));
-  QCOMPARE(stableName(RifeVersion::V4_14), QStringLiteral("4.14"));
-  QCOMPARE(stableName(RifeVariant::Lite), QStringLiteral("lite"));
+  for (const RifeModelPin& pin : rifeModelPins()) {
+    QCOMPARE(rifeVersionFromName(stableName(pin.version)),
+             std::optional<RifeVersion>(pin.version));
+    QCOMPARE(rifeVariantFromName(stableName(pin.variant)),
+             std::optional<RifeVariant>(pin.variant));
+  }
 
   for (const ModelRole role : {ModelRole::Spatial, ModelRole::Temporal}) {
     QCOMPARE(modelRoleFromName(stableName(role)), std::optional<ModelRole>(role));
@@ -94,25 +99,65 @@ void TestNativeTypes::enumNamesRoundTripAndRefuseUnknownValues() {
 }
 
 void TestNativeTypes::aRifeModelNameComesFromRevisionVariantAndEnsemble() {
+  const QVector<RifeModelPin>& pins = rifeModelPins();
+  QCOMPARE(pins.size(), 47);
+
+  QSet<QString> identities;
+  QSet<QString> names;
+  QSet<QString> digests;
+  QSet<QString> files;
+  for (const RifeModelPin& pin : pins) {
+    const QString identity =
+        QStringLiteral("%1/%2/%3")
+            .arg(stableName(pin.version), stableName(pin.variant),
+                 pin.ensemble ? QStringLiteral("ensemble") : QStringLiteral("plain"));
+    QVERIFY(!identities.contains(identity));
+    QVERIFY(!names.contains(rifeModelName(pin.version, pin.variant, pin.ensemble)));
+    QVERIFY(!digests.contains(pin.graphSha256));
+    QVERIFY(!files.contains(pin.fileName));
+    QVERIFY(pin.bytes > 0);
+    identities.insert(identity);
+    names.insert(rifeModelName(pin.version, pin.variant, pin.ensemble));
+    digests.insert(pin.graphSha256);
+    files.insert(pin.fileName);
+  }
+  QCOMPARE(identities.size(), 47);
+  QCOMPARE(names.size(), 47);
+  QCOMPARE(digests.size(), 47);
+  QCOMPARE(files.size(), 47);
+
+  QCOMPARE(rifeModelName(RifeVersion::V4_7, RifeVariant::Full, false),
+           QStringLiteral("rife_v4.7"));
+  QCOMPARE(rifeModelCode(RifeVersion::V4_7, RifeVariant::Full), 47);
+  QCOMPARE(rifeModelName(RifeVersion::V4_8, RifeVariant::Full, false),
+           QStringLiteral("rife_v4.8"));
+  QCOMPARE(rifeModelCode(RifeVersion::V4_8, RifeVariant::Full), 48);
+  QCOMPARE(rifeModelName(RifeVersion::V4_9, RifeVariant::Full, false),
+           QStringLiteral("rife_v4.9"));
+  QCOMPARE(rifeModelCode(RifeVersion::V4_9, RifeVariant::Full), 49);
   QCOMPARE(rifeModelName(RifeVersion::V4_14, RifeVariant::Full, false),
            QStringLiteral("rife_v4.14"));
-  QCOMPARE(rifeModelName(RifeVersion::V4_14, RifeVariant::Lite, false),
-           QStringLiteral("rife_v4.14_lite"));
-  QCOMPARE(rifeModelName(RifeVersion::V4_14, RifeVariant::Full, true),
-           QStringLiteral("rife_v4.14_ensemble"));
   QCOMPARE(rifeModelName(RifeVersion::V4_14, RifeVariant::Lite, true),
            QStringLiteral("rife_v4.14_lite_ensemble"));
+  QCOMPARE(rifeModelCode(RifeVersion::V4_14, RifeVariant::Full), 414);
+  QCOMPARE(rifeModelCode(RifeVersion::V4_14, RifeVariant::Lite), 4141);
+  QCOMPARE(rifeModelName(RifeVersion::V4_26, RifeVariant::Heavy, false),
+           QStringLiteral("rife_v4.26_heavy"));
+  QCOMPARE(rifeModelCode(RifeVersion::V4_26, RifeVariant::Heavy), 4262);
 
-  // Four distinct names, and the conf code is 414/4141 regardless of ensembling.
-  QSet<QString> names;
-  for (const RifeVariant variant : {RifeVariant::Full, RifeVariant::Lite}) {
-    for (const bool ensemble : {false, true}) {
-      names.insert(rifeModelName(RifeVersion::V4_14, variant, ensemble));
-    }
-  }
-  QCOMPARE(names.size(), 4);
-  QCOMPARE(rifeModelCode(RifeVariant::Full), 414);
-  QCOMPARE(rifeModelCode(RifeVariant::Lite), 4141);
+  const RifeModelPin* v47 = rifeModelPin(RifeVersion::V4_7, RifeVariant::Full, false);
+  QVERIFY(v47 != nullptr);
+  QCOMPARE(v47->fileName, QStringLiteral("rife_v4.7.onnx"));
+  const RifeModelPin* v48 = rifeModelPin(RifeVersion::V4_8, RifeVariant::Full, false);
+  QVERIFY(v48 != nullptr);
+  QCOMPARE(v48->fileName, QStringLiteral("rife_v4.8.onnx"));
+  const RifeModelPin* v49 = rifeModelPin(RifeVersion::V4_9, RifeVariant::Full, false);
+  QVERIFY(v49 != nullptr);
+  QCOMPARE(v49->fileName, QStringLiteral("rife_v4.9.onnx"));
+  const RifeModelPin* v426Heavy =
+      rifeModelPin(RifeVersion::V4_26, RifeVariant::Heavy, false);
+  QVERIFY(v426Heavy != nullptr);
+  QCOMPARE(v426Heavy->fileName, QStringLiteral("rife_v4.26_heavy.onnx"));
 }
 
 void TestNativeTypes::anUnreducedRationalStaysUnreducedAndStillReadsAsItsOwnValue() {

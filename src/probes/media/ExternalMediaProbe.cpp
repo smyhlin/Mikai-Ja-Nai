@@ -1,12 +1,20 @@
 #include <QAction>
 #include <QApplication>
+#include <QAccessible>
+#include <QAccessibleInterface>
 #include <QClipboard>
+#include <QContextMenuEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
+#include <QImage>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMap>
+#include <QMimeData>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QSettings>
 #include <QStringList>
@@ -14,14 +22,25 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <cstdio>
 #include <functional>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <backend/MikaiClient.hpp>
+#include <gui/Clipboard.hpp>
 #include "CrashLog.hpp"
 #include "pages/MainWindow.hpp"
 #include "pages/SearchPage.hpp"
 #include "theme/Theme.hpp"
+#include "widgets/TitleCard.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
@@ -30,6 +49,7 @@
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "ProbeRuntime.hpp"
+#include "ProbePicture.hpp"
 
 using namespace mplayer::shell;
 
@@ -48,9 +68,6 @@ bool until(const std::function<bool()>& predicate, int timeout = 10000) {
     return predicate();
 }
 
-/// Whether any on-screen button under `root` is painted with `glyph`. A glyph is
-/// identity; a label or tooltip is display text that changes with the locale.
-/// Absent and hidden both answer "no".
 bool anyVisibleGlyphButton(QWidget* root, IconFn glyph) {
     for (auto* button : root->findChildren<QPushButton*>()) {
         auto* icon = qobject_cast<IconButton*>(button);
@@ -67,10 +84,7 @@ QPushButton* buttonWithGlyph(QWidget* root, IconFn glyph) {
     return nullptr;
 }
 
-/// Whether the flyout offers a quality row. Quality rows sit in their own nested
-/// container while the speed presets are direct children, so a visible row that
-/// is NOT a direct child is a quality row - which reads through a rename or a
-/// translation, and is absent in the hostless case.
+// Quality rows are nested; speed presets are direct children.
 bool flyoutOffersQuality(const SettingsFlyout* flyout) {
     for (const auto* button : flyout->findChildren<QPushButton*>()) {
         if (button->parentWidget() != flyout && button->isVisible()) return true;
@@ -78,15 +92,14 @@ bool flyoutOffersQuality(const SettingsFlyout* flyout) {
     return false;
 }
 
-/// Presses the row carrying `action` as its payload. Returns false when no
-/// visible menu offers it: the payload is the stable id ("compare", "copy"), so
-/// a reworded label still passes and a missing action fails.
+// Menu payloads are stable across translations.
 bool pressMenuRow(QWidget* root, const QString& action) {
     for (auto* panel : root->findChildren<MenuPopup*>()) {
         if (!panel->isVisible()) continue;
         for (int spot = 0; spot < panel->rowCount(); ++spot) {
             if (panel->entryAt(spot).payload.toString() != action) continue;
-            if (auto* button = qobject_cast<QPushButton*>(panel->rowWidget(spot))) {
+            if (auto* button = qobject_cast<QPushButton*>(panel->rowWidget(spot));
+                button != nullptr && button->isVisible() && button->isEnabled()) {
                 button->click();
                 return true;
             }
@@ -95,10 +108,6 @@ bool pressMenuRow(QWidget* root, const QString& action) {
     return false;
 }
 
-/// Whether a visible enhancement popover offers at least one catalogue row.
-/// The rows are addressed by the payload the shell hangs on them ("level|<id>"
-/// for a category, "preset|<id>" for a preset) rather than by the words on
-/// them, so the catalogue reaching the menu is what is being asserted.
 bool enhancementCatalogueVisible(QWidget* root) {
     for (auto* panel : root->findChildren<MenuPopup*>()) {
         if (!panel->isVisible()) continue;
@@ -113,9 +122,7 @@ bool enhancementCatalogueVisible(QWidget* root) {
     return false;
 }
 
-/// What the file-dialog driver observed, so a caller can report precisely which
-/// step went wrong instead of guessing at a hang. `returned` is the chooser's
-/// own answer - the path it emitted when it accepted - not the request typed in.
+// Record the chooser's emitted answer, not just our requested path.
 struct FileDialogOutcome {
     QString requested;
     QString returned;
@@ -126,10 +133,7 @@ struct FileDialogOutcome {
     bool forcedClose = false;
 };
 
-// The home page owns exactly one current player: the dialog its mediaPlayer_
-// points at after each open. Creation order cannot identify it - a failed
-// first request keeps its dialog alive while the retry runs on the same one,
-// and a replaced stream must never be read through the old window.
+// A failed request can retain its player; creation order is not ownership.
 PlayerDialog* activePlayer(mikai::app::MainWindow* window) {
     return window != nullptr ? window->currentMediaPlayer() : nullptr;
 }
@@ -147,9 +151,7 @@ void answerInput(const QString& input, bool accept) {
     });
 }
 
-/// The probe is a hermetic fixture client: the URL it hands the player must name
-/// the loopback interface, so a mistaken argument cannot turn a QA run into an
-/// outbound request against a real host.
+// Only loopback HTTP fixtures are allowed.
 bool loopbackUrl(const QUrl& url) {
     if (!url.isValid() || (url.scheme() != QLatin1String("http") &&
                            url.scheme() != QLatin1String("https"))) {
@@ -160,11 +162,6 @@ bool loopbackUrl(const QUrl& url) {
            host == QLatin1String("::1");
 }
 
-/// The chooser's own filename field. Once selectFile() has cleared the view
-/// selection, QFileDialog::selectedFiles() falls back to these typed paths when
-/// the field is not empty; accept() then validates and returns them. The field
-/// is named, and the fallback to the single visible QLineEdit keeps this
-/// working if that name ever moves.
 QLineEdit* chooserFileNameField(QFileDialog* dialog) {
     if (auto* named = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"))) {
         return named;
@@ -175,39 +172,13 @@ QLineEdit* chooserFileNameField(QFileDialog* dialog) {
     return nullptr;
 }
 
-/// Drives the file-open modal that `open` raises, and reports what happened.
-///
-/// getOpenFileName runs its own nested event loop, so the driver has to be a
-/// timer that keeps polling for as long as that loop is running. A one-shot
-/// scheduled after a fixed delay races the dialog's construction: when it loses
-/// the race it drives nothing and the modal blocks forever. Polling also lets
-/// the driver canonicalise the path before handing it to selectFile, which a
-/// relative input needs and an absolute one already satisfies.
-///
-/// Every tick re-states the selection and re-accepts, because a single press
-/// races the dialog's own asynchronous directory listing: selecting into a
-/// dialog whose model has not listed the file yet is dropped, and the modal
-/// would then sit open until the budget expires even though nothing is wrong
-/// with the choice.
-///
-/// Acceptance is the chooser's own: `accepted` is set only by the signals
-/// QFileDialog emits on its accept path, never by the request typed into the
-/// field or by the modal merely disappearing. A modal that closes any other
-/// way - a reject, or the budget below - leaves `accepted` false.
-///
-/// Bounded at both ends. If the dialog it keeps pressing does not close within
-/// the budget it is rejected, so a modal that ignores the selection ends the run
-/// as a visible failure rather than an indefinite hang - there is no fallback
-/// path that pretends a file was chosen.
+// The chooser runs a nested event loop and lists directories asynchronously.
+// Poll and repeat acceptance until it emits an answer, or reject at the deadline.
 FileDialogOutcome driveFileDialog(const QString& path, const std::function<void()>& open) {
     constexpr int kTick = 50;
     constexpr int kBudgetMs = 20000;
 
-    // selectFile resolves against the dialog's own directory, so a relative
-    // path has to be made absolute first; canonicalFilePath also collapses ".."
-    // and a symlinked temp dir, and falls back to absoluteFilePath for a path
-    // that does not exist so the mistake surfaces in the dialog rather than as
-    // a silent no-selection.
+    // selectFile resolves relative paths against the chooser's directory.
     const QFileInfo info(path);
     const QString canonical = info.canonicalFilePath();
     const QString target = canonical.isEmpty() ? info.absoluteFilePath() : canonical;
@@ -232,16 +203,11 @@ FileDialogOutcome driveFileDialog(const QString& path, const std::function<void(
         }
         elapsed += kTick;
         if (dialog == nullptr) {
-            // Nothing addressable yet. The budget still advances, so a dialog
-            // that turns up late is closed rather than hanging the run.
             if (elapsed >= kBudgetMs) outcome.forcedClose = true;
             return;
         }
         if (!outcome.sawDialog) {
             outcome.sawDialog = true;
-            // Drive the widget implementation whose fields Qt can address. The
-            // two signals below fire only on the chooser's accept path, so they
-            // - not the field the driver itself filled in - are the answer.
             dialog->setOption(QFileDialog::DontUseNativeDialog, true);
             QObject::connect(dialog, &QFileDialog::fileSelected, &poller,
                              [&outcome](const QString& file) {
@@ -255,13 +221,7 @@ FileDialogOutcome driveFileDialog(const QString& path, const std::function<void(
                                  }
                              });
         }
-        // selectFile clears the view selection and, when the model can resolve
-        // the path, leaves only the bare file name in the field. On Windows
-        // accept() validates an ExistingFile by testing the field text verbatim,
-        // so a bare name is checked against the process directory, the dialog
-        // reports "not found", and it never closes. The field is left holding
-        // the absolute path instead, exactly as a viewer who pasted one would
-        // leave it, so the chooser's own validation passes on the real file.
+        // Windows validates the filename field verbatim, so retain its absolute path.
         dialog->selectFile(target);
         if (auto* field = chooserFileNameField(dialog)) {
             if (field->text() != target) field->setText(target);
@@ -271,8 +231,6 @@ FileDialogOutcome driveFileDialog(const QString& path, const std::function<void(
         // base still dispatches to the chooser's own override.
         static_cast<QDialog*>(dialog)->accept();
         outcome.selected = dialog->selectedFiles().value(0);
-        // The chooser's own result code is a second, independent witness to a
-        // real accept rather than a reject.
         if (dialog->result() == QDialog::Accepted) outcome.accepted = true;
         if (elapsed >= kBudgetMs) {
             outcome.forcedClose = true;
@@ -293,11 +251,6 @@ FileDialogOutcome driveFileDialog(const QString& path, const std::function<void(
     return outcome;
 }
 
-/// Whether a standalone (hostless) player offers none of the controls that only
-/// make sense for a catalogue title: the dub and subtitle pickers, the episode
-/// chevrons, and the quality list. Each is identified by the glyph it is
-/// painted with or by the container it lives in, never by the words printed on
-/// it, so a reworded or re-translated label leaves this passing.
 bool videoOnly(PlayerDialog* player) {
     if (!player) return false;
     auto* shell = player->findChild<PlayerShell*>();
@@ -337,6 +290,599 @@ bool playback(PlayerDialog* player) {
     }
     return colorful > 100;
 }
+
+bool triggerCardAction(mikai::app::TitleCard* card, const QString& caption) {
+    if (card == nullptr) return false;
+    bool triggered = false;
+    int elapsed = 0;
+    QTimer poller;
+    poller.setInterval(20);
+    QObject::connect(&poller, &QTimer::timeout, &poller, [&] {
+        elapsed += poller.interval();
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* menu = qobject_cast<QMenu*>(widget);
+            if (menu == nullptr || !menu->isVisible()) continue;
+            for (QAction* action : menu->actions()) {
+                if (action->text() != caption) continue;
+                triggered = true;
+                action->trigger();
+                menu->close();
+                poller.stop();
+                return;
+            }
+        }
+        if (elapsed >= 5000) {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (auto* menu = qobject_cast<QMenu*>(widget); menu != nullptr && menu->isVisible()) {
+                    menu->close();
+                }
+            }
+            poller.stop();
+        }
+    });
+    poller.start();
+    const QPoint local(4, 4);
+    QContextMenuEvent event(QContextMenuEvent::Mouse, local, card->mapToGlobal(local));
+    QApplication::sendEvent(card, &event);
+    poller.stop();
+    return triggered;
+}
+
+QObject* accessibleAlertTarget = nullptr;
+bool accessibleAlertObserved = false;
+QAccessible::UpdateHandler previousAccessibleUpdateHandler = nullptr;
+
+void captureAccessibleAlert(QAccessibleEvent* event) {
+    if (event != nullptr && event->type() == QAccessible::Alert &&
+        event->object() == accessibleAlertTarget) {
+        accessibleAlertObserved = true;
+    }
+    if (previousAccessibleUpdateHandler != nullptr) {
+        previousAccessibleUpdateHandler(event);
+    }
+}
+
+class AccessibleAlertCapture {
+public:
+    explicit AccessibleAlertCapture(QObject* target)
+        : wasActive_(QAccessible::isActive()) {
+        accessibleAlertTarget = target;
+        accessibleAlertObserved = false;
+        previousAccessibleUpdateHandler = QAccessible::installUpdateHandler(
+            &captureAccessibleAlert);
+        QAccessible::setActive(true);
+    }
+
+    ~AccessibleAlertCapture() {
+        QAccessible::installUpdateHandler(previousAccessibleUpdateHandler);
+        QAccessible::setActive(wasActive_);
+        accessibleAlertTarget = nullptr;
+        previousAccessibleUpdateHandler = nullptr;
+    }
+
+    bool observed() const { return accessibleAlertObserved; }
+
+private:
+    bool wasActive_;
+};
+
+bool statusFeedbackChanged(QLabel* status, const QString& before, const QString& imagePath,
+                           bool alertObserved) {
+    if (status == nullptr || !status->isVisible() || status->visibleRegion().isEmpty() ||
+        status->text().isEmpty() || status->text() == before) return false;
+    QAccessibleInterface* accessible = QAccessible::queryAccessibleInterface(status);
+    const bool exposed = accessible != nullptr &&
+                         !accessible->state().invisible &&
+                         accessible->text(QAccessible::Name) == status->text();
+    const bool captured = status->window()->grab().save(imagePath);
+    std::fprintf(stderr,
+                 "     rendered feedback: %s (%s) screenshot=%s accessible=%d alert=%d\n",
+                 status->text().toUtf8().constData(), imagePath.toUtf8().constData(),
+                 captured ? "saved" : "failed", exposed, alertObserved);
+    return exposed && captured && alertObserved;
+}
+
+// Positive copy flows restore Qt-exposed formats, text and image data only.
+class ClipboardRestore {
+public:
+    ClipboardRestore() {
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QLatin1String("windows")) {
+            if (!OpenClipboard(nullptr)) return;
+            if (!CloseClipboard()) return;
+        }
+#endif
+        captured_ = true;
+        const QMimeData* mime = QApplication::clipboard()->mimeData();
+        if (mime == nullptr) return;
+        for (const QString& format : mime->formats()) contents_.insert(format, mime->data(format));
+        text_ = mime->text();
+        hasImage_ = mime->hasImage();
+        if (hasImage_) image_ = QApplication::clipboard()->image();
+    }
+
+    bool isValid() const { return captured_; }
+
+    bool restore() {
+        if (!captured_) return false;
+        if (restored_) return true;
+        if (matchesOriginal()) {
+            restored_ = true;
+            return true;
+        }
+        for (int attempt = 0; attempt < 2; ++attempt) {
+#ifdef Q_OS_WIN
+            if (QGuiApplication::platformName() == QLatin1String("windows")) {
+                if (!OpenClipboard(nullptr)) continue;
+                if (!CloseClipboard()) continue;
+            }
+#endif
+            auto* mime = new QMimeData;
+            for (auto it = contents_.cbegin(); it != contents_.cend(); ++it) {
+                mime->setData(it.key(), it.value());
+            }
+            if (hasImage_) mime->setImageData(image_);
+            QApplication::clipboard()->setMimeData(mime);
+#ifdef Q_OS_WIN
+            if (QGuiApplication::platformName() == QLatin1String("windows") &&
+                !QApplication::clipboard()->ownsClipboard()) continue;
+#endif
+            if (matchesOriginal()) {
+                restored_ = true;
+                return true;
+            }
+        }
+        std::fprintf(stderr, "FAIL original clipboard formats/content could not be restored\n");
+        return false;
+    }
+
+    int finish(int result) { return restore() ? result : 1; }
+
+    ~ClipboardRestore() {
+        if (captured_ && !restored_) restore();
+    }
+
+private:
+    QMap<QString, QByteArray> contents_;
+    bool matchesOriginal() const {
+        const QMimeData* actual = QApplication::clipboard()->mimeData();
+        QMap<QString, QByteArray> contents;
+        if (actual != nullptr) {
+            for (const QString& format : actual->formats()) {
+                contents.insert(format, actual->data(format));
+            }
+        }
+        return contents == contents_ && QApplication::clipboard()->text() == text_ &&
+            (actual != nullptr ? actual->hasImage() : false) == hasImage_ &&
+            (!hasImage_ || QApplication::clipboard()->image().convertToFormat(
+                QImage::Format_RGBA8888) == image_.convertToFormat(QImage::Format_RGBA8888));
+    }
+
+    QString text_;
+    QImage image_;
+    bool hasImage_ = false;
+    bool captured_ = false;
+    bool restored_ = false;
+};
+
+#ifdef Q_OS_WIN
+// A real owned HWND is mandatory: Windows only denies a competing OpenClipboard while a
+// window owns the lock, so a NULL owner would let the probing process open it too.
+HWND createClipboardHolderWindow() {
+    const wchar_t className[] = L"MikaiClipboardHolder";
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = className;
+    RegisterClassExW(&wc);
+    return CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, className,
+                           L"mikai clipboard holder", WS_POPUP, 0, 0, 0, 0,
+                           nullptr, nullptr, wc.hInstance, nullptr);
+}
+
+// Bounded explicit release: 'x' from the parent, a closed stdin, or the timeout.
+int waitForClipboardReleaseSignal(int timeoutMs) {
+    const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    for (int waited = 0; waited <= timeoutMs; waited += 50) {
+        MSG msg;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+        if (input != nullptr && input != INVALID_HANDLE_VALUE) {
+            DWORD available = 0;
+            if (!PeekNamedPipe(input, nullptr, 0, nullptr, &available, nullptr)) {
+                // The parent closed its write end (broken pipe): release immediately.
+                if (GetLastError() == ERROR_BROKEN_PIPE) return 2;
+            } else if (available > 0) {
+                char byte = 0;
+                DWORD read = 0;
+                if (!ReadFile(input, &byte, 1, &read, nullptr) || read == 0) return 2;
+                if (byte == 'x') return 0;
+            }
+        }
+        Sleep(50);
+    }
+    return 3;
+}
+#endif
+
+int holdClipboardOpen() {
+#ifdef Q_OS_WIN
+    HWND owner = createClipboardHolderWindow();
+    if (owner == nullptr) return 2;
+    if (!OpenClipboard(owner)) {
+        DestroyWindow(owner);
+        return 2;
+    }
+    DWORD ownerPid = 0;
+    GetWindowThreadProcessId(owner, &ownerPid);
+    std::fprintf(stdout, "CLIPBOARD-OPEN pid=%lu owner=%p\n",
+                 static_cast<unsigned long>(ownerPid), static_cast<void*>(owner));
+    std::fflush(stdout);
+    const int released = waitForClipboardReleaseSignal(120000);
+    CloseClipboard();
+    MSG msg;
+    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
+    DestroyWindow(owner);
+    return released;
+#else
+    return 2;
+#endif
+}
+
+#ifdef Q_OS_WIN
+struct ClipboardSnapshot {
+    QMap<QString, QByteArray> contents;
+    QList<UINT> nativeFormats;
+    QString text;
+    QImage image;
+    DWORD sequence = 0;
+    bool valid = false;
+
+    static ClipboardSnapshot capture() {
+        ClipboardSnapshot snapshot;
+        if (const QMimeData* mime = QApplication::clipboard()->mimeData()) {
+            for (const QString& format : mime->formats()) {
+                snapshot.contents.insert(format, mime->data(format));
+            }
+            snapshot.text = mime->text();
+            if (mime->hasImage()) snapshot.image = QApplication::clipboard()->image();
+        }
+        if (!OpenClipboard(nullptr)) return snapshot;
+        for (UINT format = EnumClipboardFormats(0); format != 0;
+             format = EnumClipboardFormats(format)) {
+            snapshot.nativeFormats.append(format);
+        }
+        snapshot.sequence = GetClipboardSequenceNumber();
+        snapshot.valid = CloseClipboard() != 0;
+        return snapshot;
+    }
+
+    bool unchanged() const {
+        // The sequence proves no mutation of even opaque native formats.
+        if (!valid || GetClipboardSequenceNumber() != sequence) return false;
+        const ClipboardSnapshot after = capture();
+        return after.valid && after.sequence == sequence && after.contents == contents &&
+            after.nativeFormats == nativeFormats && after.text == text &&
+            after.image.convertToFormat(QImage::Format_RGBA8888) ==
+                image.convertToFormat(QImage::Format_RGBA8888);
+    }
+};
+
+class ClipboardLock {
+public:
+    bool acquire() {
+        process_.setProcessChannelMode(QProcess::SeparateChannels);
+        process_.start(QCoreApplication::applicationFilePath(),
+                       {QStringLiteral("--hold-clipboard")});
+        if (!process_.waitForStarted(10000)) {
+            logHolder("process did not start");
+            return false;
+        }
+        if (!process_.waitForReadyRead(10000)) {
+            logHolder("process never reported ownership");
+            cleanup();
+            return false;
+        }
+        if (!process_.readAllStandardOutput().contains("CLIPBOARD-OPEN")) {
+            logHolder("process reported no clipboard ownership");
+            cleanup();
+            return false;
+        }
+        // Real OS refusal: the probing process must be denied the held clipboard.
+        if (OpenClipboard(nullptr)) {
+            CloseClipboard();
+            std::fprintf(stderr, "FAIL clipboard holder did not refuse a competing open\n");
+            logHolder("competing open was not denied");
+            cleanup();
+            return false;
+        }
+        const unsigned long denial = static_cast<unsigned long>(GetLastError());
+        HWND holder = GetOpenClipboardWindow();
+        DWORD holderPid = 0;
+        if (holder != nullptr) GetWindowThreadProcessId(holder, &holderPid);
+        if (holder == nullptr || holderPid != static_cast<DWORD>(process_.processId())) {
+            std::fprintf(stderr,
+                         "FAIL clipboard holder owner window %p pid=%lu is not the spawned "
+                         "holder pid=%lld (competing open denied with %lu)\n",
+                         static_cast<void*>(holder), static_cast<unsigned long>(holderPid),
+                         static_cast<long long>(process_.processId()),
+                         static_cast<unsigned long>(denial));
+            logHolder("owner window belongs to another process");
+            cleanup();
+            return false;
+        }
+        return true;
+    }
+
+    bool release() {
+        if (process_.state() == QProcess::NotRunning) {
+            std::fprintf(stderr, "FAIL clipboard holder exited before explicit release\n");
+            logHolder("holder exited early");
+            return false;
+        }
+        process_.write("x");
+        process_.waitForBytesWritten(5000);
+        if (!process_.waitForFinished(10000) ||
+            process_.exitStatus() != QProcess::NormalExit || process_.exitCode() != 0) {
+            std::fprintf(stderr, "FAIL clipboard holder did not exit cleanly after release\n");
+            logHolder("holder exit was abnormal");
+            return false;
+        }
+        return true;
+    }
+
+    ~ClipboardLock() { cleanup(); }
+
+private:
+    // Child lifecycle evidence only: no clipboard bytes, payloads or secrets are printed.
+    void logHolder(const char* reason) {
+        const QByteArray errors = process_.readAllStandardError();
+        std::fprintf(stderr,
+                     "     holder: %s error=%s exitStatus=%d exitCode=%d stderr=%s\n",
+                     reason, qPrintable(process_.errorString()),
+                     static_cast<int>(process_.exitStatus()),
+                     process_.exitCode(),
+                     errors.isEmpty() ? "<empty>" : errors.constData());
+    }
+
+    void cleanup() {
+        if (process_.state() == QProcess::NotRunning) return;
+        if (!release()) {
+            logHolder("holder required a kill to release");
+            process_.kill();
+            process_.waitForFinished(5000);
+        }
+    }
+
+    QProcess process_;
+};
+#endif
+
+int playerClipboardFailureProbe(const QString& clip) {
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QLatin1String("windows")) {
+        std::fprintf(stderr, "FAIL player clipboard refusal requires the Windows QPA\n");
+        return 2;
+    }
+    const QString file = QFileInfo(clip).canonicalFilePath();
+    if (file.isEmpty() || !QFileInfo(file).isFile()) {
+        std::fprintf(stderr, "FAIL local clipboard fixture does not exist\n");
+        return 2;
+    }
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) return 2;
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("PlayerClipboardFailure"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    QSettings settings;
+    settings.setValue(QStringLiteral("player/anime4k"), QStringLiteral("off"));
+    if (!mplayer::probes::selectRuntime()) return 2;
+    qApp->setStyleSheet(mikai::app::theme::buildStylesheet());
+
+    QPointer<PlayerDialog> player = new PlayerDialog(
+        QStringLiteral("Clipboard refusal fixture"), file);
+    player->resize(960, 600);
+    player->show();
+    player->startPlayer();
+    QPointer<PlayerShell> shell = player->findChild<PlayerShell*>();
+    QPointer<mplayer::VideoSurface> surface =
+        player->findChild<mplayer::VideoSurface*>();
+    const bool decoded = until([&] {
+        return player && surface && surface->hasVideo() && surface->videoWidth() > 0 &&
+               surface->videoHeight() > 0 && surface->position() > 0.1;
+    }, 20000);
+    if (decoded) surface->setPaused(true);
+    const bool lit = decoded && until([&] {
+        return surface && surface->pauseObserved() && !mplayer::probes::measurePicture(
+            surface->grabFramebuffer(), surface->videoWidth(),
+            surface->videoHeight()).isMostlyBlack();
+    }, 5000);
+    check(lit, "hostless player decodes a real lit frame before clipboard refusal");
+    QPointer<QLabel> status = player ? player->findChild<QLabel*>(
+        QStringLiteral("playerStatusText")) : nullptr;
+    if (!lit || shell == nullptr || status == nullptr) {
+        if (player) delete player;
+        return 1;
+    }
+    const ClipboardSnapshot before = ClipboardSnapshot::capture();
+    check(before.valid, "all MIME and native clipboard formats are snapshotted without seeding");
+    if (!before.valid) {
+        delete player;
+        return 2;
+    }
+    ClipboardLock lock;
+    if (!lock.acquire()) {
+        check(false, "separate Win32 process owns the clipboard");
+        delete player;
+        return 2;
+    }
+    check(true, "separate Win32 process owns the clipboard");
+    check(!mikai::gui::copyText(before.text),
+          "locked clipboard rejects a public copy of its own existing text, including empty text");
+    check(GetClipboardSequenceNumber() == before.sequence,
+          "identical-text refusal leaves the exact native clipboard sequence unchanged");
+    if (!before.image.isNull()) {
+        check(!mikai::gui::copyImage(before.image),
+              "locked clipboard rejects a public copy of its own existing image");
+        check(GetClipboardSequenceNumber() == before.sequence,
+              "identical-image refusal leaves the exact native clipboard sequence unchanged");
+    } else {
+        std::fputs("INFO identical-image case unavailable: original clipboard has no image\n", stderr);
+    }
+    for (const QString& payload : {QStringLiteral("copy"), QStringLiteral("frame")}) {
+        if (!player || !shell || !surface || !status) {
+            check(false, "player remains alive for both clipboard actions");
+            break;
+        }
+        const QString previous = status->text();
+        shell->wake();
+        QTest::mouseClick(surface, Qt::RightButton, Qt::NoModifier, QPoint(60, 60));
+        const bool menuVisible = until([&] {
+            if (!player) return false;
+            for (auto* menu : player->findChildren<MenuPopup*>()) {
+                if (menu->isVisible()) return true;
+            }
+            return false;
+        }, 3000);
+        bool action = false;
+        bool feedback = false;
+        {
+            AccessibleAlertCapture alert(status);
+            action = menuVisible && pressMenuRow(player, payload);
+            QCoreApplication::processEvents();
+            const QString expectedFailure = QCoreApplication::translate(
+                "mplayer::shell::PlayerDialog",
+                payload == QLatin1String("copy") ? "Failed to copy link" : "Failed to copy frame");
+            feedback = statusFeedbackChanged(
+                status, previous, QStringLiteral("player-%1-refusal.png").arg(payload),
+                alert.observed()) && status && status->text() == expectedFailure;
+        }
+        check(action, qPrintable(QStringLiteral("visible picture menu invokes %1").arg(payload)));
+        check(feedback, qPrintable(QStringLiteral(
+            "%1 refusal renders named accessible failure, never success").arg(payload)));
+        check(player && surface && player->isVisible() && player->hasActiveSource() &&
+              surface->hasVideo(),
+              "player remains visible with its decoded source after refusal");
+        check(GetClipboardSequenceNumber() == before.sequence,
+              "refused action leaves the exact native clipboard sequence unchanged");
+    }
+    check(lock.release(), "clipboard holder exits cleanly");
+    check(before.unchanged(),
+          "untouched original retains exact sequence, all native formats, MIME bytes and image pixels");
+    check(player && surface && player->isVisible() && surface->hasVideo() &&
+          !mplayer::probes::measurePicture(surface->grabFramebuffer(),
+              surface->videoWidth(), surface->videoHeight()).isMostlyBlack(),
+          "player still renders the real frame after both refused actions");
+    if (player) delete player;
+    std::fprintf(stderr, "RESULT player clipboard refusal: %s\n", failures ? "FAIL" : "PASS");
+    return failures ? 1 : 0;
+#else
+    Q_UNUSED(clip);
+    std::fprintf(stderr, "FAIL player clipboard refusal requires Windows OpenClipboard\n");
+    return 2;
+#endif
+}
+
+int searchActionFailureProbe(bool browserFailure) {
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) return 2;
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("SearchActionFailure"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    QJsonObject recent;
+    recent.insert(QStringLiteral("ref"), QStringLiteral("QA-action-failure"));
+    recent.insert(QStringLiteral("title"), QStringLiteral("QA action failure"));
+    QSettings settings;
+    settings.setValue(QStringLiteral("home/feeds"), QString());
+    settings.setValue(QStringLiteral("home/recentTitles"),
+                      QString::fromUtf8(QJsonDocument(QJsonArray{recent}).toJson(
+                          QJsonDocument::Compact)));
+
+    mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+    mikai::app::MainWindow main(client);
+    main.show();
+    QTest::qWait(100);
+    auto* page = main.findChild<mikai::app::SearchPage*>();
+    auto* card = page != nullptr ? page->findChild<mikai::app::TitleCard*>() : nullptr;
+    auto* status = page != nullptr ? page->findChild<QLabel*>(QStringLiteral("status")) : nullptr;
+    if (card == nullptr || status == nullptr) {
+        std::fprintf(stderr, "FAIL search action probe could not find the recent title card/status\n");
+        return 1;
+    }
+
+    if (browserFailure) {
+        const QString before = status->text();
+        bool action = false;
+        bool feedback = false;
+        {
+            AccessibleAlertCapture alert(status);
+            action = triggerCardAction(
+                card, QCoreApplication::translate("mikai::app::SearchPage", "Open in browser"));
+            feedback = statusFeedbackChanged(
+                status, before, QStringLiteral("search-browser-refusal.png"), alert.observed());
+        }
+        const bool ok = action && feedback;
+        std::fprintf(stderr, "%s SearchPage browser refusal reached accessible rendered feedback\n",
+                     ok ? "PASS" : "FAIL");
+        return ok ? 0 : 1;
+    }
+
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QLatin1String("windows")) {
+        std::fprintf(stderr, "FAIL clipboard refusal requires the Windows QPA\n");
+        return 2;
+    }
+    const ClipboardSnapshot clipboardBefore = ClipboardSnapshot::capture();
+    if (!clipboardBefore.valid) {
+        std::fprintf(stderr, "FAIL original clipboard cannot be snapshotted safely\n");
+        return 2;
+    }
+    ClipboardLock lock;
+    if (!lock.acquire()) {
+        std::fprintf(stderr, "FAIL helper process did not acquire the clipboard\n");
+        return 2;
+    }
+    const QString beforeLink = status->text();
+    bool linkAction = false;
+    bool linkFeedback = false;
+    {
+        AccessibleAlertCapture alert(status);
+        linkAction = triggerCardAction(
+            card, QCoreApplication::translate("mikai::app::SearchPage", "Copy link"));
+        linkFeedback = statusFeedbackChanged(
+            status, beforeLink, QStringLiteral("search-copy-link-refusal.png"), alert.observed());
+    }
+    const bool linkSequencePreserved =
+        GetClipboardSequenceNumber() == clipboardBefore.sequence;
+    const QString beforeId = status->text();
+    bool idAction = false;
+    bool idFeedback = false;
+    {
+        AccessibleAlertCapture alert(status);
+        idAction = triggerCardAction(
+            card, QCoreApplication::translate("mikai::app::SearchPage", "Copy ID"));
+        idFeedback = statusFeedbackChanged(
+            status, beforeId, QStringLiteral("search-copy-id-refusal.png"), alert.observed());
+    }
+    const bool idSequencePreserved =
+        GetClipboardSequenceNumber() == clipboardBefore.sequence;
+    const bool helperClosed = lock.release();
+    const bool preserved = clipboardBefore.unchanged();
+    const bool ok = helperClosed && preserved && linkSequencePreserved &&
+        idSequencePreserved && linkAction && idAction && linkFeedback && idFeedback;
+    std::fprintf(stderr,
+                 "%s SearchPage Copy link/ID refusal surfaced accessible feedback and preserved clipboard\n",
+                 ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+#else
+    std::fprintf(stderr, "FAIL refused clipboard path requires Windows OpenClipboard ownership\n");
+    return 2;
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -344,26 +890,38 @@ int main(int argc, char** argv) {
     QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--hold-clipboard")) {
+        return holdClipboardOpen();
+    }
+    if (argc == 3 &&
+        QString::fromLocal8Bit(argv[1]) == QLatin1String("--player-clipboard-failure")) {
+        return playerClipboardFailureProbe(QString::fromLocal8Bit(argv[2]));
+    }
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--clipboard-failure")) {
+        return searchActionFailureProbe(false);
+    }
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--browser-failure")) {
+        if (QGuiApplication::platformName() != QLatin1String("offscreen")) {
+            std::fprintf(stderr, "FAIL browser-refusal probe requires QT_QPA_PLATFORM=offscreen\n");
+            return 2;
+        }
+        return searchActionFailureProbe(true);
+    }
     if (argc != 3) {
         std::fprintf(stderr,
-                     "usage: external_media_probe <320x180 video file> <HTTP video URL>\n"
+                     "usage: external_media_probe --player-clipboard-failure <local video> (windows)\n"
+                     "   or: external_media_probe --clipboard-failure (windows)\n"
+                     "   or: external_media_probe --browser-failure (offscreen)\n"
+                     "   or: external_media_probe <320x180 video file> <HTTP video URL>\n"
                      "The URL must be a loopback fixture (127.0.0.1/localhost/::1); the probe\n"
                      "never reaches a real host. HTTP fixture: /retry.mp4 returns 404 once,\n"
                      "then the same video.\n");
         return 2;
     }
-    // The probe is routinely handed a path relative to wherever it was started,
-    // and the file dialog resolves against its own directory, so the path is
-    // made absolute once here. An absolute invocation is already absolute and
-    // is left as it is; canonicalFilePath also collapses ".." and a symlinked
-    // temp dir when the file exists.
     const QFileInfo givenFile(QString::fromLocal8Bit(argv[1]));
     const QString file =
         givenFile.canonicalFilePath().isEmpty() ? givenFile.absoluteFilePath()
                                                 : givenFile.canonicalFilePath();
-    // The M02 clip is the source the picker has to open; if it is absent the run
-    // cannot prove anything about the handoff, so it stops before the first
-    // window instead of reporting a picker failure that is really a bad path.
     if (!QFileInfo::exists(file)) {
         std::fprintf(stderr, "FAIL media file does not exist: %s\n", file.toUtf8().constData());
         return 2;
@@ -375,10 +933,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // The player's constructor reads player/anime4k and player/presetShortcuts,
-    // so both scopes are redirected into a directory that dies with this process
-    // before the first one is built. A probe must not inherit - or overwrite -
-    // whatever a real session left behind.
+    // Both preference scopes must be isolated before constructing a player.
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
         std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
@@ -396,6 +951,11 @@ int main(int argc, char** argv) {
     settings.setValue(QStringLiteral("home/feeds"), QStringLiteral(""));
     settings.setValue(QStringLiteral("player/anime4k"), QStringLiteral("off"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
+    ClipboardRestore clipboardRestore;
+    if (!clipboardRestore.isValid()) {
+        std::fprintf(stderr, "FAIL original clipboard cannot be snapshotted safely\n");
+        return 2;
+    }
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     mikai::app::MainWindow main(client);
     main.show();
@@ -407,7 +967,7 @@ int main(int argc, char** argv) {
     auto* openFile = main.findChild<QAction*>(QStringLiteral("openVideoFile"));
     auto* openUrl = main.findChild<QAction*>(QStringLiteral("openVideoUrl"));
     check(menu && openFile && openUrl, "home offers local file and media URL");
-    if (!openFile || !openUrl) return 1;
+    if (!openFile || !openUrl) return clipboardRestore.finish(1);
 
     answerInput({}, false);
     openUrl->trigger();
@@ -418,11 +978,7 @@ int main(int argc, char** argv) {
 
     const FileDialogOutcome pick =
         driveFileDialog(file, [&openFile] { openFile->trigger(); });
-    // The path under test is the chooser's own answer, read from the dialog on
-    // its accept path: the fileSelected/filesSelected signals it emitted. A
-    // picker that never closed, closed by any route other than accept, or
-    // answered with a different file fails on the real handoff; the request
-    // typed into the field cannot make any of those pass.
+    // Check the chooser's returned answer, not the path we typed.
     const auto answersWithTarget = [&pick](const QString& candidate) {
         if (candidate.isEmpty()) return false;
         if (candidate == pick.requested) return true;
@@ -433,10 +989,7 @@ int main(int argc, char** argv) {
     check(pick.sawDialog && pick.attempted && pick.accepted && !pick.forcedClose && retained,
           "the file picker opened, accepted, and returned the requested video");
 
-    // A failed picker is reported above but must not sink the URL, retry and
-    // reopen phases below, which do not depend on a local player. The dependent
-    // checks are skipped rather than run against a null player, so nothing here
-    // is reported as a pass it did not earn.
+    // HTTP and retry phases remain independent of a failed local-file handoff.
     QPointer<PlayerDialog> local = activePlayer(&main);
     if (local) {
         check(playback(local), "file picker opens real 320x180 video and renders colored pixels");
@@ -447,11 +1000,6 @@ int main(int argc, char** argv) {
               "standalone copy uses the currently playing file path");
         shell->wake();
         local->grab().save(QStringLiteral("external-media-player.png"));
-        // The enhancement tree is opened by the glyph the shell paints it with,
-        // and what has to reach the viewer is the catalogue itself, so that is
-        // what is asserted: a visible popover holding rows addressed by their
-        // catalogue payload. The button's caption is display text and proves
-        // nothing.
         if (auto* enhance = buttonWithGlyph(local, IconPainter::spark); enhance != nullptr) {
             enhance->click();
         }
@@ -460,9 +1008,6 @@ int main(int argc, char** argv) {
               "standalone media retains the Anime4K enhancement catalogue");
         shell->dismissOverlay();
 
-        // The picture menu is opened with the same right-click a viewer uses,
-        // and the compare row is pressed by the stable payload the shell hangs
-        // on it, so the window below is reached the way a person would reach it.
         QTest::mouseClick(shell->videoSurface(), Qt::RightButton, Qt::NoModifier, QPoint(120, 120));
         QTest::qWait(150);
         check(pressMenuRow(local, QStringLiteral("compare")),
@@ -500,12 +1045,7 @@ int main(int argc, char** argv) {
     retryUrl.setPath(QStringLiteral("/retry.mp4"));
     answerInput(retryUrl.toString(), true);
     openUrl->trigger();
-    // The 404 surfaces on mpv's clock in two steps: the dialog exists from the
-    // open, and the failed stream - with its retry chip - only exists once the
-    // core reports the failure. The wait below observes a dialog whose retry
-    // chip is already up, so the chip read cannot conclude a phase that has
-    // not happened yet. Only onEngineError shows the chip, so reaching the
-    // chip is reaching the error path itself.
+    // Wait for mpv's failure, not just the dialog's creation.
     QPointer<PlayerDialog> failed;
     QPushButton* retry = nullptr;
     const bool failedArrived = until([&main, &failed, &retry] {
@@ -537,6 +1077,8 @@ int main(int argc, char** argv) {
     main.close();
     check(until([&reopened] { return reopened.isNull(); }),
           "closing home closes its standalone video player");
+    check(clipboardRestore.restore(),
+          "ordinary media flow restores original Qt-exposed formats, text and image data");
     std::fprintf(stderr, "RESULT: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }

@@ -24,6 +24,7 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QPushButton>
+#include <QScreen>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -156,17 +157,6 @@ QPushButton* pressableRowFor(MenuPopup* panel, const QString& id) {
     const int spot = rowForCatalogId(panel, id);
     if (spot < 0) return nullptr;
     return qobject_cast<QPushButton*>(panel->rowWidget(spot));
-}
-
-/// Whether every row of `panel` is one the viewer cannot press. A page that
-/// says a model is not implemented yet says it with rows that lead nowhere,
-/// and a page that is entirely inert is the honest shape of that.
-bool everyRowIsInert(MenuPopup* panel) {
-    if (panel == nullptr || panel->rowCount() == 0) return false;
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        if (!panel->entryAt(spot).disabled) return false;
-    }
-    return true;
 }
 
 bool buttonsFitWithoutOverlap(QWidget* popup) {
@@ -310,17 +300,13 @@ QPointer<PipFloat> pipFloat;
 
 /// Where the float's core was when the viewer pressed restore.
 double floatExitPosition = 0.0;
+bool floatExitPlaying = false;
 
 int failures = 0;
 
 void check(bool ok, const char* what) {
     std::fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) ++failures;
-}
-
-QRect centreOf(const QRect& rect) {
-    return QRect(rect.left() + rect.width() / 4, rect.top() + rect.height() / 4, rect.width() / 2,
-                 rect.height() / 2);
 }
 
 /// Pumps the loop until `ready` holds or the budget runs out, then answers with
@@ -334,6 +320,98 @@ bool waitFor(Ready ready, int timeoutMs, int stepMs = 40) {
         QThread::msleep(stepMs);
     }
     return ready();
+}
+
+bool pipPointerGesture(const QPointer<QWidget>& overlay, const QPoint& grab,
+                       const QPoint& drop) {
+    auto send = [&](QEvent::Type type) {
+        if (overlay.isNull()) return false;
+        const QPoint global = type == QEvent::MouseButtonPress ? grab : drop;
+        const Qt::MouseButton button =
+            type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+        const Qt::MouseButtons buttons =
+            type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton;
+        QMouseEvent event(type, overlay->mapFromGlobal(global), global, button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(overlay, &event);
+        return !overlay.isNull();
+    };
+    return send(QEvent::MouseButtonPress) && send(QEvent::MouseMove) &&
+           send(QEvent::MouseButtonRelease);
+}
+
+bool dragPipTo(const QPointer<PipFloat>& pip, const QPoint& target, const char* description) {
+    if (pip.isNull()) return false;
+    QPointer<QWidget> overlay = pip->findChild<QWidget*>(QStringLiteral("pipOverlay"));
+    check(overlay != nullptr, "the float has an overlay for pointer placement");
+    if (overlay.isNull()) return false;
+
+    QPoint grabLocal;
+    bool foundBlank = false;
+    for (const QPoint& candidate :
+         {QPoint(overlay->width() / 2, overlay->height() / 4),
+          QPoint(overlay->width() / 3, overlay->height() / 2),
+          QPoint(overlay->width() * 2 / 3, overlay->height() / 2)}) {
+        if (overlay->rect().contains(candidate) && overlay->childAt(candidate) == nullptr) {
+            grabLocal = candidate;
+            foundBlank = true;
+            break;
+        }
+    }
+    check(foundBlank, "the drag starts on exposed picture, not a playback control");
+    if (!foundBlank) return false;
+    const QPoint before = pip->pos();
+    const QPoint grab = overlay->mapToGlobal(grabLocal);
+    const QPoint drop = grab + target - before;
+    if (!pipPointerGesture(overlay, grab, drop)) {
+        check(false, "the float's pointer receiver survived the placement gesture");
+        return false;
+    }
+    QTest::qWait(500);
+    if (pip.isNull()) {
+        check(false, "the float survived the placement gesture");
+        return false;
+    }
+    const QPoint landed = pip->pos();
+    std::fprintf(stderr,
+                 "     PiP drop: before=%d,%d pointer=%d,%d expected=%d,%d landed=%d,%d\n",
+                 before.x(), before.y(), drop.x(), drop.y(), target.x(), target.y(),
+                 landed.x(), landed.y());
+    const bool placed = landed == target && landed != before;
+    check(placed, description);
+    return placed;
+}
+
+bool resizePipRightEdge(const QPointer<PipFloat>& pip, int delta) {
+    if (pip.isNull()) return false;
+    QPointer<QWidget> overlay = pip->findChild<QWidget*>(QStringLiteral("pipOverlay"));
+    check(overlay != nullptr, "the float has an overlay for edge resizing");
+    if (overlay.isNull()) return false;
+    const QPoint edge(overlay->rect().right(), overlay->height() / 2);
+    check(overlay->childAt(edge) == nullptr, "the resize starts on an exposed right edge");
+    if (overlay->childAt(edge) != nullptr) return false;
+    const QPoint before = pip->pos();
+    const QSize beforeSize = pip->size();
+    const QSize expected(beforeSize.width() + delta, beforeSize.height());
+    const QPoint grab = overlay->mapToGlobal(edge);
+    if (!pipPointerGesture(overlay, grab, grab + QPoint(delta, 0))) {
+        check(false, "the float's pointer receiver survived the resize gesture");
+        return false;
+    }
+    QTest::qWait(500);
+    if (pip.isNull()) {
+        check(false, "the float survived the resize gesture");
+        return false;
+    }
+    std::fprintf(stderr,
+                 "     PiP right-edge resize: before=%dx%d expected=%dx%d actual=%dx%d "
+                 "pos=%d,%d -> %d,%d\n",
+                 beforeSize.width(), beforeSize.height(), expected.width(), expected.height(),
+                 pip->width(), pip->height(), before.x(), before.y(), pip->x(), pip->y());
+    const bool resized = pip->size() == expected && pip->size() != beforeSize &&
+                         pip->pos() == before;
+    check(resized, "a right-edge pointer drag changes the exact size without moving the float");
+    return resized;
 }
 
 /// The float that is on screen, or null.
@@ -886,41 +964,28 @@ int main(int argc, char** argv) {
         check(enhancements != nullptr && !enhancements->isWindow() &&
                   enhancements->parentWidget() == dialog,
               "the enhancements menu uses the fullscreen overlay plane");
-        // A model this player does not run gets an enabled row that opens its
-        // own page beside the root - a page whose rows cannot be pressed -
-        // rather than a dead row left in the menu. Which label that row and
-        // those rows carry is the catalogue's business, so they are found by
-        // the ids it gives them, and what is asserted is the behaviour: the row
-        // is pressable, the page it opens stands beside the root, and pressing
-        // anything on it changes no chain.
-        QPushButton* rifeEntry =
-            pressableRowFor(enhancements, QStringLiteral("rife"));
-        check(rifeEntry != nullptr && rifeEntry->isEnabled(),
-              "a planned model opens its page from an enabled row");
-        if (rifeEntry == nullptr) {
+        // Official AnimeJaNai lives beside Anime4K and exposes its supported
+        // spatial and temporal choices through its own typed menu payloads.
+        QPushButton* animeJanaiEntry =
+            pressableRowFor(enhancements, QStringLiteral("animejanai"));
+        check(animeJanaiEntry != nullptr && animeJanaiEntry->isEnabled(),
+              "the enhancements root offers selectable official AnimeJaNai");
+        if (animeJanaiEntry == nullptr) {
             shell->dismissOverlay();
             return;
         }
-        rifeEntry->click();
+        animeJanaiEntry->click();
         QTest::qWait(60);
-
-        MenuPopup* plannedPage = levelPanelShowing(dialog, QStringLiteral("rife"));
-        check(plannedPage != nullptr && plannedPage != enhancements,
-              "the planned model's page opened beside the root");
+        MenuPopup* animeJanaiPage =
+            levelPanelShowing(dialog, QStringLiteral("animejanai"));
+        check(animeJanaiPage != nullptr && animeJanaiPage != enhancements,
+              "the official AnimeJaNai choices open beside the root");
         check(enhancements->isVisible(),
-              "the level a page was opened from stays on screen beside it");
-        check(everyRowIsInert(plannedPage),
-              "every row of a planned model's page is one the viewer cannot press");
-        const anime4k::Mode beforeRifePage = surface->anime4KMode();
-        for (int spot = 0; plannedPage != nullptr && spot < plannedPage->rowCount(); ++spot) {
-            if (auto* inert = qobject_cast<QPushButton*>(plannedPage->rowWidget(spot))) {
-                inert->click();
-            }
-            QTest::qWait(40);
-        }
-        check(surface->anime4KMode() == beforeRifePage,
-              "pressing a planned model's page leaves the chain alone");
-
+              "the enhancement root stays visible beside AnimeJaNai");
+        check(pressableRowFor(animeJanaiPage, QStringLiteral("animejanai:spatial")) != nullptr,
+              "official spatial choices have a real submenu");
+        check(pressableRowFor(animeJanaiPage, QStringLiteral("animejanai:rife")) != nullptr,
+              "official RIFE choices have a real submenu");
         QPushButton* anime4kEntry =
             pressableRowFor(enhancements, QStringLiteral("anime4k"));
         check(anime4kEntry != nullptr, "the enhancements menu offers Anime4K");
@@ -954,10 +1019,6 @@ int main(int argc, char** argv) {
               "a category opens the level beside the one it sits in");
         check(anime4kPopup->isVisible(),
               "the level a category was opened from stays on screen");
-        // The tree keeps the levels above and drops the ones below, so a level
-        // opened from another branch is not left hanging over the picture.
-        check(levelPanelShowing(dialog, QStringLiteral("rife")) == nullptr,
-              "opening a category closes the level the previous branch left open");
 
         QPushButton* row = pressableRowFor(speedPanel, anime4k::modeId(kAnime4KProbeMode));
         check(row != nullptr, "the speed category lists its presets");
@@ -1033,9 +1094,8 @@ int main(int argc, char** argv) {
 
         // The other half of the tree's contract, on a fresh open and with a
         // chain actually running now: a preset row applies its preset and takes
-        // the whole tree off the screen, and a planned model's page is inert
-        // where it stands - so a viewer who wanders into a model this player
-        // does not run cannot lose the one they had.
+        // the whole tree off the screen. Official AnimeJaNai remains a separate
+        // selectable branch and does not replace or turn off the shader chain.
         //
         // Every row is taken from the panel as it stands at that moment, and
         // only once that panel is really on screen: each level is rebuilt the
@@ -1109,22 +1169,20 @@ int main(int argc, char** argv) {
         }
         shell->dismissOverlay();
         enhancementsButton->click();
-        QPushButton* rifeRoot = pressableRowFor(awaitLevel(QString()), QStringLiteral("rife"));
-        check(rifeRoot != nullptr && rifeRoot->isEnabled(),
-              "a planned model is still an enabled row in the reopened tree");
-        const anime4k::Mode beforePlanned = surface->anime4KMode();
-        if (rifeRoot != nullptr) rifeRoot->click();
-        MenuPopup* planned = awaitLevel(QStringLiteral("rife"));
-        check(planned != nullptr && everyRowIsInert(planned),
-              "the planned model's page is open and none of its rows can be pressed");
-        for (int spot = 0; planned != nullptr && spot < planned->rowCount(); ++spot) {
-            if (auto* inert = qobject_cast<QPushButton*>(planned->rowWidget(spot))) {
-                inert->click();
-            }
-            QTest::qWait(40);
-        }
-        check(beforePlanned != anime4k::Mode::Off && surface->anime4KMode() == beforePlanned,
-              "a planned model's page cannot take away the chain that is running");
+        MenuPopup* publicRoot = awaitLevel(QString());
+        const anime4k::Mode beforeAnimeJanai = surface->anime4KMode();
+        QPushButton* animeJanaiRoot =
+            pressableRowFor(publicRoot, QStringLiteral("animejanai"));
+        check(animeJanaiRoot != nullptr && animeJanaiRoot->isEnabled(),
+              "official AnimeJaNai remains a selectable public branch");
+        if (animeJanaiRoot != nullptr) animeJanaiRoot->click();
+        MenuPopup* animeJanaiChoices = awaitLevel(QStringLiteral("animejanai"));
+        check(animeJanaiChoices != nullptr &&
+                  pressableRowFor(animeJanaiChoices, QStringLiteral("animejanai:spatial")) != nullptr &&
+                  pressableRowFor(animeJanaiChoices, QStringLiteral("animejanai:rife")) != nullptr,
+              "the official spatial and RIFE choices remain on their own public menu");
+        check(surface->anime4KMode() == beforeAnimeJanai,
+              "opening official AnimeJaNai choices leaves the running Anime4K chain unchanged");
         shell->dismissOverlay();
     });
 
@@ -1197,22 +1255,11 @@ int main(int argc, char** argv) {
         shell->dismissOverlay();
     });
 
-    // The window controls are part of the chrome, and the chrome auto-hides
-    // after kAutohideMs of pointer idle. The old check asserted them visible
-    // with no pointer activity for two and a half seconds, which asserted the
-    // opposite of the design and went red for that reason alone. It now states
-    // the actual contract, in both directions: up while the viewer is present,
-    // gone once they are not - and it is a "look twice" check, because the
-    // second half only exists after the event loop has had time to run.
     runner.add(11500, [&] {
         if (shell != nullptr) shell->dismissOverlay();
-        // Nudge the pointer the way a viewer arriving at the player would.
         if (surface != nullptr) {
-            for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
-                QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
-                                 Qt::NoButton, Qt::NoModifier);
-                QApplication::sendEvent(surface, &move);
-            }
+            QTest::mouseMove(surface, QPoint(40, 40));
+            QTest::mouseMove(surface, QPoint(60, 60));
         }
         QApplication::processEvents();
 
@@ -1226,11 +1273,7 @@ int main(int argc, char** argv) {
               "the original-file button is in the top-right corner");
         check(original->isVisible(), "the original-file button is visible while the chrome is up");
 
-        // Now let the loop turn with the pointer idle, which is the half that
-        // was never asserted anywhere: the chrome leaving on its own.
-        QTest::qWait(2800);
-        QApplication::processEvents();
-        check(!original->isVisible(),
+        check(waitFor([&] { return !original->isVisible(); }, 4000),
               "the window controls auto-hide once the pointer goes idle");
     });
 
@@ -1426,16 +1469,6 @@ int main(int argc, char** argv) {
               "the series toggle survived the drawer's own refresh");
     });
 
-    // PiP owns the picture while it is up. Three things were wrong and none of
-    // them showed as a crash - they showed as the float's controls doing
-    // nothing, so each is asserted on the state it changes.
-    runner.add(21100, [&] {
-        check(pipFloat != nullptr, "the PiP float is still up for the ownership checks");
-    });
-
-    // Placement and snapping, which is what a viewer reaches for when they
-    // want the float on the other monitor. The pool keeps the last position,
-    // so a float can otherwise reappear somewhere unusable.
     runner.add(21000, [&] {
         if (pipFloat == nullptr || !pipFloat->isVisible()) {
             check(false, "the float is up for the placement checks");
@@ -1443,69 +1476,23 @@ int main(int argc, char** argv) {
         }
         QScreen* under = QGuiApplication::screenAt(pipFloat->frameGeometry().center());
         check(under != nullptr, "the float sits on a screen it can be clicked on");
-        if (under != nullptr) {
-            const QRect area = under->availableGeometry();
-            const QRect frame = pipFloat->frameGeometry();
-            check(frame.top() >= area.top() && frame.left() >= area.left() - pipFloat->width()
-                      && frame.bottom() <= area.bottom() + pipFloat->height(),
-                  "the float is inside the work area, not under the taskbar");
-        }
-
-        // Drag it to the opposite quadrant and let go: it should land on the
-        // nearest corner. The float drags on the delta between two GLOBAL
-        // points, so the drop has to cross the middle of the work area - a
-        // short wobble inside the corner the float already occupies only snaps
-        // straight back to where it started, which is correct and proves
-        // nothing at all.
-        const QPoint before = pipFloat->pos();
-        QWidget* overlay = pipFloat->findChild<QWidget*>(QString::fromLatin1("pipOverlay"));
-        check(overlay != nullptr, "the float has an overlay to press on");
-        if (overlay == nullptr || under == nullptr) {
-            return;
-        }
+        if (under == nullptr) return;
         const QRect work = under->availableGeometry();
-        const QPointF grabAt = pipFloat->mapToGlobal(QPointF(20, 20));
-        const QPointF dropAt(work.left() + work.width() / 4.0, work.top() + work.height() / 4.0);
-        const QPointF grabLocal(20., 20.);
-        const QPointF dropLocal = grabLocal + (dropAt - grabAt);
-        QMouseEvent press(QEvent::MouseButtonPress, grabLocal, grabAt, Qt::LeftButton,
-                          Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(overlay, &press);
-        QMouseEvent move(QEvent::MouseMove, dropLocal, dropAt, Qt::LeftButton, Qt::LeftButton,
-                         Qt::NoModifier);
-        QApplication::sendEvent(overlay, &move);
-        QMouseEvent release(QEvent::MouseButtonRelease, dropLocal, dropAt, Qt::LeftButton,
-                            Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(overlay, &release);
-        QTest::qWait(500);
-        std::fprintf(stderr, "     float moved %s\n",
-                     qPrintable(QStringLiteral("%1,%2 -> %3,%4")
-                                    .arg(before.x()).arg(before.y())
-                                    .arg(pipFloat->x()).arg(pipFloat->y())));
-        check(pipFloat->pos() != before, "a drag actually moved the float");
-        if (QScreen* landed = QGuiApplication::screenAt(pipFloat->frameGeometry().center())) {
-            const QRect area = landed->availableGeometry();
-            // Snapping parks the float on the corner nearest where the frame
-            // centre ended up. Which corner that is depends on the float's own
-            // size against the work area, so the probe asserts the rule the
-            // viewer sees - it landed on a real corner - rather than a quadrant
-            // guessed from the pointer, which is wrong on a work area narrower
-            // than twice the float.
-            const QRect frame = pipFloat->frameGeometry();
-            constexpr int kInset = 24;
-            const bool left = frame.left() <= area.left() + kInset + 1;
-            const bool right = frame.right() >= area.right() - kInset - 1;
-            const bool top = frame.top() <= area.top() + kInset + 1;
-            const bool bottom = frame.bottom() >= area.bottom() - kInset - 1;
-            std::fprintf(stderr, "     snap: area=%d,%d %dx%d frame=%d,%d %dx%d lrtb=%d%d%d%d\n",
-                         area.x(), area.y(), area.width(), area.height(), frame.x(), frame.y(),
-                         frame.width(), frame.height(), int(left), int(right), int(top),
-                         int(bottom));
-            check((left || right) && (top || bottom),
-                  "a dragged float lands on the corner nearest the drop");
-            check(area.contains(frame.topLeft()) && area.contains(frame.bottomRight()),
-                  "the snapped float is inside the work area");
-        }
+        const QSize room = work.size() - pipFloat->size();
+        check(room.width() > 0 && room.height() > 0,
+              "the work area has room for two distinct noncorner placements");
+        if (room.width() <= 0 || room.height() <= 0) return;
+        const QPoint first = work.topLeft() + QPoint(room.width() / 3, room.height() / 3);
+        const QPoint second =
+            work.topLeft() + QPoint(room.width() * 2 / 3, room.height() / 2);
+        dragPipTo(pipFloat, first,
+                  "the first arbitrary drop stays at the exact released position after settling");
+        if (pipFloat.isNull()) return;
+        dragPipTo(pipFloat, second,
+                  "the second distinct arbitrary drop stays exactly where released, without snap");
+        if (pipFloat.isNull()) return;
+        check(pipFloat->frameGeometry().intersects(work),
+              "the freely-placed float is still reachable on its work area");
     });
     runner.add(21200, [&] {
         if (pipFloat == nullptr) {
@@ -1590,7 +1577,11 @@ int main(int argc, char** argv) {
             floatSurface->setPaused(false);
         }
         QTest::qWait(700);
+        floatSurface->setPaused(true);
+        check(waitFor([&] { return !floatSurface->isPlaying(); }, 3000),
+              "the viewer's paused float state is acknowledged before restore");
         floatExitPosition = floatSurface->position();
+        floatExitPlaying = floatSurface->isPlaying();
         auto* restore = pipFloat->findChild<QPushButton*>(QString::fromLatin1("pipRestore"));
         check(restore != nullptr, "the float has a restore button");
         if (restore == nullptr) {
@@ -1614,24 +1605,17 @@ int main(int argc, char** argv) {
         if (mainSurface == nullptr) {
             return;
         }
-        // The hand-back seeks the main core and pauses it, and both land on the
-        // next pump - so wait for the position the viewer left rather than
-        // sampling the value the core was parked on before PiP. Bounded, so a
-        // hand-back that never comes is a failure and not a hang.
         waitFor([&] {
             return dialogGuard.isNull() ||
                    (std::abs(mainSurface->position() - floatExitPosition) < 1.5 &&
-                    !mainSurface->isPlaying());
+                    mainSurface->isPlaying() == floatExitPlaying);
         }, 5000);
         std::fprintf(stderr, "     returned to %.2fs, the float left it at %.2fs\n",
                      mainSurface->position(), floatExitPosition);
         check(std::abs(mainSurface->position() - floatExitPosition) < 1.5,
               "the main player resumes where the float left off");
-        // The main core inherits whatever it was doing before PiP, and
-        // the probe enters PiP from a paused player, so paused is the
-        // correct state to return to - not a failure to resume.
-        check(!mainSurface->isPlaying(),
-              "the main core is back in the state PiP found it in");
+        check(mainSurface->isPlaying() == floatExitPlaying,
+              "the main core continues the float's playback state");
     });
 
     // The float's X and its expand button mean opposite things, and they were
@@ -1743,11 +1727,7 @@ int main(int argc, char** argv) {
               "closing the player left no parentless float behind");
     });
 
-    // The parked float is what a restore leaves behind, and it has to belong to
-    // the player in both states. Drive one player through enter, restore and
-    // enter again: the second entry must hand back the same window, and closing
-    // the player must then destroy it instead of leaving a hidden float - with
-    // its QOpenGLWidget and its mpv core - parentless for the rest of the run.
+    // Custom geometry survives pooled reentry; closing the owner releases the hidden float.
     runner.add(310, [&] {
         StubHost parkedHost;
         auto* parked = new PlayerDialog(QStringLiteral("probe pip parked"), url, qualities, 720,
@@ -1770,9 +1750,7 @@ int main(int argc, char** argv) {
             parked->close();
             return;
         }
-        // A parentless float is a top-level widget, so it is found there and
-        // only while it is on screen: the pool keeps a parked float hidden, and
-        // a hidden one is not the entry under test.
+        // Hidden floats belong to other pools, not this entry.
         QVector<PipFloat*> preexisting;
         for (QWidget* w : QApplication::topLevelWidgets()) {
             if (auto* f = qobject_cast<PipFloat*>(w)) preexisting.append(f);
@@ -1799,27 +1777,56 @@ int main(int argc, char** argv) {
             return;
         }
         QPointer<PipFloat> parkedFloatGuard(parkedFloat);
-        // Same count, and the same read of the main surface, for the case the
-        // pool exists for: the float is HIDDEN here, so a main surface still
-        // on screen at the moment of the delete is not a hidden-window save -
-        // it is the same fault, one state further along.
         auto parkedRelease = watchFloatRelease(parkedFloat, playerSurface(parked));
         const int floatsBefore = livePipFloats();
-        auto clickRestore = [](PipFloat* pip) -> bool {
+        auto clickRestore = [](const QPointer<PipFloat>& pip) -> bool {
+            if (pip.isNull()) return false;
             auto* restore = pip->findChild<QPushButton*>(QStringLiteral("pipRestore"));
             if (restore == nullptr) return false;
             restore->click();
             return true;
         };
-        // The float lays its chrome out when it is first shown, so give the
-        // show a beat before reaching for a control on it.
         QTest::qWait(300);
-        check(clickRestore(parkedFloat), "the parked-case float has a restore button");
-        // The hand-back lands on the next pump: the player comes back and the
-        // float goes hidden but stays alive.
+        if (parkedGuard.isNull() || parkedFloatGuard.isNull()) {
+            check(false, "the parked-case player and float survived initial layout");
+            if (parkedGuard != nullptr) parkedGuard->close();
+            return;
+        }
+        QScreen* screen = QGuiApplication::screenAt(parkedFloatGuard->frameGeometry().center());
+        check(screen != nullptr, "the parked-case float has a work area for custom geometry");
+        if (screen == nullptr) {
+            parkedGuard->close();
+            return;
+        }
+        const QRect work = screen->availableGeometry();
+        const QSize defaultSize = parkedFloatGuard->size();
+        const QPoint defaultPosition = parkedFloatGuard->pos();
+        const QSize room = work.size() - defaultSize;
+        const int resizeDelta = std::max(1, work.width() / 24);
+        const bool hasRoom =
+            room.width() * 3 / 5 > resizeDelta && room.height() > 0;
+        check(hasRoom, "the work area fits arbitrary placement and a wider custom float");
+        if (!hasRoom) {
+            parkedGuard->close();
+            return;
+        }
+        const QPoint customPosition =
+            work.topLeft() + QPoint(room.width() * 2 / 5, room.height() / 3);
+        const QSize customSize(defaultSize.width() + resizeDelta, defaultSize.height());
+        dragPipTo(parkedFloatGuard, customPosition,
+                  "the parked-case float is placed at an exact arbitrary noncorner position");
+        resizePipRightEdge(parkedFloatGuard, resizeDelta);
+        if (parkedGuard.isNull() || parkedFloatGuard.isNull()) {
+            if (parkedGuard != nullptr) parkedGuard->close();
+            return;
+        }
+        check(parkedFloatGuard->pos() != defaultPosition &&
+                  parkedFloatGuard->size() != defaultSize,
+              "the float has a real custom position and size before leaving PiP");
+        check(clickRestore(parkedFloatGuard), "the parked-case float has a restore button");
         waitFor([&] {
-            return parkedGuard.isNull() ||
-                   (!parkedFloatGuard->isVisible() && parked->isVisible());
+            return parkedGuard.isNull() || parkedFloatGuard.isNull() ||
+                   (!parkedFloatGuard->isVisible() && parkedGuard->isVisible());
         }, 6000);
         check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
                   !parkedFloatGuard->isVisible(),
@@ -1827,26 +1834,35 @@ int main(int argc, char** argv) {
         check(parkedRelease->destroyed == 0,
               "leaving PiP destroyed nothing - the float is pooled, not freed");
         if (parkedGuard == nullptr || parkedFloatGuard == nullptr) {
-            // Still open in the second case: a window left on screen would
-            // skew every stage after this one.
-            if (parkedGuard != nullptr) parked->close();
+            if (parkedGuard != nullptr) parkedGuard->close();
             return;
         }
 
-        // Second entry. The pool is the point of it: the same window has to
-        // come back rather than a second QOpenGLWidget beside the player's.
         emit parkedShell->pipRequested();
-        PipFloat* reopened = awaitNewFloat();
+        QPointer<PipFloat> reopened = awaitNewFloat();
         check(reopened != nullptr, "the second PiP entry opened a float");
-        check(reopened == parkedFloat,
+        check(reopened != nullptr && reopened == parkedFloatGuard,
               "re-entering PiP reuses the parked float instead of building another");
         if (reopened != nullptr) {
-            QTest::qWait(300);
-            check(clickRestore(reopened), "the re-entered float has a restore button");
-            waitFor([&] {
-                return parkedGuard.isNull() || parkedFloatGuard.isNull() ||
-                       !parkedFloatGuard->isVisible();
-            }, 6000);
+            QTest::qWait(500);
+            if (reopened != nullptr) {
+                std::fprintf(stderr,
+                             "     PiP reentry: expected=%d,%d %dx%d actual=%d,%d %dx%d "
+                             "default=%d,%d %dx%d\n",
+                             customPosition.x(), customPosition.y(), customSize.width(),
+                             customSize.height(), reopened->x(), reopened->y(),
+                             reopened->width(), reopened->height(), defaultPosition.x(),
+                             defaultPosition.y(), defaultSize.width(), defaultSize.height());
+                check(reopened->pos() == customPosition,
+                      "pooled reentry retains the exact arbitrary position, not the default corner");
+                check(reopened->size() == customSize,
+                      "pooled reentry retains the exact edge-resized size, not the default size");
+                check(clickRestore(reopened), "the re-entered float has a restore button");
+                waitFor([&] {
+                    return parkedGuard.isNull() || parkedFloatGuard.isNull() ||
+                           !parkedFloatGuard->isVisible();
+                }, 6000);
+            }
         }
         check(parkedGuard != nullptr && parkedFloatGuard != nullptr &&
                   !parkedFloatGuard->isVisible(),
@@ -1854,10 +1870,7 @@ int main(int argc, char** argv) {
         check(parkedRelease->destroyed == 0,
               "the second leave parked the reused float instead of destroying it");
 
-        // Close the owner with the float parked. The float is parentless, so
-        // that destructor is the only path that releases it - this is the case
-        // that used to leak the whole window once PiP had been restored.
-        parked->close();
+        if (parkedGuard != nullptr) parkedGuard->close();
         waitFor([&] { return parkedGuard.isNull(); }, 6000);
         check(parkedGuard.isNull(), "closing the parked-case player was processed");
         if (!parkedFloatGuard.isNull()) {

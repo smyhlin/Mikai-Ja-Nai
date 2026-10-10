@@ -1356,8 +1356,6 @@ QList<Bundle> discoverBundles(const QStringList& roots, QStringList* rejections)
     QStringList searchRoots = roots;
     if (searchRoots.isEmpty()) {
         searchRoots.append(runtimeStorageRoot());
-        searchRoots.append(
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("native/runtime")));
     }
 
     // A pointer target and a versioned directory can name the same bundle; a

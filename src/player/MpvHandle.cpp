@@ -233,7 +233,14 @@ MpvHandle::MpvHandle(const std::vector<std::pair<std::string, std::string>>& ext
         handle_ = nullptr;
         throw MpvError(message);
     }
-    api_->requestLogMessages(handle_, "info");
+    developerVerboseLogs_ = qEnvironmentVariableIntValue("MIKAI_MPV_VERBOSE") != 0;
+    try {
+        requestLogLevel(developerVerboseLogs_);
+    } catch (...) {
+        api_->terminateDestroy(handle_);
+        handle_ = nullptr;
+        throw;
+    }
 }
 
 MpvHandle::~MpvHandle() {
@@ -259,12 +266,16 @@ MpvHandle::MpvHandle(MpvHandle&& other) noexcept
       // The identity travels with the core, so a request issued before the move
       // is still recognised as belonging to the handle that now owns it.
       identity_(other.identity_),
+      developerVerboseLogs_(other.developerVerboseLogs_),
+      requestedLogLevel_(other.requestedLogLevel_),
       epoch_(other.epoch_) {
     other.api_ = nullptr;
     other.sink_ = nullptr;
     other.observers_.clear();
     other.pending_.clear();
     other.identity_ = 0;
+    other.developerVerboseLogs_ = false;
+    other.requestedLogLevel_ = '\0';
     other.epoch_ = 0;
 }
 
@@ -289,12 +300,16 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     // Adopt the incoming core's identity and epoch: the moved requests were
     // issued against them, so they stay live rather than being dropped.
     identity_ = other.identity_;
+    developerVerboseLogs_ = other.developerVerboseLogs_;
+    requestedLogLevel_ = other.requestedLogLevel_;
     epoch_ = other.epoch_;
     other.api_ = nullptr;
     other.sink_ = nullptr;
     other.observers_.clear();
     other.pending_.clear();
     other.identity_ = 0;
+    other.developerVerboseLogs_ = false;
+    other.requestedLogLevel_ = '\0';
     other.epoch_ = 0;
     return *this;
 }
@@ -334,6 +349,23 @@ void MpvHandle::setPaused(bool paused) { setFlag("pause", paused); }
 void MpvHandle::setSpeed(double speed) { setNumber("speed", speed); }
 void MpvHandle::setVolume(double volume) { setNumber("volume", volume); }
 void MpvHandle::setMuted(bool muted) { setFlag("mute", muted); }
+
+void MpvHandle::setBackendLogObservationEnabled(bool enabled) {
+    requestLogLevel(developerVerboseLogs_ || enabled);
+}
+
+void MpvHandle::requestLogLevel(bool verbose) {
+    if (handle_ == nullptr || api_ == nullptr || api_->requestLogMessages == nullptr) {
+        throw MpvError("mpv_request_log_messages: no live core");
+    }
+    const char level = verbose ? 'v' : 'i';
+    if (requestedLogLevel_ == level) return;
+    // mpv_request_log_messages returns void, so the only API-side failure
+    // condition exposed here is an unavailable live function entry.
+    api_->requestLogMessages(handle_, verbose ? "v" : "info");
+    requestedLogLevel_ = level;
+}
+
 void MpvHandle::stop() {
     // Same source change as loadFile: retire outstanding callbacks first.
     invalidateAsyncEpoch();

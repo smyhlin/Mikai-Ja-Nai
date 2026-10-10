@@ -1,0 +1,65 @@
+From 55e6aabf4f314edc39c12bf3157c4fa3d3701288 Mon Sep 17 00:00:00 2001
+From: Mikai <mikai@local>
+Date: Thu, 8 Oct 2026 00:00:00 +0000
+Subject: [PATCH] aji: map RIFE v4.26 heavy and expose capability
+
+Apply after native/patches/0001-0004. The TRT hunk is based on the source
+state after 0004-wide-win32-paths-and-loaders.patch; it changes only model
+selection and leaves the Windows path/process changes intact.
+
+The heavy archive has no ensemble model. Reject that combination instead of
+mapping it to the regular or ensemble graph. The dispatcher capability exports identify the source API and heavy mapping;
+neither indicates that inference is ready.
+
+---
+ a/src/aji_trt.cpp
++++ b/src/aji_trt.cpp
+@@ -932,6 +932,8 @@
+ // ensemble appends _ensemble (rife_cuda.py's mapping).
+ std::string rife_model_name(int code, bool ensemble)
+ {
++    if (code == 4262)
++        return ensemble ? "" : "rife_v4.26_heavy";
+     std::string s = std::to_string(code);
+     if (s.size() < 2)
+         return "";
+@@ -982,6 +984,11 @@
+ 
+     const std::string model =
+         rife_model_name(chain->rife_model, chain->rife_ensemble);
++    if (model.empty()) {
++        c->set_error("unsupported rife model code %d with ensemble=%d",
++                     chain->rife_model, chain->rife_ensemble ? 1 : 0);
++        return false;
++    }
+     char dims[64];
+     snprintf(dims, sizeof(dims), "1x11x%dx%d", R.ph, R.pw);
+     // strongly-typed build from the fp16-typed rife onnx (the shipped
+--- a/src/aji_dml.cpp
++++ b/src/aji_dml.cpp
+@@ -1308,6 +1308,8 @@
+ 
+ std::string rife_model_name(int code, bool ensemble)
+ {
++    if (code == 4262)
++        return ensemble ? "" : "rife_v4.26_heavy";
+     std::string s = std::to_string(code);
+     if (s.size() < 2)
+         return "";
+--- a/src/aji_dispatch.cpp
++++ b/src/aji_dispatch.cpp
+@@ -313,3 +313,12 @@
+     delete ctx;
+     *c = nullptr;
+ }
++extern "C" AJI_EXPORT int aji_api_version(void)
++{
++    return AJI_API_VERSION;
++}
++
++extern "C" AJI_EXPORT int aji_rife_heavy_supported(void)
++{
++    return 1;
++}
+-- 
+2.45.2

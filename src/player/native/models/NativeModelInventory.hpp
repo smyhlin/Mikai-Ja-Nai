@@ -164,7 +164,7 @@ struct ModelImportOutcome {
 
 class ModelInventory {
  public:
-  /// `AppLocalDataLocation()/native/models`, per §9.2. Never created by this call.
+  /// `<applicationDirPath>/native/models`. Never created by this call.
   static QString defaultRoot();
   /// An explicit root. Constructing validates and creates nothing.
   explicit ModelInventory(QString root = defaultRoot());

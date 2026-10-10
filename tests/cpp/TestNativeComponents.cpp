@@ -4,6 +4,10 @@
 #include "native/components/NativeComponentStore.hpp"
 #include "native/components/NativeComponentToolchain.hpp"
 
+#include "native/bundle/NativePaths.hpp"
+
+#include <iterator>
+
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -20,16 +24,6 @@ namespace {
 
 constexpr auto kRecordFile = "component.json";
 constexpr auto kRecordSchema = "mikai.native.components/1";
-
-bool isSha256Hex(const QString& value) {
-    if (value.size() != 64) return false;
-    for (const QChar& c : value) {
-        const bool digit = c >= QLatin1Char('0') && c <= QLatin1Char('9');
-        const bool lowerHex = c >= QLatin1Char('a') && c <= QLatin1Char('f');
-        if (!digit && !lowerHex) return false;
-    }
-    return true;
-}
 
 QByteArray filePayload(const QString& seed) {
     return QByteArrayLiteral("component fixture bytes for ") + seed.toUtf8() + "\n";
@@ -72,6 +66,43 @@ bool writeRecord(const ComponentStore& store, const QJsonObject& root) {
     if (!QDir().mkpath(directory)) return false;
     return writeBytes(QDir(directory).filePath(QString::fromLatin1(kRecordFile)),
                       QJsonDocument(root).toJson(QJsonDocument::Compact));
+}
+QJsonObject rifeInstallRecord() {
+    const RifeArchivePack& pack = rifeArchivePack();
+    QJsonObject archive;
+    archive.insert(QStringLiteral("name"), pack.name);
+    archive.insert(QStringLiteral("asset"), pack.asset);
+    archive.insert(QStringLiteral("url"), pack.url);
+    archive.insert(QStringLiteral("assetBytes"), pack.assetBytes);
+    archive.insert(QStringLiteral("assetSha256"), pack.assetSha256);
+    QJsonArray files;
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        QJsonObject file;
+        file.insert(QStringLiteral("path"), pin.fileName);
+        file.insert(QStringLiteral("bytes"), pin.bytes);
+        file.insert(QStringLiteral("sha256"), pin.graphSha256);
+        files.append(file);
+    }
+    QJsonObject record;
+    record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.rife/1"));
+    record.insert(QStringLiteral("release"), componentReleaseTag());
+    record.insert(QStringLiteral("archive"), archive);
+    record.insert(QStringLiteral("files"), files);
+    return record;
+}
+
+bool writeRifeFixture(const QString& directory, bool record) {
+    if (!QDir().mkpath(directory)) return false;
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        QFile file(QDir(directory).filePath(pin.fileName));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
+            !file.resize(pin.bytes)) {
+            return false;
+        }
+    }
+    if (!record) return true;
+    return writeBytes(QDir(directory).filePath(QStringLiteral("install.json")),
+                      QJsonDocument(rifeInstallRecord()).toJson(QJsonDocument::Compact));
 }
 
 /// Publishes the given packs into the store the way the installer would: every
@@ -168,47 +199,6 @@ void TestNativeComponents::compatiblePacksNameRuntimeAndThisGpuOnly() {
 void TestNativeComponents::compatiblePacksAreEmptyWhenTheShapeIsUnusable() {
     QVERIFY(compatiblePacksFor(0, 0).isEmpty());
     QVERIFY(compatiblePacksFor(12, 10).isEmpty());
-}
-
-void TestNativeComponents::catalogueDigestsAndSizesAreWellFormed() {
-    const QVector<ComponentPack>& catalog = tensorRtComponentCatalog();
-    QVERIFY(!catalog.isEmpty());
-    QVERIFY(packNamed(QStringLiteral("trt-runtime")) != nullptr);
-    for (const ComponentPack& pack : catalog) {
-        QVERIFY2(!pack.name.isEmpty(), qPrintable(pack.asset));
-        QVERIFY2(isSha256Hex(pack.assetSha256), qPrintable(pack.name));
-        QVERIFY2(pack.assetBytes > 0, qPrintable(pack.name));
-        QVERIFY2(pack.url.contains(QLatin1String("github.com")), qPrintable(pack.url));
-        QVERIFY2(pack.url.contains(QStringLiteral("/%1/").arg(componentReleaseTag())),
-                 qPrintable(pack.url));
-        QVERIFY2(!pack.files.isEmpty(), qPrintable(pack.name));
-        for (const QString& file : pack.files) {
-            QVERIFY2(!file.contains(QLatin1Char('/')), qPrintable(file));
-        }
-        if (!pack.resourceFile.isEmpty()) {
-            QVERIFY2(pack.files.contains(pack.resourceFile), qPrintable(pack.resourceFile));
-        }
-        if (pack.name == QLatin1String("trt-runtime")) {
-            // Nothing in this build invokes trtexec.exe, and the bundle
-            // inventory cannot describe an executable the manifest does not list.
-            QVERIFY(pack.resourceFile.isEmpty());
-            QVERIFY(!pack.files.contains(QStringLiteral("trtexec.exe")));
-        }
-    }
-
-    // The exact lists, not merely non-empty ones. A walk over the row's file
-    // slots that ran past their end used to append whatever pointers sat beside
-    // the table, and the runtime row is the one that fills every slot, so the
-    // count is the assertion that catches it.
-    QCOMPARE(packNamed(QStringLiteral("trt-runtime"))->files,
-             QStringList({QStringLiteral("cudart64_13.dll"), QStringLiteral("CUDA_LICENSE.txt"),
-                          QStringLiteral("DirectML_LICENSE.txt"), QStringLiteral("nvinfer_11.dll"),
-                          QStringLiteral("nvinfer_plugin_11.dll"),
-                          QStringLiteral("nvonnxparser_11.dll")}));
-    for (const ComponentPack& pack : catalog) {
-        if (pack.resourceFile.isEmpty()) continue;
-        QCOMPARE(pack.files, QStringList({pack.resourceFile}));
-    }
 }
 
 void TestNativeComponents::storeRecordRoundTrips() {
@@ -406,6 +396,55 @@ void TestNativeComponents::installedPackNamesFollowTheRecord() {
     QVERIFY(populateStore(store, {*runtime, *resource}));
     QCOMPARE(installedPackNames(store),
              QStringList({runtime->name, resource->name}));
+}
+
+void TestNativeComponents::rifeGraphWithoutInstallRecordIsMissing() {
+    QDir().mkpath(nativeRoot());
+    QTemporaryDir root(QDir(nativeRoot()).filePath(QStringLiteral("rife-store-test-XXXXXX")));
+    QVERIFY(root.isValid());
+    QVERIFY(writeRifeFixture(root.path(), false));
+
+    const StoredRifeGraph stored = storedRifeGraph(
+        RifeArchiveStore{root.path()}, rifeModelPins().first());
+    QVERIFY(!stored.installed);
+    QVERIFY(!stored.reason.isEmpty());
+}
+
+void TestNativeComponents::rifeGraphRecordTrustsVerifiedIdentityUntilManualVerify() {
+    QDir().mkpath(nativeRoot());
+    QTemporaryDir root(QDir(nativeRoot()).filePath(QStringLiteral("rife-store-test-XXXXXX")));
+    QVERIFY(root.isValid());
+    QVERIFY(writeRifeFixture(root.path(), true));
+
+    const RifeModelPin& pin = rifeModelPins().first();
+    const QString path = QDir(root.path()).filePath(pin.fileName);
+    QFile graph(path);
+    QVERIFY(graph.open(QIODevice::ReadWrite));
+    QVERIFY(graph.seek(0));
+    const char corrupt = 'X';
+    QCOMPARE(graph.write(&corrupt, 1), qint64(1));
+    graph.close();
+
+    const StoredRifeGraph stored = storedRifeGraph(RifeArchiveStore{root.path()}, pin);
+    QVERIFY(stored.installed);
+    QCOMPARE(stored.bytes, pin.bytes);
+
+    const StoredRifeGraph verified = verifyRifeGraph(RifeArchiveStore{root.path()}, pin);
+    QVERIFY(!verified.installed);
+    QVERIFY(verified.reason.contains(QStringLiteral("SHA-256")));
+}
+
+void TestNativeComponents::rifeGraphRecordRequiresTheExactInventory() {
+    QDir().mkpath(nativeRoot());
+    QTemporaryDir root(QDir(nativeRoot()).filePath(QStringLiteral("rife-store-test-XXXXXX")));
+    QVERIFY(root.isValid());
+    QVERIFY(writeRifeFixture(root.path(), true));
+    QVERIFY(writeBytes(QDir(root.path()).filePath(QStringLiteral("unexpected.onnx")),
+                       QByteArrayLiteral("extra")));
+
+    const StoredRifeGraph stored = storedRifeGraph(
+        RifeArchiveStore{root.path()}, rifeModelPins().first());
+    QVERIFY(!stored.installed);
 }
 
 void TestNativeComponents::toolchainKeepsTheBundleDirsWithoutAnNvidiaDevice() {

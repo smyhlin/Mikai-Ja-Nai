@@ -1,6 +1,6 @@
 {
   "schema": "mikai.native.components/1",
-  "generated": "2026-10-01",
+  "generated": "2026-10-09",
   "owner": "M03",
   "scope": "Every artefact that would exist in a shipped native runtime bundle (Standard and Native), plus the build-time-only and deliberately-not-adopted items that M03 must account for.",
   "useScope": {
@@ -16,7 +16,7 @@
   },
   "blockerTaskBindings": {
     "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in tasks.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
-    "currentState": "THREE RIGHTS ITEMS ARE OPEN: ESC-1 (the upstream inference source has no located licence and no grant), ESC-2 (the CC BY-NC-SA spatial graphs are not cleared for redistribution under the recorded scope) and ESC-3 (RIFE whole-graph artefact redistribution is unresolved). They leave the Native bundle redistribution 'blocked'. ESC-4 and ESC-5 are resolved, and ESC-6 is an obligations-tracking item. The owner's 2026-10-04 grant covers this project's own integration code only (see projectIntegrationGrant) and clears no third-party component.",
+    "currentState": "ESC-1 (upstream inference source terms unverified), ESC-2 (CC BY-NC-SA spatial graph redistribution not cleared), ESC-3 (RIFE whole-graph redistribution unresolved), and ESC-5 (trtexec developer-tool redistribution on the official upstream-config path) are open. They leave public Native bundle redistribution blocked. ESC-4 is resolved and ESC-6 tracks GPL-family obligations. The owner's 2026-10-04 grant covers this project's own integration code only (see projectIntegrationGrant) and clears no third-party component.",
     "taskBindings": {
       "ESC-1": {
         "bound": [
@@ -93,13 +93,16 @@
         "neverBoundBecause": "the graphs are acquired and pinned, so M12's capability surface is buildable and unit-testable against fixture inputs; M24/M44 still need engine-build and runtime proof, which is a capability gate, not a rights one"
       },
       "ESC-5": {
-        "bound": [],
-        "boundBecause": "nothing, by design: engines are built in-process through the TensorRT builder API, so trtexec.exe was never a task dependency"
+        "bound": [
+          "M04",
+          "M15"
+        ],
+        "boundBecause": "the official upstream configuration invokes trtexec.exe for a TensorRT first-build; only the private prepared-helper path avoids trtexec. The upstream-config path therefore requires a separate redistribution determination."
       }
     },
     "residualRightsConditions": [
       "The obligations recorded on components remain in force: GPL-family source and relinkability for core.fork-mpv; the CC BY-NC-SA attribution, warranty-disclaimer and ShareAlike terms for models.animejanai-onnx; the NVIDIA SLA 1.2.1.x distribution conditions and the required 'This software contains source code provided by NVIDIA Corporation.' notice for runtime.tensorrt and runtime.cuda-cudart; Windows/Xbox-only and non-stand-alone conditions for runtime.directml.",
-      "ESC-5's resolution is conditional on the design: it lapses if any task makes trtexec.exe a run-time dependency again."
+      "The private prepared-helper path avoids trtexec.exe, but the official upstream-config first-build path invokes it. No NVIDIA developer-tool redistribution clearance has been located; the upstream-config path remains unresolved."
     ],
     "downstreamNote": "M50 and M52 are gated by the open ESC-1/ESC-2/ESC-3 items: a Native bundle carrying the inference shim or the CC BY-NC-SA spatial graphs has no third-party redistribution clearance, and none is claimed. They are also gated on M04 and M05 capability and runtime proof, which is a consequence, not a separate finding."
   },
@@ -166,22 +169,22 @@
     },
     {
       "id": "ESC-5",
-      "severity": "RESOLVED",
+      "severity": "blocking",
       "component": "trtexec.exe",
       "finding": "The TensorRT Supplement makes the runtime .so/.dll files distributable. trtexec.exe is a developer tool, and SLA 1.2.1.4 states that unless a developer tool is identified in the Agreement as distributable it is delivered for internal use only. The Agreement text located does not identify trtexec.exe as distributable.",
-      "consequence": "The reference package ships trtexec.exe and its notice file claims the TensorRT redistributables come from NVIDIA's redistributable downloads under the same terms. That is the upstream author's reading, not a verified grant. Shipping trtexec.exe inside our bundle on the strength of that notice alone would be assuming a permission that has not been shown.",
-      "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or a bundle design that does not ship it.",
-      "designNote": "trtexec is only needed to build a TensorRT engine from an ONNX graph. The planned design builds engines in-process through the TensorRT builder API with an out-of-band preparation helper CLI. If that design holds, trtexec.exe is a build-time convenience and can stay out of the shipped bundle entirely - which resolves this by architecture rather than by permission. That is a design consequence to carry into M04/M15, not a legal finding.",
-      "resolution": "RESOLVED BY ARCHITECTURE, NOT BY PERMISSION. Engines are built in-process through the TensorRT builder API with an out-of-band preparation helper, so trtexec.exe is a build-time convenience and never a run-time dependency. tool.trtexec is therefore redistribution 'external' and inBundle false: it is not shipped, and the Supplement's developer-tool restriction never engages.",
-      "whatDidNotChange": "No written confirmation from NVIDIA was obtained, and none is required on this design. The upstream notice file's claim that the TensorRT redistributables may be redistributed does not extend to a developer tool, and this project does not rely on that claim.",
-      "note": "This is a design consequence, and M04/M15 must hold it: if the design ever changes to shell out to trtexec.exe at run time, this resolution lapses and the component becomes blocked again until a design that omits it is restored or NVIDIA confirms in writing."
+      "consequence": "The official upstream configuration invokes trtexec.exe for TensorRT engine first-build. The private prepared-helper path builds engines in-process and does not need trtexec, but that alternative architecture does not describe the upstream-config path. No NVIDIA developer-tool redistribution clearance has been established; do not ship trtexec or claim it is cleared.",
+      "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or an upstream-config design that avoids invoking it while preserving the required first-build behavior.",
+      "designNote": "The ESC-5 architecture resolution applies only to the private prepared-helper path. The official v0.9.0 conf/config path invokes trtexec for TensorRT first-build, so that path retains an unresolved developer-tool redistribution question.",
+      "resolution": "UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH. tool.trtexec remains external and not in a public bundle; the private prepared-helper path can avoid it but does not clear the upstream-config path.",
+      "whatDidNotChange": "The located TensorRT Supplement makes runtime .dll files distributable; it does not establish trtexec.exe redistribution. No NVIDIA developer-tool clearance has been obtained.",
+      "note": "Keep the prior architecture conclusion narrowly scoped: ESC-5 is avoided by architecture only when using the private prepared-helper path. Any path using upstream configuration and first-build trtexec remains blocked pending written clearance or an implementation that no longer requires trtexec."
     },
     {
       "id": "ESC-6",
       "severity": "advisory",
       "component": "mpv-fork",
       "finding": "mpv is GPL-2.0-or-later by default and LGPL-2.1-or-later only when built with -Dgpl=false and without the GPL-only files. The filter file itself carries an LGPL-2.1-or-later header. The build options used for any given binary are not derivable from the binary, and the fork's bundled FFmpeg and other dependencies have their own terms that decide the combined result.",
-      "consequence": "A Native bundle that ships a fork core is a GPL-family redistribution with real obligations: complete corresponding source, licence texts, and the ability to relink. A Standard bundle from mpv-winbuild-cmake is likewise GPL-family.",
+      "consequence": "A Native bundle that ships a fork core is a GPL-family redistribution with real obligations: complete corresponding source, licence texts, and the ability to relink. The Standard author-fork release binary is GPL-family by default, but its exact build options, dependency licence closure, corresponding source and relinkability have not been established; its third-party redistribution is blocked separately on core.author-mpv.",
       "missingEvidence": "the meson option set actually used for the fork build, and the licence status of every statically or dynamically linked dependency in the specific binary to be shipped.",
       "note": "This does not block M03. It is recorded because the fork core must be built BY this repository from the pinned commit, which is what makes the build options knowable and the corresponding source reproducible. That is already the planned design. This remains an obligations-tracking item, not a blocker: the GPL-family obligations travel with the shipped core and are recorded as conditions on components.json#core.fork-mpv."
     }
@@ -191,10 +194,10 @@
       "id": "standard",
       "kind": "standard",
       "purpose": "Plain mpv playback and the Anime4K GLSL chain. No inference, no CUDA filter.",
-      "shippingDecision": "external",
-      "rationale": "The application already provisions this core at run time from shinchiro/mpv-winbuild-cmake's release API into %LOCALAPPDATA%/MPVBackend/runtime. M03 does not vendor it and does not modify that discovery path. Nothing new is redistributed by this work.",
+      "shippingDecision": "privateLocal",
+      "rationale": "The Standard in-process Qt/OpenGL player uses the pinned 2026-10-07 author-fork API-only developer archive as its build input and copies only libmpv-2.dll into private local app/dist packages. No mpv.exe, IPC, or app-launch download is used. Third-party redistribution of this exact binary remains blocked until complete corresponding source, dependency licences and relinkability are established.",
       "components": [
-        "core.stock-mpv"
+        "core.author-mpv"
       ],
       "outOfScopeNote": "The repository's 49 vendored Anime4K GLSL shaders are not listed here. They are not native-bundle components, they are already vendored in the repository's own shaders/ directory, and their licence fact is recorded in THIRD_PARTY_NOTICES.md section 9."
     },
@@ -223,22 +226,38 @@
   ],
   "components": [
     {
-      "id": "core.stock-mpv",
+      "id": "core.author-mpv",
       "bundle": "standard",
       "name": "libmpv-2.dll",
       "sourceIdentity": {
-        "sourceId": "mpv-upstream-stock-build",
-        "buildRecipe": "shinchiro/mpv-winbuild-cmake",
-        "pinKind": "referencePin",
-        "provenanceWeakness": "the recipe tracks mpv master, not a tag; the resolved version is whatever the latest release was at download time. The app resolves it at run time and does not record the resolved tag today."
+        "sourceId": "mpv-author-winbuild",
+        "release": "2026-10-07-d6d93599d5",
+        "archive": "mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
+        "pinKind": "releasePin",
+        "mpvCommit": "d6d93599d59069b715013a6e77e898056499b905",
+        "mpvTree": "d69b8c428bb057743eef5aa4e33f6c92926fd393",
+        "archiveSha256": "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c",
+        "observedDllBytes": 122146816,
+        "observedDllSha256": "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649",
+        "architecture": "x64",
+        "mpvApi": "2.5",
+        "patchStatus": "official release DLL does not contain this project's Native status/admission patches; not a Native bundle"
       },
       "licence": {
-        "spdx": "GPL-2.0-or-later",
-        "obligations": "complete corresponding source for the binary, licence texts, relinkability"
+        "spdx": null,
+        "status": "GPL-family by default; exact build options and dependency closure for this release binary are not established",
+        "redistributionObligations": [
+          "complete corresponding source for this exact binary",
+          "dependency licence texts and applicable notices",
+          "ability for recipients to relink"
+        ]
       },
-      "redistribution": "external",
+      "redistribution": "blocked",
       "inBundle": false,
-      "notes": "Not vendored. Provisioned by pre-existing stock discovery/download logic, which this work leaves untouched."
+      "privateLocalPackage": true,
+      "blockScope": "third-party redistribution",
+      "blockReason": "Complete corresponding source, dependency licences and relinkability for this exact release binary have not been established.",
+      "notes": "The API-only archive supplies matching headers and import library; only libmpv-2.dll is copied into private local app/dist packages. The pinned fetched DLL was observed as x64 PE32+ with a hard static vulkan-1.dll import, even with OpenGL vo=libmpv; the target GPU driver supplies the loader, and a missing loader prevents DLL load. Exact GPL/dependency/relink obligations for this binary remain unestablished, so private local packages only. No mpv.exe, IPC, or app-launch mpv download is used. Historical stock shinchiro runtime observations are not an active path."
     },
     {
       "id": "core.fork-mpv",
@@ -277,13 +296,30 @@
       "sourceIdentity": {
         "sourceId": "animejanai-inference",
         "pinKind": "releasePin",
+        "tag": "v0.9.0",
+        "sourceCommit": "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3",
+        "officialAsset": {
+          "name": "aji-windows-x64.zip",
+          "bytes": 657798,
+          "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586"
+        },
+        "acquisition": "Acquire only into the user's per-machine component store after explicit user action; no public redistribution or startup download.",
         "abi": 8,
         "exports": 17,
+        "exportCountScope": "17 exports in the official v0.9.0 asset; the local source extension adds two optional dispatcher queries.",
         "buildsFrom": [
           "src/aji_dispatch.cpp",
           "src/aji_conf.cpp"
         ],
-        "dependencies": "none of its own - no CUDA, no TensorRT, no ORT"
+        "dependencies": "none of its own - no CUDA, no TensorRT, no ORT",
+        "localSourceCapabilityQuery": {
+          "abiVersion": 8,
+          "optionalExports": [
+            "int aji_api_version(void)",
+            "int aji_rife_heavy_supported(void)"
+          ],
+          "scope": "Local source extension only; the official v0.9.0 asset lacks these exports. The local DLL was compile/linked, but compiled query lookup/loading and runtime behavior are not established."
+        }
       },
       "licence": {
         "spdx": null,
@@ -319,7 +355,13 @@
           "src/kernels.cu"
         ],
         "links": "nvinfer_11, CUDA::cuda_driver, CUDA::cudart",
-        "cudaArchitectures": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual"
+        "cudaArchitectures": "75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual",
+        "localSourceCapability": {
+          "abiVersion": 8,
+          "mapping": "Local patched TensorRT backend source maps exact code 4262 with ensemble=false to rife_v4.26_heavy; ensemble=true is rejected.",
+          "scope": "Local build only; the official v0.9.0 Aji download does not contain this extension.",
+          "evidenceBoundary": "The local DLL compile/link is observed at sources.json#sources[id=animejanai-inference].localBuildObservation; this source mapping is not proof of ABI/capability lookup, model availability, backend operation, or inference."
+        }
       },
       "licence": {
         "spdx": null,
@@ -354,7 +396,13 @@
           "src/aji_conf.cpp"
         ],
         "links": "d3d12 d3d11 dxgi d3dcompiler (ORT and DirectML resolved at run time from its own directory)",
-        "platform": "WIN32 only"
+        "platform": "WIN32 only",
+        "localSourceCapability": {
+          "abiVersion": 8,
+          "mapping": "Local patched DirectML backend source maps exact code 4262 with ensemble=false to rife_v4.26_heavy; ensemble=true is rejected.",
+          "scope": "Local build only; the official v0.9.0 Aji download does not contain this extension.",
+          "evidenceBoundary": "The local DLL compile/link is observed at sources.json#sources[id=animejanai-inference].localBuildObservation; this source mapping is not proof of ABI/capability lookup, model availability, backend operation, or inference."
+        }
       },
       "licence": {
         "spdx": null,
@@ -529,13 +577,13 @@
       },
       "licence": {
         "name": "NVIDIA TensorRT SLA + Supplement",
-        "status": "RESOLVED BY ARCHITECTURE - see ESC-5; not shipped",
+        "status": "UNRESOLVED for official upstream-config first-build; private prepared-helper path avoids it (ESC-5)",
         "issue": "the Supplement's distributable portion is the runtime .so/.dll; a developer tool is internal-use only unless the Agreement identifies it as distributable, and the located Agreement text does not"
       },
       "redistribution": "external",
       "inBundle": false,
-      "architecturePath": "the planned design builds engines in-process via the TensorRT builder API in an out-of-band preparation helper. On that design trtexec.exe is a convenience, not a runtime dependency, and can be omitted from the shipped bundle without weakening the product.",
-      "resolution": "RESOLVED BY ARCHITECTURE, not by permission. Engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience and never a run-time dependency. It is therefore not shipped and not redistributed, and the Supplement's developer-tool restriction never engages. No NVIDIA confirmation was obtained and none is required on this design."
+      "architecturePath": "The private prepared-helper path builds engines in-process via the TensorRT builder API and avoids trtexec.exe. The official upstream v0.9.0 configuration path invokes trtexec.exe for TensorRT first-build, so this architecture exception does not apply there.",
+      "resolution": "No NVIDIA developer-tool redistribution clearance is established. The official upstream-config path invokes trtexec.exe on TensorRT first-build. The private prepared-helper path avoids trtexec by building in-process; that does not resolve or clear the upstream-config path. trtexec remains external, not included in public bundles."
     },
     {
       "id": "models.animejanai-onnx",
@@ -572,7 +620,8 @@
             "sha256": "ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5"
           }
         ],
-        "note": "these digests were measured on the read-only reference package; they are identity evidence for the pinned upstream files, not a build product of this repository"
+        "note": "these digests were measured on the read-only reference package; they are identity evidence for the pinned upstream files, not a build product of this repository",
+        "localAcquisition": "The graphs are staged separately in per-machine user-owned model stores after explicit user action; none is in the public distribution. This acquisition does not alter ESC-2."
       },
       "licence": {
         "spdx": null,
@@ -616,7 +665,8 @@
           "bytes": 322142263,
           "publishedDigestReproducedExactly": true,
           "butLicence": "the publishing repository declares no licence of its own and the asset carries no per-file notice"
-        }
+        },
+        "localAcquisition": "The graphs remain in a per-machine user-owned model store, separate from the app distribution, and are staged only after user action. This does not alter ESC-3."
       },
       "licence": {
         "spdx": "MIT",
@@ -671,8 +721,8 @@
     "unknownsAndGaps": [
       "The Microsoft CRT EULA text was not recovered from the pinned installer payload, so the licence terms are identified by acquisition route only. Recorded as missing evidence, not as a grant.",
       "The 13 relinked mpv-deps DLLs are export-identical to their prefix originals and byte-verified, but were built with --allow-multiple-definition and a statically linked private winpthread. Behavioural equivalence at run time is not proved and must not be inferred from the export comparison.",
-      "libmpv-2.dll statically imports vulkan-1.dll even though the meson option records vulkan=disabled. It is satisfied by the system Vulkan loader if one is present and is a soft dependency rather than a hard one, but its presence is recorded rather than assumed away.",
-      "The shipped bundle contains only the sm120 TensorRT builder resource, not the ptx and sm75-sm100 ones that buildConfigurationPins.CMAKE_CUDA_ARCHITECTURES enumerates. This is closed by provisioning rather than by shipping: the AnimeJaNai 3.6.3 component packs are downloaded and digest-verified into the app-owned component store and the pack for the GPU's compute capability is selected from them (exact trt-sm{MA}{MI} pack when published, otherwise trt-ptx). Evidence and digests: native/manifest/animejanai-release.json; catalogue: src/player/native/components/NativeComponentCatalog.cpp.",
+      "libmpv-2.dll has a hard static import of vulkan-1.dll despite the meson option recording vulkan=disabled. The installed GPU driver supplies the Vulkan loader on the target, but a missing loader prevents libmpv-2.dll from loading. Its exact binary GPL/dependency/relink obligations remain unestablished; private local distribution only.",
+      "The shipped bundle contains only the sm120 TensorRT builder resource, not the ptx and sm75-sm100 ones that buildConfigurationPins.CMAKE_CUDA_ARCHITECTURES enumerates. This is closed by provisioning rather than by shipping: the AnimeJaNai 3.7.0 component packs are downloaded and digest-verified into the app-owned component store and the pack for the GPU's compute capability is selected from them (exact trt-sm{MA}{MI} pack when published, otherwise trt-ptx). Evidence and digests: native/manifest/animejanai-release.json; catalogue: src/player/native/components/NativeComponentCatalog.cpp.",
       "models.* and the animejanai-onnx and rife graphs are user-supplied at run time and are deliberately NOT in the bundle; their ESC-2 and ESC-3 positions are recorded on their components and are unaffected by this inventory."
     ],
     "files": [
@@ -2826,26 +2876,202 @@
     "inferenceSourceSha": {
       "source": "animejanai-inference",
       "commit": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
-      "nineFileDigests": "verified locally and against upstream at this exact commit; see sources.json#sources[id=animejanai-inference].sourceDigestsMeasuredLocally",
+      "nineFileDigests": "Historical provenance of the existing private Native build record; retained as-is. Current official v0.9.0 source identity and local-vs-tag reconciliation are recorded in sources.json#sources[id=animejanai-inference].",
       "licenceStatus": "no upstream licence text located; upstream terms not verified; the draft permission request remains unsent (ESC-1)"
     },
     "fileHashes": "The digests in sources.json#observations - including the four observedBinaries entries - are descriptive measurements of files this repository did not build and are NOT release pins. The digests in installedBundleInventory.files are the installed bundle manifest's own measurements of the installed files; they record which bytes ship, and they are not a claim that those bytes were reproduced from the recorded sources. Where a reproduction claim is warranted it is stated per cohort in verificationMethod.",
-    "status": "Provenance is recorded for every source AND for every one of the 83 binaries in the installed private bundle; see installedBundleInventory for the per-file map. Identity is pinned by revision or archive digest wherever a digest is computable, and the shipped-byte digests are recorded as descriptive measurements in the bundle manifest and reproduced in the inventory for checkability - never promoted to release pins. What remains outstanding on the rights side is unchanged: ESC-1, ESC-2 and ESC-3 are open and the Native bundle shipping decision stays 'blocked'. That is a rights position, not a provenance gap."
+    "status": "Provenance is recorded for every source AND for every one of the 83 binaries in the installed private bundle; see installedBundleInventory for the per-file map. Identity is pinned by revision or archive digest wherever a digest is computable, and the shipped-byte digests are recorded as descriptive measurements in the bundle manifest and reproduced in the inventory for checkability - never promoted to release pins. ESC-1, ESC-2, ESC-3, and the upstream-config branch of ESC-5 remain open; the Native public shipping decision stays blocked. The historic installed private bundle record remains descriptive, not a new build or runtime result."
+  },
+  "currentLocalEvidence": {
+    "observedOn": "2026-10-09",
+    "upstreamComponentArchive": {
+      "version": "AnimeJaNai 3.7.0",
+      "component": "TensorRT runtime",
+      "observedSha256Prefix": "282cb9",
+      "members": [
+        "CUDA_LICENSE",
+        "DirectML_LICENSE",
+        "cudart13",
+        "nvinfer11",
+        "nvinfer_plugin11",
+        "nvonnxparser11",
+        "trtexec.exe"
+      ],
+      "memberCount": 7,
+      "noticeFinding": "No mandatory package-wide notices; preserve optional notices already present."
+    },
+    "rifeModelInventory": {
+      "modelCount": 47,
+      "correctedPin": {
+        "model": "rife_v4.18_ensemble.onnx",
+        "bytes": 10785406,
+        "sha256": "69c46eb0cf3c1874ca5278758a8e7c4df1b70d0feaa682ce895459b7a6fa9716"
+      },
+      "otherModelNamesSizesHashesMatchArchive": 46
+    },
+    "localCustomAji": {
+      "installRecord": ".probe-out/natural-rife-a42/native/components/aji/v0.9.0/trt/install.json",
+      "schema": 2,
+      "abi": 8,
+      "provenance": "local",
+      "heavyRifeSupported": true,
+      "publicDownloaderDefault": false
+    },
+    "planOnlySmoke": {
+      "plannedGraphCount": 47,
+      "allUsedExactBackendModelCodeEnsembleAndVerifiedGraph": true,
+      "engineBuildRequested": false,
+      "includesRifeV426Heavy": true
+    },
+    "freshSpatialEngineAttempt": {
+      "artifact": 340,
+      "retainedEngineAndLogs": ".probe-out/natural-spatial-a43/native/animejanai/models/spatial/",
+      "engineBuildSucceeded": true,
+      "tensorrt": "11.3.0 [b99]",
+      "elapsedSeconds": 18.527,
+      "engineMiB": 3.01755,
+      "graphSha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c",
+      "engineFile": "aji-1f13ce41.3460285348.trt-11.3.0.gpu-NVIDIA-GeForce-RTX-5090-sm12.engine",
+      "engineSha256": "a122bc35c163740a3eedb1221c72e289c296682594bc580ac5faa5676a6f74a8",
+      "overallProbe": "Failed/inconclusive after 626 seconds; 600-second wait timed out expecting incidental status text 'filter accepted'.",
+      "observedStatus": "filter retained (inference not observed)",
+      "observedConfiguration": "Engine loaded; configured slot 2001 for 320x180 to 640x360, depth 3; captured CUDA-graph chain; vo=libmpv 640x360 CUDA NV12.",
+      "statusPredicate": "The incidental 'filter accepted' predicate was a false failure and is now corrected in source; artifact 340 remains a failed run.",
+      "acceptanceBoundary": "Artifact 340 remains a failed historical attempt and is not a probe PASS; its false incidental-status gate was superseded by passing selected spatial run a46 (artifact 367)."
+    },
+    "previousSpatialEngineAttemptA44": {
+      "rawEngineBuildAndRenderLogs": "Fresh engine build and 640x output/render logs observed.",
+      "probeOverall": "Failed CRC filename filtering and an early raw-output read of 320 before configured-slot Core property reconfiguration."
+    },
+    "latestSpatialEngineAttempt": {
+      "artifact": 367,
+      "run": "a46",
+      "durationSeconds": 66.47,
+      "rawEngineBuildSeconds": 15.7249,
+      "rawEngineMiB": 2.98863,
+      "result": "FULL PASS on stage 7 current app/Core.",
+      "preRunSelectedEngineDirectory": "0 engines, 0 logs.",
+      "retainedPath": ".probe-out/natural-spatial-a46/native/animejanai/models/spatial/",
+      "evidenceLog": ".probe-out/natural-spatial-a46/qt-flow-proof.log",
+      "graphSha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c",
+      "engineBytes": 3133804,
+      "engineSha256": "0a3fd65a1de1abe5507a996ee571abfebef8eda3294046a195b91b4648c759c9",
+      "rawBuildLogSha256": "6275103a48408abde8b1eab59a1170f6d5def2ff874729f48e6fa42ad4fb8f82",
+      "rawEngineProof": "PASSED log SHA corresponds to exact --onnx graph SHA and --saveEngine actual CRC engine; all request-bound components=1.",
+      "configuredPath": "Core video-out-params 640x360; decoder input 320x180 NVDEC; @mikai_aji; configured slot 2001 GPU 320->640; four successful render flags after geometry.",
+      "renderEvidence": "Postfilter 73 rendered frames/3 seconds (24 fps unchanged); raw estimated 24; decoder/VO drops 0.",
+      "visualAndPlaybackChecks": "Nonblack changed/moving OpenGL frame and owned PlayerDialog capture on profile a46; Space pause, Right seek, volume 37/mute, audio/subtitle cycle, Off restoring hwdec, source reopen and shutdown surface passed.",
+      "processedImageSha256": "a5aee6310c2cea4404d8f93716a2a0f82dbaa4056ac92b00efb99d02cf7cb75e",
+      "acceptanceBoundary": "Passes this selected spatial model's fresh build/render/control playback run. It is not all-47 inference, numerical fidelity, private Ready/Active, or an FPS improvement claim."
+    },
+    "freshRifeEngineAttempt": {
+      "artifact": 349,
+      "model": "rife_v4.14_lite",
+      "rawEngineBuildSucceeded": true,
+      "approximateEngineSizeMiB": 9,
+      "approximateBuildSeconds": 42,
+      "enginePath": ".probe-out/natural-rife-a42/native/animejanai/models/rife/aji-a19419d9.1340852267.trt-11.3.0.gpu-NVIDIA-GeForce-RTX-5090-sm12.engine",
+      "buildLog": "sibling .build.log",
+      "priorRootEngineSnapshot": "empty",
+      "normalQtLibmpvPath": true,
+      "observations": "Runtime stats reported RIFE applied; ratio 2/1; padded 320x180 to 320x192 then cropped to 320x180; NewVideoFPS48; nonblack processed PNG and actual PlayerDialog PNG saved.",
+      "overallProbe": "Failed/unproven: request-bound artifact scan searched spatial plan.modelDir/wrong model identity; time-pos transition count was not presentation-frame cadence evidence.",
+      "acceptanceBoundary": "Artifact 349 was not overall PASS and its time-pos transitions were not frame evidence; corrected run artifact 366 passed the described selected-model rendered-frame count gate. No numerical fidelity, all-47 inference, private Ready/Active, or FPS improvement claim."
+    },
+    "latestRifeRun": {
+      "artifact": 366,
+      "durationSeconds": 88.63,
+      "rawEngineBuildSeconds": 38.932,
+      "rawEngineMiB": 9.12264,
+      "result": "FULL PASS on stage 7 current Core.",
+      "preRunSelectedEngineDirectory": "0 engines, 0 logs.",
+      "retainedPath": ".probe-out/natural-rife-a45/native/animejanai/models/rife/",
+      "evidenceLog": ".probe-out/natural-rife-a45/qt-flow-proof.log",
+      "model": "rife_v4.14_lite",
+      "modelCode": 4141,
+      "graphBytes": 5986311,
+      "graphSha256": "948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7",
+      "buildAndRender": "Natural Qt worker -> vf -> local custom ABI-8 -> trtexec raw engine; full PASSED footer matched exact ONNX and saveEngine; all request-bound components=1, not prebuilt.",
+      "engineBytes": 9565780,
+      "engineSha256": "e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22",
+      "buildLogSha256": "9ada04e23302c212641a0407193eab3c0aa80f0cd860d6db21f57b468fa59f59",
+      "runtimeObservation": "RIFE active at 2/1; NewVideoFPS48 reported; padded 320x192 then cropped to 320x180; actual NVDEC output 320x180.",
+      "presentationFrameCounter": "Successful MPV_RENDER_UPDATE_FRAME surface outputs over 3 seconds: baseline 73, processed 145 at equal resolution; time-pos events were 70 vs 72 and were not used as frame evidence. 1.5x minimum threshold passed.",
+      "processedImageSha256": "91ede513739640d2dacb86e3dbdfa48cabb8c4ecb6d99e194344b9f6fac40111",
+      "visualAndPlaybackChecks": "Nonblack/changed/moving processed image passed; PlayerDialog PNG recorded on profile a45; pause, Right seek, volume 37 and mute, audio/subtitle cycling, Off restoring hwdec, source reopen and shutdown surface all passed; postfilter raw estimated 48, decoder and VO drops 0.",
+      "identityBoundary": "Engine-to-active-model identity is inferred from exact configuration and fresh artifacts because Core has no engine-ID event.",
+      "acceptanceBoundary": "Passed this RIFE v4.14 lite fresh-build/render/interactions and relative presentation-output-count gate only; no numerical fidelity, all-47 inference, private Ready/Active, or FPS improvement claim."
+    },
+    "latestUnionBuild": {
+      "result": "Zero errors/warnings; CTest passed in 13.78 seconds.",
+      "ukrainianTranslations": "999 finished, 0 unfinished.",
+      "dist": "Rebuilt at stage 7."
+    },
+    "archiveExtractorInvestigation": {
+      "rootCause": "The existing 7zr fallback supports .7z only; the Aji install closure requires ZIP and NuGet handling.",
+      "release": "https://github.com/ip7z/7zip/releases/tag/26.03",
+      "assetListing": "https://github.com/ip7z/7zip/releases/expanded_assets/26.03",
+      "installerUrl": "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe",
+      "bootstrapUrl": "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe",
+      "acquiredOfficialTool": "7-Zip 26.03 x64 installer",
+      "bootstrapRole": "Verified 7zr bootstrap extracts the official self-extracting installer payload only; it is not used to extract ZIP/NuGet runtime archives.",
+      "verificationMethod": "SHA-256 values reproduced from the official release asset listing. The helper checks fetched installer/bootstrap bytes before writing; the installer is verified before bootstrap extraction. No separate on-disk post-download rehash claim.",
+      "payload": "On successful extraction, the bootstrap and installer are removed; 7z.exe, 7z.dll and other extracted payload files remain in cacheDir()/../tools/7zip-26.03, outside dist.",
+      "bootstrapSha256": "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d",
+      "installerSha256": "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd",
+      "licenseBasis": "Official 7-Zip licensing guidance identifies GNU LGPL for EXE/DLL use and requires identifying 7-Zip use plus a source link in documentation. Its unRAR restriction is unrelated to ZIP/7z extraction. The exact extracted license-file name/content was not inspected.",
+      "licenseSource": "https://www.7-zip.org/faq.html",
+      "laterGuiAttempt": {
+        "artifact": 351,
+        "result": "Selection/Verify/Review checks passed; DirectML install rejected a valid Windows path member as unsafe.",
+        "sourceCorrection": "Archive-member separator normalization was updated while retaining the safety guard.",
+        "fullInstallSuccessObserved": false
+      },
+      "successfulDirectMlInstall": {
+        "artifact": 357,
+        "result": "Actual DirectML download, install, and verification succeeded; selected DirectML remained selected and inactive corrupt TensorRT was ignored.",
+        "abi": 8,
+        "closure": "Four DirectML DLLs",
+        "installRecordSha256": "24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10",
+        "overallUiProbe": "Failed four shortcut/hidden-tab checks due false test predicates; not an installer failure."
+      },
+      "fullInstallFlowObserved": true
+    },
+    "guiRun343": {
+      "artifact": 343,
+      "result": "English/Ukrainian access to all 47 RIFE and five spatial choices; live catalog Save/refusal; Verify retained missing selected DirectML and inactive corrupt TensorRT status; selection survived refresh; Review Yes clicked; backend persistence passed.",
+      "downloadAttempt": "Failed before DirectML record creation: The verified runtime archive listing could not be read.",
+      "closureLimitation": "The default closure also needs the Aji ZIP and NuGet inputs; the seven-member TensorRT component archive alone is not the full install closure."
+    },
+    "latestGuiRun": {
+      "artifact": 361,
+      "durationSeconds": 13.68,
+      "result": "FULL PASS, zero failures.",
+      "shortcuts": "Native and Presets shortcuts visibly open their own pages; Ctrl+Alt+Shift+F12 glyphs and clear-inside checks pass.",
+      "geometry": "Save/Cancel at minimum 760x780, DPR 2 passed.",
+      "catalogAndSelection": "English/Ukrainian access to all 47 RIFE and five spatial choices passed; live language Save and missing-catalog refusal passed.",
+      "verification": "Missing selected DirectML versus inactive corrupt TensorRT Verify passed.",
+      "directMlInstall": "Actual Review Yes then default DirectML download/install/verify passed; four-DLL ABI-8 record.",
+      "directMlInstallRecordSha256": "24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10",
+      "distStage": "Stage 6 rebuilt; current application/Core are identical to stage 5.",
+      "fullInstallSuccessObserved": true
+    },
+    "redistributionAndCapabilityBoundary": "Artifact 361 GUI/settings/download/install/verification passed in full. RIFE artifact 366 and spatial artifact 367 passed their described fresh-build/render/control playback runs for the selected models; RIFE's relative output-count threshold passed. Engine-to-active-model identity remains inferred; numerical fidelity, all-47 inference, private Ready/Active, and FPS improvement are not established. ESC-1/2/3 remain open."
   },
   "escalationsSummary": {
     "open": [
       "ESC-1 (upstream inference source: no licence located, upstream terms not verified)",
       "ESC-2 (CC BY-NC-SA spatial graphs: redistribution not cleared under the recorded scope)",
-      "ESC-3 (RIFE graphs: whole-graph artefact redistribution unresolved)"
+      "ESC-3 (RIFE graphs: whole-graph artefact redistribution unresolved)",
+      "ESC-5 (trtexec developer-tool redistribution unresolved for official upstream-config first-build; private prepared-helper path alone avoids it)"
     ],
     "resolved": [
-      "ESC-4 (DirectML package licence obtained)",
-      "ESC-5 (trtexec.exe omitted by architecture)"
+      "ESC-4 (DirectML package licence obtained)"
     ],
     "advisoryOnly": [
       "ESC-6 (GPL-family obligations to discharge on the shipped core)"
     ],
-    "statement": "The Native bundle is redistribution 'blocked': its third-party components (ESC-1, ESC-2, ESC-3) have no established redistribution clearance, and none is claimed. The owner's 2026-10-04 grant covers this project's own integration code only (projectIntegrationGrant). M50 and M52 remain gated by those open items plus M04/M05 capability and runtime proof."
+    "statement": "The Native bundle is redistribution 'blocked': its third-party components (ESC-1, ESC-2, ESC-3) have no established redistribution clearance, and the official upstream-config TensorRT first-build path also has unresolved trtexec redistribution under ESC-5. None is claimed. The owner's 2026-10-04 grant covers this project's own integration code only (projectIntegrationGrant). M50 and M52 remain gated by those open items plus M04/M05 capability and runtime proof."
   },
   "projectIntegrationGrant": {
     "recordedOn": "2026-10-04",

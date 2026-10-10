@@ -1,34 +1,3 @@
-// The Processing tab's RIFE configuration surface: the typed controls that name
-// one RIFE request, and the one button that stores it.
-//
-// The panel is a *configuration* surface, not an execution one. It never claims
-// a graph runs: it builds the exact recipe the user described, stores it through
-// the user recipe store, and hands the stored id back so the parent combo and
-// the existing Save can select it. The request is legal on its own, even though
-// every capability is Unavailable in this build - blocking the configuration on
-// the missing runtime is exactly the coupling this surface removes.
-//
-// Three details are load-bearing.
-//
-//  * No ordinal identity. Variant, order and mode are read back by their typed
-//    value, and a reloaded recipe's settings are applied from its fields, never
-//    from a remembered index. A combo reordering cannot repoint a request.
-//
-//  * Combining needs a real, stored, spatial-only recipe. The base is re-read
-//    from the store by id at store time, so a removed or edited recipe is refused
-//    by name rather than combined from a stale list, and no chain is ever
-//    invented to fill an empty selection.
-//
-//  * No caption and no identity dictates the panel's width. A stored id is one
-//    unbroken token with no wrap point, and the choice captions are whole
-//    sentences: either one, reserved as a minimum width, would push the whole
-//    Processing page past the smallest window and force horizontal panning. The
-//    captions are therefore bounded - the combos take whatever width their row
-//    gives them, the role labels wrap, and a long choice stays readable in the
-//    tooltip and the popup - and the identity lives behind a disclosure row, in a
-//    read-only field that shows it verbatim and lets it be copied. Nothing here
-//    has to be panned to.
-
 #pragma once
 
 #include <optional>
@@ -50,7 +19,6 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
-class QToolButton;
 
 namespace mikai::app {
 
@@ -107,6 +75,11 @@ private:
     void retranslateUi();
 
     void storeRequest();
+    /// Rebuilds the variants for the selected revision from the exact pin table.
+    void updateVariantChoices();
+    /// Keeps the ensemble flag within combinations actually pinned for the
+    /// selected revision and variant.
+    void updateEnsembleChoice();
     void updateCombineControls();
     /// Shows the named reason the currently selected variant is not Ready, read
     /// from the capability table itself so the surface and the table cannot
@@ -118,15 +91,7 @@ private:
     std::optional<mplayer::native::Recipe> selectedBase(QString* reasonKey, QString* reason) const;
     void applyStoredRecipe(const mplayer::native::Recipe& recipe);
     QString recipeLabel(const mplayer::native::TemporalStage& stage, bool combined) const;
-    /// Reveals the exact identity of a stored request behind the panel's
-    /// disclosure row, or collapses the row again when there is no id: the field
-    /// is never filled with a placeholder that is not an id this store issued.
-    void showRequestId(const QString& id);
-    /// Shows the status text. `detail` is the exact identity the text describes
-    /// (a stored id); it goes to the tooltip - and therefore to the accessible
-    /// description - rather than into the label, because an unbroken id would
-    /// otherwise set the panel's minimum width.
-    void showStatus(bool ok, const QString& text, const QString& detail = QString());
+    void showStatus(bool ok, const QString& text);
 
     mplayer::native::Backend requestedBackend_ = mplayer::native::Backend::TensorRT;
 
@@ -143,14 +108,6 @@ private:
     /// built with.
     QStringList roleCaptionKeys_;
 
-    /// The explanation beside the ensemble check box. A separate caption rather
-    /// than part of the check box's own text, because a check box cannot wrap;
-    /// it is restated with the rest.
-    QLabel* ensembleHint_ = nullptr;
-    /// The bare stored id the status line currently describes, kept beside the
-    /// sentence so a retranslation can restate the tooltip's own caption around
-    /// the exact same id. Empty when the status names no id.
-    QString statusDetailId_;
     /// The locale the threshold editor's current text was rendered in. It is
     /// recorded on every write, because a retranslation happens after the
     /// default locale has already moved on, and a number the user typed under
@@ -158,6 +115,7 @@ private:
     /// number it was.
     QLocale thresholdLocale_;
 
+    QComboBox* version_ = nullptr;
     QComboBox* variant_ = nullptr;
     QCheckBox* ensemble_ = nullptr;
     QSpinBox* factorNum_ = nullptr;
@@ -169,8 +127,6 @@ private:
     QComboBox* base_ = nullptr;
     QPushButton* storeButton_ = nullptr;
     QLabel* status_ = nullptr;
-    QToolButton* idToggle_ = nullptr;
-    QLineEdit* idEdit_ = nullptr;
 };
 
 }  // namespace mikai::app

@@ -1,4 +1,4 @@
-// The pinned AnimeJaNai `3.6.3` component catalogue. See
+// The pinned AnimeJaNai `3.7.0` component catalogue. See
 // NativeComponentCatalog.hpp for the rules; this file is their one
 // implementation.
 
@@ -11,7 +11,7 @@ namespace native {
 
 namespace {
 
-constexpr char kReleaseTag[] = "3.6.3";
+constexpr char kReleaseTag[] = "3.7.0";
 constexpr char kRepository[] = "the-database/mpv-AnimeJaNai";
 
 /// A row's file list is a fixed-size slot array padded with nulls, and the walk
@@ -29,46 +29,46 @@ struct PackRow {
     const char* resourceFile;
 };
 
-/// The Windows assets of the `3.6.3` release. The release also publishes
+/// The Windows assets of the `3.7.0` release. The release also publishes
 /// `-linux-x64` variants of the same packs; those are not this build's
 /// platform and are not part of the catalogue.
 constexpr PackRow kRows[] = {
     // trtexec.exe is deliberately excluded: nothing in this build invokes it.
     {"trt-runtime", "component-trt-runtime.7z", 186822775,
-     "f00ec45133e86965e0b5c91e3c7727c7264bb6029505bdc044b2146983b57a0b",
+     "282cb9b178db241f61f7aedf1ef214af56c2a342428253d04a8d8916d6729373",
      {"cudart64_13.dll", "CUDA_LICENSE.txt", "DirectML_LICENSE.txt", "nvinfer_11.dll",
       "nvinfer_plugin_11.dll", "nvonnxparser_11.dll"},
      ""},
     {"trt-sm75", "component-trt-sm75.7z", 90359224,
-     "9aa6ac39c328e197eaf99265ed04a94e8e9988358d9c7f9a047c59fe12ac4476",
+     "4bc46f2fd2e9aad1b90666e634334197a28348f24f9a1bdb0d07fadc59b3bc4f",
      {"nvinfer_builder_resource_sm75_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm75_11.dll"},
     {"trt-sm80", "component-trt-sm80.7z", 160207044,
-     "5f4806ea00044774da927471d0f44d45f54567dfeeb4d0eaef52524a8b89a2b7",
+     "5bfe7a9288e866baa8111c851634ec077572130527ebe8844a74109e6a0e5393",
      {"nvinfer_builder_resource_sm80_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm80_11.dll"},
     {"trt-sm86", "component-trt-sm86.7z", 149799926,
-     "be567cd6b51dedf6fa964c069e4590ae20b2dec9febea4a7857f7e719f5f2b95",
+     "bdbdc7b92cc3143f76045263a08e506af4594e717763d118ac65404b7ba0b23a",
      {"nvinfer_builder_resource_sm86_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm86_11.dll"},
     {"trt-sm89", "component-trt-sm89.7z", 158554965,
-     "7de69ef11a1e2a033cec5837a0ead9c85d1cd6f13bfebd42d3374006ffec2c1d",
+     "34bd51be1cb1581db3e494d1b30732c926cd9ac1a340efabdf0f9148911fdc87",
      {"nvinfer_builder_resource_sm89_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm89_11.dll"},
     {"trt-sm90", "component-trt-sm90.7z", 420452077,
-     "d560e829c32cb809b1faf87fe71e17ff82fa343f834c6a6d75416beb8525da6a",
+     "b884e983b8b0d61ecebf9990fbed6a3fa13023b5cf9b4c2920933777e5f5ceb5",
      {"nvinfer_builder_resource_sm90_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm90_11.dll"},
     {"trt-sm100", "component-trt-sm100.7z", 251528952,
-     "aeafa38abb96335b76286f31c29f76181f75339a6ac727a4d42bfee9467920a4",
+     "98a4ab1a906123ba61db70cc470c13595b60cf94acde6625c53ad5556a58f447",
      {"nvinfer_builder_resource_sm100_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm100_11.dll"},
     {"trt-sm120", "component-trt-sm120.7z", 229417183,
-     "db69ffdf1b658f290db63546433295ea640339840087a5c460d334521dd588a6",
+     "954821ef65824b0c766998db7d2ae49c68041dac7f78328152ec41f674378c15",
      {"nvinfer_builder_resource_sm120_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_sm120_11.dll"},
     {"trt-ptx", "component-trt-ptx.7z", 208391718,
-     "149fdc181da552ebf7b55bbe8f8544e1beee365d14564924d84b94646165a03f",
+     "7bd93d7f610ec31124b4ed677395e86337a0fbe9279d6315d7005d64f6dd398e",
      {"nvinfer_builder_resource_ptx_11.dll", nullptr, nullptr, nullptr, nullptr, nullptr},
      "nvinfer_builder_resource_ptx_11.dll"},
 };
@@ -110,6 +110,15 @@ QString componentReleaseUrl() {
 const QVector<ComponentPack>& tensorRtComponentCatalog() {
     static const QVector<ComponentPack> kCatalog = buildCatalog();
     return kCatalog;
+}
+const RifeArchivePack& rifeArchivePack() {
+    static const RifeArchivePack pack{
+        QStringLiteral("rife-3.7.0"),
+        QStringLiteral("component-rife.7z"),
+        QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-rife.7z"),
+        462444035,
+        QStringLiteral("d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251")};
+    return pack;
 }
 
 const ComponentPack* tensorRtRuntimePack() {

@@ -1,23 +1,13 @@
-// Two shader chains, side by side, on one frozen frame.
-//
-// Adapted from AnimeInterp's CompareWindow. The surface is a CompareCanvas that
-// takes its geometry from the pure buildLayout core, and the mode set is the
-// reference's own rather than a subset: Original, Processed, SplitH, SplitV,
-// SideBySide, Overlay, Flicker and Difference, each with the view controls that
-// mode actually uses.
-//
-// It is a viewer of stills. Nothing here rewrites the chain the player is
-// running; each side is rendered by applying its chain to one frozen frame
-// through a borrowed surface, so a difference between the two is the chain and
-// nothing else.
 #pragma once
 
 #include <QDialog>
+#include <QHash>
 #include <QImage>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
 
+#include <memory>
 #include <optional>
 
 #include "CompareLayout.hpp"
@@ -27,49 +17,53 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
-class QPushButton;
 class QSpinBox;
 class QStackedWidget;
 class QTimer;
-class QToolButton;
 
-namespace mplayer {
-namespace shell {
+namespace mplayer::shell {
 
+struct AjiPreparationTask;
+class CompareRenderer;
 class CompareCanvas;
 class CompareGrid;
 
+// Each candidate renders in an isolated core from one immutable source PNG.
 class CompareWindow : public QDialog {
     Q_OBJECT
 
 public:
-    /// `surface` is borrowed, not owned: the window reads frames from it and
-    /// never outlives the player that created it.
     CompareWindow(mplayer::VideoSurface* surface, const QString& currentCandidateId,
-                  QWidget* parent = nullptr);
+                  QWidget* parent = nullptr,
+                  native::Backend ajiBackend = native::Backend::TensorRT);
     ~CompareWindow() override;
 
-    /// The frame both sides are currently rendered from. Public so a test can
-    /// see WHICH picture the window froze, not just that something is on
-    /// screen: a stale frame and a fresh one are equally non-null.
-    QImage frozenFrame() const { return frame_; }
-    /// Empty unless the last capture failed, in which case it says why and the
-    /// window is showing the failure rather than an older picture.
+    QImage frozenFrame() const { return isolatedOriginal_; }
+    std::optional<double> frozenPlaybackTimestamp() const { return frozenPlaybackTimestamp_; }
+    uint64_t frozenSourceEpoch() const { return frozenSourceEpoch_; }
+    QImage renderedSideA() const { return renderedA_; }
+    QImage renderedSideB() const { return renderedB_; }
+    bool comparisonPending() const {
+        return rendering_ || captureFrameActive_ || pendingAjiPreparation_ ||
+               !pendingAjiId_.isEmpty() || playbackReleasePending_ || playbackNeedsRecapture_;
+    }
+    /// True only while the frame capture is running. The show path captures
+    /// synchronously and finishes with either a frozen frame or a named
+    /// refusal, so a caller reads this to tell those two apart instead of
+    /// guessing from a delay.
+    bool captureInProgress() const { return captureFrameActive_; }
+    /// Whether the window still owns the playback hold it took for its frozen
+    /// frame. A capture can succeed and still lose the hold, which is a
+    /// different fault from a refusal and must be named separately.
+    bool playbackHeld() const { return playbackHoldActive_; }
+    QString candidateError(const QString& id) const { return ajiErrors_.value(id); }
     QString captureError() const { return captureError_; }
-    /// Empty when the native plan is held (or when there is no source to hold),
-    /// otherwise the named reason it could not be frozen - so a caller can tell
-    /// "nothing to freeze" from "refused to freeze".
     QString lockError() const { return lockError_; }
-    /// The surface's own native-transition queue depth, read live: the window
-    /// owns no queue, and a request made while the lock is held changes no
-    /// published status, so a cached copy would go stale.
     int queuedNativeChanges() const {
         return surface_ != nullptr ? surface_->queuedNativeTransitions() : 0;
     }
-    /// Re-freezes the live surface at wherever the player is now. Every
-    /// explicit extraction goes through here, so "capture again" can only ever
-    /// mean "capture this position".
     void captureNow();
+    void setAjiBackend(native::Backend backend);
 
 private slots:
     void onModeChanged(int index);
@@ -81,53 +75,39 @@ private slots:
     void onHoverPixel(int x, int y, bool valid);
 
 protected:
-    /// The window is kept and reused by the player, so being shown again is
-    /// the viewer's "compare where I am now" and has to take a new frame.
     void showEvent(QShowEvent* event) override;
-    /// Releasing here, not only in the destructor, is what lets a native request
-    /// made while Compare was open be applied the moment the window closes.
     void closeEvent(QCloseEvent* event) override;
-    /// close() hides the window, so the lock is released here as well: a hidden
-    /// Compare window never keeps the native plan frozen.
     void hideEvent(QHideEvent* event) override;
 
 private:
     void buildUi();
-    /// Fills the catalogue and opens on the running chain as A and the next
-    /// preset as B. The viewer picks sides from the badges on the pictures.
     void populateCandidates();
-    /// Freezes the frame the live surface is showing right now, at whatever
-    /// position the player is parked on. It does not seek: a capture is a
-    /// reading of the player, not a command to it.
+    void acquirePlaybackHold();
+    bool playbackHoldOwned() const;
+    void requestPlaybackHoldRelease();
+    void finishDeferredPlaybackHoldRelease();
+    void onPlaybackStateChanged(bool playing);
+    void maintainPlaybackHold();
+    void tryRecaptureAfterPause();
+    void invalidateFrozenPlayback(const QString& reason);
+    void clearGridPanes();
+    void flushDeferredGridClear();
     void captureFrame();
-    /// Grabs the framebuffer once it has stopped changing, and only once the
-    /// surface has stopped reporting a move. Null when no settled frame is
-    /// available; never the previous picture.
-    QImage grabSettledFrame(double* settledPosition);
+    QImage grabSettledFrame();
+    std::optional<double> readPlaybackTimestamp();
     void render();
-    /// Applies `id` to the borrowed core and returns the settled frame that
-    /// comes back. Empty when there is no surface or no frame to work from.
-    QImage renderWithChain(const QString& id);
+    void renderOnce();
+    QImage renderIsolated(const QString& id);
+    void dismissCandidateMenus();
     void updateInfo();
     void updateFlickerTimer();
-    /// Takes the real native-plan lock the open window holds for its whole
-    /// lifetime, so no admission, drain, suspend or resume can move the plan
-    /// under the frozen frame. False, with `lockError_` set, when a transition is
-    /// settling and the one retry also failed - the window then says so instead
-    /// of freezing a plan that is about to change.
     bool ensurePlanLock();
     void releasePlanLock();
-    /// The surface published a native status: refresh the on-demand queue depth
-    /// and retry a lock that was refused while a transition was settling.
     void onNativeStatusSettled();
     QString sideA() const;
     QString sideB() const;
     QString labelFor(const QString& id) const;
 
-    /// Borrowed, not owned: the player that created the window holds the
-    /// surface, and it can be destroyed while this window is pumping the event
-    /// loop mid-capture. A QPointer makes that a null check instead of a
-    /// dangling read; every post-pump touch goes through the guard.
     QPointer<mplayer::VideoSurface> surface_;
     CompareCanvas* canvas_ = nullptr;
     CompareGrid* grid_ = nullptr;
@@ -142,39 +122,57 @@ private:
     QLabel* info_ = nullptr;
     QLabel* hover_ = nullptr;
     QTimer* flickerTimer_ = nullptr;
+    ProcessingOverlay* processingOverlay_ = nullptr;
+    bool buildOperationActive_ = false;
 
+    // Exact live pixels are retained only to guard main playback preservation;
+    // canonical comparison input comes from the isolated unprocessed core.
     QImage frame_;
+    std::shared_ptr<CompareRenderer> isolatedRenderer_;
+    QImage isolatedOriginal_;
+    uint64_t frozenSourceEpoch_ = 0;
+    std::optional<double> frozenPlaybackTimestamp_;
     QImage renderedA_;
     QImage renderedB_;
-    /// Why the last capture produced no frame, shown in place of the picture.
-    /// A capture that cannot read a fresh frame fails visibly rather than
-    /// falling back on the previous one.
+    QString renderedAId_;
+    QString renderedBId_;
+    native::Backend renderedBackend_ = native::Backend::TensorRT;
     QString captureError_;
-    /// Counts the surface's position updates. The surface reports its position
-    /// from a 50 ms pump, so a capture has to know whether a move is still
-    /// being reported before it can trust the framebuffer: without this, a
-    /// rewind followed immediately by a capture reads the position and the
-    /// picture of the frame the viewer just left.
     quint64 positionEpoch_ = 0;
     QStringList candidates_;
-    /// The player-menu presets the badge menus offer, with the same ids, labels
-    /// and category paths. Built once with `candidates_`.
     QVector<ChoiceEntry> choices_;
-    /// The ids the viewer has picked, A first. Empty when nothing is on disk.
+    QHash<QString, native::Backend> ajiBackends_;
+    QHash<QString, QString> ajiErrors_;
     QStringList selection_;
     QString currentCandidateId_;
+    native::Backend ajiBackend_ = native::Backend::TensorRT;
     CompareMode mode_ = CompareMode::SideBySide;
     bool flickerShowA_ = true;
 
-    /// The real native-plan lock, held while the window is visible so no native
-    /// transition can move the plan under the frozen frame.
     std::optional<mplayer::VideoSurface::NativePlanLock> nativeLock_;
-    /// The named reason the lock could not be taken; empty when it was.
     QString lockError_;
-    /// Set when a lock was refused because a transition was settling, so the
-    /// next settled status retries it exactly once rather than spinning.
     bool lockRetryArmed_ = false;
+    bool rendering_ = false;
+    bool renderQueued_ = false;
+    bool playbackHoldActive_ = false;
+    bool playbackHoldOriginalPlaying_ = false;
+    bool playbackHoldMutation_ = false;
+    bool playbackReleasePending_ = false;
+    bool deferredPlanLockRelease_ = false;
+    bool playbackHoldFailed_ = false;
+    bool playbackNeedsRecapture_ = false;
+    bool captureFrameActive_ = false;
+    bool playbackHoldRetryScheduled_ = false;
+    int playbackHoldRetryCount_ = 0;
+    uint64_t playbackHoldSourceEpoch_ = 0;
+    quint64 playbackHoldGeneration_ = 0;
+    quint64 selectionGeneration_ = 0;
+    quint64 activeRenderGeneration_ = 0;
+    QString pendingAjiId_;
+    bool pendingAjiPreparation_ = false;
+    std::shared_ptr<AjiPreparationTask> preparationTask_;
+    int menuActivationDepth_ = 0;
+    bool gridTeardownDeferred_ = false;
 };
 
-}  // namespace shell
-}  // namespace mplayer
+}  // namespace mplayer::shell

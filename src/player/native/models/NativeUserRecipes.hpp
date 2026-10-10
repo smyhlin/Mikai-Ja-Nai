@@ -59,7 +59,7 @@ QString spatialRecipeIdFor(const ModelRecord& model, Backend backend);
 
 class UserRecipeStore {
  public:
-  /// `AppLocalDataLocation()/native/recipes`. Never created by this call.
+  /// `<applicationDirPath>/native/recipes`. Never created by this call.
   static QString defaultRoot();
 
   /// The app-owned default root. Never created by this call.

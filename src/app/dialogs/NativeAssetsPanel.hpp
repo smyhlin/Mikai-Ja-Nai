@@ -1,12 +1,11 @@
-// M35's assets surface: the owned-model inventory, the prepared-artifact cache,
-// and the pinned source-asset store this build can honestly offer downloads into.
+// M35's assets surface: the owned-model inventory, prepared-artifact cache,
+// and one-shot preparation action.
 //
 // Four rules are load-bearing here.
 //
 //  * The inventory is the store's own rows, proved against their immutable
-//    copies. A non-FP16 graph is shown with `model.io.unsupported` and its
-//    observed dtype, and it is NOT selectable - recording why a graph cannot be
-//    used is the point, converting it or claiming it runs is not.
+//    copies. Its visible columns are model, role and the store's readiness
+//    status; the full model facts remain available to data consumers.
 //
 //  * Importing is never done on the GUI thread. The inspection and the publish
 //    run on the runner's pool, cancellation is a shared atomic gate the worker
@@ -21,14 +20,9 @@
 //    holds it (that refusal is `removeArtifact`'s, and is surfaced verbatim). No
 //    staging directory, foreign file or unowned path is ever removed.
 //
-//  * A source asset is downloaded, verified and published, in that order, off
-//    the GUI thread. The five rows are the pinned original graphs and a row is
-//    selected by its digest, never its label; the payload is accepted only when
-//    it hashes and measures exactly as the catalogue says, and only then does
-//    `publishSpatialAssetBytes` write it into the app-owned store. A cancelled
-//    download that lost the publication race is still reported as committed. The
-//    prepared engine remains unavailable - a downloaded graph is an input, not a
-//    Ready pipeline - and RIFE weights are not offered: their lineage is open.
+//  * Downloads live in the Components tab, not here. The source-asset data API
+//    below stays for the callers that resolve a catalogue row by digest; it
+//    drives no widget of its own.
 //
 // This header carries no ONNX Runtime type and no ORT include; the inventory
 // listing is compiled in only when the model-inspection target is built, and a
@@ -57,6 +51,7 @@
 #include <native/models/NativeSpatialAssets.hpp>
 
 class QEvent;
+class QShowEvent;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -66,11 +61,6 @@ class QTableWidget;
 
 namespace mikai::app {
 class Runner;
-class NativeComponentProvisioner;
-}
-
-namespace mikai::backend {
-class MikaiClient;
 }
 
 namespace mplayer::native {
@@ -108,13 +98,6 @@ struct NativePreparationToolchain {
   /// worker refuses by name rather than inventing a digest.
   QString coreSha;
   int sourceAbi = 0;
-  /// Where the TensorRT builder resource this machine needs came from: the
-  /// bundle's own `trt` directory, or the app-owned component store when the
-  /// bundle carries no resource for this GPU. `componentFromStore` is the one
-  /// fact the panel renders differently; `componentPackName` names the pack.
-  bool componentFromStore = false;
-  QString componentPackName;
-  qint64 componentPackBytes = 0;
   QString reasonKey;
   QString reason;
 };
@@ -225,13 +208,13 @@ public:
   /// refused by name: this widget never runs an import on the GUI thread.
   void setRunner(mikai::app::Runner* runner);
 
-  /// The TensorRT component provisioner this panel drives. Optional and
-  /// null-safe: without one the component section reports the observed state and
-  /// offers no download. The caller owns the provisioner.
-  void setComponentProvisioner(NativeComponentProvisioner* provisioner);
-
   /// Re-reads the owned store and the artifact cache. Creates neither root.
+  /// The first read is deferred until this panel is shown.
   void refresh();
+
+  /// Whether the owned store has been read for this panel yet. Hidden panels
+  /// defer that work until first shown.
+  bool hasRefreshed() const { return initialRefreshDone_; }
 
   /// The rows the table currently shows, in store order.
   const QVector<NativeModelView>& models() const { return models_; }
@@ -260,41 +243,12 @@ public:
   /// false with `statusKey`/`statusReason` set on any refusal.
   bool deleteCacheEntry(const QString& buildKey);
 
-  /// The backend client real downloads run through. The caller owns it (the
-  /// settings dialog passes its own); this panel only borrows it. `fetchBytes`
-  /// is the anonymous artwork path and bypasses the API limiter, so a download
-  /// costs no API budget and needs no credential. Without one, downloading is
-  /// refused by name.
-  void setClient(mikai::backend::MikaiClient* client);
-
-  /// The pinned catalogue this panel offers, in the record's order.
+  /// The pinned spatial-asset catalogue, in the record's order.
   const QVector<mplayer::native::SpatialAsset>& sourceAssets() const { return sourceAssets_; }
   /// The copies actually proved present in the app-owned asset store.
   const QVector<mplayer::native::StoredSpatialAsset>& publishedAssets() const {
     return publishedAssets_;
   }
-
-  /// Selects a catalogue row by its stable id (`sha256:<hex>`). Returns false,
-  /// with `statusKey`/`statusReason` set, for an id this catalogue does not
-  /// carry. The id, never the label, is the selection.
-  bool selectSourceAsset(const QString& id);
-  QString selectedSourceAssetId() const { return selectedSourceAssetId_; }
-
-  /// Submits one real download of the selected pinned asset through the runner
-  /// and the backend client. The payload is verified against the catalogue's
-  /// digest and length before any publication. Returns false, with
-  /// `statusKey`/`statusReason` set, when it cannot be submitted at all (no
-  /// selection, no client, no runner, or a download already in flight).
-  /// Completion is asynchronous and arrives via `downloadFinished`.
-  bool downloadSelectedSourceAsset();
-
-  /// Asks an in-flight download to stop before publication begins. The GUI
-  /// thread never waits for the worker. A download that already began publishing
-  /// is refused by name (`native.download.commitInProgress`) and its committed
-  /// result is still reported, never concealed.
-  void cancelDownload();
-
-  bool downloadInFlight() const { return downloadInFlight_; }
 
   /// Absolute path of a copy `publishedAssets()` proved, or empty.
   QString publishedAssetPath(const QString& id) const;
@@ -395,14 +349,12 @@ public:
   bool selectModelAsRecipe(const QString& modelId);
 
 signals:
+  /// The owned model catalogue changed after a refresh.
+  void catalogRefreshed();
+
   /// Delivered on the GUI thread once the submitted import settled - accepted,
   /// refused or cancelled. `ok` is the store's own `ModelImportOutcome::ok`.
   void importFinished(bool ok);
-
-  /// Delivered on the GUI thread once the submitted download settled - the
-  /// asset was verified and published, or it was refused or cancelled. `ok` is
-  /// the store's own verdict.
-  void downloadFinished(bool ok);
 
   /// The stable id of a recipe the user just registered. The settings dialog
   /// rebuilds its recipe choices from it and selects it; only its Save writes
@@ -428,10 +380,10 @@ signals:
 
 protected:
   void changeEvent(QEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
 private:
   struct ImportResult;
-  struct DownloadResult;
   struct PrepareResult;
 
   QSize minimumSizeHint() const override;
@@ -440,29 +392,23 @@ private:
   /// headings, the hints, the buttons, the accessible names, the two tables'
   /// column headers and the stage fields' captions.
   ///
-  /// The table *cells* are not repainted from a re-read: a row's label, dtype,
-  /// size, backend list, digest and reason are the store's own record, and
-  /// re-reading it to say the same thing in a new language would move the user's
-  /// selection and drop an in-flight job's visible state. What is restated is
-  /// the panel's own chrome around those facts.
+  /// The model rows are not re-read to retranslate their visible label, role and
+  /// status: doing so would move the user's selection and drop an in-flight job's
+  /// visible state. What is restated is the panel's own chrome.
   ///
-  /// An import or download in flight is left running: its worker, its
+  /// An import or preparation in flight is left running: its worker, its
   /// cancellation gate and its generation are untouched, and its completion
   /// still paints itself in the language that is active when it arrives.
   void retranslateUi();
   void refreshModels();
   void refreshCache();
-  void refreshSourceAssets();
+  /// Re-reads the pinned catalogue and the published copies without touching a
+  /// widget; imports and probes resolve those records by digest.
+  void refreshSourceData();
   void applyStatus(const QString& key, const QString& reason, QLabel* target);
-  /// Shows as much of the real store path as actually fits: elided in the middle
-  /// only when the whole of it does not, so the caption never dictates the
-  /// page's minimum width and nothing about the store is concealed.
-  void updateStoreRootCaption();
-  void resizeEvent(QResizeEvent* event) override;
   void updateImportControls();
-  void updateDownloadControls();
+  void updateSummaries();
   void finishImport(const std::shared_ptr<ImportResult>& result, quint64 generation);
-  void finishDownload(const std::shared_ptr<DownloadResult>& result, quint64 generation);
   void finishPrepare(const std::shared_ptr<PrepareResult>& result, quint64 generation);
   /// The context this instant's provider returns, pulled fresh and never cached.
   std::optional<mplayer::native::NativePreparationContext> currentContext() const;
@@ -476,10 +422,6 @@ private:
   /// observed context, toolchain, recipe and owned models. Called on every
   /// selection change and refresh; it never starts work.
   void updatePrepareControls();
-  /// Re-renders the GPU/component status line and the download controls from the
-  /// observed device, the needed pack and the component store. Never downloads.
-  void refreshComponents();
-  void updateComponentControls();
   /// The named reason preparation cannot be submitted, or both empty when every
   /// prerequisite is observed.
   void prepareRefusal(QString* reasonKey, QString* reason) const;
@@ -491,17 +433,13 @@ private:
   bool inspectorBuilds() const;
 
   mikai::app::Runner* runner_ = nullptr;
-  mikai::backend::MikaiClient* client_ = nullptr;
   mplayer::native::InspectionRuntime runtime_;
   QString modelRoot_;
   mplayer::native::ArtifactStore artifacts_;
+  bool initialRefreshDone_ = false;
 
   QVector<mplayer::native::SpatialAsset> sourceAssets_;
   QVector<mplayer::native::StoredSpatialAsset> publishedAssets_;
-  QString selectedSourceAssetId_;
-  bool downloadInFlight_ = false;
-  quint64 downloadGeneration_ = 0;
-  std::shared_ptr<mplayer::native::ImportCancellation> downloadCancel_;
 
   QVector<NativeModelView> models_;
   QVector<mplayer::native::StoredModel> storedModels_;
@@ -548,19 +486,14 @@ private:
   QTableWidget* modelTable_ = nullptr;
   QTableWidget* cacheTable_ = nullptr;
   QListWidget* stagingList_ = nullptr;
-  QLabel* storeRootLabel_ = nullptr;
   QLabel* modelStatus_ = nullptr;
   // Retranslation handles: the section headings and hints this panel writes,
   // which are locals in buildUi() and would otherwise only be reachable by
   // walking the layout.
   QLabel* inventoryHeading_ = nullptr;
-  QLabel* sourceHeading_ = nullptr;
-  QLabel* sourceHint_ = nullptr;
   QLabel* preparationHeading_ = nullptr;
   QLabel* cacheHeading_ = nullptr;
-  QLabel* componentHeading_ = nullptr;
   QLabel* stagingHeading_ = nullptr;
-  QLabel* downloadHint_ = nullptr;
   QLabel* cacheDeleteHint_ = nullptr;
   QLabel* stagingDiscardHint_ = nullptr;
   QLabel* stageWidthLabel_ = nullptr;
@@ -569,32 +502,22 @@ private:
   QLabel* importStatus_ = nullptr;
   QLabel* preparationReason_ = nullptr;
   QLabel* cacheStatus_ = nullptr;
-  QLabel* stagingStatus_ = nullptr;
-  QLabel* componentGpuLabel_ = nullptr;
-  QLabel* componentPackLabel_ = nullptr;
   QPushButton* importButton_ = nullptr;
   QPushButton* cancelImportButton_ = nullptr;
   QPushButton* selectRecipeButton_ = nullptr;
   QPushButton* prepareButton_ = nullptr;
   QPushButton* cancelPrepareButton_ = nullptr;
   QLabel* prepareProgress_ = nullptr;
-  QPushButton* downloadButton_ = nullptr;
   QPushButton* deleteCacheButton_ = nullptr;
   QPushButton* discardStagingButton_ = nullptr;
+  QPushButton* importDetailsToggle_ = nullptr;
+  QPushButton* cacheDetailsToggle_ = nullptr;
+  QWidget* importDetails_ = nullptr;
+  QWidget* cacheDetails_ = nullptr;
   QLineEdit* stageWidthEdit_ = nullptr;
   QLineEdit* stageHeightEdit_ = nullptr;
-
-  QTableWidget* sourceTable_ = nullptr;
-  QLabel* sourceStatus_ = nullptr;
-  QLabel* licenseLabel_ = nullptr;
-  QProgressBar* downloadProgress_ = nullptr;
-  QPushButton* downloadCancelButton_ = nullptr;
-  QPushButton* importSourceButton_ = nullptr;
-  QPushButton* componentDownloadButton_ = nullptr;
-  QPushButton* componentCancelButton_ = nullptr;
-  QProgressBar* componentProgress_ = nullptr;
-  QLabel* componentStatus_ = nullptr;
-  mikai::app::NativeComponentProvisioner* componentProvisioner_ = nullptr;
+  QLabel* modelSummary_ = nullptr;
+  QLabel* stagingNote_ = nullptr;
 };
 
 }  // namespace mikai::app

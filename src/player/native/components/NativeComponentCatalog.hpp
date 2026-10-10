@@ -1,10 +1,11 @@
 // The pinned AnimeJaNai component catalogue: the TensorRT runtime pack, one
-// builder-resource pack per published compute generation, and the PTX pack.
+// builder-resource pack per published compute generation, the PTX pack, and the
+// separate RIFE archive transport pin. RIFE graph identity lives in NativeRife.
 //
 // Three decisions are load-bearing here.
 //
 //  * The catalogue is data, not a lookup against the network. Every asset name,
-//    byte count and SHA-256 of the `3.6.3` release is pinned in this table, so a
+//    byte count and SHA-256 of the `3.7.0` release is pinned in this table, so a
 //    re-uploaded asset is refused by digest at the transport rather than
 //    installed, and no run-time decision depends on GitHub being reachable.
 //    Bumping the release means editing this table and `native/manifest/
@@ -50,7 +51,7 @@ struct ComponentPack {
     QString resourceFile;
 };
 
-/// The pinned release tag, "3.6.3".
+/// The pinned release tag, "3.7.0".
 QString componentReleaseTag();
 
 /// The release page the assets above come from.
@@ -59,6 +60,17 @@ QString componentReleaseUrl();
 /// Every pinned pack, runtime first, then the resource packs in generation order
 /// and the PTX pack last.
 const QVector<ComponentPack>& tensorRtComponentCatalog();
+/// The independently downloadable Windows RIFE 3.7.0 archive. Its graph inventory
+/// comes from rifeModelPins(); this pack describes only the archive transport.
+struct RifeArchivePack {
+    QString name;
+    QString asset;
+    QString url;
+    qint64 assetBytes = 0;
+    QString assetSha256;
+};
+
+const RifeArchivePack& rifeArchivePack();
 
 /// The pack named "trt-runtime"; never null while the table is compiled in.
 const ComponentPack* tensorRtRuntimePack();

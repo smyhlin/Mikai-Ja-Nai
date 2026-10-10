@@ -6,6 +6,7 @@
 
 #include <backend/Runtime.hpp>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
@@ -27,15 +28,45 @@ using mplayer::native::RuntimeSelection;
 
 namespace {
 
-/// The directory holding the first stock candidate the selection would walk, or
-/// nothing when this machine has none. The suite never downloads: a missing
-/// runtime skips the live cases instead of starting a network fetch.
-std::optional<QString> stockRuntimeDir() {
+bool writeFileBytes(const QString& path, const QByteArray& data);
+
+/// The directory holding the first packaged candidate the selection would
+/// walk, or nothing when this machine has none. The suite never downloads.
+std::optional<QString> packagedRuntimeDir() {
     const QStringList candidates = mikai::backend::runtimeCandidates();
     if (candidates.isEmpty()) {
         return std::nullopt;
     }
     return QFileInfo(candidates.first()).absolutePath();
+}
+
+/// A DLL placed in the former per-user cache must not become a runtime
+/// candidate when the packaged module is absent.
+bool stockCacheIsExcluded() {
+    QTemporaryDir temp;
+    if (!temp.isValid()) return false;
+    const QByteArray previous = qgetenv("LOCALAPPDATA");
+    qputenv("LOCALAPPDATA", temp.path().toUtf8());
+
+    const QString stockCache =
+        QDir(temp.path()).filePath(QStringLiteral("MPVBackend/runtime"));
+    const QString stockModule = QDir(stockCache).filePath(QStringLiteral("mpv-2.dll"));
+    const bool written = writeFileBytes(stockModule, QByteArrayLiteral("stock runtime"));
+    const QStringList candidates = mikai::backend::runtimeCandidates();
+
+    if (previous.isNull()) {
+        qunsetenv("LOCALAPPDATA");
+    } else {
+        qputenv("LOCALAPPDATA", previous);
+    }
+    if (!written) return false;
+    const QString normalizedCache = QDir::cleanPath(stockCache) + QDir::separator();
+    for (const QString& candidate : candidates) {
+        if (QDir::cleanPath(candidate).startsWith(normalizedCache, Qt::CaseInsensitive)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool nativeBundleInstalled() {
@@ -302,14 +333,16 @@ void TestRuntimeSelection::aNativeDescriptorIsNeverLoadedFromItsLabelAlone() {
 }
 
 void TestRuntimeSelection::aRefusedNativeRequestFallsBackToStandardAndNamesWhy() {
+    QVERIFY2(stockCacheIsExcluded(),
+             "a DLL in the per-user cache must not be a runtime candidate");
     if (mplayer::native::runtimeSelected()) {
         QSKIP("a module was already pinned by an earlier case");
     }
     if (nativeBundleInstalled()) {
         QSKIP("a native bundle is installed, so the refusal path is not the one under test");
     }
-    if (!stockRuntimeDir().has_value()) {
-        QSKIP("no mpv runtime is present, and a test must not download one");
+    if (!packagedRuntimeDir().has_value()) {
+        QSKIP("no packaged mpv runtime is present");
     }
 
     const RuntimeSelection resolved = mplayer::native::resolveRuntime(RuntimeChoice::Native);
@@ -320,7 +353,7 @@ void TestRuntimeSelection::aRefusedNativeRequestFallsBackToStandardAndNamesWhy()
     QVERIFY2(resolved.nativeNotApplied, qPrintable(resolved.reason));
     QVERIFY(resolved.runtimeUnavailable);
     QVERIFY(!resolved.reason.isEmpty());
-    // The fallback is the real stock runtime, not a placeholder descriptor.
+    // The fallback is a real packaged Standard module, not a placeholder.
     QCOMPARE(resolved.kind, BundleKind::Standard);
     QVERIFY(!resolved.modulePath.isEmpty());
     QVERIFY(QFileInfo::exists(resolved.modulePath));
@@ -407,6 +440,60 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     QVERIFY(!refused.loaded);
     QVERIFY2(refused.reason.contains(QStringLiteral("does not match")), qPrintable(refused.reason));
     QVERIFY(!mplayer::native::runtimeSelected());
+}
+
+void TestRuntimeSelection::forkIdentityRequiresTheValidatedModuleAndActualApi() {
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString modulePath = QDir(temp.path()).filePath(QStringLiteral("mpv-2.dll"));
+    QVERIFY(writeFileBytes(modulePath, QByteArrayLiteral("module")));
+
+    mplayer::native::Bundle bundle;
+    bundle.kind = BundleKind::Standard;
+    bundle.root = QDir(temp.path()).canonicalPath();
+    bundle.modulePath = QFileInfo(modulePath).canonicalFilePath();
+    bundle.files.append(mplayer::native::BundleFile{
+        QStringLiteral("mpv-2.dll"), 122146816,
+        QStringLiteral("90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649")});
+
+    RuntimeSelection selection;
+    selection.loaded = true;
+    selection.kind = BundleKind::Standard;
+    selection.modulePath = bundle.modulePath;
+    selection.apiVersion = 131077;
+    selection.version = QStringLiteral("stock-this-display-label-is-arbitrary");
+    selection.resolvedBundle = bundle;
+    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
+
+    selection.version = QStringLiteral("d6d93599d5-not-the-fork");
+    QVERIFY(mplayer::native::isAnimeJanaiForkRuntime(selection));
+
+    selection.resolvedBundle->files[0].sha256 = QString(64, QLatin1Char('0'));
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.resolvedBundle = bundle;
+    selection.resolvedBundle->files[0].bytes -= 1;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.resolvedBundle = bundle;
+    selection.apiVersion = 131076;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.apiVersion = 131077;
+    selection.kind = BundleKind::Native;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.kind = BundleKind::Standard;
+    selection.resolvedBundle->kind = BundleKind::Native;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.resolvedBundle = bundle;
+    selection.modulePath = QStringLiteral("different-module.dll");
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.modulePath = bundle.modulePath;
+    selection.resolvedBundle->files.clear();
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.resolvedBundle = bundle;
+    selection.loaded = false;
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
+    selection.loaded = true;
+    selection.resolvedBundle.reset();
+    QVERIFY(!mplayer::native::isAnimeJanaiForkRuntime(selection));
 }
 
 void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall() {
@@ -499,12 +586,26 @@ void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheRefe
     QCOMPARE(treeFingerprint(source), sourceBefore);
 }
 
-void TestRuntimeSelection::selectingStandardLoadsTheStockRuntimeWithoutTouchingIt() {
-    const std::optional<QString> stock = stockRuntimeDir();
-    if (!stock.has_value()) {
-        QSKIP("no mpv runtime is present, and a test must not download one");
+void TestRuntimeSelection::selectingThePackagedForkLoadsWithoutMutation() {
+    const QStringList candidates = mikai::backend::runtimeCandidates();
+    const QString packagedRoot =
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("mpv"));
+    QStringList packagedCandidates;
+    for (const QString& candidate : candidates) {
+        if (QDir::cleanPath(candidate).startsWith(
+                QDir::cleanPath(packagedRoot) + QDir::separator(), Qt::CaseInsensitive)) {
+            packagedCandidates.append(candidate);
+        }
     }
-    const QString root = stock.value();
+    if (!packagedCandidates.isEmpty()) {
+        QCOMPARE(candidates.first(), packagedCandidates.first());
+    }
+
+    const std::optional<QString> packaged = packagedRuntimeDir();
+    if (!packaged.has_value()) {
+        QSKIP("no packaged mpv runtime is present");
+    }
+    const QString root = packaged.value();
     const QString treeBefore = treeFingerprint(root);
     QVERIFY(!treeBefore.isEmpty());
     const QByteArray pathBefore = qgetenv("PATH");
@@ -522,7 +623,7 @@ void TestRuntimeSelection::selectingStandardLoadsTheStockRuntimeWithoutTouchingI
     QCOMPARE(mplayer::native::currentSelection().modulePath, selection.modulePath);
 
     // Selecting loads through the explicit loader: no PATH edit, no QDir
-    // search-path pretence, and not one byte of the stock tree written.
+    // search-path pretence, and not one byte of the packaged tree written.
     QCOMPARE(qgetenv("PATH"), pathBefore);
     QCOMPARE(QDir::searchPaths(QStringLiteral("mpv")), searchPathsBefore);
     QCOMPARE(treeFingerprint(root), treeBefore);
@@ -634,14 +735,13 @@ void TestRuntimeSelection::theUnavailablePlaybackLineNamesTheSameReasonAsTheStat
     if (mplayer::native::runtimeSelected()) {
         QSKIP("a module was already pinned by an earlier case");
     }
-    // M08's user-facing contract: a runtime that could not be produced produces
+    // M08's user-facing contract: a runtime that could not be found produces
     // one clear line naming why, never a silent black player. The title page and
     // the standalone player share this one text, so the same failure reads the
     // same way wherever it surfaces.
     //
     // Deliberately hermetic: this checks the two text surfaces against each
-    // other without resolving a runtime, because resolution is allowed to
-    // download and a test must never start a network fetch.
+    // other without resolving or loading a runtime.
     QVERIFY(!mplayer::native::runtimeSelected());
     QVERIFY(!mplayer::native::currentSelection().loaded);
 

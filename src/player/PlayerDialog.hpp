@@ -6,6 +6,7 @@
 #include <QPoint>
 #include <QPointF>
 #include <QPointer>
+#include <QSize>
 #include <QString>
 #include <QVariant>
 #include <QVariantMap>
@@ -29,9 +30,13 @@ class QVariantAnimation;
 class QWidget;
 QT_END_NAMESPACE
 
+#include <atomic>
+#include <cstdint>
+#include <memory>
 #include <optional>
 
 #include "Anime4K.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "ProcessingSettingsIntent.hpp"
 #include "native/prepare/NativeFrameFixture.hpp"
 #include "native/status/NativeMenu.hpp"
@@ -78,6 +83,13 @@ public:
 /// A frameless always-on-top float showing the same stream in its own
 /// VideoSurface: mpv gives one core per surface, so the float decodes a second
 /// time rather than sharing a handle it cannot have.
+///
+/// It is placed FREELY. A drag drops it exactly where the pointer leaves it -
+/// no snap-to-corner on release, no re-pin to a corner on resize, show, or
+/// re-entry. The single placement rule is reachability: some part of the float
+/// must share pixels with a work area, or it cannot be clicked or dragged back.
+/// A pooled float re-enters at the exact position and size the viewer last left
+/// it; only an unreachable position (a monitor that went away) is corrected.
 class PipFloat : public QWidget {
     Q_OBJECT
 
@@ -86,8 +98,11 @@ public:
 
     VideoSurface* videoSurface() const { return surface_; }
     /// Opens `url` and seeks to `position` once the stream is up.
-    void openStream(const QString& url, double position);
-    /// Parks the float against a screen work area, bottom-right by default.
+    void openStream(const QString& url, double position, bool paused);
+    /// Places a brand-new float against a screen work area, bottom-right by
+    /// default. Used only for the float's first-ever placement: a pooled float
+    /// keeps the exact position and size the viewer last left it, so this is
+    /// never called on re-entry.
     void moveToCorner(QScreen* target);
     void closeStream();
 
@@ -131,12 +146,16 @@ private:
     /// window coordinates, and moves the handle to match.
     void timelineSeekTo(double x);
 
-    /// Snaps to the nearest corner of the screen the float was dropped on.
-    void snapToCorner();
-    /// Pulls the float back inside a work area. After a monitor change the
-    /// pooled position can name a screen that is no longer there, and a window
-    /// there cannot be clicked at all.
-    void clampIntoWorkArea(QScreen* target);
+    /// True when any part of the float overlaps any screen's work area. The
+    /// float is placed freely, so this is the only placement rule: a float that
+    /// shares no pixels with a work area cannot be clicked or dragged back.
+    bool overlapsAnyWorkArea() const;
+    /// Pulls the float back onto the nearest work area, keeping as much of its
+    /// position as reachability allows. After a monitor change the pooled
+    /// position can name a screen that is no longer there, and a window there
+    /// cannot be clicked at all. Only the unreachable case is corrected; a
+    /// viewer's chosen position is never overridden.
+    void pullIntoWorkArea();
     void pointerPress(QMouseEvent* event);
     void pointerMove(QMouseEvent* event);
     void pointerRelease(QMouseEvent* event);
@@ -165,6 +184,8 @@ private:
 
     double overlayOpacity_ = 1.0;
     double pendingSeek_ = -1.0;
+    std::optional<bool> pendingLoadPause_;
+    quint64 pendingLoadPauseGeneration_ = 0;
     bool muted_ = false;
     double volume_ = 0.7;
     bool draggingVolume_ = false;
@@ -177,6 +198,9 @@ private:
 
     QPointF pressGlobal_;
     QPoint pressWindow_;
+    QSize pressSize_;
+    bool resizingRight_ = false;
+    bool resizingBottom_ = false;
     bool pressed_ = false;
     bool dragging_ = false;
 };
@@ -217,10 +241,17 @@ public:
     /// Badges one track with the quality a probe found for it.
     void setTrackQuality(const QString& embed, int quality);
     void showError(const QString& message);
-    /// One path a native request change takes, whatever raised it: a menu row,
-    /// a settings control, or the toggle shortcut. The action is typed rather
-    /// than spelled, so the three callers share one vocabulary. The request is
-    /// persisted even when it cannot be applied, the effective value is
+    /// A requested AnimeJaNai preset is saved by stable id and prepared off the
+    /// GUI thread; unavailable prerequisites remain visible as a failed request.
+    void applyAnimeJanaiRequest(const QString& id);
+    void applyAnimeJanaiBackend(const QString& backend);
+    /// Monotonic generation of the last AnimeJaNai preparation result installed
+    /// by this dialog's worker. Probe callers can distinguish a fresh async
+    /// completion from a retained status for an older request.
+    quint64 animeJanaiPlanGeneration() const { return animeJanaiPlanGeneration_; }
+    /// One path a native request change takes from a menu row. The action is
+    /// typed rather than spelled, so callers share one vocabulary. The request
+    /// is persisted even when it cannot be applied, the effective value is
     /// re-derived from the filter's snapshot, and nothing here touches the URL,
     /// the stream, the quality cache or the Anime4K chain.
     void applyNativeRequest(native::menu::Action action, const QString& value);
@@ -252,8 +283,8 @@ public:
     /// instead.
     void refreshNativeInputs();
     /// Re-reads every stored player preference and installs what changed: the
-    /// native toggle binding, the Anime4K preset bindings, the stored native
-    /// request, then the native inputs plus the deduplicated request
+    /// Anime4K preset bindings and stored native request, then the native inputs
+    /// plus the deduplicated request
     /// announcement. This is what an application owner calls after a settings
     /// save is accepted, because the store is shared and only the running
     /// process can pick the save up. It is idempotent, so a save that changed
@@ -306,15 +337,8 @@ public:
     void openSubtitlesMenu();
     void togglePip();
 
-    /// The engine-preparation window, driven by whatever is building an engine
-    /// for this core. A TensorRT build is minutes long and starts from a modal
-    /// settings dialog, so the progress has to be visible somewhere the viewer
-    /// can still see: this is a top-level always-on-top window, not a child of
-    /// the player.
-    ///
-    /// The player owns nothing about the build and never starts one; it only
-    /// renders the progress it is handed, so a build that fails to start leaves
-    /// no window behind.
+    /// Shows real engine work and holds the playback owner paused until end.
+    /// Explicit play/pause requests are retained without advancing the video.
     void beginEnginePreparation(const QString& title);
     void updateEnginePreparation(int stageIndex, int stageCount, const QString& phase,
                                  const QString& detail);
@@ -357,6 +381,8 @@ signals:
     /// URL, never re-probes a quality and never starts preparation itself:
     /// Original needs no host at all and is answered inside the dialog.
     void processingSettingsRequested(ProcessingSettingsIntent intent);
+    /// AnimeJaNai backend is missing the app-owned installation record.
+    void componentSetupRequested();
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -389,8 +415,13 @@ private:
     void publishQualityOptions();
     void syncStatusVisibility();
     void syncPipBar();
-    void flashStatus(const QString& message);
+    void flashStatus(const QString& message, bool failure = false);
     void showErrorStatus(const QString& message);
+    /// Central ownership for a failed open: keeps the real reason
+    /// VideoSurface::open emitted synchronously through onEngineError and
+    /// shows the generic text only when nothing was emitted. One-shot host
+    /// reload guard plus runtimeRequested, so callers do nothing on false.
+    void ensureOpenFailureVisible();
     /// A processing status: a named reason with no retry chip and no host
     /// callback. Used for a native refusal and for a native failure, never for a
     /// media load failure.
@@ -443,6 +474,9 @@ private:
     /// menu, the settings dialog and the toggle, so the three cannot disagree
     /// about what was asked for.
     void onNativeActionRequested(native::menu::Action action, const QString& value);
+    void onAnimeJanaiStatusChanged(const QString& status);
+    void onAnimeJanaiFailure(const QString& reason);
+    void onAnimeJanaiEngineBuildChanged(bool active, bool succeeded, const QString& detail);
     /// The filter's own status changed. The held inputs, the HUD and the
     /// availability follow it, and nothing here re-arms a poll the surface has
     /// already stopped. A document from a core that no longer owns playback is
@@ -487,10 +521,6 @@ private:
     /// one outstanding request and halts itself after a terminal state or an
     /// absent filter.
     void syncNativeStatusPolling(bool requested);
-    /// Installs the native-processing toggle from the stored binding. Nothing
-    /// is installed unless the shared collision check accepts the key.
-    void loadNativeShortcuts();
-    void toggleNativeProcessing();
     void onEngineError(const QString& message);
     void onEngineDuration(double seconds);
     void onEnginePosition(double seconds);
@@ -536,6 +566,11 @@ private:
     MenuPopup* subtitlesPopup_ = nullptr;
     SeriesDrawer* seriesDrawer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
+    QPointer<VideoSurface> animeJanaiBuildingSurface_;
+    QPointer<VideoSurface> enginePreparationSurface_;
+    uint64_t enginePreparationSourceEpoch_ = 0;
+    bool enginePreparationActive_ = false;
+    void moveEnginePreparationPause(VideoSurface* owner);
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;
@@ -565,6 +600,12 @@ private:
     /// The applied chain as a candidate id. A chain with no Mode still has to
     /// survive a restart, and an enum ordinal cannot name one.
     QString anime4kChainId_ = QStringLiteral("off");
+    QString animeJanaiPresetId_;
+    native::Backend animeJanaiBackend_ = native::Backend::TensorRT;
+    native::AnimeJanaiPlan animeJanaiPlan_;
+    quint64 animeJanaiSequence_ = 0;
+    quint64 animeJanaiPlanGeneration_ = 0;
+    std::shared_ptr<std::atomic_bool> animeJanaiCancellation_;
     /// The comparison window, created on first use and kept: it borrows the
     /// surface, and two of them would fight over the same core.
     CompareWindow* compare_ = nullptr;
@@ -579,6 +620,7 @@ private:
     bool processingActive_ = false;
     QString lastProcessingReasonKey_;
     QString lastProcessingReason_;
+    bool componentSetupRequestedOnce_ = false;
     bool errorActive_ = false;
     bool refreshAttempted_ = false;
     bool closed_ = false;

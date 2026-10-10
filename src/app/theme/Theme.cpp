@@ -15,23 +15,42 @@ QWidget {
     font-size: 14px;
 }
 QLabel#heading { font-size: 22px; font-weight: 600; }
+QLabel#titleHeading { font-size: 22px; font-weight: 700; }
 QLabel#sectionHeading { font-size: 16px; font-weight: 600; padding-top: %3px; }
+QLabel#titleSectionHeading, QLabel#episodeSectionHeading { font-size: 15px; font-weight: 700; }
 QLabel#muted, QLabel#status { color: %4; }
 QLabel#descriptionPanel { background: %5; color: %2; border: none;
     border-radius: %6px; padding: %7px; }
-QScrollArea#titleOverview, QScrollArea#episodeScroll { background: transparent; border: none; }
+QGroupBox#nativeComponentPackCard { background: transparent; color: %2;
+    border: 1px solid %10; border-radius: %6px; margin-top: 0; padding: 0; }
+QLabel[textRole="muted"] { color: %4; background: transparent; }
+QLabel[textRole="recommendation"] { color: %11; font-weight: 600; background: transparent; }
+QProgressBar#nativeComponentTabProgress { background: transparent; border: 1px solid %10;
+    border-radius: %6px; min-height: 6px; max-height: 6px; }
+QProgressBar#nativeComponentTabProgress::chunk { background: %11; border-radius: %6px; }
+QGroupBox#nativeComponentPackCard::title { subcontrol-origin: margin;
+    left: %7px; padding: 0 %15px; color: %2; font-weight: 600; }
+QGroupBox#nativeComponentPackCard QLabel { background: transparent; }
+QGroupBox#nativeComponentPackCard QCheckBox { background: transparent; }
+QScrollArea#titleOverview { background: transparent; border: none; }
 QLabel#titleCover { background: %8; color: %4; border: none; border-radius: %6px; }
 QLabel#titleFacts { color: %4; font-size: 13px; }
 QLabel#titleDescription { background: transparent; color: %2; font-size: 14px; }
-QLabel#titleScores { color: %11; font-weight: 600; }
+QLabel#titleScores { color: %11; font-weight: 600; font-size: 13px; }
 QLabel#titleLinks { color: %11; }
 QWidget#titleDetails { background: %5; color: %2; border: none; border-radius: %6px; }
 QWidget#titleDetails QLabel { background: transparent; }
 QPushButton#episodeButton { background: %5; border: 1px solid transparent;
-    border-radius: %6px; font-weight: 600; }
-QPushButton#episodeButton:hover { background: %8; }
+    border-radius: %21px; font-weight: 600; padding: 0 %15px; }
+QPushButton#episodeButton:hover { background: %8; border-color: rgba(189, 172, 255, 0.30); }
 QPushButton#episodeButton:pressed { background: %9; }
 QPushButton#episodeButton:disabled { color: %4; background: %1; }
+QLabel#releaseKind { color: %4; font-size: 13px; font-weight: 600; }
+QPushButton#releaseChip { background: %5; color: %2; border: 1px solid %10;
+    border-radius: %6px; font-weight: 600; padding: 0 %7px; }
+QPushButton#releaseChip:hover:enabled { border-color: %11; }
+QPushButton#releaseChip:checked { background: %8; border-color: %11; }
+QPushButton#releaseChip:pressed { background: %9; }
 QLineEdit, QComboBox {
     background: %5; border: 1px solid %10;
     border-radius: %6px; padding: 6px %7px;
@@ -103,10 +122,18 @@ QPushButton#pagerChip { background: transparent; color: %4;
 QPushButton#pagerChip:hover { color: %2; background: %5; }
 QPushButton#pagerChipActive { background: %9; color: %2; font-weight: 600; }
 QTabWidget::pane { border: none; border-top: 1px solid %10; background: %5; }
+QTabWidget#episodeTabs::pane { border: none; border-top: 1px solid %10; background: %5;
+    margin-top: %15px; }
 QTabBar::tab { background: transparent; color: %4; border: none;
     border-bottom: 2px solid transparent; padding: 7px %18px; margin-right: 2px; }
 QTabBar::tab:selected { color: %2; border-bottom: 2px solid %11; }
 QTabBar::tab:hover { color: %2; }
+QTabWidget#episodeTabs QTabBar::tab { padding: 6px %7px; margin-right: 0; }
+QTabWidget#episodeTabs QTabBar::tab:selected { background: %5; border: 1px solid %10;
+    border-bottom: 2px solid %11; border-top-left-radius: %21px;
+    border-top-right-radius: %21px; margin-bottom: -1px; }
+QScrollArea#episodeScroll { background: %5; border: none;
+    border-bottom-left-radius: %21px; border-bottom-right-radius: %21px; }
 QListWidget { background: %1; border: none; border-radius: %6px; padding: 6px; outline: none; }
 QListWidget::item { min-height: %19px; padding: %3px %7px; border-radius: %6px;
     border-left: 2px solid transparent; }
@@ -145,7 +172,8 @@ QString buildStylesheet() {
         .arg(kRadius, 17)
         .arg(kSpacingLarge, 18)
         .arg(kSearchRowMinHeight, 19)
-        .arg(QLatin1String(kVideoBackground), 20);
+        .arg(QLatin1String(kVideoBackground), 20)
+        .arg(kTitlePillRadius, 21);
 }
 
 }  // namespace mikai::app::theme

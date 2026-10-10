@@ -202,72 +202,42 @@ const QVector<ModeInfo>& catalogue() {
     return kModes;
 }
 
-/// The menu above the presets, parents before children. The placeholder entries
-/// are the models this player does not run: they are here so the menu says so
-/// instead of staying silent about them.
+/// Only implemented Anime4K categories are navigable; unsupported model
+/// families do not get inert placeholder pages.
 const QVector<CategoryInfo>& categories() {
     static const QVector<CategoryInfo> kCategories = {
         {QStringLiteral("anime4k"), QString(), QStringLiteral("Anime4K"),
-         QCoreApplication::translate("Anime4K", "Anime4K presets: upscaling and image restoration"),
-         false},
+         QCoreApplication::translate("Anime4K", "Anime4K presets: upscaling and image restoration")},
         {QStringLiteral("anime4k/speed"), QStringLiteral("anime4k"),
          QCoreApplication::translate("Anime4K", "Speed"),
-         QCoreApplication::translate("Anime4K", "Low GPU load, real time"), false},
+         QCoreApplication::translate("Anime4K", "Low GPU load, real time")},
         {QStringLiteral("anime4k/quality"), QStringLiteral("anime4k"),
          QCoreApplication::translate("Anime4K", "Quality"),
-         QCoreApplication::translate("Anime4K", "Balanced high quality"), false},
+         QCoreApplication::translate("Anime4K", "Balanced high quality")},
         {QStringLiteral("anime4k/maximum"), QStringLiteral("anime4k"),
          QCoreApplication::translate("Anime4K", "Maximum"),
-         QCoreApplication::translate("Anime4K", "Multi-stage enhancement, higher GPU cost"), false},
+         QCoreApplication::translate("Anime4K", "Multi-stage enhancement, higher GPU cost")},
         {QStringLiteral("anime4k/experimental"), QStringLiteral("anime4k"),
          QCoreApplication::translate("Anime4K", "Experimental"),
-         QCoreApplication::translate("Anime4K", "Special cases, not typical settings"), false},
-        // The four experiment families are named the way Anime4K names them, so
-        // a viewer looking for a documented preset finds it under the same name;
-        // the warning that they are not defaults is in the tooltip.
+         QCoreApplication::translate("Anime4K", "Special cases, not typical settings")},
         {QStringLiteral("anime4k/experimental/noise"),
          QStringLiteral("anime4k/experimental"),
          QCoreApplication::translate("Anime4K", "Noise Reduction"),
          QCoreApplication::translate("Anime4K",
                                      "Noise reduction: one shader - a complete preset. "
-                                     "Experimental, not a typical setting"),
-         false},
+                                     "Experimental, not a typical setting")},
         {QStringLiteral("anime4k/experimental/thin"), QStringLiteral("anime4k/experimental"),
          QCoreApplication::translate("Anime4K", "Thin Lines"),
          QCoreApplication::translate("Anime4K", "Thin lines: one shader - a complete preset. "
-                                                 "Experimental, not a typical setting"),
-         false},
+                                                 "Experimental, not a typical setting")},
         {QStringLiteral("anime4k/experimental/texture"), QStringLiteral("anime4k/experimental"),
          QCoreApplication::translate("Anime4K", "Texture Enhancement"),
          QCoreApplication::translate("Anime4K", "Textures: one shader - a complete preset. "
-                                                 "Experimental, not a typical setting"),
-         false},
+                                                 "Experimental, not a typical setting")},
         {QStringLiteral("anime4k/experimental/darken"), QStringLiteral("anime4k/experimental"),
          QCoreApplication::translate("Anime4K", "Darken"),
          QCoreApplication::translate("Anime4K", "Line darkening: one shader - a complete preset. "
-                                                 "Experimental, not a typical setting"),
-         false},
-        // The models this player does not run each get their own page rather
-        // than a dead row, so the menu can say where they will live. RIFE
-        // lives here no longer: the native menu owns the "rife" level (see
-        // native::menu::ownsLevel and rootRows), so neither the category nor
-        // any Planned leaf remains here. RealESRGAN and the other models stay
-        // placeholders.
-        {QStringLiteral("realesrgan"), QString(), QStringLiteral("RealESRGAN"),
-         QCoreApplication::translate("Anime4K", "Neural upscaling: engine not implemented"),
-         false},
-        {QStringLiteral("other-models"), QString(),
-         QCoreApplication::translate("Anime4K", "Other models"),
-         QCoreApplication::translate("Anime4K", "Other enhancement models: engine not implemented"),
-         false},
-        {QStringLiteral("realesrgan/planned"), QStringLiteral("realesrgan"),
-         QCoreApplication::translate("Anime4K", "Planned"),
-         QCoreApplication::translate("Anime4K", "Planned: RealESRGAN is not implemented yet"),
-         true},
-        {QStringLiteral("other-models/planned"), QStringLiteral("other-models"),
-         QCoreApplication::translate("Anime4K", "Planned"),
-         QCoreApplication::translate("Anime4K", "Planned: these models are not implemented yet"),
-         true}
+                                                 "Experimental, not a typical setting")}
     };
     return kCategories;
 }
@@ -486,23 +456,21 @@ QVector<MenuRow> menuRows(const QString& parent) {
             continue;
         }
         MenuRow row;
-        row.role = category.placeholder ? MenuRow::Role::Placeholder : MenuRow::Role::Category;
+        row.role = MenuRow::Role::Category;
         row.id = category.id;
         row.label = category.label;
         row.tooltip = category.tooltip;
-        if (!category.placeholder) {
-            for (const ModeInfo& info : catalogue()) {
-                if (info.category == category.id) {
+        for (const ModeInfo& info : catalogue()) {
+            if (info.category == category.id) {
+                row.hasChildren = true;
+                break;
+            }
+        }
+        if (!row.hasChildren) {
+            for (const CategoryInfo& nested : categories()) {
+                if (nested.parent == category.id) {
                     row.hasChildren = true;
                     break;
-                }
-            }
-            if (!row.hasChildren) {
-                for (const CategoryInfo& nested : categories()) {
-                    if (nested.parent == category.id) {
-                        row.hasChildren = true;
-                        break;
-                    }
                 }
             }
         }

@@ -20,6 +20,7 @@ class PlayerDialog;
 
 namespace mikai::app {
 
+class SettingsDialog;
 class NativeComponentProvisioner;
 class QualityCache;
 class Runner;
@@ -64,6 +65,8 @@ private:
     /// focuses the existing choice. Opening settings plain starts nothing.
     void openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
                                QPointer<mplayer::shell::PlayerDialog> core);
+    /// Offers the AnimeJaNai component setup once while it is recommended.
+    void offerAnimeJanaiSetup(SettingsDialog* settings = nullptr);
     /// The one settings surface. `intent` is present only when the viewer
     /// pressed a processing-failure remedy, and `preferredCore` then names the
     /// dialog that raised it; it is consulted only while it still owns a
@@ -72,7 +75,8 @@ private:
     /// prompt; it changes nothing else about the dialog.
     void openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
                           QPointer<mplayer::shell::PlayerDialog> preferredCore,
-                          bool showComponentsFirst = false);
+                          bool showComponentsFirst = false,
+                          bool installAnimeJanaiRecommended = false);
     void chooseMediaFile();
     void chooseMediaUrl();
     /// Opens `source` in a fresh player. Refuses, keeping the current player,
@@ -112,6 +116,8 @@ private:
     int runtimeSeq_ = 0;
     bool runtimePending_ = false;
     bool runtimeRetrying_ = false;
+    bool setupDeclined_ = false;
+    bool setupPromptOffered_ = false;
     QString titleRef_;
     QString titlePoster_;
     QList<QPair<QString, QString>> titleHistory_;

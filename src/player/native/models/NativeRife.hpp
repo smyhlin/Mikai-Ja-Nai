@@ -4,13 +4,12 @@
 //
 // Three facts are load-bearing here.
 //
-//  * Identity is the model name, never an index. The four original v4.14
-//    variants - full and lite, each with and without the ensemble flag - are
-//    named exactly as the reference backend asks for them (`rife_v4.14`,
-//    `rife_v4.14_lite`, `rife_v4.14_ensemble`, `rife_v4.14_lite_ensemble`), so a
-//    persisted request can never be repointed at another variant by reordering a
-//    combo box. `rifeModelCode` is the model number the reference conf uses
-//    (414 full, 4141 lite); ensemble is a separate conf key and never changes it.
+//  * Identity is the model name, never an index. The pinned component has
+//    versioned full/lite variants and, for v4.26, a heavy graph; names preserve
+//    the archive spelling (`rife_v4.14_lite_ensemble`,
+//    `rife_v4.26_heavy`). `rifeModelCode` is version-aware (414 full, 4141
+//    lite); ensemble is a separate conf key and never changes it. Heavy remains
+//    unavailable because pinned Aji v0.9.0 does not encode its `_heavy` suffix.
 //
 //  * A curated name is a REQUEST, not a graph. Each one carries an exact content
 //    pin - the lower-case SHA-256 of the exact original graph bytes this build's
@@ -24,12 +23,11 @@
 //    each keep their own named reason.
 //
 //  * Provenance is still unresolved for redistribution. The four original v4.14
-//    graphs are acquired and byte-verified - 128/128 weight names and shapes,
-//    FP32-to-FP16 rounding bytes identical - against the author's MIT v4.14
+//    graphs have private local byte-level proof against the author's MIT v4.14
 //    full/lite checkpoints, but the exporter identity, the non-weight graph
-//    material and the applicable whole-graph permissions are unresolved. This is
-//    private local proof only; no publicly shippable claim is made here. The
-//    configuration is still a legal, storable request, and requesting is
+//    material and the applicable whole-graph permissions are unresolved. The
+//    expanded archive pins are acquisition identities, not a license or runtime
+//    proof. No publicly shippable claim is made here. A request remains
 //    configuration, not execution - the two are kept apart on purpose.
 //
 // The factory builds only what was asked for: a RIFE-only recipe when no base is
@@ -65,10 +63,13 @@ struct RifeModelPin {
     /// The acquisition file name, for refusal sentences only. Never identity and
     /// never read.
     QString fileName;
+
+    /// Exact byte size of the pinned acquisition graph.
+    qint64 bytes = 0;
 };
 
-/// The four pinned v4.14 variants, in the stable order the capability table
-/// offers. Data only; nothing here is a claim about what the store holds.
+/// The exact pinned variants in the component archive, in stable filename
+/// order. Data only; nothing here is a claim about what the store holds.
 const QVector<RifeModelPin>& rifeModelPins();
 
 /// The pin for the exact variant identity, or nullptr.
@@ -90,11 +91,12 @@ struct RifeCapability {
     RifeVariant variant = RifeVariant::Full;
     bool ensemble = false;
 
-    /// `rife_v4.14[_lite][_ensemble]`. The identity, never an ordinal.
+    /// The stable `rife_vX.Y` name, including its exact variant/ensemble suffix.
+    /// The identity, never an ordinal.
     QString modelId;
 
-    /// The reference model number: 414 for full, 4141 for lite. Ensemble is a
-    /// separate conf key and never changes it.
+    /// The version-aware reference model number: 414 for v4.14 full, 4141 for
+    /// v4.14 lite. Ensemble is a separate conf key and never changes it.
     int modelCode = 0;
 
     /// The exact graph digest this row resolves to. Never empty.
@@ -148,7 +150,7 @@ RifeModelResolution resolveRifeModel(RifeVersion version, RifeVariant variant, b
 /// the caller, never by this join.
 RifeModelResolution resolveRifeModel(const TemporalStage& stage, const CatalogView& catalog);
 
-/// The four curated variants with availability observed from `catalog`. Each row
+/// The curated variants with availability observed from `catalog`. Each row
 /// resolves its pin; a row whose pinned owned graph is present and usable is
 /// offered, and every other row carries the refusal `resolveRifeModel` produced.
 QVector<RifeCapability> rifeCapabilities(const CatalogView& catalog);

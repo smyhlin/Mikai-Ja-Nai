@@ -25,12 +25,14 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
 
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "PlaybackDiagnostics.hpp"
 #include "native/prepare/NativeFrameFixture.hpp"
 #include "native/status/NativePlaybackController.hpp"
@@ -125,9 +127,16 @@ public:
     void close();
 
     void togglePause();
-    /// Sets the paused state outright. togglePause cannot restore a known
-    /// state, which is what handing playback back to a parked core needs.
+    /// Sets the paused state outright; same-value requests still express intent.
     void setPaused(bool paused);
+    /// Reasserts an existing pause hold without expressing a newer user intent.
+    void reassertPaused();
+    bool pauseObserved() const { return observedPaused_; }
+    /// Holds output paused during engine work, retaining explicit viewer intent.
+    void setEnginePreparationPaused(bool active, bool restoreIntent = true);
+    bool playbackPauseIntent() const;
+    /// Advances for every explicit pause/play request, including togglePause.
+    quint64 pauseRequestGeneration() const { return pauseRequestGeneration_; }
     void seek(double seconds);
     void setVolume(double volume);   // 0..100
     void setMuted(bool muted);
@@ -138,6 +147,10 @@ public:
     // re-applied, because a mode picked before the engine exists still has to
     // take effect once it does.
     void setAnime4KMode(anime4k::Mode mode);
+    void setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan);
+    native::AnimeJanaiPlan animeJanaiPlan() const { return animeJanaiPlan_; }
+    QString animeJanaiStatus() const { return animeJanaiStatus_; }
+    bool animeJanaiProcessingObserved() const;
     anime4k::Mode anime4KMode() const { return anime4kMode_; }
     /// Swaps in an arbitrary chain by candidate id, which is what the compare
     /// window needs: it can name a single .glsl that has no Mode at all. The
@@ -146,6 +159,8 @@ public:
     void setAnime4KChain(const QString& candidateId);
     /// The candidate id currently applied, empty for Off.
     QString anime4KChainId() const { return anime4kChainId_; }
+    /// Changes on every public Anime4K mode/chain request, including same-value requests.
+    quint64 anime4KRequestGeneration() const { return anime4KRequestGeneration_; }
     /// What mpv reports for glsl-shaders right now. It only echoes back the
     /// string it was given - mpv does not validate a path list, so this cannot
     /// tell a working chain from a preset naming a deleted file. Useful for
@@ -164,6 +179,12 @@ public:
     /// not be called while native work holds that lock.
     std::optional<ProbePropertyValue> probeMpvProperty(const QString& name,
                                                         ProbePropertyKind want);
+    /// Probe-only: asks the embedded core to cycle an audio or subtitle track.
+    /// Returns whether the real core accepted the asynchronous command.
+    bool probeCycleMpvTrack(const QString& property);
+    /// Reads mpv's current playback timestamp and source epoch asynchronously.
+    AsyncRequestId requestPlaybackTimestamp(
+        std::function<void(uint64_t, std::optional<double>)> callback);
 
     bool isPlaying() const;
     /// Records the pause state and announces a change. Every local pause goes
@@ -175,6 +196,12 @@ public:
     int videoWidth() const;
     int videoHeight() const;
     bool hasVideo() const;
+    /// Current mpv source epoch; changes whenever the loaded source is replaced.
+    uint64_t sourceEpoch() const;
+    QString sourceUrl() const { return url_; }
+    /// Monotonic generation of Aji plan requests, used to distinguish a preview
+    /// owned by Compare from a newer explicit player request.
+    quint64 animeJanaiGeneration() const { return animeJanaiGeneration_; }
 
     // ── native status ─────────────────────────────────────────────────────
     //
@@ -210,10 +237,14 @@ public:
     /// using is refused by name - DirectML never silently runs CUDA, TensorRT
     /// never runs on frames with no device, and nothing is attached so no
     /// observation is ever attributed to a decoder this backend cannot use.
+    /// Requires a loaded Native runtime; otherwise it refuses as
+    /// native.runtimeUnavailable without changing the decoder or filter chain.
     /// The default only keeps legacy callers compiling.
     void armNativeProbe(native::Backend backend = native::Backend::TensorRT);
     /// Resolve and submit an admission. The request is taken verbatim; the caller
     /// observes the verdict through nativePlaybackStatus()/nativePlaybackStatusChanged.
+    /// Requires a loaded Native runtime; otherwise it refuses as
+    /// native.runtimeUnavailable before changing controller or playback state.
     void requestNativeAdmission(const native::PreparedAdmissionRequest& request);
     void turnNativeOff();
     void suspendNativeProcessing();
@@ -313,6 +344,8 @@ public:
 
 signals:
     void playingChanged(bool playing);
+    /// The loaded source changed, invalidating any frame captured under the old epoch.
+    void sourceEpochChanged(uint64_t epoch);
     void positionChanged(double seconds);
     void durationChanged(double seconds);
     void videoSizeChanged(int width, int height);
@@ -323,6 +356,9 @@ signals:
     /// A native transition ended in a named non-Active verdict: a refused or
     /// timed-out command, or a filter that refused the admitted plan.
     void nativeProcessingFailure(const QString& reasonKey, const QString& reason);
+    void animeJanaiStatusChanged(const QString& status);
+    void animeJanaiFailure(const QString& reason);
+    void animeJanaiEngineBuildChanged(bool active, bool succeeded, const QString& detail);
     /// The controller's status changed. This is how an asynchronous transition
     /// is acknowledged: read the status, never a transport return.
     void nativePlaybackStatusChanged(const native::NativePlaybackController::Status& status);
@@ -354,6 +390,17 @@ private:
     void pumpEvents();
     void handleState();
     void updateStreamStats();
+    void cancelAnimeJanaiOperation();
+    void processAnimeJanaiPlan();
+    void animeJanaiFail(const QString& reasonKey, const QString& reason);
+    void setAnimeJanaiStatus(const QString& status);
+    void resetAnimeJanaiObservation();
+    bool animeJanaiBackendLogsNeeded() const;
+    void observeAnimeJanaiBackendLog(const QString& prefix, const QString& line);
+    void publishAnimeJanaiObservation(const QString& status, uint64_t epoch,
+                                      quint64 generation);
+    void publishPendingAnimeJanaiObservation(uint64_t epoch, quint64 generation);
+    void restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation);
     /// Subscribes to every property the HUD reads. The values arrive as events,
     /// so the 50 ms pump never takes the core lock to learn what it shows.
     void observePlaybackState();
@@ -593,6 +640,41 @@ private:
     QString url_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     QString anime4kChainId_;
+    quint64 anime4KRequestGeneration_ = 0;
+    quint64 pauseRequestGeneration_ = 0;
+    native::AnimeJanaiPlan animeJanaiPlan_;
+    QString animeJanaiStatus_;
+    QString animeJanaiObservedStatus_;
+    bool animeJanaiEngineBuildActive_ = false;
+    bool enginePreparationPaused_ = false;
+    uint64_t enginePauseEpoch_ = 0;
+    quint64 enginePauseRequestGeneration_ = 0;
+    bool enginePauseIntent_ = true;
+    AsyncRequestId animeJanaiBuildPollRequest_;
+    qint64 animeJanaiBuildNextPollMs_ = 0;
+    bool animeJanaiBuildPollingRefused_ = false;
+    bool enginePauseHeld() const;
+    void beginEnginePause();
+    void endEnginePause(bool restoreIntent);
+    void discardEnginePause();
+    void pollAnimeJanaiEngineBuild();
+    void finishAnimeJanaiEngineBuild(bool succeeded, const QString& detail);
+    QString animeJanaiPendingObservedStatus_;
+    uint64_t animeJanaiObservedEpoch_ = 0;
+    quint64 animeJanaiObservedGeneration_ = 0;
+    uint64_t animeJanaiPendingObservedEpoch_ = 0;
+    quint64 animeJanaiPendingObservedGeneration_ = 0;
+    bool animeJanaiObserved_ = false;
+    bool animeJanaiReportPending_ = false;
+    bool animeJanaiSourceRequested_ = false;
+    AsyncRequestId animeJanaiRequest_;
+    quint64 animeJanaiGeneration_ = 0;
+    uint64_t animeJanaiEpoch_ = 0;
+    QString animeJanaiPreviousHwdec_;
+    /// The official @mikai_aji label only; independent of private mikai_native membership.
+    bool animeJanaiFilterBound_ = false;
+    bool animeJanaiBusy_ = false;
+    bool animeJanaiReconfigureAfterRestore_ = false;
 
     // mpv keeps running whether or not we repaint, so the state pump cannot
     // live in paintGL: a paused video produces no frames, and the clock,
@@ -627,9 +709,10 @@ private:
     /// core itself dies.
     bool nativeSourceActive_ = false;
     uint64_t nativeBoundEpoch_ = 0;
-    /// True while the named filter is believed to be in the core's chain. The
-    /// chain survives a source change, so the controller's attach transition does
-    /// not re-issue `vf add` for a label that is already bound.
+    /// True while the named filter may still be in the core's chain, including
+    /// an add or removal in flight. The chain survives a source change, so the
+    /// controller's attach transition does not re-issue `vf add` for a bound label;
+    /// removal clears this only after the controller observes its absence.
     bool nativeFilterBound_ = false;
     bool nativeStatusPublished_ = false;
     native::NativePlaybackController::Status lastNativeStatus_;
@@ -643,7 +726,6 @@ private:
 
     bool contextReady_ = false;
     bool pendingOpen_ = false;
-    uint64_t lastGeneration_ = 0;
     bool framePending_ = false;   // set by mpv's update callback
     /// Forces the next paint to render even with no freshly decoded frame:
     /// set when Qt hands the widget a new framebuffer (resize, re-show) and

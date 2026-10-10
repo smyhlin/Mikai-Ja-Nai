@@ -1,12 +1,9 @@
 #include "TestNativeMenu.hpp"
 
-#include "Anime4K.hpp"
 #include "native/status/NativeMenu.hpp"
 
 #include <algorithm>
 
-using mplayer::anime4k::MenuRow;
-using mplayer::anime4k::menuRows;
 using mplayer::native::Availability;
 using mplayer::native::Backend;
 using mplayer::native::NativeCadenceCounters;
@@ -24,14 +21,12 @@ using mplayer::native::menu::Inputs;
 using mplayer::native::menu::Row;
 using mplayer::native::menu::StatusLines;
 using mplayer::native::menu::currentRowId;
-using mplayer::native::menu::defaultToggleShortcut;
 using mplayer::native::menu::levelRows;
 using mplayer::native::menu::nativeRows;
 using mplayer::native::menu::ownsLevel;
 using mplayer::native::menu::rifeRows;
 using mplayer::native::menu::rootRows;
 using mplayer::native::menu::statusLines;
-using mplayer::native::menu::toggleShortcut;
 using mplayer::native::rifeModelName;
 using mplayer::native::RifeVariant;
 using mplayer::native::RifeVersion;
@@ -351,6 +346,8 @@ void TestNativeMenu::effectiveOnlyWhenTheSnapshotSaysActive() {
   // A request that is fully eligible is still not effective until the filter
   // itself reports Active: eligibility is not activation.
   Inputs inputs = eligibleInputs();
+  inputs.runtime.loaded = true;
+  inputs.runtime.kind = mplayer::native::BundleKind::Native;
   const NativeSelectionView view =
       mplayer::native::evaluateNativeSelection(inputs.preferences, inputs.availability);
   QVERIFY(view.requestAvailable);
@@ -572,20 +569,6 @@ void TestNativeMenu::rifeCurrentMarkSurvivesReordering() {
   QCOMPARE(currents, 1);
 }
 
-void TestNativeMenu::realesrganAndOtherModelsStayPlaceholders() {
-  QVERIFY(!ownsLevel(QStringLiteral("realesrgan")));
-  QVERIFY(!ownsLevel(QStringLiteral("other-models")));
-  for (const QString& level :
-       {QStringLiteral("realesrgan"), QStringLiteral("other-models")}) {
-    const QVector<MenuRow> rows = menuRows(level);
-    QVERIFY(!rows.isEmpty());
-    for (const MenuRow& row : rows) {
-      // No selectable row and no drill-down: these pages can change nothing.
-      QVERIFY(row.role == MenuRow::Role::Placeholder);
-    }
-  }
-}
-
 void TestNativeMenu::statusStaysHiddenForDefaultOff() {
   const StatusLines lines = statusLines(unavailableInputs());
   QVERIFY(!lines.visible);
@@ -593,9 +576,39 @@ void TestNativeMenu::statusStaysHiddenForDefaultOff() {
   QVERIFY(!lines.active);
 }
 
+void TestNativeMenu::standardRuntimeHidesPrivateRequestStatus() {
+  Inputs inputs = unavailableInputs();
+  inputs.preferences.enabled = true;
+  inputs.preferences.recipeId = QStringLiteral("unknown-private-recipe");
+  inputs.runtime.loaded = true;
+  inputs.runtime.kind = mplayer::native::BundleKind::Standard;
+
+  const StatusLines lines = statusLines(inputs);
+  QVERIFY(!lines.visible);
+  QVERIFY(lines.headline.isEmpty());
+  QVERIFY(!lines.active);
+}
+
+void TestNativeMenu::nativeRuntimeShowsUnobservedRequestHonestly() {
+  Inputs inputs = unavailableInputs();
+  inputs.preferences.enabled = true;
+  inputs.runtime.loaded = true;
+  inputs.runtime.kind = mplayer::native::BundleKind::Native;
+
+  const StatusLines lines = statusLines(inputs);
+  QVERIFY(lines.visible);
+  QVERIFY(!lines.active);
+  QVERIFY(!lines.reason.isEmpty());
+  QVERIFY(!lines.headline.isEmpty());
+  QVERIFY(lines.provider.isEmpty());
+  QVERIFY(lines.model.isEmpty());
+}
+
 void TestNativeMenu::statusRendersOnlyWhatTheSnapshotStates() {
   Inputs inputs = unavailableInputs();
   inputs.preferences.enabled = true;
+  inputs.runtime.loaded = true;
+  inputs.runtime.kind = mplayer::native::BundleKind::Native;
   inputs.status.availability = mplayer::native::readyAvailability();
   inputs.status.snapshot = activeSnapshot();
 
@@ -626,6 +639,8 @@ void TestNativeMenu::statusRendersOnlyWhatTheSnapshotStates() {
 void TestNativeMenu::snapshotWithoutGeometryNeverRendersZero() {
   Inputs inputs = unavailableInputs();
   inputs.preferences.enabled = true;
+  inputs.runtime.loaded = true;
+  inputs.runtime.kind = mplayer::native::BundleKind::Native;
   StatusSnapshot snapshot;
   snapshot.version = 1;
   snapshot.revision = 2;
@@ -649,20 +664,4 @@ void TestNativeMenu::snapshotWithoutGeometryNeverRendersZero() {
   const StatusLines absent = statusLines(unavailableInputs());
   QVERIFY(!absent.visible);
   QVERIFY(absent.geometry.isEmpty());
-}
-
-void TestNativeMenu::toggleShortcutPrefersTheStoredBinding() {
-  NativePreferences preferences;
-  QVERIFY(!defaultToggleShortcut().isEmpty());
-  // Nothing stored yet: the default is what the toggle would install.
-  QCOMPARE(toggleShortcut(preferences), defaultToggleShortcut());
-
-  // A stored binding wins, whatever it is.
-  preferences.toggleProcessingShortcutStored = true;
-  preferences.toggleProcessingShortcut = QStringLiteral("Ctrl+Alt+J");
-  QCOMPARE(toggleShortcut(preferences), QStringLiteral("Ctrl+Alt+J"));
-
-  // An explicitly cleared binding stays cleared: the default is not re-offered.
-  preferences.toggleProcessingShortcut.clear();
-  QVERIFY(toggleShortcut(preferences).isEmpty());
 }

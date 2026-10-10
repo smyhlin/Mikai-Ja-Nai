@@ -1,6 +1,6 @@
 #include "pages/SearchPage.hpp"
 
-#include "Clipboard.hpp"
+#include "gui/Clipboard.hpp"
 #include "Labels.hpp"
 #include "state/Feeds.hpp"
 #include "theme/Icons.hpp"
@@ -13,6 +13,7 @@
 
 #include <backend/MikaiClient.hpp>
 
+#include <QAccessible>
 #include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -1179,8 +1180,14 @@ void SearchPage::populateRows() {
 
 void SearchPage::onError(const QString& message) {
     rateLabel_->refresh();
-    status_->setText(message);
+    reportFailure(message);
     updatePager();
+}
+
+void SearchPage::reportFailure(const QString& message) {
+    status_->setText(message);
+    QAccessibleEvent event(status_, QAccessible::Alert);
+    QAccessible::updateAccessibility(&event);
 }
 
 void SearchPage::updatePager() {
@@ -1221,10 +1228,14 @@ void SearchPage::resultsContextMenu(const QPoint& position) {
     connect(open, &QAction::triggered, this, [this, item] { openItem(item); });
     QAction* copyLink = menu.addAction(tr("Copy link"));
     copyLink->setToolTip(tr("Copy the page address on mikai.me"));
-    connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
+    connect(copyLink, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(tr("Failed to copy link"));
+    });
     QAction* copyRef = menu.addAction(tr("Copy ID"));
     copyRef->setToolTip(tr("Copy the title identifier"));
-    connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
+    connect(copyRef, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(ref)) reportFailure(tr("Failed to copy ID"));
+    });
     menu.exec(results_->mapToGlobal(position));
 }
 
@@ -1235,14 +1246,21 @@ void SearchPage::animeCardMenu(const QString& ref, const QPoint& globalPos) {
     connect(open, &QAction::triggered, this, [this, ref] { openByRef(ref); });
     QAction* copyLink = menu.addAction(tr("Copy link"));
     copyLink->setToolTip(tr("Copy the page address on mikai.me"));
-    connect(copyLink, &QAction::triggered, this, [this, ref] { copyText(pageUrlFor(ref)); });
+    connect(copyLink, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(tr("Failed to copy link"));
+    });
     QAction* copyRef = menu.addAction(tr("Copy ID"));
     copyRef->setToolTip(tr("Copy the title identifier"));
-    connect(copyRef, &QAction::triggered, this, [ref] { copyText(ref); });
+    connect(copyRef, &QAction::triggered, this, [this, ref] {
+        if (!mikai::gui::copyText(ref)) reportFailure(tr("Failed to copy ID"));
+    });
     QAction* browser = menu.addAction(tr("Open in browser"));
     browser->setToolTip(tr("Open the page on mikai.me"));
-    connect(browser, &QAction::triggered, this,
-            [this, ref] { QDesktopServices::openUrl(QUrl(pageUrlFor(ref))); });
+    connect(browser, &QAction::triggered, this, [this, ref] {
+        if (!QDesktopServices::openUrl(QUrl(pageUrlFor(ref)))) {
+            reportFailure(tr("Failed to open in browser"));
+        }
+    });
     menu.exec(globalPos);
 }
 

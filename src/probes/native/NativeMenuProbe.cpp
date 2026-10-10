@@ -1,20 +1,14 @@
-// Native menu probe: the native branch inside the real enhancement tree of a
-// real player shell, exercised the way a viewer does it.
+// Standard-runtime player menu probe: supported public choices remain available,
+// private Native controls are absent, and a stale private payload cannot act.
 //
-//   - the enhancements popover gains a native branch that opens its own level
-//     in the same pooled, side-by-side tree; no seventh dock button, no new
-//     window
-//   - every row that would run something is disabled in this build, carries the
-//     fact that blocks it as its tooltip, and cannot change the stored request
-//   - Off is always choosable and clears the stored request
-//   - a request stored through the preference contract marks the same row after
-//     the tree is reopened: the mark follows the stable id, not a menu index
+//   - Anime4K and official AnimeJaNai remain real menu branches
+//   - private Native preferences survive the Standard player unchanged
+//   - a stale Native row cannot dispatch after the runtime boundary
 //   - the popover is grabbed so the row text and geometry are readable
 //
 // The process is bootstrapped explicitly onto the Standard runtime, in isolated
 // settings, so the probe is deterministic and never touches the user's own
-// player state. Run from the repo root, with the shaders deployed beside the
-// exe:
+// player state. Run from the repo root, with shaders deployed beside the exe:
 //   build-cmake/native_menu_probe.exe
 
 #include <QApplication>
@@ -26,6 +20,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
@@ -104,38 +99,15 @@ QPushButton* rowButton(MenuPopup* panel, const QString& payload) {
     return nullptr;
 }
 
-bool rowEntry(MenuPopup* panel, const QString& payload, MenuEntry* out) {
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        if (panel->entryAt(spot).payload.toString() == payload) {
-            if (out != nullptr) {
-                *out = panel->entryAt(spot);
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Opens the enhancement root and drills into the native branch, leaving its
-/// panel on screen.
-MenuPopup* openNativeBranch(PlayerShell* shell, QWidget* host) {
+/// Opens the enhancement root through the button a viewer uses.
+MenuPopup* openEnhancementRoot(PlayerShell* shell, QWidget* host) {
     QPushButton* trigger = enhanceButton(shell, host);
     if (trigger == nullptr) {
         return nullptr;
     }
     realClick(trigger);
     QCoreApplication::processEvents();
-    MenuPopup* root = levelPanel(host, QString());
-    if (root == nullptr) {
-        return nullptr;
-    }
-    QPushButton* branch = rowButton(root, QStringLiteral("level|native"));
-    if (branch == nullptr || !branch->isEnabled()) {
-        return nullptr;
-    }
-    realClick(branch);
-    QCoreApplication::processEvents();
-    return levelPanel(host, QStringLiteral("native"));
+    return levelPanel(host, QString());
 }
 
 /// Grabs the popover and writes it out, then proves the grab is readable: a
@@ -187,15 +159,6 @@ void clearStore() {
     QSettings settings;
     settings.clear();
     settings.sync();
-}
-
-/// Seeds the native binding through the preference contract itself, so the
-/// stored form is the one a settings save would leave - including the
-/// present-but-empty form that means "unbound on purpose".
-bool seedNativeToggle(const QString& portableText) {
-    native::NativePreferencePatch patch;
-    patch.toggleProcessingShortcut = portableText;
-    return native::saveNativePreferences(patch, nullptr);
 }
 
 /// Seeds a preset binding in the group the preset loader reads.
@@ -276,7 +239,7 @@ struct Scenario {
     bool mediaError = false;
 
     Scenario()
-        : dialog(new PlayerDialog(QStringLiteral("Native shortcut probe"),
+        : dialog(new PlayerDialog(QStringLiteral("Native menu probe"),
                                   QStringLiteral("av://lavfi:testsrc2=size=320x180:rate=25"),
                                   QList<QualityEntry>{},
                                   0,
@@ -431,212 +394,69 @@ int main(int argc, char** argv) {
     }
     const double menuStart = menuSurface->position();
 
-    // ── the branch inside the real tree ─────────────────────────────────
-    MenuPopup* native = openNativeBranch(shell, &dialog);
-    check(native != nullptr, "the enhancement root opens the native branch by click");
-    if (native == nullptr) {
+    // ── Standard public enhancement choices ─────────────────────────────
+    MenuPopup* root = openEnhancementRoot(shell, &dialog);
+    check(root != nullptr, "the enhancement root opens by click");
+    if (root == nullptr) {
         std::fprintf(stderr, "FAILURES %d\n", failures + 1);
         return 1;
     }
-
-    int disabledRows = 0;
-    bool sawOff = false;
-    for (int spot = 0; spot < native->rowCount(); ++spot) {
-        const MenuEntry entry = native->entryAt(spot);
-        auto* row = qobject_cast<QPushButton*>(native->rowWidget(spot));
-        check(row != nullptr, "every native row is a real row");
-        if (row == nullptr) {
-            continue;
+    auto hasPayload = [root](const QString& payload) {
+        for (int spot = 0; spot < root->rowCount(); ++spot) {
+            if (root->entryAt(spot).payload.toString() == payload) return true;
         }
-        check(!row->toolTip().isEmpty(), "every native row carries a tooltip");
-        // The widget state and the entry must agree, because the widget is what
-        // the viewer presses.
-        check(row->isEnabled() == !entry.disabled, "the row widget matches its entry");
-        if (entry.payload.toString().startsWith(QLatin1String("native|off|"))) {
-            sawOff = true;
-            check(row->isEnabled(), "Off is choosable even when nothing else is");
-        } else {
-            ++disabledRows;
-            check(!row->isEnabled(), "an unavailable native row cannot be pressed");
-        }
-    }
-    check(sawOff, "the native branch always offers Off");
-    check(disabledRows > 0, "the branch shows the blocked rows rather than hiding them");
-    shoot(native, QStringLiteral("native_menu_probe.png"));
+        return false;
+    };
+    check(hasPayload(QStringLiteral("level|anime4k")),
+          "the Standard enhancement root offers Anime4K");
+    check(hasPayload(QStringLiteral("level|animejanai")),
+          "the Standard enhancement root offers official AnimeJaNai");
+    check(!hasPayload(QStringLiteral("level|native")) &&
+              !hasPayload(QStringLiteral("level|rife")),
+          "the Standard root omits private Native and RIFE branches");
+    shoot(root, QStringLiteral("native_menu_probe.png"));
 
-    // ── the current mark survives a reopen ──────────────────────────────
+    // Store a request that the public Standard menu does not own. The runtime
+    // must preserve it, and a stale popup payload must not dispatch it.
     native::NativePreferencePatch request;
     request.enabled = true;
+    request.backend = native::Backend::DirectML;
+    request.recipeId = QStringLiteral("user:preserved");
     QString saveReason;
     check(native::saveNativePreferences(request, &saveReason),
-          QStringLiteral("a native request is stored: ") + saveReason);
+          QStringLiteral("a private Native request is stored: ") + saveReason);
     pushStoredRequest(shell);
-
-    native = openNativeBranch(shell, &dialog);
-    check(native != nullptr, "the native branch reopens");
-    if (native != nullptr) {
-        MenuEntry onEntry;
-        const bool found = rowEntry(native, QStringLiteral("native|on|"), &onEntry);
-        check(found && onEntry.current, "the stored request marks its own row as current");
-        check(found && onEntry.disabled,
-              "the current request is still shown as not applied");
-
-        // A disabled row is informational: pressing it changes nothing.
-        QPushButton* onRow = rowButton(native, QStringLiteral("native|on|"));
-        if (onRow != nullptr) {
-            realClick(onRow);
-            QCoreApplication::processEvents();
-        }
-        check(native::loadNativePreferences().enabled,
-              "a disabled row cannot change the stored request");
+    const native::NativePreferences saved = native::loadNativePreferences();
+    QSignalSpy nativeActions(shell, &PlayerShell::nativeActionRequested);
+    MenuEntry stalePrivateRow;
+    stalePrivateRow.text = QStringLiteral("Stale Native action");
+    stalePrivateRow.payload = QStringLiteral("native|on|");
+    root->setEntries({stalePrivateRow});
+    QPushButton* staleRow = rowButton(root, QStringLiteral("native|on|"));
+    check(staleRow != nullptr, "a stale Native popup row can be represented");
+    if (staleRow != nullptr) {
+        realClick(staleRow);
+        QCoreApplication::processEvents();
     }
-
-    // Turning Off through the real row clears the request and keeps the mark on
-    // the Off row after the tree is rebuilt.
-    if (native != nullptr) {
-        QPushButton* offRow = rowButton(native, QStringLiteral("native|off|"));
-        check(offRow != nullptr && offRow->isEnabled(), "Off is reachable through the menu");
-        if (offRow != nullptr) {
-            realClick(offRow);
-            QCoreApplication::processEvents();
-        }
-    }
-    check(!native::loadNativePreferences().enabled, "choosing Off clears the stored request");
-
-    native = openNativeBranch(shell, &dialog);
-    if (native != nullptr) {
-        MenuEntry offEntry;
-        check(rowEntry(native, QStringLiteral("native|off|"), &offEntry) && offEntry.current,
-              "the current mark follows the stable id after the reopen");
-    }
-
+    check(nativeActions.isEmpty(),
+          "a stale private payload emits no native action from Standard");
+    const native::NativePreferences afterStaleClick = native::loadNativePreferences();
+    check(afterStaleClick.enabled == saved.enabled &&
+              afterStaleClick.backend == saved.backend &&
+              afterStaleClick.recipeId == saved.recipeId,
+          "a stale private payload leaves every saved Native request field untouched");
     check(menuSurface->hasVideo() && !mediaError && !mediaRetryVisible(&dialog),
-          "the native menu left the Original picture up with no retry chip");
+          "the Standard enhancement menu leaves the Original picture up with no retry chip");
+    shoot(root, QStringLiteral("native_menu_probe.png"));
+
     check(clockAdvanced(menuSurface, menuStart),
           "the native menu never stopped the stream's clock");
 
-    // ── stored bindings, pressed as a viewer presses them ───────────
+    // ── preset keys still drive the player menus, not native ─────────
     //
-    // Each scenario owns its store state before its player is built and its own
-    // player after, because the binding is installed at construction: one shared
-    // dialog would be answering for whichever settings were current when it
-    // happened to be built.
-    //
-    // A stored binding nothing else owns installs, and the key flips the stored
-    // request both ways while the shell keeps saying the filter reported
-    // nothing.
-    {
-        clearStore();
-        const QKeySequence binding(QStringLiteral("Ctrl+Shift+K"));
-        check(seedNativeToggle(binding.toString(QKeySequence::PortableText)),
-              "a native toggle binding is stored");
-
-        Scenario scenario;
-        const bool live = scenario.begin();
-        check(live, "the stored binding scenario shows a live picture");
-        PlayerShell* scenarioShell = scenario.shell();
-        check(scenarioShell != nullptr, "the binding scenario has a shell");
-        if (!live || scenarioShell == nullptr) {
-            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
-            return 1;
-        }
-        const double started = scenario.surface()->position();
-        check(!native::loadNativePreferences().enabled,
-              "the stored binding scenario starts with the request off");
-
-        pressKey(scenario.dialog.data(), binding);
-        check(native::loadNativePreferences().enabled,
-              "the stored binding's key stores the native request on");
-        const ShownNativeStatus on = shownNativeStatus(scenarioShell);
-        check(on.chipVisible, "a requested native chain shows its status chip");
-        check(!on.chipText.isEmpty(), "the status chip states the situation rather than nothing");
-        check(!on.chipTooltip.isEmpty(),
-              "the status chip displays the fact that blocks the request");
-        check(!on.producerActive, "no filter snapshot reports the native chain active");
-        check(!on.claimsActive,
-              "a stored request alone never claims the native chain is active");
-        check(!on.reason.isEmpty(),
-              "a request that cannot be applied shows the fact that blocks it");
-
-        pressKey(scenario.dialog.data(), binding);
-        check(!native::loadNativePreferences().enabled,
-              "the same key clears the stored request again");
-        const ShownNativeStatus off = shownNativeStatus(scenarioShell);
-        check(!off.producerActive && !off.claimsActive,
-              "turning the request off claims no active chain either");
-        check(scenario.streamUnbroken(),
-              "the stored binding left the Original picture up with no retry chip");
-        check(clockAdvanced(scenario.surface(), started),
-              "the stored binding never stopped the stream's clock");
-    }
-
-    // With no decision stored at all, the documented default installs and fires:
-    // an absent binding is not the same as one the viewer deliberately cleared.
-    {
-        clearStore();
-        check(!native::loadNativePreferences().toggleProcessingShortcutStored,
-              "a fresh store holds no toggle decision");
-
-        Scenario scenario;
-        const bool live = scenario.begin();
-        check(live, "the default-binding scenario shows a live picture");
-        PlayerShell* scenarioShell = scenario.shell();
-        check(scenarioShell != nullptr, "the default-binding scenario has a shell");
-        if (!live || scenarioShell == nullptr) {
-            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
-            return 1;
-        }
-        const double started = scenario.surface()->position();
-
-        pressKey(scenario.dialog.data(), native::menu::defaultToggleShortcut());
-        check(native::loadNativePreferences().enabled,
-              "the default key stores the native request when nothing was chosen");
-        const ShownNativeStatus byDefault = shownNativeStatus(scenarioShell);
-        check(byDefault.chipVisible && !byDefault.chipText.isEmpty() &&
-                  !byDefault.chipTooltip.isEmpty(),
-              "the default request shows its status like any stored one");
-        check(!byDefault.producerActive && !byDefault.claimsActive,
-              "the default request never claims an active native chain");
-        check(scenario.streamUnbroken(),
-              "the default key left the Original picture up with no retry chip");
-        check(clockAdvanced(scenario.surface(), started),
-              "the default key never stopped the stream's clock");
-    }
-
-    // A binding cleared on purpose is stored as an explicit decision, so the
-    // documented default must not come back and no key may act for it.
-    {
-        clearStore();
-        check(seedNativeToggle(QString()),
-              "an unbound native toggle decision is stored");
-        check(native::loadNativePreferences().toggleProcessingShortcutStored,
-              "the cleared binding is stored as a decision, not as an absence");
-
-        Scenario scenario;
-        const bool live = scenario.begin();
-        check(live, "the cleared-binding scenario shows a live picture");
-        PlayerShell* scenarioShell = scenario.shell();
-        check(scenarioShell != nullptr, "the cleared-binding scenario has a shell");
-        if (!live || scenarioShell == nullptr) {
-            std::fprintf(stderr, "FAILURES %d\n", failures + 1);
-            return 1;
-        }
-        const double started = scenario.surface()->position();
-
-        pressKey(scenario.dialog.data(), native::menu::defaultToggleShortcut());
-        pressKey(scenario.dialog.data(), QKeySequence(QStringLiteral("Ctrl+Shift+K")));
-        check(!native::loadNativePreferences().enabled,
-              "a cleared binding installs no key and re-offers no default");
-        check(!shownNativeStatus(scenarioShell).chipVisible,
-              "a cleared binding shows no native chip, because nothing is requested");
-        check(scenario.streamUnbroken(),
-              "the cleared binding left the Original picture up with no retry chip");
-        check(clockAdvanced(scenario.surface(), started),
-              "the cleared binding never stopped the stream's clock");
-    }
-
-    // A native binding that collides with a stored preset key never installs:
-    // the preset keeps the key and the native request stays untouched.
+    // Native processing has no toggle key: it is driven from the player menus.
+    // A stored preset binding must still install and move the applied mode, and
+    // it must never create a native request on its own.
     {
         clearStore();
         // The catalogue leads with Off, which is not a preset a key can apply.
@@ -657,14 +477,12 @@ int main(int argc, char** argv) {
         }
         const QKeySequence binding(QStringLiteral("Ctrl+Shift+P"));
         seedPresetBinding(presetId, binding.toString(QKeySequence::PortableText));
-        check(seedNativeToggle(binding.toString(QKeySequence::PortableText)),
-              "a colliding native binding is stored over a preset key");
 
         Scenario scenario;
         const bool live = scenario.begin();
-        check(live, "the collision scenario shows a live picture");
+        check(live, "the preset-key scenario shows a live picture");
         PlayerShell* scenarioShell = scenario.shell();
-        check(scenarioShell != nullptr, "the collision scenario has a shell");
+        check(scenarioShell != nullptr, "the preset-key scenario has a shell");
         if (!live || scenarioShell == nullptr) {
             std::fprintf(stderr, "FAILURES %d\n", failures + 1);
             return 1;
@@ -677,35 +495,30 @@ int main(int argc, char** argv) {
         check(before != wanted, "the preset's mode is not already applied before the key");
         pressKey(scenario.dialog.data(), binding);
         check(scenarioShell->videoSurface()->anime4KMode() == wanted,
-              "the preset keeps the key the native binding collided with");
+              "the preset key still applies its mode");
         check(!native::loadNativePreferences().enabled,
-              "the colliding native binding stores no request");
-        const ShownNativeStatus collided = shownNativeStatus(scenarioShell);
-        check(!collided.producerActive && !collided.claimsActive,
-              "a colliding binding claims no active native chain");
+              "a preset key stores no native request");
+        const ShownNativeStatus applied = shownNativeStatus(scenarioShell);
+        check(!applied.producerActive && !applied.claimsActive,
+              "a preset key claims no active native chain");
         check(scenario.streamUnbroken(),
-              "the colliding binding left the stream playing with no retry chip");
+              "the preset key left the stream playing with no retry chip");
         check(clockAdvanced(scenario.surface(), started),
-              "the colliding binding never stopped the stream's clock");
+              "the preset key never stopped the stream's clock");
     }
 
-    // A stored binding on a key the player acts on itself is refused, and the
-    // player's own key still behaves exactly as it does for any viewer.
+    // A key the player acts on itself still behaves exactly as it does for any
+    // viewer, and it stores no native request either.
     {
         clearStore();
-        check(seedNativeToggle(QStringLiteral("F")),
-              "a native binding on a player-reserved key is stored");
 
         Scenario scenario;
         const bool live = scenario.begin();
-        check(live, "the reserved-binding scenario shows a live picture");
-        PlayerShell* scenarioShell = scenario.shell();
-        check(scenarioShell != nullptr, "the reserved-binding scenario has a shell");
-        if (!live || scenarioShell == nullptr) {
+        check(live, "the reserved-key scenario shows a live picture");
+        if (!live) {
             std::fprintf(stderr, "FAILURES %d\n", failures + 1);
             return 1;
         }
-        const double started = scenario.surface()->position();
         // The player opens fullscreen; the probe proves the key still owns the
         // window mode rather than pinning which way it starts.
         const bool startedFullscreen = scenario.dialog->isFullScreen();
@@ -714,18 +527,13 @@ int main(int argc, char** argv) {
         check(scenario.dialog->isFullScreen() != startedFullscreen,
               "a reserved key still runs the player's own fullscreen action");
         check(!native::loadNativePreferences().enabled,
-              "a stored binding on a reserved key stores no request");
-        const ShownNativeStatus refused = shownNativeStatus(scenarioShell);
-        check(!refused.producerActive && !refused.claimsActive,
-              "a refused reserved binding claims no active native chain");
+              "a reserved key stores no native request");
 
         pressKey(scenario.dialog.data(), QKeySequence(QStringLiteral("F")));
         check(scenario.dialog->isFullScreen() == startedFullscreen,
-              "the player's own key is still reversible after the refusal");
+              "the player's own key is still reversible");
         check(scenario.streamUnbroken(),
-              "the refused reserved binding left the Original picture up with no retry chip");
-        check(clockAdvanced(scenario.surface(), started),
-              "the refused reserved binding never stopped the stream's clock");
+              "the reserved key left the Original picture up with no retry chip");
     }
 
     if (failures == 0) {

@@ -3,8 +3,8 @@
 #include "native/bundle/NativeDiagnostics.hpp"
 
 #include <QtCore/QDir>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
-#include <QtCore/QStandardPaths>
 
 #include <algorithm>
 
@@ -300,8 +300,9 @@ bool pathHasNoReparsePoints(const QString& root, const QString& path) {
 }
 
 QString nativeRoot() {
-    return QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
-        .filePath(QStringLiteral("native"));
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    if (exeDir.isEmpty()) return {};
+    return QDir(exeDir).filePath(QStringLiteral("native"));
 }
 
 QStringList nativeSubdirectoryNames() {

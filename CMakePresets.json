@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
   "configurePresets": [
     {
       "name": "base",
@@ -11,7 +11,6 @@
         "CMAKE_MAKE_PROGRAM": "C:/temp/w64dev/w64devkit/bin/make.exe",
         "CMAKE_CXX_COMPILER": "C:/temp/w64dev/w64devkit/bin/g++.exe",
         "CMAKE_PREFIX_PATH": "C:/temp/qt6/6.8.3/mingw_64",
-        "MPV_INCLUDE_DIR": "C:/Users/myhli/AppData/Local/MPVBackend/runtime/include",
         "MIKAI_BUILD_PROBES": "ON"
       }
     },

@@ -1016,7 +1016,7 @@ void TestNativeBundle::discoveryOverTheDefaultRootsFindsAnInstalledBundleAndSkip
     const QString beside = QDir(QCoreApplication::applicationDirPath())
                                .filePath(QStringLiteral("native/runtime"));
     QVERIFY(QDir::isAbsolutePath(beside));
-    QVERIFY2(storage.compare(beside, Qt::CaseInsensitive) != 0, qPrintable(beside));
+    QCOMPARE(QDir::cleanPath(storage), QDir::cleanPath(beside));
 
     // A uniquely versioned bundle, so a real installation beside it in the
     // user's AppData is neither read nor disturbed. The probe publishes into the
@@ -1577,14 +1577,10 @@ void TestNativeBundle::aStoredRelativeNameWithMalformedUnicodeIsRefused() {
 }
 
 void TestNativeBundle::theNativeLayoutResolvesUnderOneAppLocalHierarchy() {
-    // One hierarchy, one base: every app-owned native directory is a name
-    // beneath AppLocalDataLocation()/native, so nothing is written to a second
-    // root that a user's roaming profile or a portable install would miss.
-    const QString appLocal =
-        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    QVERIFY(!appLocal.isEmpty());
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    QVERIFY(!exeDir.isEmpty());
     const QString storage = nativeStorageRoot();
-    QCOMPARE(storage, QDir::cleanPath(QDir(appLocal).filePath(QStringLiteral("native"))));
+    QCOMPARE(storage, QDir::cleanPath(QDir(exeDir).filePath(QStringLiteral("native"))));
     QCOMPARE(runtimeStorageRoot(), QDir::cleanPath(QDir(storage).filePath(QStringLiteral("runtime"))));
 
     const QStringList names = nativeSubdirectoryNames();

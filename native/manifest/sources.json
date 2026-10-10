@@ -1,6 +1,6 @@
 {
   "schema": "mikai.native.sources/1",
-  "generated": "2026-10-01",
+  "generated": "2026-10-09",
   "owner": "M03",
   "purpose": "Pinned source identities and acquisition points for every native component this repository may build, vendor or redistribute. This file records identity and licence *evidence*. It is not itself a legal clearance: per-component clearance decisions live in components.json.",
   "conventions": {
@@ -115,71 +115,70 @@
     },
     {
       "id": "mpv-author-winbuild",
-      "role": "User-selected author mpv and custom libass runtime baseline; not a prepared native processing bundle",
+      "role": "Pinned API-only developer archive providing matching libmpv headers and DLL for the Standard in-process player; not a prepared Native processing bundle",
       "pinKind": "releasePin",
       "fileIntegrity": "digestInventory",
-      "fileIntegrityReason": "Both exact release archives were downloaded into an owned directory and their measured SHA-256 digests match the publisher digests in the GitHub Releases API. The files inventory verifies these archives, not native inference or redistribution readiness.",
+      "fileIntegrityReason": "The exact API-only mpv-dev archive was downloaded locally and its SHA-256 matches the publisher digest. The extracted DLL size and digest are local observations, not publisher-provided checksums.",
       "url": "https://github.com/the-database/mpv-winbuild",
       "ref": {
         "type": "gitCommit",
-        "sha": "e44cfd8af3eb0aa41b3740f66be4e5a1fcf4171e",
-        "role": "Workflow source used by release build run 35219559230"
+        "sha": "6ac50ae6b135c5c9b484c37cc47e5368d1f8b613",
+        "role": "Release tag commit for build run 37549675458"
       },
       "release": {
-        "tag": "2026-09-17-63d127174d",
-        "tagCommit": "ef7f285b0173d65bfe42f040c4ebf8cd064347f1",
-        "page": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-09-17-63d127174d",
-        "api": "https://api.github.com/repos/the-database/mpv-winbuild/releases/tags/2026-09-17-63d127174d",
-        "buildRun": "https://github.com/the-database/mpv-winbuild/actions/runs/35219559230"
+        "tag": "2026-10-07-d6d93599d5",
+        "tagCommit": "6ac50ae6b135c5c9b484c37cc47e5368d1f8b613",
+        "page": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-07-d6d93599d5",
+        "api": "https://api.github.com/repos/the-database/mpv-winbuild/releases/tags/2026-10-07-d6d93599d5",
+        "buildRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37549675458"
       },
       "mpvSource": {
         "url": "https://github.com/the-database/mpv",
-        "commit": "63d127174d8f70336c82a22408929e2bc301edcb"
-      },
-      "libassSource": {
-        "url": "https://github.com/the-database/libass",
-        "commit": null,
-        "boundary": "The workflow resolves this fork independently and enables threads. The exact resolved libass commit has not been established here; native subtitle options were observed in the executable."
+        "commit": "d6d93599d59069b715013a6e77e898056499b905",
+        "tree": "d69b8c428bb057743eef5aa4e33f6c92926fd393"
       },
       "files": [
         {
-          "file": "mpv-x86_64-20260917-git-63d127174d.7z",
-          "bytes": 32956357,
-          "sha256": "f29f16885f1765f724b9643c6af7eb77e1b01401fa2f7bccfaffee486327a1e6",
-          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-09-17-63d127174d/mpv-x86_64-20260917-git-63d127174d.7z"
-        },
-        {
-          "file": "mpv-dev-x86_64-20260917-git-63d127174d.7z",
-          "bytes": 32160075,
-          "sha256": "aa0985be68e02d9a38e6ea3280d836e792311e9b5a8aa00c63f137983d477db8",
-          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-09-17-63d127174d/mpv-dev-x86_64-20260917-git-63d127174d.7z"
+          "file": "mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
+          "bytes": 32830217,
+          "sha256": "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c",
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
+          "contents": "API-only developer archive containing include/mpv/*, libmpv.dll.a and libmpv-2.dll; no mpv.exe"
         }
       ],
-      "acquisition": {
-        "ownedRoot": "F:/ZKS/mikai-native-sdks/mpv-author-2026-09-17",
-        "scope": "Independent immutable acquisition, never another application's installation, settings, models or cache",
-        "executableUse": "Standalone smoke only; Mikai remains an in-process Qt/OpenGL libmpv player"
+      "observedDll": {
+        "file": "libmpv-2.dll",
+        "bytes": 122146816,
+        "sha256": "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649",
+        "architecture": "x64",
+        "mpvApi": "2.5",
+        "digestKind": "locallyObserved; not a publisher digest"
       },
-      "integrationBoundary": "The original release includes the author animejanai filter and custom libass, but not this project's native status protocol or prepared-only patch. Native processing activation and complete corresponding-source/licence obligations remain separate gates. Standard playback defaults are unchanged."
+      "acquisition": {
+        "ownedRoot": "F:/ZKS/mikai-native-sdks/mpv-author-2026-10-07",
+        "scope": "Pinned developer archive used as build input and to supply only libmpv-2.dll to local app/dist packages",
+        "executableUse": "No mpv.exe is used; Mikai remains an in-process Qt/OpenGL libmpv player"
+      },
+      "integrationBoundary": "The official release DLL does not contain the project's native status/admission patches and is not a Native bundle. Preserve the separate mpv-fork source/build record at 63d127174d8f70336c82a22408929e2bc301edcb and its native/patches/mpv project patch series. The release publisher's build options, complete corresponding source/dependency licence closure and relinkability for this exact DLL are not established; third-party redistribution is blocked."
     },
     {
       "id": "mpv-upstream-stock-build",
-      "role": "the Standard (non-native) mpv core the Qt application already provisions",
+      "role": "Historical stock mpv runtime observation only; not an active source, download or provisioning path",
       "pinKind": "referencePin",
       "fileIntegrity": "documentationOnly",
-      "fileIntegrityReason": "Pre-existing and out of scope for this work: the application resolves and downloads this core at run time, and this repository neither vendors nor modifies it. No digest is recorded because this repository never holds the artefact at a known version - the resolved version is whatever the release API returns on the day.",
-      "knownGap": "Because that download is not digest-verified, the provisioned core's exact mpv revision is recorded nowhere. observations.stockCore.versionStringFoundInBinary shows what this machine ran (v0.41.0-1072-g2a4eb8067), but that is a measurement of one install, not a pin.",
+      "fileIntegrityReason": "Historical evidence only: the former app-launch resolver was removed. The prior stock binary was not digest-pinned and is not a current build or package input.",
+      "knownGap": "The historical machine observation is recorded under observations.stockCore; it is not a pin and does not describe the current Standard player.",
       "url": "https://github.com/shinchiro/mpv-winbuild-cmake",
-      "acquisition": {
-        "mechanism": "GitHub Releases API, latest release, asset matching mpv-dev-x86_64-*.7z",
+      "historicalObservation": {
+        "mechanism": "Former app-launch download from latest release API; no longer used",
         "apiUrl": "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest",
-        "resolvedBy": "src/backend/Runtime.cpp (releasesApi(), findRuntime(), ensureRuntime())",
+        "resolvedBy": "Historical code path only; not an active caller",
         "latestTagAtGeneration": "20261001",
-        "scope": "PRE-EXISTING and explicitly out of scope for this native work; not modified, not vendored, not re-hosted by this repository."
+        "scope": "Historical record, not an active source, download, or package input."
       },
       "licence": {
         "spdx": "GPL-2.0-or-later",
-        "basis": "upstream mpv default; this winbuild recipe does not pass -Dgpl=false",
+        "basis": "Historical stock recipe did not pass -Dgpl=false; not the current Standard binary",
         "evidence": [
           "https://raw.githubusercontent.com/mpv-player/mpv/master/Copyright",
           "https://raw.githubusercontent.com/shinchiro/mpv-winbuild-cmake/master/README.md"
@@ -191,17 +190,16 @@
       "role": "the C ABI-8 inference shim: aji.dll (dispatcher), aji_trt.dll (TensorRT), aji_dml.dll (DirectML)",
       "pinKind": "releasePin",
       "fileIntegrity": "digestInventory",
-      "fileIntegrityReason": "The only source in this manifest whose tracked files are individually digest-checkable today. The nine files below are hashed from the local read-only copy AND from the same path at the pinned commit on raw.githubusercontent; both agree. Pass --source-root animejanai-inference=<path> to mikai_manifest_check to recompute all nine.",
+      "fileIntegrityReason": "The nine files below are hashed from the local read-only copy. Header, conf parser and dispatcher match the official v0.9.0 tag; TRT and CMake are locally modified. Pass --source-root animejanai-inference=<path> to mikai_manifest_check to recompute the local inventory.",
       "inventoryCoverage": "The nine files below are every file that feeds the three shipped DLLs. The repository holds additional material this inventory deliberately excludes: docs/, .github/, sanity/, parity/, tools/, the *.md files and the conf fixture. Those are documentation, CI definitions and research scaffolding; none is compiled into aji.dll, aji_trt.dll or aji_dml.dll, so they cannot change a built artefact's identity.",
       "coverageRule": "A file may be omitted from sourceDigestsMeasuredLocally only if it is not an input to any of the three shipped DLLs. That is a positive test, not a blanket exemption: adding a file to src/, include/ or any CMake-referenced path leaves the inventory incomplete until its digest is added here.",
       "url": "https://github.com/the-database/animejanai-inference",
       "ref": {
         "type": "gitCommit",
-        "sha": "738ce3b3020b3950c48ce3122a08f32af531d4fa",
-        "branch": "main",
-        "commitDate": "2026-09-14T01:04:33Z",
-        "pinRationale": "Pinned to a commit, not to the moving `main` ref. Established by byte-comparison: all nine files below hash identically between the local read-only copy and raw.githubusercontent at this exact commit.",
-        "verifiedBy": "sha256sum of each local file compared against the same path fetched from raw.githubusercontent.com/the-database/animejanai-inference/738ce3b3020b3950c48ce3122a08f32af531d4fa"
+        "sha": "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3",
+        "tag": "v0.9.0",
+        "pinRationale": "Pinned to the official v0.9.0 tag commit, not the moving `main` ref. Header, conf parser and dispatcher in the read-only local source copy match this tag byte-for-byte; the local TRT implementation and CMake files are fork-modified for Unicode argv/path handling.",
+        "verifiedBy": "https://github.com/the-database/animejanai-inference/tree/c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3; local source reconciliation recorded in this entry"
       },
       "latestRelease": {
         "tag": "v0.9.0",
@@ -229,9 +227,94 @@
       },
       "localReferenceCopy": {
         "path": "C:/Users/myhli/Downloads/janai/animejanai-inference-main",
-        "role": "read-only reference input; never modified, never a runtime dependency",
-        "vcsMetadata": "no .git directory present; identity established instead by per-file digest comparison against the pinned commit",
-        "matchesPinnedCommit": true
+        "role": "user-local mutable compile source tree; not a runtime dependency. Authorized local edits are preserved.",
+        "vcsMetadata": "no .git directory present; the historical upstream baseline was reconciled by per-file comparison before subsequent authorized local source edits",
+        "matchesPinnedCommit": false
+      },
+      "officialWindowsAssetUse": {
+        "tag": "v0.9.0",
+        "asset": "aji-windows-x64.zip",
+        "bytes": 657798,
+        "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586",
+        "sourceCommit": "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3",
+        "acquisition": "Acquire the official asset and its dispatcher/TensorRT/DirectML dependency closure only into the user's per-machine component store after an explicit user action. Nothing is bundled, auto-downloaded at application startup, or publicly redistributed."
+      },
+      "localSourceReconciliation": {
+        "basis": "The upstream tag baseline comparison is historical: it was performed before authorized local source edits. Current local inputs are mutable and their present hashes are listed in sourceDigestsMeasuredLocally.",
+        "historicalUpstreamBaselineComparison": {
+          "tag": "v0.9.0",
+          "commit": "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3",
+          "byteIdenticalAtBaseline": [
+            "include/aji.h",
+            "src/aji_conf.cpp",
+            "src/aji_dispatch.cpp"
+          ],
+          "baselineForkModified": [
+            "src/aji_trt.cpp",
+            "CMakeLists.txt"
+          ]
+        },
+        "authorizedLocalChanges": [
+          {
+            "file": "src/aji_dispatch.cpp",
+            "change": "Adds optional ABI-8-preserving aji_api_version and aji_rife_heavy_supported query exports."
+          },
+          {
+            "file": "src/aji_trt.cpp",
+            "change": "Includes the CreateProcessW/UTF-8 and wide Win32 path changes; subsequent 0005 mapping accepts only RIFE code 4262 with ensemble=false as rife_v4.26_heavy."
+          },
+          {
+            "file": "src/aji_dml.cpp",
+            "change": "Local 0005 mapping accepts only RIFE code 4262 with ensemble=false as rife_v4.26_heavy."
+          },
+          {
+            "file": "CMakeLists.txt",
+            "change": "UTF-8 argv manifest integration for relevant targets."
+          }
+        ],
+        "remainingPathCaveat": "The dispatcher still uses GetModuleFileNameA and LoadLibraryExA, config parsing uses std::ifstream, and some model/cache paths remain narrow. Do not claim arbitrary non-ASCII paths work end-to-end.",
+        "binaryStatus": "A local compile/link succeeded for aji.dll, aji_trt.dll, and aji_dml.dll; artifact identities and the build record are listed in localBuildObservation. ABI/capability loading, backend loading, graph availability, and inference are not established.",
+        "localBuildExtension": {
+          "patch": "native/patches/0005-rife-heavy-model-mapping.patch",
+          "abiVersion": 8,
+          "mapping": "only exact code 4262 with ensemble=false maps to rife_v4.26_heavy; ensemble=true is rejected",
+          "capabilityExports": [
+            "int aji_api_version(void)",
+            "int aji_rife_heavy_supported(void)"
+          ],
+          "scope": "Local build source only. The official v0.9.0 downloaded Aji asset does not include this extension.",
+          "evidenceBoundary": "The ABI-8 mapping and query declarations are source-level capability; successful compilation is separately observed, but symbol lookup/loading, model availability, backend operation, and inference are not established."
+        }
+      },
+      "localBuildObservation": {
+        "buildCommand": "cmake --build .probe-out/aji-upstream-abi8-build --target aji aji_trt aji_dml --parallel 8",
+        "buildResult": "Parent-observed successful local compile/link: all 10 compile/link steps exited 0 in 32.59 seconds.",
+        "toolchain": {
+          "compiler": "MSVC 19.44.35222",
+          "cudaNvcc": "13.4.92",
+          "tensorrt": "11.3.0.99 with AJI_NVINFER=nvinfer_11",
+          "onnxruntimeDirectML": "1.24.4",
+          "directml": "1.15.4",
+          "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded"
+        },
+        "artifacts": [
+          {
+            "file": ".probe-out/aji-upstream-abi8-build/aji.dll",
+            "bytes": 313344,
+            "sha256": "59a06a64985465b94dbcea9aedfa131bfecf538c5fa809b77f6b0b976941d859"
+          },
+          {
+            "file": ".probe-out/aji-upstream-abi8-build/aji_trt.dll",
+            "bytes": 622592,
+            "sha256": "cda06b490141655c7f0401f7d0d895a4c9216d6c551354f58e663baa2a08b6d3"
+          },
+          {
+            "file": ".probe-out/aji-upstream-abi8-build/aji_dml.dll",
+            "bytes": 421376,
+            "sha256": "7cd82729b72a0ded8b8952d11a8e51665ad86b5d8be7e5d1a41d24b5449f81f1"
+          }
+        ],
+        "evidenceBoundary": "Compile/link only. These are descriptive hashes of private local build outputs, not official release pins or public artifacts. No decoder/filter/inference behavior, compiled ABI/capability loading, backend load, or model availability is established; do not claim Ready/Active or publish."
       },
       "sourceDigestsMeasuredLocally": [
         {
@@ -244,7 +327,7 @@
         },
         {
           "file": "src/aji_dispatch.cpp",
-          "sha256": "a6bd6ca4f05116c093567c5efe5f15932dc349c3b82635aade29958008f6b1dd"
+          "sha256": "78ba6142ea3a1e517cbb663c5c2ce6ea707e7a0295b5a2ed607b652b5be718ba"
         },
         {
           "file": "src/aji_conf.cpp",
@@ -256,11 +339,11 @@
         },
         {
           "file": "src/aji_trt.cpp",
-          "sha256": "72c0d53110379af2e6ec0f36f8390cb71ecd0febb7249e489ac3defb2e5c8bde"
+          "sha256": "1d376156ba36646bd2198694740511b89f5064e694a042e23b51f49a87660f72"
         },
         {
           "file": "src/aji_dml.cpp",
-          "sha256": "a6f9d15da2c580bc9f93b7b1501a4822841b4fd900cb543ddf208ab4c2c000fb"
+          "sha256": "5be8ad68fdb8cfd12a4861779555ea4daa3358a4a9557118dc2231ea5004abc8"
         },
         {
           "file": "src/kernels.cu",
@@ -271,7 +354,7 @@
           "sha256": "32f6270f78c9a32c576ac524b3e71f39af56965db1b757ac2aa731d23c0eeacc"
         }
       ],
-      "pinnedFileDigestNote": "Each digest was computed twice - once on the local copy, once on the upstream file at the pinned commit - and matched. This is what makes the commit a verified pin rather than a claim.",
+      "pinnedFileDigestNote": "The local digest inventory describes the current mutable compile inputs, not an upstream tag match. The historical tag-baseline comparison is separately recorded above. These input hashes are not generated DLL hashes; private local build-output hashes are recorded in localBuildObservation and are not release pins.",
       "licence": {
         "spdx": null,
         "declaredLicenseFile": null,
@@ -1085,7 +1168,7 @@
       "builderResources": "nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll, resolved by the TensorRT builder next to aji_trt.dll",
       "tacticSuppression": "--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT",
       "tacticSuppressionEffect": "changes which tactics the builder may select, so it changes the numerics inside a generated engine and therefore the engine's digest. An engine is interchangeable only with another built under the same tactic set; this is why components.json#runtime.cuda-cudart records cuDNN and cuBLAS as deliberately absent.",
-      "noTrtexec": "engines are built in-process through the TensorRT builder API, so trtexec.exe is a build-time convenience and is never a run-time dependency. That is what resolves ESC-5 by architecture rather than by permission."
+      "noTrtexec": "The private prepared-helper path builds engines in-process and avoids trtexec.exe. The official v0.9.0 upstream-config path invokes trtexec.exe for TensorRT first-build; this path-specific distinction leaves ESC-5 unresolved for upstream-config use."
     },
     "shippedBinaries": [
       "aji.dll",
@@ -1256,6 +1339,234 @@
   },
   "observations": {
     "disclaimer": "Descriptive measurements of pre-existing files on this machine. NOT produced by this repository's build, NOT cryptographically reproduced from any source, and NOT usable as release pins. They become pins only when this repository builds the artefact itself and the reproduction is recorded.",
+    "currentStackEvidence": {
+      "observedOn": "2026-10-09",
+      "latestReleaseApiRecheck": {
+        "mpvWinbuild": "2026-10-07-d6d93599d5",
+        "animejanai": "3.7.0",
+        "aji": "v0.9.0"
+      },
+      "officialMpvDevArchive": {
+        "bytes": 32830217,
+        "sha256": "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c",
+        "observedDll": {
+          "file": "libmpv-2.dll",
+          "bytes": 122146816,
+          "sha256": "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649"
+        },
+        "boundary": "The generic stock-20c... descriptor is a label, not evidence of a stock mpv binary. The packaged API DLL was verified as the custom fork DLL. The app retains vo=libmpv on its Qt OpenGL surface."
+      },
+      "upstreamComponentQuery": {
+        "command": "portable AnimeJaNaiUpdater.exe --components --json",
+        "exitCode": 0,
+        "gpu": "RTX 5090, SM 12.0",
+        "recommended": ["trt-runtime", "trt-sm120"],
+        "preselectedForNewInstall": "trt-sm120",
+        "effect": "Query only; it installed nothing."
+      },
+      "trtComponentArchive": {
+        "observedSha256Prefix": "282cb9",
+        "members": [
+          "CUDA_LICENSE",
+          "DirectML_LICENSE",
+          "cudart13",
+          "nvinfer11",
+          "nvinfer_plugin11",
+          "nvonnxparser11",
+          "trtexec.exe"
+        ],
+        "memberCount": 7,
+        "noticeFinding": "No mandatory package-wide notices in this component archive; installation preserves optional existing notice files.",
+        "upstreamSourceLicense": "GPL-3.0; behavior adapted through the application's existing transport, without verbatim unsafe HTTP-copy code or standalone-player updater."
+      },
+      "rifeComponentArchive": {
+        "modelsCompared": 47,
+        "onlyCorrectedPin": {
+          "model": "rife_v4.18_ensemble.onnx",
+          "bytes": 10785406,
+          "correctedSha256": "69c46eb0cf3c1874ca5278758a8e7c4df1b70d0feaa682ce895459b7a6fa9716",
+          "priorPinLength": 55,
+          "correctedPinLength": 64
+        },
+        "otherModelNamesSizesHashesMatch": 46
+      },
+      "localCustomAjiImport": {
+        "record": ".probe-out/natural-rife-a42/native/components/aji/v0.9.0/trt/install.json",
+        "schema": 2,
+        "abi": 8,
+        "provenance": "local",
+        "heavyRifeSupported": true,
+        "dispatcher": {
+          "bytes": 313344,
+          "sha256": "59a06a64985465b94dbcea9aedfa131bfecf538c5fa809b77f6b0b976941d859"
+        },
+        "selectedTrtBackend": {
+          "bytes": 622592,
+          "sha256": "cda06b490141655c7f0401f7d0d895a4c9216d6c551354f58e663baa2a08b6d3"
+        },
+        "boundary": "Explicit local import, not the public v0.9.0 downloader default; no heavy-model substitution."
+      },
+      "planOnlySmoke": {
+        "modelsPrepared": 47,
+        "engineBuildRequested": false,
+        "details": "All 47 actual prepareAnimeJanaiPlan combinations resolved exact backend/model code/ensemble/verified graph, including v4.26 heavy. Extensionless rifeModelName boundary fixed. ABI codes 47/48/49 decode correctly; 407 decodes incorrectly as 4.07. Temporary heavy-test catalog lifetime crash fixed."
+      },
+      "freshSpatialEngineAttempt": {
+        "artifact": 340,
+        "retainedEngineAndLogs": ".probe-out/natural-spatial-a43/native/animejanai/models/spatial/",
+        "engineBuild": {
+          "result": "fresh TensorRT engine build succeeded",
+          "tensorrt": "11.3.0 [b99]",
+          "elapsedSeconds": 18.527,
+          "bytesMiB": 3.01755,
+          "graphSha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c",
+          "engineFile": "aji-1f13ce41.3460285348.trt-11.3.0.gpu-NVIDIA-GeForce-RTX-5090-sm12.engine",
+          "engineSha256": "a122bc35c163740a3eedb1221c72e289c296682594bc580ac5faa5676a6f74a8"
+        },
+        "probeOverall": "FAIL/inconclusive after 626 seconds; a 600-second wait expected incidental status text 'filter accepted'",
+        "observedStatus": "filter retained (inference not observed)",
+        "observedSteps": [
+          "local shim loaded",
+          "TensorRT backend loaded",
+          "background trtexec completed for the actual single-SHA graph/model",
+          "engine loaded",
+          "slot 2001 configured for 320x180 to 640x360, depth 3",
+          "CUDA graph chain captured",
+          "vo=libmpv at 640x360 CUDA NV12"
+        ],
+        "statusPredicate": "The incidental 'filter accepted' predicate was a false failure; artifact 340 remains failed, while passing fresh spatial run a46 (artifact 367) supersedes that gate.",
+        "boundary": "Artifact 340 remains a failed historical attempt; its false incidental-status gate was superseded by passing selected spatial run a46 (artifact 367)."
+      },
+      "freshRifeEngineAttempt": {
+        "artifact": 349,
+        "model": "rife_v4.14_lite",
+        "result": "fresh raw TensorRT engine build succeeded, about 9 MiB in roughly 42 seconds",
+        "enginePath": ".probe-out/natural-rife-a42/native/animejanai/models/rife/aji-a19419d9.1340852267.trt-11.3.0.gpu-NVIDIA-GeForce-RTX-5090-sm12.engine",
+        "buildLog": "sibling .build.log",
+        "priorRootEngineSnapshot": "empty",
+        "normalQtLibmpvPath": true,
+        "observedStats": "RIFE v4.14 lite applied; active ratio 2/1; padded 320x192 and cropped 320x180; NewVideoFPS48 reported",
+        "screenshots": "nonblack processed PNG and actual PlayerDialog PNG saved",
+        "probeOverall": "FAIL/unproven: request-bound artifact scan searched spatial plan.modelDir/wrong model identity; time-pos transition count was not presentation-frame cadence evidence",
+        "boundary": "Artifact 349's time-pos transitions did not prove cadence and its overall probe failed; corrected artifact 366 passed the selected-model fresh-build/render/interactions and relative presentation-output-count gate. Numerical fidelity, all-47 inference, private Ready/Active, and FPS improvement remain unestablished."
+      },
+      "latestRifeRun": {
+        "artifact": 366,
+        "result": "FULL PASS on stage 7 current Core.",
+        "durationSeconds": 88.63,
+        "rawEngineBuildSeconds": 38.932,
+        "rawEngineMiB": 9.12264,
+        "preRunSelectedEngineDirectory": "0 engines, 0 logs.",
+        "retainedPath": ".probe-out/natural-rife-a45/native/animejanai/models/rife/",
+        "evidenceLog": ".probe-out/natural-rife-a45/qt-flow-proof.log",
+        "model": "rife_v4.14_lite",
+        "modelCode": 4141,
+        "graphBytes": 5986311,
+        "graphSha256": "948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7",
+        "buildAndRender": "Natural Qt worker -> vf -> local custom ABI-8 -> trtexec raw engine; full PASSED footer matched exact ONNX and saveEngine; all request-bound components=1, not prebuilt.",
+        "engineBytes": 9565780,
+        "engineSha256": "e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22",
+        "buildLogSha256": "9ada04e23302c212641a0407193eab3c0aa80f0cd860d6db21f57b468fa59f59",
+        "runtimeObservation": "RIFE active at 2/1; reported NewVideoFPS48; padded 320x192 then cropped to 320x180; actual NVDEC output 320x180.",
+        "presentationFrameCounter": "Successful MPV_RENDER_UPDATE_FRAME surface outputs over 3 seconds: baseline 73, processed 145 at equal resolution; time-pos events were 70 vs 72 and were not used as frame evidence. 1.5x minimum threshold passed.",
+        "processedImageSha256": "91ede513739640d2dacb86e3dbdfa48cabb8c4ecb6d99e194344b9f6fac40111",
+        "visualAndPlaybackChecks": "Nonblack/changed/moving processed image passed; PlayerDialog PNG recorded on profile a45; pause, Right seek, volume 37 and mute, audio/subtitle cycling, Off restoring hwdec, source reopen and shutdown surface all passed; postfilter raw estimated 48, decoder and VO drops 0.",
+        "identityBoundary": "Engine-to-active-model identity is inferred from exact configuration and fresh artifacts because Core has no engine-ID event.",
+        "acceptanceBoundary": "This RIFE v4.14 lite run passed its described build/render/interactions and presentation-output-count checks only. It does not establish numerical fidelity, all-47 inference, private Ready/Active, or an FPS performance improvement."
+      },
+      "archiveExtractorInvestigation": {
+        "rootCause": "The existing 7zr fallback supports .7z only; the Aji install closure requires ZIP and NuGet handling.",
+        "release": "https://github.com/ip7z/7zip/releases/tag/26.03",
+        "assetListing": "https://github.com/ip7z/7zip/releases/expanded_assets/26.03",
+        "installerUrl": "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe",
+        "bootstrapUrl": "https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe",
+        "acquiredOfficialTool": "7-Zip 26.03 x64 installer",
+        "bootstrapRole": "Verified 7zr bootstrap extracts the official self-extracting installer payload only; it is not used to extract ZIP/NuGet runtime archives.",
+        "verificationMethod": "SHA-256 values reproduced from the official release asset listing. The helper checks fetched installer/bootstrap bytes before writing; the installer is verified before bootstrap extraction. This is not a separate on-disk post-download rehash.",
+        "payload": "On successful extraction the bootstrap and installer are removed. 7z.exe, 7z.dll and other extracted payload files remain in cacheDir()/../tools/7zip-26.03, outside dist.",
+        "bootstrapSha256": "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d",
+        "installerSha256": "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd",
+        "licenseBasis": "Official 7-Zip licensing guidance identifies GNU LGPL for EXE/DLL use and requires identifying 7-Zip use plus a source link in documentation. Its unRAR restriction is unrelated to ZIP/7z extraction. The exact extracted license-file name/content was not inspected.",
+        "licenseSource": "https://www.7-zip.org/faq.html",
+        "laterGuiAttempt": {
+          "artifact": 351,
+          "result": "selection/verify/review checks passed; DirectML install failed because a valid Windows path member was treated as unsafe",
+          "sourceCorrection": "Archive-member separator normalization was updated while retaining the existing unsafe-path guard.",
+          "fullInstallSuccessObserved": false
+        },
+        "successfulDirectMlInstall": {
+          "artifact": 357,
+          "result": "Actual DirectML download/install/verification succeeded after Review Yes; selected DirectML remained selected and inactive corrupt TensorRT was ignored.",
+          "abi": 8,
+          "closure": "Four DirectML DLLs",
+          "installRecordSha256": "24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10",
+          "overallUiProbe": "Failed four shortcut/hidden-tab checks due false predicates; not a DirectML installer failure."
+        },
+        "completeGuiInstallFlow": "DirectML download/install/verify passed in artifact 357; overall UI probe is not accepted."
+      },
+      "guiRun343": {
+        "artifact": 343,
+        "passed": [
+          "English and Ukrainian all-47 RIFE and five-spatial selection access",
+          "live-catalog Save and refusal",
+          "Verify success preserving missing selected DirectML and inactive corrupt TensorRT state",
+          "selection preserved through refresh",
+          "Review Yes was actually clicked",
+          "backend persistence"
+        ],
+        "downloadAttempt": {
+          "result": "failed before DirectML record creation",
+          "message": "The verified runtime archive listing could not be read"
+        },
+        "closureNote": "Default archive installation also requires Aji ZIP and NuGet inputs; the acquired TensorRT component archive alone is not the complete Aji install closure."
+      },
+      "previousSpatialAttemptA44": {
+        "result": "Fresh raw engine build and 640x output/render logs observed.",
+        "probeOverall": "Failed on CRC filename filtering and an early raw-output read of 320 before configured-slot Core property reconfiguration."
+      },
+      "latestSpatialAttempt": {
+        "artifact": 367,
+        "run": "a46",
+        "durationSeconds": 66.47,
+        "rawEngineBuildSeconds": 15.7249,
+        "rawEngineMiB": 2.98863,
+        "result": "FULL PASS on stage 7 current app/Core.",
+        "preRunSelectedEngineDirectory": "0 engines, 0 logs.",
+        "retainedPath": ".probe-out/natural-spatial-a46/native/animejanai/models/spatial/",
+        "evidenceLog": ".probe-out/natural-spatial-a46/qt-flow-proof.log",
+        "graphSha256": "b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c",
+        "engineBytes": 3133804,
+        "engineSha256": "0a3fd65a1de1abe5507a996ee571abfebef8eda3294046a195b91b4648c759c9",
+        "rawBuildLogSha256": "6275103a48408abde8b1eab59a1170f6d5def2ff874729f48e6fa42ad4fb8f82",
+        "rawEngineProof": "PASSED log SHA corresponds to exact --onnx graph SHA and --saveEngine actual CRC engine; all request-bound components=1.",
+        "configuredPath": "Core video-out-params 640x360; decoder input 320x180 NVDEC; @mikai_aji; configured slot 2001 GPU 320->640; four successful render flags after geometry.",
+        "renderEvidence": "Postfilter 73 rendered frames/3 seconds (24 fps unchanged); raw estimated 24; decoder/VO drops 0.",
+        "visualAndPlaybackChecks": "Nonblack changed/moving OpenGL frame and owned PlayerDialog capture on profile a46; Space pause, Right seek, volume 37/mute, audio/subtitle cycle, Off restoring hwdec, source reopen and shutdown surface passed.",
+        "processedImageSha256": "a5aee6310c2cea4404d8f93716a2a0f82dbaa4056ac92b00efb99d02cf7cb75e",
+        "acceptanceBoundary": "Passes this selected spatial model's fresh build/render/control playback run. It is not all-47 inference, numerical fidelity, private Ready/Active, or an FPS improvement claim."
+      },
+      "latestGuiRun": {
+        "artifact": 361,
+        "durationSeconds": 13.68,
+        "result": "FULL PASS, zero failures.",
+        "passed": [
+          "Native and Presets shortcuts visibly opened their own pages; Ctrl+Alt+Shift+F12 glyphs and clear-inside checks",
+          "Save/Cancel at minimum 760x780, DPR 2",
+          "English/Ukrainian access to all 47 RIFE and five spatial choices",
+          "Live language Save and missing-catalog refusal",
+          "Verify preserved missing selected DirectML versus inactive corrupt TensorRT",
+          "Review Yes followed by default DirectML download/install/verify; four-DLL ABI-8 record"
+        ],
+        "directMlInstallRecordSha256": "24443bc9d5f8624149d7b3b1f91dd851ad7fbc5323fa2836d3380bbe268ebd10",
+        "distStage": "Stage 6 rebuilt; current application/Core identical to stage 5."
+      },
+      "latestUnionBuild": {
+        "result": "Zero errors/warnings; CTest passed in 13.78 seconds.",
+        "ukrainianTranslations": "999 finished, 0 unfinished.",
+        "dist": "Rebuilt at stage 7."
+      },
+      "verificationBoundary": "Artifact 361 passed the described settings/GUI and DirectML install flow. RIFE artifact 366 and spatial artifact 367 passed their described fresh-build/render/control playback runs for the selected models; RIFE's relative output-count threshold passed. Engine-to-active-model identity remains inferred; numerical fidelity, all-47 inference, private Ready/Active, and FPS improvement are not established. This does not resolve ESC-1/2/3."
+    },
     "observedBinaries": {
       "what": "The four package binaries whose SHA-256 this project measured on this machine, transcribed from plan.md section 3.2. These are the descriptive research observations the plan records. They are NOT release pins: none of the four was produced by this repository's build, and no source-to-binary reproduction has been proved. They may never be referenced by a build, a bundle manifest or a download.",
       "recordedFrom": "plan.md section 3.2, 'Binary hashes (descriptive - not release pins)'",
@@ -1270,8 +1581,8 @@
           "bytes": 120797184,
           "sha256": "d2d081547efea8a1530f4ba0bf58a0d72069b25c40d8b2a7071cea5aa82381c6",
           "producedByThisRepository": false,
-          "role": "the Standard core the Qt application provisions at run time; untouched by the native work",
-          "note": "this is the download the app resolves at run time from the shinchiro release API, not an artefact of any pinned build"
+          "role": "historical stock Standard core observation; not an active runtime source or package input",
+          "note": "historical machine observation of the former shinchiro release-API app-launch download path; that path was removed and this binary is not the current Standard core"
         },
         {
           "label": "native fork core",

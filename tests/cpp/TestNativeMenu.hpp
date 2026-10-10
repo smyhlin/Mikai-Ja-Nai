@@ -32,9 +32,9 @@ class TestNativeMenu : public QObject {
   void unavailableRifeRecipeStaysDisabledWithItsOwnReason();
   void rifeVariantsNeverCrossRouteAndDuplicatesStaySelectable();
   void rifeCurrentMarkSurvivesReordering();
-  void realesrganAndOtherModelsStayPlaceholders();
   void statusStaysHiddenForDefaultOff();
+  void standardRuntimeHidesPrivateRequestStatus();
+  void nativeRuntimeShowsUnobservedRequestHonestly();
   void statusRendersOnlyWhatTheSnapshotStates();
   void snapshotWithoutGeometryNeverRendersZero();
-  void toggleShortcutPrefersTheStoredBinding();
 };

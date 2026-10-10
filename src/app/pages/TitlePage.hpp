@@ -16,7 +16,7 @@
 #include <functional>
 #include <memory>
 
-class QComboBox;
+class QButtonGroup;
 class QGridLayout;
 class QLabel;
 class QLineEdit;
@@ -85,6 +85,8 @@ Q_SIGNALS:
     /// re-probes a quality.
     void playerProcessingSettingsRequested(mplayer::shell::PlayerDialog* player,
                                           mplayer::shell::ProcessingSettingsIntent intent);
+    /// One episode player needs the AnimeJaNai component setup surface.
+    void playerComponentSetupRequested();
     void relatedOpenRequested(const QString& ref, const QString& poster);
     void recentTitleLoaded(const QString& ref, const QString& title, const QString& poster);
 
@@ -157,7 +159,9 @@ private:
     void toggleMetadata(bool expanded);
 
     static QString scoresText(const backend::AnimeDetail& detail);
-    QString releaseLabel(const backend::Release& release, bool withCount = true) const;
+    QString releaseChipLabel(const backend::Release& release) const;
+    QString releaseChipToolTip(const backend::Release& release) const;
+    void rebuildReleaseChips();
     /// Track-picker label: the team only, no kind and no episode count.
     QString releaseTrackLabel(const backend::Release& release) const;
 
@@ -187,7 +191,6 @@ private:
     void openExternalPlayer(EpisodeEntry* entry);
     void openExternalStream(EpisodeEntry* entry, const QMap<int, QString>& qualities);
     void openEmbedInBrowser(EpisodeEntry* entry);
-    void copyAllUrls();
     void probeReleaseQualities();
     QString firstEmbed(const backend::Release& release) const;
     void applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq);
@@ -216,7 +219,7 @@ private:
     void openCoverViewer();
 
     void setStatus(const QString& text);
-    void flashStatus(const QString& text);
+    void flashStatus(const QString& text, bool failure = false);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -230,7 +233,6 @@ protected:
 
     QVector<backend::Release> releases_;
     QVector<TabState> tabStates_;
-    QVector<QVector<QString>> tabEmbeds_;
     /// Owns every episode record ever built for this page; freed on shutdown.
     QVector<EpisodeEntry*> ownedEntries_;
 
@@ -249,8 +251,10 @@ protected:
     QWidget* relatedHost_ = nullptr;
     QVBoxLayout* relatedLayout_ = nullptr;
     QTabWidget* tabs_ = nullptr;
-    QComboBox* selector_ = nullptr;
-    QPushButton* copyAll_ = nullptr;
+    QWidget* releaseChipsHost_ = nullptr;
+    QVBoxLayout* releaseRowsLayout_ = nullptr;
+    QButtonGroup* releaseGroup_ = nullptr;
+    QVector<QPushButton*> releaseChips_;
     QLabel* status_ = nullptr;
     QScrollArea* overviewScroll_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
@@ -277,6 +281,7 @@ protected:
     /// already moved on from.
     int runtimeSeq_ = 0;
     int releaseProbeSeq_ = 0;
+    int activeRelease_ = -1;
     QMap<int, int> releaseQuality_;
     QSet<int> releaseProbed_;
 

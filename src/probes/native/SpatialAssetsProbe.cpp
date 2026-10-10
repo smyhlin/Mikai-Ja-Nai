@@ -1,21 +1,18 @@
 // M35's source-asset probe: a real window holding the actual NativeAssetsPanel,
-// driven against the real pinned catalogue, the real app-owned asset store and,
-// where the network is reachable, one real anonymous download.
+// driven against the real pinned catalogue and app-owned asset store.
 //
 // What source reading cannot settle is whether the five pinned identities really
 // publish only when the bytes hash and measure exactly as the acquisition record
 // says, whether a wrong hash or a cancel leaves the store untouched, whether an
 // identical copy is never rewritten, whether the licence and the pinned origin
-// really survive beside the bytes, and whether a downloaded graph stays an input
+// really survive beside the bytes, and whether a published graph stays an input
 // rather than a Ready pipeline. So this drives the panel and reads the store
 // back.
 //
-// It needs either network access to `raw.githubusercontent.com` or a real
-// already-acquired copy of one pinned graph supplied with
-// `--source-owned-file <path>` (verified by digest - never fabricated bytes).
-// Without either it does the refusal and cancellation proofs, then skips the
-// publish proofs and exits 4. It never uses a live API credential: the asset
-// fetch goes through the client's anonymous byte path.
+// It needs either a real pinned graph supplied with `--source-owned-file <path>`
+// or an already-published verified copy in the app-owned store. Without either
+// it does the refusal and cancellation proofs, then skips the publish proofs and
+// exits 4. It never performs component downloads; those belong to Components.
 
 #include <cstdio>
 #include <optional>
@@ -35,8 +32,6 @@
 #include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-
-#include <backend/MikaiClient.hpp>
 
 #include "dialogs/NativeAssetsPanel.hpp"
 #include "native/models/NativeModelInventory.hpp"
@@ -158,26 +153,6 @@ bool inspectRoot(const QString& root, const QString& id, QString* error) {
     return true;
 }
 
-/// Drives one real download through the panel and waits for its verdict.
-bool runDownload(NativeAssetsPanel* panel, const QString& id) {
-    bool ok = false;
-    bool done = false;
-    QEventLoop loop;
-    QMetaObject::Connection connection = QObject::connect(
-        panel, &NativeAssetsPanel::downloadFinished, &loop, [&](bool result) {
-            ok = result;
-            done = true;
-            loop.quit();
-        });
-    const bool submitted = panel->selectSourceAsset(id) && panel->downloadSelectedSourceAsset();
-    if (submitted) {
-        QTimer::singleShot(600000, &loop, &QEventLoop::quit);
-        loop.exec();
-    }
-    QObject::disconnect(connection);
-    return submitted && done && ok;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -286,9 +261,8 @@ int main(int argc, char** argv) {
               QStringLiteral("a late cancel loses the publication race"));
     }
 
-    // ── 8. real bytes: supplied, or downloaded anonymously ──────────────────
+    // ── 8. real bytes: supplied or already present as a verified copy ────────
     const QString sourceOwnedFile = sourceOwnedFileArgument(argc, argv);
-    mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     QWidget window;
     window.setWindowTitle(QStringLiteral("Source assets"));
     auto* layout = new QVBoxLayout(&window);
@@ -296,7 +270,6 @@ int main(int argc, char** argv) {
     panel->setObjectName(QStringLiteral("nativeAssetsPanel"));
     mikai::app::Runner runner;
     panel->setRunner(&runner);
-    panel->setClient(&client);
     layout->addWidget(panel);
     window.resize(mikai::probes::windowSize(QSize(940, 760)));
     window.show();
@@ -308,38 +281,31 @@ int main(int argc, char** argv) {
 
     QByteArray realBytes;
     QString realId;
-    bool downloadedThroughPanel = false;
     if (!sourceOwnedFile.isEmpty()) {
         realBytes = readBytes(sourceOwnedFile);
         check(!realBytes.isEmpty(),
-              QStringLiteral("the supplied owned file is readable: %1").arg(sourceOwnedFile));
+              QStringLiteral("the supplied file is readable: %1").arg(sourceOwnedFile));
         const SpatialAsset* asset = assetForDigest(sha256Hex(realBytes));
         check(asset != nullptr,
               QStringLiteral("the supplied file hashes to one of the pinned graphs"));
         if (asset != nullptr) realId = asset->id;
     } else {
-        // The smallest pinned graph keeps the probe's own traffic small.
-        static const QString kProbeAsset =
-            QStringLiteral("sha256:7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716");
-        if (!panel->selectSourceAsset(kProbeAsset)) {
-            std::fprintf(stderr, "[spatial_assets_probe] FAIL: the probe asset is not in the "
-                                 "catalogue\n");
-            ++failures;
-        } else {
-            downloadedThroughPanel = runDownload(panel, kProbeAsset);
-            if (!downloadedThroughPanel) {
-                std::fprintf(stderr,
-                             "[spatial_assets_probe] SKIP: no network to fetch a pinned graph; "
-                             "supply --source-owned-file to prove publication\n");
-                QDir(nativeRoot()).removeRecursively();
-                return 4;
+        for (const StoredSpatialAsset& stored : panel->publishedAssets()) {
+            if (!stored.verified) continue;
+            const QByteArray bytes = readBytes(stored.graphPath);
+            const SpatialAsset* asset = assetForDigest(sha256Hex(bytes));
+            if (asset != nullptr && asset->id == stored.asset.id) {
+                realBytes = bytes;
+                realId = asset->id;
+                break;
             }
-            realId = kProbeAsset;
-            realBytes = readBytes(panel->publishedAssetPath(kProbeAsset));
-            check(sha256Hex(realBytes) == QStringLiteral(
-                                               "7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d"
-                                               "5557f52a36282716"),
-                  QStringLiteral("the downloaded asset is the pinned bytes"));
+        }
+        if (realId.isEmpty()) {
+            std::fprintf(stderr,
+                         "[spatial_assets_probe] SKIP: supply --source-owned-file or publish a "
+                         "verified pinned graph through Components to prove publication\n");
+            QDir(nativeRoot()).removeRecursively();
+            return 4;
         }
     }
     shoot(&window, QStringLiteral("spatial-assets-probe.png"));
@@ -385,7 +351,7 @@ int main(int argc, char** argv) {
                 if (row.record.onnxSha256 == asset->sha256) inModelStore = true;
             }
             check(!inModelStore,
-                  QStringLiteral("a downloaded asset alone is not a model row"));
+                  QStringLiteral("a published asset alone is not a model row"));
             check(!currentNativeAvailability(nullptr).engineAvailable,
                   QStringLiteral("the asset did not make any engine Ready"));
         }
@@ -418,7 +384,7 @@ int main(int argc, char** argv) {
         QObject::disconnect(connection);
         // Whether the runtime is present or not, no engine may have appeared.
         check(!currentNativeAvailability(nullptr).engineAvailable,
-              QStringLiteral("importing a downloaded graph did not make an engine Ready"));
+              QStringLiteral("importing a published graph did not make an engine Ready"));
         if (!submitted) {
             say(QStringLiteral("import was refused before submission: %1")
                     .arg(panel->statusReason()));

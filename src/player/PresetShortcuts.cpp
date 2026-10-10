@@ -1,7 +1,5 @@
-// The single implementation of the hotkey collision check. The reserved-key
-// predicate stays inline in the header because it is a pure table; everything
-// that compares bindings lives here so the preset and native key spaces cannot
-// grow two slightly different duplicate rules.
+// The single implementation of the preset shortcut collision check. The
+// reserved-key predicate stays inline in the header because it is a pure table.
 
 #include "PresetShortcuts.hpp"
 

@@ -15,13 +15,14 @@ namespace mplayer {
 // Defined in MpvHandle.hpp; only referenced here.
 struct AsyncReply;
 
-/// Raw numbers the core reported, separate from the HUD signal: present only
-/// while the core answered for them on the current source, so an unavailable
-/// counter is absent, never a substituted zero.
+/// Playback observations for the current source, separate from HUD values.
+/// Core-reported numbers are present only while the core answered for them; the
+/// render counter counts successful surface renders of new mpv output frames.
 struct PlaybackDiagnostics {
     std::optional<double> estimatedVfFps;     ///< raw, no container fallback
     std::optional<int64_t> decoderDropCount;  ///< decoder-frame-drop-count
     std::optional<int64_t> voDropCount;       ///< frame-drop-count (VO drops)
+    uint64_t renderedOutputFrames = 0;  ///< successful mpv-rendered new-frame updates
     /// nullopt = vf chain unread; true/false = what the live chain holds.
     std::optional<bool> nativeFilterPresent;
     std::optional<int> vfCount;  ///< chain length when read

@@ -24,7 +24,10 @@ class TestClipboard : public QObject {
   Q_OBJECT
 
  private slots:
-  void copyingEmptyTextDoesNotCrash();
+  void emptyImagesLeaveExistingClipboardContentUnchanged();
+  void copiedImagesRetainTheirPixels();
   void copyingReportsWhetherTheBoardTookTheText();
   void copyingTheSameTextTwiceIsStable();
+  void copyingTheSameImageReplacesUnrelatedFormats();
+  void emptyTextReplacesPreviousText();
 };

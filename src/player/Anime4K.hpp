@@ -54,15 +54,13 @@ struct ModeInfo {
     QStringList files;
 };
 
-/// One node of the enhancement menu above the presets. A `placeholder` node is
-/// informational and can never be selected.
+/// One node of the enhancement menu above the presets.
 struct CategoryInfo {
     QString id;
     /// The category this one hangs under; empty for a top-level row.
     QString parent;
     QString label;
     QString tooltip;
-    bool placeholder = false;
 };
 
 /// What kind of work a loose shader candidate does, used for its inventory
@@ -102,9 +100,11 @@ struct Candidate {
 };
 
 /// The catalog inventory: presets from the code table plus each .glsl found in
-/// the shaders folder. The player menu and Compare chooser use presets only;
-/// with no folder, presets are still listed but their files cannot be resolved,
-/// which `chainIsComplete` reports per candidate.
+/// the shaders folder. The player menu uses presets only; the Compare chooser
+/// takes the presets plus the scale-positive entries of this list (a loose
+/// model is offered when `scale > 0`). With no folder, presets are still listed
+/// but their files cannot be resolved, which `chainIsComplete` reports per
+/// candidate.
 QVector<Candidate> allCandidates(const QString& shadersDir = QString());
 
 /// The id of a mode, which is its persistence key. Empty for a mode the table
@@ -134,9 +134,9 @@ bool categoryContainsPreset(const QString& categoryId, const QString& presetId);
 
 /// One row of the enhancement menu, which is what the shell paints.
 struct MenuRow {
-    enum class Role { Preset, Category, Placeholder };
+    enum class Role { Preset, Category };
     Role role = Role::Category;
-    /// The preset id, or the category id for a Category/Placeholder row.
+    /// The preset id, or the category id for a Category row.
     QString id;
     QString label;
     QString tooltip;
@@ -146,8 +146,8 @@ struct MenuRow {
 };
 
 /// The rows of menu level `parent`: its preset leaves first, then the
-/// categories under it. Empty `parent` is the Enhancement root. A category row
-/// only drills down and a placeholder row is disabled, so neither selects.
+/// categories under it. Empty `parent` is the Enhancement root. Category rows
+/// drill down; preset rows select.
 QVector<MenuRow> menuRows(const QString& parent);
 
 /// The chain behind a candidate id, as file names. Empty for an id nothing

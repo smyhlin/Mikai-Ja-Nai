@@ -127,7 +127,7 @@ std::optional<BundlePreparation> parsePreparation(const QJsonObject& manifest,
 
 QString bundleKindName(BundleKind kind);
 
-/// `AppLocalDataLocation()/native`. Never created on read.
+/// `<applicationDirPath>/native`. Never created on read.
 QString nativeStorageRoot();
 
 /// `nativeStorageRoot()/runtime`.

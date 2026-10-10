@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QFrame>
 #include <QPoint>
 #include <QRect>
@@ -20,6 +21,7 @@ class QKeyEvent;
 class QLabel;
 class QMenu;
 class QProgressBar;
+class QTimer;
 class QPushButton;
 class QVBoxLayout;
 QT_END_NAMESPACE
@@ -39,9 +41,8 @@ struct MenuEntry {
     /// open, so the caller can place that level's panel beside this one. A
     /// plain row closes the popover, which is what a terminal choice does.
     bool submenu = false;
-    /// A row that is shown but cannot be chosen - used for the models that are
-    /// only planned, so the menu says so instead of hiding them. A disabled row
-    /// never emits, so it can never change the selection.
+    /// A row that is shown but cannot be chosen because its action is unavailable.
+    /// A disabled row never emits, so it cannot change the selection.
     bool disabled = false;
 };
 
@@ -90,9 +91,7 @@ public:
     /// a row, so repainting the standing rows would show the qualities of
     /// whatever was playing before.
     void setEntries(const QVector<MenuEntry>& entries);
-    /// Retitles the caption. One popover serves several menus - the enhancement
-    /// drill-down is the Anime4K menu at one level and a planned-model page at
-    /// another - so the title has to follow the level.
+    /// Retitles the caption as the enhancement tree moves between levels.
     void setTitle(const QString& title);
     int rowCount() const;
     /// The widget behind a row, for a host that needs per-row gestures such as
@@ -192,6 +191,10 @@ private:
     QLabel* title_ = nullptr;
     QLabel* detail_ = nullptr;
     QProgressBar* progress_ = nullptr;
+    QLabel* elapsedLabel_ = nullptr;
+    QTimer* elapsedTimer_ = nullptr;
+    QTimer* finishTimer_ = nullptr;
+    QElapsedTimer elapsed_;
     QPushButton* cancel_ = nullptr;
     bool settled_ = false;
 };

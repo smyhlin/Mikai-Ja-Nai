@@ -59,12 +59,6 @@ struct Inputs {
     NativeStatusView status;
 };
 
-/// Offered only when the store holds no decision, and installed only if the shared
-/// collision check accepts it.
-QString defaultToggleShortcut();
-/// The stored binding, or the default when the store has no stored decision either way.
-QString toggleShortcut(const NativePreferences& preferences);
-
 bool ownsLevel(const QString& levelId);
 
 /// The tooltip for the root rows this module is authoritative about, or empty when

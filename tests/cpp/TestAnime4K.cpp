@@ -223,12 +223,7 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
   QVERIFY(!categoryContainsPreset(QStringLiteral("anime4k/experimental/noise"),
                                   QStringLiteral("exp_thin_hq")));
 
-  // The whole menu, walked from the root the shell opens. What has to hold is
-  // the shape a viewer can act on, not any one page's row count: a category a
-  // viewer can press leads somewhere, a preset row names a real preset, and a
-  // placeholder - the row that says a model is not implemented - resolves to
-  // no chain at all, so it cannot select anything even if it were pressed. A
-  // page that grew a row, lost a row or was renamed is none of that concern.
+  // Every public category must lead to a real category or selectable preset.
   QVector<QString> pending{QString()};
   QSet<QString> reachablePresets;
   while (!pending.isEmpty()) {
@@ -245,10 +240,6 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
         case MenuRow::Role::Category:
           QVERIFY2(row.hasChildren, qPrintable(QStringLiteral("a category with nothing under it: ") + row.id));
           pending.append(row.id);
-          break;
-        case MenuRow::Role::Placeholder:
-          QVERIFY2(!row.hasChildren, qPrintable(row.id));
-          QVERIFY2(filesForId(row.id).isEmpty(), qPrintable(row.id));
           break;
       }
     }
@@ -267,26 +258,9 @@ void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
 }
 
 void TestAnime4K::rifeLevelLivesInNativeMenuNotCatalogue() {
-  // The RIFE level is owned by the native menu cutover: no catalogue alias or
-  // Planned leaf remains, while every Anime4K preset id, label, chain and the
-  // other placeholders are untouched.
   QVERIFY(mplayer::native::menu::ownsLevel(QStringLiteral("rife")));
   QVERIFY(menuRows(QStringLiteral("rife")).isEmpty());
   QVERIFY(categoryLabel(QStringLiteral("rife")).isEmpty());
-  QVERIFY(filesForId(QStringLiteral("rife/planned")).isEmpty());
-  QVERIFY(candidateForId(QStringLiteral("rife/planned")).id.isEmpty());
-
-  // The untouched neighbours: same ids, same placeholder roles, no chains.
-  QVERIFY(!categoryLabel(QStringLiteral("realesrgan")).isEmpty());
-  QVERIFY(!categoryLabel(QStringLiteral("other-models")).isEmpty());
-  for (const MenuRow& row : menuRows(QStringLiteral("realesrgan"))) {
-    QVERIFY(row.role == MenuRow::Role::Placeholder);
-    QVERIFY(filesForId(row.id).isEmpty());
-  }
-  for (const MenuRow& row : menuRows(QStringLiteral("other-models"))) {
-    QVERIFY(row.role == MenuRow::Role::Placeholder);
-    QVERIFY(filesForId(row.id).isEmpty());
-  }
   QCOMPARE(availableModes().size(), 24);
 }
 

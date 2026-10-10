@@ -81,7 +81,7 @@ QVector<SpatialAsset> spatialAssetCatalog();
 /// The catalogue row whose stable id is `id`, or null. The id is the digest.
 const SpatialAsset* findSpatialAsset(const QString& id);
 
-/// `AppLocalDataLocation()/native/assets`. Never created by this call.
+/// `<applicationDirPath>/native/assets`. Never created by this call.
 QString spatialAssetRoot();
 
 /// One published copy: the catalogue row plus the immutable file on disk.

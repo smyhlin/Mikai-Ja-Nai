@@ -324,3 +324,86 @@ bun compare-weights.mjs --out weight-comparison.json   # exit 0 = every pair exa
 `_meta/acquisition.json` still carries per-file digests, sizes and graph
 structure for the four graphs. Its `provenanceLinkage` lineage text is the
 pre-comparison phrasing and is refreshed by the parent integration step.
+
+## 9. Separate acquisition: AnimeJaNai 3.7.0 RIFE component archive
+
+This section records the Windows `component-rife.7z` asset from the official
+AnimeJaNai 3.7.0 release. It is a separate acquisition from the historical
+RIFE v4.14 archive and does not supersede or alter the v4.14 provenance above.
+
+| | |
+|---|---|
+| Release | [AnimeJaNai 3.7.0](https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0) |
+| Asset | [`component-rife.7z`](https://github.com/the-database/mpv-AnimeJaNai/releases/download/3.7.0/component-rife.7z) |
+| Published size | **462,444,035 bytes** |
+| Published SHA-256 | `d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251` |
+| Locally verified download | `F:/ZKS/mikai-native-assets/rife/_downloads/component-rife-3.7.0/component-rife.7z` |
+| Extracted inventory | **47 ONNX models**, `extracted/animejanai/rife/`, **506,592,464 bytes total** |
+| Per-file integrity pins | `rifeModelPins()` in `src/player/native/models/NativeRife.cpp`; the pinned size and SHA-256 for each model match the archive extraction |
+
+The user-initiated store verifies the archive's published size and SHA-256 and
+verifies each extracted graph's size and SHA-256 before publish. Stored
+inventory destination is `<nativeRoot>/components/rife/3.7.0`. This is a
+per-machine inventory/store only: its presence does **not** enable RIFE
+inference and is not a `Ready` or `Active` claim.
+
+This acquisition does not resolve third-party rights. The legal/redistribution
+position remains unresolved under ESC-3: no clearance to redistribute the
+archive or its models is claimed here. The v4.14 acquisition and its weight
+provenance above remain distinct and unchanged.
+## 10. Current local component and plan observations
+
+The official AnimeJaNai 3.7.0 `component-rife.7z` archive was acquired,
+verified, and imported with metadata. All 47 graph names and metadata hashes
+were compared with the archive. The compiled v4.18 ensemble hash pin alone was malformed at
+55 characters and was corrected to the exact observed full SHA-256 digest
+`69c46eb0cf3c1874ca5278758a8e7c4df1b70d0feaa682ce895459b7a6fa9716`
+(10,785,406 bytes); the other 46 names, sizes and hashes matched the acquired
+archive. The full-package inference folder is handled by the official
+hash-dispatcher without querying; custom graphs require observed ABI 8.
+
+A current plan-only smoke prepared `prepareAnimeJanaiPlan` for all 47 graphs,
+including RIFE v4.26 heavy, with exact backend/model code/ensemble flag and
+verified graph records. The filename boundary for `rifeModelName` was fixed.
+Two-digit ABI model codes 47/48/49 decode correctly; 407 decodes incorrectly
+as 4.07. No engine build was requested by this smoke. A temporary catalog
+lifetime issue that crashed a heavy test was fixed. Fresh spatial and RIFE v4.14
+lite raw TensorRT engines were built and loaded through Qt/libmpv. Spatial
+attempt a44 observed raw build and 640× output/render logs but failed CRC
+filename filtering and an early raw-output read of 320 before configured-slot
+Core property reconfiguration. Corrected spatial a46 (artifact 367, 66.47
+seconds) passed for the selected model's fresh raw build (15.7249 seconds,
+2.98863 MiB) and render/control run; its raw engine SHA-256 is
+`0a3fd65a1de1abe5507a996ee571abfebef8eda3294046a195b91b4648c759c9`
+and full trace `.probe-out/natural-spatial-a46/qt-flow-proof.log`.
+its nonblack changed/moving output and controls passed, with 73 postfilter
+frames/3 seconds and zero decoder/VO drops. This does not establish all-47
+inference, numerical fidelity, private Ready/Active, or FPS improvement.
+
+Artifact 349's initial RIFE probe failed because its request-bound scan searched
+the spatial `plan.modelDir`/wrong model identity and used `time-pos` transitions
+instead of rendered-frame counts. The corrected RIFE run (artifact 366, 88.63
+seconds, stage 7) passed for fresh selected v4.14 lite. Its graph SHA-256 is
+`948019ffb5e7e54ac6b89a13542da8d100af9b4ade7374551c5f595ac3ff2ce7`. The
+request-bound raw engine built in 38.932 seconds (9.12264 MiB; 9,565,780 bytes),
+SHA-256
+`e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22`; retained
+under `.probe-out/natural-rife-a45/native/animejanai/models/rife/`, with full
+trace `.probe-out/natural-rife-a45/qt-flow-proof.log`. The selected-engine
+directory began empty; the build footer matched exact ONNX and
+`saveEngine`, and no prebuilt engine participated. Stats reported RIFE active at
+`2/1`, `NewVideoFPS48`, padding/crop `320x180→320x192→320x180`, with actual
+320x180 NVDEC output.
+Successful `MPV_RENDER_UPDATE_FRAME` surface updates over three seconds were
+73 baseline versus 145 processed at equal resolution; the 1.5x threshold
+passed. The processed image was nonblack, changed, and moving; pause/seek,
+volume/mute, audio/subtitle cycle, Off restoring hwdec, source reopen and
+shutdown-surface checks passed. Engine-to-active-model identity remains an
+inference because Core has no engine-ID event. This run does not establish
+numerical fidelity, all-47-model inference, private Ready/Active, or an FPS
+performance improvement.
+
+These component-archive observations do not alter the historical v4.14
+provenance or resolve ESC-1/2/3. The imported graph inventory and a plan-only
+result are not numerical verification, readiness, Active processing, or
+redistribution clearance.

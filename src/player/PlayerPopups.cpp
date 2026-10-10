@@ -496,9 +496,6 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     setFixedWidth(360);
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(16, 14, 16, 14);
-    layout->setSpacing(kSpacingSmall);
-
     title_ = new QLabel(this);
     title_->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kText));
     title_->setWordWrap(true);
@@ -513,6 +510,10 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     progress_->setTextVisible(false);
     progress_->setFixedHeight(6);
     progress_->setRange(0, 0);
+    // The bar paints no text, so its accessible name is the only place the
+    // indeterminate-versus-staged fact can be read: a silent bar reads as
+    // nothing happening at all.
+    progress_->setAccessibleName(tr("Preparation progress"));
     progress_->setStyleSheet(QStringLiteral("QProgressBar {"
                                             "  background-color: rgba(255, 255, 255, 0.10);"
                                             "  border: none; border-radius: 3px; }"
@@ -520,8 +521,26 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
                                             "  background-color: #bdacff; border-radius: 3px; }"));
     layout->addWidget(progress_);
 
+    elapsedLabel_ = new QLabel(this);
+    elapsedLabel_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    layout->addWidget(elapsedLabel_);
+    elapsedTimer_ = new QTimer(this);
+    elapsedTimer_->setInterval(1000);
+    connect(elapsedTimer_, &QTimer::timeout, this, [this] {
+        const qint64 seconds = elapsed_.elapsed() / 1000;
+        elapsedLabel_->setText(tr("Elapsed: %1:%2:%3")
+                                  .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
+                                  .arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'))
+                                  .arg(seconds % 60, 2, 10, QLatin1Char('0')));
+    });
+    finishTimer_ = new QTimer(this);
+    finishTimer_->setSingleShot(true);
+    connect(finishTimer_, &QTimer::timeout, this, &QWidget::hide);
+
     cancel_ = new QPushButton(this);
+    cancel_->setObjectName(QStringLiteral("processingOverlayCancel"));
     cancel_->setStyleSheet(rowQss(kText, "rgba(255, 255, 255, 0.08)"));
+    cancel_->setAccessibleName(tr("Cancel preparation"));
     // One connection for the window's whole life, dispatched on what the window
     // is showing: rewiring it per run is how a second build inherited the
     // previous failure's Dismiss handler and could no longer be cancelled.
@@ -538,6 +557,12 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
 }
 
 void ProcessingOverlay::begin(const QString& title) {
+    finishTimer_->stop();
+    elapsed_.restart();
+    elapsedLabel_->setText(tr("Elapsed: %1:%2:%3")
+                              .arg(QStringLiteral("00"), QStringLiteral("00"),
+                                   QStringLiteral("00")));
+    elapsedTimer_->start();
     settled_ = false;
     title_->setText(title);
     detail_->clear();
@@ -565,24 +590,28 @@ void ProcessingOverlay::setStage(int stageIndex, int stageCount, const QString& 
     }
     if (!detail.isEmpty()) text += QStringLiteral(" — ") + detail;
     detail_->setText(text);
+    adjustSize();
 }
 
 void ProcessingOverlay::finish(bool ok, const QString& summary) {
     settled_ = true;
+    elapsedTimer_->stop();
+    finishTimer_->stop();
     cancel_->setEnabled(false);
-    progress_->setRange(0, ok ? 1 : 0);
-    if (ok) progress_->setValue(1);
+    progress_->setRange(0, 1);
+    progress_->setValue(ok ? 1 : 0);
     detail_->setText(summary);
     title_->setText(ok ? tr("Engine ready") : tr("Engine build stopped"));
     // A success has nothing left to read, so it leaves on its own; a failure
     // stays until the viewer dismisses it, because a refusal that disappears is
     // a refusal nobody saw.
     if (ok) {
-        QTimer::singleShot(1500, this, [this] { hide(); });
+        finishTimer_->start(1500);
     } else {
         cancel_->setText(tr("Dismiss"));
         cancel_->setEnabled(true);
     }
+    adjustSize();
 }
 
 void ProcessingOverlay::anchorTo(const QWidget* anchor) {

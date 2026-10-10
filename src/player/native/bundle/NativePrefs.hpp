@@ -29,9 +29,6 @@ struct NativeFactoryObservation;
 /// NativeRuntimeSelection and preserved.
 QString nativeSettingsGroup();
 
-/// Separate from the preset bindings so the two spaces never share a settings key.
-QString nativeShortcutsSettingsGroup();
-
 /// The only schema this build reads.
 inline constexpr int kNativePreferencesSchema = 1;
 
@@ -41,7 +38,6 @@ inline constexpr char kNativeEnabledKey[] = "enabled";
 inline constexpr char kNativeBackendKey[] = "backend";
 inline constexpr char kNativeRecipeKey[] = "recipe";
 inline constexpr char kNativeCustomModelsDirKey[] = "customModelsDir";
-inline constexpr char kNativeToggleProcessingKey[] = "toggleProcessing";
 /// Set when the viewer dismissed the startup missing-components prompt with
 /// "Skip and never ask". Read-only by convention: the only writer is the
 /// startup prompt itself, and clearing it means asking again.
@@ -70,14 +66,6 @@ struct NativePreferences {
     /// The validated canonical directory, or empty; read-only to the UI.
     QString customModelsDir;
 
-    /// The PortableText binding, or empty when unbound; installability is the
-    /// shared collision check's decision, not this module's.
-    QString toggleProcessingShortcut;
-
-    /// "Never written" and "written as nothing" are different facts: only the
-    /// first may fall back to a documented default binding.
-    bool toggleProcessingShortcutStored = false;
-
     /// False when the stored block is a schema this build does not read; the
     /// requested fields carry defaults while the stored document is left untouched.
     bool schemaRecognised = true;
@@ -89,24 +77,6 @@ struct NativePreferences {
     /// What a missing or unknown-schema block reads as.
     bool isDefault() const;
 };
-
-/// The stored toggle binding as the player's Qt GUI reader reported it. Reading
-/// and canonicalising a PortableText key chord needs QKeySequence, which lives
-/// in QtGui; this QtCore-only contract declares the shape, and the reader
-/// (src/player/NativeToggleShortcut.cpp) performs the read and the parse.
-struct NativeToggleShortcut {
-    /// True when the key is present at all, even as an explicit empty binding.
-    bool stored = false;
-    /// The canonical PortableText binding; empty when unbound or invalid.
-    QString value;
-    /// False only when a stored, non-empty text named no key at all; the fact
-    /// is then named by the caller, never silently dropped.
-    bool valid = true;
-};
-
-/// Reads the toggle binding from the shortcuts group through the player's GUI
-/// reader. Never writes.
-NativeToggleShortcut loadStoredToggleShortcut();
 
 /// Additive and read-only: no key is written, removed or created, so opening
 /// settings cannot mutate the store.
@@ -120,10 +90,6 @@ struct NativePreferencePatch {
     /// An empty string removes the key.
     std::optional<QString> recipeId;
     std::optional<QString> customModelsDir;
-    /// The one empty value that does *not* remove its key: a cleared binding is
-    /// stored as an explicit "unbound" so the default is not re-offered.
-    std::optional<QString> toggleProcessingShortcut;
-
     /// True when the patch names no key at all; saving it writes nothing - not
     /// even the schema - which keeps a General save out of native storage.
     bool isEmpty() const;

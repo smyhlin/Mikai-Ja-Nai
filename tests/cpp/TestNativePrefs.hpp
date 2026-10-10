@@ -3,7 +3,7 @@
 #include <QtTest/QTest>
 
 /// The native preference block, the availability the request is evaluated
-/// against, and the shared shortcut collision check. All pure and CPU-testable:
+/// against, and the preset shortcut collision check. All pure and CPU-testable:
 /// the settings group is isolated by the runner, so these assert the persisted
 /// form, the per-key fallbacks and the named availability exactly.
 class TestNativePrefs : public QObject {
@@ -24,7 +24,7 @@ class TestNativePrefs : public QObject {
   void anUnknownRecipeIsKeptAndReportedUnavailable();
   void anOfferedRecipeOnAnUnavailableBackendStaysRequested();
   void anAvailableRecipeOnItsBackendIsRequestedButNeverActive();
-  void aClearedToggleIsStoredAsExplicitlyUnbound();
+  void anOldToggleBindingDoesNotInvalidatePreferences();
   void aRequestedTickPersistsWhileUnavailableAndKeepsTheRuntimeChoice();
   void aNativeSaveLeavesForeignKeysAlone();
   void clearingNativePreferencesLeavesTheRuntimeChoiceAlone();
@@ -41,7 +41,6 @@ class TestNativePrefs : public QObject {
 
   void theSharedCheckRefusesReservedKeysInEveryForm();
   void theSharedCheckRefusesADuplicateAndNamesTheOwner();
-  void aNativeClaimBlocksAPresetAndNamesTheNativeOwner();
   void anEmptySequenceIsRefusedAsReserved();
   void theComponentsPromptStartsUndismissedAndStaysDismissed();
 };

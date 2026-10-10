@@ -1,5 +1,5 @@
-// Anime4K menu probe: the real popovers, every preset leaf, the planned-model
-// pages, persistence across a reopen, and the pixels mpv actually draws.
+// Anime4K menu probe: the real popovers, every preset leaf, persistence across
+// a reopen, and the pixels mpv actually draws.
 //
 //   - the dock's enhancement button opens a tree of panels standing side by
 //     side, one per level, with no Back row: a category opens the level beside
@@ -7,14 +7,10 @@
 //   - every leaf is only ever reached from a menu opened for it, and each one
 //     has to reach its exact catalogue id AND put that preset's ordered chain
 //     into mpv's glsl-shaders, stage for stage
-//   - the three planned-model pages are informational: every row on them is one
-//     the viewer cannot press, and none of them changes the running chain
 //   - the experiment that was picked has to survive a close/reopen: the chain
 //     id, the info chip, the marked menu row, and the rendered picture
-//   - Compare's chooser offers every catalogue preset exactly once, nested under
-//     the categories the catalogue gives it, never offers the chain-internal
-//     AutoDownscalePre steps, and never rewrites the chain the player is
-//     running - checked after driving its own actions
+//   - Compare offers every shader preset and public spatial AnimeJaNai model,
+//     excludes RIFE/private/loose candidates, and leaves the player chain untouched
 //
 // Rows are addressed by the catalogue id the shell hangs on them, never by the
 // label printed on them, so nothing here fails because a menu was reworded or a
@@ -251,16 +247,6 @@ QStringList categoryIdsOn(MenuPopup* panel) {
     return ids;
 }
 
-/// Whether every row of `panel` leads nowhere: the shape a page takes when what
-/// it holds is not implemented yet.
-bool everyRowInert(MenuPopup* panel) {
-    if (panel == nullptr || panel->rowCount() == 0) return false;
-    for (int spot = 0; spot < panel->rowCount(); ++spot) {
-        if (!panel->entryAt(spot).disabled) return false;
-    }
-    return true;
-}
-
 /// A real press-then-release on a visible row, delivered to the widget itself
 /// rather than injected through the window system: the probe drives the same
 /// Qt controls a viewer clicks, without depending on which window the desktop
@@ -370,8 +356,6 @@ void saveFrame(const QImage& frame, const QString& name) {
 }
 
 // ── the compare chooser, read as a tree ─────────────────────────────────
-//
-// A chain-internal downscale is not a complete comparison candidate.
 
 void collectLeafIds(const QList<QAction*>& actions, QStringList* ids) {
     for (QAction* action : actions) {
@@ -547,19 +531,12 @@ int main(int argc, char** argv) {
           "the Anime4K menu is an in-window overlay, not a native popup");
     shoot(dialog, QStringLiteral("anime4k-menu-root.png"));
 
-    // The root lists the four top-level branches of the tree. The ids come from
-    // the catalogue, so a branch that is added or renamed is covered without
-    // this probe needing to know its name.
+    // The root offers supported Anime4K and official AnimeJaNai choices.
     const QStringList rootBranches = categoryIdsOn(menus.enhancements);
     check(rootBranches.contains(QStringLiteral("anime4k")),
           "the enhancements root offers Anime4K");
-    for (const QString& page : {QStringLiteral("rife"), QStringLiteral("realesrgan"),
-                                QStringLiteral("other-models")}) {
-        check(rootBranches.contains(page),
-              (QStringLiteral("the enhancements root offers the planned-model branch: ") + page)
-                  .toUtf8()
-                  .constData());
-    }
+    check(rootBranches.contains(QStringLiteral("animejanai")),
+          "the enhancements root offers official AnimeJaNai");
 
     // A category row opens the level beside it; it must not select anything on
     // the way.
@@ -602,32 +579,6 @@ int main(int argc, char** argv) {
         check(noisePresets.contains(QStringLiteral("exp_noise_bilateral_mean")) &&
                   noisePresets.contains(QStringLiteral("exp_noise_bilateral_mode")),
               "the family lists its own leaves");
-    }
-
-    // ── the planned models ──────────────────────────────────────────────
-    for (const QString& page : {QStringLiteral("rife"), QStringLiteral("realesrgan"),
-                                QStringLiteral("other-models")}) {
-        check(openEnhancements(shell, dialog, menus),
-              "the enhancements menu reopens for a planned page");
-        check(clickRow(menus.enhancements, page), "a planned model opens its page by click");
-        MenuPopup* plannedPage = levelPanel(dialog, page);
-        check(plannedPage != nullptr, "the planned page opened in the shared tree");
-        check(plannedPage != nullptr && everyRowInert(plannedPage),
-              "a planned page holds nothing the viewer can press");
-        const QString chainBefore = surface->effectiveShaderChain();
-        const QString idBefore = surface->anime4KChainId();
-        for (int spot = 0; plannedPage != nullptr && spot < plannedPage->rowCount(); ++spot) {
-            if (auto* inert = qobject_cast<QPushButton*>(plannedPage->rowWidget(spot))) {
-                realClick(inert);
-            }
-            QCoreApplication::processEvents();
-        }
-        check(surface->effectiveShaderChain() == chainBefore &&
-                  surface->anime4KChainId() == idBefore,
-              (QStringLiteral("pressing any row on the ") + page +
-               QStringLiteral(" page changes nothing"))
-                  .toUtf8()
-                  .constData());
     }
 
     // ── the rendered proof ─────────────────────────────────────────────
@@ -731,20 +682,33 @@ int main(int argc, char** argv) {
             QStringList offered;
             collectLeafIds(chooser->actions(), &offered);
 
-            // The catalogue is the expectation: whatever it holds, all of it has
-            // to be pickable here, and nothing beyond it.
             QStringList catalogueIds;
             QHash<QString, QStringList> expectedPath;
             for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
                 catalogueIds << info.id;
                 expectedPath.insert(info.id, chooserPathFor(info.category));
             }
+            const QStringList spatialPath{QStringLiteral("AnimeJaNai"),
+                                          QStringLiteral("Spatial models")};
+            const QVector<native::AnimeJanaiPreset> publicModels = native::animeJanaiPresets();
+            for (const native::AnimeJanaiPreset& preset : publicModels) {
+                if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) continue;
+                catalogueIds << preset.id;
+                expectedPath.insert(preset.id, spatialPath);
+            }
             QStringList sortedOffered = offered;
             QStringList sortedCatalogue = catalogueIds;
             sortedOffered.sort();
             sortedCatalogue.sort();
-            check(!offered.isEmpty() && sortedOffered == sortedCatalogue,
-                  "the chooser offers every catalogue preset exactly once, and nothing else");
+            const bool catalogueUnique =
+                std::adjacent_find(sortedCatalogue.cbegin(), sortedCatalogue.cend()) ==
+                sortedCatalogue.cend();
+            const bool offeredUnique =
+                std::adjacent_find(sortedOffered.cbegin(), sortedOffered.cend()) ==
+                sortedOffered.cend();
+            check(catalogueUnique && offeredUnique && !offered.isEmpty() &&
+                      sortedOffered == sortedCatalogue,
+                  "the chooser offers all shader presets and public spatial models only");
 
             // Each preset has to sit where the catalogue says it sits, at the
             // depth its own category implies: the one preset that hangs directly
@@ -781,7 +745,14 @@ int main(int argc, char** argv) {
             check(everyPresetPlaced,
                   "each preset is nested under the categories the catalogue gives it");
             check(countActionText(chooser->actions(), QStringLiteral("AutoDownscalePre"), true) == 0,
-                  "the chain-internal AutoDownscalePre steps are never offered");
+                  "chain-internal AutoDownscalePre steps are never offered");
+            bool offeredNonPublicModel = false;
+            for (const native::AnimeJanaiPreset& preset : publicModels) {
+                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:"))) continue;
+                offeredNonPublicModel |= offered.contains(preset.id);
+            }
+            check(!offeredNonPublicModel,
+                  "RIFE and non-public AnimeJaNai entries are never offered");
 
             // The badge menu is the only chooser, so a preset is picked the way
             // a viewer's click reaches it: through its own QAction. The action

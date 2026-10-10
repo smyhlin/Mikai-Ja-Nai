@@ -1,40 +1,23 @@
-// Proves the compare window's two load-bearing claims, which nothing else in
-// the suite covers:
-//
-//  1. A frozen frame is the same frame. The window compares two chains by
-//     applying each to the live core and grabbing what comes back, so if the
-//     frame moved between the two grabs the difference would be playback and
-//     not the shader. This is the same trap InteractionProbe documents: seeking
-//     to one timestamp twice does not reproduce the same pixels, so the control
-//     pair is two SETTLED frames without re-seeking.
-//  2. The catalogue is real. Every candidate resolves to files on disk, an
-//     unknown id resolves to nothing, and a chain that is applied actually
-//     changes the picture - mpv's glsl-shaders echoes the string back without
-//     validating it, so the only evidence is pixels.
-//
-//  2b. The badge chooser IS the player's preset set. Every leaf it offers is an
-//     `availableModes()` preset with that preset's own label under that
-//     preset's own category path, and every preset the catalogue holds is
-//     offered. The expectation is read out of the catalogue rather than typed,
-//     so a renamed preset stays a rename instead of a second copy of the
-//     wording that goes stale. A loose `.glsl` is never a choice: a compared
-//     model the player cannot select is not a model the player can run.
-//
-//  3. A capture is fresh. The window is kept and reused, so "capture again"
-//     after a rewind must give the new frame, not the one already frozen.
-//     testsrc2 changes every frame, so two captures at two timestamps are
-//     provably two different pictures, and the second must match what the
-//     player is actually showing.
-//
-//  4. Compare leaves the player as found. The chain read before the two sides
-//     is the chain afterwards, on a successful capture, on close and after a
-//     failed capture; the native status polling a capture paused comes back at
-//     the value it actually had (off stays off); and a surface that cannot be
-//     read - closed, empty, or absent - is refused by name rather than frozen.
+// Compares canonical raw input at the held timestamp while preserving exact
+// processed live pixels; differences exclude letterboxing.
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QGraphicsPixmapItem>
+#include <QGraphicsScene>
+#include <QSpinBox>
+#include <QWheelEvent>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QFileInfo>
+#include <QHash>
 #include <QImage>
 #include <QLabel>
+#include <QPointer>
+#include <QProgressBar>
+#include <QPushButton>
 #include <QMenu>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -46,20 +29,33 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <memory>
+#include <optional>
 
 #include "Anime4K.hpp"
+#include "CompareCanvas.hpp"
+#include "ComparePane.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 #include "ProbeRuntime.hpp"
+#include "ProbePicture.hpp"
 
 using namespace mplayer;
 using namespace mplayer::shell;
 
 namespace {
 
+/// Diagnostics only. When enabled, every async playback-timestamp sample taken
+/// from the raw/active Aji control section is mirrored to stderr together with
+/// the requested epoch, the epoch observed at request time, whether the async
+/// request was valid, whether the callback ran, and whether a timestamp value
+/// arrived. Reporting never changes a check outcome.
+bool timestampTrace = false;
+
+unsigned timestampAttempt = 0;
 int failures = 0;
 
 void check(bool ok, const char* what) {
@@ -94,6 +90,146 @@ QImage settledFrame(VideoSurface* surface) {
     return QImage();
 }
 
+struct PlaybackTimestampSample {
+    uint64_t sourceEpoch = 0;
+    std::optional<double> timestamp;
+    bool completed = false;
+};
+
+bool requestPlaybackTimestamp(VideoSurface* surface, PlaybackTimestampSample* sample,
+                              int timeoutMs = 5000) {
+    if (surface == nullptr || sample == nullptr) return false;
+    auto result = std::make_shared<PlaybackTimestampSample>();
+    QEventLoop loop;
+    QPointer<QEventLoop> loopGuard(&loop);
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    const uint64_t requestedEpoch = surface->sourceEpoch();
+    const uint64_t epochAtRequest = surface->sourceEpoch();
+    const AsyncRequestId request = surface->requestPlaybackTimestamp(
+        [result, loopGuard](uint64_t sourceEpoch, std::optional<double> timestamp) {
+            result->sourceEpoch = sourceEpoch;
+            result->timestamp = timestamp;
+            result->completed = true;
+            if (loopGuard != nullptr) loopGuard->quit();
+        });
+    const bool requestValid = request.valid();
+    if (!requestValid) {
+        if (timestampTrace) {
+            std::fprintf(stderr,
+                         "TRACE timestamp attempt=%u requestedEpoch=%llu epochAtRequest=%llu "
+                         "requestValid=0 callbackCompleted=0 hasTimestamp=0 timestamp=(none)\n",
+                         ++timestampAttempt,
+                         static_cast<unsigned long long>(requestedEpoch),
+                         static_cast<unsigned long long>(epochAtRequest));
+        }
+        return false;
+    }
+    if (!result->completed) {
+        timeout.start(timeoutMs);
+        loop.exec();
+    }
+    *sample = *result;
+    if (timestampTrace) {
+        std::fprintf(stderr,
+                     "TRACE timestamp attempt=%u requestedEpoch=%llu epochAtRequest=%llu "
+                     "requestValid=1 callbackCompleted=%d hasTimestamp=%d timestamp=%s "
+                     "replyEpoch=%llu epochNow=%llu\n",
+                     ++timestampAttempt,
+                     static_cast<unsigned long long>(requestedEpoch),
+                     static_cast<unsigned long long>(epochAtRequest),
+                     sample->completed ? 1 : 0, sample->timestamp.has_value() ? 1 : 0,
+                     sample->timestamp.has_value()
+                         ? qPrintable(QString::number(*sample->timestamp, 'f', 6))
+                         : "(none)",
+                     static_cast<unsigned long long>(sample->sourceEpoch),
+                     static_cast<unsigned long long>(surface->sourceEpoch()));
+    }
+    return sample->completed && sample->timestamp.has_value();
+}
+
+bool playbackTimestampMatches(VideoSurface* surface, uint64_t sourceEpoch,
+                              const std::optional<double>& expectedTimestamp) {
+    PlaybackTimestampSample current;
+    return expectedTimestamp.has_value() && requestPlaybackTimestamp(surface, &current) &&
+           current.sourceEpoch == sourceEpoch &&
+           std::abs(*current.timestamp - *expectedTimestamp) <= 1e-6;
+}
+bool waitForStablePlaybackTimestamp(VideoSurface* surface, uint64_t sourceEpoch,
+                                    PlaybackTimestampSample* stable, int timeoutMs = 10000) {
+    if (surface == nullptr || stable == nullptr) return false;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < timeoutMs) {
+        PlaybackTimestampSample first;
+        if (!requestPlaybackTimestamp(surface, &first, 1000) ||
+            first.sourceEpoch != sourceEpoch) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            continue;
+        }
+        QThread::msleep(150);
+        PlaybackTimestampSample second;
+        if (requestPlaybackTimestamp(surface, &second, 1000) &&
+            second.sourceEpoch == sourceEpoch &&
+            std::abs(*second.timestamp - *first.timestamp) <= 1e-6) {
+            *stable = second;
+            if (timestampTrace) {
+                std::fprintf(stderr,
+                             "TRACE stable-ok requestedEpoch=%llu epochNow=%llu timestamp=%.6f\n",
+                             static_cast<unsigned long long>(sourceEpoch),
+                             static_cast<unsigned long long>(surface->sourceEpoch()),
+                             *second.timestamp);
+            }
+            return true;
+        }
+        if (timestampTrace) {
+            std::fprintf(stderr,
+                         "TRACE stable-retry requestedEpoch=%llu epochNow=%llu "
+                         "firstEpoch=%llu firstTs=%s secondEpoch=%llu secondTs=%s\n",
+                         static_cast<unsigned long long>(sourceEpoch),
+                         static_cast<unsigned long long>(surface->sourceEpoch()),
+                         static_cast<unsigned long long>(first.sourceEpoch),
+                         qPrintable(first.timestamp.has_value()
+                                        ? QString::number(*first.timestamp, 'f', 6)
+                                        : QStringLiteral("(none)")),
+                         static_cast<unsigned long long>(second.sourceEpoch),
+                         qPrintable(second.timestamp.has_value()
+                                        ? QString::number(*second.timestamp, 'f', 6)
+                                        : QStringLiteral("(none)")));
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    if (timestampTrace) {
+        std::fprintf(stderr,
+                     "TRACE stable-timeout requestedEpoch=%llu epochNow=%llu\n",
+                     static_cast<unsigned long long>(sourceEpoch),
+                     static_cast<unsigned long long>(surface->sourceEpoch()));
+    }
+    return false;
+}
+bool waitForPlaybackProgress(VideoSurface* surface, uint64_t sourceEpoch,
+                             const std::optional<double>& startingTimestamp,
+                             PlaybackTimestampSample* progressed, int timeoutMs = 10000) {
+    if (surface == nullptr || !startingTimestamp.has_value() || progressed == nullptr) {
+        return false;
+    }
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < timeoutMs) {
+        PlaybackTimestampSample current;
+        if (requestPlaybackTimestamp(surface, &current, 1000) &&
+            current.sourceEpoch == sourceEpoch && current.timestamp.has_value() &&
+            std::abs(*current.timestamp - *startingTimestamp) > 0.01) {
+            *progressed = current;
+            return true;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QThread::msleep(50);
+    }
+    return false;
+}
+
 /// Mean absolute per-channel difference, inside the picture band only. The
 /// framebuffer includes the letterbox bars, whose edges read as a huge
 /// difference, so the whole image would be measured against the wrong thing.
@@ -118,6 +254,52 @@ double meanDifference(const QImage& a, const QImage& b) {
     return counted > 0 ? total / static_cast<double>(counted) : -1.0;
 }
 
+struct LiveShaderSnapshot {
+    PlaybackTimestampSample playback;
+    bool timestampAvailable = false;
+    bool paused = false;
+    bool playing = false;
+    uint64_t outputFrames = 0;
+    QString requestedId;
+    QString effectiveChain;
+    std::optional<ProbePropertyValue> coreChain;
+};
+
+LiveShaderSnapshot sampleLiveShaderState(VideoSurface* surface) {
+    LiveShaderSnapshot sample;
+    sample.timestampAvailable = requestPlaybackTimestamp(surface, &sample.playback);
+    sample.paused = surface->pauseObserved();
+    sample.playing = surface->isPlaying();
+    sample.outputFrames = surface->playbackDiagnostics().renderedOutputFrames;
+    sample.requestedId = surface->anime4KChainId();
+    sample.effectiveChain = surface->effectiveShaderChain();
+    sample.coreChain = surface->probeMpvProperty(QStringLiteral("glsl-shaders"),
+                                               ProbePropertyKind::Text);
+    return sample;
+}
+
+void reportLiveShaderSnapshot(const char* phase, const LiveShaderSnapshot& sample,
+                              const QImage& image) {
+    std::fprintf(stderr,
+                 "TRACE live-shader phase=%s epoch=%llu timestamp=%s paused=%d playing=%d "
+                 "framebuffer=%dx%d outputFrames=%llu requested=%s effective=%s core=%s\n",
+                 phase, static_cast<unsigned long long>(sample.playback.sourceEpoch),
+                 sample.timestampAvailable
+                     ? qPrintable(QString::number(*sample.playback.timestamp, 'f', 6))
+                     : "(unavailable)",
+                 sample.paused, sample.playing, image.width(), image.height(),
+                 static_cast<unsigned long long>(sample.outputFrames),
+                 qPrintable(sample.requestedId), qPrintable(sample.effectiveChain),
+                 sample.coreChain.has_value() ? qPrintable(sample.coreChain->text)
+                                              : "(unavailable)");
+}
+
+bool sameLiveShaderTimestamp(const LiveShaderSnapshot& a, const LiveShaderSnapshot& b) {
+    return a.timestampAvailable && b.timestampAvailable && a.paused && b.paused &&
+           !a.playing && !b.playing && a.playback.sourceEpoch == b.playback.sourceEpoch &&
+           std::abs(*a.playback.timestamp - *b.playback.timestamp) <= 1e-6;
+}
+
 /// The label path a catalogue category id reads as: one label per level of the
 /// id, taken from the catalogue itself. The chooser is checked against the
 /// category it claims rather than against a copy of its wording.
@@ -132,6 +314,145 @@ QStringList labelPath(const QString& categoryId) {
         }
     }
     return path;
+}
+
+bool triggerChoice(CompareWindow* compare, int side, const QString& id,
+                  const std::function<void()>& beforeTrigger = {}) {
+    int badgeIndex = 0;
+    for (QToolButton* badge : compare->findChildren<QToolButton*>()) {
+        if (!badge->isVisible() || badge->menu() == nullptr) {
+            continue;
+        }
+        if (badgeIndex++ != side) {
+            continue;
+        }
+        // showMenu() blocks until dismissed; popup() exposes the same actions without user input.
+        badge->menu()->popup(badge->mapToGlobal(QPoint(0, badge->height())));
+        QCoreApplication::processEvents();
+        std::function<bool(QMenu*)> trigger = [&](QMenu* menu) {
+            for (QAction* action : menu->actions()) {
+                if (QMenu* submenu = action->menu()) {
+                    action->hover();
+                    QCoreApplication::processEvents();
+                    if (trigger(submenu)) return true;
+                } else if (action->data().toString() == id) {
+                    if (beforeTrigger) beforeTrigger();
+                    QTimer renderWatchdog;
+                    if (id.startsWith(QLatin1String("spatial:"))) {
+                        renderWatchdog.setSingleShot(true);
+                        QObject::connect(&renderWatchdog, &QTimer::timeout, compare, [compare, id] {
+                            std::fprintf(stderr,
+                                         "FAIL %s render watchdog: still pending after 600000 ms\n",
+                                         qPrintable(id));
+                            compare->close();
+                        });
+                        renderWatchdog.start(600000);
+                    }
+                    // The activation runs production slots synchronously, and a
+                    // source change during the pumped render may have retired
+                    // this badge's pane; never touch a deleted badge or menu.
+                    QPointer<QToolButton> badgeGuard(badge);
+                    action->trigger();
+                    renderWatchdog.stop();
+                    if (!badgeGuard.isNull()) {
+                        if (QMenu* badgeMenu = badgeGuard->menu()) {
+                            badgeMenu->hide();
+                        }
+                        QCoreApplication::processEvents();
+                    }
+                    return true;
+                }
+            }
+            return false;
+        };
+        QPointer<QToolButton> selectedBadge(badge);
+        QMenu* selectedMenu = badge->menu();
+        const bool selected = trigger(selectedMenu);
+        if (!selectedBadge.isNull() && selectedBadge->menu() != nullptr) {
+            selectedBadge->menu()->hide();
+            QCoreApplication::processEvents();
+        }
+        return selected;
+    }
+    return false;
+}
+
+/// How many side panes the side-by-side layout currently has. A refused
+/// capture leaves none, which is why a selection afterwards cannot be made:
+/// the badge chooser lives in the pane.
+qsizetype visibleComparePanes(CompareWindow* compare) {
+    qsizetype visible = 0;
+    for (ComparePane* pane : compare->findChildren<ComparePane*>()) {
+        if (pane->isVisible()) ++visible;
+    }
+    return visible;
+}
+
+bool visibleSideMatches(CompareWindow* compare, int side, const QString& id,
+                        const QImage& output, VideoSurface* surface) {
+    QList<ComparePane*> visible;
+    for (ComparePane* pane : compare->findChildren<ComparePane*>()) {
+        if (pane->isVisible()) visible.append(pane);
+    }
+    if (side < 0 || side >= visible.size() || output.isNull()) return false;
+    ComparePane* pane = visible.at(side);
+    bool exactPixmap = false;
+    for (QGraphicsItem* item : pane->scene()->items()) {
+        if (auto* pixmap = dynamic_cast<QGraphicsPixmapItem*>(item))
+            exactPixmap |= pixmap->pixmap().toImage().convertToFormat(QImage::Format_RGBA8888) ==
+                           output.convertToFormat(QImage::Format_RGBA8888);
+    }
+    bool checkedId = false;
+    std::function<void(QMenu*)> scan = [&](QMenu* menu) {
+        for (QAction* action : menu->actions()) {
+            if (action->menu()) scan(action->menu());
+            else if (action->isChecked() && action->data().toString() == id) checkedId = true;
+        }
+    };
+    for (QToolButton* badge : pane->findChildren<QToolButton*>()) {
+        if (badge->isVisible() && badge->menu()) scan(badge->menu());
+    }
+    const auto picture = mplayer::probes::measurePicture(
+        pane->viewport()->grab().toImage(), surface->videoWidth(), surface->videoHeight());
+    return pane->key() == id && exactPixmap && checkedId && !picture.isMostlyBlack();
+}
+
+bool waitForRenderedSide(CompareWindow* compare, const QString& id, int side,
+                         QImage* result, QString* failure) {
+    // A cold TensorRT engine may take minutes. Pump the GUI event loop during
+    // preparation, but make lack of forward progress a named hard failure.
+    constexpr int watchdogMs = 600000;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < watchdogMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (!compare->candidateError(id).isEmpty()) {
+            if (failure != nullptr) *failure = compare->candidateError(id);
+            return false;
+        }
+        if (!compare->isVisible()) {
+            if (failure != nullptr) *failure = QStringLiteral("comparison closed before output");
+            return false;
+        }
+        const QImage image = side == 0 ? compare->renderedSideA() : compare->renderedSideB();
+        if (!compare->comparisonPending()) {
+            if (!image.isNull()) {
+                if (result != nullptr) *result = image;
+                return true;
+            }
+            if (failure != nullptr) {
+                *failure = QStringLiteral("candidate completed without a rendered side image");
+            }
+            return false;
+        }
+        QThread::msleep(20);
+    }
+    if (failure != nullptr) {
+        *failure = compare->comparisonPending()
+                       ? QStringLiteral("still pending after 600000 ms")
+                       : QStringLiteral("no rendered side image after 600000 ms");
+    }
+    return false;
 }
 
 }  // namespace
@@ -155,12 +476,22 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    timestampTrace = !qEnvironmentVariableIsEmpty("COMPARE_PROBE_TRACE_TIMESTAMPS");
+    if (timestampTrace) {
+        std::fprintf(stderr, "TRACE timestamp diagnostics enabled\n");
+    }
+    const bool ajiMode = argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("--aji");
+    if (ajiMode && argc != 3) {
+        std::fprintf(stderr, "usage: compare_probe.exe --aji <video>\n");
+        return 2;
+    }
+    if (ajiMode) {
+        std::fprintf(stderr, "CLI: compare_probe --aji <video>\n");
+    }
     static StubHost host;
-    // A real file can be handed in to check the frozen-frame path against a
-    // decoded source; the lavfi pattern is the default because it needs no
-    // fixture on disk.
-    const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
-                                 : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
+    const QString url = ajiMode ? QString::fromLocal8Bit(argv[2])
+                                : (argc > 1 ? QString::fromLocal8Bit(argv[1])
+                                            : QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25"));
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("compare probe"), url, qualities, 720, &host);
@@ -179,7 +510,8 @@ int main(int argc, char** argv) {
         // Poll rather than trust a deadline: a cold mpv core can take several
         // seconds to open a file, and a fixed timeout turns a slow machine into
         // a false failure.
-        for (int attempt = 0; attempt < 200; ++attempt) {
+        const int sourceWatchdogMs = ajiMode ? 600000 : 10000;
+        for (int waited = 0; waited < sourceWatchdogMs; waited += 50) {
             if (surface != nullptr && surface->hasVideo()) {
                 break;
             }
@@ -187,15 +519,49 @@ int main(int argc, char** argv) {
             QThread::msleep(50);
         }
         if (surface == nullptr || !surface->hasVideo()) {
+            if (ajiMode) {
+                std::fprintf(stderr,
+                             "FAIL --aji source did not load within %d ms: video=%s, surface=%d\n",
+                             sourceWatchdogMs, qPrintable(url), surface != nullptr);
+                app.exit(1);
+                return;
+            }
             // Exit 0, not 1: nothing failed, the session just cannot prove it.
-        // A non-zero code here would make a headless agent report a red run
-        // for a condition no display can satisfy.
-        std::fprintf(stderr, "SKIP  no stream loaded in this session\n");
-        app.exit(0);            return;
+            // A non-zero code here would make a headless agent report a red run
+            // for a condition no display can satisfy.
+            std::fprintf(stderr, "SKIP  no stream loaded in this session\n");
+            app.exit(0);
+            return;
         }
         surface->setPaused(true);
         surface->seek(6.0);
         QTest::qWait(1200);
+
+        QStringList publicSpatialIds;
+        if (ajiMode) {
+            PlaybackTimestampSample initialStableTimestamp;
+            const bool initiallyStable = waitForStablePlaybackTimestamp(
+                surface, surface->sourceEpoch(), &initialStableTimestamp);
+            if (!initiallyStable || surface->isPlaying()) {
+                PlaybackTimestampSample latest;
+                const bool latestAvailable = requestPlaybackTimestamp(surface, &latest);
+                std::fprintf(stderr,
+                             "FAIL --aji initial pause did not settle: epoch=%llu, timestamp=%s, "
+                             "playingFlag=%d, position=%.6f, hasVideo=%d, status=%s\n",
+                             static_cast<unsigned long long>(surface->sourceEpoch()),
+                             latestAvailable ? qPrintable(QString::number(*latest.timestamp, 'f', 6))
+                                             : "(unavailable)",
+                             surface->isPlaying(), surface->position(), surface->hasVideo(),
+                             qPrintable(surface->animeJanaiStatus()));
+                app.exit(1);
+                return;
+            }
+        }
+        native::AnimeJanaiPlan originalAjiPlan;
+        QString originalAjiId;
+        QImage ajiSourceBaseline;
+        QString shaderBeforeAji;
+        const native::Backend ajiBackend = native::Backend::TensorRT;
 
         // ── 1. the frozen frame is stable ───────────────────────────
         const QImage controlA = settledFrame(surface);
@@ -215,9 +581,14 @@ int main(int argc, char** argv) {
         // copy that goes stale the moment the catalogue changes.
         const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
         QStringList presetIds;
+        QStringList selectablePresetIds;
         presetIds.reserve(presets.size());
         for (const anime4k::ModeInfo& preset : presets) {
             presetIds.append(preset.id);
+            if (anime4k::chainIsComplete(anime4k::candidateForId(preset.id, shadersDir),
+                                         shadersDir)) {
+                selectablePresetIds.append(preset.id);
+            }
         }
         const QVector<anime4k::Candidate> all = anime4k::allCandidates(shadersDir);
         const QString offId = anime4k::modeId(anime4k::Mode::Off);
@@ -244,28 +615,77 @@ int main(int argc, char** argv) {
               "the catalogue offers a loose restoration shader that has no preset");
 
         const QImage before = settledFrame(surface);
+        const LiveShaderSnapshot beforeState = sampleLiveShaderState(surface);
+        const QImage beforeConfirmed = timestampTrace ? settledFrame(surface) : QImage();
         surface->setAnime4KChain(single);
         QTest::qWait(600);
         const QImage after = settledFrame(surface);
+        const LiveShaderSnapshot afterState = sampleLiveShaderState(surface);
         const double effect = meanDifference(before, after);
         std::fprintf(stderr, "     single shader: %.3f / 255 against %.3f noise\n", effect, noise);
-        check(effect > 0.05,
+        check(effect > 0.05 && sameLiveShaderTimestamp(beforeState, afterState),
               "applying a chain changes the picture by more than the noise floor");
 
-        // Back off: the window has to be able to undo what it previewed.
         surface->setAnime4KChain(offId);
         QTest::qWait(600);
         const QImage restored = settledFrame(surface);
+        const LiveShaderSnapshot restoredState = sampleLiveShaderState(surface);
         const double residual = meanDifference(before, restored);
         std::fprintf(stderr, "     after off: %.3f / 255\n", residual);
-        check(residual < 0.05, "turning the chain off returns the original picture");
-
-        int incomplete = 0;
-        for (const anime4k::Candidate& candidate : all) {
-            if (!anime4k::chainIsComplete(candidate, shadersDir)) ++incomplete;
+        const bool restoresOriginal = residual >= 0.0 && residual < 0.05 &&
+                                      sameLiveShaderTimestamp(beforeState, restoredState);
+        check(restoresOriginal, "turning the chain off returns the original picture");
+        if (timestampTrace || !restoresOriginal) {
+            reportLiveShaderSnapshot("before", beforeState, before);
+            reportLiveShaderSnapshot("active", afterState, after);
+            reportLiveShaderSnapshot("off", restoredState, restored);
+            if (!beforeConfirmed.isNull()) {
+                std::fprintf(stderr, "TRACE live-shader initial-to-confirmed=%.6f / 255\n",
+                             meanDifference(before, beforeConfirmed));
+            }
         }
-        std::fprintf(stderr, "     catalogue: %d candidates\n", int(all.size()));
-        check(incomplete == 0, "every candidate resolves to files that exist on disk");
+        if (!restoresOriginal) {
+            // Keep the first failure; a later image diagnoses it, never replaces it.
+            QTest::qWait(1200);
+            const QImage delayedOff = settledFrame(surface);
+            const LiveShaderSnapshot delayedState = sampleLiveShaderState(surface);
+            reportLiveShaderSnapshot("off-delayed", delayedState, delayedOff);
+            std::fprintf(stderr, "TRACE live-shader initial-to-delayed=%.6f "
+                                 "off-to-delayed=%.6f / 255\n",
+                         meanDifference(before, delayedOff), meanDifference(restored, delayedOff));
+            before.save(QStringLiteral(".probe-out/compare-live-before.png"));
+            after.save(QStringLiteral(".probe-out/compare-live-active.png"));
+            restored.save(QStringLiteral(".probe-out/compare-live-off.png"));
+            delayedOff.save(QStringLiteral(".probe-out/compare-live-off-delayed.png"));
+
+            surface->setAnime4KChain(single);
+            QTest::qWait(600);
+            const QImage repeatedActive = settledFrame(surface);
+            const LiveShaderSnapshot repeatedActiveState = sampleLiveShaderState(surface);
+            surface->setAnime4KChain(offId);
+            QTest::qWait(600);
+            const QImage repeatedOff = settledFrame(surface);
+            const LiveShaderSnapshot repeatedOffState = sampleLiveShaderState(surface);
+            reportLiveShaderSnapshot("active-repeat", repeatedActiveState, repeatedActive);
+            reportLiveShaderSnapshot("off-repeat", repeatedOffState, repeatedOff);
+            std::fprintf(stderr, "TRACE live-shader repeated-effect=%.6f "
+                                 "repeated-residual=%.6f / 255 sameTimestamp=%d\n",
+                         meanDifference(delayedOff, repeatedActive),
+                         meanDifference(delayedOff, repeatedOff),
+                         sameLiveShaderTimestamp(delayedState, repeatedOffState));
+        }
+
+        QStringList incompleteCandidates;
+        for (const anime4k::Candidate& candidate : all) {
+            if (!anime4k::chainIsComplete(candidate, shadersDir)) {
+                incompleteCandidates.append(candidate.id);
+            }
+        }
+        std::fprintf(stderr, "     catalogue: %d candidates, %d incomplete\n", int(all.size()),
+                     int(incompleteCandidates.size()));
+        for (const QString& id : incompleteCandidates) {
+            std::fprintf(stderr, "     unavailable shader candidate: %s\n", qPrintable(id));
+        }
 
         // ── 4. the window opens, and reads the live surface ──────────
         auto* shell = dialog->findChild<PlayerShell*>();
@@ -274,9 +694,120 @@ int main(int argc, char** argv) {
             app.exit(failures == 0 ? 0 : 1);
             return;
         }
+        if (ajiMode) {
+            QString originalShaderForOffIntent;
+            for (const anime4k::ModeInfo& preset : presets) {
+                if (preset.mode != anime4k::Mode::Off &&
+                    anime4k::chainIsComplete(anime4k::candidateForId(preset.id, shadersDir),
+                                             shadersDir)) {
+                    originalShaderForOffIntent = preset.id;
+                    break;
+                }
+            }
+            check(!originalShaderForOffIntent.isEmpty(),
+                  "the Aji Off-intent regression has a complete non-Off shader preset");
+            surface->setAnime4KChain(originalShaderForOffIntent);
+            shaderBeforeAji = surface->anime4KChainId();
+            check(shaderBeforeAji == originalShaderForOffIntent && shaderBeforeAji != offId &&
+                      !surface->effectiveShaderChain().isEmpty(),
+                  "the live Aji test begins with an observable active shader chain");
+            surface->setAnime4KChain(offId);
+            surface->setAnimeJanaiPlan(native::AnimeJanaiPlan{});
+            bool baseOff = false;
+            for (int waited = 0; waited < 600000; waited += 50) {
+                QCoreApplication::processEvents();
+                surface->update();
+                if (surface->animeJanaiStatus() == QLatin1String("Off")) {
+                    baseOff = true;
+                    break;
+                }
+                QThread::msleep(50);
+            }
+            check(baseOff, "the source baseline is captured with Aji off");
+            ajiSourceBaseline = settledFrame(surface);
+            check(!ajiSourceBaseline.isNull(), "the unprocessed source frame is captured");
+            surface->setAnime4KChain(shaderBeforeAji);
+            for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+                if (!preset.rife && preset.id.startsWith(QLatin1String("spatial:"))) {
+                    publicSpatialIds.append(preset.id);
+                }
+            }
+            check(publicSpatialIds.size() == 5, "--aji sees all five public spatial models");
+            if (publicSpatialIds.size() != 5) {
+                app.exit(1);
+                return;
+            }
+            originalAjiId = publicSpatialIds.first();
+            originalAjiPlan = native::prepareAnimeJanaiPlan(originalAjiId, ajiBackend);
+            check(originalAjiPlan.available,
+                  "the staged backend and public spatial model prepare a real Aji plan");
+            if (!originalAjiPlan.available) {
+                std::fprintf(stderr, "     Aji preparation: %s\n",
+                             qPrintable(originalAjiPlan.reason));
+                app.exit(1);
+                return;
+            }
+            QString ajiFailure;
+            QObject::connect(surface, &VideoSurface::animeJanaiFailure, surface,
+                             [&ajiFailure](const QString& reason) { ajiFailure = reason; });
+            surface->setAnimeJanaiPlan(originalAjiPlan);
+            const bool observed = [&] {
+                for (int waited = 0; waited < 600000; waited += 50) {
+                    QCoreApplication::processEvents();
+                    surface->update();
+                    if (surface->animeJanaiProcessingObserved()) return true;
+                    if (!ajiFailure.isEmpty()) return false;
+                    QThread::msleep(50);
+                }
+                return false;
+            }();
+            check(observed, "the active baseline Aji backend reports spatial processing");
+            if (!observed) {
+                std::fprintf(stderr, "     Aji baseline: %s\n",
+                             qPrintable(ajiFailure.isEmpty() ? surface->animeJanaiStatus()
+                                                            : ajiFailure));
+                app.exit(1);
+                return;
+            }
+        }
+        if (ajiMode) {
+            surface->setPaused(false);
+            PlaybackTimestampSample beforePlayback;
+            PlaybackTimestampSample playbackAdvanced;
+            const bool actuallyStarted = requestPlaybackTimestamp(surface, &beforePlayback) &&
+                                         waitForPlaybackProgress(
+                                             surface, beforePlayback.sourceEpoch,
+                                             beforePlayback.timestamp, &playbackAdvanced);
+            check(actuallyStarted,
+                  "the Aji probe begins Compare with observable active playback");
+            if (!actuallyStarted) {
+                std::fprintf(stderr,
+                             "FAIL --aji playback start: epoch=%llu, timestamp=%s, "
+                             "playingFlag=%d, status=%s\n",
+                             static_cast<unsigned long long>(beforePlayback.sourceEpoch),
+                             beforePlayback.timestamp.has_value()
+                                 ? qPrintable(QString::number(*beforePlayback.timestamp, 'f', 6))
+                                 : "(unavailable)",
+                             surface->isPlaying(), qPrintable(surface->animeJanaiStatus()));
+                app.exit(1);
+                return;
+            }
+        }
+        const uint64_t comparisonSourceEpoch = surface->sourceEpoch();
+        const uint64_t pauseGenerationBeforeCompare = surface->pauseRequestGeneration();
+        PlaybackTimestampSample preCaptureTimestamp;
+        const bool preCaptureTimestampAvailable =
+            requestPlaybackTimestamp(surface, &preCaptureTimestamp);
         emit shell->compareRequested();
         QTest::qWait(2500);
+        const uint64_t pauseGenerationAfterCompare = surface->pauseRequestGeneration();
         auto* compare = dialog->findChild<CompareWindow*>();
+        std::fprintf(stderr,
+                     "DIAG --aji Compare open pause generation: before=%llu after=%llu, "
+                     "playing=%d, pending=%d\n",
+                     static_cast<unsigned long long>(pauseGenerationBeforeCompare),
+                     static_cast<unsigned long long>(pauseGenerationAfterCompare),
+                     surface->isPlaying(), compare != nullptr && compare->comparisonPending());
         check(compare != nullptr, "the compare row opened a window");
         if (compare == nullptr) {
             std::fprintf(stderr, "RESULT: FAIL (%d)\n", failures);
@@ -284,19 +815,99 @@ int main(int argc, char** argv) {
             return;
         }
         check(compare->isVisible(), "the compare window is on screen");
+        check(surface->sourceEpoch() == comparisonSourceEpoch,
+              "opening Compare preserves the source epoch");
+        const std::optional<double> frozenTimestamp = compare->frozenPlaybackTimestamp();
+        PlaybackTimestampSample settledAfterCapture;
+        const bool captureTimestampStable =
+            waitForStablePlaybackTimestamp(surface, comparisonSourceEpoch, &settledAfterCapture);
+        check(compare->frozenSourceEpoch() == comparisonSourceEpoch &&
+                  frozenTimestamp.has_value() && captureTimestampStable &&
+                  !surface->isPlaying() &&
+                  settledAfterCapture.timestamp.has_value() &&
+                  std::abs(*frozenTimestamp - *settledAfterCapture.timestamp) <= 1e-6 &&
+                  playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp),
+              "Compare freezes the current stable playback timestamp and source epoch");
+        const QString comparisonPng = QStringLiteral(".probe-out/compare-window.png");
+        check(QDir().mkpath(QStringLiteral(".probe-out")) &&
+                  compare->grab().save(comparisonPng),
+              "the visible comparison window is captured as a PNG");
 
-        // The badge menus are the only chooser, so what they offer IS the set
-        // of Compare models. The catalogue is the contract here: every preset
-        // availableModes() lists has to be selectable, every choice has to be
-        // one of those presets, and each has to sit under the labels its own
-        // category names. The expected path is derived from the catalogue's
-        // labels rather than typed out, so a renamed group stays a rename
-        // instead of turning into a broken probe.
+        // Every public shader preset and spatial model must be selectable.
+        if (ajiMode &&
+            (!frozenTimestamp.has_value() || !captureTimestampStable ||
+             surface->isPlaying() ||
+             !settledAfterCapture.timestamp.has_value() ||
+             !compare->captureError().isEmpty() || compare->frozenFrame().isNull() ||
+             compare->frozenSourceEpoch() != comparisonSourceEpoch ||
+             std::abs(*frozenTimestamp - *settledAfterCapture.timestamp) > 1e-6 ||
+             !playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp))) {
+            PlaybackTimestampSample latestAfterCapture;
+            const bool latestAvailable = requestPlaybackTimestamp(surface, &latestAfterCapture);
+            const QString beforeTimestamp =
+                preCaptureTimestampAvailable && preCaptureTimestamp.timestamp.has_value()
+                    ? QString::number(*preCaptureTimestamp.timestamp, 'f', 6)
+                    : QStringLiteral("(unavailable)");
+            const QString frozenTimestampText =
+                frozenTimestamp.has_value() ? QString::number(*frozenTimestamp, 'f', 6)
+                                            : QStringLiteral("(unavailable)");
+            const QString currentTimestamp =
+                latestAvailable && latestAfterCapture.timestamp.has_value()
+                    ? QString::number(*latestAfterCapture.timestamp, 'f', 6)
+                    : QStringLiteral("(unavailable)");
+            std::fprintf(stderr,
+                         "FAIL --aji capture prerequisite: error=%s, preEpoch=%llu, "
+                         "preTimestamp=%s, frozenEpoch=%llu, frozenTimestamp=%s, "
+                         "currentEpoch=%llu, currentTimestamp=%s, stable=%d, "
+                         "playingFlag=%d, position=%.6f, pauseGeneration=%llu->%llu, "
+                         "ajiStatus=%s\n",
+                         qPrintable(compare->captureError()),
+                         static_cast<unsigned long long>(preCaptureTimestamp.sourceEpoch),
+                         qPrintable(beforeTimestamp),
+                         static_cast<unsigned long long>(compare->frozenSourceEpoch()),
+                         qPrintable(frozenTimestampText),
+                         static_cast<unsigned long long>(latestAfterCapture.sourceEpoch),
+                         qPrintable(currentTimestamp), captureTimestampStable,
+                         surface->isPlaying(), surface->position(),
+                         static_cast<unsigned long long>(pauseGenerationBeforeCompare),
+                         static_cast<unsigned long long>(pauseGenerationAfterCompare),
+                         qPrintable(surface->animeJanaiStatus()));
+            app.exit(1);
+            return;
+        }
         struct Offered {
             QString id;
             QString label;
             QStringList path;
+            bool enabled = true;
+            QString tooltip;
         };
+        QVector<Offered> expected;
+        QStringList unavailablePresetIds;
+        QHash<QString, QStringList> missingPresetFiles;
+        for (const anime4k::ModeInfo& preset : presets) {
+            const anime4k::Candidate candidate = anime4k::candidateForId(preset.id, shadersDir);
+            if (anime4k::chainIsComplete(candidate, shadersDir)) {
+                expected.append({preset.id, preset.label, labelPath(preset.category), true, {}});
+            } else {
+                unavailablePresetIds.append(preset.id);
+                QStringList missingFiles;
+                for (const QString& file : candidate.files) {
+                    if (!QFileInfo(QDir(shadersDir).filePath(file)).exists()) {
+                        missingFiles.append(QFileInfo(file).fileName());
+                    }
+                }
+                missingPresetFiles.insert(preset.id, missingFiles);
+            }
+        }
+        const QStringList spatialPath{QStringLiteral("AnimeJaNai"),
+                                      QStringLiteral("Spatial models")};
+        for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+            if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
+                continue;
+            }
+            expected.append({preset.id, preset.label, spatialPath, true, {}});
+        }
         std::function<void(QMenu*, QStringList&, QVector<Offered>&)> collect =
             [&collect](QMenu* menu, QStringList& path, QVector<Offered>& out) {
                 for (QAction* action : menu->actions()) {
@@ -305,60 +916,107 @@ int main(int argc, char** argv) {
                         collect(submenu, path, out);
                         path.removeLast();
                     } else if (!action->data().toString().isEmpty()) {
-                        out.append({action->data().toString(), action->text(), path});
+                        out.append({action->data().toString(), action->text(), path,
+                                    action->isEnabled() && menu->isEnabled(),
+                                    action->toolTip()});
                     }
                 }
             };
         int chipMenus = 0;
-        QStringList unoffered;  // player presets the chooser leaves out
-        QStringList repeated;   // player presets the chooser offers more than once
-        QStringList foreign;    // choices that are not player presets at all
-        QStringList misplaced;  // choices not under their category's own labels
-        QStringList mislabeled;  // choices whose leaf text is not the preset's own label
+        QStringList unoffered;   // available catalog entries missing from a badge
+        QStringList repeated;    // registry entries offered more than once
+        QStringList foreign;     // choices not present in either public catalog
+        QStringList misplaced;   // choices not under their category's own labels
+        QStringList mislabeled;  // choices whose leaf text differs from its catalog label
+        QStringList disabledAvailable;
+        QStringList selectableMissingAssets;
+        QStringList untruthfulMissingAssetLabels;
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
-            if (chip->menu() == nullptr) {
+            if (!chip->isVisible() || chip->menu() == nullptr) {
                 continue;
             }
             ++chipMenus;
             QStringList path;
             QVector<Offered> offered;
             collect(chip->menu(), path, offered);
-            for (const anime4k::ModeInfo& preset : presets) {
+            for (const Offered& entry : expected) {
                 const auto seen = std::count_if(
                     offered.cbegin(), offered.cend(),
-                    [&preset](const Offered& choice) { return choice.id == preset.id; });
-                if (seen == 0 && !unoffered.contains(preset.id)) {
-                    unoffered.append(preset.id);
+                    [&entry](const Offered& choice) { return choice.id == entry.id; });
+                if (seen == 0 && !unoffered.contains(entry.id)) {
+                    unoffered.append(entry.id);
                 }
-                if (seen > 1 && !repeated.contains(preset.id)) {
-                    repeated.append(preset.id);
+                const auto found = std::find_if(
+                    offered.cbegin(), offered.cend(),
+                    [&entry](const Offered& choice) { return choice.id == entry.id; });
+                if (found != offered.cend() && !found->enabled &&
+                    !disabledAvailable.contains(entry.id)) {
+                    disabledAvailable.append(entry.id);
+                }
+                if (seen > 1 && !repeated.contains(entry.id)) {
+                    repeated.append(entry.id);
                 }
             }
             for (const Offered& choice : offered) {
-                const auto preset = std::find_if(
-                    presets.cbegin(), presets.cend(), [&choice](const anime4k::ModeInfo& info) {
-                        return info.id == choice.id;
+                const auto expectedChoice = std::find_if(
+                    expected.cbegin(), expected.cend(), [&choice](const Offered& entry) {
+                        return entry.id == choice.id;
                     });
-                if (preset == presets.cend()) {
+                if (expectedChoice == expected.cend()) {
+                    if (unavailablePresetIds.contains(choice.id)) {
+                        const auto seenUnavailable = std::count_if(
+                            offered.cbegin(), offered.cend(),
+                            [&choice](const Offered& candidate) {
+                                return candidate.id == choice.id;
+                            });
+                        if (seenUnavailable > 1 && !repeated.contains(choice.id)) {
+                            repeated.append(choice.id);
+                        }
+                        const auto preset = std::find_if(
+                            presets.cbegin(), presets.cend(),
+                            [&choice](const anime4k::ModeInfo& candidate) {
+                                return candidate.id == choice.id;
+                            });
+                        if (preset != presets.cend()) {
+                            if (choice.path != labelPath(preset->category) &&
+                                !misplaced.contains(choice.id)) {
+                                misplaced.append(choice.id);
+                            }
+                            if (choice.label != preset->label && !mislabeled.contains(choice.id)) {
+                                mislabeled.append(choice.id);
+                            }
+                        }
+                        if (choice.enabled && !selectableMissingAssets.contains(choice.id)) {
+                            selectableMissingAssets.append(choice.id);
+                        }
+                        const QStringList missingFiles = missingPresetFiles.value(choice.id);
+                        const bool namesMissingFile = std::any_of(
+                            missingFiles.cbegin(), missingFiles.cend(),
+                            [&choice](const QString& file) {
+                                return !file.isEmpty() &&
+                                       choice.tooltip.contains(file, Qt::CaseInsensitive);
+                            });
+                        if (!choice.enabled && !namesMissingFile &&
+                            !untruthfulMissingAssetLabels.contains(choice.id)) {
+                            untruthfulMissingAssetLabels.append(choice.id);
+                        }
+                        continue;
+                    }
                     if (!foreign.contains(choice.id)) {
                         foreign.append(choice.id);
                     }
-                } else if (choice.path != labelPath(preset->category) &&
-                           !misplaced.contains(choice.id)) {
-                    misplaced.append(choice.id);
-                }
-                // The chooser is specified in ids AND labels: a menu carrying the
-                // right preset under the right group but spelling a leaf
-                // differently is a chooser the viewer reads twice, and one the
-                // player menu cannot produce.
-                if (preset != presets.cend() && choice.label != preset->label &&
-                    !mislabeled.contains(choice.id)) {
-                    mislabeled.append(choice.id);
+                } else {
+                    if (choice.path != expectedChoice->path && !misplaced.contains(choice.id)) {
+                        misplaced.append(choice.id);
+                    }
+                    if (choice.label != expectedChoice->label && !mislabeled.contains(choice.id)) {
+                        mislabeled.append(choice.id);
+                    }
                 }
             }
         }
-        std::fprintf(stderr, "     chip menus: %d, player presets: %d\n", chipMenus,
-                     int(presets.size()));
+        std::fprintf(stderr, "     chip menus: %d, expected registered choices: %d\n", chipMenus,
+                     int(expected.size()));
         for (const QString& id : unoffered) {
             std::fprintf(stderr, "     not selectable: %s\n", qPrintable(id));
         }
@@ -366,7 +1024,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "     offered twice: %s\n", qPrintable(id));
         }
         for (const QString& id : foreign) {
-            std::fprintf(stderr, "     not a player preset: %s\n", qPrintable(id));
+            std::fprintf(stderr, "     not a registered upscale candidate or preset: %s\n",
+                         qPrintable(id));
         }
         for (const QString& id : misplaced) {
             std::fprintf(stderr, "     under the wrong group: %s\n", qPrintable(id));
@@ -374,12 +1033,27 @@ int main(int argc, char** argv) {
         for (const QString& id : mislabeled) {
             std::fprintf(stderr, "     spelled differently: %s\n", qPrintable(id));
         }
+        for (const QString& id : selectableMissingAssets) {
+            std::fprintf(stderr, "     missing shader assets remain selectable: %s\n",
+                         qPrintable(id));
+        }
+        for (const QString& id : untruthfulMissingAssetLabels) {
+            std::fprintf(stderr, "     missing shader row lacks its missing-file explanation: %s\n",
+                         qPrintable(id));
+        }
         check(chipMenus > 0, "the compare badges carry a candidate chooser menu");
-        check(unoffered.isEmpty(), "every player preset is selectable in the compare badges");
-        check(repeated.isEmpty(), "no player preset is offered twice in one badge menu");
-        check(foreign.isEmpty(), "every compare choice is a preset the player can run");
-        check(misplaced.isEmpty(), "each choice sits under its own catalogue category labels");
-        check(mislabeled.isEmpty(), "each choice is spelled with its own catalogue label");
+        check(unoffered.isEmpty(),
+              "the chooser offers every preset and public spatial model from the catalogs");
+        check(repeated.isEmpty(), "no registered compare candidate is offered twice in one badge menu");
+        check(foreign.isEmpty(), "no RIFE, private or loose shader candidate is selectable");
+        check(misplaced.isEmpty(), "each choice sits under its registry category labels");
+        check(mislabeled.isEmpty(), "each choice uses its registry label");
+        check(disabledAvailable.isEmpty(),
+              "available catalog candidates are not incorrectly disabled");
+        check(selectableMissingAssets.isEmpty(),
+              "shader presets with missing assets cannot be selected");
+        check(untruthfulMissingAssetLabels.isEmpty(),
+              "disabled missing-asset shader rows explain the actual missing file");
         // The chain internals: files a preset runs inside its chain but that the
         // catalogue does not list as candidates of their own (the AutoDownscale
         // steps). Which files those are is read from the catalogue rather than
@@ -400,7 +1074,7 @@ int main(int argc, char** argv) {
         }
         bool offeredInternal = false;
         for (QToolButton* chip : compare->findChildren<QToolButton*>()) {
-            if (chip->menu() == nullptr) {
+            if (!chip->isVisible() || chip->menu() == nullptr) {
                 continue;
             }
             std::function<void(QMenu*)> scan = [&](QMenu* menu) {
@@ -415,6 +1089,568 @@ int main(int argc, char** argv) {
             scan(chip->menu());
         }
         check(!offeredInternal, "the chain-internal downscale steps are not offered standalone");
+        check(chipMenus == 2, "each visible image has exactly one corner model selector");
+        auto* modeBox = compare->findChild<QComboBox*>(QStringLiteral("compareMode"));
+        auto* splitKnob = compare->findChild<QDoubleSpinBox*>(QStringLiteral("compareSplit"));
+        auto* flickerKnob = compare->findChild<QSpinBox*>(QStringLiteral("compareFlicker"));
+        auto* gainKnob = compare->findChild<QSpinBox*>(QStringLiteral("compareGain"));
+        auto* fitButton = compare->findChild<QToolButton*>(QStringLiteral("compareFit"));
+        check(modeBox && splitKnob && flickerKnob && gainKnob && fitButton &&
+                  !splitKnob->isVisible() && !flickerKnob->isVisible() && !gainKnob->isVisible(),
+              "the initially visible two-pane layout hides all irrelevant controls");
+        if (!modeBox || !splitKnob || !flickerKnob || !gainKnob || !fitButton) {
+            app.exit(1);
+            return;
+        }
+        for (CompareMode mode : {CompareMode::SplitH, CompareMode::SplitV,
+                                 CompareMode::Flicker, CompareMode::Difference,
+                                 CompareMode::SideBySide}) {
+            modeBox->setCurrentIndex(modeBox->findData(QString::fromLatin1(modeKey(mode))));
+            QCoreApplication::processEvents();
+            check(splitKnob->isVisible() == (mode == CompareMode::SplitH || mode == CompareMode::SplitV) &&
+                      flickerKnob->isVisible() == (mode == CompareMode::Flicker) &&
+                      gainKnob->isVisible() == (mode == CompareMode::Difference),
+                  "layout switching exposes only the control that actually applies");
+        }
+        QList<ComparePane*> panes;
+        for (ComparePane* pane : compare->findChildren<ComparePane*>())
+            if (pane->isVisible()) panes.append(pane);
+        check(panes.size() == 2, "side-by-side exposes two actual image panes");
+        if (panes.size() == 2) {
+            const QPoint local = panes.first()->viewport()->rect().center();
+            QWheelEvent zoomEvent(QPointF(local), QPointF(panes.first()->viewport()->mapToGlobal(local)),
+                                  QPoint(), QPoint(0, 240), Qt::NoButton, Qt::NoModifier,
+                                  Qt::NoScrollPhase, false);
+            QApplication::sendEvent(panes.first()->viewport(), &zoomEvent);
+            QCoreApplication::processEvents();
+            check(panes.first()->zoom() > 1.0 && panes.last()->zoom() > 1.0,
+                  "an actual wheel gesture zooms both active panes");
+            QTest::mouseClick(fitButton, Qt::LeftButton);
+            QCoreApplication::processEvents();
+            check(panes.first()->zoom() == 1.0 && panes.last()->zoom() == 1.0,
+                  "Fit resets both active side-by-side pane zooms");
+        }
+        const QImage immutableShaderInput = compare->frozenFrame();
+        const QImage liveBeforeModelChanges = settledFrame(surface);
+        for (const anime4k::ModeInfo& preset : presets) {
+            if (!anime4k::chainIsComplete(anime4k::candidateForId(preset.id), shadersDir)) continue;
+            for (int side = 0; side < 2; ++side) {
+                const QImage unchangedSide = side == 0 ? compare->renderedSideB() : compare->renderedSideA();
+                check(triggerChoice(compare, side, preset.id),
+                      "a corner selector switches to an available Anime4K preset");
+                QImage output;
+                QString failure;
+                const bool completed = waitForRenderedSide(compare, preset.id, side, &output, &failure);
+                const auto picture = mplayer::probes::measurePicture(
+                    output, surface->videoWidth(), surface->videoHeight());
+                check(completed && !picture.isMostlyBlack() &&
+                          visibleSideMatches(compare, side, preset.id, output, surface),
+                      "changing the Anime4K model leaves the correctly labelled actual visible image lit");
+                check((side == 0 ? compare->renderedSideB() : compare->renderedSideA()) == unchangedSide,
+                      "changing one model preserves the other side's pixels");
+                check(compare->frozenFrame() == immutableShaderInput &&
+                          playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp) &&
+                          settledFrame(surface) == liveBeforeModelChanges,
+                      "shader comparisons preserve frozen input and exact live pixels and timestamp");
+                bool menuVisible = false;
+                for (QMenu* menu : compare->findChildren<QMenu*>()) menuVisible |= menu->isVisible();
+                check(!menuVisible, "the chooser closes before the new output is presented");
+                if (!completed || picture.isMostlyBlack()) {
+                    std::fprintf(stderr, "FAIL shader %s side %d: %s\n",
+                                 qPrintable(preset.id), side, qPrintable(failure));
+                    app.exit(1);
+                    return;
+                }
+            }
+        }
+        check(triggerChoice(compare, 0, QStringLiteral("off")) &&
+                  triggerChoice(compare, 1, QStringLiteral("off")) &&
+                  compare->renderedSideA() == immutableShaderInput &&
+                  compare->renderedSideB() == immutableShaderInput,
+              "both corner selectors return to the exact immutable raw Original after shader changes");
+
+        if (ajiMode) {
+            const QString savedPreset =
+                QSettings().value(QStringLiteral("player/anime4k")).toString();
+            const QString liveChain = surface->anime4KChainId();
+            const QString liveShader = surface->effectiveShaderChain();
+            const QImage liveControl = settledFrame(surface);
+            const QImage immutableOriginal = compare->frozenFrame();
+            const auto unchangedLivePlayback = [&] {
+                return !surface->isPlaying() &&
+                       playbackTimestampMatches(surface, comparisonSourceEpoch,
+                                                frozenTimestamp) &&
+                       surface->animeJanaiPlan().presetId == originalAjiId &&
+                       surface->animeJanaiPlan().backend == ajiBackend &&
+                       surface->animeJanaiProcessingObserved() &&
+                       surface->anime4KChainId() == liveChain &&
+                       surface->effectiveShaderChain() == liveShader &&
+                       settledFrame(surface) == liveControl;
+            };
+            check(!immutableOriginal.isNull() && !liveControl.isNull(),
+                  "the isolated source and the held player's output are both captured");
+            check(unchangedLivePlayback(),
+                  "opening the isolated comparison preserves exact live timestamp and pixels");
+            if (immutableOriginal.isNull() || liveControl.isNull() ||
+                !unchangedLivePlayback()) {
+                app.exit(1);
+                return;
+            }
+
+            auto* operation = compare->findChild<ProcessingOverlay*>();
+            bool cancelledRealBuild = false;
+            bool retryBuildObserved = false;
+            bool honestBuildUi = false;
+            bool elapsedAdvanced = false;
+            QElapsedTimer buildUiElapsed;
+            QStringList initialOperationLabels;
+            const QImage otherBeforeBuildCancellation = compare->renderedSideB();
+            QTimer cancelRealBuild;
+            cancelRealBuild.setInterval(40);
+            QObject::connect(&cancelRealBuild, &QTimer::timeout, compare, [&] {
+                if (!operation || !operation->isVisible() || !compare->comparisonPending()) return;
+                auto* progress = operation->findChild<QProgressBar*>();
+                auto* cancel = operation->findChild<QPushButton*>();
+                if (!progress || progress->minimum() != 0 || progress->maximum() != 0 ||
+                    !cancel || !cancel->isEnabled()) return;
+                bool popupOpen = false;
+                for (QMenu* menu : compare->findChildren<QMenu*>()) popupOpen |= menu->isVisible();
+                const bool honestNow = !popupOpen && !surface->isPlaying() && surface->pauseObserved() &&
+                                       operation->isWindow() &&
+                                       operation->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
+                QStringList labels;
+                for (QLabel* label : operation->findChildren<QLabel*>()) labels.append(label->text());
+                if (!buildUiElapsed.isValid()) {
+                    buildUiElapsed.start();
+                    initialOperationLabels = labels;
+                    honestBuildUi = honestNow;
+                    return;
+                }
+                honestBuildUi &= honestNow;
+                if (buildUiElapsed.elapsed() < 1200) return;
+                elapsedAdvanced = labels != initialOperationLabels;
+                cancelRealBuild.stop();
+                cancelledRealBuild = true;
+                QTest::mouseClick(cancel, Qt::LeftButton);
+            });
+            cancelRealBuild.start();
+            const QString cancellableModel = publicSpatialIds.last();
+            check(triggerChoice(compare, 0, cancellableModel),
+                  "a real spatial choice exercises cached-or-building engine ownership");
+            cancelRealBuild.stop();
+            if (cancelledRealBuild) {
+                check(honestBuildUi && elapsedAdvanced && !compare->comparisonPending() &&
+                          compare->renderedSideA().isNull() &&
+                          !compare->candidateError(cancellableModel).isEmpty() &&
+                          compare->renderedSideB() == otherBeforeBuildCancellation &&
+                          unchangedLivePlayback(),
+                      "actual build Cancel stops owned work after advancing elapsed time, with indeterminate progress and exact live preservation");
+                QTimer observeRetryBuild;
+                observeRetryBuild.setInterval(40);
+                QObject::connect(&observeRetryBuild, &QTimer::timeout, compare, [&] {
+                    auto* progress = operation->findChild<QProgressBar*>();
+                    retryBuildObserved |= operation->isVisible() && compare->comparisonPending() &&
+                                          progress && progress->maximum() == 0;
+                });
+                observeRetryBuild.start();
+                check(triggerChoice(compare, 0, cancellableModel),
+                      "the real model can be selected again after cancelling its owned builder");
+                observeRetryBuild.stop();
+            }
+            QImage preparedOutput;
+            QString prepareFailure;
+            check(waitForRenderedSide(compare, cancellableModel, 0,
+                                      &preparedOutput, &prepareFailure) &&
+                      visibleSideMatches(compare, 0, cancellableModel, preparedOutput, surface),
+                  "the actual model succeeds after either cached selection or cancelled-build retry");
+            if (retryBuildObserved && operation) {
+                auto* progress = operation->findChild<QProgressBar*>();
+                auto* cancel = operation->findChild<QPushButton*>();
+                check(operation->isVisible() && progress && progress->maximum() == 1 &&
+                          progress->value() == 1 && cancel && !cancel->isEnabled(),
+                      "a genuinely completed retry presents visible settled success before dismissing");
+            }
+            check(triggerChoice(compare, 0, offId),
+                  "the build-lifecycle case returns to exact raw input before the model sweep");
+
+            for (qsizetype index = 0; index < publicSpatialIds.size(); ++index) {
+                const QString& id = publicSpatialIds.at(index);
+                check(triggerChoice(compare, 0, id),
+                      "the visible side-A menu selects a public spatial model");
+                QImage a;
+                QString failure;
+                const bool renderedA = waitForRenderedSide(compare, id, 0, &a, &failure);
+                check(renderedA && !a.isNull() &&
+                          !mplayer::probes::measurePicture(a, surface->videoWidth(),
+                                                          surface->videoHeight()).isMostlyBlack() &&
+                          visibleSideMatches(compare, 0, id, a, surface),
+                      "the selected spatial model produces lit correctly labelled visible side-A output");
+                if (!renderedA || a.isNull()) {
+                    std::fprintf(stderr, "FAIL model %s: %s\n", qPrintable(id),
+                                 qPrintable(failure));
+                    app.exit(1);
+                    return;
+                }
+                const double effect = meanDifference(immutableOriginal, a);
+                std::fprintf(stderr, "     spatial %s effect %.6f / 255\n",
+                             qPrintable(id), effect);
+                check(effect > 0.01,
+                      "the model output differs from the immutable Original pixels");
+                check(triggerChoice(compare, 1, id),
+                      "the visible side-B menu selects the same spatial model");
+                QImage b;
+                const bool renderedB = waitForRenderedSide(compare, id, 1, &b, &failure);
+                check(renderedB && !b.isNull() && visibleSideMatches(compare, 1, id, b, surface),
+                      "the same spatial model produces lit correctly labelled visible side-B output");
+                if (!renderedB || b.isNull()) {
+                    std::fprintf(stderr, "FAIL side-B model %s: %s; visible=%d capture=%s\n",
+                                 qPrintable(id), qPrintable(failure), compare->isVisible(),
+                                 qPrintable(compare->captureError()));
+                    app.exit(1);
+                    return;
+                }
+                const double noise = meanDifference(a, b);
+                std::fprintf(stderr, "     same-input same-model noise %.6f / 255\n", noise);
+                check(renderedB && a == b && noise == 0.0,
+                      "both sides of one model use exactly the same frozen input");
+                check(compare->frozenFrame() == immutableOriginal && unchangedLivePlayback(),
+                      "each model preserves frozen Original and pixel-identical live playback");
+                check(a.save(QStringLiteral(".probe-out/compare-aji-%1.png").arg(index)),
+                      "the actual selected-model output is saved as PNG");
+            }
+
+            check(triggerChoice(compare, 0, offId),
+                  "the visible menu selects an unprocessed Original side");
+            QImage rawControl;
+            QString rawFailure;
+            const bool rawRendered =
+                waitForRenderedSide(compare, offId, 0, &rawControl, &rawFailure);
+            check(rawRendered && rawControl == immutableOriginal,
+                  "Off reproduces the pixel-identical immutable Original after all models");
+            check(triggerChoice(compare, 1, offId),
+                  "the other visible menu selects the same Original side");
+            check(compare->renderedSideA() == compare->renderedSideB(),
+                  "two unprocessed sides have zero pixel difference");
+            check(unchangedLivePlayback(),
+                  "Original rendering leaves the player's active Aji and shader output untouched");
+
+            QString crossFamilyShader;
+            for (const anime4k::ModeInfo& preset : presets) {
+                if (preset.id != offId &&
+                    anime4k::chainIsComplete(anime4k::candidateForId(preset.id), shadersDir)) {
+                    crossFamilyShader = preset.id;
+                    break;
+                }
+            }
+            check(!crossFamilyShader.isEmpty(), "a real shader is available for cross-family switching");
+            for (const QString& spatialId : publicSpatialIds) {
+                for (int side = 0; side < 2; ++side) {
+                    const QImage otherSide = side == 0 ? compare->renderedSideB()
+                                                        : compare->renderedSideA();
+                    for (const QString& id : {crossFamilyShader, spatialId, crossFamilyShader}) {
+                        check(triggerChoice(compare, side, id),
+                              "a visible corner switches across the shader/spatial boundary");
+                        QImage output;
+                        QString failure;
+                        const bool complete = waitForRenderedSide(compare, id, side, &output, &failure);
+                        check(complete && visibleSideMatches(compare, side, id, output, surface),
+                              "cross-family switching presents actual lit pixels with the selected model");
+                        check((side == 0 ? compare->renderedSideB() : compare->renderedSideA()) == otherSide &&
+                                  compare->frozenFrame() == immutableOriginal && unchangedLivePlayback(),
+                              "cross-family changes preserve the other side, raw input and exact live state");
+                        if (!complete) {
+                            std::fprintf(stderr, "FAIL cross-family %s side %d: %s\\n",
+                                         qPrintable(id), side, qPrintable(failure));
+                            app.exit(1);
+                            return;
+                        }
+                    }
+                }
+            }
+            check(triggerChoice(compare, 0, offId) && triggerChoice(compare, 1, offId) &&
+                      compare->renderedSideA() == immutableOriginal &&
+                      compare->renderedSideB() == immutableOriginal,
+                  "both sides return to exact raw pixels after all cross-family transitions");
+
+            bool supersededWhilePending = false;
+            QTimer rapidSelection;
+            rapidSelection.setInterval(1);
+            QObject::connect(&rapidSelection, &QTimer::timeout, compare, [&] {
+                if (!compare->comparisonPending()) return;
+                rapidSelection.stop();
+                supersededWhilePending = triggerChoice(compare, 0, crossFamilyShader);
+            });
+            rapidSelection.start();
+            check(triggerChoice(compare, 0, publicSpatialIds.first()),
+                  "a real spatial selection starts the rapid-selection lifecycle");
+            rapidSelection.stop();
+            QImage finalRapidOutput;
+            QString rapidFailure;
+            check(supersededWhilePending &&
+                      waitForRenderedSide(compare, crossFamilyShader, 0,
+                                          &finalRapidOutput, &rapidFailure) &&
+                      visibleSideMatches(compare, 0, crossFamilyShader, finalRapidOutput, surface) &&
+                      compare->renderedSideB() == immutableOriginal && unchangedLivePlayback(),
+                  "a newer selection wins without publishing the superseded model or touching live playback");
+            check(triggerChoice(compare, 0, offId),
+                  "Original remains usable after rapid selection cancellation");
+
+            const QImage unaffectedBeforeFailure = compare->renderedSideB();
+            compare->setAjiBackend(native::Backend::DirectML);
+            const QString missingId = publicSpatialIds.last();
+            check(triggerChoice(compare, 0, missingId),
+                  "a spatial choice keeps the explicitly selected unavailable backend");
+            QImage missingOutput;
+            QString missingFailure;
+            const bool substituted =
+                waitForRenderedSide(compare, missingId, 0, &missingOutput, &missingFailure);
+            check(!substituted && missingOutput.isNull() &&
+                      compare->renderedSideA().isNull() &&
+                      !compare->candidateError(missingId).isEmpty(),
+                  "an unavailable backend names the failure without a fallback or stale image");
+            check(compare->renderedSideB() == unaffectedBeforeFailure,
+                  "a named backend failure preserves the unaffected comparison side exactly");
+            check(unchangedLivePlayback(),
+                  "an unavailable comparison backend leaves live processing and timestamp intact");
+            compare->setAjiBackend(ajiBackend);
+            check(triggerChoice(compare, 0, offId),
+                  "Original remains usable after a failed backend selection");
+            check(compare->renderedSideA() == immutableOriginal,
+                  "the named backend failure does not damage the frozen input");
+            check(QSettings().value(QStringLiteral("player/anime4k")).toString() == savedPreset,
+                  "comparison choices leave saved player preferences unchanged");
+
+            compare->close();
+            PlaybackTimestampSample resumed;
+            check(!compare->isVisible() &&
+                      waitForPlaybackProgress(surface, comparisonSourceEpoch,
+                                              frozenTimestamp, &resumed),
+                  "closing Compare resumes playback that was playing when it opened");
+            check(surface->animeJanaiPlan().presetId == originalAjiId &&
+                      surface->anime4KChainId() == liveChain,
+                  "normal close preserves the player's processing choices");
+
+            const auto reopen = [&] {
+                const quint64 pauseBefore = surface->pauseRequestGeneration();
+                emit shell->compareRequested();
+                // The window works synchronously inside showEvent, so no blind
+                // wait is needed: the state it published is already final, and
+                // reading it directly is what separates a captured window from
+                // a refused one. The old fixed wait read both identically,
+                // which is exactly the ambiguity the pass/fail had.
+                std::fprintf(stderr,
+                             "     reopen capture readiness: inProgress=%d held=%d "
+                             "visible=%d pending=%d frozenNull=%d\n",
+                             compare->captureInProgress() ? 1 : 0,
+                             compare->playbackHeld() ? 1 : 0, compare->isVisible() ? 1 : 0,
+                             compare->comparisonPending() ? 1 : 0,
+                             compare->frozenFrame().isNull() ? 1 : 0);
+                const bool captured = compare->isVisible() && compare->captureError().isEmpty() &&
+                                      !compare->frozenFrame().isNull();
+                if (!captured) {
+                    PlaybackTimestampSample current;
+                    const bool timestampAvailable = requestPlaybackTimestamp(surface, &current);
+                    const auto frozen = compare->frozenPlaybackTimestamp();
+                    std::fprintf(stderr,
+                                 "TRACE Compare reopen refused: visible=%d pending=%d frozenNull=%d "
+                                 "capture=%s lock=%s inProgress=%d held=%d visiblePanes=%d "
+                                 "liveEpoch=%llu frozenEpoch=%llu "
+                                 "timestamp=%s frozenTimestamp=%s paused=%d playing=%d "
+                                 "pauseGeneration=%llu->%llu\n",
+                                 compare->isVisible(), compare->comparisonPending(),
+                                 compare->frozenFrame().isNull(), qPrintable(compare->captureError()),
+                                 qPrintable(compare->lockError()),
+                                 compare->captureInProgress() ? 1 : 0,
+                                 compare->playbackHeld() ? 1 : 0,
+                                 static_cast<int>(visibleComparePanes(compare)),
+                                 static_cast<unsigned long long>(surface->sourceEpoch()),
+                                 static_cast<unsigned long long>(compare->frozenSourceEpoch()),
+                                 timestampAvailable
+                                     ? qPrintable(QString::number(*current.timestamp, 'f', 6))
+                                     : "(unavailable)",
+                                 frozen.has_value() ? qPrintable(QString::number(*frozen, 'f', 6))
+                                                    : "(unavailable)",
+                                 surface->pauseObserved(), surface->isPlaying(),
+                                 static_cast<unsigned long long>(pauseBefore),
+                                 static_cast<unsigned long long>(surface->pauseRequestGeneration()));
+                }
+                return captured;
+            };
+            surface->setPaused(true);
+            PlaybackTimestampSample pausedBeforeOpen;
+            check(waitForStablePlaybackTimestamp(surface, comparisonSourceEpoch,
+                                                 &pausedBeforeOpen),
+                  "the paused-close case starts from an observed stable timestamp");
+            check(reopen(), "Compare captures an originally paused source again");
+            compare->close();
+            check(!surface->isPlaying() &&
+                      playbackTimestampMatches(surface, comparisonSourceEpoch,
+                                               pausedBeforeOpen.timestamp),
+                  "closing an originally paused Compare preserves pause and timestamp");
+
+            surface->setPaused(false);
+            PlaybackTimestampSample moving;
+            check(waitForPlaybackProgress(surface, comparisonSourceEpoch,
+                                          pausedBeforeOpen.timestamp, &moving),
+                  "the explicit-pause case starts from real moving playback");
+            check(reopen(), "Compare opens before a newer same-value pause request");
+            const auto heldTimestamp = compare->frozenPlaybackTimestamp();
+            surface->setPaused(true);
+            compare->close();
+            check(!surface->isPlaying() &&
+                      playbackTimestampMatches(surface, comparisonSourceEpoch, heldTimestamp),
+                  "a newer explicit pause wins over Compare's original playing intent");
+
+            check(reopen(), "Compare opens before a newer explicit Play request");
+            const auto beforePlay = compare->frozenPlaybackTimestamp();
+            surface->setPaused(false);
+            PlaybackTimestampSample advanced;
+            check(waitForPlaybackProgress(surface, comparisonSourceEpoch, beforePlay, &advanced),
+                  "explicit Play advances the live player while Compare is visible");
+            check(compare->frozenFrame().isNull() &&
+                      compare->renderedSideA().isNull() &&
+                      !compare->captureError().isEmpty(),
+                  "resumed playback visibly invalidates the old comparison pair");
+            compare->close();
+            PlaybackTimestampSample stillPlaying;
+            check(waitForPlaybackProgress(surface, comparisonSourceEpoch,
+                                          advanced.timestamp, &stillPlaying),
+                  "closing Compare preserves a newer explicit Play request");
+
+            check(reopen(), "Compare reopens before a source replacement");
+            const uint64_t oldEpoch = surface->sourceEpoch();
+            check(surface->open(url), "the player accepts a source replacement");
+            QTest::qWait(1500);
+            check(surface->sourceEpoch() != oldEpoch && compare->frozenFrame().isNull() &&
+                      !compare->captureError().isEmpty(),
+                  "a new source epoch clears the old frozen input even for the same URL");
+            compare->close();
+            surface->setPaused(true);
+            surface->seek(6.0);
+            PlaybackTimestampSample replacementHeld;
+            check(waitForStablePlaybackTimestamp(surface, surface->sourceEpoch(),
+                                                 &replacementHeld),
+                  "the replacement source settles before a new comparison");
+            check(reopen() && compare->frozenSourceEpoch() == surface->sourceEpoch(),
+                  "reopening Compare captures the replacement source instead of stale pixels");
+            compare->close();
+
+            surface->setPaused(false);
+            PlaybackTimestampSample pendingMoving;
+            check(waitForPlaybackProgress(surface, surface->sourceEpoch(),
+                                          replacementHeld.timestamp, &pendingMoving),
+                  "the pending-close case starts from moving playback");
+            check(reopen(), "Compare opens before pending spatial work");
+            const uint64_t pendingEpoch = surface->sourceEpoch();
+            const auto pendingTimestamp = compare->frozenPlaybackTimestamp();
+            bool closedPending = false;
+            QTimer closeTimer;
+            closeTimer.setInterval(1);
+            QObject::connect(&closeTimer, &QTimer::timeout, compare, [&] {
+                if (!compare->comparisonPending()) return;
+                closedPending = true;
+                closeTimer.stop();
+                compare->close();
+            });
+            closeTimer.start();
+            const bool pendingSelected =
+                triggerChoice(compare, 0, publicSpatialIds.first());
+            closeTimer.stop();
+            check(pendingSelected,
+                  "the visible menu starts a cancellable spatial comparison");
+            if (!pendingSelected) {
+                // A refusal upstream leaves the window with no published pane,
+                // so there is no side-0 badge to choose from: name that state
+                // instead of leaving the pending checks unexplained.
+                std::fprintf(stderr,
+                             "     pending selection unavailable: panes=%d frozenNull=%d "
+                             "capture=%s lock=%s pending=%d held=%d\n",
+                             static_cast<int>(visibleComparePanes(compare)),
+                             compare->frozenFrame().isNull() ? 1 : 0,
+                             qPrintable(compare->captureError()),
+                             qPrintable(compare->lockError()),
+                             compare->comparisonPending() ? 1 : 0,
+                             compare->playbackHeld() ? 1 : 0);
+            }
+            PlaybackTimestampSample resumedPending;
+            check(closedPending && !compare->isVisible() &&
+                      waitForPlaybackProgress(surface, pendingEpoch, pendingTimestamp,
+                                              &resumedPending),
+                  "closing during pending work releases the hold and resumes the live player");
+            check(surface->animeJanaiPlan().presetId == originalAjiId &&
+                      surface->animeJanaiPlan().backend == ajiBackend &&
+                      surface->anime4KChainId() == liveChain,
+                  "pending comparison cancellation never replaces live processing");
+            surface->setPaused(true);
+            check(reopen(), "Compare reopens for source replacement during pending work");
+            const uint64_t pendingSourceEpoch = surface->sourceEpoch();
+            bool sourceReplacedPending = false;
+            QTimer replacePendingSource;
+            replacePendingSource.setInterval(1);
+            QObject::connect(&replacePendingSource, &QTimer::timeout, compare, [&] {
+                if (!compare->comparisonPending()) return;
+                replacePendingSource.stop();
+                sourceReplacedPending = true;
+                surface->open(url);
+            });
+            replacePendingSource.start();
+            check(triggerChoice(compare, 0, publicSpatialIds.last()),
+                  "a real spatial selection begins before pending source replacement");
+            replacePendingSource.stop();
+            QTest::qWait(1000);
+            check(sourceReplacedPending && surface->sourceEpoch() != pendingSourceEpoch &&
+                      !compare->comparisonPending() && compare->frozenFrame().isNull() &&
+                      compare->renderedSideA().isNull() && compare->renderedSideB().isNull() &&
+                      !compare->captureError().isEmpty(),
+                  "source replacement cancels owned work and publishes no old-source pair");
+            compare->close();
+
+            // The dedicated toolbar Close button is gone, so the user's only
+            // remaining affordances are Escape and the window manager's own
+            // close. Escape is the one this probe can send without simulating
+            // an OS title bar; it must run the same release path a programmatic
+            // close() does: pause preserved, plan lock released, frame cleared.
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                const bool escape = attempt == 1;
+                surface->setPaused(true);
+                surface->seek(6.0);
+                PlaybackTimestampSample heldBeforeClose;
+                const bool heldSettled = waitForStablePlaybackTimestamp(
+                    surface, surface->sourceEpoch(), &heldBeforeClose);
+                check(reopen(),
+                      escape ? "the window reopened for the Escape close case"
+                            : "the window reopened for the programmatic close case");
+                if (escape) {
+                    QTest::keyClick(compare, Qt::Key_Escape);
+                } else {
+                    compare->close();
+                }
+                const bool closedByAffordance =
+                    !compare->isVisible() && heldSettled && !surface->isPlaying() &&
+                    playbackTimestampMatches(surface, surface->sourceEpoch(),
+                                             heldBeforeClose.timestamp) &&
+                    !surface->nativePlanLocked() && compare->frozenFrame().isNull();
+                check(closedByAffordance,
+                      escape
+                          ? "Escape closes the window and releases the hold"
+                          : "closing the window releases the hold it took for its frozen frame");
+                if (!closedByAffordance) {
+                    std::fprintf(stderr,
+                                 "     %s close: visible=%d heldSettled=%d playing=%d "
+                                 "planLocked=%d frozenNull=%d capture=%s\n",
+                                 escape ? "escape" : "close", compare->isVisible() ? 1 : 0,
+                                 heldSettled ? 1 : 0, surface->isPlaying() ? 1 : 0,
+                                 surface->nativePlanLocked() ? 1 : 0,
+                                 compare->frozenFrame().isNull() ? 1 : 0,
+                                 qPrintable(compare->captureError()));
+                }
+            }
+
+            dialog->close();
+            std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");
+            app.exit(failures == 0 ? 0 : 1);
+            return;
+        }
 
         if (auto* info = compare->findChild<QLabel*>(QString::fromLatin1("compareInfo"))) {
             std::fprintf(stderr, "     info: %s\n", qPrintable(info->text()));
@@ -488,13 +1724,7 @@ int main(int argc, char** argv) {
               "a chain with no Mode is remembered by its id");
 
         // ── 8. Compare leaves the player as found ─────────────────
-        // R6. Each side is rendered by swapping the borrowed surface's chain,
-        // so the chain read before the two sides has to be the chain the
-        // player is running afterwards - on a successful capture, when the
-        // window closes, and on every reopen. `single` is a loose .glsl that
-        // is deliberately NOT one of the presets the badges offer, so a
-        // restore that never happened would surface here as a preset id
-        // instead of the one the player was actually running.
+        // Isolation must preserve even a live loose shader absent from the chooser.
         compare->close();
         QTest::qWait(200);
         check(surface->anime4KChainId() == single,
@@ -506,7 +1736,7 @@ int main(int argc, char** argv) {
         check(!compare->frozenFrame().isNull(), "the reopened window captured a frame");
         check(compare->captureError().isEmpty(), "the reopened capture reported no error");
         check(surface->anime4KChainId() == single,
-              "a reopened capture restores the player's chain");
+              "a reopened isolated capture leaves the player's chain unchanged");
 
         compare->captureNow();
         QTest::qWait(2500);
@@ -614,13 +1844,7 @@ int main(int argc, char** argv) {
         surface->setNativeStatusPolling(false);
 
         // ── 10b. the stored preset is not the live chain, and stays that way ──
-        // The player persists `player/anime4k`, but the surface can be running
-        // something that setting does not name - here a loose .glsl the badges
-        // cannot offer. Compare swaps the LIVE chain to render its two sides,
-        // so picking both sides has to put that live chain back untouched and
-        // must never rewrite what the player has stored. The evidence is the
-        // chain id AND the glsl-shaders string mpv actually holds, not just the
-        // window's own bookkeeping.
+        // Saved selection and live loose shader are distinct; preserve both.
         const QString storedKey = QStringLiteral("player/anime4k");
         QSettings persisted;
         persisted.setValue(storedKey, offId);
@@ -657,12 +1881,14 @@ int main(int argc, char** argv) {
             }
             return false;
         };
-        check(pickPreset(0, presetIds.value(0)), "the first badge accepts a preset pick");
+        check(pickPreset(0, selectablePresetIds.value(0)),
+              "the first badge accepts an available preset pick");
         check(surface->anime4KChainId() == chainBefore,
               "picking side A leaves the live chain id unchanged");
         check(surface->effectiveShaderChain() == propertyBefore,
               "picking side A leaves glsl-shaders as found");
-        check(pickPreset(1, presetIds.value(1)), "the second badge accepts another preset pick");
+        check(pickPreset(1, selectablePresetIds.value(1)),
+              "the second badge accepts another available preset pick");
         check(surface->anime4KChainId() == chainBefore,
               "picking side B leaves the live chain id unchanged");
         check(surface->effectiveShaderChain() == propertyBefore,
@@ -745,7 +1971,7 @@ int main(int argc, char** argv) {
 
         // The degenerate case: no surface at all. It has to name the missing
         // surface rather than dereference it.
-        CompareWindow noSurface(nullptr, presetIds.value(0));
+        CompareWindow noSurface(nullptr, selectablePresetIds.value(0));
         noSurface.captureNow();
         QTest::qWait(50);
         std::fprintf(stderr, "     no-surface refusal: %s\n",
@@ -767,7 +1993,7 @@ int main(int argc, char** argv) {
             QThread::msleep(50);
         }
         if (borrowedOpened && borrowed->hasVideo()) {
-            auto* guardWindow = new CompareWindow(borrowed, presetIds.value(0));
+            auto* guardWindow = new CompareWindow(borrowed, selectablePresetIds.value(0));
             guardWindow->captureNow();
             check(!guardWindow->captureError().isEmpty() || !guardWindow->frozenFrame().isNull(),
                   "the second surface produced a real frame before the guard check");

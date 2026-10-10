@@ -3,8 +3,10 @@
 #include "Anime4K.hpp"
 #include "CompareCanvas.hpp"
 #include "CompareGrid.hpp"
+#include "CompareRenderer.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/status/NativePlaybackController.hpp"
 
 #include <QCloseEvent>
@@ -14,17 +16,21 @@
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
+#include <QRunnable>
 #include <QSignalBlocker>
 #include <QShowEvent>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <optional>
 
@@ -39,29 +45,13 @@ constexpr int kGap = 12;
 constexpr int kGapSmall = 8;
 constexpr int kWindowWidth = 1280;
 constexpr int kWindowHeight = 800;
-/// How long a frame may sit still before the picture counts as settled. The
-/// surface reports its position from a 50 ms pump, so anything tighter would
-/// be measuring the pump rather than the video.
 constexpr double kSettleQuietSeconds = 0.08;
-/// Consecutive identical grabs before a frame is believed. One grab can be the
-/// picture from before the change that was just asked for.
 constexpr int kSettleRounds = 2;
-/// Consecutive rounds with no position update from the surface before its
-/// framebuffer is believed at all. The surface pumps its position every 50 ms,
-/// so a capture that accepted a frame immediately could read the picture of a
-/// seek that has not been reported yet. Five rounds is 200 ms, four pump
-/// intervals, and it restarts whenever a late update does arrive.
+// Observe several 50 ms surface updates before trusting a paused framebuffer.
 constexpr int kMinObserveRounds = 5;
-/// How long a capture waits for the picture to settle before giving up and
-/// saying so.
 constexpr int kSettleTimeoutMs = 3000;
-/// Poll spacing while waiting. Fine enough that kSettleRounds consecutive grabs
-/// span a real change, coarse enough not to starve the event loop.
 constexpr int kPollIntervalMs = 40;
-
-QString caption(const QString& text) {
-    return QStringLiteral(" %1 ").arg(text);
-}
+constexpr int kMaxPauseReassertions = kSettleTimeoutMs / kPollIntervalMs;
 
 QStringList categoryPath(const QString& categoryId) {
     QStringList path;
@@ -81,61 +71,117 @@ QStringList categoryPath(const QString& categoryId) {
 
 }  // namespace
 
+struct AjiPreparationTask {
+    std::atomic_bool cancelled{false};
+    std::atomic_bool finished{false};
+    std::optional<native::AnimeJanaiPlan> plan;
+};
+
+struct PlaybackTimestampResult {
+    std::atomic_bool finished{false};
+    uint64_t sourceEpoch = 0;
+    std::optional<double> timestamp;
+};
+
 CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandidateId,
-                             QWidget* parent)
-    : QDialog(parent), surface_(surface), currentCandidateId_(currentCandidateId) {
+                             QWidget* parent, native::Backend ajiBackend)
+    : QDialog(parent), surface_(surface), currentCandidateId_(currentCandidateId),
+      ajiBackend_(ajiBackend) {
     setWindowTitle(tr("Quality Comparison"));
     setModal(false);
     resize(kWindowWidth, kWindowHeight);
+    if (surface_ != nullptr) {
+        const native::AnimeJanaiPlan activePlan = surface_->animeJanaiPlan();
+        if (activePlan.enabled && !activePlan.presetId.isEmpty()) {
+            const QVector<native::AnimeJanaiPreset> publicPresets = native::animeJanaiPresets();
+            const auto active = std::find_if(
+                publicPresets.cbegin(), publicPresets.cend(),
+                [&activePlan](const native::AnimeJanaiPreset& preset) {
+                    return !preset.rife && preset.id == activePlan.presetId;
+                });
+            if (active != publicPresets.cend()) {
+                currentCandidateId_ = active->id;
+            }
+        }
+    }
     buildUi();
     populateCandidates();
-    // No capture here. The window is constructed before it is shown, and the
-    // surface's framebuffer is not something to read before the widget stack
-    // has been mapped. The first showEvent() takes the frame instead, so
-    // construction and reopening follow exactly the same path.
-    //
-    // The position epoch counts the surface's own updates, which is the only
-    // signal that a move is still being reported. A capture waits for it to go
-    // quiet before trusting the framebuffer, because the surface reports its
-    // position from a 50 ms pump: a rewind clicked just before a capture would
-    // otherwise be read as the position the viewer started from.
+    // Capture after mapping; position updates prevent accepting a late seek's old frame.
     if (surface_ != nullptr) {
+        connect(surface_, &VideoSurface::playingChanged, this,
+                &CompareWindow::onPlaybackStateChanged);
+        connect(surface_, &VideoSurface::sourceEpochChanged, this, [this](uint64_t epoch) {
+            QTimer::singleShot(0, this, [this, epoch] {
+                if (surface_ == nullptr || surface_->sourceEpoch() != epoch) {
+                    return;
+                }
+                if (playbackHoldActive_ && epoch != playbackHoldSourceEpoch_) {
+                    invalidateFrozenPlayback(tr("The source changed during comparison."));
+                } else if (playbackReleasePending_) {
+                    finishDeferredPlaybackHoldRelease();
+                }
+            });
+        });
         connect(surface_, &VideoSurface::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
         // Carries the queue depth and the end of a settling transition, so the
         // armed retry never freezes a stale epoch.
         connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
                 &CompareWindow::onNativeStatusSettled);
+        connect(surface_, &QObject::destroyed, this, [this] {
+            playbackHoldActive_ = false;
+            playbackHoldOriginalPlaying_ = false;
+            playbackReleasePending_ = true;
+            deferredPlanLockRelease_ = true;
+            if (!rendering_) {
+                finishDeferredPlaybackHoldRelease();
+            }
+        });
     }
-    render();
+    onModeChanged(modeBox_->currentIndex());
 }
 
-CompareWindow::~CompareWindow() { releasePlanLock(); }
+CompareWindow::~CompareWindow() {
+    if (preparationTask_) {
+        preparationTask_->cancelled.store(true, std::memory_order_release);
+    }
+    if (!rendering_) {
+        requestPlaybackHoldRelease();
+    }
+    releasePlanLock();
+}
 
 void CompareWindow::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
-    // The player keeps one window and re-shows it, so showing it again is the
-    // viewer asking to compare where the player is NOW. Without this the window
-    // would raise itself onto the frame it froze the first time it was opened,
-    // which is the whole of the "my rewind did nothing" complaint.
+    // Reusing the window always captures the current position again.
     if (surface_ != nullptr && surface_->hasVideo()) {
         captureNow();
     }
 }
 
 void CompareWindow::closeEvent(QCloseEvent* event) {
-    // The window is reused, so the lock is released here and re-taken in
-    // showEvent; release is also what applies a queued native request.
-    releasePlanLock();
+    requestPlaybackHoldRelease();
     QDialog::closeEvent(event);
 }
 
 void CompareWindow::hideEvent(QHideEvent* event) {
-    releasePlanLock();
+    dismissCandidateMenus();
+    ++selectionGeneration_;
+    if (preparationTask_) {
+        preparationTask_->cancelled.store(true, std::memory_order_release);
+    }
+    requestPlaybackHoldRelease();
     QDialog::hideEvent(event);
 }
 
 void CompareWindow::captureNow() {
+    QPointer<CompareWindow> self(this);
+    ++selectionGeneration_;
+    playbackNeedsRecapture_ = false;
+    playbackReleasePending_ = false;
+    deferredPlanLockRelease_ = false;
+    acquirePlaybackHold();
+    maintainPlaybackHold();
     // Every capture path holds the plan lock, so no freeze is ever taken outside it.
     if (surface_ != nullptr && !ensurePlanLock()) {
         frame_ = QImage();
@@ -144,11 +190,17 @@ void CompareWindow::captureNow() {
         return;
     }
     captureFrame();
+    if (self.isNull()) {
+        return;
+    }
     render();
+    if (self.isNull()) {
+        return;
+    }
     // The lock's lifetime is the visible window: a programmatic capture on a
     // hidden window must not leave the plan held.
     if (!isVisible()) {
-        releasePlanLock();
+        requestPlaybackHoldRelease();
     }
 }
 
@@ -252,10 +304,6 @@ void CompareWindow::buildUi() {
     hover_->setObjectName(QStringLiteral("compareHover"));
     header->addWidget(hover_, 1);
 
-    auto* close = new QPushButton(tr("Close"), this);
-    close->setObjectName(QStringLiteral("compareClose"));
-    connect(close, &QPushButton::clicked, this, &QDialog::close);
-    header->addWidget(close);
     right->addLayout(header);
 
     // --- view controls: one per mode that has a value --------------------
@@ -293,8 +341,11 @@ void CompareWindow::buildUi() {
     auto* fit = new QToolButton(this);
     fit->setObjectName(QStringLiteral("compareFit"));
     fit->setText(tr("Fit"));
-    connect(fit, &QToolButton::clicked, this, [this] { canvas_->fitToContent(); });
-    view->addWidget(fit);
+    connect(fit, &QToolButton::clicked, this, [this] {
+        if (mode_ == CompareMode::SideBySide) grid_->fitToContent();
+        else canvas_->fitToContent();
+    });
+    header->insertWidget(2, fit);
 
     right->addLayout(view);
 
@@ -333,16 +384,30 @@ void CompareWindow::buildUi() {
 
     root->addLayout(right, 1);
 
+    processingOverlay_ = new ProcessingOverlay(this);
+    connect(processingOverlay_, &ProcessingOverlay::cancelRequested, this, [this] {
+        if (!buildOperationActive_) return;
+        ++selectionGeneration_;
+        if (preparationTask_) preparationTask_->cancelled.store(true, std::memory_order_release);
+        if (!pendingAjiId_.isEmpty())
+            ajiErrors_.insert(pendingAjiId_, tr("Comparison engine build cancelled."));
+        renderQueued_ = true;
+    });
+
     flickerTimer_ = new QTimer(this);
     connect(flickerTimer_, &QTimer::timeout, this, &CompareWindow::onFlickerTimeout);
 }
 
 void CompareWindow::populateCandidates() {
     const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
+    const QVector<native::AnimeJanaiPreset> ajiPresets = native::animeJanaiPresets();
+    const native::Backend ajiBackend = ajiBackend_;
     candidates_.clear();
-    candidates_.reserve(presets.size());
+    candidates_.reserve(presets.size() + ajiPresets.size());
     choices_.clear();
-    choices_.reserve(presets.size());
+    choices_.reserve(presets.size() + ajiPresets.size());
+    ajiBackends_.clear();
+    ajiErrors_.clear();
     for (const anime4k::ModeInfo& preset : presets) {
         candidates_.append(preset.id);
         ChoiceEntry entry;
@@ -351,13 +416,21 @@ void CompareWindow::populateCandidates() {
         entry.path = categoryPath(preset.category);
         choices_.append(entry);
     }
+    for (const native::AnimeJanaiPreset& preset : ajiPresets) {
+        if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
+            continue;
+        }
+        candidates_.append(preset.id);
+        ajiBackends_.insert(preset.id, ajiBackend);
+        choices_.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")}});
+    }
     selection_.clear();
     if (candidates_.isEmpty()) {
         return;
     }
     // Two sides, always: the chain the player is running opens as A and another
-    // player-menu preset as B, so the window opens on a comparison rather than
-    // on an empty pane. A catalogue of one compares a chain with itself.
+    // candidate as B, so the window opens on a comparison rather than on an
+    // empty pane. A catalogue of one compares a chain with itself.
     const qsizetype current =
         std::max<qsizetype>(0, candidates_.indexOf(currentCandidateId_));
     selection_.append(candidates_.value(current));
@@ -367,25 +440,234 @@ void CompareWindow::populateCandidates() {
     }
 }
 
+void CompareWindow::acquirePlaybackHold() {
+    if (surface_ == nullptr) {
+        return;
+    }
+    if (playbackHoldActive_ && playbackHoldOwned()) {
+        playbackReleasePending_ = false;
+        return;
+    }
+    playbackHoldActive_ = false;
+    playbackHoldOriginalPlaying_ = surface_->isPlaying();
+    playbackHoldSourceEpoch_ = surface_->sourceEpoch();
+    const quint64 generationBeforePause = surface_->pauseRequestGeneration();
+    playbackHoldMutation_ = true;
+    if (playbackHoldOriginalPlaying_) {
+        surface_->setPaused(true);
+    }
+    playbackHoldMutation_ = false;
+    playbackHoldGeneration_ = surface_->pauseRequestGeneration();
+    if (playbackHoldOriginalPlaying_ &&
+        playbackHoldGeneration_ != generationBeforePause + 1) {
+        playbackHoldOriginalPlaying_ = false;
+    }
+    playbackHoldActive_ = surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
+                          !surface_->isPlaying();
+    playbackReleasePending_ = false;
+    playbackHoldFailed_ = false;
+    playbackNeedsRecapture_ = false;
+    playbackHoldRetryScheduled_ = false;
+    playbackHoldRetryCount_ = 0;
+}
+
+bool CompareWindow::playbackHoldOwned() const {
+    return playbackHoldActive_ && surface_ != nullptr &&
+           surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
+           surface_->pauseRequestGeneration() == playbackHoldGeneration_ &&
+           !surface_->isPlaying() && surface_->pauseObserved();
+}
+
+void CompareWindow::requestPlaybackHoldRelease() {
+    playbackReleasePending_ = true;
+    deferredPlanLockRelease_ = true;
+    if (rendering_) {
+        return;
+    }
+    if (isolatedRenderer_) isolatedRenderer_->stop();
+    processingOverlay_->hide();
+    finishDeferredPlaybackHoldRelease();
+}
+
+void CompareWindow::finishDeferredPlaybackHoldRelease() {
+    if (!playbackReleasePending_) {
+        return;
+    }
+    if (rendering_) {
+        deferredPlanLockRelease_ = true;
+        return;
+    }
+    if (playbackReleasePending_ && playbackHoldOwned() &&
+        playbackHoldOriginalPlaying_ && !playbackHoldFailed_) {
+        playbackHoldMutation_ = true;
+        surface_->setPaused(false);
+        playbackHoldMutation_ = false;
+    }
+    playbackHoldActive_ = false;
+    playbackHoldOriginalPlaying_ = false;
+    playbackReleasePending_ = false;
+    if (deferredPlanLockRelease_) {
+        deferredPlanLockRelease_ = false;
+        releasePlanLock();
+    }
+}
+
+void CompareWindow::onPlaybackStateChanged(bool playing) {
+    if (!playbackHoldActive_ || playbackHoldMutation_ || surface_ == nullptr) {
+        return;
+    }
+    if (surface_->sourceEpoch() != playbackHoldSourceEpoch_) {
+        invalidateFrozenPlayback(tr("The source changed during comparison."));
+        return;
+    }
+    if (!playing) {
+        if (surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
+            playbackHoldOriginalPlaying_ = false;
+            playbackHoldGeneration_ = surface_->pauseRequestGeneration();
+        }
+        if (playbackNeedsRecapture_) {
+            QTimer::singleShot(0, this, [this] { tryRecaptureAfterPause(); });
+        }
+        return;
+    }
+    if (surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
+        invalidateFrozenPlayback(tr("Playback resumed during comparison."));
+        return;
+    }
+    const bool hadFrozenPair = !frame_.isNull() && frozenPlaybackTimestamp_.has_value();
+    playbackNeedsRecapture_ = isVisible() && !hadFrozenPair;
+    ++selectionGeneration_;
+    if (preparationTask_) {
+        preparationTask_->cancelled.store(true, std::memory_order_release);
+    }
+    pendingAjiId_.clear();
+    pendingAjiPreparation_ = false;
+    frame_ = QImage();
+    frozenPlaybackTimestamp_.reset();
+    renderedA_ = QImage();
+    renderedB_ = QImage();
+    isolatedOriginal_ = QImage();
+    captureError_ = hadFrozenPair
+                        ? tr("Playback advanced after the frozen comparison frame; capture again.")
+                        : tr("Playback resumed while the comparison was holding it; waiting for pause.");
+    canvas_->clear(captureError_);
+    canvas_->setSideImages(QImage(), QImage(), QImage());
+    clearGridPanes();
+    updateInfo();
+    surface_->reassertPaused();
+    maintainPlaybackHold();
+    render();
+}
+
+void CompareWindow::maintainPlaybackHold() {
+    if (!playbackHoldActive_ || surface_ == nullptr) {
+        return;
+    }
+    if (surface_->sourceEpoch() != playbackHoldSourceEpoch_) {
+        invalidateFrozenPlayback(tr("The source changed during comparison."));
+        return;
+    }
+    const quint64 requestGeneration = surface_->pauseRequestGeneration();
+    if (requestGeneration != playbackHoldGeneration_) {
+        if (surface_->pauseObserved() && !surface_->isPlaying()) {
+            playbackHoldOriginalPlaying_ = false;
+            playbackHoldGeneration_ = requestGeneration;
+        } else {
+            invalidateFrozenPlayback(tr("Playback resumed during comparison."));
+            return;
+        }
+    }
+    if (!surface_->pauseObserved() || surface_->isPlaying()) {
+        if (playbackHoldRetryCount_ >= kMaxPauseReassertions) {
+            surface_->reassertPaused();
+            playbackHoldActive_ = false;
+            playbackHoldOriginalPlaying_ = false;
+            playbackNeedsRecapture_ = false;
+            playbackHoldFailed_ = true;
+            captureError_ = tr("Playback could not be held paused for comparison.");
+            updateInfo();
+            render();
+            return;
+        }
+        ++playbackHoldRetryCount_;
+        surface_->reassertPaused();
+        if (!playbackHoldRetryScheduled_) {
+            playbackHoldRetryScheduled_ = true;
+            QTimer::singleShot(kPollIntervalMs, this, [this] {
+                playbackHoldRetryScheduled_ = false;
+                maintainPlaybackHold();
+            });
+        }
+    } else {
+        playbackHoldRetryCount_ = 0;
+    }
+}
+
+void CompareWindow::tryRecaptureAfterPause() {
+    if (!playbackNeedsRecapture_) {
+        return;
+    }
+    if (captureFrameActive_ || rendering_) {
+        QTimer::singleShot(kPollIntervalMs, this,
+                           [this] { tryRecaptureAfterPause(); });
+        return;
+    }
+    if (isVisible() && playbackHoldActive_ && playbackHoldOwned()) {
+        playbackNeedsRecapture_ = false;
+        captureNow();
+    } else if (!isVisible()) {
+        playbackNeedsRecapture_ = false;
+    }
+}
+
+void CompareWindow::invalidateFrozenPlayback(const QString& reason) {
+    playbackHoldActive_ = false;
+    playbackHoldOriginalPlaying_ = false;
+    playbackNeedsRecapture_ = false;
+    playbackHoldRetryScheduled_ = false;
+    playbackReleasePending_ = true;
+    deferredPlanLockRelease_ = true;
+    ++selectionGeneration_;
+    if (preparationTask_) {
+        preparationTask_->cancelled.store(true, std::memory_order_release);
+    }
+    pendingAjiId_.clear();
+    pendingAjiPreparation_ = false;
+    frame_ = QImage();
+    frozenPlaybackTimestamp_.reset();
+    renderedA_ = QImage();
+    renderedB_ = QImage();
+    isolatedOriginal_ = QImage();
+    captureError_ = reason;
+    canvas_->clear(reason);
+    canvas_->setSideImages(QImage(), QImage(), QImage());
+    clearGridPanes();
+    updateInfo();
+    render();
+    if (!rendering_ && deferredPlanLockRelease_) {
+        deferredPlanLockRelease_ = false;
+        releasePlanLock();
+    }
+}
+
+void CompareWindow::setAjiBackend(native::Backend backend) {
+    if (ajiBackend_ != backend) ++selectionGeneration_;
+    ajiBackend_ = backend;
+    for (auto it = ajiBackends_.begin(); it != ajiBackends_.end(); ++it) {
+        it.value() = backend;
+    }
+    ajiErrors_.clear();
+}
 QString CompareWindow::sideA() const { return selection_.value(0); }
 
 QString CompareWindow::sideB() const { return selection_.value(1); }
 
-QImage CompareWindow::grabSettledFrame(double* settledPosition) {
-    *settledPosition = 0.0;
+QImage CompareWindow::grabSettledFrame() {
+    QPointer<CompareWindow> self(this);
     if (surface_ == nullptr) {
         return QImage();
     }
-    // A frame is believed only when the framebuffer has stopped changing AND
-    // the position has stopped changing, in the SAME consecutive rounds.
-    //
-    // Either signal alone lies, and this is the whole bug. The position comes
-    // off a 50 ms pump, so a core that has just been rewound reports its new
-    // position a frame or two BEFORE the framebuffer is repainted - and a
-    // framebuffer that has not been repainted still holds the previous frame.
-    // Requiring several consecutive rounds with both quiet, at a spacing wider
-    // than the pump, is what makes this the frame at the current position
-    // rather than the frame the viewer just left.
+    // Require both a quiet position pump and identical pixels after any seek.
     QImage previous;
     double previousPosition = 0.0;
     int stableRounds = 0;
@@ -393,6 +675,9 @@ QImage CompareWindow::grabSettledFrame(double* settledPosition) {
     int quietEpochRounds = 0;
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
         QCoreApplication::processEvents();
+        if (self.isNull()) {
+            return QImage();
+        }
         QThread::msleep(kPollIntervalMs);
         // The event loop above can deliver a close that destroys the borrowed
         // surface; the QPointer turns that into a refusal here instead of a
@@ -402,13 +687,6 @@ QImage CompareWindow::grabSettledFrame(double* settledPosition) {
         }
         const QImage probe = surface_->grabFramebuffer();
         const double now = surface_->position();
-        // Phase one, observed first and on its own: has the surface stopped
-        // reporting a move? A seek issued moments ago has not been pumped yet,
-        // so the position on offer in the first rounds is still the one the
-        // viewer is leaving. kMinObserveRounds is deliberately several pump
-        // intervals, so a seek that was already in flight when the capture
-        // started cannot slip through unobserved - and unlike a wall-clock
-        // deadline it restarts when a late update does arrive.
         if (positionEpoch_ != epoch) {
             epoch = positionEpoch_;
             quietEpochRounds = 0;
@@ -431,31 +709,65 @@ QImage CompareWindow::grabSettledFrame(double* settledPosition) {
         }
         previous = probe;
         previousPosition = now;
-        // Phase two, only after phase one has actually observed a settled
-        // surface: the picture has to hold still for a run of rounds by now
-        // that the position it belongs to has stopped moving. This is where a
-        // repaint that landed after the seek gets read.
         if (quietEpochRounds >= kMinObserveRounds && stableRounds >= kSettleRounds) {
-            *settledPosition = now;
             return previous;
         }
     }
     return QImage();
 }
 
+std::optional<double> CompareWindow::readPlaybackTimestamp() {
+    QPointer<CompareWindow> self(this);
+    QPointer<VideoSurface> source = surface_;
+    if (source == nullptr) {
+        return std::nullopt;
+    }
+    const uint64_t expectedEpoch = source->sourceEpoch();
+    auto result = std::make_shared<PlaybackTimestampResult>();
+    const AsyncRequestId request = source->requestPlaybackTimestamp(
+        [result](uint64_t epoch, std::optional<double> timestamp) {
+            result->sourceEpoch = epoch;
+            result->timestamp = timestamp;
+            result->finished.store(true, std::memory_order_release);
+        });
+    if (!request.valid()) {
+        return std::nullopt;
+    }
+    for (int waited = 0; waited < kSettleTimeoutMs; waited += 10) {
+        QCoreApplication::processEvents();
+        if (self.isNull()) {
+            return std::nullopt;
+        }
+        if (source == nullptr || source->sourceEpoch() != expectedEpoch) {
+            return std::nullopt;
+        }
+        if (result->finished.load(std::memory_order_acquire)) {
+            break;
+        }
+        QThread::msleep(10);
+    }
+    if (!result->finished.load(std::memory_order_acquire) ||
+        result->sourceEpoch != expectedEpoch ||
+        result->sourceEpoch != source->sourceEpoch() || !result->timestamp.has_value() ||
+        !std::isfinite(*result->timestamp)) {
+        return std::nullopt;
+    }
+    return result->timestamp;
+}
+
 void CompareWindow::captureFrame() {
-    // A capture is a READING of the player, not a command to it. The old
-    // version seeked to the position it was already at, which re-seeked live
-    // playback, and then accepted the framebuffer as soon as the reported
-    // position came within tolerance - a tolerance the cached position reaches
-    // before the framebuffer has been repainted, so the "fresh" frame it
-    // stored was the one the viewer had just rewound away from. When the
-    // tolerance was never reached it stored a bare grab instead, which is the
-    // stale picture reading as a real comparison.
-    //
-    // So: read where the player actually is, freeze the picture it is actually
-    // showing, and if that picture cannot be read, say so on screen.
+    struct ActiveGuard {
+        bool& active;
+        ~ActiveGuard() { active = false; }
+    };
+    captureFrameActive_ = true;
+    ActiveGuard activeGuard{captureFrameActive_};
+    QPointer<CompareWindow> self(this);
+    // Capture the current settled frame without seeking; failure is visible.
     frame_ = QImage();
+    isolatedOriginal_ = QImage();
+    renderedAId_.clear();
+    renderedBId_.clear();
     captureError_.clear();
     if (surface_ == nullptr) {
         captureError_ = tr("No playback surface");
@@ -465,75 +777,213 @@ void CompareWindow::captureFrame() {
         captureError_ = tr("No video to compare");
         return;
     }
-    // The pause below is a temporary override that buys a settled grab. Only a
-    // picture earns it: a capture that cannot read one has frozen nothing, so
-    // the play state it was found in is what it has to be left with.
-    const bool wasPlaying = surface_->isPlaying();
-    if (wasPlaying) {
-        surface_->setPaused(true);
+    const uint64_t sourceEpoch = surface_->sourceEpoch();
+    const quint64 captureGeneration = selectionGeneration_;
+    for (int waited = 0; waited < kSettleTimeoutMs &&
+                         (!surface_->pauseObserved() || surface_->isPlaying());
+         waited += kPollIntervalMs) {
+        QCoreApplication::processEvents();
+        if (self.isNull()) {
+            return;
+        }
+        if (surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch ||
+            selectionGeneration_ != captureGeneration) {
+            if (!self.isNull() && captureError_.isEmpty()) {
+                captureError_ = tr("Playback changed during frame capture");
+            }
+            return;
+        }
+        const quint64 requestGeneration = surface_->pauseRequestGeneration();
+        if (requestGeneration != playbackHoldGeneration_ &&
+            surface_->pauseObserved() && !surface_->isPlaying()) {
+            playbackHoldOriginalPlaying_ = false;
+            playbackHoldGeneration_ = requestGeneration;
+        }
+        QThread::msleep(kPollIntervalMs);
     }
-    // The native plan is held by the real scoped lock (ensurePlanLock), not by
-    // stopping the status reader: pausing polling is not locking, and the reader
-    // stays live so a transition already in flight is still acknowledged. Only
-    // the Anime4K shader chain is mutated here; native identity is untouched.
-    double settled = 0.0;
-    const QImage grabbed = grabSettledFrame(&settled);
-    if (grabbed.isNull()) {
-        captureError_ = tr("Could not capture a new frame");
-        // Nothing was frozen, so the pause that bought the grab is put back.
-        // The guard is the same QPointer one the grab loop uses: the event
-        // loop above can have destroyed the borrowed surface mid-wait.
-        if (wasPlaying && surface_ != nullptr) {
-            surface_->setPaused(false);
+    if (!playbackHoldOwned()) {
+        if (captureError_.isEmpty()) {
+            captureError_ = tr("Playback did not settle while pausing for comparison");
         }
         return;
     }
-    // Both sides render from this one image, so the difference between them is
-    // the chain and nothing else.
+    const std::optional<double> timestampBefore = readPlaybackTimestamp();
+    if (self.isNull()) {
+        return;
+    }
+    if (!timestampBefore.has_value()) {
+        captureError_ = tr("Could not capture the playback timestamp");
+        return;
+    }
+    const QImage grabbed = grabSettledFrame();
+    if (self.isNull()) {
+        return;
+    }
+    if (grabbed.isNull() || surface_ == nullptr ||
+        surface_->sourceEpoch() != sourceEpoch) {
+        captureError_ = surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch
+                            ? tr("The source changed during frame capture")
+                            : tr("Could not capture a new frame");
+        return;
+    }
+    const std::optional<double> playbackTimestamp = readPlaybackTimestamp();
+    if (self.isNull()) {
+        return;
+    }
+    if (!playbackTimestamp.has_value() || !playbackHoldOwned() ||
+        std::abs(*playbackTimestamp - *timestampBefore) > 1e-6 || surface_ == nullptr ||
+        surface_->sourceEpoch() != sourceEpoch) {
+        captureError_ = surface_ == nullptr || surface_->sourceEpoch() != sourceEpoch
+                            ? tr("The source changed during frame capture")
+                            : (!playbackTimestamp.has_value()
+                                   ? tr("Could not capture the playback timestamp")
+                                   : tr("The playback timestamp changed while capturing the frame"));
+        return;
+    }
     frame_ = grabbed;
+    isolatedRenderer_.reset();
+    isolatedOriginal_ = QImage();
+    frozenSourceEpoch_ = sourceEpoch;
+    frozenPlaybackTimestamp_ = playbackTimestamp;
 }
 
-QImage CompareWindow::renderWithChain(const QString& id) {
-    if (surface_ == nullptr || frame_.isNull()) {
-        return QImage();
+QImage CompareWindow::renderIsolated(const QString& id) {
+    QPointer<CompareWindow> self(this);
+    const quint64 generation = activeRenderGeneration_;
+    const auto cancelled = [self, generation] {
+        return self == nullptr || !self->isVisible() ||
+               generation != self->selectionGeneration_ ||
+               !self->playbackHoldOwned() || self->surface_ == nullptr ||
+               self->surface_->sourceEpoch() != self->frozenSourceEpoch_;
+    };
+    const auto progress = [self](const QString& detail) {
+        if (self == nullptr || self->buildOperationActive_) return;
+        self->buildOperationActive_ = true;
+        self->processingOverlay_->anchorTo(self);
+        self->processingOverlay_->begin(CompareWindow::tr("Build comparison TensorRT engine"));
+        self->processingOverlay_->setStage(-1, 0, detail, QString());
+    };
+    if (!isolatedRenderer_) {
+        isolatedRenderer_ = std::make_shared<CompareRenderer>();
+        const auto renderer = isolatedRenderer_;
+        pendingAjiId_ = id;
+        updateInfo();
+        const bool captured = renderer->capture(surface_->sourceUrl(), *frozenPlaybackTimestamp_,
+                                                frame_.size(), cancelled, progress);
+        if (self == nullptr) return {};
+        if (!captured || cancelled()) {
+            pendingAjiId_.clear();
+            if (!cancelled()) ajiErrors_.insert(id, renderer->error());
+            renderer->stop();
+            if (isolatedRenderer_ == renderer) isolatedRenderer_.reset();
+            return {};
+        }
+        isolatedOriginal_ = renderer->render(QStringLiteral("off"), {}, cancelled, progress);
+        if (self == nullptr || cancelled()) return {};
+        if (isolatedOriginal_.isNull()) {
+            pendingAjiId_.clear();
+            ajiErrors_.insert(id, renderer->error());
+            renderer->stop();
+            if (isolatedRenderer_ == renderer) isolatedRenderer_.reset();
+            return {};
+        }
     }
-    surface_->setAnime4KChain(id);
-    // A chain is applied when mpv builds its filter, and a paused video
-    // produces no frames to build it from, so the surface is asked to render
-    // and then given a few frames to settle. Two settled grabs, not one: the
-    // first can still be the pre-chain image.
-    //
-    // The surface is parked on the frozen frame's position, so what comes back
-    // here is that same source with the chain on - the only thing that differs
-    // between the two sides.
-    surface_->update();
-    QImage last;
-    for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
-        QCoreApplication::processEvents();
-        QThread::msleep(kPollIntervalMs);
-        // Same guard as the capture loop: the pump can destroy the borrowed
-        // surface mid-render.
-        if (surface_ == nullptr) {
-            return QImage();
+    native::AnimeJanaiPlan plan;
+    if (ajiBackends_.contains(id)) {
+        const native::Backend backend = ajiBackends_.value(id);
+        auto task = std::make_shared<AjiPreparationTask>();
+        preparationTask_ = task;
+        pendingAjiId_ = id;
+        pendingAjiPreparation_ = true;
+        updateInfo();
+        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend] {
+            task->plan = native::prepareAnimeJanaiPlan(id, backend, [task] {
+                return task->cancelled.load(std::memory_order_acquire);
+            });
+            task->finished.store(true, std::memory_order_release);
+        }));
+        while (!task->finished.load(std::memory_order_acquire)) {
+            if (cancelled()) task->cancelled.store(true, std::memory_order_release);
+            if (self != nullptr) QCoreApplication::processEvents();
+            QThread::msleep(kPollIntervalMs);
         }
-        surface_->update();
-        QCoreApplication::processEvents();
-        const QImage probe = surface_->grabFramebuffer();
-        if (probe.isNull()) {
-            continue;
+        if (self != nullptr) preparationTask_.reset();
+        if (cancelled()) {
+            task->cancelled.store(true, std::memory_order_release);
+            if (self != nullptr) {
+                pendingAjiId_.clear();
+                pendingAjiPreparation_ = false;
+            }
+            return {};
         }
-        if (!last.isNull() && probe == last) {
-            return probe;
+        pendingAjiPreparation_ = false;
+        plan = std::move(*task->plan);
+        if (!plan.available) {
+            pendingAjiId_.clear();
+            ajiErrors_.insert(id, plan.reason);
+            return {};
         }
-        last = probe;
     }
-    // Never the last unsettled grab. A side that has not settled is not a
-    // picture of that chain, and handing one over would put a half-built
-    // filter into a difference image and call it a result.
-    return QImage();
+    const auto renderer = isolatedRenderer_;
+    if (id == QLatin1String("off")) {
+        pendingAjiId_.clear();
+        return isolatedOriginal_;
+    }
+    pendingAjiId_ = id;
+    updateInfo();
+    const QImage image = renderer->render(id, plan, cancelled, progress);
+    const bool stopped = cancelled();
+    if (stopped || image.isNull()) renderer->stop();
+    if (self == nullptr) return {};
+    if (buildOperationActive_) {
+        buildOperationActive_ = false;
+        processingOverlay_->finish(!stopped && !image.isNull(),
+            stopped ? tr("Comparison engine build cancelled.")
+                    : (image.isNull() ? tr("Comparison engine build failed: %1").arg(renderer->error())
+                                      : tr("Comparison engine ready.")));
+    }
+    if (!isVisible()) processingOverlay_->hide();
+    pendingAjiId_.clear();
+    if (!stopped && image.isNull()) ajiErrors_.insert(id, renderer->error());
+    return stopped ? QImage() : image;
 }
 
 void CompareWindow::render() {
+    QPointer<CompareWindow> self(this);
+    if (rendering_) {
+        renderQueued_ = true;
+        return;
+    }
+    rendering_ = true;
+    do {
+        renderQueued_ = false;
+        activeRenderGeneration_ = selectionGeneration_;
+        renderOnce();
+        if (self.isNull()) {
+            return;
+        }
+    } while (renderQueued_);
+    rendering_ = false;
+    if (!isVisible() || !playbackHoldOwned()) {
+        if (isolatedRenderer_) isolatedRenderer_->stop();
+    }
+    if (playbackReleasePending_ && (!isVisible() || !playbackHoldActive_)) {
+        finishDeferredPlaybackHoldRelease();
+    } else if (deferredPlanLockRelease_ && !playbackHoldActive_) {
+        deferredPlanLockRelease_ = false;
+        releasePlanLock();
+    }
+}
+
+void CompareWindow::renderOnce() {
+    QPointer<CompareWindow> self(this);
+    if (!frame_.isNull() && surface_ == nullptr) {
+        frame_ = QImage();
+        captureError_ = tr("The playback surface was destroyed");
+    } else if (!frame_.isNull() && surface_->sourceEpoch() != frozenSourceEpoch_) {
+        frame_ = QImage();
+        captureError_ = tr("The source changed after the frame was captured");
+    }
     if (frame_.isNull()) {
         // A failed capture, an unfrozen plan and a window with no frame are
         // different faults; the named one is shown and no stale picture remains.
@@ -544,26 +994,66 @@ void CompareWindow::render() {
                            : (captureError_.isEmpty() ? tr("No frame to compare")
                                                       : captureError_));
         canvas_->setSideImages(QImage(), QImage(), QImage());
-        grid_->setItems({}, {}, {});
+        clearGridPanes();
         updateInfo();
         return;
     }
-    // The live chain is read before both sides and put back after: Compare must
-    // not leave the player running a preview chain.
-    const QString liveChain = surface_ != nullptr ? surface_->anime4KChainId() : QString();
-    const QImage a = renderWithChain(sideA());
-    const QImage b = renderWithChain(sideB());
-    if (surface_ != nullptr) {
-        if (liveChain.isEmpty()) {
-            // No id to put back: fall back to the mode, which clears anything
-            // the comparison left on the surface.
-            surface_->setAnime4KMode(surface_->anime4KMode());
-        } else if (surface_->anime4KChainId() != liveChain) {
-            surface_->setAnime4KChain(liveChain);
+    const QString renderAId = sideA();
+    const QString renderBId = sideB();
+    const auto candidateOutput = [this](const QString& id) {
+        if (ajiErrors_.contains(id)) return QImage();
+        const bool backendMatches = !ajiBackends_.contains(id) || renderedBackend_ == ajiBackend_;
+        if (backendMatches && id == renderedAId_ && !renderedA_.isNull()) return renderedA_;
+        if (backendMatches && id == renderedBId_ && !renderedB_.isNull()) return renderedB_;
+        return renderIsolated(id);
+    };
+    const QImage a = candidateOutput(renderAId);
+    if (self.isNull()) {
+        return;
+    }
+    const QImage b = activeRenderGeneration_ == selectionGeneration_
+                         ? (renderBId == renderAId ? a : candidateOutput(renderBId))
+                         : QImage();
+    if (self.isNull()) {
+        return;
+    }
+    if (surface_ == nullptr || surface_->sourceEpoch() != frozenSourceEpoch_) {
+        frame_ = QImage();
+        renderedA_ = QImage();
+        renderedB_ = QImage();
+        captureError_ = surface_ == nullptr ? tr("The playback surface was destroyed")
+                                            : tr("The source changed during comparison rendering");
+        canvas_->clear(captureError_);
+        canvas_->setSideImages(QImage(), QImage(), QImage());
+        clearGridPanes();
+        updateInfo();
+        return;
+    }
+    if (!playbackHoldOwned()) {
+        frame_ = QImage();
+        frozenPlaybackTimestamp_.reset();
+        playbackNeedsRecapture_ = false;
+        if (captureError_.isEmpty()) {
+            captureError_ = tr("Playback changed during comparison.");
         }
     }
+    if (frame_.isNull()) {
+        renderedA_ = QImage();
+        renderedB_ = QImage();
+        clearGridPanes();
+        canvas_->clear(captureError_.isEmpty()
+                           ? tr("Playback changed during comparison.")
+                           : captureError_);
+        canvas_->setSideImages(QImage(), QImage(), QImage());
+        updateInfo();
+        return;
+    }
+    if (activeRenderGeneration_ != selectionGeneration_) return;
     renderedA_ = a;
     renderedB_ = b;
+    renderedAId_ = renderAId;
+    renderedBId_ = renderBId;
+    renderedBackend_ = ajiBackend_;
     QImage difference;
     if (!a.isNull() && !b.isNull() && a.size() == b.size()) {
         // Gain 1 is the honest picture, so it is the colour-mapped one;
@@ -574,12 +1064,14 @@ void CompareWindow::render() {
     canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
     canvas_->setChoices(choices_, sideA(), sideB());
     canvas_->setMode(mode_);
-    canvas_->setSideImages(a.isNull() ? frame_ : a, b.isNull() ? frame_ : b, difference);
+    canvas_->setSideImages(a, b, difference);
     stack_->setCurrentIndex(mode_ == CompareMode::SideBySide ? 1 : 0);
     if (mode_ == CompareMode::SideBySide) {
+        // A deferred teardown never outlives a fresh pair: the panes it would
+        // delete are still alive, so republishing them cancels the deletion.
+        gridTeardownDeferred_ = false;
         grid_->setChoices(choices_);
-        grid_->setItems({sideA(), sideB()},
-                        {a.isNull() ? frame_ : a, b.isNull() ? frame_ : b},
+        grid_->setItems({sideA(), sideB()}, {a, b},
                         {labelFor(sideA()), labelFor(sideB())});
     }
     updateInfo();
@@ -603,6 +1095,7 @@ void CompareWindow::onFlickerTimeout() {
 }
 
 void CompareWindow::onModeChanged(int index) {
+    dismissCandidateMenus();
     CompareMode mode;
     if (index < 0 || !modeFromKey(modeBox_->itemData(index).toString().toLatin1().constData(), mode)) {
         return;
@@ -645,12 +1138,27 @@ void CompareWindow::onGainChanged(int value) {
 }
 
 void CompareWindow::onCandidateChosen(int side, const QString& id) {
-    if (!candidates_.contains(id)) {
+    // Menu activation guard: this slot runs inside QAction::activate, and the
+    // render below pumps the event loop, so a source change can invalidate and
+    // clear the grid while the activation is still on the stack. Pane deletion
+    // is deferred until the activation unwinds (see clearGridPanes).
+    struct ActivationGuard {
+        CompareWindow* owner;
+        explicit ActivationGuard(CompareWindow* window) : owner(window) {
+            ++owner->menuActivationDepth_;
+        }
+        ~ActivationGuard() { --owner->menuActivationDepth_; }
+    };
+    ActivationGuard activation(this);
+    dismissCandidateMenus();
+    if (!candidates_.contains(id) || side < 0 || side > 1) {
         return;
     }
+    ajiErrors_.remove(id);
     // The badge menus are the only chooser, so this is the whole selection: A
     // first, B second. Picking the same chain on both sides is allowed - two
     // frames of one chain is a legitimate way to look at it.
+    ++selectionGeneration_;
     if (side == 0) {
         if (selection_.isEmpty()) {
             selection_.append(id);
@@ -666,7 +1174,51 @@ void CompareWindow::onCandidateChosen(int side, const QString& id) {
     } else {
         return;
     }
+    if (side == 0 && renderedAId_ != id) {
+        renderedA_ = {};
+        renderedAId_.clear();
+    }
+    if (side == 1 && renderedBId_ != id) {
+        renderedB_ = {};
+        renderedBId_.clear();
+    }
+    canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
+    canvas_->setChoices(choices_, sideA(), sideB());
+    canvas_->setSideImages(renderedA_, renderedB_, {});
+    if (mode_ == CompareMode::SideBySide)
+        grid_->setItems({sideA(), sideB()}, {renderedA_, renderedB_},
+                        {labelFor(sideA()), labelFor(sideB())});
     render();
+}
+
+void CompareWindow::dismissCandidateMenus() {
+    for (QToolButton* badge : findChildren<QToolButton*>()) {
+        if (badge->menu() != nullptr) badge->menu()->close();
+    }
+}
+
+void CompareWindow::clearGridPanes() {
+    if (grid_ == nullptr) {
+        return;
+    }
+    if (menuActivationDepth_ > 0) {
+        gridTeardownDeferred_ = true;
+        QTimer::singleShot(0, this, [this] { flushDeferredGridClear(); });
+        return;
+    }
+    grid_->setItems({}, {}, {});
+}
+
+void CompareWindow::flushDeferredGridClear() {
+    if (!gridTeardownDeferred_ || grid_ == nullptr) {
+        return;
+    }
+    if (menuActivationDepth_ > 0) {
+        QTimer::singleShot(0, this, [this] { flushDeferredGridClear(); });
+        return;
+    }
+    gridTeardownDeferred_ = false;
+    grid_->setItems({}, {}, {});
 }
 
 void CompareWindow::onHoverPixel(int x, int y, bool valid) {
@@ -674,117 +1226,37 @@ void CompareWindow::onHoverPixel(int x, int y, bool valid) {
 }
 
 void CompareWindow::updateInfo() {
-    const QString a = sideA();
-    const QString b = sideB();
-    const anime4k::Candidate infoA = anime4k::candidateForId(a);
-    const anime4k::Candidate infoB = anime4k::candidateForId(b);
-    const QString shadersDir = anime4k::findShadersDir();
     QStringList parts;
-    const auto describe = [&parts, &shadersDir](const QString& tag, const QString& id,
-                                                const anime4k::Candidate& candidate) {
-        if (id.isEmpty()) {
-            return;
-        }
-        QString line = caption(tag) + QStringLiteral(" %1").arg(candidate.label);
-        line += QStringLiteral(" · ") +
-                tr("%n shader", nullptr, static_cast<int>(candidate.files.size()));
-        if (candidate.scale > 0) {
-            line += QStringLiteral(" · ×%1").arg(candidate.scale);
-        }
-        if (!anime4k::chainIsComplete(candidate, shadersDir)) {
-            line += QStringLiteral(" · ") + tr("FILE MISSING");
-        }
-        parts.append(line);
-    };
-    describe(QStringLiteral("A"), a, infoA);
-    describe(QStringLiteral("B"), b, infoB);
-    // A plan that could not be frozen outranks everything: with no held epoch no
-    // comparison of a native frame is claimed at all.
-    if (!lockError_.isEmpty()) {
-        info_->setText(tr("Native plan not frozen: %1").arg(lockError_));
-        return;
+    if (!lockError_.isEmpty()) parts.append(tr("Native plan not frozen: %1").arg(lockError_));
+    if (!captureError_.isEmpty()) parts.append(tr("Capture error: %1").arg(captureError_));
+    if (!pendingAjiId_.isEmpty()) {
+        parts.append(pendingAjiPreparation_ ? tr("Preparing AnimeJaNai %1…").arg(labelFor(pendingAjiId_))
+                                           : tr("Rendering %1…").arg(labelFor(pendingAjiId_)));
     }
-    // A failed capture leads the line. Whatever the two sides are, the
-    // comparison itself did not happen, and that outranks naming them.
-    if (!captureError_.isEmpty()) {
-        info_->setText(tr("Capture error: %1").arg(captureError_));
-        return;
+    for (const QString& id : {sideA(), sideB()}) {
+        if (ajiErrors_.contains(id))
+            parts.append(tr("%1 unavailable: %2").arg(labelFor(id), ajiErrors_.value(id)));
     }
-    // The base is named from the filter's own effective plan, never the request;
-    // a requested-but-not-effective chain is labelled as the original frame.
-    if (surface_ != nullptr) {
-        const native::NativePlaybackController::Status& native =
-            surface_->nativePlaybackStatus();
-        if (native.effective.has_value()) {
-            const native::NativeEffectivePlan& plan = *native.effective;
-            QString line = tr("Native output base");
-            if (!plan.recipe.isEmpty()) {
-                line += QStringLiteral(" · ") + tr("recipe %1").arg(plan.recipe);
-            }
-            QStringList identity;
-            if (!plan.provider.isEmpty()) identity.append(plan.provider);
-            if (!plan.model.isEmpty()) identity.append(plan.model);
-            if (!identity.isEmpty()) {
-                line += QStringLiteral(" · ") + identity.join(QLatin1Char(' '));
-            }
-            if (plan.interpolation.has_value() && plan.interpolation->factor.isValid()) {
-                line += QStringLiteral(" · ") +
-                        tr("RIFE %1").arg(plan.interpolation->factor.toString());
-                if (!plan.order.isEmpty()) {
-                    line += QLatin1Char(' ') + plan.order;
-                }
-            }
-            parts.prepend(line);
-        } else if (native.state != native::NativePlaybackController::State::Off &&
-                   native.state != native::NativePlaybackController::State::Idle) {
-            // The queued case is named by this translated line plus the
-            // translated count below, never by the controller's untranslated C
-            // sentence; a real refusal keeps the actual reason in the wrapper.
-            const bool queueState =
-                native.reasonKey == QLatin1String("native.playback.planLocked") ||
-                native.reasonKey == QLatin1String("native.playback.planLockRelease") ||
-                queuedNativeChanges() > 0;
-            parts.prepend(queueState
-                              ? tr("Native requested · base is the original frame")
-                              : tr("Native requested · base is the original frame — %1")
-                                    .arg(native.reason));
-        }
-    }
-    if (queuedNativeChanges() > 0) {
-        parts.append(tr("%n native change(s) queued until Compare closes", nullptr,
-                        queuedNativeChanges()));
-    }
-    if (parts.isEmpty()) {
-        info_->setText(tr("Select at least one variant to compare."));
-        return;
-    }
-    // The gate the shaders carry. Every upscaler is prefixed
-    // `//!WHEN OUTPUT.w MAIN.w / 1.200 > ...`, so a chain declines to run at
-    // all when mpv is already displaying the video at or above source size. On
-    // a 1080p source in a 1080p window an x4 chain can therefore change
-    // nothing at all, and saying so is the difference between "this looks
-    // different" and "this cannot do anything here".
-    const int sourceWidth =
-        surface_ != nullptr && surface_->videoWidth() > 0 ? surface_->videoWidth() : frame_.width();
-    const int sourceHeight = surface_ != nullptr && surface_->videoHeight() > 0
-                                 ? surface_->videoHeight()
-                                 : frame_.height();
-    if (sourceWidth > 0 && sourceHeight > 0) {
-        const double outputWidth = static_cast<double>(canvas_->imageWidth());
-        if (outputWidth / 1.200 < sourceWidth) {
-            parts.append(tr("window is narrower than the source - upscaling will not run"));
-        }
-    }
+    if (queuedNativeChanges() > 0)
+        parts.append(tr("%n native change(s) queued until Compare closes", nullptr, queuedNativeChanges()));
     if (mode_ == CompareMode::Difference && !renderedA_.isNull() && !renderedB_.isNull() &&
-        renderedA_.size() == renderedB_.size()) {
+        renderedA_.size() == renderedB_.size())
         parts.append(tr("mean difference %1/255")
-                         .arg(QString::number(meanAbsoluteDifference(renderedA_, renderedB_),
-                                              'f', 2)));
-    }
+                         .arg(QString::number(meanAbsoluteDifference(renderedA_, renderedB_), 'f', 2)));
     info_->setText(parts.join(QStringLiteral("  ·  ")));
+    info_->setVisible(!parts.isEmpty());
 }
 
 QString CompareWindow::labelFor(const QString& id) const {
+    if (ajiBackends_.contains(id)) {
+        const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.id == id) {
+                return preset.label;
+            }
+        }
+        return QStringLiteral("—");
+    }
     const anime4k::Candidate candidate = anime4k::candidateForId(id);
     return candidate.label.isEmpty() ? QStringLiteral("—") : candidate.label;
 }

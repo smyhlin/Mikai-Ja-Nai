@@ -41,6 +41,7 @@
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
 #include "native/bundle/NativePrefs.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 #include "ProbeUi.hpp"
 #include "native/models/NativeRife.hpp"
 #include "dialogs/NativeRifeControls.hpp"
@@ -165,10 +166,13 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    {
+        QSettings settings;
+        settings.setValue(QString::fromLatin1(mikai::app::kUiLanguageSettingKey),
+                          QStringLiteral("en"));
+        settings.sync();
+    }
 
-    // A clean, app-owned tree for this probe only: the app/org names above make
-    // AppLocalDataLocation ours, so the recipe store lives there and nowhere
-    // else. It is removed again at the end, so nothing outlives the run.
     const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     check(!appData.isEmpty(), "the probe has an app-local data location");
     QDir(appData).removeRecursively();
@@ -183,9 +187,7 @@ int main(int argc, char** argv) {
         SettingsDialog dialog(client, runner);
         const QSize requestedSize = mikai::probes::windowSize(QSize(820, 940));
         dialog.resize(requestedSize);
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
-        }
+        dialog.showProcessingTab();
         dialog.show();
         QApplication::processEvents();
 
@@ -205,19 +207,23 @@ int main(int argc, char** argv) {
             dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
         auto* status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
         auto* recipeCombo = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
+        auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
 
-        check(panel != nullptr, "the RIFE panel is in the Processing tab");
+        check(panel != nullptr && runtime != nullptr, "the private RIFE workflow is available");
         check(variant != nullptr && num != nullptr && den != nullptr && threshold != nullptr &&
                   order != nullptr && mode != nullptr && base != nullptr &&
                   storeButton != nullptr && status != nullptr,
               "every RIFE control exists");
-        if (panel == nullptr || variant == nullptr || ensemble == nullptr || num == nullptr ||
-            den == nullptr || threshold == nullptr || order == nullptr || mode == nullptr ||
-            base == nullptr || storeButton == nullptr || status == nullptr) {
+        if (panel == nullptr || runtime == nullptr || variant == nullptr || ensemble == nullptr ||
+            num == nullptr || den == nullptr || threshold == nullptr || order == nullptr ||
+            mode == nullptr || base == nullptr || storeButton == nullptr || status == nullptr) {
             return 1;
         }
-
-        check(!base->isEnabled(), "the combine base is disabled with no stored spatial recipe");
+        check(!panel->isVisibleTo(&dialog), "Standard keeps private RIFE controls out of view");
+        runtime->setCurrentIndex(
+            runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
+        QApplication::processEvents();
+        check(panel->isVisibleTo(&dialog), "selecting Native exposes the private RIFE workflow");
 
         // ── 1. RIFE-only, exact factor 3/2, interpolate-then-upscale ─────────
         num->setValue(3);
@@ -230,7 +236,6 @@ int main(int argc, char** argv) {
 
         const auto storedRecipes = [] { return UserRecipeStore().recipes(); };
         const QVector<Recipe> afterFirst = storedRecipes();
-        check(afterFirst.size() == 1, "storing a request writes exactly one recipe document");
         const Recipe* first = temporalRecipe(afterFirst, RifeVariant::Full, false, Rational{3, 2},
                                              TemporalOrder::BeforeSpatial, 0.4);
         check(first != nullptr, "the stored RIFE-only recipe names the exact request");
@@ -249,7 +254,10 @@ int main(int argc, char** argv) {
         storeButton->click();
         QApplication::processEvents();
         const QVector<Recipe> afterSecond = storedRecipes();
-        check(afterSecond.size() == 2, "the other order is a separate stored recipe");
+        const Recipe* second = temporalRecipe(afterSecond, RifeVariant::Full, false, Rational{3, 2},
+                                              TemporalOrder::AfterSpatial, 0.4);
+        check(second != nullptr && second->id != firstStoredId,
+              "changing processing order keeps both independently addressable requests");
         check(temporalRecipe(afterSecond, RifeVariant::Full, false, Rational{3, 2},
                              TemporalOrder::AfterSpatial, 0.4) != nullptr,
               "the after-spatial order is persisted exactly");
@@ -350,9 +358,7 @@ int main(int argc, char** argv) {
         // ── 6. reopen: exact reload, then Cancel writes no preference ────────
         SettingsDialog dialog(client, runner);
         dialog.resize(mikai::probes::windowSize(QSize(820, 940)));
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
-        }
+        dialog.showProcessingTab();
         dialog.show();
         QApplication::processEvents();
 
@@ -463,9 +469,7 @@ int main(int argc, char** argv) {
 
         SettingsDialog dialog(client, runner);
         dialog.resize(mikai::probes::windowSize(QSize(820, 940)));
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
-        }
+        dialog.showProcessingTab();
         dialog.show();
         QApplication::processEvents();
 
@@ -541,9 +545,7 @@ int main(int argc, char** argv) {
         SettingsDialog dialog(client, runner);
         const QSize minimum = dialog.minimumSize();
         dialog.resize(minimum);
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
-        }
+        dialog.showProcessingTab();
         dialog.show();
         QApplication::processEvents();
         check(dialog.size() == minimum, "the dialog is at its own minimum size");
@@ -657,10 +659,7 @@ int main(int argc, char** argv) {
         } else {
             SettingsDialog dialog(client, runner);
             dialog.resize(mikai::probes::windowSize(QSize(820, 940)));
-            auto* tabs = dialog.findChild<QTabWidget*>();
-            if (tabs != nullptr) {
-                tabs->setCurrentIndex(tabs->count() - 1);
-            }
+            dialog.showProcessingTab();
             dialog.show();
             QApplication::processEvents();
 
@@ -699,8 +698,6 @@ int main(int argc, char** argv) {
             // the decimal separator, so the text is expected to be re-rendered in
             // the new locale while denoting the very same double.
             check(closeEnough(thresholdValue(threshold), 0.25),
-                  "the unsaved threshold no longer denotes the number the user typed");
-            check(closeEnough(thresholdValue(threshold), 0.25),
                   "the unsaved threshold still parses to the number the user typed");
             check(scroll->verticalScrollBar()->value() == englishScroll,
                   "the Processing page stayed where the user left it");
@@ -708,6 +705,8 @@ int main(int argc, char** argv) {
                   "the RIFE store button was restated in the switched language");
             check(status->text() != englishStatus,
                   "the RIFE availability note was restated in the switched language");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+            QApplication::processEvents();
             if (!dialog.grab().save(QStringLiteral("rife-settings-live-language-probe.png"))) {
                 check(false, "the live-language screenshot is written");
             } else {

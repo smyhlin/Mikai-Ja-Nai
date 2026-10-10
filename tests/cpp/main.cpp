@@ -4,6 +4,7 @@
 // executables and useless for one ctest entry, so the suites are driven by hand
 // here and the first failure decides the exit code.
 
+#include "TestAnimeJanaiRuntime.hpp"
 #include "TestAnime4K.hpp"
 #include "TestI18n.hpp"
 #include "TestLayering.hpp"
@@ -53,6 +54,7 @@
 namespace {
 
 constexpr const char* kSuites[] = {
+    "TestAnimeJanaiRuntime",
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
@@ -146,6 +148,7 @@ int main(int argc, char** argv) {
     arguments << QString::fromLocal8Bit(argv[i]);
   }
 
+  TestAnimeJanaiRuntime animeJanaiRuntime;
   TestRuntimeSelection runtimeSelection;
   TestNativeTypes nativeTypes;
   TestNativeRecipe nativeRecipe;
@@ -222,6 +225,7 @@ int main(int argc, char** argv) {
       failures |= runOne(name, suite, qtestArgs, admitted);
     }
   };
+  run("TestAnimeJanaiRuntime", &animeJanaiRuntime, true);
   run("TestRuntimeSelection", &runtimeSelection, true);
   run("TestNativeTypes", &nativeTypes, true);
   run("TestNativeRecipe", &nativeRecipe, true);

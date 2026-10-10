@@ -73,8 +73,7 @@ public:
     // Tells mpv a frame was presented, so it can schedule the next.
     void reportSwap();
 
-    // Cheap, call once per paint. Returns mpv's frame-generation counter, zero
-    // if no frame yet.
+    // Returns mpv's MPV_RENDER_UPDATE_* flags describing new render output.
     uint64_t update();
 
     // Fires (on an mpv thread) when a new frame may be available.

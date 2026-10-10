@@ -114,6 +114,9 @@ public:
     void setVolume(double volume);
     void setMuted(bool muted);
     void stop();
+    // Enables backend-observation logs for a request while preserving the
+    // developer's MIKAI_MPV_VERBOSE baseline.
+    void setBackendLogObservationEnabled(bool enabled);
 
     // Synchronous reads take the mpv core lock: nothing that must stay
     // responsive while native work holds that lock may call them. Native status
@@ -188,6 +191,7 @@ private:
     // no event to inspect here.
     void require(int error, const char* what, const std::string& property = {});
     std::string errorText(int error) const;
+    void requestLogLevel(bool verbose);
 
     // Drops anything whose correlation key does not name a request this handle
     // still owns.
@@ -215,6 +219,9 @@ private:
     uint64_t nextRequestId_ = 1;
     // Zero only for a moved-from handle; a live handle's token is never reused.
     uint64_t identity_ = 0;
+    bool developerVerboseLogs_ = false;
+    // '\0' means no threshold has been requested from this core yet.
+    char requestedLogLevel_ = '\0';
     // Bumped when the source or core changes or is replaced, so a reply for the
     // previous core or source is recognised as stale.
     uint64_t epoch_ = 1;

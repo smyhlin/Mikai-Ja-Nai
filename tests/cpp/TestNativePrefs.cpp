@@ -17,10 +17,13 @@ using namespace mplayer::native;
 
 namespace {
 
-/// Keys that belong to other settings owners. A native save must leave every one
-/// of them exactly as it found it.
+/// Keys outside the native preference fields. Native saves and each isolated
+/// test leave them untouched except when a test deliberately seeds one.
+constexpr const char kRetiredToggleBindingKey[] =
+    "player/native/shortcuts/toggleProcessing";
 constexpr const char* kForeignKeys[] = {"player/presetShortcuts/hd2x", "ui/language",
-                                        "quality/cache", "feeds"};
+                                        "quality/cache", "feeds",
+                                        kRetiredToggleBindingKey};
 
 void clearForeignKeys() {
   QSettings settings;
@@ -92,7 +95,6 @@ void TestNativePrefs::aNativeRequestRoundTripsThroughItsGroup() {
   patch.enabled = true;
   patch.backend = Backend::DirectML;
   patch.recipeId = QStringLiteral("janai.spatial.hd2b.v1");
-  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
   QString reason;
   QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
 
@@ -102,7 +104,6 @@ void TestNativePrefs::aNativeRequestRoundTripsThroughItsGroup() {
   QVERIFY(loaded.enabled);
   QVERIFY(loaded.backend == Backend::DirectML);
   QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2b.v1"));
-  QCOMPARE(loaded.toggleProcessingShortcut, QStringLiteral("Ctrl+Shift+J"));
   QVERIFY(loaded.issues.isEmpty());
   QVERIFY(!loaded.isDefault());
 }
@@ -135,9 +136,6 @@ void TestNativePrefs::loadingAnEmptyGroupWritesNothingAndReadsDefaults() {
   QVERIFY(!settings.contains(QLatin1String(kNativeRecipeKey)));
   QVERIFY(!settings.contains(QLatin1String(kNativeCustomModelsDirKey)));
   settings.endGroup();
-  settings.beginGroup(nativeShortcutsSettingsGroup());
-  QVERIFY(!settings.contains(QLatin1String(kNativeToggleProcessingKey)));
-  settings.endGroup();
 }
 
 void TestNativePrefs::eachCorruptKeyFallsBackAloneAndReportsTheReason() {
@@ -151,9 +149,6 @@ void TestNativePrefs::eachCorruptKeyFallsBackAloneAndReportsTheReason() {
   settings.setValue(QLatin1String(kNativeCustomModelsDirKey),
                     QStringLiteral("Z:/mikai/definitely-not-here"));
   settings.endGroup();
-  settings.beginGroup(nativeShortcutsSettingsGroup());
-  settings.setValue(QLatin1String(kNativeToggleProcessingKey), QStringLiteral("banana"));
-  settings.endGroup();
   settings.sync();
 
   const NativePreferences loaded = loadNativePreferences();
@@ -161,9 +156,6 @@ void TestNativePrefs::eachCorruptKeyFallsBackAloneAndReportsTheReason() {
   QVERIFY(loaded.backend == Backend::TensorRT);
   QCOMPARE(loaded.recipeId, QStringLiteral("janai.unknown.v9"));
   QVERIFY(loaded.customModelsDir.isEmpty());
-  QVERIFY(loaded.toggleProcessingShortcut.isEmpty());
-  // Stored but unusable is still "set": a default must not be re-offered.
-  QVERIFY(loaded.toggleProcessingShortcutStored);
 
   QSet<QString> reasonKeys;
   for (const NativePreferenceIssue& issue : loaded.issues) {
@@ -174,7 +166,6 @@ void TestNativePrefs::eachCorruptKeyFallsBackAloneAndReportsTheReason() {
   QVERIFY(reasonKeys.contains(QStringLiteral("native.enabledInvalid")));
   QVERIFY(reasonKeys.contains(QStringLiteral("native.backendUnknown")));
   QVERIFY(reasonKeys.contains(QStringLiteral("native.modelsDirInvalid")));
-  QVERIFY(reasonKeys.contains(QStringLiteral("native.shortcutInvalid")));
 }
 
 void TestNativePrefs::anUnknownSchemaReadsAsOffAndLeavesTheStoredBlockAlone() {
@@ -242,9 +233,6 @@ void TestNativePrefs::anEmptyPatchSaveWritesNothing() {
   QVERIFY(!settings.contains(QLatin1String(kNativeBackendKey)));
   QVERIFY(!settings.contains(QLatin1String(kNativeRecipeKey)));
   settings.endGroup();
-  settings.beginGroup(nativeShortcutsSettingsGroup());
-  QVERIFY(!settings.contains(QLatin1String(kNativeToggleProcessingKey)));
-  settings.endGroup();
 }
 
 void TestNativePrefs::anUntouchedUnknownSchemaSurvivesAGeneralSave() {
@@ -272,9 +260,6 @@ void TestNativePrefs::anUntouchedUnknownSchemaSurvivesAGeneralSave() {
            QStringLiteral("future-backend"));
   QCOMPARE(check.value(QLatin1String(kNativeRecipeKey)).toString(),
            QStringLiteral("future.recipe"));
-  check.endGroup();
-  check.beginGroup(nativeShortcutsSettingsGroup());
-  QVERIFY(!check.contains(QLatin1String(kNativeToggleProcessingKey)));
   check.endGroup();
 
   // And the untouched block still reads exactly as it did: off, unrecognised,
@@ -354,7 +339,6 @@ void TestNativePrefs::aRequestedTickPersistsWhileUnavailableAndKeepsTheRuntimeCh
   patch.enabled = true;
   patch.backend = Backend::DirectML;
   patch.recipeId = QStringLiteral("janai.spatial.hd2b.v1");
-  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
   QString reason;
   QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
 
@@ -382,37 +366,24 @@ void TestNativePrefs::aRequestedTickPersistsWhileUnavailableAndKeepsTheRuntimeCh
   check.endGroup();
 }
 
-void TestNativePrefs::aClearedToggleIsStoredAsExplicitlyUnbound() {
-  QString reason;
-  NativePreferencePatch set;
-  set.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
-  QVERIFY2(saveNativePreferences(set, &reason), qPrintable(reason));
+void TestNativePrefs::anOldToggleBindingDoesNotInvalidatePreferences() {
+  QSettings settings;
+  settings.beginGroup(nativeSettingsGroup());
+  settings.setValue(QLatin1String(kNativeSchemaKey), kNativePreferencesSchema);
+  settings.setValue(QLatin1String(kNativeEnabledKey), true);
+  settings.setValue(QLatin1String(kNativeBackendKey), QStringLiteral("directml"));
+  settings.setValue(QLatin1String(kNativeRecipeKey),
+                    QStringLiteral("janai.spatial.hd2x.v1"));
+  settings.endGroup();
+  settings.setValue(QString::fromLatin1(kRetiredToggleBindingKey),
+                    QStringLiteral("Ctrl+Shift+J, Ctrl+Shift+K"));
+  settings.sync();
 
   const NativePreferences loaded = loadNativePreferences();
-  QVERIFY(loaded.toggleProcessingShortcutStored);
-  QCOMPARE(loaded.toggleProcessingShortcut, QStringLiteral("Ctrl+Shift+J"));
-
-  // Clearing it keeps the key present, so "the user unbound this" stays
-  // distinguishable from "no binding was ever written" - the only case a
-  // documented default may still be offered.
-  NativePreferencePatch cleared;
-  cleared.toggleProcessingShortcut = QString();
-  QVERIFY2(saveNativePreferences(cleared, &reason), qPrintable(reason));
-
-  const NativePreferences afterClear = loadNativePreferences();
-  QVERIFY(afterClear.toggleProcessingShortcutStored);
-  QVERIFY(afterClear.toggleProcessingShortcut.isEmpty());
-  QVERIFY(afterClear.issues.isEmpty());
-  QSettings check;
-  check.beginGroup(nativeShortcutsSettingsGroup());
-  QVERIFY(check.contains(QLatin1String(kNativeToggleProcessingKey)));
-  check.endGroup();
-
-  // Removing the whole block is what goes back to "never written".
-  clearNativePreferences();
-  const NativePreferences fresh = loadNativePreferences();
-  QVERIFY(!fresh.toggleProcessingShortcutStored);
-  QVERIFY(fresh.toggleProcessingShortcut.isEmpty());
+  QVERIFY(loaded.enabled);
+  QCOMPARE(loaded.backend, Backend::DirectML);
+  QCOMPARE(loaded.recipeId, QStringLiteral("janai.spatial.hd2x.v1"));
+  QVERIFY(loaded.issues.isEmpty());
 }
 
 void TestNativePrefs::aNativeSaveLeavesForeignKeysAlone() {
@@ -427,7 +398,6 @@ void TestNativePrefs::aNativeSaveLeavesForeignKeysAlone() {
   patch.enabled = true;
   patch.backend = Backend::DirectML;
   patch.recipeId = QStringLiteral("janai.spatial.hd2x.v1");
-  patch.toggleProcessingShortcut = QStringLiteral("Ctrl+Shift+J");
   QString reason;
   QVERIFY2(saveNativePreferences(patch, &reason), qPrintable(reason));
 
@@ -723,23 +693,6 @@ void TestNativePrefs::theSharedCheckRefusesADuplicateAndNamesTheOwner() {
   QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Preset);
   QCOMPARE(conflict.ownerId, QStringLiteral("preset.a"));
   QCOMPARE(conflict.ownerLabel, QStringLiteral("Preset A"));
-  QVERIFY(conflict.reasonKey == QLatin1String(kShortcutDuplicateReasonKey));
-}
-
-void TestNativePrefs::aNativeClaimBlocksAPresetAndNamesTheNativeOwner() {
-  using namespace mplayer::shell;
-  const QKeySequence sequence(Qt::CTRL | Qt::Key_J);
-  QMap<QString, ShortcutClaim> claims;
-  // The preset side validates with the native claim already in the map, which is
-  // what makes a preset take the native combination get refused.
-  claims.insert(shortcutClaimKey(sequence), claim(QStringLiteral("toggleProcessing"),
-                                                  QStringLiteral("Processing toggle"),
-                                                  ShortcutOwnerKind::Native));
-
-  const ShortcutConflict conflict = findShortcutConflict(sequence, claims);
-  QVERIFY(conflict.blocked);
-  QVERIFY(conflict.ownerKind == ShortcutOwnerKind::Native);
-  QCOMPARE(conflict.ownerId, QStringLiteral("toggleProcessing"));
   QVERIFY(conflict.reasonKey == QLatin1String(kShortcutDuplicateReasonKey));
 }
 

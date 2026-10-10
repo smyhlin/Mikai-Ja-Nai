@@ -1,13 +1,15 @@
 #include "TestLayering.hpp"
 
-#include <Clipboard.hpp>
+#include <gui/Clipboard.hpp>
 #include <backend/Streams.hpp>
 
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QMimeData>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QStringList>
 #include <QtGui/QClipboard>
+#include <QtGui/QColor>
 #include <QtGui/QGuiApplication>
 
 #ifndef MIKAI_SOURCE_DIR
@@ -108,32 +110,66 @@ void TestLayering::theStreamErrorsShareOneHierarchy() {
   QVERIFY(caughtAsBase);
 }
 
-void TestClipboard::copyingEmptyTextDoesNotCrash() {
-  // The offscreen platform has no real clipboard, so this must return a verdict
-  // rather than throw or hang.
-  const bool copied = mikai::app::copyText(QString());
-  Q_UNUSED(copied);
-  QVERIFY(QGuiApplication::clipboard() != nullptr);
+void TestClipboard::emptyImagesLeaveExistingClipboardContentUnchanged() {
+  const QString original = QStringLiteral("existing clipboard text");
+  const QByteArray privateContents("original\0bytes", 14);
+  auto* mime = new QMimeData;
+  mime->setText(original);
+  mime->setData(QStringLiteral("application/x-mikai-clipboard-test"), privateContents);
+  QGuiApplication::clipboard()->setMimeData(mime);
+  const QStringList formats = QGuiApplication::clipboard()->mimeData()->formats();
+  QVERIFY(!mikai::gui::copyImage(QImage()));
+  QCOMPARE(QGuiApplication::clipboard()->text(), original);
+  QCOMPARE(QGuiApplication::clipboard()->mimeData()->formats(), formats);
+  QCOMPARE(QGuiApplication::clipboard()->mimeData()->data(
+               QStringLiteral("application/x-mikai-clipboard-test")), privateContents);
+}
+
+void TestClipboard::copiedImagesRetainTheirPixels() {
+  QImage image(3, 2, QImage::Format_RGBA8888);
+  image.fill(Qt::red);
+  image.setPixelColor(1, 1, QColor(21, 63, 199));
+  image.setPixelColor(2, 0, QColor(97, 13, 231));
+  QVERIFY(mikai::gui::copyImage(image));
+  QCOMPARE(QGuiApplication::clipboard()->image().convertToFormat(QImage::Format_RGBA8888),
+           image);
 }
 
 void TestClipboard::copyingReportsWhetherTheBoardTookTheText() {
-  // copyText reads the board back and retries once, so a COM refusal costs one
-  // retry and is then reported as a failure rather than as a silent success.
   const QString url = QStringLiteral("https://ashdi.vip/vod/268104");
-  const bool copied = mikai::app::copyText(url);
-  if (copied) {
-    QCOMPARE(QGuiApplication::clipboard()->text(), url);
-  } else {
-    // A refused copy must not leave a lie behind: the old text survives.
-    QVERIFY(QGuiApplication::clipboard()->text() != url);
-  }
+  QVERIFY(mikai::gui::copyText(url));
+  QCOMPARE(QGuiApplication::clipboard()->text(), url);
 }
 
 void TestClipboard::copyingTheSameTextTwiceIsStable() {
   const QString url = QStringLiteral("https://ashdi.vip/vod/113749");
-  const bool first = mikai::app::copyText(url);
-  const bool second = mikai::app::copyText(url);
-  // A retry on a board that already holds the text must not report a different
-  // outcome the second time, or the status line flickers on repeated copies.
-  QCOMPARE(first, second);
+  QVERIFY(mikai::gui::copyText(url));
+  auto* mime = new QMimeData;
+  mime->setText(url);
+  mime->setHtml(QStringLiteral("<a>old decorated link</a>"));
+  QGuiApplication::clipboard()->setMimeData(mime);
+  QVERIFY(mikai::gui::copyText(url));
+  QCOMPARE(QGuiApplication::clipboard()->text(), url);
+  QVERIFY(!QGuiApplication::clipboard()->mimeData()->hasHtml());
+}
+
+void TestClipboard::copyingTheSameImageReplacesUnrelatedFormats() {
+  QImage image(3, 2, QImage::Format_RGBA8888);
+  image.fill(QColor(37, 91, 149));
+  image.setPixelColor(2, 1, QColor(219, 53, 11));
+  QVERIFY(mikai::gui::copyImage(image));
+  auto* mime = new QMimeData;
+  mime->setImageData(image);
+  mime->setText(QStringLiteral("old image annotation"));
+  QGuiApplication::clipboard()->setMimeData(mime);
+  QVERIFY(mikai::gui::copyImage(image));
+  QCOMPARE(QGuiApplication::clipboard()->image().convertToFormat(QImage::Format_RGBA8888),
+           image);
+  QVERIFY(!QGuiApplication::clipboard()->mimeData()->hasText());
+}
+
+void TestClipboard::emptyTextReplacesPreviousText() {
+  QGuiApplication::clipboard()->setText(QStringLiteral("old text"));
+  QVERIFY(mikai::gui::copyText(QString()));
+  QCOMPARE(QGuiApplication::clipboard()->text(), QString());
 }

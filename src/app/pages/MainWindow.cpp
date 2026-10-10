@@ -1,6 +1,7 @@
 #include "pages/MainWindow.hpp"
 
 #include "dialogs/SettingsDialog.hpp"
+#include "dialogs/ComponentStoreTab.hpp"
 #include "pages/SearchPage.hpp"
 #include "pages/TitlePage.hpp"
 #include "state/NativeComponentProvisioner.hpp"
@@ -30,7 +31,14 @@
 #include <QUrl>
 #include <QVariant>
 #include <QCloseEvent>
+#include <QApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFont>
+#include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QSizePolicy>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -195,6 +203,8 @@ bool MainWindow::openMedia(const QString& source) {
             [this](mplayer::shell::ProcessingSettingsIntent intent) {
                 openSettingsForIntent(intent, mediaPlayer_);
             });
+    connect(mediaPlayer_, &mplayer::shell::PlayerDialog::componentSetupRequested,
+            this, [this] { offerAnimeJanaiSetup(); });
     // The app-owned assembly answers this dialog's native requests: it reads the
     // owned model store, the requested recipe and the measured machine identity
     // off the GUI thread and submits the whole request back through the dialog.
@@ -390,13 +400,76 @@ void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent 
     openSettingsImpl(intent, core);
 }
 
+void MainWindow::offerAnimeJanaiSetup(SettingsDialog* settings) {
+    if (setupDeclined_ || setupPromptOffered_) return;
+    const QString promptBody = mikai::app::animeJanaiSetupPrompt();
+    if (promptBody.isEmpty()) return;
+
+    QWidget* parent = QApplication::activeWindow();
+    if (parent == nullptr) parent = this;
+
+    QDialog prompt(parent);
+    prompt.setWindowTitle(tr("Set up AnimeJaNai"));
+    prompt.setModal(true);
+
+    auto* layout = new QVBoxLayout(&prompt);
+    auto* heading = new QLabel(tr("Set up AnimeJaNai"), &prompt);
+    QFont headingFont = heading->font();
+    headingFont.setBold(true);
+    heading->setFont(headingFont);
+    layout->addWidget(heading);
+
+    auto* body = new QLabel(promptBody, &prompt);
+    body->setTextFormat(Qt::RichText);
+    body->setWordWrap(true);
+    layout->addWidget(body);
+
+    auto* buttons = new QDialogButtonBox(&prompt);
+    auto* install = buttons->addButton(tr("Install"), QDialogButtonBox::AcceptRole);
+    install->setObjectName(QStringLiteral("primary"));
+    auto* notNow = buttons->addButton(tr("Not now"), QDialogButtonBox::RejectRole);
+    install->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    notNow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    layout->addWidget(buttons);
+    install->setDefault(true);
+
+    setupPromptOffered_ = true;
+    bool installChosen = false;
+    bool notNowChosen = false;
+    connect(install, &QPushButton::clicked, &prompt, [&prompt, &installChosen] {
+        installChosen = true;
+        prompt.accept();
+    });
+    connect(notNow, &QPushButton::clicked, &prompt, [&prompt, &notNowChosen] {
+        notNowChosen = true;
+        prompt.reject();
+    });
+    prompt.exec();
+    if (installChosen) {
+        if (settings != nullptr) {
+            settings->showComponentsTab();
+            settings->installRecommended();
+        } else {
+            openSettingsImpl(std::nullopt, {}, true, true);
+        }
+    } else if (notNowChosen) {
+        setupDeclined_ = true;
+    }
+}
+
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
                                   QPointer<mplayer::shell::PlayerDialog> preferredCore,
-                                  bool showComponentsFirst) {
+                                  bool showComponentsFirst,
+                                  bool installAnimeJanaiRecommended) {
     SettingsDialog dialog(client_, *runner_, this);
     dialog.setComponentProvisioner(componentProvisioner_);
+    connect(&dialog, &SettingsDialog::componentsTabOpened, this,
+            [this](SettingsDialog* settings) { offerAnimeJanaiSetup(settings); });
     if (showComponentsFirst) {
         dialog.showComponentsTab();
+    }
+    if (installAnimeJanaiRecommended) {
+        dialog.installRecommended();
     }
 
     // Every preparation fact is resolved live at the moment it is asked for. A
@@ -699,6 +772,8 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
                    mplayer::shell::ProcessingSettingsIntent intent) {
                 openSettingsForIntent(intent, QPointer<mplayer::shell::PlayerDialog>(player));
             });
+    connect(title_, &TitlePage::playerComponentSetupRequested,
+            this, [this] { offerAnimeJanaiSetup(); });
     connect(title_, &TitlePage::relatedOpenRequested, this,
             [this](const QString& target, const QString& targetPoster) {
                 openRelated(target, targetPoster);

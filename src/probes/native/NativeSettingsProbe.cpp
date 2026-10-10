@@ -1,45 +1,49 @@
-// Real settings-dialog probe: builds the actual Processing tab on an isolated
-// settings store and checks what it does with a stored, currently-unavailable
-// native request.
-//
-// The one thing source reading cannot settle is whether the dialog shows the
-// persisted request as *requested* rather than as applied, and whether a native
-// save leaves the rest of the store alone. So this drives the real widgets: the
-// tick, the backend, the recipe, the toggle and the runtime choice, then the real
-// Save button, then a reopen.
-//
-// It never claims the native engine works. The request is unavailable in this
-// build by construction, and the probe asserts the dialog says so.
 
 #include <QAccessible>
 #include <QApplication>
-#include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QCommandLineParser>
+#include <QCommandLineOption>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontMetrics>
+#include <QGuiApplication>
+#include <QGroupBox>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QLocale>
 #include <QPushButton>
+#include <QScreen>
 #include <QSettings>
 #include <QStyle>
 #include <QStyleOptionFrame>
+#include <QStandardPaths>
+#include <QThread>
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QToolButton>
+#include <QUuid>
 #include "ProbeUi.hpp"
 
 #include <cstdio>
 
 #include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
+#include "theme/Metrics.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "dialogs/ComponentStoreTab.hpp"
 #include "native/bundle/NativePrefs.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
+#include "native/components/NativeGpuProbe.hpp"
+#include "native/models/NativeRife.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::Runner;
@@ -54,6 +58,41 @@ void check(bool ok, const char* what) {
     if (!ok) {
         ++failures;
     }
+}
+QString fileSha256(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    if (!hash.addData(&file)) return {};
+    return QString::fromLatin1(hash.result().toHex());
+}
+QSize fitSettingsDialogSize(const SettingsDialog& dialog, QSize requestedSize) {
+    const QScreen* screen = dialog.screen();
+    return screen == nullptr ? requestedSize
+                             : requestedSize.boundedTo(screen->availableGeometry().size());
+}
+
+
+bool waitForUi(const auto& predicate, int timeoutMs) {
+    QElapsedTimer clock;
+    clock.start();
+    while (clock.elapsed() < timeoutMs) {
+        QApplication::processEvents();
+        if (predicate()) return true;
+        QThread::msleep(10);
+    }
+    QApplication::processEvents();
+    return predicate();
+}
+
+QLabel* statusSeverityLabel(QWidget& root) {
+    for (QLabel* label : root.findChildren<QLabel*>()) {
+        const QString severity = label->accessibleDescription();
+        if (severity == QLatin1String("success") || severity == QLatin1String("failure") ||
+            severity == QLatin1String("cancelled") || severity == QLatin1String("neutral"))
+            return label;
+    }
+    return nullptr;
 }
 
 QPushButton* acceptButton(QDialogButtonBox* box) {
@@ -81,15 +120,72 @@ QToolButton* clearActionFor(QLineEdit& input) {
     return action != nullptr && action->isVisibleTo(&input) ? action : nullptr;
 }
 
-/// The first preset row's field. Every key-sequence field but the named native
-/// toggle is a preset row.
 QKeySequenceEdit* presetField(SettingsDialog& dialog) {
-    for (QKeySequenceEdit* field : dialog.findChildren<QKeySequenceEdit*>()) {
-        if (field->objectName() != QLatin1String("nativeToggleShortcutEdit")) {
-            return field;
+    auto* tabs = dialog.findChild<QTabWidget*>();
+    if (tabs == nullptr) return nullptr;
+    const QStringList parts =
+        SettingsDialog::tr("Shortcut for %1").split(QStringLiteral("%1"));
+    if (parts.size() != 2) return nullptr;
+    for (int index = 0; index < tabs->count(); ++index) {
+        if (tabs->tabText(index) != SettingsDialog::tr("Presets")) continue;
+        for (QKeySequenceEdit* field : tabs->widget(index)->findChildren<QKeySequenceEdit*>()) {
+            const QString name = field->accessibleName();
+            if (name.startsWith(parts.at(0)) && name.endsWith(parts.at(1)) &&
+                name.size() > parts.at(0).size() + parts.at(1).size()) {
+                return field;
+            }
         }
     }
     return nullptr;
+}
+
+QWidget* shortcutTabPage(QTabWidget& tabs, QWidget& field) {
+    for (int index = 0; index < tabs.count(); ++index) {
+        QWidget* page = tabs.widget(index);
+        if (page == &field || page->isAncestorOf(&field)) return page;
+    }
+    return nullptr;
+}
+
+bool showShortcutField(SettingsDialog& dialog, QKeySequenceEdit* field) {
+    auto* tabs = dialog.findChild<QTabWidget*>();
+    if (tabs == nullptr || field == nullptr) return false;
+    QWidget* page = shortcutTabPage(*tabs, *field);
+    if (page == nullptr) return false;
+    tabs->setCurrentWidget(page);
+    dialog.show();
+    QApplication::processEvents();
+    if (page->layout() != nullptr) page->layout()->activate();
+    mikai::probes::revealWidget(field);
+    QApplication::processEvents();
+    return tabs->currentWidget() == page && page->isVisibleTo(&dialog) &&
+           field->isVisibleTo(&dialog);
+}
+
+void shortcutDiagnostics(SettingsDialog& dialog, QKeySequenceEdit& field) {
+    auto* tabs = dialog.findChild<QTabWidget*>();
+    QLineEdit* input = field.findChild<QLineEdit*>();
+    if (input == nullptr) return;
+    QStyleOptionFrame frame;
+    frame.initFrom(input);
+    const QRect contents =
+        input->style()->subElementRect(QStyle::SE_LineEditContents, &frame, input);
+    QToolButton* clear = clearActionFor(*input);
+    const QFontMetrics metrics(input->font());
+    const QString binding = input->text();
+    const QString tabCaption = tabs != nullptr
+        ? tabs->tabText(tabs->currentIndex()) : QStringLiteral("<no tabs>");
+    std::fprintf(stderr,
+                 "[native_settings_probe] preset shortcut name=%s tab=%s visible=%d field=%d,%d %dx%d line-edit=%d,%d %dx%d contents=%d,%d %dx%d clear=%s rect=%d,%d %dx%d font=%s text-width=%d capture=native-settings-preset-shortcut-failure.png\n",
+                 qPrintable(field.accessibleName()), qPrintable(tabCaption),
+                 field.isVisibleTo(&dialog) ? 1 : 0, field.x(), field.y(),
+                 field.width(), field.height(), input->x(), input->y(),
+                 input->width(), input->height(), contents.x(), contents.y(),
+                 contents.width(), contents.height(), clear != nullptr ? "yes" : "no",
+                 clear != nullptr ? clear->x() : -1, clear != nullptr ? clear->y() : -1,
+                 clear != nullptr ? clear->width() : 0, clear != nullptr ? clear->height() : 0,
+                 qPrintable(input->font().toString()), metrics.horizontalAdvance(binding));
+    dialog.grab().save(QStringLiteral("native-settings-preset-shortcut-failure.png"));
 }
 
 /// Whether a sighted user can read the binding the field holds. Qt's own
@@ -135,8 +231,315 @@ bool bindingFullyVisible(QKeySequenceEdit& field) {
     return true;
 }
 
-/// Whether the clear action the field shows while it holds text sits inside the
-/// field itself.
+bool componentCardReachable(QWidget& componentTab, const QString& translatedTitle) {
+    for (QLabel* label : componentTab.findChildren<QLabel*>()) {
+        if (label->text() == translatedTitle && label->isVisibleTo(&componentTab))
+            return true;
+    }
+    return false;
+}
+
+QComboBox* backendSelector(QWidget& componentTab) {
+    return componentTab.findChild<QComboBox*>(QStringLiteral("animeJanaiRuntimeBackend"));
+}
+
+QString backendIdentity(mplayer::native::Backend backend) {
+    return backend == mplayer::native::Backend::TensorRT
+        ? QStringLiteral("tensorrt") : QStringLiteral("directml");
+}
+
+QPushButton* accessibleAction(QWidget& root, const QString& actionName) {
+    for (QPushButton* button : root.findChildren<QPushButton*>()) {
+        QAccessibleInterface* accessible = QAccessible::queryAccessibleInterface(button);
+        if (button->isVisibleTo(&root) && accessible != nullptr &&
+            (accessible->text(QAccessible::Name) == actionName ||
+             button->text() == actionName))
+            return button;
+    }
+    return nullptr;
+}
+
+void exerciseProcessing(SettingsDialog& dialog, mikai::backend::MikaiClient& client,
+                        Runner& runner, QSize requestedSize, const QString& language) {
+    QSettings before;
+    const QString nativeEnabledBefore =
+        before.value(QStringLiteral("player/native/enabled")).toString();
+    const QString nativeBackendBefore =
+        before.value(QStringLiteral("player/native/backend")).toString();
+    const QString nativeRecipeBefore =
+        before.value(QStringLiteral("player/native/recipe")).toString();
+    const QString runtimeBefore =
+        before.value(QStringLiteral("player/native/runtimeChoice")).toString();
+    const QString customModelsDirBefore =
+        before.value(QStringLiteral("player/native/customModelsDir")).toString();
+    const QString shortcutBefore =
+        before.value(QStringLiteral("player/presetShortcuts/hd2x")).toString();
+    const QString cacheBefore = before.value(QStringLiteral("quality/cache")).toString();
+
+    auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+    auto* privateAssets = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
+    if (runtime != nullptr) {
+        runtime->setCurrentIndex(
+            runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    requestedSize = fitSettingsDialogSize(dialog, requestedSize);
+    dialog.resize(requestedSize);
+    dialog.showProcessingTab();
+    dialog.show();
+    QApplication::processEvents();
+    check(mikai::probes::dialogActionsFit(dialog, requestedSize),
+          "Processing Save and Cancel stay visible at the minimum window");
+    auto* processing = dialog.findChild<QWidget*>(QStringLiteral("nativeProcessingScroll"));
+    check(processing != nullptr && processing->isVisibleTo(&dialog),
+          "the real Processing page is visible");
+    if (processing != nullptr) {
+        const QString suffix =
+            requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
+                ? QStringLiteral("compact")
+                : QStringLiteral("wide");
+        check(dialog.grab().save(
+                  QStringLiteral("native-processing-%1-%2.png").arg(language, suffix)),
+              "the visible Processing page screenshot was saved");
+    }
+
+    QApplication::processEvents();
+    check(privateAssets != nullptr && !privateAssets->isVisibleTo(&dialog),
+          "the Standard Processing screenshot contains no private Native editor");
+    if (runtime != nullptr) {
+        runtime->setCurrentIndex(
+            runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
+    }
+    QApplication::processEvents();
+    check(privateAssets != nullptr && privateAssets->isVisibleTo(&dialog),
+          "choosing Native deliberately exposes the private workflow");
+    dialog.reject();
+    QApplication::processEvents();
+
+    QSettings after;
+    check(after.value(QStringLiteral("player/native/enabled")).toString() == nativeEnabledBefore &&
+              after.value(QStringLiteral("player/native/backend")).toString() == nativeBackendBefore &&
+              after.value(QStringLiteral("player/native/recipe")).toString() == nativeRecipeBefore &&
+              after.value(QStringLiteral("player/native/runtimeChoice")).toString() == runtimeBefore &&
+              after.value(QStringLiteral("player/native/customModelsDir")).toString() ==
+                  customModelsDirBefore,
+          "Cancel preserves saved Native requests and the custom model directory");
+    check(after.value(QStringLiteral("player/presetShortcuts/hd2x")).toString() ==
+                  shortcutBefore &&
+              after.value(QStringLiteral("quality/cache")).toString() == cacheBefore,
+          "Cancel preserves foreign settings data");
+
+    {
+        QString runtimeReason;
+        if (!mplayer::native::storeRuntimeChoice(
+                mplayer::native::RuntimeChoice::Standard, &runtimeReason)) {
+            std::fprintf(stderr,
+                         "[native_settings_probe] could not seed Standard runtime choice: %s\n",
+                         qPrintable(runtimeReason));
+        }
+    }
+    {
+        SettingsDialog dialog(client, runner);
+        dialog.showProcessingTab();
+        dialog.show();
+        QApplication::processEvents();
+        auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+        auto* privateAssets = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
+        check(runtime != nullptr &&
+                  runtime->currentData().toInt() ==
+                      static_cast<int>(mplayer::native::RuntimeChoice::Standard),
+              "Standard remains the selected runtime for the hidden-form Save check");
+        check(privateAssets != nullptr && !privateAssets->isVisibleTo(&dialog),
+              "private Native controls remain hidden for a Standard Save");
+        QPushButton* save = acceptButton(dialog.findChild<QDialogButtonBox*>());
+        if (save != nullptr) save->click();
+        QApplication::processEvents();
+    }
+    QSettings afterStandardSave;
+    check(afterStandardSave.value(QStringLiteral("player/native/enabled")).toString() ==
+                  nativeEnabledBefore &&
+              afterStandardSave.value(QStringLiteral("player/native/backend")).toString() ==
+                  nativeBackendBefore &&
+              afterStandardSave.value(QStringLiteral("player/native/recipe")).toString() ==
+                  nativeRecipeBefore &&
+              afterStandardSave.value(QStringLiteral("player/native/customModelsDir")).toString() ==
+                  customModelsDirBefore,
+          "Standard Save preserves hidden private Native preferences");
+}
+
+void exerciseComponents(SettingsDialog& dialog, QSize requestedSize, const QString& language) {
+    requestedSize = fitSettingsDialogSize(dialog, requestedSize);
+    dialog.resize(requestedSize);
+    dialog.showComponentsTab();
+    dialog.show();
+    QApplication::processEvents();
+
+    auto* componentTab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+    check(componentTab != nullptr && componentTab->isVisibleTo(&dialog),
+          "the real Components tab is reachable");
+    if (componentTab == nullptr) return;
+
+    componentTab->refresh();
+    QApplication::processEvents();
+    QComboBox* backend = backendSelector(*componentTab);
+    QPushButton* install = accessibleAction(
+        *componentTab,
+        QCoreApplication::translate("mikai::app::ComponentStoreTab", "Apply changes"));
+    check(backend != nullptr && backend->isVisibleTo(componentTab),
+          "the backend selector is reachable");
+    check(install != nullptr,
+          "the Apply changes action is reachable without starting a download");
+    if (backend == nullptr) return;
+    const int directMl = backend->findData(
+        static_cast<int>(mplayer::native::Backend::DirectML));
+    check(directMl >= 0, "the backend selector includes DirectML");
+    if (directMl >= 0) backend->setCurrentIndex(directMl);
+
+    check(componentCardReachable(
+              *componentTab,
+              QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                          "TensorRT runtime")),
+          "the TensorRT runtime card title is reachable");
+    check(componentCardReachable(
+              *componentTab,
+              QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                          "TensorRT kernels for this GPU")),
+          "the TensorRT GPU kernels card title is reachable");
+    check(componentCardReachable(
+              *componentTab,
+              QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                          "RIFE interpolation models")),
+          "the RIFE card title is reachable");
+    const QString screenshot =
+        QStringLiteral("native-components-%1-%2.png")
+            .arg(language, requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
+                               ? QStringLiteral("compact")
+                               : QStringLiteral("wide"));
+    check(dialog.grab().save(screenshot),
+          "the Components surface screenshot was saved");
+}
+
+void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
+                                    mplayer::native::Backend selected,
+                                    mplayer::native::Backend inactive,
+                                    bool installRuntime) {
+    dialog.showComponentsTab();
+    dialog.show();
+    QApplication::processEvents();
+
+    auto* componentTab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+    if (componentTab == nullptr) {
+        check(false, "the real Components tab is reachable for Verify");
+        return;
+    }
+    componentTab->refresh();
+    QApplication::processEvents();
+    QComboBox* backend = backendSelector(*componentTab);
+    QPushButton* verify = accessibleAction(
+        *componentTab, QCoreApplication::translate("mikai::app::ComponentStoreTab", "Verify"));
+    check(backend != nullptr && verify != nullptr,
+          "the public Components surface exposes backend choice and Verify");
+    if (backend == nullptr || verify == nullptr) return;
+    const QString statusSeverityBefore =
+        statusSeverityLabel(*componentTab) != nullptr
+            ? statusSeverityLabel(*componentTab)->accessibleDescription()
+            : QString();
+    const QString statusReasonBefore = componentTab->statusReason();
+    const int selectedIndex = backend->findData(static_cast<int>(selected));
+    check(selectedIndex >= 0, "the absent backend is selectable through the public control");
+    if (selectedIndex < 0) return;
+    backend->setCurrentIndex(selectedIndex);
+    QApplication::processEvents();
+    check(backend->currentData().toInt() == static_cast<int>(selected),
+          "the selected backend survives Components refresh");
+    verify->click();
+    const bool verifyCompleted = waitForUi([&] {
+        QLabel* currentStatus = statusSeverityLabel(*componentTab);
+        return verify->isEnabled() && currentStatus != nullptr &&
+               (currentStatus->accessibleDescription() != statusSeverityBefore ||
+                componentTab->statusReason() != statusReasonBefore);
+    }, 5000);
+    QLabel* status = statusSeverityLabel(*componentTab);
+    check(verifyCompleted, "Verify completion was observed through the Components status surface");
+    check(status != nullptr &&
+              status->accessibleDescription() == QLatin1String("success"),
+          "Verify reports success for the selected backend despite an inactive corrupt record");
+
+    if (installRuntime) {
+        QPushButton* install = accessibleAction(
+            *componentTab,
+            QCoreApplication::translate("mikai::app::ComponentStoreTab", "Apply changes"));
+        check(install != nullptr,
+              "the public Apply changes action is available for the opt-in smoke");
+        if (install != nullptr) {
+            check(backend->currentData().toInt() == static_cast<int>(selected),
+                  "Verify preserves the selected backend before Apply changes");
+            install->click();
+            const auto gpuBackend = mplayer::native::observeComputeCapability().nvidia
+                                        ? mplayer::native::Backend::TensorRT
+                                        : mplayer::native::Backend::DirectML;
+            const bool installCompleted = waitForUi([&] {
+                QLabel* currentStatus = statusSeverityLabel(*componentTab);
+                const QString severity = currentStatus != nullptr
+                    ? currentStatus->accessibleDescription() : QString();
+                return mplayer::native::describeAnimeJanaiInstallation(gpuBackend, true).installed ||
+                       severity == QLatin1String("failure");
+            }, 300000);
+            bool cancelClicked = false;
+            if (!installCompleted) {
+                QPushButton* cancel = accessibleAction(
+                    *componentTab,
+                    QCoreApplication::translate(
+                        "mikai::app::ComponentStoreTab", "Cancel the running download"));
+                if (cancel != nullptr && cancel->isEnabled()) {
+                    cancel->click();
+                    cancelClicked = true;
+                }
+                waitForUi([&] {
+                    QLabel* currentStatus = statusSeverityLabel(*componentTab);
+                    return currentStatus == nullptr ||
+                           currentStatus->accessibleDescription() ==
+                               QLatin1String("cancelled") ||
+                           currentStatus->accessibleDescription() ==
+                               QLatin1String("failure");
+                }, 60000);
+            }
+            const auto installed =
+                mplayer::native::describeAnimeJanaiInstallation(gpuBackend, true);
+            const auto inactiveInstallation =
+                mplayer::native::describeAnimeJanaiInstallation(inactive, true);
+            const QString recordPath =
+                QDir(installed.root).filePath(QStringLiteral("install.json"));
+            const bool recordExists = QFileInfo(recordPath).isFile();
+            const QString recordSha256 = recordExists ? fileSha256(recordPath) : QString();
+            const QString actualBackend = installed.installed
+                ? backendIdentity(gpuBackend)
+                : (inactiveInstallation.installed
+                       ? backendIdentity(inactive)
+                       : QStringLiteral("none"));
+            check(backend->currentData().toInt() == static_cast<int>(gpuBackend),
+                  "Apply changes selects the backend matched to this GPU");
+            check(installCompleted && installed.installed && recordExists &&
+                      !recordSha256.isEmpty(),
+                  "the real Apply changes install produced a verified GPU-backend record");
+            QLabel* finalStatus = statusSeverityLabel(*componentTab);
+            const QString severity = finalStatus != nullptr
+                ? finalStatus->accessibleDescription() : QStringLiteral("unavailable");
+            std::fprintf(stderr,
+                         "[native_settings_probe] apply-changes requested-backend=%s actual-backend=%s completed=%d status-reason=%s severity=%s cancel-clicked=%d installed=%d root=%s record=%s record-sha256=%s\\n",
+                         qPrintable(backendIdentity(gpuBackend)),
+                         qPrintable(actualBackend), installCompleted ? 1 : 0,
+                         qPrintable(componentTab->statusReason()), qPrintable(severity),
+                         cancelClicked ? 1 : 0, installed.installed ? 1 : 0,
+                         qPrintable(installed.root), qPrintable(recordPath),
+                         qPrintable(recordSha256));
+        }
+    }
+
+    const QString screenshot = QStringLiteral("native-components-verify-isolation.png");
+    check(dialog.grab().save(screenshot),
+          "the selected-backend Verify result was captured");
+}
+
 bool clearActionInside(QKeySequenceEdit& field) {
     QLineEdit* input = field.findChild<QLineEdit*>();
     QToolButton* clear = input != nullptr ? clearActionFor(*input) : nullptr;
@@ -162,6 +565,14 @@ int main(int argc, char** argv) {
     }
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
+    QCommandLineParser parser;
+    parser.addHelpOption();
+    QCommandLineOption installRuntimeOption(
+        QStringLiteral("install-runtime"),
+        QStringLiteral("Opt in to a real reviewed DirectML runtime installation smoke."));
+    parser.addOption(installRuntimeOption);
+    parser.process(app);
+    const bool installRuntime = parser.isSet(installRuntimeOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -182,7 +593,7 @@ int main(int argc, char** argv) {
         settings.setValue(QStringLiteral("ui/language"), QStringLiteral("uk"));
         settings.setValue(QStringLiteral("quality/cache"), QStringLiteral("cache-body"));
         settings.setValue(QStringLiteral("home/feeds"), QStringLiteral("ongoing"));
-        // The stored native request: an unavailable tick, a recipe the (empty)
+        // The stored native request: an unavailable recipe the (empty)
         // catalogue cannot offer, and a backend this build does not run.
         settings.beginGroup(mplayer::native::nativeSettingsGroup());
         settings.setValue(QLatin1String(mplayer::native::kNativeSchemaKey),
@@ -191,11 +602,9 @@ int main(int argc, char** argv) {
         settings.setValue(QLatin1String(mplayer::native::kNativeBackendKey),
                           QStringLiteral("directml"));
         settings.setValue(QLatin1String(mplayer::native::kNativeRecipeKey), recipeId);
+        settings.setValue(QLatin1String(mplayer::native::kNativeCustomModelsDirKey),
+                          QStringLiteral("foreign-model-store-path"));
         settings.setValue(QStringLiteral("runtimeChoice"), QStringLiteral("standard"));
-        settings.endGroup();
-        settings.beginGroup(mplayer::native::nativeShortcutsSettingsGroup());
-        settings.setValue(QLatin1String(mplayer::native::kNativeToggleProcessingKey),
-                          QStringLiteral("Ctrl+Shift+J"));
         settings.endGroup();
         settings.sync();
     }
@@ -214,12 +623,19 @@ int main(int argc, char** argv) {
         envFixtureBytes = fixture.readAll();
     }
 
+    const QString probeCatalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+    if (!probeCatalog.isEmpty() && QFileInfo::exists(probeCatalog)) {
+        check(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), probeCatalog),
+              "the supplied catalog is installed through the public language API");
+    }
+
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
 
     {
         SettingsDialog dialog(client, runner);
-        const QSize requestedSize = mikai::probes::windowSize(QSize(760, 780));
+        const QSize requestedSize =
+            fitSettingsDialogSize(dialog, mikai::probes::windowSize(QSize(760, 780)));
         dialog.resize(requestedSize);
         if (auto* tabs = dialog.findChild<QTabWidget*>()) {
             tabs->setCurrentIndex(tabs->count() - 1);
@@ -231,29 +647,32 @@ int main(int argc, char** argv) {
         if (!dialog.grab().save(QStringLiteral("native-settings-probe.png"))) {
             return 2;
         }
-        auto* enabled = dialog.findChild<QCheckBox*>(QStringLiteral("nativeEnabledCheck"));
         auto* backend = dialog.findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
         auto* recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
         auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
-        auto* toggle =
-            dialog.findChild<QKeySequenceEdit*>(QStringLiteral("nativeToggleShortcutEdit"));
+        auto* privateAssets = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
+        dialog.showProcessingTab();
+        QApplication::processEvents();
+        check(privateAssets != nullptr && !privateAssets->isVisibleTo(&dialog),
+              "Standard Processing hides the private Native editor and assets");
+        check(runtime != nullptr &&
+                  runtime->currentData().toInt() ==
+                      static_cast<int>(mplayer::native::RuntimeChoice::Standard),
+              "the stored runtime choice is shown");
+        if (runtime != nullptr) {
+            runtime->setCurrentIndex(
+                runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
+        }
+        QApplication::processEvents();
+        check(privateAssets != nullptr && privateAssets->isVisibleTo(&dialog),
+              "deliberately selecting Native exposes its private workflow");
 
-        check(enabled != nullptr && enabled->isChecked(),
-              "the stored unavailable tick is shown");
         check(backend != nullptr &&
                   backend->currentData().toInt() ==
                       static_cast<int>(mplayer::native::Backend::DirectML),
               "the stored backend is shown");
         check(recipe != nullptr && recipe->currentData().toString() == recipeId,
               "an unknown recipe stays requested");
-        check(toggle != nullptr &&
-                  toggle->keySequence().toString(QKeySequence::PortableText) ==
-                      QStringLiteral("Ctrl+Shift+J"),
-              "the stored toggle binding is shown");
-        check(runtime != nullptr &&
-                  runtime->currentData().toInt() ==
-                      static_cast<int>(mplayer::native::RuntimeChoice::Standard),
-              "the stored runtime choice is shown");
 
         // Changing the combo must not write anything until Save.
         if (runtime != nullptr) {
@@ -289,7 +708,7 @@ int main(int argc, char** argv) {
         QSettings settings;
         settings.beginGroup(mplayer::native::nativeSettingsGroup());
         check(settings.value(QLatin1String(mplayer::native::kNativeEnabledKey)).toBool(),
-              "Save persisted the tick");
+              "Save preserved the stored enabled request");
         check(settings.value(QLatin1String(mplayer::native::kNativeBackendKey)).toString() ==
                   QStringLiteral("directml"),
               "Save persisted the backend");
@@ -299,11 +718,9 @@ int main(int argc, char** argv) {
         check(settings.value(QStringLiteral("runtimeChoice")).toString() ==
                   QStringLiteral("native"),
               "Save persisted the runtime choice");
-        settings.endGroup();
-        settings.beginGroup(mplayer::native::nativeShortcutsSettingsGroup());
-        check(settings.value(QLatin1String(mplayer::native::kNativeToggleProcessingKey))
-                      .toString() == QStringLiteral("Ctrl+Shift+J"),
-              "Save persisted the toggle binding");
+        check(settings.value(QLatin1String(mplayer::native::kNativeCustomModelsDirKey)).toString() ==
+                  QStringLiteral("foreign-model-store-path"),
+              "Save preserved the stored custom model directory");
         settings.endGroup();
 
         check(settings.value(QStringLiteral("player/presetShortcuts/hd2x")).toString() ==
@@ -321,11 +738,8 @@ int main(int argc, char** argv) {
 
     {
         SettingsDialog dialog(client, runner);
-        auto* enabled = dialog.findChild<QCheckBox*>(QStringLiteral("nativeEnabledCheck"));
         auto* recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
         auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
-        check(enabled != nullptr && enabled->isChecked(),
-              "reopening shows the stored tick again");
         check(recipe != nullptr && recipe->currentData().toString() == recipeId,
               "reopening keeps the requested recipe");
         check(runtime != nullptr &&
@@ -334,53 +748,87 @@ int main(int argc, char** argv) {
               "reopening shows the stored runtime choice");
     }
 
-    // The shared shortcut field width, on the two kinds of field that use it. Each
-    // is driven to the longest combination the dialog accepts, so a field that
-    // cannot show it says so here.
+    {
+        QSettings settings;
+        settings.setValue(QStringLiteral("player/native/enabled"), false);
+        settings.setValue(QStringLiteral("quality/cache"), QStringLiteral("preserved-cache"));
+        settings.sync();
+    }
     {
         SettingsDialog dialog(client, runner);
-        dialog.resize(mikai::probes::windowSize(QSize(760, 780)));
-        auto* toggle =
-            dialog.findChild<QKeySequenceEdit*>(QStringLiteral("nativeToggleShortcutEdit"));
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(tabs->count() - 1);
+        dialog.reject();
+        QCoreApplication::processEvents();
+    }
+    {
+        QSettings settings;
+        check(!settings.value(QStringLiteral("player/native/enabled")).toBool(),
+              "Cancel preserves the stored disabled request");
+        check(settings.value(QStringLiteral("quality/cache")).toString() ==
+                  QStringLiteral("preserved-cache"),
+              "Cancel preserves unrelated settings with Native disabled");
+    }
+    {
+        SettingsDialog dialog(client, runner);
+        auto* backend = dialog.findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
+        auto* recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
+        auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+        if (runtime != nullptr) {
+            runtime->setCurrentIndex(
+                runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
         }
-        if (toggle != nullptr) {
-            toggle->setKeySequence(longestBinding());
+        if (recipe != nullptr) {
+            const int noneIndex = recipe->findData(QString());
+            if (noneIndex >= 0) recipe->setCurrentIndex(noneIndex);
         }
-        dialog.show();
+        if (backend != nullptr) {
+            const int tensorRtIndex =
+                backend->findData(static_cast<int>(mplayer::native::Backend::TensorRT));
+            if (tensorRtIndex >= 0) backend->setCurrentIndex(tensorRtIndex);
+        }
+
+        auto* box = dialog.findChild<QDialogButtonBox*>();
+        QPushButton* save = acceptButton(box);
+        check(recipe != nullptr && recipe->currentData().toString().isEmpty(),
+              "the stored-disabled preservation case changes the recipe");
+        check(save != nullptr, "Save exists for the persisted-disabled preservation case");
+        if (save != nullptr) save->click();
         QApplication::processEvents();
-        mikai::probes::revealWidget(toggle);
-        check(toggle != nullptr, "the native shortcut field is listed");
-        if (toggle != nullptr) {
-            check(toggle->keySequence() == longestBinding(),
-                  "the native field holds the longest binding");
-            check(bindingFullyVisible(*toggle),
-                  "the native field shows every character of the longest binding");
-            check(clearActionInside(*toggle), "the native clear action is inside the field");
-        }
+        check(dialog.result() == static_cast<int>(QDialog::Accepted),
+              "Save accepts backend and recipe edits with Native disabled");
+    }
+    {
+        QSettings settings;
+        check(!settings.value(QStringLiteral("player/native/enabled")).toBool(),
+              "backend and recipe edits preserve the saved disabled request");
+        check(settings.value(QStringLiteral("quality/cache")).toString() ==
+                  QStringLiteral("preserved-cache"),
+              "backend and recipe edits preserve unrelated settings");
     }
 
+    // The preset shortcut field is driven to the longest combination the dialog
+    // accepts, so a field that cannot show it says so here.
     {
         SettingsDialog dialog(client, runner);
-        dialog.resize(mikai::probes::windowSize(QSize(760, 780)));
-        if (auto* tabs = dialog.findChild<QTabWidget*>()) {
-            tabs->setCurrentIndex(1);  // the Presets tab, where the preset rows live
-        }
+        dialog.resize(fitSettingsDialogSize(dialog, mikai::probes::windowSize(QSize(760, 780))));
         QKeySequenceEdit* preset = presetField(dialog);
+        check(preset != nullptr,
+              "a preset shortcut field is listed by its translated accessible-name pattern");
         if (preset != nullptr) {
             preset->setKeySequence(longestBinding());
         }
-        dialog.show();
-        QApplication::processEvents();
-        mikai::probes::revealWidget(preset);
-        check(preset != nullptr, "a preset shortcut field is listed");
+        const bool presetPageVisible = showShortcutField(dialog, preset);
+        check(presetPageVisible,
+              "the preset shortcut's owning tab and field are visible");
         if (preset != nullptr) {
             check(preset->keySequence() == longestBinding(),
                   "the preset field holds the longest binding");
-            check(bindingFullyVisible(*preset),
-                  "the preset field shows every character of the longest binding");
-            check(clearActionInside(*preset), "the preset clear action is inside the field");
+            const bool readable = bindingFullyVisible(*preset);
+            if (!readable) shortcutDiagnostics(dialog, *preset);
+            check(readable,
+                  "the visible preset field shows every character of the longest binding");
+            const bool clearInside = clearActionInside(*preset);
+            if (!clearInside) shortcutDiagnostics(dialog, *preset);
+            check(clearInside, "the preset clear action is inside the field");
         }
     }
 
@@ -396,8 +844,10 @@ int main(int argc, char** argv) {
                          "SKIP the live language section: MIKAI_PROBE_TRANSLATION must name the "
                          "built catalog for this probe to switch into Ukrainian\n");
         } else {
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog),
+                  "the probe loads the supplied catalog through the public language API");
             check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
-                  "the probe starts in English");
+                  "the probe starts in English with its catalog available for Save");
 
             {
                 SettingsDialog dialog(client, runner);
@@ -451,6 +901,73 @@ int main(int argc, char** argv) {
             check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
                   "the probe leaves English installed");
         }
+    }
+
+    {
+        const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+        for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
+            const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
+            check(applied, "the Processing surface language was installed");
+            if (!applied) continue;
+            for (const QSize size : {
+                     QSize(mikai::app::theme::kSettingsDialogMinWidth,
+                           mikai::app::theme::kSettingsDialogDefaultHeight),
+                     QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
+                           mikai::app::theme::kSettingsDialogDefaultHeight)}) {
+                SettingsDialog dialog(client, runner);
+                exerciseProcessing(dialog, client, runner, size, language);
+            }
+        }
+    }
+    {
+        const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+        for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
+            const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
+            check(applied, "the Components surface language was installed");
+            if (!applied) continue;
+            for (const QSize size : {
+                     QSize(mikai::app::theme::kSettingsDialogMinWidth,
+                           mikai::app::theme::kSettingsDialogDefaultHeight),
+                     QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
+                           mikai::app::theme::kSettingsDialogDefaultHeight)}) {
+                SettingsDialog dialog(client, runner);
+                exerciseComponents(dialog, size, language);
+            }
+        }
+    }
+    {
+        const QString previousApplicationName = QCoreApplication::applicationName();
+        const QString isolatedName =
+            QStringLiteral("MikaiNativeSettingsProbeVerify_%1")
+                .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        QCoreApplication::setApplicationName(isolatedName);
+        const QString isolatedAppData =
+            QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        const auto selectedBackend = mplayer::native::Backend::DirectML;
+        const auto inactiveBackend = mplayer::native::Backend::TensorRT;
+        const auto selectedBefore =
+            mplayer::native::describeAnimeJanaiInstallation(selectedBackend);
+        const auto inactiveBefore =
+            mplayer::native::describeAnimeJanaiInstallation(inactiveBackend);
+        bool corruptFixtureReady = false;
+        if (!selectedBefore.root.isEmpty() && !inactiveBefore.root.isEmpty() &&
+            !selectedBefore.installed && QDir().mkpath(inactiveBefore.root)) {
+            const QString corruptRecord =
+                QDir(inactiveBefore.root).filePath(QStringLiteral("install.json"));
+            QFile record(corruptRecord);
+            const QByteArray invalidJson = QByteArrayLiteral("{ deliberately invalid");
+            corruptFixtureReady = record.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                                  record.write(invalidJson) == invalidJson.size();
+            record.close();
+        }
+        check(corruptFixtureReady, "the isolated Verify fixture has a missing selected record and corrupt inactive record");
+        if (corruptFixtureReady) {
+            SettingsDialog dialog(client, runner);
+            exerciseVerifyBackendIsolation(dialog, selectedBackend, inactiveBackend,
+                                            installRuntime);
+        }
+        if (!isolatedAppData.isEmpty()) QDir(isolatedAppData).removeRecursively();
+        QCoreApplication::setApplicationName(previousApplicationName);
     }
 
     std::fprintf(stderr, "[native_settings_probe] %s (%d failures)\n",

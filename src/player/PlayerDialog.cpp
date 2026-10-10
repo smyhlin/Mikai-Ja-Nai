@@ -17,12 +17,18 @@
 #include <QSettings>
 
 #include <QApplication>
+#include <QAccessible>
+#include <QMetaObject>
+#include <QThreadPool>
+#include <QRunnable>
 
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
 #include "PresetShortcuts.hpp"
+#include "gui/Clipboard.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -41,12 +47,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
-#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
-#include <QSet>
 #include <QShortcut>
 #include <QShowEvent>
 #include <QSignalBlocker>
@@ -60,6 +64,7 @@
 #include <cmath>
 #include <functional>
 #include <optional>
+#include <memory>
 
 namespace mplayer {
 namespace shell {
@@ -95,18 +100,26 @@ constexpr double kShellRateMin = 0.25;
 constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
+constexpr auto kAnimeJanaiPresetSettingKey = "player/animejanai/preset";
+constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
+
+QString animeJanaiBackendName(native::Backend backend) {
+    return backend == native::Backend::DirectML ? QStringLiteral("directml")
+                                                 : QStringLiteral("tensorrt");
+}
 
 constexpr int kSeriesWidth = 190;
 constexpr int kStripHeight = 30;
 constexpr int kStatusMs = 1900;
-constexpr int kStatusLabelWidth = 560;
 constexpr int kStripMargin = 8;
 
 constexpr int kPipSeekStepSeconds = 10;
 constexpr int kPipCornerRadiusPx = 16;
 // The gap a parked float keeps from the work-area edge: far enough that a
 // maximized window does not look like it is clipping it, close enough that
-// the controls at the edges are reachable.
+// the controls at the edges are reachable. Only the FIRST placement of a
+// brand-new float uses a corner; a viewer-placed float is free and this offset
+// never applies to it.
 constexpr int kPipBoundsOffset = 24;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
@@ -244,37 +257,6 @@ QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qr
     return icon;
 }
 
-/// The preset bindings that are actually installed, keyed by the combination
-/// they hold. The native toggle asks the same question the preset loader asks,
-/// through the same shared collision check, so a native binding can never take
-/// a key a preset is already using.
-QMap<QString, ShortcutClaim> installedPresetClaims() {
-    QMap<QString, ShortcutClaim> claims;
-    QSettings settings;
-    settings.beginGroup(QLatin1String(kPresetShortcutSettingsGroup));
-    QSet<QKeySequence> claimed;
-    for (const anime4k::ModeInfo& info : anime4k::availableModes()) {
-        const QString stored = settings.value(info.id).toString();
-        if (stored.isEmpty()) {
-            continue;
-        }
-        const QKeySequence sequence =
-            QKeySequence::fromString(stored, QKeySequence::PortableText);
-        if (sequence.isEmpty() || isReservedPresetShortcut(sequence) ||
-            claimed.contains(sequence)) {
-            continue;
-        }
-        claimed.insert(sequence);
-        ShortcutClaim claim;
-        claim.ownerId = info.id;
-        claim.ownerLabel = info.label;
-        claim.kind = ShortcutOwnerKind::Preset;
-        claims.insert(shortcutClaimKey(sequence), claim);
-    }
-    settings.endGroup();
-    return claims;
-}
-
 }  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -284,6 +266,7 @@ QMap<QString, ShortcutClaim> installedPresetClaims() {
 PipFloat::PipFloat(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
     setObjectName(QStringLiteral("playerPip"));
+    setMinimumSize(kPipDefaultWidth / 2, kPipDefaultHeight / 2);
     setAttribute(Qt::WA_TranslucentBackground);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
@@ -314,6 +297,11 @@ PipFloat::PipFloat(QWidget* parent)
             const double at = pendingSeek_;
             pendingSeek_ = -1.0;
             surface_->seek(at);
+            if (pendingLoadPause_ &&
+                surface_->pauseRequestGeneration() == pendingLoadPauseGeneration_) {
+                surface_->setPaused(*pendingLoadPause_);
+            }
+            pendingLoadPause_.reset();
         }
     });
     connect(surface_, &VideoSurface::errorOccurred, this,
@@ -476,17 +464,21 @@ QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qre
     return button;
 }
 
-void PipFloat::openStream(const QString& url, double position) {
+void PipFloat::openStream(const QString& url, double position, bool paused) {
     if (url.isEmpty()) {
         return;
     }
     pendingSeek_ = position;
     surface_->open(url);
+    surface_->setPaused(paused);
+    pendingLoadPause_ = paused;
+    pendingLoadPauseGeneration_ = surface_->pauseRequestGeneration();
     fitSurfaces();
 }
 
 void PipFloat::closeStream() {
     pendingSeek_ = -1.0;
+    pendingLoadPause_.reset();
     surface_->close();
 }
 
@@ -684,12 +676,6 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
-void PipFloat::showEvent(QShowEvent* event) {
-    QWidget::showEvent(event);
-    fitSurfaces();
-    revealControls();
-}
-
 void PipFloat::closeEvent(QCloseEvent* event) {
     // A close from the window manager must not leave a live VideoSurface behind
     // a deleted float: the stream is stopped before the host tears it down.
@@ -703,23 +689,28 @@ void PipFloat::pointerPress(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) {
         return;
     }
-    // Both anchors are taken in screen space: the pointer position it was
-    // grabbed at, and where the window itself was sitting when it was.
     pressGlobal_ = event->globalPosition();
     pressWindow_ = pos();
+    pressSize_ = size();
+    const QPoint local = mapFromGlobal(event->globalPosition().toPoint());
+    resizingRight_ = local.x() >= width() - 8;
+    resizingBottom_ = local.y() >= height() - 8;
     pressed_ = true;
     dragging_ = false;
 }
 
 void PipFloat::pointerMove(QMouseEvent* event) {
-    // A drag that started on the timeline scrubs, no matter where the pointer
-    // has wandered to since: the overlay sees the move first, and without
-    // this the window would start sliding out from under a scrubbing hand.
     if (draggingTimeline_) {
         timelineSeekTo(event->position().x());
         return;
     }
     if (!pressed_ || !(event->buttons() & Qt::LeftButton)) {
+        const QPoint local = mapFromGlobal(event->globalPosition().toPoint());
+        const bool right = local.x() >= width() - 8;
+        const bool bottom = local.y() >= height() - 8;
+        overlay_->setCursor(right && bottom ? Qt::SizeFDiagCursor
+                            : right ? Qt::SizeHorCursor
+                            : bottom ? Qt::SizeVerCursor : Qt::ArrowCursor);
         return;
     }
     const QPointF delta = event->globalPosition() - pressGlobal_;
@@ -729,9 +720,22 @@ void PipFloat::pointerMove(QMouseEvent* event) {
         }
         dragging_ = true;
     }
-    // The window is placed from where it started plus where the pointer has come
-    // to, not nudged by the last event: both operands are screen positions, so
-    // nothing rounds twice and the float stays under the cursor.
+    if (resizingRight_ || resizingBottom_) {
+        QScreen* target = QGuiApplication::screenAt(pressWindow_);
+        if (target == nullptr) target = screen();
+        const QSize bounds = target != nullptr
+            ? target->availableGeometry().size() : pressSize_;
+        const int width = resizingRight_
+            ? std::clamp(pressSize_.width() + static_cast<int>(std::lround(delta.x())),
+                         minimumWidth(), std::max(minimumWidth(), bounds.width()))
+            : pressSize_.width();
+        const int height = resizingBottom_
+            ? std::clamp(pressSize_.height() + static_cast<int>(std::lround(delta.y())),
+                         minimumHeight(), std::max(minimumHeight(), bounds.height()))
+            : pressSize_.height();
+        resize(width, height);
+        return;
+    }
     move(pressWindow_ + QPoint(static_cast<int>(std::lround(delta.x())),
                                static_cast<int>(std::lround(delta.y()))));
 }
@@ -768,30 +772,39 @@ void PipFloat::pointerRelease(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton) {
         return;
     }
+    const bool resized = resizingRight_ || resizingBottom_;
     const bool dragged = dragging_;
     pressed_ = false;
     dragging_ = false;
+    resizingRight_ = false;
+    resizingBottom_ = false;
     if (draggingTimeline_) {
         draggingTimeline_ = false;
         scrubbing_ = false;
         revealControls();
         return;
     }
+    if (resized) return;
     if (dragged) {
-        // Land on the nearest corner. Parked wherever the finger left it, a
-        // float ends up half over the taskbar or off the usable area.
-        snapToCorner();
+        if (!overlapsAnyWorkArea()) {
+            pullIntoWorkArea();
+        }
         return;
     }
     surface_->togglePause();
 }
 
-// ── layout ───────────────────────────────────────────────────────────────
+// ── placement ────────────────────────────────────────────────────────────
 
 void PipFloat::moveToCorner(QScreen* target) {
     if (target == nullptr) {
         return;
     }
+    // Only ever the FIRST placement of a brand-new float: a sensible default
+    // corner to open in before the viewer has placed it anywhere. A pooled float
+    // is never sent back here on re-entry - it keeps wherever the viewer last
+    // put it.
+    //
     // availableGeometry, not geometry: the taskbar and the docked app bar are
     // not places a float can be dragged back from, so a window parked on the
     // work area is one the viewer cannot reach.
@@ -800,35 +813,56 @@ void PipFloat::moveToCorner(QScreen* target) {
          area.bottom() - height() - kPipBoundsOffset + 1);
 }
 
-void PipFloat::snapToCorner() {
-    // Snapping is a one-off on release, not a live guide: the float follows
-    // the pointer exactly while it is down, and lands on the nearest corner
-    // when it comes up. A live guide would be a second thing to look at while
-    // dragging the thing you came to move.
+/// The float is placed freely, so the only placement rule is reachability: some
+/// part of the float must sit on a work area, or a viewer cannot click it and
+/// cannot drag it back. Off-screen is the one position that has no recovery.
+bool PipFloat::overlapsAnyWorkArea() const {
+    const QRect frame = frameGeometry();
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    for (QScreen* screen : screens) {
+        if (screen != nullptr && frame.intersects(screen->availableGeometry())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void PipFloat::pullIntoWorkArea() {
+    // Pull the float back to the work area nearest where it already is, keeping
+    // as much of its position as reachability allows: a monitor change can leave
+    // the pooled position naming a screen that is gone, and a window there
+    // cannot be clicked at all. availableGeometry, not geometry: the taskbar and
+    // the docked app bar are not places a float can be dragged back from.
     QScreen* target = QGuiApplication::screenAt(frameGeometry().center());
+    if (target == nullptr) {
+        target = QGuiApplication::primaryScreen();
+    }
     if (target == nullptr) {
         return;
     }
     const QRect area = target->availableGeometry();
-    const QPoint centre = frameGeometry().center();
-    const bool left = centre.x() < area.center().x();
-    const bool top = centre.y() < area.center().y();
-    const int x = left ? area.left() + kPipBoundsOffset
-                        : area.right() - width() - kPipBoundsOffset + 1;
-    const int y = top ? area.top() + kPipBoundsOffset
-                       : area.bottom() - height() - kPipBoundsOffset + 1;
-    if (pos() == QPoint(x, y)) {
-        return;
-    }
-    // Animated because a float that jumps reads as a glitch; short, because it
-    // is the last thing that happened and the viewer is already looking away.
-    auto* anim = new QPropertyAnimation(this, "pos", this);
-    anim->setDuration(120);
-    anim->setEasingCurve(QEasingCurve::OutCubic);
-    anim->setStartValue(pos());
-    anim->setEndValue(QPoint(x, y));
-    anim->start(QAbstractAnimation::DeleteWhenStopped);
+    const QPoint origin = frameGeometry().topLeft();
+    const int x = std::clamp(origin.x(), area.left(), std::max(area.left(), area.right() - width()));
+    const int y =
+        std::clamp(origin.y(), area.top(), std::max(area.top(), area.bottom() - height()));
+    move(x, y);
 }
+
+void PipFloat::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    fitSurfaces();
+    revealControls();
+    // A pooled float re-enters where the viewer last left it. The one position
+    // that is not honoured is one that is no longer reachable - a monitor that
+    // went away since the last session - and only that is corrected, once, on
+    // entry. A viewer who left it somewhere odd gets it back exactly there.
+    if (!overlapsAnyWorkArea()) {
+        pullIntoWorkArea();
+    }
+}
+
+// ── layout ───────────────────────────────────────────────────────────────
+
 void PipFloat::fitSurfaces() {
     surface_->setGeometry(rect());
     overlay_->setGeometry(rect());
@@ -983,6 +1017,17 @@ PlayerDialog::PlayerDialog(const QString& caption,
     // Applied before any file is opened: the surface builds its mpv core on the
     // first open() and glsl-shaders is only honoured as a construction option,
     // so a mode restored later would land on a core that already ignored it.
+    QSettings animeJanaiSettings;
+    animeJanaiPresetId_ = animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString();
+    const QString storedAnimeJanaiBackend =
+        animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
+    if (const auto backend = native::backendFromName(storedAnimeJanaiBackend)) {
+        animeJanaiBackend_ = *backend;
+    } else {
+        // Native's selected preference is an initial default only; subsequent
+        // AnimeJaNai backend changes are explicit and persisted independently.
+        animeJanaiBackend_ = native::loadNativePreferences().backend;
+    }
     const QString storedChain = QSettings().value(kAnime4KSettingKey).toString();
     // Resolves the experiments too: every catalogue entry has an id.
     anime4kMode_ = anime4k::modeForId(storedChain);
@@ -1039,8 +1084,18 @@ PlayerDialog::PlayerDialog(const QString& caption,
     connectShell();
     connectEngine();
     loadPresetShortcuts();
-    loadNativeShortcuts();
     refreshNativeInputs();
+    connect(surface_, &VideoSurface::animeJanaiStatusChanged, this,
+            &PlayerDialog::onAnimeJanaiStatusChanged);
+    connect(surface_, &VideoSurface::animeJanaiFailure, this,
+            &PlayerDialog::onAnimeJanaiFailure);
+    connect(surface_, &VideoSurface::animeJanaiEngineBuildChanged, this,
+            &PlayerDialog::onAnimeJanaiEngineBuildChanged);
+    shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, tr("Unavailable · not prepared"));
+    if (!animeJanaiPresetId_.isEmpty()) {
+        applyAnimeJanaiRequest(animeJanaiPresetId_);
+    }
 
     // A child widget is shown when its parent is, so the panels that start
     // closed have to say so: an empty episode drawer and a retry chip would
@@ -1055,6 +1110,38 @@ PlayerDialog::PlayerDialog(const QString& caption,
 
 PlayerDialog::~PlayerDialog() {
     closed_ = true;
+    // Child teardown (PlayerShell/surface_ destruction in ~QDialog) emits
+    // nativeStatusChanged and friends through VideoSurface's reader detach.
+    // Derived PlayerDialog members are already destroyed at that point, so a
+    // live connection would run onNativeStatusChanged on a half-destroyed
+    // receiver and corrupt the heap. Disconnect receiver-side first, before
+    // member destruction can reach the children's destructors.
+    if (surface_ != nullptr) {
+        disconnect(surface_, nullptr, this, nullptr);
+    }
+    if (pip_ != nullptr && pip_->videoSurface() != nullptr &&
+        (pipPool_ == nullptr || pip_->videoSurface() != pipPool_->videoSurface())) {
+        disconnect(pip_->videoSurface(), nullptr, this, nullptr);
+    }
+    if (pipPool_ != nullptr && pipPool_->videoSurface() != nullptr) {
+        disconnect(pipPool_->videoSurface(), nullptr, this, nullptr);
+    }
+    enginePreparationActive_ = false;
+    // The overlay is a Qt::Tool child window: QObject parenting deletes it
+    // here, but a top-level tool is not hidden by the parent hide/close, so
+    // hide it explicitly rather than leaving a visible tool behind until the
+    // deleteLater tick. No resume: the builder owns acknowledgement.
+    if (processingOverlay_ != nullptr) {
+        processingOverlay_->hide();
+    }
+    if (enginePreparationSurface_ != nullptr) {
+        enginePreparationSurface_->setEnginePreparationPaused(false, false);
+        enginePreparationSurface_.clear();
+    }
+    ++animeJanaiSequence_;
+    if (animeJanaiCancellation_) {
+        animeJanaiCancellation_->store(true);
+    }
     if (statusTimer_) {
         statusTimer_->stop();
     }
@@ -1113,7 +1200,8 @@ void PlayerDialog::buildStatus() {
     statusLabel_ = new QLabel(QString(), statusPanel_);
     statusLabel_->setObjectName(QStringLiteral("playerStatusText"));
     statusLabel_->setStyleSheet(statusTextQss());
-    statusLabel_->setMaximumWidth(kStatusLabelWidth);
+    statusLabel_->setWordWrap(true);
+    statusLabel_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     row->addWidget(statusLabel_, 1);
 
     retryButton_ =
@@ -1161,6 +1249,10 @@ void PlayerDialog::connectShell() {
         speed_ = rate;
         surface_->setSpeed(speed_);
     });
+    connect(shell_, &PlayerShell::animeJanaiPresetRequested, this,
+            &PlayerDialog::applyAnimeJanaiRequest);
+    connect(shell_, &PlayerShell::animeJanaiBackendRequested, this,
+            &PlayerDialog::applyAnimeJanaiBackend);
     connect(shell_, &PlayerShell::anime4KModeChanged, this, [this](anime4k::Mode mode) {
         anime4kMode_ = mode;
         surface_->setAnime4KMode(mode);
@@ -1206,9 +1298,8 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::qualityRequested, this, &PlayerDialog::onQualityPicked);
     connect(shell_, &PlayerShell::fullscreenChanged, this,
             &PlayerDialog::onShellFullscreenChanged);
-    // The menu's native rows take the same path a settings control and the
-    // toggle shortcut take: one requested-change handler, so the three can
-    // never disagree about what was asked for.
+    // The menu's native rows share one requested-change handler, so every
+    // selection follows the same persistence and availability path.
     connect(shell_, &PlayerShell::nativeActionRequested, this,
             &PlayerDialog::onNativeActionRequested);
     shell_->installEventFilter(this);
@@ -1273,58 +1364,6 @@ void PlayerDialog::loadPresetShortcuts() {
     settings.endGroup();
 }
 
-void PlayerDialog::loadNativeShortcuts() {
-    // The toggle is a *stored* binding owned by the native preference, and this
-    // only installs it. The default is offered when nothing is stored, and even
-    // then it is installed only if the shared collision check accepts it -
-    // against the reserved player keys and every preset binding already live.
-    const native::NativePreferences preferences = native::loadNativePreferences();
-    const QString stored = native::menu::toggleShortcut(preferences);
-    if (stored.isEmpty()) {
-        return;
-    }
-    const QKeySequence sequence =
-        QKeySequence::fromString(stored, QKeySequence::PortableText);
-    if (sequence.isEmpty()) {
-        qWarning().noquote() << "mikai: stored native toggle shortcut" << stored
-                             << "names no key and was not installed";
-        return;
-    }
-    const ShortcutConflict conflict = findShortcutConflict(sequence, installedPresetClaims());
-    if (conflict.blocked) {
-        // Somebody already owns the key. The native action is simply not
-        // installed; it never shadows a preset or a player key. A binding that
-        // lands here is a fact the viewer has to be able to account for - the
-        // key is set and does nothing - so the skip is reported with the reason
-        // and owner the shared check already resolved. Nothing here reads the
-        // store's other keys, so no preference beyond this binding is named, and
-        // the source is named truthfully: the default is only offered when the
-        // store holds no decision, so a viewer who never chose a key is not told
-        // a binding they stored was refused.
-        qWarning().noquote() << "mikai:"
-                             << (preferences.toggleProcessingShortcutStored
-                                     ? "stored native toggle shortcut"
-                                     : "default native toggle shortcut")
-                             << "for" << shortcutClaimKey(sequence) << "was not installed:"
-                             << conflict.reasonKey << "is held by" << conflict.ownerId
-                             << conflict.ownerLabel;
-        return;
-    }
-    auto* shortcut = new QShortcut(sequence, this);
-    shortcut->setContext(Qt::WindowShortcut);
-    connect(shortcut, &QShortcut::activated, this, &PlayerDialog::toggleNativeProcessing);
-}
-
-void PlayerDialog::toggleNativeProcessing() {
-    const native::NativePreferences preferences = native::loadNativePreferences();
-    // The toggle flips the *request*. Off changes no pixels; on is persisted as
-    // the request and, with no engine, reports the reason instead of pretending
-    // it was applied.
-    applyNativeRequest(preferences.enabled ? native::menu::Action::TurnOff
-                                           : native::menu::Action::TurnOn,
-                       QString());
-}
-
 namespace {
 
 /// The factory observation the core that owns playback currently holds, or
@@ -1376,9 +1415,18 @@ void PlayerDialog::refreshStoredSettings() {
     // deduplicates the announcement, so a save that changed nothing costs a store
     // read and announces nothing. Nothing here reopens the stream, calls the API,
     // touches the quality cache, or replaces an effective native plan.
-    loadNativeShortcuts();
     loadPresetShortcuts();
+    QSettings animeJanaiSettings;
+    const QString preset = animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString();
+    const QString backendName = animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
+    const auto backend = native::backendFromName(backendName);
+    const bool changed = preset != animeJanaiPresetId_ ||
+                         (backend.has_value() && *backend != animeJanaiBackend_);
+    animeJanaiPresetId_ = preset;
+    if (backend.has_value()) animeJanaiBackend_ = *backend;
+    shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
     refreshNativeInputs();
+    if (changed) applyAnimeJanaiRequest(animeJanaiPresetId_);
 }
 
 void PlayerDialog::refreshNativeInputs() {
@@ -1396,7 +1444,7 @@ void PlayerDialog::onNativeActionRequested(native::menu::Action action, const QS
 }
 
 void PlayerDialog::onNativeStatusChanged(const native::NativeStatusView& status) {
-    if (shell_ == nullptr) {
+    if (closed_ || shell_ == nullptr) {
         return;
     }
     // Only the core that owns playback speaks for the current source. The parked
@@ -1428,10 +1476,12 @@ void PlayerDialog::syncNativeStatusPolling(bool requested) {
     if (surface_ == nullptr) {
         return;
     }
-    // Native is read only while a core exists to read from and the request is
-    // on. With no core there is nothing to poll, and with the request off the
-    // chip must not keep showing a chain nobody asked for.
-    surface_->setNativeStatusPolling(requested && engineReady_);
+    // The private filter belongs only to a pinned Native runtime. In
+    // particular, the Standard AnimeJaNai fork has its own filter ABI and must
+    // never be queried for the private status property.
+    const native::RuntimeSelection& runtime = native::currentSelection();
+    const bool nativeModule = runtime.loaded && runtime.kind == native::BundleKind::Native;
+    surface_->setNativeStatusPolling(requested && engineReady_ && nativeModule);
 }
 
 void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString& value) {
@@ -1497,6 +1547,109 @@ void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString
     // claims the chain is running, and nothing here touches the URL, the stream
     // or the media.
     announceNativeRequest();
+}
+
+void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
+    const QString presetId = id;
+    animeJanaiPresetId_ = id;
+    QSettings settings;
+    settings.setValue(kAnimeJanaiPresetSettingKey, id);
+    settings.setValue(kAnimeJanaiBackendSettingKey,
+                      animeJanaiBackendName(animeJanaiBackend_));
+    ++animeJanaiSequence_;
+    if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
+    const quint64 sequence = animeJanaiSequence_;
+    const auto cancelled = std::make_shared<std::atomic_bool>(false);
+    animeJanaiCancellation_ = cancelled;
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_,
+                                   id.isEmpty() ? tr("Turning off…") : tr("Preparing…"));
+    const QString requestedPreset = presetId;
+    const native::Backend backend = animeJanaiBackend_;
+    // Raw owner: copying a QPointer on the worker would race dialog
+    // destruction (QPointer is GUI-thread only). A plain address copies safely;
+    // the queued body runs on the dialog's own thread, where it checks the
+    // shared cancellation BEFORE touching the address. The destructor always
+    // sets this generation's flag, so a dead owner always reads cancelled and
+    // is never dereferenced; same-thread serialisation keeps a live owner
+    // alive for the rest of the body.
+    PlayerDialog* ownerDialog = this;
+    QThreadPool::globalInstance()->start(QRunnable::create(
+        [ownerDialog, cancelled, sequence, requestedPreset, backend] {
+            native::AnimeJanaiPlan plan = native::prepareAnimeJanaiPlan(
+                requestedPreset, backend, [cancelled] { return cancelled->load(); });
+            if (cancelled->load()) return;
+            QObject* appRoot = QCoreApplication::instance();
+            if (appRoot == nullptr) return;
+            QMetaObject::invokeMethod(appRoot,
+                [ownerDialog, cancelled, sequence, plan = std::move(plan)]() mutable {
+                    if (cancelled->load()) return;
+                    // Local guard on the GUI thread: safe here (never copied
+                    // off-thread). Every call below can reenter via nested
+                    // event loops or direct signals that close/delete the
+                    // dialog, so the guard is re-checked after each one.
+                    QPointer<PlayerDialog> guard(ownerDialog);
+                    if (guard.isNull() || cancelled->load() ||
+                        guard->closed_ || guard->animeJanaiSequence_ != sequence) return;
+                    if (guard->lastProcessingReasonKey_.startsWith(
+                            QLatin1String("animejanai.")) &&
+                        (!plan.enabled || plan.available)) {
+                        guard->retireProcessingRow();
+                    }
+                    if (guard.isNull() || cancelled->load()) return;
+                    guard->animeJanaiPlan_ = plan;
+                    guard->animeJanaiPlanGeneration_ = sequence;
+                    VideoSurface* owner = guard->playbackSurface();
+                    if (owner == nullptr) owner = guard->surface_;
+                    if (owner != nullptr) owner->setAnimeJanaiPlan(plan);
+                    if (guard.isNull() || cancelled->load()) return;
+                    const QString status = !plan.available
+                        ? PlayerDialog::tr("Unavailable · %1").arg(plan.reason)
+                        : (owner != nullptr ? owner->animeJanaiStatus() : PlayerDialog::tr("Off"));
+                    guard->shell_->setAnimeJanaiSelection(plan.presetId, status);
+                    if (guard.isNull() || cancelled->load()) return;
+                    if (plan.enabled && !plan.available) {
+                        guard->showProcessingFailure(plan.reasonKey, plan.reason);
+                    }
+                }, Qt::QueuedConnection);
+        }));
+}
+
+void PlayerDialog::applyAnimeJanaiBackend(const QString& backendName) {
+    const auto backend = native::backendFromName(backendName);
+    if (!backend) return;
+    animeJanaiBackend_ = *backend;
+    shell_->setAnimeJanaiBackend(animeJanaiBackendName(*backend));
+    QSettings().setValue(kAnimeJanaiBackendSettingKey, animeJanaiBackendName(*backend));
+    if (!animeJanaiPresetId_.isEmpty()) applyAnimeJanaiRequest(animeJanaiPresetId_);
+}
+
+void PlayerDialog::onAnimeJanaiStatusChanged(const QString& status) {
+    if (closed_ || sender() != playbackSurface()) return;
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, status);
+}
+
+void PlayerDialog::onAnimeJanaiFailure(const QString& reason) {
+    if (closed_ || sender() != playbackSurface()) return;
+    showProcessingFailure(QStringLiteral("animejanai.failure"), reason);
+}
+
+void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
+                                                 const QString& detail) {
+    auto* owner = qobject_cast<VideoSurface*>(sender());
+    if (closed_ || owner == nullptr) return;
+    if (active) {
+        if (owner != playbackSurface()) return;
+        if (animeJanaiBuildingSurface_ != owner) {
+            beginEnginePreparation(tr("Building TensorRT engine"));
+            animeJanaiBuildingSurface_ = owner;
+        }
+        updateEnginePreparation(-1, 0, tr("Preparing model"), detail);
+        return;
+    }
+    if (animeJanaiBuildingSurface_ != owner) return;
+    animeJanaiBuildingSurface_.clear();
+    endEnginePreparation(succeeded, detail);
+    flashStatus(detail, !succeeded);
 }
 
 void PlayerDialog::reportNativeProcessingFailure(const QString& reason) {
@@ -1605,6 +1758,10 @@ void PlayerDialog::announceNativeRequest() {
     if (closed_) {
         return;
     }
+    const native::RuntimeSelection& runtime = native::currentSelection();
+    if (!runtime.loaded || runtime.kind != native::BundleKind::Native) {
+        return;
+    }
     if (nativeHandoff_ != NativeHandoff::None) {
         // Mid hand-off the single inference claim still belongs to the outgoing
         // core, and a request for the incoming one can only be refused on the
@@ -1693,7 +1850,7 @@ void PlayerDialog::onNativeReferenceFrameReady(const native::FrameFixture& frame
                                                quint64 sourceEpoch, double framePosition,
                                                int frameIndex,
                                                std::optional<native::Rational> frameFps) {
-    if (!nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
+    if (closed_ || !nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
         return;
     }
     if (frameIndex != nativeReferenceFrameIndex_) {
@@ -1714,7 +1871,7 @@ void PlayerDialog::onNativeReferenceFrameReady(const native::FrameFixture& frame
 
 void PlayerDialog::onNativeReferenceFrameFailed(const QString& reasonKey, const QString& reason,
                                                 int frameIndex) {
-    if (!nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
+    if (closed_ || !nativeReferencePending_ || sender() != nativeReferenceSurface_.data()) {
         return;
     }
     if (frameIndex != nativeReferenceFrameIndex_) {
@@ -1762,7 +1919,7 @@ void PlayerDialog::finishNativeHandoff() {
 
 void PlayerDialog::onNativePlaybackStatusChanged(
     const native::NativePlaybackController::Status& status) {
-    if (nativeHandoff_ == NativeHandoff::None) {
+    if (closed_ || nativeHandoff_ == NativeHandoff::None) {
         return;
     }
     // A settled state, not a request: only the controller's own observation
@@ -1790,6 +1947,9 @@ void PlayerDialog::onNativePlaybackStatusChanged(
 }
 
 void PlayerDialog::onNativeProcessingFailure(const QString& reasonKey, const QString& reason) {
+    if (closed_) {
+        return;
+    }
     if (nativeHandoff_ != NativeHandoff::None) {
         const NativeHandoff phase = nativeHandoff_;
         nativeHandoff_ = NativeHandoff::None;
@@ -1813,8 +1973,11 @@ void PlayerDialog::onNativeProcessingFailure(const QString& reasonKey, const QSt
 void PlayerDialog::copyStreamUrl() {
     if (!directMedia_) {
         host_->requestCopyStreamUrl();
-    } else {
-        QGuiApplication::clipboard()->setText(url_);
+        return;
+    }
+    if (!mikai::gui::copyText(url_)) {
+        flashStatus(tr("Failed to copy link"), true);
+        return;
     }
     flashStatus(tr("Video link copied"));
 }
@@ -1950,6 +2113,8 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     if (closed_ || url.isEmpty()) {
         return false;
     }
+    ++animeJanaiSequence_;
+    if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
     // A new source supersedes the failed one, so the chip it left is retired
     // here rather than lingering over the reload. Every recovery path runs
     // through openStream - a retry click, a refreshed link, an episode or
@@ -1985,6 +2150,8 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     url_ = url;
     // open() reports false only when the engine itself could not be created, so
     // this is the one place that knows whether a retry is worth offering.
+    // The real MpvError reason was already emitted synchronously through
+    // onEngineError before this returns, so the failure chip names the cause.
     engineReady_ = surface_->open(url);
     if (!resumePending_) {
         // Volume, mute and rate live on the core across a load, but the shell
@@ -1993,12 +2160,22 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
         shell_->setMuted(muted_);
         shell_->setRate(std::clamp(speed_, kShellRateMin, kShellRateMax));
     }
+    // Observable selections stay as the caller set them: quality options and
+    // the PiP bar follow the requested height even when no core opened.
     publishQualityOptions();
     syncPipBar();
+    if (!engineReady_) {
+        // No core: nothing observed, nothing to announce and no plan to paint
+        // as Configured. The failure chip above is the only status.
+        return engineReady_;
+    }
     // A new source is a new filter session: the reader was rebound and its view
     // cleared, so the held inputs and the poll demand follow the new core rather
     // than a plan from the previous one.
     refreshNativeInputs();
+    if (!animeJanaiPresetId_.isEmpty()) {
+        applyAnimeJanaiRequest(animeJanaiPresetId_);
+    }
     return engineReady_;
 }
 
@@ -2008,7 +2185,10 @@ void PlayerDialog::restoreResumePoint() {
     surface_->seek(position);
     shell_->setPosition(position);
     if (resumePaused_) {
-        surface_->togglePause();
+        // Assert the desired pause, not a toggle: restoreResumePoint runs from
+        // the duration/playing callbacks, and a toggle inverts whatever the
+        // core currently holds instead of installing the recorded intent.
+        surface_->setPaused(true);
         shell_->setPlaying(false);
     } else {
         shell_->setPlaying(true);
@@ -2104,8 +2284,9 @@ void PlayerDialog::openCompareWindow() {
     // One window, kept and reused: it borrows the surface, and a second one
     // would fight the first for the same core while it swaps chains.
     if (compare_ == nullptr) {
-        compare_ = new CompareWindow(surface_, anime4kChainId_, this);
+        compare_ = new CompareWindow(surface_, anime4kChainId_, this, animeJanaiBackend_);
     }
+    compare_->setAjiBackend(animeJanaiBackend_);
     compare_->show();
     compare_->raise();
     compare_->activateWindow();
@@ -2113,24 +2294,21 @@ void PlayerDialog::openCompareWindow() {
 
 void PlayerDialog::copyCurrentFrame() {
     if (closed_ || surface_ == nullptr || !surface_->hasVideo()) {
-        flashStatus(tr("No frame to copy"));
+        flashStatus(tr("No frame to copy"), true);
         return;
     }
-    // grabFramebuffer reads the GL front buffer, so this is the frame on
-    // screen at full source resolution - not a scaled grab of the widget,
-    // which would hand over a thumbnail on a HiDPI display.
-    QImage frame = surface_->grabFramebuffer();
+    const QImage frame = surface_->grabFramebuffer();
     if (frame.isNull()) {
-        flashStatus(tr("Could not read the current frame"));
+        flashStatus(tr("Could not read the current frame"), true);
         return;
     }
-    if (!QGuiApplication::clipboard()) {
-        flashStatus(tr("Clipboard is unavailable"));
+    if (!mikai::gui::copyImage(frame)) {
+        flashStatus(tr("Failed to copy frame"), true);
         return;
     }
-    QGuiApplication::clipboard()->setImage(frame);
-            flashStatus(tr("Frame copied (%1×%2)").arg(frame.width()).arg(frame.height()));
+    flashStatus(tr("Frame copied (%1×%2)").arg(frame.width()).arg(frame.height()));
 }
+
 void PlayerDialog::onMediaDropped(const QString& path) {
     if (closed_ || path.isEmpty()) {
         return;
@@ -2152,7 +2330,10 @@ void PlayerDialog::onMediaDropped(const QString& path) {
     setWindowTitle(tr("Player — %1").arg(caption_));
     shell_->setEpisodeLabel(caption_);
     shell_->setMedia(path, caption_);
-    openStream(path, 0, /*resume=*/false);
+    if (!openStream(path, 0, /*resume=*/false)) {
+        ensureOpenFailureVisible();
+        return;
+    }
             flashStatus(tr("Playing local file"));
 }
 
@@ -2261,7 +2442,6 @@ void PlayerDialog::applyEpisode(const QString& label,
     setWindowTitle(tr("Player — %1").arg(caption_));
     shell_->setEpisodeLabel(label);
     setPlaylist(playlist_, index);
-            flashStatus(tr("Episode: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             // A new episode starts at its beginning, always. openStream
@@ -2269,8 +2449,13 @@ void PlayerDialog::applyEpisode(const QString& label,
             // right for a quality or a dub swap inside one episode and wrong
             // here: stepping or picking the next one and landing at the same
             // offset into it is not what either gesture means.
-            openStream(entry.url, target, /*resume=*/false);
+            const bool ok = openStream(entry.url, target, /*resume=*/false);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
+            if (!ok) {
+                ensureOpenFailureVisible();
+                return;
+            }
+            flashStatus(tr("Episode: %1").arg(label));
             return;
         }
     }
@@ -2287,11 +2472,15 @@ void PlayerDialog::applyVariant(const QList<QualityEntry>& qualities,
     }
     setQualities(qualities);
     const int target = pickTargetHeight(0);
-            flashStatus(tr("Track: %1").arg(label));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
-            openStream(entry.url, target);
+            const bool ok = openStream(entry.url, target);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
+            if (!ok) {
+                ensureOpenFailureVisible();
+                return;
+            }
+            flashStatus(tr("Track: %1").arg(label));
             return;
         }
     }
@@ -2303,13 +2492,17 @@ void PlayerDialog::applyRefreshedStreams(const QList<QualityEntry>& qualities, i
     }
     setQualities(qualities);
     const int target = pickTargetHeight(height);
-            flashStatus(tr("Stream link has expired — refreshing"));
     for (const QualityEntry& entry : qualities_) {
         if (entry.height == target) {
             // A refreshed link is a fresh stream, not a continuation: the old
             // resume point belongs to the expired url.
-            openStream(entry.url, target, /*resume=*/false);
+            const bool ok = openStream(entry.url, target, /*resume=*/false);
             shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(target));
+            if (!ok) {
+                ensureOpenFailureVisible();
+                return;
+            }
+            flashStatus(tr("Stream link has expired — refreshing"));
             return;
         }
     }
@@ -2518,9 +2711,13 @@ void PlayerDialog::onQualityPicked(const QVariant& payload) {
         if (entry.height != height) {
             continue;
         }
-        flashStatus(tr("Switching to %1p…").arg(height));
-        openStream(entry.url, height);
+        const bool ok = openStream(entry.url, height);
         shell_->setMedia(entry.url, caption_, QStringLiteral("%1p").arg(height));
+        if (!ok) {
+            ensureOpenFailureVisible();
+            return;
+        }
+        flashStatus(tr("Switching to %1p…").arg(height));
         return;
     }
     // A press that matches nothing used to do nothing at all: the popover
@@ -2583,24 +2780,19 @@ void PlayerDialog::syncStatusVisibility() {
     }
 }
 
-void PlayerDialog::flashStatus(const QString& message) {
-    if (closed_) {
-        return;
-    }
-    // A toast never retires an actionable row: while a media error or a
-    // processing failure owns the panel, the toast only updates the label and
-    // leaves every chip - and the transient timer that would hide them - alone.
-    if (errorActive_ || processingActive_) {
-        statusLabel_->setText(message);
-        statusPanel_->show();
-        statusPanel_->raise();
-        return;
-    }
-    retryButton_->hide();
+void PlayerDialog::flashStatus(const QString& message, bool failure) {
+    if (closed_) return;
     statusLabel_->setText(message);
-    statusTimer_->start(kStatusMs);
+    if (!errorActive_ && !processingActive_) {
+        retryButton_->hide();
+        statusTimer_->start(kStatusMs);
+    }
     statusPanel_->show();
     statusPanel_->raise();
+    if (failure) {
+        QAccessibleEvent event(statusLabel_, QAccessible::Alert);
+        QAccessible::updateAccessibility(&event);
+    }
 }
 
 void PlayerDialog::showErrorStatus(const QString& message) {
@@ -2621,6 +2813,33 @@ void PlayerDialog::showErrorStatus(const QString& message) {
     }
     statusPanel_->show();
     statusPanel_->raise();
+    // A failed stream is an alert like any other failure toast: assistive
+    // technology must hear the real reason, not just see it.
+    QAccessibleEvent alert(statusLabel_, QAccessible::Alert);
+    QAccessible::updateAccessibility(&alert);
+}
+
+void PlayerDialog::ensureOpenFailureVisible() {
+    if (closed_) {
+        return;
+    }
+    // VideoSurface::open emits the real MpvError reason synchronously through
+    // onEngineError before returning false, so errorActive_ already names the
+    // cause. The generic text is only for an open that reported false without
+    // emitting anything (empty url, no core, no signal). Never overwrites.
+    if (!errorActive_) {
+        showErrorStatus(tr("Could not play the stream"));
+    }
+    // One shot: the host re-extracts and reloads, and a second failure must not
+    // start the loop over again. onEngineError already armed this for the
+    // emitted path; this covers the silent-false path without duplicating it.
+    if (!directMedia_ && !refreshAttempted_) {
+        refreshAttempted_ = true;
+        if (host_ != nullptr) {
+            host_->playbackFailed();
+        }
+    }
+    emit runtimeRequested();
 }
 
 void PlayerDialog::showError(const QString& message) { onEngineError(message); }
@@ -2635,11 +2854,14 @@ void PlayerDialog::showProcessingStatus(const QString& reason) {
     // row already up untouched.
     if (processingActive_ || errorActive_) {
         statusLabel_->setText(reason);
+        statusLabel_->setToolTip(reason);
         statusPanel_->show();
         statusPanel_->raise();
+        layoutPanels();
         return;
     }
     statusLabel_->setText(reason);
+    statusLabel_->setToolTip(reason);
     statusTimer_->start(kStatusMs);
     statusPanel_->show();
     statusPanel_->raise();
@@ -2654,13 +2876,28 @@ void PlayerDialog::showProcessingFailure(const QString& reasonKey, const QString
     showProcessingStatus(processingFailureMessage(lastProcessingReason_));
     // The row is shown only after the label, and it has no timer: the remedies
     // stay up until one is chosen, a new source supersedes them, or the dialog
-    // closes. Real video does not retire them - Original keeps playing under them.
+    // closes. The Original action is scoped to the failing processor.
     processingActive_ = true;
-    processingPrepareButton_->show();
+    const bool animeJanaiFailure = reasonKey.startsWith(QLatin1String("animejanai."));
+    processingPrepareButton_->setVisible(!animeJanaiFailure);
+    processingProvidersButton_->setText(animeJanaiFailure ? tr("Settings") : tr("Providers"));
+    processingProvidersButton_->setToolTip(
+        animeJanaiFailure ? tr("Open processing and component settings")
+                          : tr("Choose the processing provider"));
+    processingOriginalButton_->setText(
+        animeJanaiFailure ? tr("Turn off AnimeJaNai") : tr("Original"));
     processingProvidersButton_->show();
     processingOriginalButton_->show();
+    statusLabel_->setToolTip(statusLabel_->text());
     statusPanel_->show();
     statusPanel_->raise();
+    layoutPanels();
+    if (reasonKey == QLatin1String("animejanai.installation.recordMissing")) {
+        if (!componentSetupRequestedOnce_) {
+            componentSetupRequestedOnce_ = true;
+            emit componentSetupRequested();
+        }
+    }
 }
 
 void PlayerDialog::retireProcessingRow() {
@@ -2703,6 +2940,10 @@ void PlayerDialog::onProcessingOriginalRequested() {
     // whichever core owns playback, retires the assembly and leaves the media and
     // the Anime4K chain untouched. Only this row is retired; a media error keeps
     // its chip and its recovery loop.
+    if (lastProcessingReasonKey_.startsWith(QLatin1String("animejanai."))) {
+        applyAnimeJanaiRequest(QString());
+        return;
+    }
     retireProcessingRow();
     applyNativeRequest(native::menu::Action::TurnOff, QString());
 }
@@ -2713,12 +2954,16 @@ void PlayerDialog::retryPlayback() {
     }
     if (!engineReady_) {
         // There is no engine to retry with: the host has to provision the mpv
-        // runtime first, and startPlayer() is what runs again afterwards.
-        emit runtimeRequested();
+        // runtime first, and startPlayer() is what runs again afterwards. The
+        // visible chip keeps the actual refusal reason; generic only when no
+        // reason exists yet.
+        ensureOpenFailureVisible();
         return;
     }
     // The retry starts the stream over, so no resume point survives it.
-    openStream(url_, currentHeight_, /*resume=*/false);
+    if (!openStream(url_, currentHeight_, /*resume=*/false)) {
+        ensureOpenFailureVisible();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2734,12 +2979,7 @@ void PlayerDialog::startPlayer() {
     if (!openStream(url_, 0, /*resume=*/false)) {
         // No mpv core: the host has to provision the runtime before this can
         // work, and calling startPlayer() again is what retries it.
-        showErrorStatus(tr("Could not play the stream"));
-        if (!directMedia_ && !refreshAttempted_) {
-            refreshAttempted_ = true;
-            host_->playbackFailed();
-        }
-        emit runtimeRequested();
+        ensureOpenFailureVisible();
     }
 }
 
@@ -2751,9 +2991,14 @@ void PlayerDialog::layoutPanels() {
     strip_->adjustSize();
     strip_->move(area.x() + kSpacingMedium,
                  area.y() + kStripMargin + kInfoChipHeight + kSpacingSmall);
-    const QSize hint = statusPanel_->sizeHint();
-    statusPanel_->setGeometry(area.x() + (area.width() - hint.width()) / 2, area.y() + kStripMargin,
-                              hint.width(), hint.height());
+    const int panelWidth = std::min(statusPanel_->sizeHint().width(),
+                                    std::max(240, area.width() - 2 * kStripMargin));
+    const int panelHeight = statusPanel_->layout() != nullptr &&
+                                    statusPanel_->layout()->hasHeightForWidth()
+                                 ? statusPanel_->layout()->heightForWidth(panelWidth)
+                                 : statusPanel_->sizeHint().height();
+    statusPanel_->setGeometry(area.x() + (area.width() - panelWidth) / 2, area.y() + kStripMargin,
+                              panelWidth, panelHeight);
     if (seriesExpanded_) {
         const int top = strip_->geometry().bottom() + kSpacingXS + 1;
         const int height =
@@ -3000,6 +3245,13 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     }
     shuttingDown_ = true;
     closed_ = true;
+    enginePreparationActive_ = false;
+    if (enginePreparationSurface_ != nullptr) {
+        enginePreparationSurface_->setEnginePreparationPaused(false, false);
+        enginePreparationSurface_.clear();
+    }
+    ++animeJanaiSequence_;
+    if (animeJanaiCancellation_) animeJanaiCancellation_->store(true);
     const bool statusTimerWasActive = statusTimer_->isActive();
     statusTimer_->stop();
     audioPopup_->close();
@@ -3045,6 +3297,13 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
         event->ignore();
         return;
     }
+    // The overlay is a Qt::Tool child window: a parent hide does not hide a
+    // Tool, so park it on the accepted path only. The refused path above keeps
+    // the dialog open and leaves the overlay exactly as the builder left it;
+    // no resume happens here, only the builder's own acknowledgement resumes.
+    if (processingOverlay_ != nullptr) {
+        processingOverlay_->hide();
+    }
     shell_->close();
     // VideoSurface owns the libmpv handle: a dialog closed by the host's
     // shutdown must not leave the core running behind it.
@@ -3066,12 +3325,29 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
 
 bool PlayerDialog::isPipActive() const { return pip_ != nullptr; }
 
+void PlayerDialog::moveEnginePreparationPause(VideoSurface* owner) {
+    if (!enginePreparationActive_ || owner == enginePreparationSurface_) return;
+    if (enginePreparationSurface_ != nullptr) {
+        enginePreparationSurface_->setEnginePreparationPaused(false, false);
+    }
+    enginePreparationSurface_ = owner;
+    enginePreparationSourceEpoch_ = owner != nullptr ? owner->sourceEpoch() : 0;
+    if (owner != nullptr) owner->setEnginePreparationPaused(true);
+}
+
 void PlayerDialog::beginEnginePreparation(const QString& title) {
     if (closed_) return;
+    enginePreparationActive_ = true;
+    moveEnginePreparationPause(playbackSurface());
     if (processingOverlay_ == nullptr) {
         processingOverlay_ = new ProcessingOverlay(this);
-        connect(processingOverlay_, &ProcessingOverlay::cancelRequested, this,
-                [this] { emit enginePreparationCancelRequested(); });
+        connect(processingOverlay_, &ProcessingOverlay::cancelRequested, this, [this] {
+            if (animeJanaiBuildingSurface_ != nullptr) {
+                applyAnimeJanaiRequest(QString());
+            } else {
+                emit enginePreparationCancelRequested();
+            }
+        });
     }
     processingOverlay_->anchorTo(this);
     processingOverlay_->begin(title);
@@ -3084,8 +3360,18 @@ void PlayerDialog::updateEnginePreparation(int stageIndex, int stageCount, const
 }
 
 void PlayerDialog::endEnginePreparation(bool ok, const QString& summary) {
-    if (closed_ || processingOverlay_ == nullptr) return;
-    processingOverlay_->finish(ok, summary);
+    if (closed_ || animeJanaiBuildingSurface_ != nullptr) return;
+    enginePreparationActive_ = false;
+    if (enginePreparationSurface_ != nullptr) {
+        const bool restore = enginePreparationSurface_ == playbackSurface() &&
+                             (enginePreparationSourceEpoch_ == 0 ||
+                              enginePreparationSourceEpoch_ ==
+                                  enginePreparationSurface_->sourceEpoch());
+        enginePreparationSurface_->setEnginePreparationPaused(false, restore);
+    }
+    enginePreparationSurface_.clear();
+    enginePreparationSourceEpoch_ = 0;
+    if (processingOverlay_ != nullptr) processingOverlay_->finish(ok, summary);
 }
 
 bool PlayerDialog::enginePreparationVisible() const {
@@ -3154,6 +3440,12 @@ void PlayerDialog::enterPip() {
                 &PlayerDialog::onNativePlaybackStatusChanged);
         connect(window->videoSurface(), &VideoSurface::nativeProcessingFailure, this,
                 &PlayerDialog::onNativeProcessingFailure);
+        connect(window->videoSurface(), &VideoSurface::animeJanaiStatusChanged, this,
+                &PlayerDialog::onAnimeJanaiStatusChanged);
+        connect(window->videoSurface(), &VideoSurface::animeJanaiFailure, this,
+                &PlayerDialog::onAnimeJanaiFailure);
+        connect(window->videoSurface(), &VideoSurface::animeJanaiEngineBuildChanged, this,
+                &PlayerDialog::onAnimeJanaiEngineBuildChanged);
         // The float's own probe observation is what makes its source/device
         // ready, and its own factory observation is what names the current
         // source's availability while it owns playback. The slot drops the
@@ -3167,6 +3459,9 @@ void PlayerDialog::enterPip() {
         connect(window->videoSurface(), &VideoSurface::nativeReferenceFrameFailed, this,
                 &PlayerDialog::onNativeReferenceFrameFailed);
     }
+    // Each pooled surface owns independent filter state; copy the complete
+    // prepared plan before opening its core rather than inheriting main status.
+    window->videoSurface()->setAnimeJanaiPlan(animeJanaiPlan_);
     // The float owns a second core, so it needs the chain separately: the mode
     // alone would drop a chain the compare window applied. It is pooled, so the
     // recorded id is compared rather than assumed - "off" clears whatever a
@@ -3178,10 +3473,11 @@ void PlayerDialog::enterPip() {
         window->videoSurface()->setAnime4KChain(floatChain);
     }
 
-    window->setPlaying(surface_->isPlaying());
+    const bool enteringPaused = enginePreparationActive_ || surface_->playbackPauseIntent();
+    window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
     window->setMuted(muted_);
-    window->openStream(url_, surface_->position());
+    window->openStream(url_, surface_->position(), enteringPaused);
     // Volume lives on the core and the float has its own. Without this it
     // opens at mpv's default 100% while the player sits wherever the viewer
     // set it, so the volume jumps on entering PiP.
@@ -3191,20 +3487,25 @@ void PlayerDialog::enterPip() {
     // the rate budget, and meant coming back to two videos at different
     // positions. Only the float plays while PiP is up.
     pipResumePosition_ = surface_->position();
-    pipResumePlaying_ = surface_->isPlaying();
+    pipResumePlaying_ = !enteringPaused;
     surface_->setPaused(true);
 
-    window->resize(kPipDefaultWidth, kPipDefaultHeight);
-    // Placed against the screen under the pointer, not against the player.
-    // The whole point of a float is to move it to another monitor, and
-    // opening it in the corner of the fullscreen player put it exactly where
-    // the viewer was already looking.
-    if (QScreen* current = QGuiApplication::screenAt(QCursor::pos())) {
-        window->moveToCorner(current);
-    } else if (QScreen* fallback = screen()) {
-        window->moveToCorner(fallback);
+    // Pooled reentry preserves the viewer's position and size.
+    if (fresh) {
+        window->resize(kPipDefaultWidth, kPipDefaultHeight);
+        // Placed against the screen under the pointer, not against the player.
+        // The whole point of a float is to move it to another monitor, and
+        // opening it in the corner of the fullscreen player put it exactly where
+        // the viewer was already looking.
+        if (QScreen* current = QGuiApplication::screenAt(QCursor::pos())) {
+            window->moveToCorner(current);
+        } else if (QScreen* fallback = screen()) {
+            window->moveToCorner(fallback);
+        }
     }
     pip_ = window;
+    moveEnginePreparationPause(window->videoSurface());
+    if (enginePreparationActive_) window->videoSurface()->setPaused(enteringPaused);
     // The owning core changes here, so a capture asked of the main core can no
     // longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
@@ -3278,7 +3579,17 @@ void PlayerDialog::releasePipPool() {
 
 void PlayerDialog::leavePip(bool closing) {
     PipFloat* window = pip_;
+    // The float owns play/pause while PiP is up: the main core returns to the
+    // float's live pause intent, not to the entry record. A viewer who paused
+    // the float comes back paused; one who left it running comes back
+    // running. The entry flag only covers a missing window.
+    const bool returningPaused = enginePreparationActive_ || (window != nullptr
+        ? window->videoSurface()->playbackPauseIntent() : !pipResumePlaying_);
+    surface_->setAnimeJanaiPlan(animeJanaiPlan_);
     pip_ = nullptr;
+    moveEnginePreparationPause(closing || closed_ ? nullptr : surface_);
+    if (!closing && !closed_) surface_->setPaused(returningPaused);
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, surface_->animeJanaiStatus());
     // The owning core returns to the main player, so a capture asked of the
     // float can no longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
@@ -3330,8 +3641,11 @@ void PlayerDialog::leavePip(bool closing) {
     // availability go back to its own observation instead of the float's. The
     // announcement is left to the resume that follows, exactly as before.
     pushNativeInputs();
-    QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen] {
-        if (closed_) {
+    const uint64_t returnEpoch = surface_->sourceEpoch();
+    const quint64 returnPauseGeneration = surface_->pauseRequestGeneration();
+    QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen, returnEpoch,
+                                returnPauseGeneration, returningPaused] {
+        if (closed_ || pip_ != nullptr || surface_->sourceEpoch() != returnEpoch) {
             return;
         }
         if (!isVisible()) {
@@ -3344,12 +3658,16 @@ void PlayerDialog::leavePip(bool closing) {
             transitioning_ = false;
             shell_->enterFullscreen();
         }
-        if (surface_->hasVideo()) {
+        if (surface_->hasVideo() && pip_ == nullptr &&
+            surface_->sourceEpoch() == returnEpoch) {
             if (resumeAt > 0.0) {
                 surface_->seek(resumeAt);
                 shell_->setPosition(resumeAt);
             }
-            surface_->setPaused(!pipResumePlaying_);
+            if (surface_->sourceEpoch() == returnEpoch &&
+                surface_->pauseRequestGeneration() == returnPauseGeneration) {
+                surface_->setPaused(returningPaused);
+            }
         }
     });
             flashStatus(tr("Returned to window"));

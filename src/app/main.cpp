@@ -12,36 +12,19 @@
 
 namespace {
 
-/// Chooses and pins the mpv module for this process, once.
-///
-/// The player is in-process, so the module has to be resolved before the first
-/// core rather than when an episode opens. A missing or refused runtime is one
-/// clear log line here: home, search and the settings dialog all work without
-/// it, and the player reports the same named reason when it is asked to play.
-///
-/// Every outcome is named, and none of them is silent. A Native request that
-/// fell back to Standard says so on its own line even though playback works,
-/// because "the app started" is not evidence that the chosen runtime ran.
 void selectPlayerRuntime() {
     const mplayer::native::RuntimeSelection selection = mplayer::native::selectStartupRuntime();
     if (selection.loaded) {
         qInfo().noquote() << "mikai: player runtime" << mplayer::native::runtimeStatusText();
     }
     if (selection.nativeNotApplied) {
-        // The native half of the answer rides alongside Standard's, and it is
-        // the one that names what the user asked for and did not get.
         qWarning().noquote() << "mikai: native runtime not applied:" << selection.reason;
     }
     if (selection.restartRequired) {
         qInfo().noquote() << "mikai: runtime choice pending" << selection.reason;
     }
     if (!selection.loaded) {
-        // Startup selected nothing and provisioned nothing; the first play runs
-        // the provisioning attempt on the pool. Naming it here is what stops a
-        // missing runtime from reading as a black player with no cause.
-        qWarning().noquote()
-            << "mikai: mpv runtime unavailable:" << selection.reason
-            << "- the first playback will retry provisioning";
+        qWarning().noquote() << "mikai: mpv runtime unavailable:" << selection.reason;
     }
 }
 

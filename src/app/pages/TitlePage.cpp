@@ -2,7 +2,7 @@
 
 #include "pages/EpisodeGrid.hpp"
 
-#include "Clipboard.hpp"
+#include "gui/Clipboard.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
 #include "state/NativePlaybackAssembly.hpp"
@@ -20,19 +20,19 @@
 #include <backend/Streams.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
-#include <QAbstractItemView>
-#include <QComboBox>
+#include <QAbstractButton>
+#include <QAccessible>
+#include <QButtonGroup>
 #include <QtCore/QDebug>
 #include <QDesktopServices>
 #include <QEvent>
 #include <QFileDialog>
-#include <QFont>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
-#include <QPainter>
-#include <QPainterPath>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QProcess>
 #include <QPushButton>
@@ -42,8 +42,6 @@
 #include <QSizePolicy>
 #include <QStandardPaths>
 #include <QStyle>
-#include <QStyleOptionViewItem>
-#include <QStyledItemDelegate>
 #include <QPointer>
 #include <QTabBar>
 #include <QTabWidget>
@@ -56,10 +54,89 @@
 namespace mikai::app {
 namespace {
 
-constexpr int kQualityRole = static_cast<int>(Qt::UserRole) + 1;
-constexpr int kBadgeHeight = 20;
-constexpr int kBadgePadding = 8;
 constexpr int kFlashMs = 1200;
+
+class ReleaseFlowLayout final : public QLayout {
+public:
+    ReleaseFlowLayout(int horizontalSpacing, int verticalSpacing)
+        : horizontalSpacing_(horizontalSpacing), verticalSpacing_(verticalSpacing) {
+        setContentsMargins(0, 0, 0, 0);
+    }
+
+    ~ReleaseFlowLayout() override {
+        while (QLayoutItem* item = takeAt(0)) {
+            delete item;
+        }
+    }
+
+    void addItem(QLayoutItem* item) override { items_.append(item); }
+
+    int count() const override { return static_cast<int>(items_.size()); }
+
+    QLayoutItem* itemAt(int index) const override { return items_.value(index); }
+
+    QLayoutItem* takeAt(int index) override {
+        if (index < 0 || index >= items_.size()) {
+            return nullptr;
+        }
+        return items_.takeAt(index);
+    }
+
+    Qt::Orientations expandingDirections() const override { return {}; }
+
+    bool hasHeightForWidth() const override { return true; }
+
+    int heightForWidth(int width) const override {
+        return doLayout(QRect(0, 0, width, 0), true);
+    }
+
+    QSize sizeHint() const override { return minimumSize(); }
+
+    QSize minimumSize() const override {
+        QSize size;
+        for (const QLayoutItem* item : items_) {
+            size = size.expandedTo(item->minimumSize());
+        }
+        const QMargins margins = contentsMargins();
+        return size + QSize(margins.left() + margins.right(),
+                            margins.top() + margins.bottom());
+    }
+
+    void setGeometry(const QRect& rect) override {
+        QLayout::setGeometry(rect);
+        doLayout(rect, false);
+    }
+
+private:
+    int doLayout(const QRect& rect, bool testOnly) const {
+        const QMargins margins = contentsMargins();
+        const QRect content = rect.adjusted(margins.left(), margins.top(),
+                                            -margins.right(), -margins.bottom());
+        int x = content.x();
+        int y = content.y();
+        int lineHeight = 0;
+        const int right = content.x() + content.width();
+
+        for (QLayoutItem* item : items_) {
+            const QSize size = item->sizeHint();
+            if (x > content.x() && x + size.width() > right) {
+                x = content.x();
+                y += lineHeight + verticalSpacing_;
+                lineHeight = 0;
+            }
+            if (!testOnly) {
+                item->setGeometry(QRect(QPoint(x, y), size));
+            }
+            x += size.width() + horizontalSpacing_;
+            lineHeight = qMax(lineHeight, size.height());
+        }
+        return y - rect.y() + lineHeight + margins.bottom();
+    }
+
+    QList<QLayoutItem*> items_;
+    int horizontalSpacing_;
+    int verticalSpacing_;
+};
 
 QList<mplayer::shell::QualityEntry> toQualities(const QMap<int, QString>& map) {
     QList<mplayer::shell::QualityEntry> list;
@@ -82,71 +159,6 @@ int maxQuality(const QMap<int, QString>& map) {
     }
     return best;
 }
-
-/// Paints the release row, then a quality chip on its right edge carrying the
-/// best height that release actually serves.
-class ReleaseQualityDelegate : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-
-    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
-        const QSize hint = QStyledItemDelegate::sizeHint(option, index);
-        const int height = heightAt(index);
-        if (height <= 0) {
-            return hint;
-        }
-        // Reserve the chip's height as well as its width: sizing to the row
-        // height alone lets a 20px badge overhang its row and collide with the
-        // next one.
-        return QSize(hint.width() + badgeWidth(option, index),
-                     qMax(hint.height(), kBadgeHeight + 2 * theme::kSpacingXs));
-    }
-
-    void paint(QPainter* painter, const QStyleOptionViewItem& option,
-               const QModelIndex& index) const override {
-        QStyledItemDelegate::paint(painter, option, index);
-        const int height = heightAt(index);
-        if (height <= 0) {
-            return;
-        }
-        painter->save();
-        const QString text = QStringLiteral("%1p").arg(height);
-        const int width = painter->fontMetrics().horizontalAdvance(text) + kBadgePadding * 2;
-        const int right = option.rect.right() - theme::kSpacingMedium / 2;
-        const int top = option.rect.top() + (option.rect.height() - kBadgeHeight) / 2;
-        const QRectF rect(right - width, top, width, kBadgeHeight);
-        QPainterPath chip;
-        chip.addRoundedRect(rect, theme::kRadiusSmall, theme::kRadiusSmall);
-        painter->fillPath(chip, QColor(QLatin1String(theme::kSurfaceActive)));
-        painter->setPen(QColor(QLatin1String(theme::kAccent)));
-        painter->drawPath(chip);
-        QFont font(painter->font());
-        font.setPointSizeF(qMax(8.0, font.pointSizeF() - 1.0));
-        painter->setFont(font);
-        painter->setPen(QColor(QLatin1String(theme::kText)));
-        const QRectF textRect = rect.adjusted(kBadgePadding, 0, -kBadgePadding, 0);
-        painter->drawText(textRect, Qt::AlignCenter,
-                          painter->fontMetrics().elidedText(text, Qt::ElideRight,
-                                                           qRound(textRect.width())));
-        painter->restore();
-    }
-
-private:
-    static int heightAt(const QModelIndex& index) {
-        bool ok = false;
-        const int height = index.data(kQualityRole).toInt(&ok);
-        return ok ? height : 0;
-    }
-
-    static int badgeWidth(const QStyleOptionViewItem& option, const QModelIndex& index) {
-        const int height = heightAt(index);
-        if (height <= 0) {
-            return 0;
-        }
-        return option.fontMetrics.horizontalAdvance(QStringLiteral("%1p").arg(height)) +
-               kBadgePadding * 2;
-    }
-};
 
 QString capitalize(const QString& text) {
     if (text.isEmpty()) {
@@ -220,21 +232,46 @@ public:
         page_->probeTrackQuality(session_, embed);
     }
     void requestOpenOriginal() override {
-        if (session_->entry != nullptr && !session_->entry->embedUrl.isEmpty()) {
-            QDesktopServices::openUrl(QUrl(session_->entry->embedUrl));
+        if (session_->entry != nullptr && !session_->entry->embedUrl.isEmpty() &&
+            !QDesktopServices::openUrl(QUrl(session_->entry->embedUrl))) {
+            showPlayerWarning(QCoreApplication::translate("TitlePage", "Failed to open in browser"));
         }
     }
     void requestCopyStreamUrl() override {
-        // `copyUrl` is bare by design: the host handed the player a URL, so the
-        // host is the one that knows what to copy.
-        if (session_->entry != nullptr) {
-            copyText(session_->entry->embedUrl);
+        if (session_->entry != nullptr && !mikai::gui::copyText(session_->entry->embedUrl)) {
+            showPlayerWarning(QCoreApplication::translate("TitlePage", "Failed to copy link"));
         }
     }
     void playerClosed() override { page_->closeSession(session_); }
     void playbackFailed() override { page_->recoverStream(session_); }
 
 private:
+    /// The named failure the dialog's clipboard or browser action could not
+    /// complete. Parented to the player so the warning sits above the thing that
+    /// raised it and is reachable by a screen reader, with the page's status line
+    /// as the only fallback when there is no live dialog.
+    ///
+    /// The warning spins its own nested event loop, and everything that can
+    /// delete this page or this player inside it - a window close, a navigation,
+    /// the dialog's own close - has to be able to happen. Both pointers are
+    /// therefore read once, weakly, before the loop, and nothing is dereferenced
+    /// after it: the dialog's own close path is what disposes a session, and it
+    /// does that while the session is still registered.
+    void showPlayerWarning(const QString& message) {
+        // Read weakly, once, before the nested loop: a dialog already on its way
+        // to being deleted must not be handed a message box as its parent.
+        const QPointer<mplayer::shell::PlayerDialog> dialog = session_->dialog;
+        if (dialog.isNull()) {
+            const QPointer<TitlePage> page = page_;
+            if (!page.isNull()) {
+                page->flashStatus(message, true);
+            }
+            return;
+        }
+        const QString title = dialog->windowTitle();
+        QMessageBox::warning(dialog, title, message);
+    }
+
     TitlePage* page_;
     PlayerSession* session_;
 };
@@ -265,15 +302,19 @@ TitlePage::~TitlePage() {
 
 void TitlePage::buildUi() {
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge, theme::kSpacingLarge,
-                             theme::kSpacingLarge);
-    root->setSpacing(theme::kSpacingMedium);
+    root->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium, theme::kSpacingLarge,
+                             theme::kSpacingMedium);
+    root->setSpacing(theme::kSpacingSmall);
 
     auto* top = new QHBoxLayout();
     auto* back = new QPushButton(tr("← Back"), this);
     connect(back, &QPushButton::clicked, this, &TitlePage::backRequested);
     status_ = new QLabel(this);
     status_->setObjectName(QStringLiteral("status"));
+    // Right-aligned against the rate chip: the stretch absorbs text-length
+    // changes on the left, so flashes never push the rate/settings controls.
+    status_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    status_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto* settingsButton = new QPushButton(this);
     settingsButton->setObjectName(QStringLiteral("settingsChip"));
     settingsButton->setIcon(theme::gearIcon());
@@ -296,7 +337,9 @@ void TitlePage::buildUi() {
     auto* page = new QWidget(overviewScroll_);
     auto* pageLayout = new QHBoxLayout(page);
     pageLayout->setContentsMargins(0, 0, 0, 0);
-    pageLayout->setSpacing(theme::kSpacingLarge);
+    // Cover-to-text gutter: one step down from the old full-large gap so the
+    // facts block reads attached to its cover rather than floating.
+    pageLayout->setSpacing(theme::kTitleColumnSpacing);
 
     cover_ = new CoverLabel(tr("Loading…"), page);
     cover_->setObjectName(QStringLiteral("titleCover"));
@@ -308,9 +351,11 @@ void TitlePage::buildUi() {
     pageLayout->addWidget(cover_, 0, Qt::AlignTop);
 
     auto* textColumn = new QVBoxLayout();
-    textColumn->setSpacing(theme::kSpacingSmall);
+    // Facts, scores, description and disclosures stack at token gap; the gaps
+    // between *sections* come from the fixed spacers below instead.
+    textColumn->setSpacing(theme::kTitleStackSpacing);
     heading_ = new QLabel(this);
-    heading_->setObjectName(QStringLiteral("heading"));
+    heading_->setObjectName(QStringLiteral("titleHeading"));
     heading_->setWordWrap(true);
     subtitle_ = new QLabel(this);
     subtitle_->setObjectName(QStringLiteral("muted"));
@@ -339,6 +384,7 @@ void TitlePage::buildUi() {
     textColumn->addWidget(description_);
 
     auto* disclosure = new QHBoxLayout();
+    disclosure->setSpacing(theme::kSpacingMedium);
     descriptionButton_ = new QPushButton(tr("Read more"), this);
     descriptionButton_->setObjectName(QStringLiteral("textAction"));
     descriptionButton_->hide();
@@ -359,7 +405,10 @@ void TitlePage::buildUi() {
     disclosure->addWidget(metaButton_);
     disclosure->addWidget(relatedButton_);
     disclosure->addStretch();
+    // Disclosure row is the last of the description section: its gap sits above
+    // the details/links/related sections that follow.
     textColumn->addLayout(disclosure);
+    textColumn->addSpacing(theme::kSpacingSmall);
 
     metaHost_ = new QWidget(this);
     metaHost_->setObjectName(QStringLiteral("titleDetails"));
@@ -390,33 +439,36 @@ void TitlePage::buildUi() {
     overviewScroll_->setWidget(page);
     root->addWidget(overviewScroll_, 1);
 
-    auto* selectorRow = new QHBoxLayout();
-    selectorRow->setSpacing(theme::kSpacingSmall);
+    auto* releaseSection = new QVBoxLayout();
+    releaseSection->setContentsMargins(0, theme::kSpacingSmall, 0, 0);
+    releaseSection->setSpacing(theme::kSpacingXs);
     auto* episodesHeading = new QLabel(tr("Episodes"), this);
-    episodesHeading->setObjectName(QStringLiteral("sectionHeading"));
-    selectorRow->addWidget(episodesHeading);
-    selector_ = new QComboBox(this);
-    selector_->setEnabled(false);
-    selector_->setItemDelegate(new ReleaseQualityDelegate(selector_));
-    // A combo's popup is a private container, so `view()` exposes no
-    // aboutToShow signal. Watching that container for Show is the one reliable
-    // hook, and it fires on first open rather than on every repaint: the chips
-    // are only visible in the popup, so a title nobody browses never pays for
-    // a probe.
-    if (QWidget* popup = selector_->view()->parentWidget()) {
-        popup->installEventFilter(this);
-    }
-    connect(selector_, &QComboBox::currentIndexChanged, this, &TitlePage::fillEpisodes);
-    selectorRow->addWidget(selector_, 1);
-    copyAll_ = new QPushButton(tr("Copy all"), this);
-    copyAll_->setEnabled(false);
-    connect(copyAll_, &QPushButton::clicked, this, &TitlePage::copyAllUrls);
-    selectorRow->addWidget(copyAll_);
-    root->addLayout(selectorRow);
+    episodesHeading->setObjectName(QStringLiteral("episodeSectionHeading"));
+    releaseSection->addWidget(episodesHeading);
+
+    releaseChipsHost_ = new QWidget(this);
+    releaseChipsHost_->setObjectName(QStringLiteral("releaseChipsHost"));
+    releaseRowsLayout_ = new QVBoxLayout(releaseChipsHost_);
+    releaseRowsLayout_->setContentsMargins(0, 0, 0, 0);
+    releaseRowsLayout_->setSpacing(theme::kSpacingXs);
+    releaseSection->addWidget(releaseChipsHost_);
+    root->addLayout(releaseSection);
+
+    releaseGroup_ = new QButtonGroup(this);
+    releaseGroup_->setExclusive(true);
+    connect(releaseGroup_, &QButtonGroup::idClicked, this, [this](int index) {
+        if (index != activeRelease_) {
+            fillEpisodes(index);
+        }
+        probeReleaseQualities();
+    });
 
     tabs_ = new QTabWidget(this);
+    tabs_->setObjectName(QStringLiteral("episodeTabs"));
     tabs_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     tabs_->setDocumentMode(true);
+    tabs_->tabBar()->setExpanding(false);
+    tabs_->tabBar()->setDrawBase(false);
     root->addWidget(tabs_);
     // A tab that has never been shown has no pills in it; this is where they
     // get built, once, the first time the reader goes there.
@@ -536,23 +588,13 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     releaseProbeSeq_ += 1;
     releaseQuality_.clear();
     releaseProbed_.clear();
-    {
-        const QSignalBlocker blocker(selector_);
-        selector_->clear();
-        for (int index = 0; index < releases_.size(); ++index) {
-            selector_->addItem(releaseLabel(releases_.at(index)));
-            selector_->setItemData(index, 0, kQualityRole);
-        }
-        if (!releases_.isEmpty()) {
-            selector_->setCurrentIndex(0);
-        }
-    }
+    rebuildReleaseChips();
 
     if (releases_.isEmpty()) {
         setStatus(tr("No releases available"));
         return;
     }
-    selector_->setEnabled(true);
+    releaseChips_.first()->setChecked(true);
     fillEpisodes(0);
 }
 
@@ -592,7 +634,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     if (!formatText.isEmpty()) facts << formatText;
     if (!seasonText.isEmpty()) facts << seasonText;
     if (!episodesLabel.isEmpty()) facts << tr("%1 episodes").arg(episodesLabel);
-    facts_->setText(facts.join(QStringLiteral("   ·   ")));
+    facts_->setText(facts.join(QStringLiteral(" · ")));
 
     QVector<QPair<QString, QString>> rows;
     if (!episodesLabel.isEmpty()) rows.append({tr("Episodes"), episodesLabel});
@@ -743,8 +785,9 @@ QWidget* TitlePage::buildRelatedCarousel(
     layout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
 
     auto* header = new QHBoxLayout();
+    header->setSpacing(theme::kSpacingSmall);
     auto* title = new QLabel(heading, section);
-    title->setObjectName(QStringLiteral("sectionHeading"));
+    title->setObjectName(QStringLiteral("titleSectionHeading"));
     header->addWidget(title);
     header->addStretch();
     auto* previous = new QPushButton(QStringLiteral("←"), section);
@@ -912,24 +955,42 @@ QString TitlePage::scoresText(const backend::AnimeDetail& detail) {
     return parts.join(QStringLiteral(" · "));
 }
 
-QString TitlePage::releaseLabel(const backend::Release& release, bool withCount) const {
-    const QString kindText = labels::kind(release.kind);
+QString TitlePage::releaseChipLabel(const backend::Release& release) const {
     QStringList teams;
     for (const backend::Team& team : release.teams) {
         if (!team.name.isEmpty()) {
             teams << team.name;
         }
     }
-    QString label =
-        teams.isEmpty() ? kindText : kindText + QStringLiteral(" — ") + teams.join(QLatin1String(", "));
+    QString label = teams.isEmpty() ? labels::kind(release.kind)
+                                    : teams.join(QLatin1String(", "));
     if (release.is_collab) {
         label += tr(" (collab)");
     }
-    if (withCount) {
-        const int count = backend::playableEpisodeCount(release);
-        if (count > 0) {
-            label += tr(" · %n episode(s)", nullptr, count);
+    const int count = backend::playableEpisodeCount(release);
+    if (count > 0) {
+        label += QStringLiteral(" · %1").arg(count);
+    }
+    return label;
+}
+
+QString TitlePage::releaseChipToolTip(const backend::Release& release) const {
+    QStringList teams;
+    for (const backend::Team& team : release.teams) {
+        if (!team.name.isEmpty()) {
+            teams << team.name;
         }
+    }
+    QString label = labels::kind(release.kind);
+    if (!teams.isEmpty()) {
+        label += QStringLiteral(" — ") + teams.join(QLatin1String(", "));
+    }
+    if (release.is_collab) {
+        label += tr(" (collab)");
+    }
+    const int count = backend::playableEpisodeCount(release);
+    if (count > 0) {
+        label += tr(" · %n episode(s)", nullptr, count);
     }
     return label;
 }
@@ -951,22 +1012,81 @@ QString TitlePage::releaseTrackLabel(const backend::Release& release) const {
     return labels::kind(release.kind);
 }
 
+void TitlePage::rebuildReleaseChips() {
+    for (QAbstractButton* button : releaseGroup_->buttons()) {
+        releaseGroup_->removeButton(button);
+    }
+    const auto oldRows = releaseChipsHost_->findChildren<QWidget*>(
+        QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* row : oldRows) {
+        releaseRowsLayout_->removeWidget(row);
+        delete row;
+    }
+    releaseChips_.fill(nullptr, releases_.size());
+    activeRelease_ = -1;
+
+    QVector<QString> kindOrder;
+    QMap<QString, QVector<int>> releasesByKind;
+    for (int index = 0; index < releases_.size(); ++index) {
+        const QString& kind = releases_.at(index).kind;
+        if (!releasesByKind.contains(kind)) {
+            kindOrder.append(kind);
+        }
+        releasesByKind[kind].append(index);
+    }
+
+    QVector<QLabel*> kindLabels;
+    for (const QString& kind : kindOrder) {
+        auto* rowWidget = new QWidget(releaseChipsHost_);
+        auto* row = new QHBoxLayout(rowWidget);
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(theme::kSpacingSmall);
+
+        auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
+        kindLabel->setObjectName(QStringLiteral("releaseKind"));
+        kindLabels.append(kindLabel);
+        row->addWidget(kindLabel, 0, Qt::AlignTop);
+        auto* chips = new ReleaseFlowLayout(theme::kSpacingSmall, theme::kSpacingXs);
+        row->addLayout(chips, 1);
+
+        for (const int index : releasesByKind.value(kind)) {
+            auto* chip = new QPushButton(releaseChipLabel(releases_.at(index)), rowWidget);
+            chip->setToolTip(releaseChipToolTip(releases_.at(index)));
+            chip->setObjectName(QStringLiteral("releaseChip"));
+            chip->setCheckable(true);
+            chip->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+            chip->setFixedHeight(theme::kTitleReleaseChipHeight);
+            releaseGroup_->addButton(chip, index);
+            releaseChips_[index] = chip;
+            chips->addWidget(chip);
+        }
+        releaseRowsLayout_->addWidget(rowWidget);
+    }
+
+    int kindLabelWidth = 0;
+    for (QLabel* label : kindLabels) {
+        kindLabelWidth = qMax(kindLabelWidth, label->sizeHint().width());
+    }
+    for (QLabel* label : kindLabels) {
+        label->setFixedWidth(kindLabelWidth);
+    }
+}
+
 void TitlePage::fillEpisodes(int index) {
+    if (index < 0 || index >= releases_.size() || index == activeRelease_) {
+        return;
+    }
+    activeRelease_ = index;
     while (tabs_->count() > 0) {
         QWidget* page = tabs_->widget(0);
         tabs_->removeTab(0);
         page->deleteLater();
     }
-    copyAll_->setEnabled(false);
     fetchWaiters_.clear();
     tabStates_.clear();
-    tabEmbeds_.clear();
     // The tabs are new widgets at the default height, so the last fit's answer
     // says nothing about this one.
     fittedHeight_ = 0;
-    if (index < 0 || index >= releases_.size()) {
-        return;
-    }
 
     // Episodes are grouped by the site that serves them, so each tab is one
     // provider's catalogue. Tabs are strictly isolated: each holds only its own
@@ -992,13 +1112,6 @@ void TitlePage::fillEpisodes(int index) {
         state.entries = it.value();
         state.pageSize = theme::kEpisodesPerPage;
 
-        QVector<QString> embeds;
-        embeds.reserve(state.entries.size());
-        for (const EpisodeEntry* entry : state.entries) {
-            embeds << entry->embedUrl;
-        }
-        tabEmbeds_.append(embeds);
-
         auto* tabPage = new QWidget(tabs_);
         auto* tabLayout = new QVBoxLayout(tabPage);
         tabLayout->setContentsMargins(0, 0, 0, 0);
@@ -1021,8 +1134,8 @@ void TitlePage::fillEpisodes(int index) {
         grid->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         state.grid = grid;
         state.gridLayout = new QGridLayout(grid);
-        state.gridLayout->setContentsMargins(0, theme::kSpacingSmall, 0, 0);
-        state.gridLayout->setSpacing(theme::kSpacingSmall);
+        state.gridLayout->setContentsMargins(0, theme::kSpacingXs, 0, 0);
+        state.gridLayout->setSpacing(theme::kSpacingXs);
         grid->installEventFilter(this);
         scroll->setWidget(grid);
         tabLayout->addWidget(scroll, 1);
@@ -1051,7 +1164,6 @@ void TitlePage::fillEpisodes(int index) {
         }
     }
 
-    copyAll_->setEnabled(tabs_->count() > 0);
     setStatus(tabs_->count() > 0 ? QString() : tr("No sources in this release"));
     fitEpisodeSection();
 }
@@ -1108,7 +1220,7 @@ void TitlePage::renderTabPage(int stateIndex) {
     }
     state.pager->setState(state.page + 1, totalPages, state.entries.size(), numbers);
     const int columns = qMax(
-        1, state.grid->width() / (theme::kEpisodeButtonWidth + theme::kSpacingSmall));
+        1, state.grid->width() / (theme::kEpisodeButtonWidth + theme::kSpacingXs));
     QVector<QWidget*> buttons;
     buttons.reserve(end - start);
     for (int index = start; index < end; ++index) {
@@ -1149,9 +1261,9 @@ void TitlePage::reflowGrid(int stateIndex) {
         return;
     }
     TabState& state = tabStates_[stateIndex];
-    // A compact pill per episode: 72px plus the gutter fits a row of 14.
+    // A compact pill per episode: 64px plus the gutter fits a row of 16.
     const int columns = qMax(1, state.grid->width() /
-                                      (theme::kEpisodeButtonWidth + theme::kSpacingSmall));
+                                    (theme::kEpisodeButtonWidth + theme::kSpacingXs));
     if (columns == state.columns) {
         return;
     }
@@ -1169,13 +1281,6 @@ void TitlePage::reflowGrid(int stateIndex) {
 }
 
 bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::Show && selector_ != nullptr &&
-        watched == selector_->view()->parentWidget()) {
-        // The release popup is up: this is the moment a quality probe is worth
-        // spending, because that is the only time its chip is on screen.
-        probeReleaseQualities();
-        return QWidget::eventFilter(watched, event);
-    }
     if (event->type() == QEvent::Resize) {
         for (int index = 0; index < tabStates_.size(); ++index) {
             if (tabStates_.at(index).grid == watched) {
@@ -1207,19 +1312,29 @@ void TitlePage::fitEpisodeSection() {
         }
         reflowGrid(index);
     }
-    int gridHeight = 0;
-    int pagerHeight = 0;
-    for (const TabState& state : tabStates_) {
-        gridHeight = qMax(gridHeight, state.grid->sizeHint().height());
-        if (state.pager != nullptr && !state.pager->isHidden()) {
-            pagerHeight = qMax(pagerHeight, state.pager->sizeHint().height());
-        }
-    }
     const int tabBarHeight = tabs_->count() > 0 ? tabs_->tabBar()->sizeHint().height() : 0;
-    const int gap = pagerHeight > 0 ? theme::kSpacingSmall - theme::kSpacingXs : 0;
-    int desired = tabBarHeight + gridHeight + pagerHeight + gap + 2 * frame;
-    // A 140-episode page would push the whole window; long lists scroll inside.
-    desired = qBound(76, desired, theme::kEpisodeSectionMaxHeight);
+    for (TabState& state : tabStates_) {
+        if (state.scroll == nullptr) {
+            continue;
+        }
+        const int pagerHeight = state.pager != nullptr && !state.pager->isHidden()
+                                    ? state.pager->sizeHint().height()
+                                    : 0;
+        const int gap = pagerHeight > 0 ? theme::kTitleStackSpacing : 0;
+        const int maxGridHeight =
+            qMax(0, theme::kEpisodeSectionMaxHeight - tabBarHeight - pagerHeight - gap -
+                         theme::kSpacingXs - 2 * frame);
+        const int gridHeight = state.grid->sizeHint().height() + 2 * state.scroll->frameWidth();
+        state.scroll->setFixedHeight(qMin(gridHeight, maxGridHeight));
+    }
+    // Size from the active page: reserving another release's taller grid leaves
+    // a blank panel beneath shorter episode lists.
+    const QWidget* currentPage = tabs_->currentWidget();
+    const int desired = currentPage == nullptr
+                            ? 0
+                            : qMin(tabBarHeight + currentPage->sizeHint().height() +
+                                       theme::kSpacingXs + 2 * frame,
+                                   theme::kEpisodeSectionMaxHeight);
     if (fittedHeight_ == desired && tabs_->height() == desired) {
         return;
     }
@@ -1245,7 +1360,7 @@ void TitlePage::ensureQualities(
     }
     const QString embed = entry->embedUrl;
     if (embed.isEmpty() || qualityCache_.isNoSource(embed)) {
-        flashStatus(tr("This player has no video for this episode"));
+        flashStatus(tr("This player has no video for this episode"), true);
         return;
     }
     const QMap<int, QString> cached = qualityCache_.qualities(embed);
@@ -1299,14 +1414,14 @@ void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qual
                     }
                 }
             }
-            flashStatus(tr("This player has no video for this episode"));
+            flashStatus(tr("This player has no video for this episode"), true);
         } else {
-            flashStatus(tr("Failed to load episode qualities"));
+            flashStatus(tr("Failed to load episode qualities"), true);
         }
         return;
     }
     if (qualities.isEmpty()) {
-        flashStatus(tr("Could not find a stream for this episode"));
+        flashStatus(tr("Could not find a stream for this episode"), true);
         return;
     }
     qualityCache_.remember(embed, qualities);
@@ -1382,15 +1497,15 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
 }
 
 void TitlePage::copyStreamUrl(const QString& url, int height) {
-    if (!copyText(url)) {
-        flashStatus(tr("Failed to copy link"));
+    if (!mikai::gui::copyText(url)) {
+        flashStatus(tr("Failed to copy link"), true);
         return;
     }
     flashStatus(tr("Direct link copied (%1p)").arg(height));
 }
 void TitlePage::copyEpisode(EpisodeEntry* entry) {
-    if (!copyText(entry->embedUrl)) {
-        flashStatus(tr("Failed to copy episode URL"));
+    if (!mikai::gui::copyText(entry->embedUrl)) {
+        flashStatus(tr("Failed to copy episode URL"), true);
         return;
     }
     flashStatus(qualityCache_.isNoSource(entry->embedUrl)
@@ -1399,8 +1514,11 @@ void TitlePage::copyEpisode(EpisodeEntry* entry) {
 }
 
 void TitlePage::openEmbedInBrowser(EpisodeEntry* entry) {
-    QDesktopServices::openUrl(QUrl(entry->embedUrl));
-    flashStatus(tr("Opened in browser"));
+    if (QDesktopServices::openUrl(QUrl(entry->embedUrl))) {
+        flashStatus(tr("Opened in browser"));
+    } else {
+        flashStatus(tr("Failed to open in browser"), true);
+    }
 }
 
 void TitlePage::openExternalPlayer(EpisodeEntry* entry) {
@@ -1412,7 +1530,7 @@ void TitlePage::openExternalPlayer(EpisodeEntry* entry) {
 void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>& qualities) {
     const int height = maxQuality(qualities);
     if (height <= 0) {
-        flashStatus(tr("No available video quality found"));
+        flashStatus(tr("No available video quality found"), true);
         return;
     }
     QString program;
@@ -1426,7 +1544,7 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
         }
     }
     if (program.isEmpty()) {
-        flashStatus(tr("External player not found — install mpv or VLC"));
+        flashStatus(tr("External player not found — install mpv or VLC"), true);
         return;
     }
     const QString streamUrl = qualities.value(height);
@@ -1437,35 +1555,11 @@ void TitlePage::openExternalStream(EpisodeEntry* entry, const QMap<int, QString>
     if (QProcess::startDetached(program, arguments)) {
         flashStatus(tr("Opened in %1 · %2p").arg(name).arg(height));
     } else {
-        flashStatus(tr("Failed to launch %1").arg(name));
+        flashStatus(tr("Failed to launch %1").arg(name), true);
     }
-}
-
-void TitlePage::copyAllUrls() {
-    const int index = tabs_->currentIndex();
-    if (index < 0 || index >= tabEmbeds_.size()) {
-        return;
-    }
-    QStringList urls;
-    for (const QString& url : tabEmbeds_.at(index)) {
-        if (!url.isEmpty()) {
-            urls << url;
-        }
-    }
-    if (urls.isEmpty()) {
-        return;
-    }
-    const QString original = copyAll_->text();
-    copyAll_->setText(copyText(urls.join(QLatin1Char('\n')))
-                          ? tr("Copied (%1)").arg(urls.size())
-                          : tr("Failed to copy"));
-    QTimer::singleShot(kFlashMs, this, [this, original] { copyAll_->setText(original); });
 }
 
 void TitlePage::probeReleaseQualities() {
-    // One request per release, not per episode, and only when the list is
-    // actually opened: the chip is invisible until the popup is up, so a title
-    // whose releases are never browsed never pays for this.
     if (closed_) {
         return;
     }
@@ -1479,8 +1573,6 @@ void TitlePage::probeReleaseQualities() {
             continue;
         }
         const int seq = releaseProbeSeq_;
-        // The chip is on screen waiting for this, so it rides the stream pool
-        // rather than the bulk one the rest of the discovery fan-out uses.
         const QPointer<TitlePage> self(this);
         runner_.runStream(
             [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
@@ -1509,8 +1601,7 @@ QString TitlePage::firstEmbed(const backend::Release& release) const {
 }
 
 void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualities, int seq) {
-    // Record a probe result, ignoring one that landed after the releases changed.
-    if (closed_ || seq != releaseProbeSeq_ || index < 0 || index >= selector_->count()) {
+    if (closed_ || seq != releaseProbeSeq_ || index < 0 || index >= releaseChips_.size()) {
         return;
     }
     const int height = maxQuality(qualities);
@@ -1518,8 +1609,13 @@ void TitlePage::applyReleaseQuality(int index, const QMap<int, QString>& qualiti
         return;
     }
     releaseQuality_.insert(index, height);
-    selector_->setItemData(index, height, kQualityRole);
-    selector_->view()->viewport()->update();
+    QPushButton* chip = releaseChips_.at(index);
+    if (chip != nullptr) {
+        chip->setText(releaseChipLabel(releases_.at(index)) +
+                      QStringLiteral(" · %1p").arg(height));
+        chip->setToolTip(releaseChipToolTip(releases_.at(index)) +
+                         QStringLiteral(" · %1p").arg(height));
+    }
 }
 
 QVector<QVariantMap> TitlePage::episodeVariants(const QString& number) const {
@@ -1589,7 +1685,7 @@ QVector<QVariantMap> TitlePage::tabPlaylist(int stateIndex, const QString& numbe
 void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualities) {
     const int height = maxQuality(qualities);
     if (height <= 0) {
-        flashStatus(tr("Could not find a stream for this episode"));
+        flashStatus(tr("Could not find a stream for this episode"), true);
         return;
     }
     auto* session = new PlayerSession;
@@ -1620,6 +1716,12 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     return;
                 }
                 emit playerProcessingSettingsRequested(session->dialog, intent);
+            });
+    connect(session->dialog, &mplayer::shell::PlayerDialog::componentSetupRequested,
+            this, [this, session] {
+                if (sessions_.contains(session) && session->dialog != nullptr) {
+                    emit playerComponentSetupRequested();
+                }
             });
     // The app-owned assembly answers this episode player's native requests: it
     // reads the owned model store, the requested recipe and the measured machine
@@ -1745,7 +1847,7 @@ void TitlePage::recoverStream(PlayerSession* session) {
     // The cached URL is the one that just failed; keeping it would replay the
     // same dead link on the next click instead of extracting again.
     qualityCache_.forget(embed);
-    flashStatus(tr("Stream expired — refreshing URL…"));
+    flashStatus(tr("Stream expired — refreshing URL…"), true);
     const QPointer<TitlePage> self(this);
     runner_.runStream(
         [embed] { return QVariant::fromValue(backend::qualityStreams(embed)); },
@@ -1758,7 +1860,24 @@ void TitlePage::recoverStream(PlayerSession* session) {
             self->qualityCache_.remember(embed, qualities);
             session->dialog->applyRefreshedStreams(toQualities(qualities), height);
         },
-        [](const QString&) {});
+        [self, session](const QString& message) {
+            // The re-extraction failed: the stream is as dead as it was, so the
+            // viewer is told rather than left with an expired link and no
+            // explanation. A session whose player has already gone simply has
+            // nowhere left to say it, and is dropped. `showError` also raises the
+            // retry chip, which is the honest next step: the dead URL is still
+            // the only one there is.
+            if (self.isNull() || self->closed_ || !self->sessions_.contains(session) ||
+                session->dialog == nullptr) {
+                return;
+            }
+            session->dialog->showError(
+                message.contains(QStringLiteral("no_source"), Qt::CaseInsensitive)
+                    ? QCoreApplication::translate("TitlePage",
+                                                  "This player has no video any more.")
+                    : QCoreApplication::translate("TitlePage",
+                                                  "Could not refresh the stream link."));
+        });
 }
 
 void TitlePage::switchPlayerVariant(PlayerSession* session, const QString& embed,
@@ -1771,9 +1890,15 @@ void TitlePage::switchPlayerVariant(PlayerSession* session, const QString& embed
     entry->embedUrl = embed;
     entry->label = label;
     ownedEntries_.append(entry);
+    // The flight outlives the dialog that ordered it: a track switch, then a
+    // close inside the fetch, leaves this answering a session the page has
+    // already disposed. The registration is checked here rather than the
+    // dialog pointer, because the session itself is what was freed.
+    const QPointer<TitlePage> self(this);
     ensureQualities(
-        entry, [session](EpisodeEntry* loaded, const QMap<int, QString>& qualities) {
-            if (session->dialog == nullptr) {
+        entry, [self, session](EpisodeEntry* loaded, const QMap<int, QString>& qualities) {
+            if (self.isNull() || self->closed_ || !self->sessions_.contains(session) ||
+                session->dialog == nullptr) {
                 return;
             }
             session->entry = loaded;
@@ -1816,8 +1941,16 @@ void TitlePage::probeTrackQuality(PlayerSession* session, const QString& embed) 
             session->dialog->setTrackQuality(embed, maxQuality(qualities));
         },
         [self, session, embed](const QString&) {
-            if (!self.isNull()) {
-                self->trackWaiters_[embed].removeAll(session);
+            if (self.isNull()) {
+                return;
+            }
+            // removeAll alone would leave an empty waiter list behind on the
+            // map, so the key is only touched when this session really is one of
+            // the waiters that were registered.
+            const auto waiting = self->trackWaiters_.find(embed);
+            if (waiting != self->trackWaiters_.end() && waiting->removeAll(session) > 0 &&
+                waiting->isEmpty()) {
+                self->trackWaiters_.erase(waiting);
             }
         });
 }
@@ -1836,9 +1969,14 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
     entry->label = label;
     ownedEntries_.append(entry);
     const QVector<QVariantMap> variants = episodeVariants(number);
+    // Same lifetime as the track switch above: the drawer row that ordered this
+    // fetch can be closed before it lands, and the session is then long gone.
+    const QPointer<TitlePage> self(this);
     ensureQualities(
-        entry, [session, index, variants](EpisodeEntry* loaded, const QMap<int, QString>& qualities) {
-            if (session->dialog == nullptr) {
+        entry, [self, session, index, variants](EpisodeEntry* loaded,
+                                               const QMap<int, QString>& qualities) {
+            if (self.isNull() || self->closed_ || !self->sessions_.contains(session) ||
+                session->dialog == nullptr) {
                 return;
             }
             session->entry = loaded;
@@ -1848,32 +1986,38 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
 }
 
 void TitlePage::loadCover(const QString& url, bool allowHint) {
+    // The client outlives the page, so the worker copies the address and the
+    // callbacks hold a QPointer: an image landing after the page was disposed
+    // is dropped instead of dereferencing freed widget state.
+    backend::MikaiClient* client = &client_;
+    const QPointer<TitlePage> self(this);
     runner_.runImage(
-        [this, url] { return client_.fetchBytes(url); },
-        [this, url](const QVariant& result) {
-            if (closed_) {
+        [client, url] { return client->fetchBytes(url); },
+        [self, url](const QVariant& result) {
+            if (self.isNull() || self->closed_) {
                 return;
             }
             QPixmap pixmap;
             if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
-                coverPixmap_ = pixmap;
-                coverUrl_ = url;
-                cover_->setZoomable(true);
-                cover_->setToolTip(tr("Click to open the cover"));
-                cover_->setText(QString());
-                cover_->setPixmap(pixmap.scaled(cover_->size(), Qt::KeepAspectRatio,
-                                                Qt::SmoothTransformation));
+                self->coverPixmap_ = pixmap;
+                self->coverUrl_ = url;
+                self->cover_->setZoomable(true);
+                self->cover_->setToolTip(
+                    QCoreApplication::translate("TitlePage", "Click to open the cover"));
+                self->cover_->setText(QString());
+                self->cover_->setPixmap(pixmap.scaled(self->cover_->size(), Qt::KeepAspectRatio,
+                                                      Qt::SmoothTransformation));
             }
         },
-        [this, url, allowHint](const QString&) {
-            if (closed_) {
+        [self, url, allowHint](const QString&) {
+            if (self.isNull() || self->closed_) {
                 return;
             }
-            if (allowHint && !posterHint_.isEmpty() && posterHint_ != url) {
-                loadCover(posterHint_, false);
+            if (allowHint && !self->posterHint_.isEmpty() && self->posterHint_ != url) {
+                self->loadCover(self->posterHint_, false);
             } else {
-                cover_->setZoomable(false);
-                cover_->setText(tr("No cover"));
+                self->cover_->setZoomable(false);
+                self->cover_->setText(QCoreApplication::translate("TitlePage", "No cover"));
             }
         });
 }
@@ -1895,8 +2039,8 @@ void TitlePage::copyCoverUrl() {
     if (coverUrl_.isEmpty()) {
         return;
     }
-    if (!copyText(coverUrl_)) {
-        flashStatus(tr("Failed to copy cover URL"));
+    if (!mikai::gui::copyText(coverUrl_)) {
+        flashStatus(tr("Failed to copy cover URL"), true);
         return;
     }
     flashStatus(tr("Cover URL copied"));
@@ -1946,8 +2090,12 @@ void TitlePage::setStatus(const QString& text) {
     status_->setText(text);
 }
 
-void TitlePage::flashStatus(const QString& text) {
+void TitlePage::flashStatus(const QString& text, bool failure) {
     status_->setText(text);
+    if (failure) {
+        QAccessibleEvent event(status_, QAccessible::Alert);
+        QAccessible::updateAccessibility(&event);
+    }
     QTimer::singleShot(kFlashMs, this, [this] {
         if (!closed_) {
             status_->setText(baseStatus_);

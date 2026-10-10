@@ -9,6 +9,7 @@
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QMap>
 #include <QWindow>
 #include <QPainterPath>
 #include <QShowEvent>
@@ -18,6 +19,7 @@
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 
 namespace mplayer {
 namespace shell {
@@ -36,12 +38,161 @@ QString stateName(PlayerShell::State state) {
 
 /// One panel per level of the enhancement tree: the root, the Anime4K level, a
 /// category, an experiment family, and the deepest one a preset hangs in.
-constexpr int kEnhancementTreeDepth = 5;
+constexpr int kEnhancementTreeDepth = 6;
+constexpr auto kAnimeJanaiRoot = "animejanai";
+constexpr auto kAnimeJanaiRife = "animejanai:rife";
+constexpr auto kAnimeJanaiSpatial = "animejanai:spatial";
+constexpr auto kAnimeJanaiBackend = "animejanai:backend";
+
+QString rifeVersion(const native::AnimeJanaiPreset& preset) {
+    return QFileInfo(preset.modelFile).completeBaseName().section(QLatin1Char('_'), 0, 1)
+        .remove(QStringLiteral("rife_v"));
+}
+
+int rifeMinor(const QString& version) {
+    bool ok = false;
+    const int minor = version.section(QLatin1Char('.'), 1, 1).toInt(&ok);
+    return ok ? minor : -1;
+}
+
+int rifeRange(const QString& version) {
+    const int minor = rifeMinor(version);
+    return minor >= 7 ? (minor - 7) / 5 : -1;
+}
+
+QString rifeRangeLabel(int range) {
+    const int first = 7 + range * 5;
+    return QObject::tr("RIFE v4.%1–v4.%2").arg(first).arg(first + 4);
+}
+QString animeJanaiTitle(const QString& levelId) {
+    if (levelId == QLatin1String(kAnimeJanaiRoot)) return QStringLiteral("ANIMEJANAI");
+    if (levelId == QLatin1String(kAnimeJanaiSpatial)) return QObject::tr("SPATIAL MODELS");
+    if (levelId == QLatin1String(kAnimeJanaiRife)) return QObject::tr("RIFE MODELS");
+    if (levelId == QLatin1String(kAnimeJanaiBackend)) return QObject::tr("BACKEND");
+    if (levelId.startsWith(QString::fromLatin1(kAnimeJanaiRife) + QStringLiteral(":range:"))) {
+        return rifeRangeLabel(levelId.section(QLatin1Char(':'), -1).toInt());
+    }
+    if (levelId.startsWith(QString::fromLatin1(kAnimeJanaiRife) + QStringLiteral(":version:"))) {
+        return QObject::tr("RIFE v%1").arg(levelId.section(QLatin1Char(':'), -1));
+    }
+    return levelId.section(QLatin1Char(':'), -1).toUpper();
+}
+
+QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& currentId) {
+    QVector<MenuEntry> entries;
+    const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
+    auto addSubmenu = [&entries](const QString& label, const QString& id) {
+        MenuEntry entry;
+        entry.text = label + QStringLiteral("  ›");
+        entry.payload = QStringLiteral("level|") + id;
+        entry.submenu = true;
+        entries.append(entry);
+    };
+    if (levelId == QLatin1String(kAnimeJanaiRoot)) {
+        MenuEntry off;
+        off.text = QObject::tr("Off");
+        off.tooltip = QObject::tr("Disable only AnimeJaNai; Anime4K is unchanged.");
+        off.payload = QStringLiteral("ajipreset|");
+        off.current = currentId.isEmpty();
+        entries.append(off);
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.id.startsWith(QLatin1String("builtin"))) {
+                MenuEntry entry;
+                entry.text = preset.label;
+                entry.tooltip = preset.reason;
+                entry.payload = QStringLiteral("ajipreset|") + preset.id;
+                entry.current = preset.id == currentId;
+                entries.append(entry);
+            }
+        }
+        addSubmenu(QObject::tr("Spatial models"), QString::fromLatin1(kAnimeJanaiSpatial));
+        addSubmenu(QObject::tr("RIFE models"), QString::fromLatin1(kAnimeJanaiRife));
+        addSubmenu(QObject::tr("Backend"), QString::fromLatin1(kAnimeJanaiBackend));
+    } else if (levelId == QLatin1String(kAnimeJanaiSpatial)) {
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (!preset.id.startsWith(QLatin1String("spatial:")) || preset.rife) {
+                continue;
+            }
+            MenuEntry entry;
+            entry.text = preset.label;
+            entry.tooltip = preset.supported ? preset.reason
+                                            : QObject::tr("Unavailable: %1").arg(preset.reason);
+            entry.payload = QStringLiteral("ajipreset|") + preset.id;
+            entry.current = preset.id == currentId;
+            entry.disabled = !preset.supported;
+            entries.append(entry);
+        }
+    } else if (levelId == QLatin1String(kAnimeJanaiRife)) {
+        QMap<int, bool> ranges;
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.rife) ranges.insert(rifeRange(rifeVersion(preset)), true);
+        }
+        for (int range : ranges.keys()) {
+            if (range >= 0) {
+                addSubmenu(rifeRangeLabel(range),
+                           QString::fromLatin1(kAnimeJanaiRife) +
+                               QStringLiteral(":range:") + QString::number(range));
+            }
+        }
+    } else if (levelId.startsWith(
+                   QString::fromLatin1(kAnimeJanaiRife) + QStringLiteral(":range:"))) {
+        const int range = levelId.section(QLatin1Char(':'), -1).toInt();
+        QMap<int, QString> versions;
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            const QString version = rifeVersion(preset);
+            if (preset.rife && rifeRange(version) == range) {
+                versions.insert(rifeMinor(version), version);
+            }
+        }
+        for (const QString& version : versions.values()) {
+            addSubmenu(QObject::tr("RIFE v%1").arg(version),
+                       QString::fromLatin1(kAnimeJanaiRife) +
+                           QStringLiteral(":version:") + version);
+        }
+    } else if (levelId.startsWith(
+                   QString::fromLatin1(kAnimeJanaiRife) + QStringLiteral(":version:"))) {
+        const QString version = levelId.section(QLatin1Char(':'), -1);
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (!preset.rife || rifeVersion(preset) != version) continue;
+            MenuEntry entry;
+            entry.text = preset.label;
+            entry.tooltip = preset.supported ? preset.reason
+                                            : QObject::tr("Unavailable: %1").arg(preset.reason);
+            entry.payload = QStringLiteral("ajipreset|") + preset.id;
+            entry.current = preset.id == currentId;
+            entry.disabled = !preset.supported;
+            entries.append(entry);
+        }
+    } else if (levelId == QLatin1String(kAnimeJanaiBackend)) {
+        for (const auto& item : {qMakePair(native::Backend::TensorRT, QObject::tr("TensorRT")),
+                                 qMakePair(native::Backend::DirectML, QObject::tr("DirectML"))}) {
+            MenuEntry entry;
+            entry.text = item.second;
+            const QString backend = item.first == native::Backend::TensorRT
+                                        ? QStringLiteral("tensorrt")
+                                        : QStringLiteral("directml");
+            entry.payload = QStringLiteral("ajbackend|") + backend;
+            entry.current = backend == currentId;
+            entries.append(entry);
+        }
+    }
+    return entries;
+}
 
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
                                       const native::menu::Inputs& native) {
     QVector<MenuEntry> entries;
-    if (native::menu::ownsLevel(levelId)) {
+    if (levelId == QLatin1String(kAnimeJanaiRoot) ||
+        levelId == QLatin1String(kAnimeJanaiSpatial) ||
+        levelId == QLatin1String(kAnimeJanaiRife) ||
+        levelId == QLatin1String(kAnimeJanaiBackend) ||
+        levelId.startsWith(QLatin1String(kAnimeJanaiRife) + QStringLiteral(":"))) {
+        return animeJanaiEntries(levelId, currentId);
+    }
+    const native::RuntimeSelection& runtime = native::currentSelection();
+    const bool privateNativeRuntime =
+        runtime.loaded && runtime.kind == native::BundleKind::Native;
+    if (privateNativeRuntime && native::menu::ownsLevel(levelId)) {
         for (const native::menu::Row& row : native::menu::levelRows(levelId, native)) {
             MenuEntry entry;
             entry.text = row.label;
@@ -81,28 +232,27 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
                 entry.current = currentId != QLatin1String("off") &&
                                 anime4k::categoryContainsPreset(row.id, currentId);
                 break;
-            case anime4k::MenuRow::Role::Placeholder:
-                entry.disabled = true;
-                break;
-        }
-        if (row.role != anime4k::MenuRow::Role::Preset) {
-            const QString override = native::menu::categoryTooltip(row.id, native);
-            if (!override.isEmpty()) {
-                entry.tooltip = override;
-            }
         }
         entries.append(entry);
     }
     if (levelId.isEmpty()) {
-        for (const native::menu::Row& row : native::menu::rootRows(native)) {
-            MenuEntry entry;
-            entry.text = row.label + (row.submenu ? QStringLiteral("  ›") : QString());
-            entry.tooltip = row.tooltip;
-            entry.disabled = row.disabled;
-            entry.submenu = row.submenu;
-            entry.current = row.current;
-            entry.payload = QStringLiteral("level|") + row.value;
-            entries.append(entry);
+        MenuEntry aj;
+        aj.text = QObject::tr("AnimeJaNai  ›");
+        aj.tooltip = QObject::tr("AnimeJaNai official filter");
+        aj.payload = QStringLiteral("level|") + QString::fromLatin1(kAnimeJanaiRoot);
+        aj.submenu = true;
+        entries.append(aj);
+        if (privateNativeRuntime) {
+            for (const native::menu::Row& row : native::menu::rootRows(native)) {
+                MenuEntry entry;
+                entry.text = row.label + (row.submenu ? QStringLiteral("  ›") : QString());
+                entry.tooltip = row.tooltip;
+                entry.disabled = row.disabled;
+                entry.submenu = row.submenu;
+                entry.current = row.current;
+                entry.payload = QStringLiteral("level|") + row.value;
+                entries.append(entry);
+            }
         }
     }
     return entries;
@@ -152,6 +302,23 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     hideTimer_.setSingleShot(true);
     connect(&hideTimer_, &QTimer::timeout, this, &PlayerShell::enterAutoHidden);
+    enhancementHoverTimer_.setSingleShot(true);
+    connect(&enhancementHoverTimer_, &QTimer::timeout, this, [this] {
+        MenuPopup* panel = pendingEnhancementHoverPanel_.data();
+        QWidget* row = pendingEnhancementHoverRow_.data();
+        const int spot = pendingEnhancementHoverSpot_;
+        cancelEnhancementHover();
+        if (panel == nullptr || row == nullptr || !panel->isVisible() ||
+            !row->isVisible() || spot < 0 || spot >= panel->rowCount() ||
+            panel->rowWidget(spot) != row) {
+            return;
+        }
+        const QRect rowGlobal(row->mapToGlobal(QPoint(0, 0)), row->size());
+        if (!rowGlobal.contains(QCursor::pos())) {
+            return;
+        }
+        onEnhancementRow(panel, spot, false);
+    });
 
     buildSurface();
     buildWindowControls();
@@ -396,6 +563,7 @@ void PlayerShell::buildDock() {
         panel->setObjectName(root ? QStringLiteral("playerEnhancementsPopup")
                                  : QStringLiteral("playerEnhancementLevelPopup"));
         connect(panel, &MenuPopup::picked, this, [this, panel](const QVariant& payload) {
+            cancelEnhancementHover();
             // A click names a row; the panel it came from is what says which
             // level of the tree that row belongs to, which the payload alone
             // cannot - the same preset id is reachable from the panel it hangs
@@ -411,7 +579,9 @@ void PlayerShell::buildDock() {
         enhancementLevels_.append(QString());
         registerOverlay(panel);
     }
-    btnEnhance_->setVisible(!anime4k::findShadersDir().isEmpty());
+    // The enhancement tree also contains AnimeJaNai, which is independent of
+    // the local Anime4K shader directory.
+    btnEnhance_->setVisible(true);
 
     registerOverlay(flyout_);
 }
@@ -455,8 +625,8 @@ void PlayerShell::buildFooter() {
 
     // The native status chip. It is a sibling of the Anime4K chip rather than a
     // replacement: the shader chain and the native pipeline are separate, and
-    // one must never be read as the other. It stays hidden until native
-    // processing is requested or the filter reports a state of its own.
+    // one must never be read as the other. It is shown only for the loaded
+    // Native runtime, when processing is requested or the filter reports state.
     lblNative_ = new QLabel(footerLeft_);
     lblNative_->setObjectName(QStringLiteral("playerNativeStatus"));
     lblNative_->setFont(monoFont(8));
@@ -464,6 +634,12 @@ void PlayerShell::buildFooter() {
         QStringLiteral("background: transparent; color: #ffcf7a;"));
     lblNative_->hide();
     info->addWidget(lblNative_);
+    lblAnimeJanai_ = new QLabel(footerLeft_);
+    lblAnimeJanai_->setObjectName(QStringLiteral("playerAnimeJanaiStatus"));
+    lblAnimeJanai_->setFont(monoFont(8));
+    lblAnimeJanai_->setStyleSheet(QStringLiteral("background: transparent; color: #79dcf2;"));
+    lblAnimeJanai_->hide();
+    info->addWidget(lblAnimeJanai_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
 
     footerRight_ = new Panel(blackSoft(), 8.0, w15(), this);
@@ -670,6 +846,7 @@ void PlayerShell::registerOverlay(QWidget* overlay) {
 }
 
 bool PlayerShell::dismissOverlay() {
+    cancelEnhancementHover();
     bool dismissed = false;
     for (QWidget* overlay : overlays_) {
         if (overlay->isVisible()) {
@@ -1008,7 +1185,40 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
     qualityOptions_ = options;
 }
 
+void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& status) {
+    const bool selectionChanged = animeJanaiPresetId_ != id;
+    animeJanaiPresetId_ = id;
+    if (lblAnimeJanai_ != nullptr) {
+        if (id.isEmpty()) {
+            lblAnimeJanai_->hide();
+        } else {
+            const QString visibleStatus = status.startsWith(QLatin1String("Configured;"))
+                                              ? tr("Preparing…") : status;
+            lblAnimeJanai_->setText(QStringLiteral("│ AnimeJaNai %1").arg(visibleStatus));
+            lblAnimeJanai_->setToolTip(status);
+            lblAnimeJanai_->setAccessibleName(visibleStatus);
+            lblAnimeJanai_->show();
+        }
+        footerLeft_->adjustSize();
+    }
+    if (selectionChanged) {
+        refreshEnhancementTree();
+    }
+    updateInfoChip();
+}
+
+void PlayerShell::setAnimeJanaiBackend(const QString& backend) {
+    if (animeJanaiBackend_ == backend) {
+        return;
+    }
+    animeJanaiBackend_ = backend;
+    refreshEnhancementTree();
+}
+
 void PlayerShell::setAnime4KMode(anime4k::Mode mode) {
+    if (anime4kMode_ == mode) {
+        return;
+    }
     anime4kMode_ = mode;
     refreshEnhancementTree();
     updateInfoChip();
@@ -1064,6 +1274,7 @@ void PlayerShell::onAnime4KPreset(const QString& presetId) {
 }
 
 void PlayerShell::refreshEnhancementTree() {
+    cancelEnhancementHover();
     const QString currentId = anime4k::modeId(anime4kMode_);
     for (int depth = 0; depth < enhancementPanels_.size(); ++depth) {
         MenuPopup* panel = enhancementPanels_.at(depth);
@@ -1073,6 +1284,8 @@ void PlayerShell::refreshEnhancementTree() {
         const QString& level = enhancementLevels_.at(depth);
         if (level.isEmpty()) {
             panel->setTitle(tr("ENHANCEMENTS"));
+        } else if (level.startsWith(QLatin1String("animejanai"))) {
+            panel->setTitle(animeJanaiTitle(level));
         } else if (level == QLatin1String(native::menu::kNativeLevelId)) {
             panel->setTitle(tr("NATIVE PROCESSING"));
         } else if (level == QLatin1String(native::menu::kRifeLevelId)) {
@@ -1081,13 +1294,19 @@ void PlayerShell::refreshEnhancementTree() {
             const QString label = anime4k::categoryLabel(level);
             panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
         }
-        panel->setEntries(
-            enhancementEntries(enhancementLevels_.at(depth), currentId, nativeInputs_));
+        panel->setEntries(enhancementEntries(
+            enhancementLevels_.at(depth),
+            enhancementLevels_.at(depth) == QLatin1String(kAnimeJanaiBackend)
+                ? animeJanaiBackend_
+                : (enhancementLevels_.at(depth).startsWith(QLatin1String("animejanai"))
+                       ? animeJanaiPresetId_ : currentId),
+            nativeInputs_));
         watchEnhancementRows(panel);
     }
 }
 
 void PlayerShell::collapseEnhancementTree(int depth) {
+    cancelEnhancementHover();
     for (int deeper = depth + 1; deeper < enhancementPanels_.size(); ++deeper) {
         MenuPopup* panel = enhancementPanels_.at(deeper);
         if (panel->isVisible()) {
@@ -1105,12 +1324,30 @@ void PlayerShell::watchEnhancementRows(MenuPopup* panel) {
     }
 }
 
+void PlayerShell::cancelEnhancementHover() {
+    enhancementHoverTimer_.stop();
+    pendingEnhancementHoverPanel_.clear();
+    pendingEnhancementHoverRow_.clear();
+    pendingEnhancementHoverSpot_ = -1;
+}
+
+bool PlayerShell::hasVisibleEnhancementDescendant(int depth) const {
+    for (int deeper = depth + 1; deeper < enhancementPanels_.size(); ++deeper) {
+        if (enhancementPanels_.at(deeper)->isVisible()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidget* anchor) {
     if (depth <= 0 || depth >= enhancementPanels_.size() || anchor == nullptr) {
         return;
     }
     MenuPopup* panel = enhancementPanels_.at(depth);
-    if (levelId == QLatin1String(native::menu::kNativeLevelId)) {
+    if (levelId.startsWith(QLatin1String("animejanai"))) {
+        panel->setTitle(animeJanaiTitle(levelId));
+    } else if (levelId == QLatin1String(native::menu::kNativeLevelId)) {
         panel->setTitle(tr("NATIVE PROCESSING"));
     } else if (levelId == QLatin1String(native::menu::kRifeLevelId)) {
         panel->setTitle(QStringLiteral("RIFE"));
@@ -1118,8 +1355,12 @@ void PlayerShell::showEnhancementLevel(int depth, const QString& levelId, QWidge
         const QString label = anime4k::categoryLabel(levelId);
         panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
     }
-    panel->setEntries(
-        enhancementEntries(levelId, anime4k::modeId(anime4kMode_), nativeInputs_));
+    panel->setEntries(enhancementEntries(
+        levelId, levelId == QLatin1String(kAnimeJanaiBackend)
+                     ? animeJanaiBackend_
+                     : (levelId.startsWith(QLatin1String("animejanai"))
+                            ? animeJanaiPresetId_ : anime4k::modeId(anime4kMode_)),
+        nativeInputs_));
     enhancementLevels_[depth] = levelId;
     panel->setProperty("enhancementLevel", levelId);
     watchEnhancementRows(panel);
@@ -1142,6 +1383,12 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
         return;
     }
     if (entry.submenu) {
+        const QString submenuId = entry.payload.toString().mid(6);
+        const native::RuntimeSelection& runtime = native::currentSelection();
+        if (native::menu::ownsLevel(submenuId) &&
+            (!runtime.loaded || runtime.kind != native::BundleKind::Native)) {
+            return;
+        }
         if (depth == 0) {
             // Which way the tree grows is decided once, from the room beside
             // the root, and then held for every level below it: a cascade that
@@ -1152,7 +1399,7 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
                 enhancementGrowLeft_ = rect.left() > host->width() - rect.right();
             }
         }
-        showEnhancementLevel(depth + 1, entry.payload.toString().mid(6), panel->rowWidget(spot));
+        showEnhancementLevel(depth + 1, submenuId, panel->rowWidget(spot));
         return;
     }
     // A terminal row: the levels below it are no longer about anything.
@@ -1161,7 +1408,22 @@ void PlayerShell::onEnhancementRow(MenuPopup* panel, int spot, bool activated) {
         return;
     }
     const QString payload = entry.payload.toString();
+    if (payload.startsWith(QLatin1String("ajipreset|"))) {
+        const QString id = payload.mid(10);
+        emit animeJanaiPresetRequested(id);
+        dismissOverlay();
+        return;
+    }
+    if (payload.startsWith(QLatin1String("ajbackend|"))) {
+        emit animeJanaiBackendRequested(payload.mid(10));
+        dismissOverlay();
+        return;
+    }
     if (payload.startsWith(QLatin1String("native|"))) {
+        const native::RuntimeSelection& runtime = native::currentSelection();
+        if (!runtime.loaded || runtime.kind != native::BundleKind::Native) {
+            return;
+        }
         // native|<action>|<value>. The value keeps any '|' it carries, so a
         // recipe id is never truncated into a different id. A row that names no
         // action emits nothing - and a native payload never reaches the shader
@@ -1236,7 +1498,7 @@ void PlayerShell::updateNativeHud() {
     }
     const native::menu::StatusLines lines = native::menu::statusLines(nativeInputs_);
     if (!lines.visible || lines.headline.isEmpty()) {
-        // Default Off is not clutter: the plain chip stays plain.
+        // No private Native runtime state belongs on a Standard player.
         lblNative_->hide();
     } else {
         lblNative_->setText(QStringLiteral("│ ") + lines.headline);
@@ -1509,7 +1771,18 @@ bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
             }
             for (int spot = 0; spot < panel->rowCount(); ++spot) {
                 if (panel->rowWidget(spot) == watched) {
-                    onEnhancementRow(panel, spot, false);
+                    cancelEnhancementHover();
+                    if (hasVisibleEnhancementDescendant(depth)) {
+                        pendingEnhancementHoverPanel_ = panel;
+                        pendingEnhancementHoverRow_ = qobject_cast<QWidget*>(watched);
+                        pendingEnhancementHoverSpot_ = spot;
+                        const int delay =
+                            panel->style()->styleHint(QStyle::SH_Menu_SubMenuPopupDelay,
+                                                      nullptr, panel);
+                        enhancementHoverTimer_.start(qMax(0, delay));
+                    } else {
+                        onEnhancementRow(panel, spot, false);
+                    }
                     return false;
                 }
             }

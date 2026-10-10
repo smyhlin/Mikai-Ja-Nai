@@ -198,13 +198,26 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   dialog.resize(820, 940);
   dialog.show();
   QCoreApplication::processEvents();
+  dialog.showProcessingTab();
+  QCoreApplication::processEvents();
 
+  auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+  auto* privateAssets = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
+  QVERIFY(runtime != nullptr);
+  QVERIFY(privateAssets != nullptr);
+  runtime->setCurrentIndex(
+      runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+  QCoreApplication::processEvents();
+  QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  runtime->setCurrentIndex(
+      runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
+  QCoreApplication::processEvents();
+  QVERIFY(privateAssets->isVisibleTo(&dialog));
   auto* threshold = dialog.findChild<QLineEdit*>(QStringLiteral("nativeRifeSceneThresholdEdit"));
   auto* factorNum = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorNumSpin"));
   auto* factorDen = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorDenSpin"));
   auto* backend = dialog.findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
   auto* recipe = dialog.findChild<QComboBox*>(QStringLiteral("nativeRecipeCombo"));
-  auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
   auto* storeButton = dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
   auto* status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
   auto* assetsPanel = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
@@ -309,6 +322,19 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QCOMPARE(playButton->toolTip(), englishPlayTooltip);
   QCOMPARE(storedValues(), storedBefore);
   QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+
+  runtime->setCurrentIndex(
+      runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+  QCoreApplication::processEvents();
+  QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
+  QCoreApplication::processEvents();
+  QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  QCOMPARE(storedValues(), storedBefore);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+  QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  QCOMPARE(storedValues(), storedBefore);
 }
 
 void TestI18n::unavailableLanguageIsRefusedByNameAndKeepsTheWorkingTranslation() {

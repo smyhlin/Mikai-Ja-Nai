@@ -9,7 +9,7 @@
 // root down to the target may be a reparse point, because a junction inside an
 // owned directory can redirect a resolved path outside it.
 //
-// Storage layout lives here too: `AppLocalDataLocation/native` with runtime,
+// Storage layout lives here too: `<applicationDirPath>/native` with runtime,
 // models, assets, artifacts, recipes, scratch and logs beneath it. A read never
 // creates one.
 //
@@ -110,7 +110,7 @@ QStringList ancestorChain(const QString& root, const QString& path);
 /// a reparse point.
 bool pathHasNoReparsePoints(const QString& root, const QString& path);
 
-/// `AppLocalDataLocation()/native`. Never created by this call.
+/// `<applicationDirPath>/native`. Never created by this call.
 QString nativeRoot();
 
 /// The app-owned subdirectory names, in the order §9.2 lists them, with the

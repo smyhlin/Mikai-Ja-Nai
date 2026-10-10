@@ -36,20 +36,16 @@ class Runner;
 class NativeComponentProvisioner;
 class ComponentStoreTab;
 
-/// API key, live quota readout, the home-page feed switches, the Anime4K preset
-/// hotkeys and the native processing preferences, in tabs: the General tab is
-/// the account and the home page, the Presets tab the Anime4K keys, and the
-/// Processing tab the native track.
+/// API key, live quota readout, the home-page feed switches, Anime4K preset
+/// hotkeys, runtime choice and private Native processing preferences, in tabs.
+/// Standard Processing keeps the private Native editor out of view; selecting
+/// Native deliberately exposes its separate recipe and preparation workflow.
+/// Official AnimeJaNai choices remain in the player menu and Components tab.
 ///
 /// Preset and native bindings are only written once every binding validates, so
 /// a reserved, duplicated or cross-space key cannot half-apply. Only native
 /// fields the user actually changed are written, so an untouched block - or one
 /// this build does not read - survives a General save.
-///
-/// The Processing tab is honest by construction: it persists the *requested*
-/// native preference and shows eligibility separately from activation, which only
-/// the filter's own status can report. Nothing here pretends a preparation, an
-/// engine or an import exists.
 class SettingsDialog : public QDialog {
     Q_OBJECT
 
@@ -64,22 +60,22 @@ public:
 
     /// The Processing tab, brought into view. A remedy that only wants the
     /// existing surface seen reaches this and nothing else: no preparation is
-    /// armed, no request is issued and no store is read.
+    /// armed, no request is issued and no private store is read.
     void showProcessingTab();
 
-    /// The Processing tab with the existing backend choice focused, for a
-    /// remedy whose answer is "choose the processing provider". It changes
+    /// The Processing tab with the backend choice focused when the private
+    /// Native workflow is visible, or the runtime choice otherwise. It changes
     /// nothing; Save remains the only writer of the request.
     void focusNativeProviderChoice();
 
-    /// The Processing tab with the existing preparation command invoked once,
-    /// for a remedy whose answer is "prepare". The command is the panel's own
-    /// `prepareArtifact()`, so a request it cannot submit states its named
-    /// refusal in the panel's own status line and adds no second truth here.
+    /// The Processing tab with the preparation command invoked once when the
+    /// private Native workflow is visible. Otherwise it focuses the runtime
+    /// choice so a Standard user can deliberately select Native first.
     void triggerNativePrepare();
 
-    /// Routes a typed remedy to the surface that answers it. Prepare runs the
-    /// command; Providers only brings the choice into view.
+    /// Routes a typed remedy to the surface that answers it. Prepare runs only
+    /// in the visible Native workflow; otherwise it focuses runtime selection.
+    /// Providers focuses the private backend when visible, or runtime selection.
     void applyProcessingIntent(mplayer::shell::ProcessingSettingsIntent intent);
 
     /// The backend a preparation job should align the core to: the panel's
@@ -104,6 +100,9 @@ public:
     /// Brings the Components tab into view: the downloadable backend elements,
     /// their install state and the manual Verify. Changes nothing by itself.
     void showComponentsTab();
+    /// Starts the Components tab's recommended download without a confirmation.
+    void installRecommended();
+
 
     /// Asks the in-flight engine build to stop. False when nothing was running.
     /// The request reaches the worker's own cancellation gate; the GUI thread
@@ -139,6 +138,9 @@ public:
                                     const QString& reason);
 
 signals:
+    /// The viewer navigated to the Components tab.
+    void componentsTabOpened(SettingsDialog* dialog);
+
     /// The engine build the Processing tab started, forwarded so a surface that
     /// outlives this dialog - the player's preparation window - can follow it.
     /// The dialog owns no build of its own; these are the panel's own events.
@@ -169,15 +171,6 @@ private:
         QLabel* label = nullptr;
     };
 
-    /// One captioned row the Processing tab builds through its own `addRow`
-    /// lambda: the label it shows, and the key of the caption behind it. A
-    /// retranslation restates the caption in place rather than rebuilding the
-    /// row, because rebuilding a row discards whatever the user typed in it.
-    struct ProcessingRowCaption {
-        QLabel* label = nullptr;
-        QString captionKey;
-    };
-
     QWidget* buildGeneralTab();
     QWidget* buildPresetsTab();
     QWidget* buildProcessingTab();
@@ -200,8 +193,6 @@ private:
     void retranslateProcessingTab();
 
     /// The bindings every current row holds, minus the field named by `exclude`.
-    /// Seeded by the native request too, so the two key spaces collide across
-    /// each other and not only within one tab.
     QMap<QString, mplayer::shell::ShortcutClaim> shortcutClaims(
         const QKeySequenceEdit* exclude) const;
 
@@ -210,10 +201,6 @@ private:
     /// holds. Empty on success, in which case `presets` holds every non-empty
     /// binding keyed by the preset id.
     QString collectPresetShortcuts(QMap<QString, QString>* presets) const;
-
-    /// The same check for the one native binding. Empty on success, in which
-    /// case `toggleProcessing` holds its PortableText form or is cleared.
-    QString collectNativeShortcuts(QString* toggleProcessing) const;
 
     void showPresetError(const QString& message);
     void showNativeError(const QString& message);
@@ -299,13 +286,8 @@ private:
     QLabel* nativeDescription_ = nullptr;
     QLabel* backendRowLabel_ = nullptr;
     QLabel* recipeRowLabel_ = nullptr;
-    QLabel* modelsDirRowLabel_ = nullptr;
-    QLabel* toggleRowLabel_ = nullptr;
     QLabel* runtimeModuleRowLabel_ = nullptr;
-    QLabel* runtimeHeading_ = nullptr;
     QLabel* rifeHeading_ = nullptr;
-    QLabel* rifeHint_ = nullptr;
-    QVector<ProcessingRowCaption> processingRowCaptions_;
     /// The stable id the recipe combo was given for the synthetic
     /// "not available" entry, so a retranslation can restate that one entry's
     /// caption without rebuilding the list and losing the user's selection.
@@ -324,21 +306,20 @@ private:
     /// not already have. Never used to skip anything: it only decides whether
     /// an already-active choice needs applying at all.
     QString appliedLanguagePreference_;
+    /// The exact preference stored when the dialog opened, which may differ from
+    /// the language currently installed in-process. Restored verbatim on refusal.
+    QString storedLanguagePreference_;
 
-    // Native processing. The request is loaded once, read-only, and the widgets
-    // start from it; the availability snapshot is what the status explains.
+    // Native processing. The request is loaded once; backend and recipe widgets
+    // start from it, and the availability snapshot is what the status explains.
     mplayer::native::NativePreferences nativePreferences_;
     mplayer::native::NativeAvailability nativeAvailability_;
-    QCheckBox* nativeEnabled_ = nullptr;
     QComboBox* nativeBackend_ = nullptr;
     QComboBox* nativeRecipe_ = nullptr;
     NativeRifeControls* nativeRife_ = nullptr;
-    QLineEdit* customModelsDir_ = nullptr;
-    QKeySequenceEdit* nativeToggleEdit_ = nullptr;
     QComboBox* runtimeChoice_ = nullptr;
     QLabel* runtimeHint_ = nullptr;
     QLabel* nativeStatus_ = nullptr;
-    QLabel* runtimeStatus_ = nullptr;
     QLabel* nativeError_ = nullptr;
 
     /// The assets panel this dialog owns. The preparation providers are

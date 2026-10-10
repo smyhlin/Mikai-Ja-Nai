@@ -13,6 +13,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QEvent>
+#include <QtGui/QShowEvent>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -27,9 +28,7 @@
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QVariant>
-#include <QtGui/QFontMetrics>
 #include <QtGui/QIntValidator>
-#include <QtGui/QResizeEvent>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QHBoxLayout>
@@ -45,7 +44,6 @@
 #include <QtWidgets/QVBoxLayout>
 
 #include <backend/Errors.hpp>
-#include <backend/MikaiClient.hpp>
 
 #include <native/bundle/NativeBundle.hpp>
 #include <native/models/NativeInspectedPlan.hpp>
@@ -56,7 +54,6 @@
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <native/models/NativeUserRecipes.hpp>
-#include <native/components/NativeComponentCatalog.hpp>
 #include <native/components/NativeComponentStore.hpp>
 #include <native/components/NativeComponentToolchain.hpp>
 #include <native/components/NativeGpuProbe.hpp>
@@ -103,17 +100,6 @@ QString normalizedUuid(const QString& uuid) {
 bool isCudaDeviceUuid(const QString& uuid) { return normalizedUuid(uuid).size() == 32; }
 
 #endif  // MIKAI_WITH_MODEL_INSPECTION
-
-QString backendList(const QVector<Backend>& backends) {
-    if (backends.isEmpty()) return QStringLiteral("—");
-    QStringList names;
-    names.reserve(backends.size());
-    for (const Backend backend : backends) {
-        names.append(backend == Backend::TensorRT ? QStringLiteral("TensorRT")
-                                                  : QStringLiteral("DirectML"));
-    }
-    return names.join(QStringLiteral(", "));
-}
 
 QString statusCell(const NativeModelView& view) {
     if (view.usable) return QCoreApplication::translate("NativeAssetsPanel", "Ready");
@@ -650,12 +636,6 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     }
     toolchain.tools.trtBinDir = componentDirs.trtBinDir;
     toolchain.tools.cudaBinDir = componentDirs.cudaBinDir;
-    toolchain.componentFromStore = componentDirs.fromStore;
-    toolchain.componentPackName = componentDirs.packName;
-    if (const ComponentPack* pack = tensorRtResourcePackFor(observeComputeCapability().smMajor,
-                                                            observeComputeCapability().smMinor)) {
-        toolchain.componentPackBytes = pack->assetBytes;
-    }
     toolchain.coreSha = preparation.coreSha;
     toolchain.sourceAbi = preparation.sourceAbi;
     // The block's declared provider types are the bundle's own statement of which
@@ -718,16 +698,6 @@ struct NativeAssetsPanel::ImportResult {
     QString modelId;
 };
 
-struct NativeAssetsPanel::DownloadResult {
-    bool ok = false;
-    bool published = false;
-    bool cancelled = false;
-    QString reasonKey;
-    QString reason;
-    QString id;
-    QString path;
-};
-
 struct NativeAssetsPanel::PrepareResult {
     bool ok = false;
     bool cancelled = false;
@@ -744,15 +714,31 @@ struct NativeAssetsPanel::PrepareResult {
 
 namespace {
 
-/// The licence line under the pinned source-asset table. The licence record's
-/// own values are data and are read from the store's catalogue; only the
-/// sentence around them is this panel's, so it is composed here once and can be
-/// restated in a new language without re-reading anything.
-QString licenseCaption() {
-    const SpatialAssetLicense license = spatialAssetLicense();
-    return QCoreApplication::translate("NativeAssetsPanel",
-                                       "Creator: %1. Licence: %2 (%3).\n%4")
-        .arg(spatialAssetRepository(), license.name, license.url, license.useScope);
+/// One-line summaries for each actionable section, using the store's own facts.
+QString modelsSummaryLine(const QVector<NativeModelView>& models) {
+    int usable = 0;
+    for (const NativeModelView& view : models) {
+        if (view.usable) ++usable;
+    }
+    if (models.isEmpty()) {
+        return QCoreApplication::translate("NativeAssetsPanel", "No owned models yet");
+    }
+    return QCoreApplication::translate("NativeAssetsPanel", "%1 model(s), %2 ready")
+        .arg(models.size())
+        .arg(usable);
+}
+
+QString cacheSummaryLine(const QVector<NativeCacheEntry>& entries) {
+    int proven = 0;
+    for (const NativeCacheEntry& entry : entries) {
+        if (entry.proven) ++proven;
+    }
+    if (entries.isEmpty()) {
+        return QCoreApplication::translate("NativeAssetsPanel", "No prepared artifacts");
+    }
+    return QCoreApplication::translate("NativeAssetsPanel", "%1 artifact(s), %2 proven")
+        .arg(entries.size())
+        .arg(proven);
 }
 
 }  // namespace
@@ -764,7 +750,6 @@ NativeAssetsPanel::NativeAssetsPanel(QWidget* parent)
     runtime_ = defaultInspectionRuntime();
 #endif
     buildUi();
-    refresh();
 }
 
 QSize NativeAssetsPanel::minimumSizeHint() const {
@@ -787,25 +772,24 @@ void NativeAssetsPanel::buildUi() {
     inventoryHeading_->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(inventoryHeading_);
 
-    storeRootLabel_ = new QLabel(this);
-    storeRootLabel_->setObjectName(QStringLiteral("muted"));
-    storeRootLabel_->setWordWrap(true);
-    auto captionPolicy = storeRootLabel_->sizePolicy();
-    captionPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
-    storeRootLabel_->setSizePolicy(captionPolicy);
-    root->addWidget(storeRootLabel_);
+    modelSummary_ = new QLabel(this);
+    modelSummary_->setObjectName(QStringLiteral("muted"));
+    modelSummary_->setWordWrap(true);
+    modelSummary_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    root->addWidget(modelSummary_);
 
     modelTable_ = new QTableWidget(this);
     modelTable_->setObjectName(QStringLiteral("nativeModelTable"));
     modelTable_->setAccessibleName(tr("Owned model inventory"));
-    modelTable_->setColumnCount(6);
-    modelTable_->setHorizontalHeaderLabels(
-        {tr("Model"), tr("Role"), tr("Dtype"), tr("Size"), tr("Backends"), tr("Status")});
+    modelTable_->setColumnCount(3);
+    modelTable_->setHorizontalHeaderLabels({tr("Model"), tr("Role"), tr("Status")});
     modelTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     modelTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     modelTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     modelTable_->verticalHeader()->setVisible(false);
-    modelTable_->horizontalHeader()->setStretchLastSection(true);
+    modelTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    modelTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    modelTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     modelTable_->horizontalHeader()->setMinimumSectionSize(0);
     modelTable_->setMaximumHeight(mikai::app::theme::kNativeAssetsTableMaxHeight);
     modelTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -819,17 +803,34 @@ void NativeAssetsPanel::buildUi() {
 
     auto* importRow = new QHBoxLayout();
     importRow->setSpacing(mikai::app::theme::kSpacingSmall);
-    importButton_ = new QPushButton(tr("Import"), this);
+    importDetailsToggle_ = new QPushButton(tr("Import a file…"), this);
+    importDetailsToggle_->setObjectName(QStringLiteral("nativeImportDetailsToggle"));
+    importDetailsToggle_->setAccessibleName(tr("Show the file-import controls"));
+    importDetailsToggle_->setCheckable(true);
+    importDetailsToggle_->setChecked(false);
+    importRow->addWidget(importDetailsToggle_);
+    importRow->addStretch();
+    root->addLayout(importRow);
+
+    // The file import is the rare path: it hides behind the toggle above, so
+    // the common model and preparation actions own the first screen.
+    importDetails_ = new QWidget(this);
+    auto* importBox = new QVBoxLayout(importDetails_);
+    importBox->setContentsMargins(0, 0, 0, 0);
+    importBox->setSpacing(mikai::app::theme::kSpacingSmall);
+    auto* importFields = new QHBoxLayout();
+    importFields->setSpacing(mikai::app::theme::kSpacingSmall);
+    importButton_ = new QPushButton(tr("Import"), importDetails_);
     importButton_->setObjectName(QStringLiteral("nativeImportButton"));
     importButton_->setAccessibleName(tr("Import a model"));
-    importRow->addWidget(importButton_);
+    importFields->addWidget(importButton_);
 
-    stageWidthLabel_ = new QLabel(tr("Stage W"), this);
+    stageWidthLabel_ = new QLabel(tr("Stage W"), importDetails_);
     // The field's own caption yields width too, but it stays a single line: it is
     // short by design and wrapping it would stack "Stage" over "W".
     stageWidthLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    importRow->addWidget(stageWidthLabel_);
-    stageWidthEdit_ = new QLineEdit(this);
+    importFields->addWidget(stageWidthLabel_);
+    stageWidthEdit_ = new QLineEdit(importDetails_);
     stageWidthEdit_->setObjectName(QStringLiteral("nativeStageWidthEdit"));
     // The visible label is the field's accessible name, and the field is that
     // label's buddy: the two dimension boxes were the only actionable controls
@@ -840,31 +841,33 @@ void NativeAssetsPanel::buildUi() {
     stageWidthLabel_->setBuddy(stageWidthEdit_);
     stageWidthEdit_->setValidator(new QIntValidator(1, 100000, stageWidthEdit_));
     stageWidthEdit_->setFixedWidth(mikai::app::theme::kNativeDimensionFieldWidth);
-    importRow->addWidget(stageWidthEdit_);
+    importFields->addWidget(stageWidthEdit_);
 
-    stageHeightLabel_ = new QLabel(tr("H"), this);
+    stageHeightLabel_ = new QLabel(tr("H"), importDetails_);
     stageHeightLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    importRow->addWidget(stageHeightLabel_);
-    stageHeightEdit_ = new QLineEdit(this);
+    importFields->addWidget(stageHeightLabel_);
+    stageHeightEdit_ = new QLineEdit(importDetails_);
     stageHeightEdit_->setObjectName(QStringLiteral("nativeStageHeightEdit"));
     stageHeightEdit_->setAccessibleName(stageHeightLabel_->text());
     stageHeightLabel_->setBuddy(stageHeightEdit_);
     stageHeightEdit_->setValidator(new QIntValidator(1, 100000, stageHeightEdit_));
     stageHeightEdit_->setFixedWidth(mikai::app::theme::kNativeDimensionFieldWidth);
-    importRow->addWidget(stageHeightEdit_);
+    importFields->addWidget(stageHeightEdit_);
 
-    cancelImportButton_ = new QPushButton(tr("Cancel"), this);
+    cancelImportButton_ = new QPushButton(tr("Cancel"), importDetails_);
     cancelImportButton_->setObjectName(QStringLiteral("nativeImportCancelButton"));
     cancelImportButton_->setEnabled(false);
-    importRow->addWidget(cancelImportButton_);
-    importRow->addStretch();
-    root->addLayout(importRow);
+    importFields->addWidget(cancelImportButton_);
+    importFields->addStretch();
+    importBox->addLayout(importFields);
 
-    importStatus_ = new QLabel(this);
+    importStatus_ = new QLabel(importDetails_);
     importStatus_->setObjectName(QStringLiteral("descriptionPanel"));
     importStatus_->setWordWrap(true);
     importStatus_->setMinimumHeight(mikai::app::theme::kSecondaryControlSize);
-    root->addWidget(importStatus_);
+    importBox->addWidget(importStatus_);
+    importDetails_->hide();
+    root->addWidget(importDetails_);
 
     selectRecipeButton_ = new QPushButton(tr("Select as recipe"), this);
     selectRecipeButton_->setObjectName(QStringLiteral("nativeSelectRecipeButton"));
@@ -876,141 +879,6 @@ void NativeAssetsPanel::buildUi() {
     selectRecipeReason_->setWordWrap(true);
     selectRecipeReason_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     root->addWidget(selectRecipeReason_);
-
-    sourceHeading_ = new QLabel(tr("Source assets"), this);
-    sourceHeading_->setObjectName(QStringLiteral("sectionHeading"));
-    root->addWidget(sourceHeading_);
-
-    sourceHint_ = new QLabel(
-        tr("The five pinned original AnimeJaNai spatial graphs (upstream 3.6.3, commit %1). "
-           "A download is verified against its recorded SHA-256 and byte count before anything "
-           "is written, and lands in the app-owned source store.")
-            .arg(spatialAssetCommit()),
-        this);
-    sourceHint_->setObjectName(QStringLiteral("muted"));
-    sourceHint_->setWordWrap(true);
-    sourceHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    root->addWidget(sourceHint_);
-
-    sourceTable_ = new QTableWidget(this);
-    sourceTable_->setObjectName(QStringLiteral("nativeSourceTable"));
-    sourceTable_->setAccessibleName(tr("Pinned source assets"));
-    sourceTable_->setColumnCount(3);
-    sourceTable_->setHorizontalHeaderLabels({tr("Asset"), tr("Size"), tr("Status")});
-    sourceTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    sourceTable_->setSelectionMode(QAbstractItemView::SingleSelection);
-    sourceTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    sourceTable_->verticalHeader()->setVisible(false);
-    sourceTable_->horizontalHeader()->setStretchLastSection(true);
-    sourceTable_->horizontalHeader()->setMinimumSectionSize(0);
-    sourceTable_->setMaximumHeight(mikai::app::theme::kNativeAssetsTableMaxHeight);
-    sourceTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    sourceTable_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    root->addWidget(sourceTable_);
-
-    licenseLabel_ = new QLabel(this);
-    licenseLabel_->setObjectName(QStringLiteral("muted"));
-    licenseLabel_->setWordWrap(true);
-    licenseLabel_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    {
-        const SpatialAssetLicense license = spatialAssetLicense();
-        licenseLabel_->setText(
-            tr("Creator: %1. Licence: %2 (%3).\n%4")
-                .arg(spatialAssetRepository(), license.name, license.url, license.useScope));
-    }
-    root->addWidget(licenseLabel_);
-
-    auto* sourceRow = new QHBoxLayout();
-    sourceRow->setSpacing(mikai::app::theme::kSpacingSmall);
-    downloadButton_ = new QPushButton(tr("Download"), this);
-    downloadButton_->setObjectName(QStringLiteral("nativeDownloadButton"));
-    downloadButton_->setEnabled(false);
-    sourceRow->addWidget(downloadButton_);
-    downloadHint_ = new QLabel(tr("Download and verify the selected pinned source asset."), this);
-    downloadHint_->setWordWrap(true);
-    downloadHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    // This legend names the action beside it, so it is bound to that button as
-    // its buddy: the label the user reads is the name assistive technology
-    // announces for the action.
-    downloadHint_->setBuddy(downloadButton_);
-    sourceRow->addWidget(downloadHint_, 1);
-    downloadCancelButton_ = new QPushButton(tr("Cancel"), this);
-    downloadCancelButton_->setObjectName(QStringLiteral("nativeDownloadCancelButton"));
-    downloadCancelButton_->setEnabled(false);
-    sourceRow->addWidget(downloadCancelButton_);
-    importSourceButton_ = new QPushButton(tr("Import graph"), this);
-    importSourceButton_->setObjectName(QStringLiteral("nativeSourceImportButton"));
-    importSourceButton_->setEnabled(false);
-    sourceRow->addWidget(importSourceButton_);
-    root->addLayout(sourceRow);
-
-    downloadProgress_ = new QProgressBar(this);
-    downloadProgress_->setObjectName(QStringLiteral("nativeDownloadProgress"));
-    // Indeterminate: the only honest progress this transport exposes. It shows
-    // that a fetch is in flight, never a percentage that was not measured.
-    downloadProgress_->setRange(0, 0);
-    downloadProgress_->setTextVisible(false);
-    downloadProgress_->hide();
-    root->addWidget(downloadProgress_);
-
-    sourceStatus_ = new QLabel(this);
-    sourceStatus_->setObjectName(QStringLiteral("descriptionPanel"));
-    sourceStatus_->setWordWrap(true);
-    sourceStatus_->setMinimumHeight(mikai::app::theme::kSecondaryControlSize);
-    root->addWidget(sourceStatus_);
-
-    componentHeading_ = new QLabel(tr("TensorRT components"), this);
-    componentHeading_->setObjectName(QStringLiteral("sectionHeading"));
-    root->addWidget(componentHeading_);
-
-    componentGpuLabel_ = new QLabel(this);
-    componentGpuLabel_->setObjectName(QStringLiteral("descriptionPanel"));
-    componentGpuLabel_->setWordWrap(true);
-    root->addWidget(componentGpuLabel_);
-
-    componentPackLabel_ = new QLabel(this);
-    componentPackLabel_->setObjectName(QStringLiteral("descriptionPanel"));
-    componentPackLabel_->setWordWrap(true);
-    root->addWidget(componentPackLabel_);
-
-    auto* componentRow = new QHBoxLayout();
-    componentRow->setSpacing(mikai::app::theme::kSpacingSmall);
-    componentDownloadButton_ = new QPushButton(tr("Download components"), this);
-    componentDownloadButton_->setObjectName(QStringLiteral("nativeComponentDownloadButton"));
-    componentDownloadButton_->setEnabled(false);
-    componentRow->addWidget(componentDownloadButton_);
-    componentCancelButton_ = new QPushButton(tr("Cancel"), this);
-    componentCancelButton_->setObjectName(QStringLiteral("nativeComponentCancelButton"));
-    componentCancelButton_->setEnabled(false);
-    componentRow->addWidget(componentCancelButton_);
-    componentRow->addStretch();
-    root->addLayout(componentRow);
-
-    connect(componentDownloadButton_, &QPushButton::clicked, this, [this] {
-        if (componentProvisioner_ == nullptr) return;
-        QString reason;
-        if (!componentProvisioner_->ensure(&reason)) {
-            componentStatus_->setText(reason);
-            return;
-        }
-        componentProgress_->show();
-        componentProgress_->setValue(0);
-    });
-    connect(componentCancelButton_, &QPushButton::clicked, this, [this] {
-        if (componentProvisioner_ != nullptr) componentProvisioner_->cancel();
-    });
-
-    componentProgress_ = new QProgressBar(this);
-    componentProgress_->setObjectName(QStringLiteral("nativeComponentProgress"));
-    componentProgress_->setRange(0, 100);
-    componentProgress_->setTextVisible(false);
-    componentProgress_->hide();
-    root->addWidget(componentProgress_);
-
-    componentStatus_ = new QLabel(this);
-    componentStatus_->setObjectName(QStringLiteral("muted"));
-    componentStatus_->setWordWrap(true);
-    root->addWidget(componentStatus_);
 
     preparationHeading_ = new QLabel(tr("Preparation"), this);
     preparationHeading_->setObjectName(QStringLiteral("sectionHeading"));
@@ -1044,11 +912,31 @@ void NativeAssetsPanel::buildUi() {
     cacheHeading_->setObjectName(QStringLiteral("sectionHeading"));
     root->addWidget(cacheHeading_);
 
-    cacheTable_ = new QTableWidget(this);
+    // The cache table is optional detail; the summary row remains visible.
+    auto* cacheSummaryRow = new QHBoxLayout();
+    cacheSummaryRow->setSpacing(mikai::app::theme::kSpacingSmall);
+    cacheStatus_ = new QLabel(this);
+    cacheStatus_->setObjectName(QStringLiteral("muted"));
+    cacheStatus_->setWordWrap(true);
+    cacheStatus_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    cacheSummaryRow->addWidget(cacheStatus_, 1);
+    cacheDetailsToggle_ = new QPushButton(tr("Details…"), this);
+    cacheDetailsToggle_->setObjectName(QStringLiteral("nativeCacheDetailsToggle"));
+    cacheDetailsToggle_->setAccessibleName(tr("Show the prepared-artifact details"));
+    cacheDetailsToggle_->setCheckable(true);
+    cacheDetailsToggle_->setChecked(false);
+    cacheSummaryRow->addWidget(cacheDetailsToggle_);
+    root->addLayout(cacheSummaryRow);
+
+    cacheDetails_ = new QWidget(this);
+    auto* cacheBox = new QVBoxLayout(cacheDetails_);
+    cacheBox->setContentsMargins(0, 0, 0, 0);
+    cacheBox->setSpacing(mikai::app::theme::kSpacingSmall);
+    cacheTable_ = new QTableWidget(cacheDetails_);
     cacheTable_->setObjectName(QStringLiteral("nativeCacheTable"));
     cacheTable_->setAccessibleName(tr("Prepared artifact cache"));
-    cacheTable_->setColumnCount(4);
-    cacheTable_->setHorizontalHeaderLabels({tr("Build key"), tr("Engine"), tr("Size"), tr("Status")});
+    cacheTable_->setColumnCount(3);
+    cacheTable_->setHorizontalHeaderLabels({tr("Engine"), tr("Size"), tr("Status")});
     cacheTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     cacheTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     cacheTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1058,28 +946,26 @@ void NativeAssetsPanel::buildUi() {
     cacheTable_->setMaximumHeight(mikai::app::theme::kNativeAssetsTableMaxHeight);
     cacheTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     cacheTable_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    root->addWidget(cacheTable_);
+    cacheBox->addWidget(cacheTable_);
 
     auto* cacheRow = new QHBoxLayout();
-    deleteCacheButton_ = new QPushButton(tr("Delete"), this);
+    deleteCacheButton_ = new QPushButton(tr("Delete"), cacheDetails_);
     deleteCacheButton_->setObjectName(QStringLiteral("nativeCacheDeleteButton"));
     deleteCacheButton_->setEnabled(false);
     cacheRow->addWidget(deleteCacheButton_);
-    cacheDeleteHint_ = new QLabel(tr("Remove the selected cache artifact."), this);
+    cacheDeleteHint_ = new QLabel(tr("Remove the selected cache artifact."), cacheDetails_);
     cacheDeleteHint_->setWordWrap(true);
     cacheDeleteHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    // Bound to the delete action it explains, like the download hint above.
+    // Bound to the delete action it explains, like the scratch legend below.
     cacheDeleteHint_->setBuddy(deleteCacheButton_);
     cacheRow->addWidget(cacheDeleteHint_, 1);
-    root->addLayout(cacheRow);
-
-    cacheStatus_ = new QLabel(this);
-    cacheStatus_->setObjectName(QStringLiteral("muted"));
-    cacheStatus_->setWordWrap(true);
-    root->addWidget(cacheStatus_);
+    cacheBox->addLayout(cacheRow);
+    cacheDetails_->hide();
+    root->addWidget(cacheDetails_);
 
     stagingHeading_ = new QLabel(tr("Incomplete scratch"), this);
     stagingHeading_->setObjectName(QStringLiteral("sectionHeading"));
+    stagingHeading_->hide();
     root->addWidget(stagingHeading_);
 
     stagingList_ = new QListWidget(this);
@@ -1090,6 +976,7 @@ void NativeAssetsPanel::buildUi() {
     // for a width no window can hold.
     stagingList_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     stagingList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    stagingList_->hide();
     root->addWidget(stagingList_);
 
     auto* stagingRow = new QHBoxLayout();
@@ -1103,12 +990,14 @@ void NativeAssetsPanel::buildUi() {
     // Bound to the discard action it explains, like the other row legends.
     stagingDiscardHint_->setBuddy(discardStagingButton_);
     stagingRow->addWidget(stagingDiscardHint_, 1);
+    stagingRow->addStretch();
+    // The scratch cleanup hides with the list: nothing incomplete, nothing to show.
+    stagingRow->setEnabled(false);
     root->addLayout(stagingRow);
-
-    stagingStatus_ = new QLabel(this);
-    stagingStatus_->setObjectName(QStringLiteral("muted"));
-    stagingStatus_->setWordWrap(true);
-    root->addWidget(stagingStatus_);
+    stagingNote_ = new QLabel(this);
+    stagingNote_->setObjectName(QStringLiteral("muted"));
+    stagingNote_->hide();
+    root->addWidget(stagingNote_);
 
     root->addStretch();
 
@@ -1153,25 +1042,13 @@ void NativeAssetsPanel::buildUi() {
         QString reasonKey;
         QString reason;
         if (discardStaging(artifacts_, directory, &reasonKey, &reason)) {
-            stagingStatus_->setText(tr("Discarded scratch directory %1.").arg(directory));
+            applyStatus({}, tr("Discarded scratch directory %1.").arg(directory), stagingNote_);
         } else {
-            stagingStatus_->setText(reason);
+            applyStatus(reasonKey, reason, stagingNote_);
         }
         refreshCache();
     });
     connect(modelTable_, &QTableWidget::itemSelectionChanged, this, [this] {
-        const int row = modelTable_->currentRow();
-        if (row >= 0 && row < models_.size()) {
-            const NativeModelView& view = models_.at(row);
-            modelStatus_->setText(
-                tr("Content id: %1\nBackends: %2\nTerms: %3")
-                    .arg(view.contentId.isEmpty() ? QStringLiteral("—") : view.contentId,
-                         view.backends.isEmpty() ? QStringLiteral("—")
-                                                 : backendList(view.backends),
-                         view.terms.isEmpty() ? QStringLiteral("—") : view.terms));
-        } else {
-            modelStatus_->clear();
-        }
         updateImportControls();
     });
     connect(selectRecipeButton_, &QPushButton::clicked, this, [this] {
@@ -1179,38 +1056,19 @@ void NativeAssetsPanel::buildUi() {
         if (row < 0 || row >= models_.size()) return;
         selectModelAsRecipe(models_.at(row).id);
     });
-    connect(sourceTable_, &QTableWidget::itemSelectionChanged, this, [this] {
-        const int row = sourceTable_->currentRow();
-        if (row >= 0 && row < sourceAssets_.size()) {
-            const SpatialAsset& asset = sourceAssets_.at(row);
-            selectedSourceAssetId_ = asset.id;
-            const QString published = publishedAssetPath(asset.id);
-            sourceStatus_->setText(
-                tr("%1\n%2 bytes · sha256:%3%4")
-                    .arg(asset.name)
-                    .arg(asset.bytes)
-                    .arg(asset.sha256)
-                    .arg(published.isEmpty() ? QString()
-                                             : tr("\nStored at %1").arg(published)));
-        } else {
-            selectedSourceAssetId_.clear();
-            sourceStatus_->clear();
-        }
-        updateDownloadControls();
+    connect(importDetailsToggle_, &QPushButton::toggled, this, [this](bool on) {
+        if (importDetails_ != nullptr) importDetails_->setVisible(on);
+        importDetailsToggle_->setText(on ? tr("Hide import") : tr("Import a file…"));
+        importDetailsToggle_->setAccessibleName(
+            on ? tr("Hide the file-import controls")
+               : tr("Show the file-import controls"));
     });
-    connect(downloadButton_, &QPushButton::clicked, this, [this] {
-        downloadSelectedSourceAsset();
-    });
-    connect(downloadCancelButton_, &QPushButton::clicked, this, &NativeAssetsPanel::cancelDownload);
-    connect(importSourceButton_, &QPushButton::clicked, this, [this] {
-        bool okWidth = false;
-        bool okHeight = false;
-        const int width = stageWidthEdit_->text().toInt(&okWidth);
-        const int height = stageHeightEdit_->text().toInt(&okHeight);
-        const QSize geometry = (okWidth && okHeight && width > 0 && height > 0)
-                                   ? QSize(width, height)
-                                   : QSize();
-        importPublishedAsset(selectedSourceAssetId_, geometry);
+    connect(cacheDetailsToggle_, &QPushButton::toggled, this, [this](bool on) {
+        if (cacheDetails_ != nullptr) cacheDetails_->setVisible(on);
+        cacheDetailsToggle_->setText(on ? tr("Hide details") : tr("Details…"));
+        cacheDetailsToggle_->setAccessibleName(
+            on ? tr("Hide the prepared-artifact details")
+               : tr("Show the prepared-artifact details"));
     });
     connect(cacheTable_, &QTableWidget::itemSelectionChanged, this, [this] {
         const int row = cacheTable_->currentRow();
@@ -1228,12 +1086,11 @@ void NativeAssetsPanel::buildUi() {
     // long translated heading, hint or provenance path wraps or scrolls, and the
     // panel never pushes the settings page wider than the smallest window.
     const QList<QLabel*> captions = {
-        inventoryHeading_,  sourceHeading_, preparationHeading_, cacheHeading_,
-        stagingHeading_,    storeRootLabel_, sourceHint_,        licenseLabel_,
-        modelStatus_,       importStatus_,  selectRecipeReason_, sourceStatus_,
-        downloadHint_,      preparationReason_, prepareProgress_, cacheDeleteHint_,
-        cacheStatus_,       stagingDiscardHint_, stagingStatus_};
+        modelSummary_, inventoryHeading_, preparationHeading_,
+        preparationReason_, prepareProgress_, cacheHeading_, cacheDeleteHint_,
+        cacheStatus_, stagingDiscardHint_, stagingNote_};
     for (QLabel* caption : captions) {
+        if (caption == nullptr) continue;
         caption->setWordWrap(true);
         caption->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     }
@@ -1244,16 +1101,11 @@ void NativeAssetsPanel::buildUi() {
     cancelImportButton_->setAccessibleName(tr("Cancel the running model import"));
     selectRecipeButton_->setAccessibleName(
         tr("Register the selected model as the requested recipe"));
-    downloadButton_->setAccessibleName(tr("Download and verify the selected source asset"));
-    downloadCancelButton_->setAccessibleName(tr("Cancel the running source download"));
-    importSourceButton_->setAccessibleName(
-        tr("Import the selected source graph into the owned store"));
     deleteCacheButton_->setAccessibleName(tr("Delete the selected prepared artifact"));
     discardStagingButton_->setAccessibleName(
         tr("Discard the selected incomplete scratch directory"));
     cancelPrepareButton_->setAccessibleName(tr("Cancel the running preparation"));
 
-    updateStoreRootCaption();
 }
 
 void NativeAssetsPanel::changeEvent(QEvent* event) {
@@ -1264,17 +1116,16 @@ void NativeAssetsPanel::changeEvent(QEvent* event) {
 }
 
 void NativeAssetsPanel::retranslateUi() {
-    // In place. Nothing is re-read: the owned model rows, the artifact cache,
-    // the published copies and the pinned catalogue are the store's own facts,
-    // and re-reading them to say the same thing in a new language would move the
-    // user's selection, reset a revealed scratch directory and hide whatever an
-    // in-flight import or download was reporting. A worker already running keeps
-    // running: its gate, its generation and its callbacks are untouched, and its
-    // completion paints itself in whatever language is active when it lands.
+    // In place. Nothing is re-read: the owned model rows, the artifact cache
+    // and the prepared pipeline are the store's own facts, and re-reading them
+    // to say the same thing in a new language would move the user's selection,
+    // reset a revealed scratch directory and hide whatever an in-flight import
+    // or preparation was reporting. A worker already running keeps running: its
+    // gate, its generation and its callbacks are untouched, and its completion
+    // paints itself in whatever language is active when it lands.
     inventoryHeading_->setText(tr("Owned models"));
     modelTable_->setAccessibleName(tr("Owned model inventory"));
-    modelTable_->setHorizontalHeaderLabels(
-        {tr("Model"), tr("Role"), tr("Dtype"), tr("Size"), tr("Backends"), tr("Status")});
+    modelTable_->setHorizontalHeaderLabels({tr("Model"), tr("Role"), tr("Status")});
 
     stageWidthLabel_->setText(tr("Stage W"));
     stageHeightLabel_->setText(tr("H"));
@@ -1284,34 +1135,15 @@ void NativeAssetsPanel::retranslateUi() {
     importButton_->setAccessibleName(tr("Import a model"));
     cancelImportButton_->setText(tr("Cancel"));
     cancelImportButton_->setAccessibleName(tr("Cancel the running model import"));
+    importDetailsToggle_->setText(importDetails_ != nullptr && importDetails_->isVisible()
+                                      ? tr("Hide import")
+                                      : tr("Import a file…"));
+    importDetailsToggle_->setAccessibleName(importDetails_ != nullptr && importDetails_->isVisible()
+                                                ? tr("Hide the file-import controls")
+                                                : tr("Show the file-import controls"));
     selectRecipeButton_->setText(tr("Select as recipe"));
     selectRecipeButton_->setAccessibleName(
         tr("Register the selected model as the requested recipe"));
-
-    sourceHeading_->setText(tr("Source assets"));
-    sourceHint_->setText(
-        tr("The five pinned original AnimeJaNai spatial graphs (upstream 3.6.3, commit %1). "
-           "A download is verified against its recorded SHA-256 and byte count before anything "
-           "is written, and lands in the app-owned source store.")
-            .arg(spatialAssetCommit()));
-    sourceTable_->setAccessibleName(tr("Pinned source assets"));
-    sourceTable_->setHorizontalHeaderLabels({tr("Asset"), tr("Size"), tr("Status")});
-    downloadButton_->setText(tr("Download"));
-    downloadButton_->setAccessibleName(tr("Download and verify the selected source asset"));
-    downloadCancelButton_->setText(tr("Cancel"));
-    downloadCancelButton_->setAccessibleName(tr("Cancel the running source download"));
-    importSourceButton_->setText(tr("Import graph"));
-    importSourceButton_->setAccessibleName(
-        tr("Import the selected source graph into the owned store"));
-    downloadHint_->setText(tr("Download and verify the selected pinned source asset."));
-    licenseLabel_->setText(licenseCaption());
-
-    componentHeading_->setText(tr("TensorRT components"));
-    componentDownloadButton_->setText(tr("Download components"));
-    componentDownloadButton_->setAccessibleName(
-        tr("Download the TensorRT builder resource this GPU needs"));
-    componentCancelButton_->setText(tr("Cancel"));
-    componentCancelButton_->setAccessibleName(tr("Cancel the running component download"));
 
     preparationHeading_->setText(tr("Preparation"));
     cancelPrepareButton_->setText(tr("Cancel"));
@@ -1319,8 +1151,11 @@ void NativeAssetsPanel::retranslateUi() {
 
     cacheHeading_->setText(tr("Prepared artifacts"));
     cacheTable_->setAccessibleName(tr("Prepared artifact cache"));
-    cacheTable_->setHorizontalHeaderLabels(
-        {tr("Build key"), tr("Engine"), tr("Size"), tr("Status")});
+    cacheDetailsToggle_->setText(cacheDetailsToggle_->isChecked() ? tr("Hide details") : tr("Details…"));
+    cacheDetailsToggle_->setAccessibleName(
+        cacheDetailsToggle_->isChecked() ? tr("Hide the prepared-artifact details")
+                                        : tr("Show the prepared-artifact details"));
+    cacheTable_->setHorizontalHeaderLabels({tr("Engine"), tr("Size"), tr("Status")});
     deleteCacheButton_->setText(tr("Delete"));
     deleteCacheButton_->setAccessibleName(tr("Delete the selected prepared artifact"));
     cacheDeleteHint_->setText(tr("Remove the selected cache artifact."));
@@ -1332,143 +1167,59 @@ void NativeAssetsPanel::retranslateUi() {
         tr("Discard the selected incomplete scratch directory"));
     stagingDiscardHint_->setText(tr("Remove the selected incomplete scratch directory."));
 
-    // The store root is re-elided against the new "Store: %1" pattern, so the
-    // caption stays the same shape without its prefix and suffix swallowing the
-    // width the path has left.
-    updateStoreRootCaption();
-    // The three control refreshes restate only this panel's own captions and
-    // tooltips; the licence line and the per-row verdicts keep whatever the
-    // store and the producer last said about them, because they are the record
-    // rather than chrome.
+    // The control refreshes restate only this panel's own captions and
+    // tooltips; the per-row verdicts keep whatever the store and the producer
+    // last said about them, because they are the record rather than chrome.
     updateImportControls();
-    updateDownloadControls();
+    updateSummaries();
     updatePrepareControls();
-    updateComponentControls();
-}
-
-void NativeAssetsPanel::resizeEvent(QResizeEvent* event) {
-    QWidget::resizeEvent(event);
-    if (event->size().width() != event->oldSize().width()) updateStoreRootCaption();
-}
-
-void NativeAssetsPanel::updateStoreRootCaption() {
-    if (storeRootLabel_ == nullptr) return;
-    if (modelRoot_.isEmpty()) {
-        storeRootLabel_->setText(tr("Store: %1").arg(tr("not available")));
-        storeRootLabel_->setToolTip(QString());
-        storeRootLabel_->setAccessibleDescription(QString());
-        return;
-    }
-    const QFontMetrics metrics(storeRootLabel_->font());
-    const QString pattern = tr("Store: %1");
-    const qsizetype marker = pattern.indexOf(QStringLiteral("%1"));
-    const QString prefix = marker < 0 ? QString() : pattern.left(marker);
-    const QString suffix = marker < 0 ? QString() : pattern.mid(marker + 2);
-    const int around = metrics.horizontalAdvance(prefix) + metrics.horizontalAdvance(suffix);
-    const int available = storeRootLabel_->width() - around;
-    storeRootLabel_->setText(pattern.arg(metrics.elidedText(
-        modelRoot_, Qt::ElideMiddle, qMax(available, 0))));
-    storeRootLabel_->setToolTip(modelRoot_);
-    storeRootLabel_->setAccessibleDescription(modelRoot_);
 }
 
 void NativeAssetsPanel::setRunner(mikai::app::Runner* runner) {
     runner_ = runner;
     updateImportControls();
-    updateDownloadControls();
 }
 
-void NativeAssetsPanel::setClient(mikai::backend::MikaiClient* client) {
-    // Borrowed, never owned: the settings dialog keeps its client and passes it
-    // so real downloads run through the app's one backend transport.
-    client_ = client;
-    updateDownloadControls();
-}
-
-void NativeAssetsPanel::setComponentProvisioner(
-    mikai::app::NativeComponentProvisioner* provisioner) {
-    if (componentProvisioner_ == provisioner) {
-        refreshComponents();
-        return;
+void NativeAssetsPanel::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    if (!initialRefreshDone_) {
+        initialRefreshDone_ = true;
+        refresh();
     }
-    if (componentProvisioner_ != nullptr) {
-        disconnect(componentProvisioner_, nullptr, this, nullptr);
-    }
-    componentProvisioner_ = provisioner;
-    if (componentProvisioner_ != nullptr) {
-        connect(componentProvisioner_, &mikai::app::NativeComponentProvisioner::progress, this,
-                [this](const QString& pack, qint64 received, qint64 total) {
-                    if (componentProgress_ == nullptr) return;
-                    componentProgress_->setRange(0, 100);
-                    componentProgress_->setValue(
-                        total > 0 ? static_cast<int>(received * 100 / total) : 0);
-                    componentStatus_->setText(tr("Downloading %1: %2 of %3")
-                                                  .arg(pack, QLocale().formattedDataSize(received),
-                                                       QLocale().formattedDataSize(total)));
-                });
-        connect(componentProvisioner_, &mikai::app::NativeComponentProvisioner::finished, this,
-                [this](bool ok, bool cancelled, const QString& summary) {
-                    if (componentProgress_ != nullptr) componentProgress_->hide();
-                    if (componentStatus_ != nullptr) {
-                        componentStatus_->setText(cancelled ? tr("Component download cancelled")
-                                                            : summary);
-                    }
-                    refreshComponents();
-                });
-    }
-    refreshComponents();
 }
 
 void NativeAssetsPanel::refresh() {
+    initialRefreshDone_ = true;
     refreshModels();
     refreshCache();
-    refreshSourceAssets();
+    refreshSourceData();
     // One observation per refresh, on the GUI thread: the toolchain and the
     // provider runtimes the validated bundle and the application directory
     // really carry. A selection change reads this value instead of re-walking it.
     observedToolchain_ = observeNativePreparationToolchain();
     updateImportControls();
-    updateDownloadControls();
-    refreshComponents();
+    updateSummaries();
+    updatePrepareControls();
+    emit catalogRefreshed();
 }
 
-void NativeAssetsPanel::refreshComponents() {
-    if (componentHeading_ == nullptr) return;
-    const GpuComputeCapability& gpu = observeComputeCapability();
-    componentGpuLabel_->setText(tr("GPU: %1").arg(computeCapabilityText(gpu)));
-
-    const ComponentPack* pack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
-    if (pack == nullptr) {
-        componentPackLabel_->setText(
-            tr("No builder resource pack is published for this GPU."));
-    } else {
-        componentPackLabel_->setText(tr("Builder resource: %1 (%2)")
-                                         .arg(pack->name,
-                                              QLocale().formattedDataSize(pack->assetBytes)));
+void NativeAssetsPanel::updateSummaries() {
+    if (modelSummary_ != nullptr) modelSummary_->setText(modelsSummaryLine(models_));
+    if (cacheStatus_ != nullptr) cacheStatus_->setText(cacheSummaryLine(cache_));
+    cacheDetailsToggle_->setVisible(!cache_.isEmpty());
+    cacheDetails_->setVisible(cacheDetailsToggle_->isChecked() && !cache_.isEmpty());
+    const bool hasScratch = !staging_.isEmpty();
+    if (stagingHeading_ != nullptr) stagingHeading_->setVisible(hasScratch);
+    if (stagingList_ != nullptr) stagingList_->setVisible(hasScratch);
+    discardStagingButton_->setVisible(hasScratch);
+    stagingDiscardHint_->setVisible(hasScratch);
+    if (stagingNote_ != nullptr) {
+        stagingNote_->setVisible(hasScratch);
+        if (hasScratch) {
+            stagingNote_->setText(tr("%1 incomplete scratch director(ies) left by a cancelled or crashed build.").arg(staging_.size()));
+        }
     }
-
-    QString status;
-    if (!observedToolchain_.available) {
-        status = observedToolchain_.reason;
-    } else if (observedToolchain_.componentFromStore) {
-        status = tr("Component store");
-    } else if (gpu.smMajor > 0) {
-        status = tr("Bundle resource");
-    } else {
-        status = tr("Not installed");
-    }
-    componentStatus_->setText(status);
-    updateComponentControls();
 }
-
-void NativeAssetsPanel::updateComponentControls() {
-    if (componentDownloadButton_ == nullptr) return;
-    const bool satisfied = observedToolchain_.available;
-    const bool busy = componentProvisioner_ != nullptr && componentProvisioner_->running();
-    componentDownloadButton_->setEnabled(!satisfied && !busy && componentProvisioner_ != nullptr);
-    componentCancelButton_->setEnabled(busy);
-}
-
 void NativeAssetsPanel::refreshModels() {
     // The user's chosen model is a stable id, never a row index: rebuilding the
     // table must not move their choice.
@@ -1513,14 +1264,10 @@ void NativeAssetsPanel::refreshModels() {
     }
 
     modelTable_->setRowCount(models_.size());
+    modelTable_->setVisible(!models_.isEmpty());
     for (int row = 0; row < models_.size(); ++row) {
         const NativeModelView& view = models_.at(row);
-        const QStringList cells = {view.label,
-                                   view.role,
-                                   view.dtype.isEmpty() ? QStringLiteral("—") : view.dtype,
-                                   humanBytes(view.bytes),
-                                   backendList(view.backends),
-                                   statusCell(view)};
+        const QStringList cells = {view.label, view.role, statusCell(view)};
         for (int column = 0; column < cells.size(); ++column) {
             auto* item = new QTableWidgetItem(cells.at(column));
             if (view.usable) {
@@ -1532,14 +1279,12 @@ void NativeAssetsPanel::refreshModels() {
         }
     }
 
-    // The status is this read's verdict, applied after the table is rebuilt:
-    // rebuilding the rows changes the selection, and a refresh must never leave
-    // a previous read's diagnostic standing under a table it no longer
-    // describes. Both empty means there is nothing to report - a populated
-    // table speaks for itself - and clears whatever stood there before.
+    // The read's named failure remains visible; a valid empty store is represented
+    // once by the existing model summary.
+    const bool emptyStore = catalogKey == QLatin1String("native.models.empty");
     modelStatus_->setText(catalogReason.isEmpty() ? catalogKey : catalogReason);
-    // Re-selecting by id restores the user's choice and its detail; with no
-    // selection the catalogue's own verdict stays showing.
+    modelStatus_->setVisible(!emptyStore && !modelStatus_->text().isEmpty());
+    // Re-selecting by id restores the user's choice without changing its status.
     if (!selectedModelId.isEmpty()) {
         for (int row = 0; row < models_.size(); ++row) {
             if (models_.at(row).id == selectedModelId) {
@@ -1558,7 +1303,6 @@ void NativeAssetsPanel::refreshCache() {
     for (int row = 0; row < cache_.size(); ++row) {
         const NativeCacheEntry& entry = cache_.at(row);
         const QStringList cells = {
-            entry.buildKey,
             entry.proven ? QFileInfo(entry.enginePath).fileName() : QStringLiteral("—"),
             entry.proven ? humanBytes(entry.engineBytes) : QStringLiteral("—"),
             entry.proven ? tr("Proven") : entry.reason};
@@ -1573,47 +1317,15 @@ void NativeAssetsPanel::refreshCache() {
     stagingList_->clear();
     for (const QString& directory : staging_) stagingList_->addItem(directory);
     discardStagingButton_->setEnabled(false);
-    stagingStatus_->setText(staging_.isEmpty()
-                                ? tr("No incomplete scratch directories.")
-                                : tr("%1 incomplete scratch director(ies) left by a cancelled or "
-                                     "crashed build.")
-                                      .arg(staging_.size()));
-    if (cache_.isEmpty()) {
-        cacheStatus_->setText(tr("No prepared artifacts in this build."));
-    }
+    updateSummaries();
 }
 
-void NativeAssetsPanel::refreshSourceAssets() {
+void NativeAssetsPanel::refreshSourceData() {
+    // Widget-free: the pinned catalogue and the published copies the data API
+    // resolves by digest. The Components tab owns the visible inventory.
     sourceAssets_ = spatialAssetCatalog();
     publishedAssets_ = SpatialAssetStore().stored();
-
-    sourceTable_->setRowCount(sourceAssets_.size());
-    for (int row = 0; row < sourceAssets_.size(); ++row) {
-        const SpatialAsset& asset = sourceAssets_.at(row);
-        const QString path = publishedAssetPath(asset.id);
-        const QString status =
-            path.isEmpty() ? tr("Not downloaded") : tr("Downloaded and verified");
-        const QStringList cells = {asset.name, humanBytes(asset.bytes), status};
-        for (int column = 0; column < cells.size(); ++column) {
-            auto* item = new QTableWidgetItem(cells.at(column));
-            item->setToolTip(path.isEmpty() ? asset.url : path);
-            sourceTable_->setItem(row, column, item);
-        }
-    }
-
-    // Keep the selection on the stable id, never the row index: a refresh must
-    // not move the user's choice.
-    if (!selectedSourceAssetId_.isEmpty()) {
-        for (int row = 0; row < sourceAssets_.size(); ++row) {
-            if (sourceAssets_.at(row).id == selectedSourceAssetId_) {
-                sourceTable_->setCurrentCell(row, 0);
-                break;
-            }
-        }
-    }
-    updateDownloadControls();
 }
-
 QString NativeAssetsPanel::publishedAssetPath(const QString& id) const {
     for (const StoredSpatialAsset& row : publishedAssets_) {
         if (row.verified && row.asset.id == id) return row.graphPath;
@@ -1621,215 +1333,12 @@ QString NativeAssetsPanel::publishedAssetPath(const QString& id) const {
     return {};
 }
 
-bool NativeAssetsPanel::selectSourceAsset(const QString& id) {
-    for (int row = 0; row < sourceAssets_.size(); ++row) {
-        if (sourceAssets_.at(row).id == id) {
-            selectedSourceAssetId_ = id;
-            sourceTable_->setCurrentCell(row, 0);
-            updateDownloadControls();
-            return true;
-        }
-    }
-    applyStatus(QStringLiteral("native.download.unknown"),
-                tr("%1 is not one of the pinned source assets.").arg(id), sourceStatus_);
-    return false;
-}
-
-void NativeAssetsPanel::updateDownloadControls() {
-    const SpatialAsset* selected = findSpatialAsset(selectedSourceAssetId_);
-    const bool canDownload =
-        selected != nullptr && client_ != nullptr && runner_ != nullptr && !downloadInFlight_;
-    downloadButton_->setEnabled(canDownload);
-    downloadCancelButton_->setEnabled(downloadInFlight_);
-    downloadProgress_->setVisible(downloadInFlight_);
-
-    if (selected == nullptr) {
-        downloadButton_->setToolTip(tr("Select one of the pinned source assets."));
-    } else if (client_ == nullptr) {
-        downloadButton_->setToolTip(
-            tr("No backend client is available, so nothing can be fetched."));
-    } else if (runner_ == nullptr) {
-        downloadButton_->setToolTip(
-            tr("No off-thread runner is available, so no download can be submitted."));
-    } else {
-        downloadButton_->setToolTip(
-            tr("Download %1 and verify it before storing it.").arg(selected->name));
-    }
-
-    bool runtimePresent = false;
-#ifdef MIKAI_WITH_MODEL_INSPECTION
-    runtimePresent = inspectionRuntimeIsPresent(runtime_, nullptr);
-#endif
-    const QString path = publishedAssetPath(selectedSourceAssetId_);
-    const bool canImport = !path.isEmpty() && runtimePresent && !importInFlight_;
-    importSourceButton_->setEnabled(canImport);
-    importSourceButton_->setToolTip(
-        path.isEmpty()
-            ? tr("Download the selected source asset first; only a verified copy is imported.")
-            : (runtimePresent
-                   ? tr("Inspect and publish this graph into the owned model store at the stage "
-                        "geometry above.")
-                   : tr("The ONNX Runtime inspector is not available in this build, so the "
-                        "downloaded graph cannot be imported.")));
-}
-
-bool NativeAssetsPanel::downloadSelectedSourceAsset() {
-    applyStatus({}, {}, sourceStatus_);
-    if (downloadInFlight_) {
-        applyStatus(QStringLiteral("native.download.busy"),
-                    tr("A download is already running; wait for it or cancel it first."),
-                    sourceStatus_);
-        return false;
-    }
-    const SpatialAsset* selected = findSpatialAsset(selectedSourceAssetId_);
-    if (selected == nullptr) {
-        applyStatus(QStringLiteral("native.download.selection"),
-                    tr("Select one of the pinned source assets first."), sourceStatus_);
-        return false;
-    }
-    if (client_ == nullptr) {
-        applyStatus(QStringLiteral("native.download.client"),
-                    tr("No backend client is available, so nothing can be fetched."),
-                    sourceStatus_);
-        return false;
-    }
-    if (runner_ == nullptr) {
-        applyStatus(QStringLiteral("native.download.runner"),
-                    tr("No off-thread runner is available, so no download can be submitted."),
-                    sourceStatus_);
-        return false;
-    }
-
-    auto cancellation = std::make_shared<ImportCancellation>();
-    downloadCancel_ = cancellation;
-    auto result = std::make_shared<DownloadResult>();
-    downloadInFlight_ = true;
-    const quint64 generation = ++downloadGeneration_;
-    updateDownloadControls();
-
-    const SpatialAsset asset = *selected;
-    mikai::backend::MikaiClient* client = client_;
-
-    runner_->run(
-        [asset, client, cancellation, result]() -> QVariant {
-            if (cancellation->isCancelled()) {
-                result->cancelled = true;
-                result->reasonKey = QStringLiteral("native.download.cancelled");
-                result->reason = QCoreApplication::translate(
-                    "NativeAssetsPanel", "The download was cancelled before it started.");
-                return QVariant();
-            }
-            QByteArray bytes;
-            try {
-                bytes = client->fetchBytes(asset.url);
-            } catch (const mikai::backend::MikaiApiError& error) {
-                result->reasonKey = QStringLiteral("native.download.fetch");
-                result->reason = QCoreApplication::translate(
-                                     "NativeAssetsPanel", "The download of %1 failed: %2")
-                                     .arg(asset.name, error.message.isEmpty() ? error.code
-                                                                              : error.message);
-                return QVariant();
-            } catch (...) {
-                result->reasonKey = QStringLiteral("native.download.fetch");
-                result->reason = QCoreApplication::translate(
-                                     "NativeAssetsPanel",
-                                     "The download of %1 failed with an unknown transport error.")
-                                     .arg(asset.name);
-                return QVariant();
-            }
-            if (bytes.isEmpty()) {
-                result->reasonKey = QStringLiteral("native.download.empty");
-                result->reason = QCoreApplication::translate(
-                                     "NativeAssetsPanel",
-                                     "%1 returned no bytes, so nothing was written.")
-                                     .arg(asset.name);
-                return QVariant();
-            }
-            // The publication gate: the one atomic step that commits the asset.
-            // A cancel that won while the bytes were in flight writes nothing.
-            if (!cancellation->beginPublication()) {
-                result->cancelled = true;
-                result->reasonKey = QStringLiteral("native.download.cancelled");
-                result->reason = QCoreApplication::translate(
-                    "NativeAssetsPanel",
-                    "The download was cancelled; nothing was written.");
-                return QVariant();
-            }
-            const SpatialAssetPublication publication =
-                publishSpatialAssetBytes(asset, bytes, QString());
-            result->ok = publication.ok;
-            result->published = publication.published;
-            result->reasonKey = publication.reasonKey;
-            result->reason = publication.reason;
-            result->id = publication.id;
-            result->path = publication.graphPath;
-            // Only a cancel that won the publication gate is a cancellation; once
-            // publishing began this stays false, so the committed result is not
-            // concealed.
-            if (cancellation->isCancelled()) result->cancelled = true;
-            return QVariant();
-        },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QVariant&) {
-            if (guard) guard->finishDownload(result, generation);
-        },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QString& message) {
-            result->reasonKey = QStringLiteral("native.download.failed");
-            result->reason = message;
-            if (guard) guard->finishDownload(result, generation);
-        });
-    return true;
-}
-
-void NativeAssetsPanel::cancelDownload() {
-    if (!downloadInFlight_ || !downloadCancel_) return;
-    const ImportCancellation::CancelResult result = downloadCancel_->cancel();
-    if (result == ImportCancellation::CancelResult::TooLate) {
-        applyStatus(QStringLiteral("native.download.commitInProgress"),
-                    tr("The download has already begun storing the asset, so it can no longer be "
-                       "cancelled; its committed result will be reported."),
-                    sourceStatus_);
-        return;
-    }
-    applyStatus(QStringLiteral("native.download.cancelling"),
-                tr("Cancelling the download; the worker decides at its next check."),
-                sourceStatus_);
-    updateDownloadControls();
-}
-
-void NativeAssetsPanel::finishDownload(const std::shared_ptr<DownloadResult>& result,
-                                       quint64 generation) {
-    if (generation != downloadGeneration_) return;
-    downloadInFlight_ = false;
-    downloadCancel_.reset();
-
-    if (result->published) {
-        // The worker passed the publication gate, so the copy is committed and
-        // is reported as such, never re-labelled as a cancellation.
-        applyStatus({}, {}, sourceStatus_);
-    } else if (result->cancelled) {
-        applyStatus(QStringLiteral("native.download.cancelled"),
-                    tr("The download was cancelled; nothing was written."), sourceStatus_);
-    } else if (result->ok) {
-        applyStatus({}, {}, sourceStatus_);
-    } else {
-        applyStatus(result->reasonKey.isEmpty() ? QStringLiteral("native.download.failed")
-                                                : result->reasonKey,
-                    result->reason.isEmpty()
-                        ? tr("The asset was refused and nothing was written.")
-                        : result->reason,
-                    sourceStatus_);
-    }
-
-    refreshSourceAssets();
-    emit downloadFinished(result->ok);
-}
-
 bool NativeAssetsPanel::importPublishedAsset(const QString& id, const QSize& stageGeometry) {
     const QString path = publishedAssetPath(id);
     if (path.isEmpty()) {
         applyStatus(QStringLiteral("native.import.downloadedMissing"),
                     tr("That source asset is not present and verified in the owned store yet; "
-                       "download it first."),
+                       "get and verify it in Components first."),
                     importStatus_);
         return false;
     }
@@ -1873,6 +1382,8 @@ void NativeAssetsPanel::updateImportControls() {
     const int selectedRow = modelTable_ != nullptr ? modelTable_->currentRow() : -1;
     const bool usableSelected =
         selectedRow >= 0 && selectedRow < models_.size() && models_.at(selectedRow).usable;
+    selectRecipeButton_->setVisible(!models_.isEmpty());
+    selectRecipeReason_->setVisible(!models_.isEmpty());
     selectRecipeButton_->setEnabled(usableSelected);
     selectRecipeReason_->setText(
         usableSelected
@@ -1881,7 +1392,6 @@ void NativeAssetsPanel::updateImportControls() {
             : tr("Select a model this build offers (Ready) to register it as a recipe."));
 
     updatePrepareControls();
-    updateDownloadControls();
 }
 
 QString NativeAssetsPanel::inspectionRuntimeReason() const {

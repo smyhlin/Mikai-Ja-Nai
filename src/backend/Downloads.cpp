@@ -36,8 +36,17 @@ constexpr int kCancelPollMs = 200;
 constexpr int kProgressIntervalMs = 100;
 
 const QUrl& sevenZipUrl() {
-    static const QUrl url(QStringLiteral("https://www.7-zip.org/a/7zr.exe"));
+    static const QUrl url(QStringLiteral("https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"));
     return url;
+}
+
+const QUrl& sevenZipInstallerUrl() {
+    static const QUrl url(QStringLiteral("https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe"));
+    return url;
+}
+
+QString sha256(const QByteArray& bytes) {
+    return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
 QString findSevenZip() {
@@ -51,7 +60,8 @@ QString findSevenZip() {
             return candidate;
         }
     }
-    const QString cached = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zr.exe")));
+    const QString cached = QDir::cleanPath(
+        cacheDir().filePath(QStringLiteral("../tools/7zip-26.03/7z.exe")));
     return QFileInfo::exists(cached) ? cached : QString{};
 }
 
@@ -221,17 +231,52 @@ QString ensureSevenZip() {
     if (!found.isEmpty()) {
         return found;
     }
-    const QString tool = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zr.exe")));
-    QDir().mkpath(QFileInfo(tool).absolutePath());
-    const QByteArray binary =
-        fetchUrlBytes(sevenZipUrl(), {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
-                      60000);
-    QFile file(tool);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        throw std::runtime_error("could not write " + tool.toStdString());
+
+    // 7zr can unpack the official self-extracting installer, but cannot handle
+    // ZIP/NuGet archives used by runtime provisioning. Verify both official
+    // artifacts before executing/extracting anything from them.
+    constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
+    constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
+    const QString tools = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zip-26.03")));
+    const QString bootstrap = QDir(tools).filePath(QStringLiteral("7zr.exe"));
+    const QString installer = QDir(tools).filePath(QStringLiteral("7z2603-x64.exe"));
+    if (!QDir().mkpath(tools)) {
+        throw std::runtime_error("could not create " + tools.toStdString());
     }
-    file.write(binary);
-    file.close();
+
+    auto writeVerified = [](const QString& path, const QUrl& url, const char* digest) {
+        const QByteArray bytes =
+            fetchUrlBytes(url, {{QStringLiteral("User-Agent"), QStringLiteral("MPVBackend")}},
+                          60000);
+        if (sha256(bytes) != QLatin1String(digest)) {
+            throw std::runtime_error("official 7-Zip download SHA-256 mismatch");
+        }
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
+            file.write(bytes) != bytes.size() || !file.flush()) {
+            throw std::runtime_error("could not write " + path.toStdString());
+        }
+    };
+
+    writeVerified(bootstrap, sevenZipUrl(), bootstrapSha);
+    writeVerified(installer, sevenZipInstallerUrl(), installerSha);
+    QProcess extract;
+    extract.start(bootstrap, {QStringLiteral("x"), QStringLiteral("-o%1").arg(tools),
+                              QStringLiteral("-y"), installer});
+    if (!extract.waitForStarted() || !extract.waitForFinished(60000) ||
+        extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
+        const QString details = QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
+        throw std::runtime_error(
+            QStringLiteral("could not extract the verified x64 7-Zip package: %1")
+                .arg(details).toStdString());
+    }
+    const QString tool = QDir(tools).filePath(QStringLiteral("7z.exe"));
+    if (!QFileInfo(tool).isFile() ||
+        !QFileInfo(QDir(tools).filePath(QStringLiteral("7z.dll"))).isFile()) {
+        throw std::runtime_error("verified x64 7-Zip package did not contain 7z.exe and 7z.dll");
+    }
+    QFile::remove(bootstrap);
+    QFile::remove(installer);
     return tool;
 }
 

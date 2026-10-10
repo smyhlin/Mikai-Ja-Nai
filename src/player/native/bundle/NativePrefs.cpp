@@ -112,11 +112,9 @@ AvailabilityState storedRecipeState(const Recipe& recipe,
 
 QString nativeSettingsGroup() { return QStringLiteral("player/native"); }
 
-QString nativeShortcutsSettingsGroup() { return QStringLiteral("player/native/shortcuts"); }
-
 bool NativePreferences::isDefault() const {
     return !enabled && backend == Backend::TensorRT && recipeId.isEmpty() &&
-           customModelsDir.isEmpty() && toggleProcessingShortcut.isEmpty();
+           customModelsDir.isEmpty();
 }
 
 NativePreferences loadNativePreferences() {
@@ -205,21 +203,6 @@ NativePreferences loadNativePreferences() {
 
     settings.endGroup();
 
-    // The PortableText binding is read and canonicalised by the player's Qt GUI
-    // reader, so this module stays QtCore-only and never grows a key grammar of
-    // its own; an invalid key stays named rather than silently dropped.
-    const NativeToggleShortcut shortcut = loadStoredToggleShortcut();
-    preferences.toggleProcessingShortcutStored = shortcut.stored;
-    if (shortcut.stored && !shortcut.valid) {
-        preferences.issues.append(issue(
-            kNativeToggleProcessingKey, "native.shortcutInvalid",
-            translated(QT_TRANSLATE_NOOP(
-                "NativePrefs",
-                "The saved native shortcut did not name a key; it was cleared."))));
-    } else {
-        preferences.toggleProcessingShortcut = shortcut.value;
-    }
-
     for (const NativePreferenceIssue& entry : preferences.issues) {
         qWarning().noquote() << "mikai: native preference" << entry.key
                              << "was not applied:" << entry.reason;
@@ -229,7 +212,7 @@ NativePreferences loadNativePreferences() {
 
 bool NativePreferencePatch::isEmpty() const {
     return !enabled.has_value() && !backend.has_value() && !recipeId.has_value() &&
-           !customModelsDir.has_value() && !toggleProcessingShortcut.has_value();
+           !customModelsDir.has_value();
 }
 
 bool saveNativePreferences(const NativePreferencePatch& patch, QString* reason) {
@@ -289,19 +272,6 @@ bool saveNativePreferences(const NativePreferencePatch& patch, QString* reason) 
     }
     settings.endGroup();
 
-    if (patch.toggleProcessingShortcut.has_value()) {
-        settings.beginGroup(nativeShortcutsSettingsGroup());
-        if (patch.toggleProcessingShortcut->isEmpty()) {
-            // Stored present-and-empty, not removed: "cleared on purpose" must survive
-            // or the default comes back.
-            settings.setValue(QLatin1String(kNativeToggleProcessingKey), QString());
-        } else {
-            settings.setValue(QLatin1String(kNativeToggleProcessingKey),
-                              *patch.toggleProcessingShortcut);
-        }
-        settings.endGroup();
-    }
-
     settings.sync();
     if (settings.status() != QSettings::NoError) {
         if (reason != nullptr) {
@@ -347,9 +317,6 @@ void clearNativePreferences() {
     settings.remove(QLatin1String(kNativeBackendKey));
     settings.remove(QLatin1String(kNativeRecipeKey));
     settings.remove(QLatin1String(kNativeCustomModelsDirKey));
-    settings.endGroup();
-    settings.beginGroup(nativeShortcutsSettingsGroup());
-    settings.remove(QLatin1String(kNativeToggleProcessingKey));
     settings.endGroup();
     settings.sync();
 }

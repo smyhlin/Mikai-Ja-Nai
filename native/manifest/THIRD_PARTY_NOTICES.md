@@ -1,6 +1,6 @@
 # Third-party notices — native runtime components
 
-Generated 2026-10-01 for M03; per-file inventory added 2026-10-04. This file
+Generated 2026-10-08 for M03; per-file inventory added 2026-10-04. This file
 records what was actually found, with citations. It does **not** grant
 permission and is not legal advice. Where a licence is unresolved it says so,
 rather than picking the convenient reading.
@@ -65,13 +65,42 @@ texts, and relinkability. This is why the plan builds the core rather than
 adopting a third party's binary — the build options become knowable and the
 corresponding source reproducible.
 
-### Stock core (Standard bundle)
+### Standard core — pinned author-fork developer archive
 
-Provisioned at run time from
-[`shinchiro/mpv-winbuild-cmake`](https://github.com/shinchiro/mpv-winbuild-cmake)
-by the pre-existing discovery/download path, which this work leaves untouched.
-That recipe does not pass `-Dgpl=false`, so it is GPL-2.0-or-later. It is not
-vendored here.
+The Standard in-process Qt/PlayerShell application keeps its QOpenGLWidget
+render API. CMake fetches and verifies the pinned API-only developer archive
+during configure/package, compiles against its matching headers, and copies
+only `libmpv-2.dll` into private local app/dist packages. It uses no `mpv.exe`,
+IPC, or app-launch mpv download.
+
+The pinned `the-database/mpv-winbuild` release is
+[`2026-10-07-d6d93599d5`](https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-07-d6d93599d5),
+tag commit `6ac50ae6b135c5c9b484c37cc47e5368d1f8b613`, build run
+[37549675458](https://github.com/the-database/mpv-winbuild/actions/runs/37549675458).
+Its source mpv commit is
+[`d6d93599d59069b715013a6e77e898056499b905`](https://github.com/the-database/mpv/tree/d6d93599d59069b715013a6e77e898056499b905),
+tree `d69b8c428bb057743eef5aa4e33f6c92926fd393`. The API-only archive
+[`mpv-dev-x86_64-20261007-git-d6d93599d5.7z`](https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/mpv-dev-x86_64-20261007-git-d6d93599d5.7z)
+is 32,830,217 bytes with publisher SHA-256
+`077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`. It
+contains `include/mpv/*`, `libmpv.dll.a` and `libmpv-2.dll`; it contains no
+`mpv.exe`. The locally extracted DLL was observed as x64, mpv API 2.5,
+122,146,816 bytes, SHA-256
+`90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649`
+(local measurement, not a publisher digest).
+
+This official release DLL does **not** contain this project's Native
+status/admission patches and is not a Native bundle. The separate Native fork
+build remains based on commit
+[`63d127174d8f70336c82a22408929e2bc301edcb`](https://github.com/the-database/mpv/tree/63d127174d8f70336c82a22408929e2bc301edcb),
+with its project patch series recorded at `sources.json#patchSeries.mpvForkPatchSeries`.
+
+mpv is GPL-family by default. The exact build options, complete corresponding
+source, dependency licence closure, and relinkability for this release binary
+have not been established. Accordingly, this is a private/local package only;
+third-party redistribution remains blocked until that evidence is established.
+The former stock `shinchiro/mpv-winbuild-cmake` app-launch download and its
+machine observations are historical only, not an active path.
 
 ---
 
@@ -79,7 +108,7 @@ vendored here.
 
 | | |
 |---|---|
-| Source | <https://github.com/the-database/animejanai-inference> @ `738ce3b3020b3950c48ce3122a08f32af531d4fa` |
+| Source | <https://github.com/the-database/animejanai-inference> @ v0.9.0, commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3` |
 | Artefacts | `aji.dll`, `aji_trt.dll`, `aji_dml.dll` |
 | Licence | **none** |
 
@@ -116,11 +145,39 @@ adopted: this project is built around this specific implementation, and
 substituting a different one would change the product rather than its
 provenance.
 
-The commit pin above is **verified, not assumed**: all nine key source files
-were hashed locally and again from upstream at that exact commit, and every
-digest matched. See `sources.json#sources[id=animejanai-inference]`.
+The official Windows release asset is `aji-windows-x64.zip` (657,798 bytes,
+SHA-256 `22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586`).
+The historical baseline comparison against the v0.9.0 tag, performed before
+authorized local edits, found the header, configuration parser and dispatcher
+byte-identical; the TRT source and CMake were already locally modified. The
+current mutable local source additionally changes the dispatcher for optional
+ABI-8 capability queries and changes TRT/DirectML backend mapping. Its TRT
+changes include Unicode-aware `CreateProcessW` use and wide Win32 file
+operations, but the dispatcher still uses ANSI module-path and DLL-loading
+calls and other config/model/cache path handling remains narrow. No end-to-end
+Unicode-path support is claimed. A local MSVC/CUDA compile/link and descriptive
+artifact hashes are recorded in
+`sources.json#sources[id=animejanai-inference].localBuildObservation`; runtime
+behavior is not established.
+
+The official asset and its dispatcher/TensorRT/DirectML dependency closure may
+be acquired only into the user's per-machine component store after explicit
+user action. This does not grant redistribution rights: no Aji binary or model
+graph is included in a public distribution, and there are no startup downloads.
+The upstream source has no located licence or upstream grant; the owner's
+2026-10-04 grant covers project-owned integration code only.
 
 This blocks the Native bundle. It is escalated, not worked around.
+The local source-only extension preserves ABI 8; the patched TRT and DirectML
+backend sources map exact RIFE code `4262` (only with ensemble disabled) to
+`rife_v4.26_heavy`, and the dispatcher source exposes optional
+`aji_api_version()` and `aji_rife_heavy_supported()` queries. The official
+downloaded v0.9.0 Aji asset lacks the extension. The local MSVC/CUDA compile
+and link of all three DLLs succeeded; observed local artifact sizes and hashes
+are in `sources.json#sources[id=animejanai-inference].localBuildObservation`.
+This is not an ABI/capability lookup, decoder/filter, backend-load, graph
+availability, or inference result, and does not establish Ready/Active or
+authorize public distribution.
 
 ---
 
@@ -176,10 +233,13 @@ The reference package ships it and its notice claims the TensorRT
 redistributables come from NVIDIA's downloads "under the same terms". That is
 the upstream author's reading, not a grant this project has verified.
 
-The planned architecture removes the question rather than answering it: engines
-are built in-process through the TensorRT builder API in an out-of-band
-preparation helper, so `trtexec.exe` is a build-time convenience and not a
-runtime dependency. That is a design consequence to carry into M04/M15.
+The architecture distinction is path-specific. The private prepared-helper
+path builds engines in-process through the TensorRT builder API and does not
+need `trtexec.exe`. However, the official v0.9.0 configuration path invokes
+`trtexec.exe` for the TensorRT first-build. The private helper's design does not
+resolve the official-config path: no NVIDIA developer-tool redistribution
+clearance has been established. `trtexec.exe` remains outside any public
+bundle, and ESC-5 remains unresolved for a path using the upstream config.
 
 ---
 
@@ -265,6 +325,11 @@ apply (§4).
 reference package — same size (18 527 776) and same sha256 `9c9e6d82…`. That
 turns the reference package's DirectML binary from an unattributed blob into a
 verified artefact of this pinned package.
+The Aji DirectML closure uses ONNX Runtime DirectML **1.24.4** and DirectML
+**1.15.4**, with their respective MIT and Microsoft binary terms/notices above.
+These runtime packages are provisioned into the user's per-machine component
+store only following explicit user action; this notice does not authorize a
+public bundle or claim that the backend has loaded or run.
 
 [dml-license]: https://raw.githubusercontent.com/microsoft/DirectML/master/LICENSE
 
@@ -403,6 +468,9 @@ graph-operator derivation or whole-artefact redistribution.
 `F:\ZKS\mikai-native-assets\rife\onnx\`, outside the repository and every
 tracked tree. Archive pin, extraction, structural check, the comparison report
 and the rights position: **`../rife-acquisition.md`**.
+Model graphs remain separate from the app distribution and are staged only in
+per-machine user-owned graph stores after user action; this does not resolve
+ESC-2 or ESC-3 and does not grant public redistribution.
 
 **Status: acquired and weight-data traced, not cleared.** No grant covers
 redistributing the graph files, so they stay out of any shipped bundle; M12's
@@ -522,8 +590,9 @@ itself proof the variant set resolves on an arbitrary machine. That remains a
 run-time question and is not claimed here.
 
 `libmpv-2.dll` statically imports `vulkan-1.dll` even though the meson build
-records `vulkan=disabled`. It is satisfied by the system loader when present
-and is a soft dependency, but it is recorded rather than assumed away.
+records `vulkan=disabled`. This is a hard load-time import: the installed GPU
+driver supplies the Vulkan loader on the target system, but a missing loader
+prevents `libmpv-2.dll` from loading. It is recorded rather than assumed away.
 
 ### Wire version versus producer ABI
 
@@ -555,7 +624,7 @@ this project's own integration code only. `aji.dll` and `aji_trt.dll` are
 | mpv fork core (Native) | GPL-2.0-or-later **or** LGPL-2.1-or-later, per build options | **cleared**, with GPL-family obligations, once self-built from the pin |
 | `aji.dll` / `aji_trt.dll` / `aji_dml.dll` | **none** | **blocked** |
 | TensorRT runtime DLLs | NVIDIA TensorRT SLA + Supplement | external — acquired from NVIDIA, bundled under §1.2.1.x |
-| `trtexec.exe` | unresolved | **blocked** (design removes the need) |
+| `trtexec.exe` | unresolved for upstream-config first-build; private prepared-helper path avoids it | **blocked** (ESC-5; no NVIDIA developer-tool clearance) |
 | `cudart64_*.dll` | CUDA EULA Attachment A | external — acquired from the CUDA redistributable |
 | `onnxruntime.dll` | MIT | **cleared** |
 | `DirectML.dll` | Microsoft Software License Terms (binary) + MIT (code) | **cleared**, on the licence read from the pinned package |

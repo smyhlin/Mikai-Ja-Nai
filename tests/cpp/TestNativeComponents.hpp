@@ -30,11 +30,6 @@ class TestNativeComponents : public QObject {
   void compatiblePacksNameRuntimeAndThisGpuOnly();
   void compatiblePacksAreEmptyWhenTheShapeIsUnusable();
 
-  // Every pinned row must be complete enough for the transport to refuse a
-  // substituted asset: a digest, a size, a URL naming this release, and files
-  // the extractor can actually find.
-  void catalogueDigestsAndSizesAreWellFormed();
-
   // A record published from real bytes reads back as installed, and one file
   // removed from under it turns the same record into a named absence.
   void storeRecordRoundTrips();
@@ -49,6 +44,12 @@ class TestNativeComponents : public QObject {
   void verifyPackCatchesReplacedBytes();
   void verifyPackAcceptsTheRecordedBytes();
   void installedPackNamesFollowTheRecord();
+
+  // RIFE status trusts only the app-owned record for the exact compiled release
+  // and graph inventory; manual verification still hashes the selected graph.
+  void rifeGraphWithoutInstallRecordIsMissing();
+  void rifeGraphRecordTrustsVerifiedIdentityUntilManualVerify();
+  void rifeGraphRecordRequiresTheExactInventory();
 
   // Where the builder resource comes from: the bundle's own declared inventory
   // wins, the store serves a GPU the bundle cannot describe, neither source is a

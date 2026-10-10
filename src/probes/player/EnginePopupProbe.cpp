@@ -1,28 +1,119 @@
-// The engine-preparation window: what the player shows while a TensorRT engine
-// is built.
-//
-// It is driven through the player's own public API, not by poking the widget, so
-// what is judged is the surface a host actually reaches. The window is a
-// top-level tool window rather than a child of the player, because the build
-// starts from a modal settings dialog; that is why its visibility is read from
-// the window itself and not from a parent's child list.
 
+#include <QAccessible>
+#include <QAccessibleInterface>
 #include <QApplication>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QElapsedTimer>
 #include <QLabel>
+#include <QMimeData>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QUrl>
 
+#include <cmath>
 #include <cstdio>
+#include <functional>
 
+#include "MpvApi.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
+#include "PlayerShell.hpp"
 #include "ProbePicture.hpp"
 #include "ProbeRuntime.hpp"
+#include "ShellWidgets.hpp"
+#include "VideoSurface.hpp"
+
+struct RefusalHost : public mplayer::shell::PlayerHost {
+    int variantRequests = 0;
+    int episodeRequests = 0;
+    int trackProbes = 0;
+    int copyRequests = 0;
+    int originalRequests = 0;
+    int playbackFailures = 0;
+    int closed = 0;
+
+    void requestVariant(const QString&, const QString&) override { ++variantRequests; }
+    void requestEpisode(int) override { ++episodeRequests; }
+    void requestTrackProbe(const QString&) override { ++trackProbes; }
+    void requestOpenOriginal() override { ++originalRequests; }
+    void requestCopyStreamUrl() override { ++copyRequests; }
+    void playerClosed() override { ++closed; }
+    void playbackFailed() override { ++playbackFailures; }
+};
+
+QString statusText(mplayer::shell::PlayerDialog* dialog) {
+    if (dialog != nullptr) {
+        if (auto* label = dialog->findChild<QLabel*>(QStringLiteral("playerStatusText"))) {
+            return label->text();
+        }
+    }
+    return {};
+}
+
+bool refusalRowVisible(mplayer::shell::PlayerDialog* dialog) {
+    if (dialog != nullptr) {
+        if (auto* panel = dialog->findChild<QFrame*>(QStringLiteral("playerStatusPanel"))) {
+            return panel->isVisibleTo(dialog);
+        }
+    }
+    return false;
+}
+
+bool anywhereShows(QWidget* root, const QString& text) {
+    if (root == nullptr || text.isEmpty()) return false;
+    for (const QLabel* label : root->findChildren<QLabel*>()) {
+        if (label->isVisible() && label->text().contains(text, Qt::CaseInsensitive)) return true;
+    }
+    return false;
+}
+
+const QStringList& successWords() {
+    static const QStringList words{QStringLiteral("Playing local file"), QStringLiteral("Episode: "),
+                                   QStringLiteral("Track: "), QStringLiteral("copied")};
+    return words;
+}
+
+class AlertCounter {
+public:
+    static AlertCounter* current_;
+    static QAccessible::UpdateHandler previous_;
+
+    explicit AlertCounter(QObject* target) : target_(target), wasActive_(QAccessible::isActive()) {
+        previous_ = QAccessible::installUpdateHandler(&AlertCounter::onUpdate);
+        current_ = this;
+        QAccessible::setActive(true);
+    }
+
+    ~AlertCounter() {
+        QAccessible::installUpdateHandler(previous_);
+        QAccessible::setActive(wasActive_);
+        current_ = nullptr;
+        previous_ = nullptr;
+    }
+
+    int count() const { return count_; }
+
+private:
+    static void onUpdate(QAccessibleEvent* event) {
+        if (current_ != nullptr && event != nullptr && event->type() == QAccessible::Alert &&
+            event->object() == current_->target_) {
+            ++current_->count_;
+        }
+        if (previous_ != nullptr) previous_(event);
+    }
+
+    QObject* target_ = nullptr;
+    int count_ = 0;
+    bool wasActive_ = false;
+};
+
+AlertCounter* AlertCounter::current_ = nullptr;
+QAccessible::UpdateHandler AlertCounter::previous_ = nullptr;
 
 using namespace mplayer::shell;
 
@@ -39,124 +130,666 @@ public:
     void playbackFailed() override {}
 };
 
+void pump(int milliseconds) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < milliseconds) {
+        QApplication::processEvents();
+        QThread::msleep(10);
+    }
+}
+
+bool waitFor(const std::function<bool()>& ready, int timeoutMs = 5000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < timeoutMs) {
+        QApplication::processEvents();
+        if (ready()) return true;
+        QThread::msleep(10);
+    }
+    return ready();
+}
+
+bool corePaused(mplayer::VideoSurface* surface, bool paused) {
+    const auto value = surface->probeMpvProperty(QStringLiteral("pause"),
+                                               mplayer::ProbePropertyKind::Flag);
+    return value && value->kind == mplayer::ProbePropertyValue::Kind::Flag &&
+           value->flag == paused;
+}
+
+std::optional<double> corePosition(mplayer::VideoSurface* surface) {
+    const auto value = surface->probeMpvProperty(QStringLiteral("time-pos"),
+                                               mplayer::ProbePropertyKind::Number);
+    return value && value->isNumeric() ? std::optional<double>(value->asNumber()) : std::nullopt;
+}
+
+void requireHeld(mplayer::probes::Verdict& verdict, mplayer::VideoSurface* surface,
+                 const QString& scenario) {
+    const bool acknowledged = waitFor([surface] { return corePaused(surface, true); }, 2000);
+    verdict.require(acknowledged, scenario + QStringLiteral(": actual core pause acknowledged"));
+    pump(150);
+    const auto start = corePosition(surface);
+    const QImage frame = surface->grabFramebuffer();
+    bool paused = true;
+    bool frozen = start.has_value();
+    for (int i = 0; i < 5; ++i) {
+        pump(80);
+        paused = paused && corePaused(surface, true) && !surface->isPlaying();
+        const auto position = corePosition(surface);
+        frozen = frozen && position && start && std::abs(*position - *start) < 0.000001;
+    }
+    verdict.require(paused, scenario + QStringLiteral(": paused output remains enforced"));
+    verdict.require(frozen, scenario + QStringLiteral(": actual media clock stays frozen"));
+    verdict.require(!frame.isNull() && frame == surface->grabFramebuffer(),
+                    scenario + QStringLiteral(": displayed frame stays identical"));
+}
+
 QString labelTexts(const QWidget* root) {
     QStringList texts;
-    for (const QLabel* label : root->findChildren<QLabel*>()) {
-        texts << label->text();
-    }
+    for (const QLabel* label : root->findChildren<QLabel*>()) texts << label->text();
     return texts.join(QStringLiteral(" | "));
 }
 
-QProgressBar* bar(const QWidget* root) {
-    return root->findChild<QProgressBar*>();
+void clickCancel(ProcessingOverlay* overlay) {
+    if (overlay == nullptr) return;
+    for (QPushButton* button : overlay->findChildren<QPushButton*>()) {
+        if (button->isVisible() && button->isEnabled()) {
+            button->click();
+            return;
+        }
+    }
+}
+
+PipFloat* activeFloat() {
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        if (auto* pip = qobject_cast<PipFloat*>(window); pip != nullptr && pip->isVisible()) {
+            return pip;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace
 
+/// The loader-refusal mode. `clip` is a real local media file the player is
+/// handed as direct media; the refusal comes from the runtime, never from the
+/// clip. Returns the verdict's own exit code.
+int runRuntimeRefusal(const QString& clip) {
+    mplayer::probes::Verdict verdict;
+
+    // The loader must be empty BEFORE this runs, so the refusal is observed
+    // rather than assumed. An already-pinned module would make every check below
+    // a claim about a process that is not the one on screen.
+    if (mplayer::MpvApi::instance().loaded()) {
+        std::fprintf(stderr,
+                     "FAIL a module is already pinned: the refusal mode must run on a "
+                     "process that has not selected one\n");
+        return 1;
+    }
+    if (mplayer::native::runtimeSelected()) {
+        std::fprintf(stderr, "FAIL a runtime is already recorded as selected\n");
+        return 1;
+    }
+
+    // The refusal under test: a named installable package that is not there.
+    // `MIKAI_PROBE_BUNDLE` names an absolute root that does not exist, which is
+    // the shape a caller produces by naming a directory that was never
+    // published. The reader must refuse it by name - there is no discovery
+    // fallback behind an explicit request - and must pin nothing.
+    const QString missingRoot = QStringLiteral("Z:/mikai-engine-popup-probe-no-such-runtime-root");
+    qputenv("MIKAI_PROBE_BUNDLE", missingRoot.toUtf8());
+    const bool missingRefused = !mplayer::probes::selectRuntime();
+    verdict.require(missingRefused,
+                    QStringLiteral("an isolated package that is not there is refused by name"));
+    verdict.require(!mplayer::MpvApi::instance().loaded(),
+                    QStringLiteral("the refused isolated package pins no module"));
+    qunsetenv("MIKAI_PROBE_BUNDLE");
+
+    // The same refusal for an explicitly named module file rather than a bundle
+    // root: a path that is not a real file. The loader's own reason is printed,
+    // because that reason is what a viewer would be shown.
+    const QString missingModule =
+        QStringLiteral("Z:/mikai-engine-popup-probe-no-such-libmpv-2.dll");
+    mplayer::MpvBundle missing;
+    missing.root = QStringLiteral("Z:/mikai-engine-popup-probe-no-such-runtime-root");
+    missing.modulePath = missingModule;
+    missing.descriptorId = QStringLiteral("engine-popup-probe-missing-module");
+    missing.protocolVersion = 1;
+    QString missingReason;
+    const bool missingModuleRefused = !mplayer::MpvApi::instance().load(missing, &missingReason);
+    verdict.require(missingModuleRefused,
+                    QStringLiteral("an explicit module file that is not there is refused by name"));
+    verdict.require(!missingReason.trimmed().isEmpty(),
+                    QStringLiteral("the module refusal names its own reason"));
+    if (missingModuleRefused) {
+        std::fprintf(stderr, "[runtime-refusal] module %s refused: %s\n",
+                     qPrintable(missingModule), qPrintable(missingReason));
+    }
+    verdict.require(!mplayer::MpvApi::instance().loaded(),
+                    QStringLiteral("a refused loader leaves no core behind it"));
+
+    RefusalHost host;
+    const QList<QualityEntry> qualities = {{360, clip}};
+    auto* dialog = new PlayerDialog(QStringLiteral("probe 360p"), clip, qualities, 360, &host);
+    dialog->show();
+    QPointer<PlayerDialog> guard(dialog);
+
+    // The dialog is constructed exactly as the app builds it, and startPlayer()
+    // is what opens the stream, so the failure it reports is the real one.
+    dialog->startPlayer();
+    for (int i = 0; i < 200 && !refusalRowVisible(dialog); ++i) pump(10);
+    auto* surface = dialog->findChild<mplayer::VideoSurface*>(QStringLiteral("videoSurface"));
+
+    // ── the refusal is visible ────────────────────────────────────────────
+    verdict.require(surface != nullptr, QStringLiteral("the real player owns its surface"));
+    verdict.require(surface == nullptr || !surface->hasVideo(),
+                    QStringLiteral("no core means hasVideo is false"));
+    verdict.require(surface == nullptr || !surface->isPlaying(),
+                    QStringLiteral("no core means nothing reports playing"));
+    verdict.require(!dialog->enginePreparationVisible(),
+                    QStringLiteral("no operation window appears for a runtime that never loaded"));
+    verdict.require(dialog->findChild<ProcessingOverlay*>() == nullptr,
+                    QStringLiteral("no engine work is announced without a core"));
+    verdict.require(refusalRowVisible(dialog) && !statusText(dialog).trimmed().isEmpty(),
+                    QStringLiteral("the unavailable runtime is readable on the status row"));
+    verdict.require(statusText(dialog).contains(missingRoot) ||
+                        statusText(dialog).contains(missingModule),
+                    QStringLiteral("the player preserves the loader's missing-runtime cause"));
+    verdict.require(dialog->isVisible() && dialog->width() > 0,
+                    QStringLiteral("the window itself stays on screen after the refusal"));
+
+    // ── the refusal is accessible ─────────────────────────────────────────
+    // The Retry chip is what a screen reader reaches for; it is raised with the
+    // failure and is named, not a bare glyph.
+    QPushButton* retry = nullptr;
+    for (QPushButton* button : dialog->findChildren<QPushButton*>()) {
+        if (button->objectName() == QLatin1String("playerRetryButton")) retry = button;
+    }
+    verdict.require(retry != nullptr && retry->isVisibleTo(dialog),
+                    QStringLiteral("the failure keeps its Retry chip reachable"));
+    verdict.require(retry != nullptr && !retry->accessibleName().trimmed().isEmpty(),
+                    QStringLiteral("the Retry chip carries an accessible name"));
+
+    // The row itself is measured as a row, not as text a sighted viewer alone can
+    // read: on screen, carrying the refusal, and reachable by accessible name.
+    QLabel* announceLabel = dialog->findChild<QLabel*>(QStringLiteral("playerStatusText"));
+    verdict.require(announceLabel != nullptr && announceLabel->isVisibleTo(dialog) &&
+                        !announceLabel->text().trimmed().isEmpty(),
+                    QStringLiteral("the failure row is visible and carries its own reason"));
+    QAccessibleInterface* row =
+        announceLabel != nullptr ? QAccessible::queryAccessibleInterface(announceLabel) : nullptr;
+    verdict.require(row != nullptr && row->isValid(),
+                    QStringLiteral("the failure row exposes a live accessible interface"));
+    verdict.require(row != nullptr && !row->text(QAccessible::Name).trimmed().isEmpty(),
+                    QStringLiteral("the failure row is reachable by its accessible name"));
+
+    // The Alert is what actually announces a failure rather than showing one, and
+    // it is counted over the player's real missing-runtime path. The count must
+    // FAIL before the app raises it and PASS once it does: a path that names the
+    // runtime on screen but says nothing to assistive technology is not finished.
+    int alertsBefore = 0;
+    {
+        AlertCounter alerts(announceLabel);
+        dialog->startPlayer();
+        for (int i = 0; i < 100 && alerts.count() == 0; ++i) pump(10);
+        alertsBefore = alerts.count();
+    }
+    const bool alertRaised = alertsBefore > 0;
+    verdict.require(alertRaised,
+                    QStringLiteral("the unavailable runtime raises an accessible Alert "
+                                   "(observed %1)").arg(alertsBefore));
+    if (!alertRaised) {
+        std::fprintf(stderr,
+                     "[runtime-refusal] showErrorStatus sets the named status row and the Retry "
+                     "chip but emits no QAccessible::Alert, while flashStatus(message, true) "
+                     "does; the missing-runtime path is not announced to assistive technology\n");
+    }
+
+    // ── retry asks the app to provision, never reloads a dead url ─────────
+    // With no engine there is nothing to retry with: the signal the app wires to
+    // its provisioning path is the answer, and it must arrive exactly once. A
+    // retry that re-ran the load instead would loop a stream that cannot load.
+    int runtimeRequests = 0;
+    QObject::connect(dialog, &PlayerDialog::runtimeRequested, dialog,
+                     [&runtimeRequests] { ++runtimeRequests; });
+    const int failuresBefore = host.playbackFailures;
+    if (retry != nullptr && retry->isEnabled()) {
+        retry->click();
+        for (int i = 0; i < 50; ++i) pump(10);
+    }
+    verdict.require(surface == nullptr || !surface->hasVideo(),
+                    QStringLiteral("Retry without a runtime still opens no stream"));
+    verdict.require(runtimeRequests == 1,
+                    QStringLiteral("Retry without a runtime asks for provisioning exactly once"));
+    verdict.require(host.playbackFailures == failuresBefore,
+                    QStringLiteral("Retry does not re-report a failure the app already has"));
+    verdict.require(refusalRowVisible(dialog) && !statusText(dialog).trimmed().isEmpty(),
+                    QStringLiteral("the failed retry leaves the refusal readable"));
+
+    // ── no false success anywhere in the chrome ───────────────────────────
+    for (const QString& word : successWords()) {
+        verdict.require(!anywhereShows(dialog, word),
+                        QStringLiteral("no false success text is shown: %1").arg(word));
+    }
+    verdict.require(dialog->currentHeight() == 360,
+                    QStringLiteral("the player still names the height the caller offered"));
+    verdict.require(surface == nullptr || !surface->isPlaying(),
+                    QStringLiteral("the play control never reports a running stream"));
+
+    // ── the public UI still answers, honestly ─────────────────────────────
+    // Quality: the popover lists what the caller offered, so the choice stays
+    // readable even though nothing can play right now.
+    if (auto* shell = dialog->findChild<PlayerShell*>()) {
+        shell->openSettings();
+        for (int i = 0; i < 100 && !anywhereShows(dialog, QStringLiteral("360p")); ++i) {
+            pump(10);
+        }
+        auto* flyout = dialog->findChild<SettingsFlyout*>();
+        verdict.require(flyout != nullptr && flyout->isVisible(),
+                        QStringLiteral("the settings popover opens with no core loaded"));
+        verdict.require(anywhereShows(dialog, QStringLiteral("360p")),
+                        QStringLiteral("the offered quality stays listed on a refused runtime"));
+        shell->dismissOverlay();
+    }
+
+    // Episode: the host is asked for the playlist, and the dialog's own answer to
+    // that request must be the refusal rather than a "Playing episode N" claim.
+    QVector<QVariantMap> playlist;
+    for (int index = 0; index < 3; ++index) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("label"), QStringLiteral("Series %1").arg(index + 1));
+        playlist.append(entry);
+    }
+    dialog->setPlaylist(playlist, 0);
+    pump(10);
+    if (auto* seriesButton = dialog->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
+        seriesButton != nullptr && seriesButton->isVisible() && seriesButton->isEnabled()) {
+        seriesButton->click();
+        pump(10);
+    }
+    if (auto* drawer = dialog->findChild<SeriesDrawer*>()) {
+        verdict.require(drawer->isVisibleTo(dialog),
+                        QStringLiteral("the episode drawer opens next to the refusal"));
+        for (QPushButton* row : drawer->findChildren<QPushButton*>()) {
+            if (row->isVisible() && row->isEnabled()) {
+                row->click();
+                break;
+            }
+        }
+        pump(10);
+    }
+    verdict.require(host.episodeRequests == 1,
+                    QStringLiteral("picking an episode row asks the host exactly once"));
+    const int failuresBeforeEpisode = host.playbackFailures;
+    dialog->applyEpisode(QStringLiteral("Series 2"), QStringLiteral("embed-2"), 1,
+                         QList<QualityEntry>{{360, clip}}, {});
+    for (int i = 0; i < 100; ++i) pump(10);
+    verdict.require(surface == nullptr || !surface->hasVideo(),
+                    QStringLiteral("an episode swap on a refused runtime opens no stream"));
+    verdict.require(!anywhereShows(dialog, QStringLiteral("Episode: ")),
+                    QStringLiteral("no episode success is claimed on a core that does not exist"));
+    verdict.require(host.playbackFailures >= failuresBeforeEpisode,
+                    QStringLiteral("the refused episode swap reports its own failure, once"));
+
+    // Track: publishing variants is the host's answer; the dialog lists them
+    // without pretending a track is playing.
+    QVector<QVariantMap> variants;
+    for (int index = 0; index < 2; ++index) {
+        QVariantMap variant;
+        variant.insert(QStringLiteral("embed"), QStringLiteral("embed-%1").arg(index + 1));
+        variant.insert(QStringLiteral("label"),
+                       index == 0 ? QStringLiteral("Ukrainian dub") : QStringLiteral("English dub"));
+        variant.insert(QStringLiteral("kind"), QStringLiteral("voice"));
+        variant.insert(QStringLiteral("kind_label"), QStringLiteral("DUB"));
+        // The first is already measured; the second is not, so opening the picker
+        // must ask the host for it rather than assert a quality it never reported.
+        variant.insert(QStringLiteral("quality"), index == 0 ? 1080 : 0);
+        variants.append(variant);
+    }
+    dialog->setVariants(variants, QStringLiteral("embed-1"));
+    pump(10);
+    verdict.require(dialog->currentEmbed() == QStringLiteral("embed-1"),
+                    QStringLiteral("the published track becomes the current one"));
+    const int trackProbesBefore = host.trackProbes;
+    dialog->openAudioMenu();
+    auto* audio = dialog->findChild<MenuPopup*>(QStringLiteral("playerAudioPopup"));
+    verdict.require(audio != nullptr && audio->isVisible() && audio->rowCount() >= 2,
+                    QStringLiteral("the dub picker lists the published tracks"));
+    verdict.require(host.trackProbes == trackProbesBefore + 1,
+                    QStringLiteral("an unmeasured track is probed through the host, by name"));
+    // Picking a row asks the host for that variant; it is the host's answer that
+    // would load a stream, and the host has none to offer.
+    const int variantsBeforePicking = host.variantRequests;
+    if (audio != nullptr && audio->rowCount() >= 2) {
+        if (auto* row = qobject_cast<QPushButton*>(audio->rowWidget(1));
+            row != nullptr && row->isVisible() && row->isEnabled()) {
+            row->click();
+            for (int i = 0; i < 100; ++i) pump(10);
+        }
+    }
+    verdict.require(host.variantRequests == variantsBeforePicking + 1,
+                    QStringLiteral("picking a track asks the host for that variant, exactly once"));
+    const int failuresBeforeVariant = host.playbackFailures;
+    dialog->applyVariant(QList<QualityEntry>{{360, clip}}, QStringLiteral("English dub"),
+                         QStringLiteral("embed-2"));
+    for (int i = 0; i < 100; ++i) pump(10);
+    verdict.require(surface == nullptr || !surface->hasVideo(),
+                    QStringLiteral("a variant swap on a refused runtime opens no stream"));
+    verdict.require(!anywhereShows(dialog, QStringLiteral("Track: ")),
+                    QStringLiteral("no track success is claimed on a core that does not exist"));
+    verdict.require(host.playbackFailures >= failuresBeforeVariant,
+                    QStringLiteral("the refused variant swap is not silently dropped"));
+
+    // Drop: a real local file handed to the player. The drop becomes direct
+    // media, so there is no anime host to re-extract for: the failure is the
+    // player's own visible row, and it is still a refusal by name.
+    const int failuresBeforeDrop = host.playbackFailures;
+    QMimeData droppedMedia;
+    droppedMedia.setUrls({QUrl::fromLocalFile(clip)});
+    QDragEnterEvent dragEnter(QPoint(10, 10), Qt::CopyAction, &droppedMedia,
+                              Qt::LeftButton, Qt::NoModifier);
+    QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &droppedMedia,
+                    Qt::LeftButton, Qt::NoModifier);
+    if (auto* dropShell = dialog->findChild<PlayerShell*>(); dropShell != nullptr) {
+        QApplication::sendEvent(dropShell, &dragEnter);
+        QApplication::sendEvent(dropShell, &drop);
+    }
+    verdict.require(dragEnter.isAccepted() && drop.isAccepted(),
+                    QStringLiteral("the player accepts the real local-file drop"));
+    for (int i = 0; i < 100; ++i) pump(10);
+    verdict.require(surface == nullptr || !surface->hasVideo(),
+                    QStringLiteral("a dropped file loads nothing without a runtime"));
+    verdict.require(!anywhereShows(dialog, QStringLiteral("Playing local file")),
+                    QStringLiteral("a dropped file is not announced as local playback"));
+    verdict.require(refusalRowVisible(dialog) && !statusText(dialog).trimmed().isEmpty(),
+                    QStringLiteral("the dropped file's own refusal stays readable"));
+    verdict.require(statusText(dialog).contains(missingRoot) ||
+                        statusText(dialog).contains(missingModule),
+                    QStringLiteral("the dropped file preserves the real runtime failure cause"));
+    // Direct media has no host to re-extract, so the drop must not manufacture a
+    // host callback for a failure the host has no part in.
+    verdict.require(host.playbackFailures == failuresBeforeDrop,
+                    QStringLiteral("a direct drop does not ask the host to re-extract"));
+
+    // ── close-Tool regression ─────────────────────────────────────────────
+    // The dialog is closed while the refusal is on screen. Every Tool window and
+    // every top-level window the dialog owned is enumerated before the close and
+    // the same sets again after it, so the regression is "nothing this player
+    // owned is still standing", not merely "there never was one".
+    QStringList toolsBefore;
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        if (window->windowFlags().testFlag(Qt::Tool) && !window->objectName().isEmpty()) {
+            toolsBefore << window->objectName();
+        }
+    }
+    QStringList ownedBefore;
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        if (window->windowHandle() != nullptr && dialog->isAncestorOf(window)) {
+            ownedBefore << QStringLiteral("%1/%2").arg(window->metaObject()->className(),
+                                                       window->objectName());
+        }
+    }
+    const int closedBefore = host.closed;
+    dialog->close();
+    for (int i = 0; i < 250 && !guard.isNull(); ++i) pump(10);
+    verdict.require(guard.isNull(), QStringLiteral("closing the refused player deletes the dialog"));
+    verdict.require(host.closed >= closedBefore,
+                    QStringLiteral("the host hears the close once the dialog is gone"));
+    QStringList toolsAfter;
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        if (window->windowFlags().testFlag(Qt::Tool) && !window->objectName().isEmpty()) {
+            toolsAfter << window->objectName();
+        }
+    }
+    QStringList orphans;
+    for (QWidget* window : QApplication::topLevelWidgets()) {
+        if (window->windowHandle() == nullptr) continue;
+        const QString id =
+            QStringLiteral("%1/%2").arg(window->metaObject()->className(), window->objectName());
+        if (ownedBefore.contains(id)) orphans << id;
+    }
+    verdict.require(orphans.isEmpty(), QStringLiteral("no owned window survives the closed player"));
+    for (const QString& tool : toolsBefore) {
+        verdict.require(!toolsAfter.contains(tool),
+                        QStringLiteral("no orphan operation window survives the close: %1").arg(tool));
+    }
+
+    const int exitCode = verdict.report("engine_popup_runtime_refusal");
+    std::fprintf(stderr,
+                 "[runtime-refusal] isolatedRoot=%s missingModule=%s refusal=%d alerts=%d "
+                 "host: variant=%d episode=%d trackProbe=%d copy=%d original=%d "
+                 "playbackFailed=%d runtimeRequested=%d closed=%d\n",
+                 qPrintable(missingRoot), qPrintable(missingModule), missingRefused ? 1 : 0,
+                 alertsBefore, host.variantRequests, host.episodeRequests, host.trackProbes,
+                 host.copyRequests, host.originalRequests, host.playbackFailures,
+                 runtimeRequests, host.closed);
+    return exitCode;
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
-
     QTemporaryDir settingsDir;
-    if (!settingsDir.isValid()) {
-        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
-        return 1;
-    }
+    if (!settingsDir.isValid()) return 1;
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiEnginePopupProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("EnginePopupProbe"));
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
-    if (!mplayer::probes::selectRuntime()) {
-        return 2;
+
+    // The refusal mode is the one path that must reach a real player with NO
+    // module loaded, so it is recognised before the abort below and it is the
+    // only thing that is. It bypasses the abort rather than replacing what
+    // refuses: the refusal is still produced by the production selection helper
+    // and by the loader, naming a package that is not there.
+    //
+    //   engine_popup_probe --runtime-refusal <real clip file>
+    //
+    // The caller must run it on a process with no mpv installed for it to find:
+    // the parent launches this stage with no mpv and its own per-stage QSettings,
+    // and the probe refuses an environment that has already selected a module.
+    // Everything else is the operation-window mode unchanged, and still needs a
+    // real runtime, which the abort below still enforces.
+    const QStringList arguments = QCoreApplication::arguments();
+    const int refusalIndex = arguments.indexOf(QStringLiteral("--runtime-refusal"));
+    if (refusalIndex >= 0) {
+        if (refusalIndex + 1 >= arguments.size()) {
+            std::fprintf(stderr, "usage: engine_popup_probe --runtime-refusal <real clip file>\n");
+            return 2;
+        }
+        for (const QString& argument : arguments.mid(1)) {
+            if (argument.startsWith(QLatin1Char('-')) &&
+                argument != QLatin1String("--runtime-refusal")) {
+                std::fprintf(stderr, "engine_popup_probe: unknown option %s\n",
+                             qPrintable(argument));
+                return 2;
+            }
+        }
+        const QString refusalClip = arguments.at(refusalIndex + 1);
+        // No inherited selection: an explicit module variable here would let a
+        // populated stage stand in for the missing install under test.
+        qunsetenv("MIKAI_PROBE_BUNDLE");
+        qunsetenv("MIKAI_MPV_MODULE");
+        if (mplayer::native::runtimeSelected() || mplayer::MpvApi::instance().loaded()) {
+            std::fprintf(
+                stderr, "FAIL --runtime-refusal requires a process with no selected module\n");
+            return 2;
+        }
+        std::fprintf(stderr, "CLI: engine_popup_probe --runtime-refusal %s\n",
+                     qPrintable(refusalClip));
+        return runRuntimeRefusal(refusalClip);
     }
 
-    static StubHost host;
+    if (!mplayer::probes::selectRuntime()) return 2;
+
+    StubHost host;
     const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                  : QStringLiteral("av://lavfi:testsrc2=size=640x360:rate=25");
     const QList<QualityEntry> qualities = {{360, url}};
-
     auto* dialog = new PlayerDialog(QStringLiteral("probe 360p"), url, qualities, 360, &host);
     dialog->startPlayer();
     dialog->show();
-
     mplayer::probes::Verdict verdict;
-
-    // Nothing is shown before a build is announced: a window that appears on its
-    // own would be a claim about work nobody asked for.
+    auto* surface = dialog->findChild<mplayer::VideoSurface*>(QStringLiteral("videoSurface"));
+    const bool loaded = surface != nullptr && waitFor([surface] {
+        return surface->hasVideo() && surface->position() > 0.2 && surface->isPlaying();
+    });
+    verdict.require(loaded, QStringLiteral("real media is playing before preparation"));
+    if (!loaded) {
+        dialog->close();
+        return verdict.report("engine_popup_probe");
+    }
     verdict.require(!dialog->enginePreparationVisible(),
-                    QStringLiteral("no preparation window before a build is announced"));
+                    QStringLiteral("no operation window appears before work starts"));
 
     bool cancelSeen = false;
     QObject::connect(dialog, &PlayerDialog::enginePreparationCancelRequested, dialog,
                      [&cancelSeen] { cancelSeen = true; });
-
+    const quint64 originalGeneration = surface->pauseRequestGeneration();
     dialog->beginEnginePreparation(QStringLiteral("Preparing TensorRT engine"));
     QApplication::processEvents();
     auto* overlay = dialog->findChild<ProcessingOverlay*>();
-    verdict.require(overlay != nullptr, QStringLiteral("the player owns a preparation window"));
-    verdict.require(dialog->enginePreparationVisible(),
-                    QStringLiteral("the window is visible once a build is announced"));
-    if (overlay != nullptr) {
-        verdict.require(labelTexts(overlay).contains(QStringLiteral("Preparing TensorRT engine")),
-                        QStringLiteral("the window carries the build's own title"));
-        QProgressBar* progress = bar(overlay);
-        verdict.require(progress != nullptr && progress->minimum() == 0 &&
-                            progress->maximum() == 0,
-                        QStringLiteral("the bar is indeterminate before a stage count exists"));
-    }
-
-    // One real stage event: the plan's own stage count, so the caption is
-    // "stage 2 of 3" and the bar is stepped, never a synthesised percentage.
-    dialog->updateEnginePreparation(2, 3, QStringLiteral("Building engine"),
-                                    QStringLiteral("sm120, 480p -> 1080p"));
-    QApplication::processEvents();
-    if (overlay != nullptr) {
-        const QString text = labelTexts(overlay);
-        verdict.require(text.contains(QStringLiteral("Stage 2 of 3")),
-                        QStringLiteral("the caption names the stage against the plan's count"));
-        verdict.require(text.contains(QStringLiteral("Building engine")),
-                        QStringLiteral("the caption carries the builder's own phase"));
-        QProgressBar* progress = bar(overlay);
-        verdict.require(progress != nullptr && progress->maximum() == 3 && progress->value() == 2,
-                        QStringLiteral("the bar steps over the stage count"));
-    }
-
-    // Cancel reaches the host, which owns the build.
-    if (overlay != nullptr) {
-        for (QPushButton* button : overlay->findChildren<QPushButton*>()) {
-            if (button->isEnabled()) button->click();
-        }
-        QApplication::processEvents();
-    }
-    verdict.require(cancelSeen, QStringLiteral("Cancel is routed to the host that owns the build"));
-
-    // A failure stays up: a refusal that disappears is a refusal nobody read.
-    dialog->endEnginePreparation(false, QStringLiteral("native.build.toolFailed"));
-    QApplication::processEvents();
-    verdict.require(dialog->enginePreparationVisible(),
-                    QStringLiteral("a failed build keeps its window up"));
-    if (overlay != nullptr) {
-        verdict.require(labelTexts(overlay).contains(QStringLiteral("native.build.toolFailed")),
-                        QStringLiteral("the window names the failure it stopped on"));
-    }
-
-    // A success leaves on its own, after the settle delay. Pumped rather than
-    // entered as a nested loop: this probe owns no scene to render and a second
-    // event loop only adds a way to die without a verdict.
-    dialog->beginEnginePreparation(QStringLiteral("Preparing TensorRT engine"));
-    verdict.require(dialog->enginePreparationVisible(),
-                    QStringLiteral("a second build reopens the window"));
-    dialog->endEnginePreparation(true, QStringLiteral("done"));
-    QElapsedTimer settle;
-    settle.start();
-    while (settle.elapsed() < 2500) {
-        QApplication::processEvents();
-        QThread::msleep(10);
-    }
+    verdict.require(overlay != nullptr && dialog->enginePreparationVisible(),
+                    QStringLiteral("preparation owns a visible operation window"));
+    auto* progress = overlay != nullptr ? overlay->findChild<QProgressBar*>() : nullptr;
+    verdict.require(progress != nullptr && progress->minimum() == 0 && progress->maximum() == 0,
+                    QStringLiteral("progress is indeterminate without real stages"));
+    verdict.require(surface->pauseRequestGeneration() == originalGeneration,
+                    QStringLiteral("an operation pause does not masquerade as viewer intent"));
+    requireHeld(verdict, surface, QStringLiteral("originally playing preparation"));
+    surface->setPaused(false);
+    requireHeld(verdict, surface, QStringLiteral("Play requested during preparation"));
+    surface->togglePause();
+    surface->togglePause();
+    requireHeld(verdict, surface, QStringLiteral("successive toggles retain latest Play intent"));
+    dialog->updateEnginePreparation(2, 3, QStringLiteral("Builder phase"), QStringLiteral("Real stage detail"));
+    verdict.require(progress != nullptr && progress->maximum() == 3 && progress->value() == 2,
+                    QStringLiteral("only a supplied stage count creates determinate progress"));
+    dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+    verdict.require(waitFor([surface] { return corePaused(surface, false); }),
+                    QStringLiteral("success restores the retained playing intent"));
+    pump(1800);
     verdict.require(!dialog->enginePreparationVisible(),
-                    QStringLiteral("a finished build dismisses its own window"));
+                    QStringLiteral("successful completion dismisses its notification"));
 
+    surface->setPaused(true);
+    waitFor([surface] { return corePaused(surface, true); });
+    dialog->beginEnginePreparation(QStringLiteral("Paused input"));
+    dialog->beginEnginePreparation(QStringLiteral("Updated operation"));
+    requireHeld(verdict, surface, QStringLiteral("repeated begin on paused input"));
+    dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+    verdict.require(corePaused(surface, true) && !surface->isPlaying(),
+                    QStringLiteral("repeated begin preserves the original paused intent"));
+
+    dialog->beginEnginePreparation(QStringLiteral("Paused input with Play"));
+    surface->togglePause();
+    requireHeld(verdict, surface, QStringLiteral("toggle Play on originally paused input"));
+    dialog->endEnginePreparation(false, QStringLiteral("native.build.toolFailed"));
+    verdict.require(waitFor([surface] { return corePaused(surface, false); }),
+                    QStringLiteral("failure honors the latest explicit Play intent"));
+    pump(1800);
+    verdict.require(dialog->enginePreparationVisible() && overlay != nullptr &&
+                        labelTexts(overlay).contains(QStringLiteral("native.build.toolFailed")),
+                    QStringLiteral("failure remains readable beyond the success-dismiss delay"));
+
+    dialog->beginEnginePreparation(QStringLiteral("Newer Pause wins"));
+    surface->setPaused(false);
+    surface->setPaused(true);
+    requireHeld(verdict, surface, QStringLiteral("newer explicit Pause"));
+    dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+    verdict.require(corePaused(surface, true) && !surface->isPlaying(),
+                    QStringLiteral("completion cannot override a newer explicit Pause"));
+
+    surface->setPaused(false);
+    waitFor([surface] { return corePaused(surface, false); });
+    dialog->beginEnginePreparation(QStringLiteral("Cancelled operation"));
+    clickCancel(overlay);
+    verdict.require(cancelSeen, QStringLiteral("public preparation Cancel reaches its builder owner"));
+    requireHeld(verdict, surface, QStringLiteral("Cancel awaiting builder acknowledgement"));
+    dialog->endEnginePreparation(false, QStringLiteral("Cancelled"));
+    verdict.require(waitFor([surface] { return corePaused(surface, false); }),
+                    QStringLiteral("acknowledged cancellation restores surviving playing intent"));
+
+    dialog->beginEnginePreparation(QStringLiteral("First build"));
+    dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+    dialog->beginEnginePreparation(QStringLiteral("Next build"));
+    pump(2200);
+    verdict.require(dialog->enginePreparationVisible(),
+                    QStringLiteral("an older completion timer cannot hide a new active build"));
+    requireHeld(verdict, surface, QStringLiteral("new build past older completion timer"));
+    cancelSeen = false;
+    clickCancel(overlay);
+    verdict.require(cancelSeen, QStringLiteral("the next operation remains cancellable"));
+    dialog->endEnginePreparation(false, QStringLiteral("Cancelled"));
+    verdict.require(progress != nullptr && progress->maximum() > 0,
+                    QStringLiteral("a stopped operation no longer animates as running"));
+
+    surface->setPaused(false);
+    waitFor([surface] { return corePaused(surface, false); });
+    dialog->beginEnginePreparation(QStringLiteral("Source-bound operation"));
+    const uint64_t oldEpoch = surface->sourceEpoch();
+    surface->open(url);
+    verdict.require(waitFor([surface, oldEpoch] {
+        return surface->sourceEpoch() != oldEpoch && surface->hasVideo();
+    }), QStringLiteral("replacement loads a genuinely newer source epoch"));
+    surface->setPaused(true);
+    dialog->endEnginePreparation(true, QStringLiteral("Old source complete"));
+    verdict.require(corePaused(surface, true),
+                    QStringLiteral("old completion never resumes replacement media"));
+    surface->setPaused(false);
+    verdict.require(waitFor([surface] { return corePaused(surface, false); }),
+                    QStringLiteral("source replacement leaves no stale engine pause hold"));
+
+    dialog->beginEnginePreparation(QStringLiteral("Owner handoff"));
+    dialog->togglePip();
+    PipFloat* pip = nullptr;
+    const bool floated = waitFor([&pip] {
+        pip = activeFloat();
+        return pip != nullptr && pip->videoSurface()->hasVideo();
+    });
+    verdict.require(floated, QStringLiteral("real PiP owner loads during preparation"));
+    if (floated) {
+        requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP receives active preparation hold"));
+        dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+        verdict.require(corePaused(pip->videoSurface(), true) && corePaused(surface, true),
+                        QStringLiteral("owner replacement cannot inherit an automatic original-owner resume"));
+        dialog->beginEnginePreparation(QStringLiteral("PiP preparation"));
+        pip->videoSurface()->setPaused(false);
+        requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP Play during preparation"));
+        pip->videoSurface()->setPaused(true);
+        dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+        verdict.require(corePaused(pip->videoSurface(), true) && corePaused(surface, true),
+                        QStringLiteral("PiP newer Pause survives completion; parked main stays paused"));
+        pip->videoSurface()->setPaused(false);
+        waitFor([pip] { return corePaused(pip->videoSurface(), false); });
+        dialog->togglePip();
+        surface->setPaused(true);
+        pump(350);
+        verdict.require(corePaused(surface, true),
+                        QStringLiteral("deferred PiP return cannot override a newer Pause"));
+    }
+
+    surface->setPaused(false);
+    dialog->beginEnginePreparation(QStringLiteral("Closing source"));
+    surface->close();
+    dialog->endEnginePreparation(true, QStringLiteral("Closed source complete"));
+    verdict.require(!surface->hasVideo() && !surface->isPlaying(),
+                    QStringLiteral("completion cannot resume a closed source"));
+    dialog->startPlayer();
+    verdict.require(waitFor([surface] {
+        return surface->hasVideo() && corePaused(surface, false) && surface->position() > 0.2;
+    }), QStringLiteral("reopening after close has no stale operation hold"));
+    dialog->beginEnginePreparation(QStringLiteral("Closing with work"));
+    auto* tool = dialog->findChild<ProcessingOverlay*>();
+    verdict.require(tool != nullptr && tool->isVisible(),
+                    QStringLiteral("operation window visible before close"));
+    QPointer<QWidget> toolGuard(tool);
+    QPointer<PlayerDialog> dialogGuard(dialog);
     dialog->close();
+    verdict.require(waitFor([&dialogGuard] { return dialogGuard.isNull(); }, 5000),
+                    QStringLiteral("closing the player deletes the dialog"));
+    pump(200);
+    verdict.require(toolGuard.isNull() || !toolGuard->isVisible(),
+                    QStringLiteral("no orphan operation Tool stays visible after close"));
     return verdict.report("engine_popup_probe");
 }

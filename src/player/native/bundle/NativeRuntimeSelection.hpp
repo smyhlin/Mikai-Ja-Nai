@@ -99,30 +99,17 @@ RuntimeSelection selectRuntime();
 /// to Standard as this process's first and only module, with the native reason
 /// recorded alongside it.
 ///
-/// This never provisions: it answers from what is already installed, so it can
-/// run on the GUI thread without blocking. `resolveRuntime()` is the half that
-/// may download, and the recovery path runs that on the pool.
-///
-/// `hint` names one directory to search before the bundled and cached
-/// locations; it is how a probe points the same resolver at a scratch tree
-/// without a second selection path existing.
+/// Discovery is offline; `hint` precedes the executable-adjacent runtime.
 RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint = {});
 
 /// Explicit Standard selection for probe and test entrypoints, which set up
 /// isolated settings and then need the same module the app would pick.
 RuntimeSelection selectStandardRuntime(const QString& hint = {});
 
-/// The startup entrypoint: selects the stored choice from what is already
-/// installed, without provisioning and without touching the network. `main()`
-/// calls this before the first core, so a machine with nothing installed gets a
-/// named reason instead of a download that blocks startup; the first play runs
-/// the provisioning attempt on the pool through `resolveRuntime()`.
+/// Startup pins the installed module before any core exists; absence stays a named failure.
 RuntimeSelection selectStartupRuntime(const QString& hint = {});
 
-/// Resolves a choice to a validated descriptor without loading anything. This
-/// is the half that may download, so it blocks and belongs off the GUI thread.
-/// It still refuses to disturb a reference install: a download lands in
-/// app-owned scratch and is published through the atomic installer.
+/// Resolution validates installed bytes but neither loads nor downloads a module.
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint = {});
 
 /// Loads a resolved descriptor. Runs on the GUI thread and, once it succeeds,
@@ -131,6 +118,10 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved);
 
 /// The recorded selection. Empty until something has been selected.
 const RuntimeSelection& currentSelection();
+
+/// True only for a loaded Standard selection whose validated module inventory,
+/// canonical path, and actual mpv API version identify the pinned AnimeJaNai fork.
+bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection);
 
 /// True once a module is pinned. Recovery must not run when it is true: that is
 /// what keeps a retry from becoming a second load.

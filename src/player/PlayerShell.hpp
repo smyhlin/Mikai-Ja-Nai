@@ -29,6 +29,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPointF>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QRect>
@@ -88,6 +89,8 @@ public:
     /// The heights the settings popover offers, in the host's own naming.
     void setQualityOptions(const QVector<SettingsFlyout::QualityOption>& options);
     void setAnime4KMode(anime4k::Mode mode);
+    void setAnimeJanaiSelection(const QString& id, const QString& status);
+    void setAnimeJanaiBackend(const QString& backend);
 
     // ── native processing (the enhancement tree's native branch) ────
     /// The four inputs the native branch and its status line read, replaced as
@@ -166,6 +169,8 @@ signals:
     void seekRequested(double seconds);
     void rateChanged(double rate);
     void anime4KModeChanged(anime4k::Mode mode);
+    void animeJanaiPresetRequested(const QString& id);
+    void animeJanaiBackendRequested(const QString& backend);
     void volumeChanged(double volume);
     void muteChanged(bool muted);
     void fullscreenChanged(bool fullscreen);
@@ -246,6 +251,8 @@ private:
     /// Puts the hover filter on the rows of one panel, so resting on a row
     /// opens what sits under it.
     void watchEnhancementRows(MenuPopup* panel);
+    void cancelEnhancementHover();
+    bool hasVisibleEnhancementDescendant(int depth) const;
     void updateInfoChip();
     void retranslateUi();
     void openKeys();
@@ -303,14 +310,16 @@ private:
     bool enhancementGrowLeft_ = false;
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
+    QString animeJanaiPresetId_;
+    QString animeJanaiBackend_ = QStringLiteral("tensorrt");
+    QLabel* lblAnimeJanai_ = nullptr;
 
     Panel* footerLeft_ = nullptr;
     QLabel* lblEpisode_ = nullptr;
     QLabel* lblNetworkStats_ = nullptr;
     QLabel* lblEnhancement_ = nullptr;
-    /// The native status chip. Hidden until native processing is requested or
-    /// the filter reports a state of its own, so a default Off machine keeps
-    /// the plain chip.
+    /// The native status chip. Shown only for a loaded Native runtime, when
+    /// processing is requested or the filter reports a state of its own.
     QLabel* lblNative_ = nullptr;
     /// The native branch's inputs. Default-constructed to the truth of this
     /// build: nothing requested, no engine available.
@@ -326,6 +335,10 @@ private:
     CenterGlyph* center_ = nullptr;
 
     QTimer hideTimer_;
+    QTimer enhancementHoverTimer_;
+    QPointer<MenuPopup> pendingEnhancementHoverPanel_;
+    QPointer<QWidget> pendingEnhancementHoverRow_;
+    int pendingEnhancementHoverSpot_ = -1;
     QElapsedTimer sincePosition_;
 
     /// Every floating overlay in the player window: the four popovers, the

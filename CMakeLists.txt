@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.24)
 project(mikai LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -135,14 +135,66 @@ if(MIKAI_BUILD_PROBES)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/probes/shared)
 endif()
 
-set(MPV_INCLUDE_DIR "" CACHE PATH "Directory containing mpv/client.h and mpv/render_gl.h")
-find_path(MIKAI_MPV_HEADERS mpv/client.h
-  HINTS ${MPV_INCLUDE_DIR}
-  REQUIRED
-)
-if(NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/render_gl.h")
-  message(FATAL_ERROR "MPV_INCLUDE_DIR must contain mpv/client.h and mpv/render_gl.h")
+set(MIKAI_DIST_MPV_ARCHIVE "" CACHE FILEPATH
+  "Optional local copy of the pinned mpv-dev archive (its published SHA-256 is always checked)")
+set(MIKAI_DIST_MPV_CACHE_DIR "${CMAKE_BINARY_DIR}/_dist-cache/mpv")
+set(MIKAI_MPV_ARCHIVE_NAME "mpv-dev-x86_64-20261007-git-d6d93599d5.7z")
+set(MIKAI_MPV_ARCHIVE_URL
+  "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/${MIKAI_MPV_ARCHIVE_NAME}")
+set(MIKAI_MPV_ARCHIVE_SHA256
+  "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c")
+file(MAKE_DIRECTORY "${MIKAI_DIST_MPV_CACHE_DIR}")
+if(MIKAI_DIST_MPV_ARCHIVE)
+  set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_ARCHIVE}")
+  if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
+    message(FATAL_ERROR "The local mpv archive override was not found: ${MIKAI_PINNED_MPV_ARCHIVE}")
+  endif()
+else()
+  set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_CACHE_DIR}/${MIKAI_MPV_ARCHIVE_NAME}")
+  if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
+    message(STATUS "Downloading pinned mpv developer archive for matching headers")
+    file(DOWNLOAD "${MIKAI_MPV_ARCHIVE_URL}" "${MIKAI_PINNED_MPV_ARCHIVE}"
+      EXPECTED_HASH "SHA256=${MIKAI_MPV_ARCHIVE_SHA256}"
+      STATUS mpv_download_status
+      SHOW_PROGRESS)
+    list(GET mpv_download_status 0 mpv_download_code)
+    list(GET mpv_download_status 1 mpv_download_message)
+    if(NOT mpv_download_code EQUAL 0)
+      file(REMOVE "${MIKAI_PINNED_MPV_ARCHIVE}")
+      message(FATAL_ERROR "mpv archive download failed: ${mpv_download_message}")
+    endif()
+  endif()
 endif()
+file(SHA256 "${MIKAI_PINNED_MPV_ARCHIVE}" actual_mpv_archive_sha256)
+if(NOT actual_mpv_archive_sha256 STREQUAL MIKAI_MPV_ARCHIVE_SHA256)
+  message(FATAL_ERROR
+    "The mpv archive SHA-256 does not match the pinned release: "
+    "expected ${MIKAI_MPV_ARCHIVE_SHA256}, got ${actual_mpv_archive_sha256}")
+endif()
+
+set(MIKAI_MPV_HEADERS_DIR "${MIKAI_DIST_MPV_CACHE_DIR}/headers")
+if(NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/client.h"
+    OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/render_gl.h"
+    OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
+  file(REMOVE_RECURSE "${MIKAI_MPV_HEADERS_DIR}")
+  file(MAKE_DIRECTORY "${MIKAI_MPV_HEADERS_DIR}")
+  file(ARCHIVE_EXTRACT INPUT "${MIKAI_PINNED_MPV_ARCHIVE}"
+    DESTINATION "${MIKAI_MPV_HEADERS_DIR}")
+endif()
+set(MIKAI_MPV_HEADERS "${MIKAI_MPV_HEADERS_DIR}/include")
+if(NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/client.h"
+    OR NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/render_gl.h")
+  message(FATAL_ERROR
+    "The verified mpv archive does not contain include/mpv/client.h and include/mpv/render_gl.h")
+endif()
+file(GLOB_RECURSE MIKAI_MPV_DLL_CANDIDATES LIST_DIRECTORIES FALSE
+  "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
+list(LENGTH MIKAI_MPV_DLL_CANDIDATES MIKAI_MPV_DLL_COUNT)
+if(NOT MIKAI_MPV_DLL_COUNT EQUAL 1)
+  message(FATAL_ERROR
+    "The verified mpv archive must contain exactly one libmpv-2.dll; found ${MIKAI_MPV_DLL_COUNT}")
+endif()
+list(GET MIKAI_MPV_DLL_CANDIDATES 0 MIKAI_MPV_DLL)
 
 # mikai_backend first: mikai_native_support links it (bundle runtime resolution
 # calls mikai::backend helpers), so it must be declared before use.
@@ -229,8 +281,11 @@ add_library(mikai_native_support STATIC
   src/player/native/components/NativeComponentStore.hpp
   src/player/native/components/NativeComponentToolchain.cpp
   src/player/native/components/NativeComponentToolchain.hpp
+  src/player/native/components/AnimeJanaiRuntime.cpp
+  src/player/native/components/AnimeJanaiRuntime.hpp
   src/player/native/components/NativeComponentProvisioning.cpp
   src/player/native/components/NativeComponentProvisioning.hpp
+  src/player/native/components/AnimeJanaiInstallation.cpp
 )
 # Grouped as native/{bundle,models,prepare,status}. Consumers include the
 # domain: #include "native/bundle/NativeBundle.hpp".
@@ -281,7 +336,6 @@ set(PLAYER_SOURCES
   src/player/native/status/NativePlaybackController.hpp
   src/player/native/bundle/NativePrefs.cpp
   src/player/native/bundle/NativeCapabilities.cpp
-  src/player/NativeToggleShortcut.cpp
   src/player/native/status/NativeMenu.cpp
   src/player/PresetShortcuts.cpp
   src/player/MpvHandle.cpp
@@ -296,6 +350,7 @@ set(PLAYER_SOURCES
   src/player/PlayerPopups.cpp
   src/player/PlayerDialog.cpp
   src/player/CompareWindow.cpp
+  src/player/CompareRenderer.cpp
   src/player/CompareCanvas.cpp
   src/player/CompareLayout.cpp
   src/player/ComparePane.cpp
@@ -332,6 +387,7 @@ set(PLAYER_HEADERS
   src/player/PlayerDialog.hpp
   src/player/ProcessingSettingsIntent.hpp
   src/player/CompareWindow.hpp
+  src/player/CompareRenderer.hpp
   src/player/CompareCanvas.hpp
   src/player/CompareLayout.hpp
   src/player/ComparePane.hpp
@@ -409,6 +465,9 @@ target_link_libraries(native_settings_probe PRIVATE mikai_app Qt6::Test mikai_pr
 set_target_properties(native_settings_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(mpv_surface_smoke EXCLUDE_FROM_ALL src/probes/player/mpv_surface_smoke.cpp)
 target_link_libraries(mpv_surface_smoke PRIVATE mikai_player Qt6::Widgets mikai_probe_shared)
+add_executable(animejanai_probe EXCLUDE_FROM_ALL src/probes/player/AnimeJanaiProbe.cpp)
+target_link_libraries(animejanai_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test mikai_probe_shared)
+set_target_properties(animejanai_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(headless_pixel_probe EXCLUDE_FROM_ALL src/probes/player/HeadlessPixelProbe.cpp)
 target_link_libraries(headless_pixel_probe PRIVATE mikai_player Qt6::Core Qt6::Gui Qt6::OpenGL mikai_probe_shared)
 set_target_properties(headless_pixel_probe PROPERTIES WIN32_EXECUTABLE FALSE)
@@ -448,9 +507,6 @@ add_executable(compare_probe EXCLUDE_FROM_ALL src/probes/player/CompareProbe.cpp
 target_link_libraries(compare_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test mikai_probe_shared)
 set_target_properties(compare_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
-# Live Anime4K menu walk: real popovers, every leaf, the planned-model pages,
-# settings survival across a reopen, and the pixels the chain actually draws.
-# Run it from the repo root with the shaders deployed beside the exe.
 add_executable(anime4k_menu_probe EXCLUDE_FROM_ALL src/probes/player/Anime4KMenuProbe.cpp)
 target_link_libraries(anime4k_menu_probe PRIVATE mikai_player Qt6::Widgets Qt6::Test mikai_probe_shared)
 set_target_properties(anime4k_menu_probe PROPERTIES WIN32_EXECUTABLE FALSE)
@@ -519,6 +575,8 @@ add_executable(mikai_tests
   tests/cpp/TestNativeAssets.cpp
   tests/cpp/TestNativeComponents.hpp
   tests/cpp/TestNativeComponents.cpp
+  tests/cpp/TestAnimeJanaiRuntime.hpp
+  tests/cpp/TestAnimeJanaiRuntime.cpp
   tests/cpp/TestModels.hpp
   tests/cpp/TestModels.cpp
   tests/cpp/TestReleases.hpp
@@ -593,7 +651,7 @@ if(TARGET mikai_backend)
   )
 
   set(APP_HEADERS
-    src/app/Clipboard.hpp
+    src/gui/Clipboard.hpp
     src/app/CrashLog.hpp
     src/app/I18n.hpp
     src/app/Labels.hpp
@@ -739,6 +797,15 @@ if(TARGET mikai_backend)
     endif()
   endif()
 
+  # Copy the verified libmpv API DLL beside the app; no process or IPC runtime is used.
+  add_custom_command(TARGET mikai POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/mpv"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/libmpv-2.dll"
+    COMMENT "Deploying the pinned libmpv API DLL"
+    VERBATIM
+  )
+
   # Copy Anime4K shaders next to the executable so libmpv can find them at runtime.
   add_custom_command(TARGET mikai POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -748,7 +815,7 @@ if(TARGET mikai_backend)
   )
 
   # The self-contained dist folder: the app, its Qt runtime, the shaders, the
-  # translations, and an mpv runtime when one is available locally.
+  # translations, and the pinned AnimeJaNai-compatible libmpv API DLL.
   option(MIKAI_DIST_NATIVE "Copy the installed Native bundle into the dist folder" OFF)
   set(MIKAI_DIST_DIR "${CMAKE_SOURCE_DIR}/dist-mikai" CACHE PATH
     "Where the deploy target assembles the app")
@@ -765,6 +832,11 @@ if(TARGET mikai_backend)
       -DSHADERS=${CMAKE_CURRENT_SOURCE_DIR}/shaders
       -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DMIKAI_DIST_NATIVE=${MIKAI_DIST_NATIVE}
+      "-DMIKAI_DIST_MPV_ARCHIVE=${MIKAI_PINNED_MPV_ARCHIVE}"
+      "-DMIKAI_DIST_CACHE_DIR=${MIKAI_DIST_MPV_CACHE_DIR}"
+      "-DMIKAI_MPV_ARCHIVE_NAME=${MIKAI_MPV_ARCHIVE_NAME}"
+      "-DMIKAI_MPV_ARCHIVE_URL=${MIKAI_MPV_ARCHIVE_URL}"
+      "-DMIKAI_MPV_ARCHIVE_SHA256=${MIKAI_MPV_ARCHIVE_SHA256}"
       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dist.cmake
     DEPENDS mikai
     COMMENT "Assembling the self-contained dist folder")
@@ -803,7 +875,7 @@ endif()
 
 if(MIKAI_BUILD_PROBES)
   add_subdirectory(tests/fixtures)
-  foreach(target IN ITEMS mikai_tests mpv_surface_smoke headless_pixel_probe
+  foreach(target IN ITEMS mikai_tests mpv_surface_smoke animejanai_probe headless_pixel_probe
       widget_pixel_probe shell_probe dialog_probe interaction_probe compare_probe
       compare_shot_probe anime4k_menu_probe resolver_probe title_page_probe external_media_probe)
     add_custom_command(TARGET ${target} POST_BUILD

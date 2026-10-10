@@ -4,6 +4,7 @@
 // the only place in src/app a dimension may be written down.
 namespace mikai::app::theme {
 
+inline constexpr int kSpacingNone = 0;
 inline constexpr int kSpacingXs = 4;
 inline constexpr int kSpacingSmall = 8;
 inline constexpr int kSpacingMedium = 12;
@@ -25,6 +26,17 @@ inline constexpr int kSettingsPresetListMaxHeight = 440;
 // identifier cannot widen the page; the popup still shows the entry in full.
 inline constexpr int kSettingsChoiceLengthChars = 30;
 inline constexpr int kNativeAssetsTableMaxHeight = 160;
+inline constexpr int kComponentTableKindColumnWidth = 116;
+inline constexpr int kComponentTableSizeColumnWidth = 76;
+inline constexpr int kComponentTableStatusColumnWidth = 116;
+inline constexpr int kComponentTableActionColumnWidth = 92;
+inline constexpr int kComponentTableNameMinimumWidth = 120;
+inline constexpr int kComponentTableCompactWidth =
+    kComponentTableNameMinimumWidth + kComponentTableSizeColumnWidth +
+    kComponentTableStatusColumnWidth + kComponentTableActionColumnWidth;
+inline constexpr int kComponentTableMinimalWidth =
+    kComponentTableNameMinimumWidth + kComponentTableStatusColumnWidth +
+    kComponentTableActionColumnWidth;
 inline constexpr int kNativeDimensionFieldWidth = 72;
 inline constexpr int kIconSize = 18;
 inline constexpr int kMenuItemMinHeight = 34;
@@ -37,13 +49,24 @@ inline constexpr int kSearchResultsPerPage = 55;
 inline constexpr int kPagerChipWindow = 7;
 
 inline constexpr int kEpisodesPerPage = 140;
-inline constexpr int kEpisodeButtonWidth = 72;
-inline constexpr int kEpisodeButtonHeight = 40;
+inline constexpr int kEpisodeButtonWidth = 64;
+inline constexpr int kEpisodeButtonHeight = 32;
 inline constexpr int kEpisodeSectionMaxHeight = 420;
 
 inline constexpr int kTitleCoverWidth = 188;
 inline constexpr int kTitleCoverHeight = 268;
 inline constexpr int kTitleDescriptionPreviewChars = 210;
+
+// Title-page-only compact rhythm: the cover/text column gap, the text-column
+// stack gap, selector row height, quality-chip geometry and episode-pill shape.
+inline constexpr int kTitleColumnSpacing = 16;
+inline constexpr int kTitleStackSpacing = 4;
+inline constexpr int kTitleReleaseChipHeight = 32;
+inline constexpr int kTitleBadgeHeight = 20;
+inline constexpr int kTitleBadgeHPadding = 8;
+// Concentric step-down for title-page pills and the episode panel they sit
+// in: the panel keeps the app radius, the pill steps one token down.
+inline constexpr int kTitlePillRadius = 6;
 
 inline constexpr int kCoverBackdropDownscale = 26;
 inline constexpr double kCoverZoomMin = 0.1;

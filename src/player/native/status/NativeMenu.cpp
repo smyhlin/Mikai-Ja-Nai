@@ -31,6 +31,7 @@ QString variantLabel(RifeVariant variant) {
     switch (variant) {
         case RifeVariant::Full: return translated(QT_TRANSLATE_NOOP("NativeMenu", "Full"));
         case RifeVariant::Lite: return translated(QT_TRANSLATE_NOOP("NativeMenu", "Lite"));
+        case RifeVariant::Heavy: return translated(QT_TRANSLATE_NOOP("NativeMenu", "Heavy"));
     }
     return QString();
 }
@@ -121,22 +122,6 @@ Action actionFromName(const QString& name) {
     return Action::None;
 }
 
-QString defaultToggleShortcut() {
-    // Offered only through the stored binding path; the player installs it only if
-    // the shared collision check accepts it.
-    return QStringLiteral("Ctrl+Shift+J");
-}
-
-QString toggleShortcut(const NativePreferences& preferences) {
-    // A stored decision wins even when "unbound": the default is only for a store
-    // that holds no decision at all.
-    if (preferences.toggleProcessingShortcutStored) {
-        return preferences.toggleProcessingShortcut;
-    }
-    return preferences.toggleProcessingShortcut.isEmpty() ? defaultToggleShortcut()
-                                                          : preferences.toggleProcessingShortcut;
-}
-
 bool ownsLevel(const QString& levelId) {
     return levelId == QLatin1String(kNativeLevelId) || levelId == QLatin1String(kRifeLevelId);
 }
@@ -144,7 +129,7 @@ bool ownsLevel(const QString& levelId) {
 QString categoryTooltip(const QString& levelId, const Inputs& in) {
     if (levelId == QLatin1String(kNativeLevelId)) {
         const NativeSelectionView view = evaluateNativeSelection(in.preferences, in.availability);
-        return translated(QT_TRANSLATE_NOOP("NativeMenu", "Native processing (AnimeJaNai). %1"))
+        return translated(QT_TRANSLATE_NOOP("NativeMenu", "Private prepared Native pipeline. %1"))
             .arg(refusalReason(in, view));
     }
     if (levelId == QLatin1String(kRifeLevelId)) {
@@ -209,15 +194,14 @@ QVector<Row> nativeRows(const Inputs& in) {
     off.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Off (Original picture)"));
     off.tooltip = translated(QT_TRANSLATE_NOOP(
         "NativeMenu",
-        "Turn native processing off. The Anime4K shaders, the stream and the current "
-        "media are left exactly as they are."));
+        "Disable only the private prepared Native pipeline."));
     off.action = Action::TurnOff;
     off.current = !in.preferences.enabled;
     rows.append(off);
 
     Row on;
     on.id = QStringLiteral("native/on");
-    on.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Native processing (AnimeJaNai)"));
+    on.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Enable prepared Native pipeline"));
     on.action = Action::TurnOn;
     // Exactly one row wears the mark: "On" only when no specific recipe is asked for.
     on.current = in.preferences.enabled && in.preferences.recipeId.isEmpty();
@@ -425,7 +409,7 @@ QVector<Row> rootRows(const Inputs& in) {
     QVector<Row> rows(2);
     Row& native = rows[0];
     native.id = QString::fromLatin1(kNativeLevelId);
-    native.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Native processing"));
+    native.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Prepared Native"));
     native.tooltip = categoryTooltip(native.id, in);
     native.submenu = true;
     native.disabled = false;
@@ -433,7 +417,7 @@ QVector<Row> rootRows(const Inputs& in) {
     native.value = native.id;
     Row& rife = rows[1];
     rife.id = QString::fromLatin1(kRifeLevelId);
-    rife.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "RIFE"));
+    rife.label = translated(QT_TRANSLATE_NOOP("NativeMenu", "Prepared RIFE"));
     rife.tooltip = categoryTooltip(rife.id, in);
     rife.submenu = true;
     rife.disabled = false;
@@ -460,7 +444,9 @@ StatusLines statusLines(const Inputs& in) {
     StatusLines lines;
     const std::optional<StatusSnapshot>& snapshot = in.status.snapshot;
     const bool filterReports = snapshot.has_value() && snapshot->state != NativeState::Off;
-    lines.visible = in.preferences.enabled || filterReports;
+    const bool nativeRuntime =
+        in.runtime.loaded && in.runtime.kind == BundleKind::Native;
+    lines.visible = nativeRuntime && (in.preferences.enabled || filterReports);
     if (!lines.visible) {
         return lines;
     }

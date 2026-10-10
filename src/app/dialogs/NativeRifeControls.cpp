@@ -17,7 +17,6 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QSpinBox>
-#include <QtWidgets/QToolButton>
 #include <QtWidgets/QVBoxLayout>
 
 #include <native/models/NativeRife.hpp>
@@ -100,32 +99,31 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     form->setSpacing(theme::kSpacingMedium);
 
+    version_ = new QComboBox(this);
+    version_->setObjectName(QStringLiteral("nativeRifeVersionCombo"));
+    version_->setAccessibleName(tr("RIFE version"));
+    boundCaptionWidth(version_);
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        if (version_->findData(static_cast<int>(pin.version)) >= 0) continue;
+        version_->addItem(QStringLiteral("v%1").arg(stableName(pin.version)),
+                          static_cast<int>(pin.version));
+    }
+    const int defaultVersion = version_->findData(static_cast<int>(RifeVersion::V4_14));
+    if (defaultVersion >= 0) version_->setCurrentIndex(defaultVersion);
+    form->addRow(tr("Version"), version_);
+
     variant_ = new QComboBox(this);
     variant_->setObjectName(QStringLiteral("nativeRifeVariantCombo"));
     variant_->setAccessibleName(tr("RIFE variant"));
     boundCaptionWidth(variant_);
-    // The variant list is the resolver's own pin table rather than a second copy:
-    // a variant this build does not pin can never be offered here, and a pinned
-    // one can never be missing from it. Full precedes Lite by the table's order.
-    for (const RifeModelPin& pin : rifeModelPins()) {
-        if (pin.version != RifeVersion::V4_14) continue;
-        if (variant_->findData(static_cast<int>(pin.variant)) >= 0) continue;
-        variant_->addItem(pin.variant == RifeVariant::Lite ? tr("Lite") : tr("Full"),
-                          static_cast<int>(pin.variant));
-    }
-    variant_->setCurrentIndex(variant_->findData(static_cast<int>(RifeVariant::Full)));
-    if (variant_->currentIndex() < 0 && variant_->count() > 0) {
-        variant_->setCurrentIndex(0);
-    }
+    updateVariantChoices();
     form->addRow(tr("Variant"), variant_);
 
     // The ensemble flag. A check box caption cannot wrap, so a whole translated
     // sentence here - the Ukrainian "Застосувати ансамбль до варіанта" alone
     // measured ~473 px - reserved the panel's minimum width and pushed the page
-    // past the smallest window. The interactive label is therefore the concise
-    // caption, and the explanation sits in its own wrapped hint below; the caption
-    // stays a real, readable phrase rather than an abbreviation, and nothing about
-    // the option itself changes.
+    // past the smallest window. Keep the interactive label concise and put the
+    // explanation in the checkbox tooltip; nothing about the option itself changes.
     const QString ensembleExplanation =
         tr("Applies ensembling on top of the chosen variant; it is not a third variant.");
     ensemble_ = new QCheckBox(tr("Ensemble variant"), this);
@@ -139,16 +137,6 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     // The row spans the form: the check box carries its own caption, so a second
     // label column would only repeat the word and add width to the row.
     form->addRow(ensemble_);
-
-    ensembleHint_ = new QLabel(ensembleExplanation, this);
-    ensembleHint_->setObjectName(QStringLiteral("nativeRifeEnsembleHint"));
-    ensembleHint_->setWordWrap(true);
-    // A wrapped hint yields whatever width it is given and never votes its own
-    // sentence into the panel's minimum, exactly like the status line below.
-    QSizePolicy ensembleHintPolicy = ensembleHint_->sizePolicy();
-    ensembleHintPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
-    ensembleHint_->setSizePolicy(ensembleHintPolicy);
-    form->addRow(ensembleHint_);
 
     auto* factorRow = new QHBoxLayout();
     factorRow->setSpacing(theme::kSpacingSmall);
@@ -251,9 +239,10 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     // spanning row (the ensemble caption and its hint) carries no label, so the
     // two lists stay parallel by construction: one entry is appended per row
     // that produced a label.
-    roleCaptionKeys_ = {QStringLiteral("Variant"), QStringLiteral("Frame factor"),
-                        QStringLiteral("Scene threshold"), QStringLiteral("Order"),
-                        QStringLiteral("Request"), QStringLiteral("Spatial recipe")};
+    roleCaptionKeys_ = {QStringLiteral("Version"), QStringLiteral("Variant"),
+                        QStringLiteral("Frame factor"), QStringLiteral("Scene threshold"),
+                        QStringLiteral("Order"), QStringLiteral("Request"),
+                        QStringLiteral("Spatial recipe")};
 
     root->addLayout(form);
 
@@ -284,46 +273,18 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
         QStringLiteral("color: %1;").arg(QLatin1String(theme::kMuted)));
     root->addWidget(status_);
 
-    // The exact id is one unbroken token, so it is never laid out as a label. It
-    // waits behind a disclosure row and is shown verbatim in a read-only field
-    // that can be selected and copied.
-    idToggle_ = new QToolButton(this);
-    idToggle_->setObjectName(QStringLiteral("nativeRifeIdToggle"));
-    idToggle_->setText(tr("Request ID"));
-    idToggle_->setCheckable(true);
-    idToggle_->setArrowType(Qt::RightArrow);
-    idToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    // A bare tool button is shorter than the 24 px desktop hit target; the
-    // disclosure is actionable once a request is stored, so its height is set
-    // to the settings control height like the other actions on this surface.
-    idToggle_->setMinimumHeight(theme::kSettingsControlSize);
-    idToggle_->setEnabled(false);
-    auto* idRow = new QHBoxLayout();
-    idRow->setSpacing(theme::kSpacingMedium);
-    idRow->addWidget(idToggle_);
-    idRow->addStretch();
-    root->addLayout(idRow);
-
-    idEdit_ = new QLineEdit(this);
-    idEdit_->setReadOnly(true);
-    idEdit_->setAccessibleName(tr("Exact request ID"));
-    idEdit_->hide();
-    root->addWidget(idEdit_);
-
-    connect(idToggle_, &QToolButton::toggled, this, [this](bool open) {
-        idToggle_->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
-        if (open) {
-            idEdit_->setFocus();
-            idEdit_->selectAll();
-        }
-        idEdit_->setVisible(open);
-    });
-
     connect(storeButton_, &QPushButton::clicked, this, &NativeRifeControls::storeRequest);
     connect(mode_, &QComboBox::currentIndexChanged, this,
             [this](int) { updateCombineControls(); });
-    connect(variant_, &QComboBox::currentIndexChanged, this,
-            [this](int) { updateCapabilityNote(); });
+    connect(version_, &QComboBox::currentIndexChanged, this, [this](int) {
+        updateVariantChoices();
+        updateEnsembleChoice();
+        updateCapabilityNote();
+    });
+    connect(variant_, &QComboBox::currentIndexChanged, this, [this](int) {
+        updateEnsembleChoice();
+        updateCapabilityNote();
+    });
     connect(ensemble_, &QCheckBox::toggled, this, [this](bool) { updateCapabilityNote(); });
 
     updateCombineControls();
@@ -348,18 +309,23 @@ void NativeRifeControls::retranslateUi() {
 
     for (int i = 0; i < roleLabels_.size() && i < roleCaptionKeys_.size(); ++i) {
         roleLabels_.at(i)->setText(
-            QCoreApplication::translate("NativeRifeControls",
+            QCoreApplication::translate("mikai::app::NativeRifeControls",
                                         roleCaptionKeys_.at(i).toUtf8().constData()));
     }
 
     // The variant entries are the resolver's pin names, restated through their
     // own typed data: a reordering or a new pin can never repoint a request.
-    const auto restateVariant = [this](RifeVariant value, const QString& caption) {
-        const int index = variant_->findData(static_cast<int>(value));
-        if (index >= 0) variant_->setItemText(index, caption);
-    };
-    restateVariant(RifeVariant::Full, tr("Full"));
-    restateVariant(RifeVariant::Lite, tr("Lite"));
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        const int index = variant_->findData(static_cast<int>(pin.variant));
+        if (index < 0) continue;
+        const QString name = stableName(pin.variant);
+        variant_->setItemText(index, name.left(1).toUpper() + name.mid(1));
+    }
+    version_->setAccessibleName(tr("RIFE version"));
+    for (int i = 0; i < version_->count(); ++i) {
+        const auto version = static_cast<RifeVersion>(version_->itemData(i).toInt());
+        version_->setItemText(i, QStringLiteral("v%1").arg(stableName(version)));
+    }
     variant_->setAccessibleName(tr("RIFE variant"));
 
     const QString ensembleExplanation =
@@ -367,7 +333,6 @@ void NativeRifeControls::retranslateUi() {
     ensemble_->setText(tr("Ensemble variant"));
     ensemble_->setAccessibleName(tr("Ensemble the variant"));
     ensemble_->setToolTip(ensembleExplanation);
-    ensembleHint_->setText(ensembleExplanation);
 
     factorNum_->setAccessibleName(tr("Frame factor numerator"));
     factorDen_->setAccessibleName(tr("Frame factor denominator"));
@@ -416,19 +381,45 @@ void NativeRifeControls::retranslateUi() {
     storeButton_->setText(tr("Store request"));
     storeButton_->setAccessibleName(tr("Store the RIFE request"));
     status_->setAccessibleName(tr("RIFE request status"));
-    // The status sentence is already the resolver's verdict, recomposed by the
-    // call below in the current language; its detail tooltip is chrome, so it is
-    // restated here against whatever id the panel currently discloses.
-    if (!statusDetailId_.isEmpty()) {
-        status_->setToolTip(tr("Stored request id: %1").arg(statusDetailId_));
-    }
-    idToggle_->setText(tr("Request ID"));
-    idEdit_->setAccessibleName(tr("Exact request ID"));
-
-    // The availability note is the resolver's own verdict about the catalogue
-    // already held in this panel: recomposing it re-reads nothing and keeps the
-    // exact content id in the tooltip.
     updateCapabilityNote();
+}
+
+void NativeRifeControls::updateVariantChoices() {
+    const int oldVariant = variant_->currentData().toInt();
+    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
+    QSignalBlocker blocker(variant_);
+    variant_->clear();
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        if (pin.version != version ||
+            variant_->findData(static_cast<int>(pin.variant)) >= 0) {
+            continue;
+        }
+        const QString name = stableName(pin.variant);
+        variant_->addItem(name.left(1).toUpper() + name.mid(1),
+                          static_cast<int>(pin.variant));
+    }
+    int selected = variant_->findData(oldVariant);
+    if (selected < 0) {
+        selected = variant_->findData(static_cast<int>(RifeVariant::Full));
+    }
+    if (selected < 0 && variant_->count() > 0) selected = 0;
+    variant_->setCurrentIndex(selected);
+    variant_->setToolTip(variant_->currentText());
+}
+
+void NativeRifeControls::updateEnsembleChoice() {
+    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
+    const RifeVariant variant = static_cast<RifeVariant>(variant_->currentData().toInt());
+    const bool hasPlain = rifeModelPin(version, variant, false) != nullptr;
+    const bool hasEnsemble = rifeModelPin(version, variant, true) != nullptr;
+    if (!hasPlain && hasEnsemble) {
+        QSignalBlocker blocker(ensemble_);
+        ensemble_->setChecked(true);
+    } else if (hasPlain && !hasEnsemble) {
+        QSignalBlocker blocker(ensemble_);
+        ensemble_->setChecked(false);
+    }
+    ensemble_->setEnabled(hasPlain && hasEnsemble);
 }
 
 void NativeRifeControls::updateCapabilityNote() {
@@ -437,10 +428,16 @@ void NativeRifeControls::updateCapabilityNote() {
     // The surface only repeats its verdict, so a pin the store does not hold is
     // named missing rather than assumed present, and a resolved pin is
     // *selectable* - never running. Nothing here claims Prepared or Active.
+    const RifeVersion version = static_cast<RifeVersion>(version_->currentData().toInt());
     const RifeVariant variant = static_cast<RifeVariant>(variant_->currentData().toInt());
     const bool ensemble = ensemble_->isChecked();
-    const RifeModelResolution resolution =
-        resolveRifeModel(RifeVersion::V4_14, variant, ensemble, catalog_);
+    if (stableName(variant) == QStringLiteral("heavy")) {
+        showStatus(true,
+                   tr("The heavy request is stored as selected, but the current pinned runtime "
+                      "cannot address this model name."));
+        return;
+    }
+    const RifeModelResolution resolution = resolveRifeModel(version, variant, ensemble, catalog_);
     if (resolution.resolved()) {
         // Muted, not an error: this is availability, and the request is storable
         // either way. The exact identity rides the tooltip/description rather
@@ -449,8 +446,7 @@ void NativeRifeControls::updateCapabilityNote() {
                    tr("The pinned original %1 is present in the owned store and usable, so the "
                       "request can be stored. It runs only once a prepared native pipeline is "
                       "activated.")
-                       .arg(rifeModelName(RifeVersion::V4_14, variant, ensemble)),
-                   resolution.contentId());
+                       .arg(rifeModelName(version, variant, ensemble)));
         return;
     }
     showStatus(true, resolution.reason);
@@ -513,7 +509,7 @@ std::optional<TemporalStage> NativeRifeControls::temporalStage(QString* reasonKe
     }
 
     TemporalStage stage;
-    stage.version = RifeVersion::V4_14;
+    stage.version = static_cast<RifeVersion>(version_->currentData().toInt());
     stage.variant = static_cast<RifeVariant>(variant_->currentData().toInt());
     stage.ensemble = ensemble_->isChecked();
     stage.factor.num = factorNum_->value();
@@ -547,8 +543,9 @@ std::optional<Recipe> NativeRifeControls::selectedBase(QString* reasonKey,
 }
 
 QString NativeRifeControls::recipeLabel(const TemporalStage& stage, bool combined) const {
-    QString name = tr("RIFE v4.14 · %1")
-                       .arg(stage.variant == RifeVariant::Lite ? tr("Lite") : tr("Full"));
+    QString variantName = stableName(stage.variant);
+    variantName = variantName.left(1).toUpper() + variantName.mid(1);
+    QString name = tr("RIFE v%1 · %2").arg(stableName(stage.version), variantName);
     if (stage.ensemble) {
         name += tr(" · Ensemble");
     }
@@ -562,22 +559,11 @@ QString NativeRifeControls::recipeLabel(const TemporalStage& stage, bool combine
     return name;
 }
 
-void NativeRifeControls::showStatus(bool ok, const QString& text, const QString& detail) {
+void NativeRifeControls::showStatus(bool ok, const QString& text) {
     status_->setText(text);
-    statusDetailId_ = detail;
-    status_->setToolTip(detail.isEmpty() ? QString()
-                                         : tr("Stored request id: %1").arg(detail));
     status_->setStyleSheet(QStringLiteral("color: %1;")
                                .arg(QLatin1String(ok ? theme::kMuted : theme::kDanger)));
     status_->show();
-}
-
-void NativeRifeControls::showRequestId(const QString& id) {
-    idEdit_->setText(id);
-    idToggle_->setEnabled(!id.isEmpty());
-    if (id.isEmpty()) {
-        idToggle_->setChecked(false);
-    }
 }
 
 void NativeRifeControls::storeRequest() {
@@ -616,11 +602,6 @@ void NativeRifeControls::storeRequest() {
     }
 
     refreshStoredRecipes();
-    // The visible text names the request the way the store names it to a person.
-    // The exact id is one unbroken token with no wrap point: it stays in the
-    // tooltip (and, through the tooltip, in the accessible description) and behind
-    // the disclosure row, which carries it verbatim and lets it be copied, instead
-    // of setting the panel's minimum width. Nothing about the id changes.
     const QString name = stored->label.isEmpty()
                              ? recipeLabel(request.temporal, request.base.has_value())
                              : stored->label;
@@ -628,9 +609,7 @@ void NativeRifeControls::storeRequest() {
                tr("Stored the request as %1. It is selected in the recipe list; Save "
                   "persists it, and the picture keeps using the original pipeline until a "
                   "prepared native pipeline exists.")
-                   .arg(name),
-               stored->id);
-    showRequestId(stored->id);
+                   .arg(name));
     emit recipeRequested(stored->id);
 }
 
@@ -640,6 +619,7 @@ void NativeRifeControls::applyStoredRecipe(const Recipe& recipe) {
     }
     const TemporalStage& stage = *recipe.temporal;
 
+    QSignalBlocker blockVersion(version_);
     QSignalBlocker blockVariant(variant_);
     QSignalBlocker blockEnsemble(ensemble_);
     QSignalBlocker blockNum(factorNum_);
@@ -649,8 +629,11 @@ void NativeRifeControls::applyStoredRecipe(const Recipe& recipe) {
     QSignalBlocker blockMode(mode_);
     QSignalBlocker blockBase(base_);
 
+    version_->setCurrentIndex(version_->findData(static_cast<int>(stage.version)));
+    updateVariantChoices();
     variant_->setCurrentIndex(variant_->findData(static_cast<int>(stage.variant)));
     ensemble_->setChecked(stage.ensemble);
+    updateEnsembleChoice();
     factorNum_->setValue(stage.factor.num);
     factorDen_->setValue(stage.factor.den);
     threshold_->setText(thresholdText(stage.sceneThreshold, &thresholdLocale_));
@@ -694,7 +677,6 @@ void NativeRifeControls::loadStoredRecipe(const QString& recipeId) {
     if (!recipe.has_value()) {
         return;
     }
-    showRequestId(recipe->id);
     applyStoredRecipe(*recipe);
 }
 

@@ -386,8 +386,46 @@ QString stableName(TemporalOrder order) {
 
 QString stableName(RifeVersion version) {
   switch (version) {
+    case RifeVersion::V4_7:
+      return QStringLiteral("4.7");
+    case RifeVersion::V4_8:
+      return QStringLiteral("4.8");
+    case RifeVersion::V4_9:
+      return QStringLiteral("4.9");
+    case RifeVersion::V4_10:
+      return QStringLiteral("4.10");
+    case RifeVersion::V4_11:
+      return QStringLiteral("4.11");
+    case RifeVersion::V4_12:
+      return QStringLiteral("4.12");
+    case RifeVersion::V4_13:
+      return QStringLiteral("4.13");
     case RifeVersion::V4_14:
       return QStringLiteral("4.14");
+    case RifeVersion::V4_15:
+      return QStringLiteral("4.15");
+    case RifeVersion::V4_16:
+      return QStringLiteral("4.16");
+    case RifeVersion::V4_17:
+      return QStringLiteral("4.17");
+    case RifeVersion::V4_18:
+      return QStringLiteral("4.18");
+    case RifeVersion::V4_19:
+      return QStringLiteral("4.19");
+    case RifeVersion::V4_20:
+      return QStringLiteral("4.20");
+    case RifeVersion::V4_21:
+      return QStringLiteral("4.21");
+    case RifeVersion::V4_22:
+      return QStringLiteral("4.22");
+    case RifeVersion::V4_23:
+      return QStringLiteral("4.23");
+    case RifeVersion::V4_24:
+      return QStringLiteral("4.24");
+    case RifeVersion::V4_25:
+      return QStringLiteral("4.25");
+    case RifeVersion::V4_26:
+      return QStringLiteral("4.26");
   }
   return QString();
 }
@@ -398,6 +436,8 @@ QString stableName(RifeVariant variant) {
       return QStringLiteral("full");
     case RifeVariant::Lite:
       return QStringLiteral("lite");
+    case RifeVariant::Heavy:
+      return QStringLiteral("heavy");
   }
   return QString();
 }
@@ -436,13 +476,33 @@ std::optional<TemporalOrder> temporalOrderFromName(const QString& name) {
 }
 
 std::optional<RifeVersion> rifeVersionFromName(const QString& name) {
+  if (name == QLatin1String("4.7")) return RifeVersion::V4_7;
+  if (name == QLatin1String("4.8")) return RifeVersion::V4_8;
+  if (name == QLatin1String("4.9")) return RifeVersion::V4_9;
+  if (name == QLatin1String("4.10")) return RifeVersion::V4_10;
+  if (name == QLatin1String("4.11")) return RifeVersion::V4_11;
+  if (name == QLatin1String("4.12")) return RifeVersion::V4_12;
+  if (name == QLatin1String("4.13")) return RifeVersion::V4_13;
   if (name == QLatin1String("4.14")) return RifeVersion::V4_14;
+  if (name == QLatin1String("4.15")) return RifeVersion::V4_15;
+  if (name == QLatin1String("4.16")) return RifeVersion::V4_16;
+  if (name == QLatin1String("4.17")) return RifeVersion::V4_17;
+  if (name == QLatin1String("4.18")) return RifeVersion::V4_18;
+  if (name == QLatin1String("4.19")) return RifeVersion::V4_19;
+  if (name == QLatin1String("4.20")) return RifeVersion::V4_20;
+  if (name == QLatin1String("4.21")) return RifeVersion::V4_21;
+  if (name == QLatin1String("4.22")) return RifeVersion::V4_22;
+  if (name == QLatin1String("4.23")) return RifeVersion::V4_23;
+  if (name == QLatin1String("4.24")) return RifeVersion::V4_24;
+  if (name == QLatin1String("4.25")) return RifeVersion::V4_25;
+  if (name == QLatin1String("4.26")) return RifeVersion::V4_26;
   return std::nullopt;
 }
 
 std::optional<RifeVariant> rifeVariantFromName(const QString& name) {
   if (name == QLatin1String("full")) return RifeVariant::Full;
   if (name == QLatin1String("lite")) return RifeVariant::Lite;
+  if (name == QLatin1String("heavy")) return RifeVariant::Heavy;
   return std::nullopt;
 }
 
@@ -451,14 +511,91 @@ QVector<Backend> allBackends() {
 }
 
 QString rifeModelName(RifeVersion version, RifeVariant variant, bool ensemble) {
+  const QString variantName =
+      variant == RifeVariant::Lite ? QStringLiteral("_lite")
+      : variant == RifeVariant::Heavy ? QStringLiteral("_heavy")
+                                      : QString();
   return QStringLiteral("rife_v%1%2%3")
-      .arg(stableName(version),
-           variant == RifeVariant::Lite ? QStringLiteral("_lite") : QString(),
+      .arg(stableName(version), variantName,
            ensemble ? QStringLiteral("_ensemble") : QString());
 }
 
-int rifeModelCode(RifeVariant variant) {
-  return variant == RifeVariant::Lite ? 4141 : 414;
+int rifeModelCode(RifeVersion version, RifeVariant variant) {
+  int baseCode = 0;
+  switch (version) {
+    case RifeVersion::V4_7:
+      baseCode = 47;
+      break;
+    case RifeVersion::V4_8:
+      baseCode = 48;
+      break;
+    case RifeVersion::V4_9:
+      baseCode = 49;
+      break;
+    case RifeVersion::V4_10:
+      baseCode = 410;
+      break;
+    case RifeVersion::V4_11:
+      baseCode = 411;
+      break;
+    case RifeVersion::V4_12:
+      baseCode = 412;
+      break;
+    case RifeVersion::V4_13:
+      baseCode = 413;
+      break;
+    case RifeVersion::V4_14:
+      baseCode = 414;
+      break;
+    case RifeVersion::V4_15:
+      baseCode = 415;
+      break;
+    case RifeVersion::V4_16:
+      baseCode = 416;
+      break;
+    case RifeVersion::V4_17:
+      baseCode = 417;
+      break;
+    case RifeVersion::V4_18:
+      baseCode = 418;
+      break;
+    case RifeVersion::V4_19:
+      baseCode = 419;
+      break;
+    case RifeVersion::V4_20:
+      baseCode = 420;
+      break;
+    case RifeVersion::V4_21:
+      baseCode = 421;
+      break;
+    case RifeVersion::V4_22:
+      baseCode = 422;
+      break;
+    case RifeVersion::V4_23:
+      baseCode = 423;
+      break;
+    case RifeVersion::V4_24:
+      baseCode = 424;
+      break;
+    case RifeVersion::V4_25:
+      baseCode = 425;
+      break;
+    case RifeVersion::V4_26:
+      baseCode = 426;
+      break;
+    default:
+      return 0;
+  }
+
+  switch (variant) {
+    case RifeVariant::Full:
+      return baseCode;
+    case RifeVariant::Lite:
+      return baseCode * 10 + 1;
+    case RifeVariant::Heavy:
+      return baseCode * 10 + 2;
+  }
+  return 0;
 }
 
 bool isEligibleIoType(const QString& ioType) {
@@ -925,7 +1062,7 @@ bool readTemporal(const QJsonValue& value, TemporalStage* stage, QString* errorK
       rifeVariantFromName(jsonString(object, QStringLiteral("variant")));
   if (!variant.has_value()) {
     return reject(QStringLiteral("stage.temporal.variant.unknown"),
-                  QStringLiteral("temporal variant %1 is neither full nor lite")
+                  QStringLiteral("temporal variant %1 is not supported by this build")
                       .arg(jsonString(object, QStringLiteral("variant"))));
   }
   if (!object.value(QStringLiteral("ensemble")).isBool()) {

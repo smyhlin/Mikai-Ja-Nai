@@ -346,9 +346,16 @@ void TestNativeRecipe::orderingOfSpatialStagesSurvivesTheRoundTrip() {
 
 void TestNativeRecipe::anUnreducedFactorSurvivesTheRoundTripUnchanged() {
   Recipe recipe = rifeOnlyRecipe();
+  recipe.temporal->version = RifeVersion::V4_26;
+  recipe.temporal->variant = RifeVariant::Heavy;
+  recipe.temporal->ensemble = false;
   recipe.temporal->factor = Rational(4, 2);
 
   const Recipe parsed = roundTrip(recipe);
+  QCOMPARE(parsed.temporal->version, RifeVersion::V4_26);
+  QCOMPARE(parsed.temporal->variant, RifeVariant::Heavy);
+  QCOMPARE(parsed.temporal->ensemble, false);
+  QCOMPARE(parsed.temporal->modelId(), QStringLiteral("rife_v4.26_heavy"));
 
   // 4/2 and 2/1 are the same frame rate, but only 4/2 is what was asked for. The
   // document keeps the request; reduction is something a caller opts into.
@@ -392,7 +399,7 @@ void TestNativeRecipe::allThreeShapesSurviveTheirOwnRoundTrip() {
       QCOMPARE(parsed.temporal->ensemble, ensemble);
       QCOMPARE(parsed.temporal->modelId(),
                rifeModelName(RifeVersion::V4_14, variant, ensemble));
-      QCOMPARE(rifeModelCode(parsed.temporal->variant),
+      QCOMPARE(rifeModelCode(parsed.temporal->version, parsed.temporal->variant),
                variant == RifeVariant::Lite ? 4141 : 414);
     }
   }

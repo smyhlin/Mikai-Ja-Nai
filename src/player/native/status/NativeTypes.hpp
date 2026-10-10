@@ -15,6 +15,7 @@
 #include <QtCore/QChar>
 #include <QtCore/QString>
 #include <QtCore/QVector>
+#include <QtCore/QtGlobal>
 
 namespace mplayer {
 namespace native {
@@ -37,11 +38,13 @@ enum class TemporalOrder {
 
 /// Explicit rather than a free string, so a document claiming a revision this
 /// build does not carry is rejected instead of read as the one it does.
-enum class RifeVersion { V4_14 };
+enum class RifeVersion {
+  V4_7, V4_8, V4_9, V4_10, V4_11, V4_12, V4_13, V4_14, V4_15, V4_16,
+  V4_17, V4_18, V4_19, V4_20, V4_21, V4_22, V4_23, V4_24, V4_25, V4_26
+};
 
-/// Ensemble is a flag on top of Full/Lite, not a third revision: the reference
-/// builds it by ensembling one of the two.
-enum class RifeVariant { Full, Lite };
+/// Ensemble is a flag on top of Full/Lite/Heavy, not a third revision.
+enum class RifeVariant { Full, Lite, Heavy };
 
 QString stableName(ModelRole role);
 QString stableName(Backend backend);
@@ -66,9 +69,9 @@ QVector<Backend> allBackends();
 /// "rife_v4.14", "rife_v4.14_lite", "rife_v4.14_ensemble", "rife_v4.14_lite_ensemble".
 QString rifeModelName(RifeVersion version, RifeVariant variant, bool ensemble);
 
-/// 414 for full, 4141 for lite. Ensemble is a separate conf key and never
-/// changes this number.
-int rifeModelCode(RifeVariant variant);
+/// The version's reference model number (for example 414 for v4.14, 4141 for
+/// v4.14 lite). Ensemble is a separate conf key and never changes this number.
+int rifeModelCode(RifeVersion version, RifeVariant variant);
 
 /// The only dtype the FP16 NCHW bridge can bind. A graph in another dtype is
 /// recorded as unsupported with that dtype named - never converted or

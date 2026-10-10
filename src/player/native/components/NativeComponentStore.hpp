@@ -1,14 +1,39 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
+
+#include <functional>
 
 #include "native/components/NativeComponentCatalog.hpp"
+#include "native/models/NativeRife.hpp"
 
 namespace mplayer::native {
 
 struct ComponentStore {
     QString root;
 };
+struct RifeArchiveStore {
+    QString root;
+};
+
+struct StoredRifeGraph {
+    bool installed = false;
+    QString fileName;
+    QString path;
+    qint64 bytes = 0;
+    QString reason;
+};
+
+RifeArchiveStore rifeArchiveStore();
+StoredRifeGraph storedRifeGraph(const RifeArchiveStore& store, const RifeModelPin& pin);
+StoredRifeGraph verifyRifeGraph(const RifeArchiveStore& store, const RifeModelPin& pin);
+
+/// Publishes the complete allowlisted RIFE graph inventory from an already
+/// validated extraction directory, rolling back if replacement cannot be published.
+bool installRifeGraphs(const RifeArchiveStore& store, const QVector<RifeModelPin>& pins,
+                       const QString& extractionRoot, const std::function<bool()>& cancelled,
+                       QString* reason);
 
 ComponentStore componentStore();
 

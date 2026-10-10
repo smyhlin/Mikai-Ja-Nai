@@ -48,6 +48,15 @@ void CompareGrid::setChoices(const QVector<ChoiceEntry>& choices) {
     }
 }
 
+void CompareGrid::fitToContent() {
+    zoom_ = 1.0;
+    center_ = QPointF(0.5, 0.5);
+    for (ComparePane* pane : panes_) {
+        pane->fit();
+        pane->setLocalView(zoom_, center_);
+    }
+}
+
 ComparePane* CompareGrid::paneAt(int index) const {
     if (index < 0 || index >= static_cast<int>(panes_.size())) {
         return nullptr;

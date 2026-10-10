@@ -46,7 +46,7 @@ struct ArtifactRecord {
 /// caller-vouched (a test's temporary directory) and is used as given.
 class ArtifactStore {
  public:
-  /// `AppLocalDataLocation()/native/artifacts`, per §6.6. Never created.
+  /// `<applicationDirPath>/native/artifacts`. Never created.
   ArtifactStore();
   /// An explicit root. Constructing does not validate or create anything;
   /// `isOwned()` does both.
