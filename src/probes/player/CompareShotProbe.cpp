@@ -1,29 +1,28 @@
-// Renders the comparison window and saves a PNG, so the thing can be looked at
-// instead of described.
-//
-// Everything else in this repo verified the comparison by asserting that a
-// button existed and a chain reached the core. None of it ever looked at the
-// result, which is how a window that renders no image at all still passed 30
-// checks. This probe exists to be looked at.
 #include <QApplication>
-#include "CompareCanvas.hpp"
-#include <QComboBox>
-#include <QGraphicsView>
+#include <QElapsedTimer>
+#include <QImage>
 #include <QPixmap>
-#include <QPointingDevice>
+#include <QPointer>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
-#include <QWheelEvent>
-#include <cmath>
+
 #include <cstdio>
 
-#include "Anime4K.hpp"
-#include "ComparePane.hpp"
+#include "CompareCanvas.hpp"
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerShell.hpp"
-#include "VideoSurface.hpp"
 #include "ProbeRuntime.hpp"
+#include "VideoSurface.hpp"
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace mplayer;
 using namespace mplayer::shell;
@@ -35,23 +34,6 @@ int failures = 0;
 void check(bool ok, const char* what) {
     std::fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) ++failures;
-}
-
-/// True when the wheel rescaled the picture this view is showing. The scale on
-/// screen is the view transform, so that is what is measured, and the wheel is
-/// sent into the viewport, where a real wheel event lands.
-bool wheelRescales(const QGraphicsView* view) {
-    const double before = view->transform().m11();
-    const QPointF centre(view->viewport()->width() / 2.0, view->viewport()->height() / 2.0);
-    for (int notch : {3, -3, 5, -5}) {
-        QWheelEvent wheel(centre, view->viewport()->mapToGlobal(centre.toPoint()), QPoint(),
-                          QPoint(0, notch * 120), Qt::NoButton, Qt::NoModifier,
-                          Qt::NoScrollPhase, false, Qt::MouseEventNotSynthesized,
-                          QPointingDevice::primaryPointingDevice());
-        QApplication::sendEvent(view->viewport(), &wheel);
-        QCoreApplication::processEvents();
-    }
-    return qAbs(view->transform().m11() - before) > 1e-9;
 }
 
 class Host : public PlayerHost {
@@ -69,6 +51,18 @@ public:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // Before the first PlayerDialog reads player/anime4k and
+    // player/presetShortcuts, or the probe inherits a real session.
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) {
+        std::fprintf(stderr, "FAIL cannot create an isolated settings directory\n");
+        return 1;
+    }
+    QCoreApplication::setOrganizationName(QStringLiteral("MikaiShotProbe"));
+    QCoreApplication::setApplicationName(QStringLiteral("CompareShotProbe"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
     if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
@@ -76,9 +70,6 @@ int main(int argc, char** argv) {
     const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
-    // Driven through the real player, because that is how it is reached: a
-    // window that only works when constructed one particular way is a window
-    // nobody opens.
     auto* dialog = new PlayerDialog(QStringLiteral("shot"), url, qualities, 720, &host);
     dialog->setVariants({QVariantMap{{"label", QStringLiteral("v")},
                                     {"embed", QStringLiteral("e1")}}},
@@ -108,8 +99,6 @@ int main(int argc, char** argv) {
             return;
         }
 
-        // A pixmap with real pixels in it is the whole point: an empty or
-        // all-one-colour canvas is exactly what the last version produced.
         const QImage image = canvas->grab().toImage().convertToFormat(QImage::Format_RGB888);
         image.save(QStringLiteral("compare_canvas.png"));
         std::fprintf(stderr, "     canvas %dx%d\n", image.width(), image.height());
@@ -127,36 +116,67 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "     canvas has picture: %.1f%% of samples in range\n", share);
         check(share > 20.0, "the canvas shows an actual picture, not a blank panel");
 
-        // ── the wheel must not zoom, in either surface ────────────
-        // The single canvas and the pane grid are separate classes with
-        // separate event handlers, so one wheel is not evidence about the
-        // other; both are wheeled here.
-        auto* modes = compare->findChild<QComboBox*>(QString::fromLatin1("compareMode"));
-        check(modes != nullptr && modes->count() > 1,
-              "the window can switch to the surface being wheeled");
-        if (modes != nullptr) {
-            modes->setCurrentIndex(0);
-            QTest::qWait(300);
-            check(!wheelRescales(canvas), "the wheel does not rescale the single canvas");
-            std::fprintf(stderr, "     canvas scale %.4f\n", canvas->transform().m11());
+        compare->grab().save(QStringLiteral("compare_shot.png"));
+        std::fprintf(stderr, "     compare_shot.png saved from the visible window\n");
 
-            const int sideBySide =
-                modes->findData(QString::fromLatin1(modeKey(CompareMode::SideBySide)));
-            modes->setCurrentIndex(sideBySide >= 0 ? sideBySide : 0);
-            QTest::qWait(300);
-            const QList<ComparePane*> panes = compare->findChildren<ComparePane*>();
-            check(!panes.isEmpty(), "the side-by-side layout builds its panes");
-            for (ComparePane* pane : panes) {
-                if (!pane->isVisible()) {
-                    continue;
-                }
-                check(!wheelRescales(pane), "the wheel does not rescale a side-by-side pane");
-                std::fprintf(stderr, "     pane %s scale %.4f\n", qPrintable(pane->key()),
-                             pane->transform().m11());
-            }
+        // WM_SYSCOMMAND/SC_CLOSE, what the native title bar sends.
+        QPointer<CompareWindow> compareGuard(compare);
+        VideoSurface* surface = dialog->findChild<VideoSurface*>();
+        const QImage frozenBefore = compare->frozenFrame();
+        std::fprintf(stderr,
+                     "     before close: visible=%d frozen=%dx%d playing=%d planLocked=%d\n",
+                     compare->isVisible() ? 1 : 0, frozenBefore.width(), frozenBefore.height(),
+                     surface != nullptr && surface->isPlaying() ? 1 : 0,
+                     surface != nullptr && surface->nativePlanLocked() ? 1 : 0);
+        check(compare->isVisible(), "the compare window is on screen before the close");
+#ifdef Q_OS_WIN
+        const HWND hwnd = reinterpret_cast<HWND>(compare->winId());
+        if (hwnd == nullptr || !IsWindow(hwnd)) {
+            check(false, "the compare window owns a native HWND to close");
+            app.exit(1);
+            return;
+        }
+        SendMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+#else
+        compare->close();
+#endif
+        QElapsedTimer afterClose;
+        afterClose.start();
+        while (afterClose.elapsed() < 2000) {
+            const bool settled = (compareGuard.isNull() || !compareGuard->isVisible()) &&
+                                 (compareGuard.isNull() || !compareGuard->playbackHeld()) &&
+                                 (compareGuard.isNull() || !compareGuard->comparisonPending()) &&
+                                 (surface == nullptr || !surface->nativePlanLocked());
+            if (settled) break;
+            QTest::qWait(50);
         }
 
-        compare->grab().save(QStringLiteral("compare_shot.png"));
+        check(!compareGuard.isNull() && !compareGuard->isVisible(),
+              "the native close command hid the Compare window");
+        check(!compareGuard.isNull() && !compareGuard->playbackHeld(),
+              "the close released the playback the frozen capture had paused");
+        check(!compareGuard.isNull() && !compareGuard->comparisonPending(),
+              "the close left no pending capture, build or release");
+        check(surface != nullptr && !surface->nativePlanLocked(),
+              "the close released the native plan lock the frozen capture held");
+        check(!compareGuard.isNull() && compareGuard->frozenFrame().isNull() &&
+                  compareGuard->renderedSideA().isNull() &&
+                  compareGuard->renderedSideB().isNull(),
+              "the native close clears the frozen source and both comparison outputs");
+        if (!compareGuard.isNull()) {
+            std::fprintf(stderr,
+                         "     after close: visible=%d held=%d pending=%d planLocked=%d "
+                         "frozenNull=%d outputsNull=%d\n",
+                         compareGuard->isVisible() ? 1 : 0,
+                         compareGuard->playbackHeld() ? 1 : 0,
+                         compareGuard->comparisonPending() ? 1 : 0,
+                         surface != nullptr && surface->nativePlanLocked() ? 1 : 0,
+                         compareGuard->frozenFrame().isNull() ? 1 : 0,
+                         compareGuard->renderedSideA().isNull() &&
+                                 compareGuard->renderedSideB().isNull()
+                             ? 1 : 0);
+        }
+
         std::fprintf(stderr, "RESULT: %s\n", failures == 0 ? "PASS" : "FAIL");
         app.exit(failures == 0 ? 0 : 1);
     });

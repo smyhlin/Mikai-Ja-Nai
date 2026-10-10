@@ -1433,11 +1433,7 @@ int main(int argc, char** argv) {
             const auto reopen = [&] {
                 const quint64 pauseBefore = surface->pauseRequestGeneration();
                 emit shell->compareRequested();
-                // The window works synchronously inside showEvent, so no blind
-                // wait is needed: the state it published is already final, and
-                // reading it directly is what separates a captured window from
-                // a refused one. The old fixed wait read both identically,
-                // which is exactly the ambiguity the pass/fail had.
+                QCoreApplication::processEvents();
                 std::fprintf(stderr,
                              "     reopen capture readiness: inProgress=%d held=%d "
                              "visible=%d pending=%d frozenNull=%d\n",
@@ -1605,11 +1601,6 @@ int main(int argc, char** argv) {
                   "source replacement cancels owned work and publishes no old-source pair");
             compare->close();
 
-            // The dedicated toolbar Close button is gone, so the user's only
-            // remaining affordances are Escape and the window manager's own
-            // close. Escape is the one this probe can send without simulating
-            // an OS title bar; it must run the same release path a programmatic
-            // close() does: pause preserved, plan lock released, frame cleared.
             for (int attempt = 0; attempt < 2; ++attempt) {
                 const bool escape = attempt == 1;
                 surface->setPaused(true);
