@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
     // The log and any crash report land in the folder this exe runs from.
     mikai::app::installCrashLog();
 
+    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
