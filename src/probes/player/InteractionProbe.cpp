@@ -17,6 +17,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QFile>
 #include <QImage>
 #include <QGraphicsOpacityEffect>
@@ -1458,10 +1459,11 @@ int main(int argc, char** argv) {
                 check(play->width() > cornerSize && play->height() > cornerSize,
                       "PiP play button is the largest control on the float");
             }
-            // 1.6 s is the float's own hold, so waiting 2.4 s proves a hovered
-            // float keeps its controls past the point an idle one drops them.
-            QEvent enter(QEvent::Enter);
-            QCoreApplication::sendEvent(pip, &enter);
+            QTest::mouseMove(pip, QPoint(pip->width() / 4, pip->height() / 3));
+            check(waitFor([&] {
+                      return pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
+                  }, 1000),
+                  "the actual pointer entered the float");
             QTest::qWait(2400);
             QWidget* overlay = child("pipOverlay");
             QGraphicsOpacityEffect* effect =
@@ -1471,11 +1473,13 @@ int main(int argc, char** argv) {
             const qreal hovered = effect != nullptr ? effect->opacity() : 0.0;
             check(hovered > 0.9, "PiP controls stay up while the pointer is on the float");
 
-            QEvent leave(QEvent::Leave);
-            QCoreApplication::sendEvent(pip, &leave);
-            QTest::qWait(3000);
-            const qreal idle = effect != nullptr ? effect->opacity() : 0.0;
-            check(idle < 0.1, "PiP controls auto-hide once the pointer leaves");
+            QTest::mouseMove(pip, QPoint(-32, pip->height() / 2));
+            check(waitFor([&] {
+                      return !pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
+                  }, 1000),
+                  "the actual pointer left the float");
+            check(waitFor([&] { return effect != nullptr && effect->opacity() < 0.1; }, 4000),
+                  "PiP controls auto-hide once the pointer leaves");
         }
     });
 

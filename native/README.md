@@ -185,6 +185,20 @@ Natural-player and Compare acceptance after this fix are recorded separately;
 the earlier captioned-player diagnostic incorrectly judged caption pixels
 against an uncaptioned reference, so that throwaway mode was removed, not weakened.
 
+On the composed post-fix binaries, natural spatial and RIFE selections also
+pass with clean inspected captioned frames and finite chroma/color intermediates
+(`.probe-out/ui-audit-natural-{spatial,rife}-gl-blend-fix-1791656532391.log`).
+The real H.264 operation API passes 93/93 with no skips or unavailable
+instrumentation (`.probe-out/ui-audit-gl-blend-operation-pause-1791656532391.log`).
+The first interaction run exposed a probe defect: it sent synthetic Enter/Leave
+events while the actual pointer remained over the float. The corrected probe
+moves and observes the real pointer, without changing production PiP behavior,
+and passes 180/180
+(`.probe-out/ui-audit-gl-blend-real-pointer-interactions-1791656532391.log`).
+The app, tests and relevant probes build without warnings/errors, and the full
+hermetic CTest entry passes in 17.60 s
+(`.probe-out/ui-audit-gl-blend-{composed-build,hermetic}-1791656532391.log`).
+
 The exact-author SDK core initially refused loading with Win32 126 despite its
 staged dependency closure. A direct Windows discriminator loaded and unloaded
 the same core, GGML, FreeType and curl bytes when only `/` changed to `\`.
