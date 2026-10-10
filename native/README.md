@@ -146,6 +146,31 @@ Live context, stride, ordering, lifetime and CUDA-to-GL publication remain under
 investigation. A later GUI no-graph attempt failed its foreground/input guard
 before model selection and therefore supplies no graph-versus-plain evidence.
 
+The later active-frame triplet observes the actual paused spatial playback at
+24.750 s / frame 594 under one unchanged source epoch, filter generation,
+`nvdec` decoder and empty Anime4K chain. Its raw post-video-filter 1024×576 frame
+is clean, while both surrounding 1920×1080 OpenGL framebuffer captures retain
+the lower-half stripes. Frozen files are
+`.probe-out/spatial-active-{fbo-before,raw-postvf,fbo-after}-1791656532391.png`;
+the capture log is
+`.probe-out/ui-audit-spatial-active-raw-triplet-1791656532391.log`.
+This narrows the observed difference to the displayed/imported frame versus the
+clean postfilter frame. It does not rule out an earlier publication race:
+a paused renderer can reuse an already uploaded texture after the raw download.
+The running author core is `d6d93599d59069b715013a6e77e898056499b905`, not the
+separate private SDK/fork source; its decode-event ordering, ticket wait before
+publication and full CUDA-to-GL copy synchronization are present.
+
+The keyboard and three-dot footer buttons are removed. Their supported actions
+now live in the video's right-click menu, with the local containing-folder action
+offered only for an existing file. Actual right-click, keyboard-row activation,
+Escape and `?`, local `#` filename versus streamed-source availability, and the
+existing playback/PiP flows pass all 178 interaction requirements
+(`.probe-out/ui-audit-context-menu-interactions-1791656532391.log`).
+The app and tests build without warnings/errors, CTest passes in 18.32 s, and
+the rebuilt Ukrainian catalogue has 998 finished strings and none unfinished.
+These results do not clear the processed spatial pixel or Compare gates.
+
 The preceding 512×288 RIFE build did complete and process, but its probe exited
 1: a stale prior stats file prematurely satisfied the effect predicate, so the
 pause assertions ran before build completion. The probe now requires current
