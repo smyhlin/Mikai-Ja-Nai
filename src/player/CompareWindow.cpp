@@ -523,6 +523,19 @@ void CompareWindow::finishDeferredPlaybackHoldRelease() {
         deferredPlanLockRelease_ = false;
         releasePlanLock();
     }
+    if (!isVisible()) {
+        frame_ = QImage();
+        isolatedOriginal_ = QImage();
+        frozenSourceEpoch_ = 0;
+        frozenPlaybackTimestamp_.reset();
+        renderedA_ = QImage();
+        renderedB_ = QImage();
+        pendingAjiId_.clear();
+        pendingAjiPreparation_ = false;
+        canvas_->clear(QString());
+        canvas_->setSideImages(QImage(), QImage(), QImage());
+        clearGridPanes();
+    }
 }
 
 void CompareWindow::onPlaybackStateChanged(bool playing) {
