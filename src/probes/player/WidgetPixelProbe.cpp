@@ -246,6 +246,7 @@ int main(int argc, char** argv) {
         // different one from the passing run. --dpr is applied via the
         // QT_SCALE_FACTOR environment variable before QApplication creation,
         // because QOpenGLWidget in Qt 6 has no per-widget DPR setter.
+        surface.setWindowFlag(Qt::WindowStaysOnTopHint, true);
         if (explicitSize.isValid()) surface.resize(explicitSize);
         if (fullscreen) {
             surface.showFullScreen();
