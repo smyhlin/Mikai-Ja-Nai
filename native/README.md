@@ -161,6 +161,30 @@ The running author core is `d6d93599d59069b715013a6e77e898056499b905`, not the
 separate private SDK/fork source; its decode-event ordering, ticket wait before
 publication and full CUDA-to-GL copy synchronization are present.
 
+The stripe cause is now reproduced at the Qt → libmpv GL-state boundary. Actual
+entry-state logging observes `GL_BLEND` enabled before every sampled `paintGL`
+render. The published core's first separated-chroma pass does not disable it:
+finite RG8 source samples and finite, normalized Lanczos weights are blended
+into an undefined RGBA16F framebuffer. The captured first chroma texture has
+378/740/474/959 non-finite R/G/B/A values, all in its lower half
+(`.probe-out/ui-audit-published-real-gl-entry-state-1791656532391.log`).
+The CUDA-GL ownership experiment did not remove those stripes and is not the fix.
+
+`VideoSurface::paintGL` now disables blending before rendering, as required by
+the pinned `render_gl.h` contract. The unchanged published DLL, backend and
+cached spatial engine then render the same held 24.750 s / frame 594 cleanly
+with NVDEC and the second caption track still active. Every captured active
+color/chroma plane is finite; subtitles off/restored preserve the clean image.
+Evidence is `.probe-out/ui-audit-published-gl-blend-fix-1791656532391.log` and
+the inspected `.probe-out/gl-blend-fixed-{fbo-before,subtitles-restored}-1791656532391.png`.
+The opt-in `animejanai_probe --capture-processed-raw --capture-gl-textures`
+now rejects non-finite output-sized color/chroma planes rather than accepting
+mere motion. SDK-only admission and the unused native patch were removed:
+no new DLL, CPU fallback, shader substitution or tolerance change is needed.
+Natural-player and Compare acceptance after this fix are recorded separately;
+the earlier captioned-player diagnostic incorrectly judged caption pixels
+against an uncaptioned reference, so that throwaway mode was removed, not weakened.
+
 The exact-author SDK core initially refused loading with Win32 126 despite its
 staged dependency closure. A direct Windows discriminator loaded and unloaded
 the same core, GGML, FreeType and curl bytes when only `/` changed to `\`.

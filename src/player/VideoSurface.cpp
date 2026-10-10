@@ -1522,6 +1522,8 @@ void VideoSurface::paintGL() {
     // Clear reused Qt buffers before rendering, including pixels outside the video rectangle.
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     gl->glViewport(0, 0, targetWidth, targetHeight);
+    // Qt enables blending before paintGL; libmpv requires its default disabled state.
+    gl->glDisable(GL_BLEND);
     gl->glDisable(GL_SCISSOR_TEST);
     gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     gl->glClear(GL_COLOR_BUFFER_BIT);

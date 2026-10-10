@@ -1,3 +1,4 @@
+#include "GlTextureCapture.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -10,6 +11,8 @@
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
 #include <QOpenGLWidget>
 #include <QSettings>
 #include <QStandardPaths>
@@ -1146,6 +1149,227 @@ std::optional<double> numericProperty(VideoSurface* surface, const QString& name
     return value->asNumber();
 }
 
+std::optional<QString> textProperty(VideoSurface* surface, const QString& name) {
+    const auto value = surface->probeMpvProperty(name, ProbePropertyKind::Text);
+    if (!value || value->kind != ProbePropertyValue::Kind::Text) return std::nullopt;
+    return value->text;
+}
+
+void result(bool ok, const char* description) {
+    std::fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", description);
+}
+
+struct ProcessedRawCapture {
+    VideoSurface* surface = nullptr;
+    QString nativeRoot;
+    native::AnimeJanaiPlan plan;
+    std::optional<double> requestedAt;
+    bool isolateSubtitles = false;
+    bool captureGlTextures = false;
+
+    bool run() {
+        QPointer<VideoSurface> owner(surface);
+        if (!owner) return false;
+        const auto pause = owner->probeMpvProperty(QStringLiteral("pause"), ProbePropertyKind::Flag);
+        if (!pause || pause->kind != ProbePropertyValue::Kind::Flag) {
+            std::fprintf(stderr, "FAIL processed-raw: pause state unavailable\n");
+            return false;
+        }
+        const bool wasPaused = pause->flag;
+        owner->setPaused(true);
+        const auto settlePaint = [&]() {
+            if (!owner) return false;
+            QObject receiver;
+            int swaps = 0;
+            QObject::connect(owner, &QOpenGLWidget::frameSwapped, &receiver, [&]() {
+                ++swaps;
+                if (owner && swaps < 2) owner->update();
+            });
+            owner->update();
+            return waitUntil([&] { return !owner || swaps >= 2; }, 5000) && owner;
+        };
+        const bool captured = [&]() {
+            if (!waitUntil([&] { return !owner || owner->pauseObserved(); }, 5000) || !owner)
+                return false;
+            if (requestedAt) {
+                owner->seek(*requestedAt);
+                if (!waitUntil([&] {
+                        if (!owner) return true;
+                        const auto time = numericProperty(owner, QStringLiteral("time-pos"));
+                        const auto seeking = owner->probeMpvProperty(
+                            QStringLiteral("seeking"), ProbePropertyKind::Flag);
+                        return time && std::abs(*time - *requestedAt) <= 0.01 &&
+                               seeking && seeking->kind == ProbePropertyValue::Kind::Flag &&
+                               !seeking->flag;
+                    }, 10000) || !owner)
+                    return false;
+            }
+            if (!settlePaint()) {
+                std::fprintf(stderr, "FAIL processed-raw: held frame was not presented\n");
+                return false;
+            }
+            const uint64_t epoch = owner->sourceEpoch();
+            const quint64 generation = owner->animeJanaiGeneration();
+            const auto position = numericProperty(owner, QStringLiteral("time-pos"));
+            const auto vf = textProperty(owner, QStringLiteral("vf"));
+            const auto shaders = textProperty(owner, QStringLiteral("glsl-shaders"));
+            const auto hwdec = textProperty(owner, QStringLiteral("hwdec-current"));
+            const auto inputW = numericProperty(owner, QStringLiteral("video-params/w"));
+            const auto inputH = numericProperty(owner, QStringLiteral("video-params/h"));
+            const auto outputW = numericProperty(owner, QStringLiteral("video-out-params/w"));
+            const auto outputH = numericProperty(owner, QStringLiteral("video-out-params/h"));
+            if (!position || !vf || !shaders || !hwdec ||
+                !vf->contains(QStringLiteral("@mikai_aji")) || plan.presetId.isEmpty()) {
+                std::fprintf(stderr, "FAIL processed-raw: live frame/filter facts unavailable\n");
+                return false;
+            }
+            std::fprintf(stderr,
+                         "[processed-raw] epoch=%llu position=%.6f input=%.0fx%.0f "
+                         "output=%.0fx%.0f hwdec=%s surface=%dx%d dpr=%.3f vf=%s shaders=%s\n",
+                         static_cast<unsigned long long>(epoch), *position,
+                         inputW.value_or(-1), inputH.value_or(-1),
+                         outputW.value_or(-1), outputH.value_or(-1), qPrintable(*hwdec),
+                         owner->width(), owner->height(), owner->devicePixelRatioF(),
+                         qPrintable(*vf), qPrintable(*shaders));
+            const QDir folder(nativeRoot);
+            const QString beforePath =
+                folder.filePath(QStringLiteral("animejanai-probe-processed-raw-fbo-before.png"));
+            const QString rawPath =
+                folder.filePath(QStringLiteral("animejanai-probe-processed-raw-raw-postvf.png"));
+            const QString afterPath =
+                folder.filePath(QStringLiteral("animejanai-probe-processed-raw-fbo-after.png"));
+            owner->makeCurrent();
+            QOpenGLFunctions* gl = owner->context()->functions();
+            GLint unpackBuffer = -1, unpackAlignment = -1, unpackRows = -1;
+            GLboolean colorMask[4]{};
+            gl->glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
+            gl->glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpackAlignment);
+            gl->glGetIntegerv(GL_UNPACK_ROW_LENGTH, &unpackRows);
+            gl->glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+            std::fprintf(stderr,
+                         "[processed-raw] GL stencil=%d depth=%d blend=%d scissor=%d "
+                         "dither=%d color-mask=%d%d%d%d unpack-buffer=%d alignment=%d rows=%d\n",
+                         gl->glIsEnabled(GL_STENCIL_TEST), gl->glIsEnabled(GL_DEPTH_TEST),
+                         gl->glIsEnabled(GL_BLEND), gl->glIsEnabled(GL_SCISSOR_TEST),
+                         gl->glIsEnabled(GL_DITHER), colorMask[0], colorMask[1],
+                         colorMask[2], colorMask[3], unpackBuffer, unpackAlignment, unpackRows);
+            owner->doneCurrent();
+            const QImage before = owner->grabFramebuffer();
+            const bool beforeSaved = !before.isNull() && before.save(beforePath, "PNG");
+            bool texturesSaved = true;
+            if (captureGlTextures) {
+                owner->makeCurrent();
+                texturesSaved = outputW && outputH &&
+                    savePlayerGlTextures(owner, QSize(static_cast<int>(*outputW),
+                                                      static_cast<int>(*outputH)),
+                                         folder.filePath(QStringLiteral("gl-texture-readback")));
+                owner->doneCurrent();
+            }
+
+            // Destroying this receiver also cancels queued replies after a timeout.
+            QObject receiver;
+            bool answered = false;
+            bool rawSaved = false;
+            double rawPosition = -1;
+            QSize rawSize;
+            QString failure;
+            QObject::connect(
+                owner, &VideoSurface::nativeReferenceFrameReady, &receiver,
+                [&](const native::FrameFixture& frame, quint64 frameEpoch,
+                    double framePosition, int frameIndex, std::optional<native::Rational>) {
+                    if (answered) return;
+                    answered = true;
+                    rawPosition = framePosition;
+                    rawSize = frame.size;
+                    const qint64 bytes = qint64(frame.size.width()) * frame.size.height() * 3;
+                    if (frameIndex != 0 || frameEpoch != epoch ||
+                        !std::isfinite(framePosition) ||
+                        std::abs(framePosition - *position) > 0.01 ||
+                        frame.size.isEmpty() || bytes != frame.rgb.size()) {
+                        failure = QStringLiteral("stale or malformed postfilter frame");
+                        return;
+                    }
+                    const QImage image(reinterpret_cast<const uchar*>(frame.rgb.constData()),
+                                       frame.size.width(), frame.size.height(),
+                                       frame.size.width() * 3, QImage::Format_RGB888);
+                    rawSaved = !image.isNull() && image.save(rawPath, "PNG");
+                });
+            QObject::connect(
+                owner, &VideoSurface::nativeReferenceFrameFailed, &receiver,
+                [&](const QString& key, const QString& reason, int) {
+                    if (answered) return;
+                    answered = true;
+                    failure = key + QStringLiteral(": ") + reason;
+                });
+            owner->requestNativeReferenceFrame(0);
+            const bool received =
+                waitUntil([&] { return answered || !owner; }, 10000);
+            if (!owner) return false;
+            // Software download can repair a race: keep both surrounding FBO observations.
+            const QImage after = owner->grabFramebuffer();
+            const bool afterSaved = !after.isNull() && after.save(afterPath, "PNG");
+            bool subtitleCaptured = !isolateSubtitles;
+            if (isolateSubtitles) {
+                const auto originalSid = textProperty(owner, QStringLiteral("sid"));
+                const auto cycleTo = [&](const QString& expected) {
+                    for (int attempt = 0; attempt < 4 && owner; ++attempt) {
+                        const auto prior = textProperty(owner, QStringLiteral("sid"));
+                        if (prior == expected) return true;
+                        if (!prior || !owner->probeCycleMpvTrack(QStringLiteral("sid")))
+                            return false;
+                        if (!waitUntil([&] {
+                                return !owner ||
+                                       textProperty(owner, QStringLiteral("sid")) != prior;
+                            }, 3000) || !owner)
+                            return false;
+                    }
+                    return owner && textProperty(owner, QStringLiteral("sid")) == expected;
+                };
+                const bool disabled = originalSid && *originalSid != QStringLiteral("no") &&
+                                      cycleTo(QStringLiteral("no")) && settlePaint();
+                const QString disabledPath = folder.filePath(
+                    QStringLiteral("animejanai-probe-processed-raw-subtitles-off.png"));
+                const bool disabledSaved = disabled && owner &&
+                    owner->grabFramebuffer().save(disabledPath, "PNG");
+                const bool restored = originalSid && cycleTo(*originalSid) && settlePaint();
+                const QString restoredPath = folder.filePath(
+                    QStringLiteral("animejanai-probe-processed-raw-subtitles-restored.png"));
+                const bool restoredSaved = restored && owner &&
+                    owner->grabFramebuffer().save(restoredPath, "PNG");
+                subtitleCaptured = disabledSaved && restoredSaved;
+                std::fprintf(stderr,
+                             "[processed-raw] subtitle-isolation original=%s off=%d restored=%d "
+                             "off-image=%s restored-image=%s\n",
+                             originalSid ? qPrintable(*originalSid) : "unavailable",
+                             disabledSaved, restoredSaved, qPrintable(disabledPath),
+                             qPrintable(restoredPath));
+            }
+            if (!owner) return false;
+            const auto endPosition = numericProperty(owner, QStringLiteral("time-pos"));
+            const bool sameFrame =
+                owner->sourceEpoch() == epoch && owner->animeJanaiGeneration() == generation &&
+                endPosition && std::abs(*endPosition - *position) <= 0.01 &&
+                textProperty(owner, QStringLiteral("vf")) == vf &&
+                textProperty(owner, QStringLiteral("glsl-shaders")) == shaders &&
+                textProperty(owner, QStringLiteral("hwdec-current")) == hwdec &&
+                owner->pauseObserved();
+            std::fprintf(stderr,
+                         "[processed-raw] before=%s saved=%d raw=%s saved=%d raw-size=%dx%d "
+                         "after=%s saved=%d positions=%.6f/%.6f/%.6f "
+                         "same-frame=%d received=%d failure=%s\n",
+                         qPrintable(beforePath), beforeSaved, qPrintable(rawPath), rawSaved,
+                         rawSize.width(), rawSize.height(), qPrintable(afterPath), afterSaved,
+                         *position, rawPosition, endPosition.value_or(-1),
+                         sameFrame, received, qPrintable(failure));
+            return beforeSaved && received && rawSaved && afterSaved && sameFrame &&
+                   subtitleCaptured && texturesSaved;
+        }();
+        if (owner) owner->setPaused(wasPaused);
+        result(captured, "presented held postfilter raw and FBO captures; not a pixel verdict");
+        return captured;
+    }
+};
+
 struct EngineBuildPlaybackEvidence {
     bool armed = false;
     bool originallyPlaying = false;
@@ -1441,10 +1665,6 @@ int observedFrameChanges(VideoSurface* surface, int durationMs) {
     return changes;
 }
 
-void result(bool ok, const char* description) {
-    std::fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", description);
-}
-
 bool validateRifePlans(native::Backend backend) {
     const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
     int expectedCount = 0;
@@ -1560,6 +1780,28 @@ int main(int argc, char** argv) {
                                           QStringLiteral("Require a fresh TensorRT engine build in this run"));
     QCommandLineOption validatePlansOption(QStringLiteral("validate-model-plans"),
                                            QStringLiteral("Validate every real prepared RIFE plan; does not build engines"));
+    QCommandLineOption captureProcessedRawOption(
+        QStringLiteral("capture-processed-raw"),
+        QStringLiteral("At the processed evidence point, park the ACTUAL surface and capture the "
+                       "FBO-before frame, the raw post-video-filter frame, and the FBO-after "
+                       "frame at one identical paused time under one source epoch. Diagnostic "
+                       "only: the raw frame is a postfilter observation and is never an Original "
+                       "reference. With no --capture-at the capture holds the position the core "
+                       "was already parked at."));
+    QCommandLineOption captureAtOption(
+        QStringLiteral("capture-at"),
+        QStringLiteral("Non-negative seconds to hold for the --capture-processed-raw triplet. One "
+                       "seek is issued after the processing is live; omitted, the observed park "
+                       "position is held instead."),
+        QStringLiteral("seconds"));
+    QCommandLineOption subtitleIsolationOption(
+        QStringLiteral("capture-subtitle-isolation"),
+        QStringLiteral("With --capture-processed-raw, capture subtitles off and restored at the "
+                       "held frame to distinguish subtitle composition from video processing."));
+    QCommandLineOption glTexturesOption(
+        QStringLiteral("capture-gl-textures"),
+        QStringLiteral("With --capture-processed-raw, capture NV12/color-pass GL textures and "
+                       "reject non-finite active output planes; requires desktop OpenGL 4.5."));
     parser.addOption(presetOption);
     parser.addOption(backendOption);
     parser.addOption(importOption);
@@ -1570,6 +1812,10 @@ int main(int argc, char** argv) {
     parser.addOption(naturalOption);
     parser.addOption(requireBuildOption);
     parser.addOption(validatePlansOption);
+    parser.addOption(captureProcessedRawOption);
+    parser.addOption(captureAtOption);
+    parser.addOption(subtitleIsolationOption);
+    parser.addOption(glTexturesOption);
     parser.addPositionalArgument(QStringLiteral("video"), QStringLiteral("Local video file"));
     parser.addPositionalArgument(QStringLiteral("preset"), QStringLiteral("Prepared preset id"),
                                  QStringLiteral("[preset]"));
@@ -1614,6 +1860,51 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "FAIL --validate-model-plans is plan-only and cannot be combined with "
                      "natural playback, an engine-build requirement, or a selected preset\n");
+        return 1;
+    }
+    if (parser.isSet(subtitleIsolationOption) && !parser.isSet(captureProcessedRawOption)) {
+        std::fprintf(stderr, "FAIL --capture-subtitle-isolation requires --capture-processed-raw\n");
+        return 1;
+    }
+    if (parser.isSet(glTexturesOption) && !parser.isSet(captureProcessedRawOption)) {
+        std::fprintf(stderr, "FAIL --capture-gl-textures requires --capture-processed-raw\n");
+        return 1;
+    }
+    std::optional<double> captureAtSeconds;
+    if (parser.isSet(captureAtOption)) {
+        if (!parser.isSet(captureProcessedRawOption)) {
+            std::fprintf(stderr,
+                         "FAIL --capture-at requires --capture-processed-raw; a capture "
+                         "position without the capture itself would silently do nothing\n");
+            return 1;
+        }
+        bool secondsOk = false;
+        const double seconds = parser.value(captureAtOption).toDouble(&secondsOk);
+        if (!secondsOk || !std::isfinite(seconds) || seconds < 0.0) {
+            std::fprintf(stderr,
+                         "FAIL --capture-at needs a finite non-negative seconds value "
+                         "(received %s)\n",
+                         qPrintable(parser.value(captureAtOption).trimmed()));
+            return 1;
+        }
+        captureAtSeconds = seconds;
+    }
+    if (parser.isSet(captureProcessedRawOption) && validatePlansOnly) {
+        std::fprintf(stderr,
+                     "FAIL --capture-processed-raw captures a live processed postfilter frame and "
+                     "cannot be combined with --validate-model-plans\n");
+        return 1;
+    }
+    if (parser.isSet(captureProcessedRawOption) && positional.isEmpty()) {
+        std::fprintf(stderr,
+                     "FAIL --capture-processed-raw needs a local video file to capture from\n");
+        return 1;
+    }
+    if (parser.isSet(captureProcessedRawOption) && parser.isSet(requireBuildOption)) {
+        std::fprintf(stderr,
+                     "FAIL --capture-processed-raw cannot be combined with --require-engine-build: "
+                     "a fresh multi-minute engine build runs the probe on a different processing "
+                     "trigger than a cached engine does\n");
         return 1;
     }
     const QString backendArg =
@@ -1751,6 +2042,7 @@ int main(int argc, char** argv) {
         window.show();
     }
     int failures = 0;
+    int captureTripletFailures = 0;
     bool ajiInconclusive = false;
     bool buildActive = false;
     bool buildWindowVisible = false;
@@ -2318,6 +2610,16 @@ int main(int argc, char** argv) {
                     QStringLiteral("animejanai-probe-processed.png"));
                 const bool imageSaved = processedFrame.save(imagePath, "PNG");
                 const QString imageSha256 = imageSaved ? fileSha256(imagePath) : QString();
+                if (parser.isSet(captureProcessedRawOption)) {
+                    ProcessedRawCapture capture;
+                    capture.surface = surface;
+                    capture.nativeRoot = actualNativeRoot;
+                    capture.plan = surface->animeJanaiPlan();
+                    capture.requestedAt = captureAtSeconds;
+                    capture.isolateSubtitles = parser.isSet(subtitleIsolationOption);
+                    capture.captureGlTextures = parser.isSet(glTexturesOption);
+                    if (!capture.run()) ++captureTripletFailures;
+                }
                 QString guiImagePath;
                 bool guiImageSaved = false;
                 if (parser.isSet(naturalOption) && naturalDialog) {
@@ -2494,15 +2796,17 @@ int main(int argc, char** argv) {
                 bool slotSwitchTested = false;
                 std::fprintf(stderr,
                              "[AnimeJanaiProbe] post-effect checkpoint before builtin slot candidates "
-                             "selected=%s slot=%d require-build=%d\n",
+                             "selected=%s slot=%d require-build=%d capture-processed-raw=%d\n",
                              qPrintable(plan.presetId), plan.slot,
-                             parser.isSet(requireBuildOption) ? 1 : 0);
+                             parser.isSet(requireBuildOption) ? 1 : 0,
+                             parser.isSet(captureProcessedRawOption) ? 1 : 0);
                 for (const native::AnimeJanaiPreset& candidate : native::animeJanaiPresets()) {
                     std::fprintf(stderr,
                                  "[AnimeJanaiProbe] builtin candidate id=%s slot=%d supported=%d rife=%d\n",
                                  qPrintable(candidate.id), candidate.slot,
                                  candidate.supported ? 1 : 0, candidate.rife ? 1 : 0);
-                    if (parser.isSet(requireBuildOption)) break;
+                    if (parser.isSet(requireBuildOption) ||
+                        parser.isSet(captureProcessedRawOption)) break;
                     if (!candidate.supported || candidate.slot == plan.slot || candidate.rife) continue;
                     native::AnimeJanaiPlan alternate;
                     if (parser.isSet(naturalOption)) {
@@ -2571,9 +2875,11 @@ int main(int argc, char** argv) {
                     break;
                 }
                 if (!slotSwitchTested) {
-                    std::fprintf(stderr, parser.isSet(requireBuildOption)
-                        ? "SKIP builtin slot switch: omitted from required-build proof to avoid a second expensive engine build\n"
-                        : "SKIP builtin slot switch: no other supported installed spatial preset is available\n");
+                    std::fprintf(stderr, parser.isSet(captureProcessedRawOption)
+                        ? "SKIP builtin slot switch: omitted for --capture-processed-raw so the captured filter chain, engine and decoder stay exactly as the diagnostic read them\n"
+                        : parser.isSet(requireBuildOption)
+                            ? "SKIP builtin slot switch: omitted from required-build proof to avoid a second expensive engine build\n"
+                            : "SKIP builtin slot switch: no other supported installed spatial preset is available\n");
                 }
                 if (parser.isSet(naturalOption)) {
                     std::fprintf(stderr, "[AnimeJanaiProbe] post-effect checkpoint before Off selection\n");
@@ -2653,6 +2959,14 @@ int main(int argc, char** argv) {
         window.close();
     }
     QCoreApplication::processEvents();
+
+    if (parser.isSet(captureProcessedRawOption) && captureTripletFailures == 0 && !hasPreset) {
+        std::fprintf(stderr,
+                     "FAIL --capture-processed-raw was requested but no AnimeJaNai preset was "
+                     "supplied, so the diagnostic captured nothing\n");
+        ++captureTripletFailures;
+    }
+    failures += captureTripletFailures;
 
     if (failures != 0) {
         std::fprintf(stderr, "FAIL AnimeJaNai GUI probe: %d assertion(s) failed\n", failures);
