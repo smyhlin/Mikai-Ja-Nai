@@ -15,6 +15,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSaveFile>
 #include <QThread>
 #include <QTimer>
 #include <QUrl>
@@ -41,6 +42,13 @@ constexpr int kAbortDrainMs = 2000;
 // the same request may then succeed. It used to retry forever, so an endpoint
 // that always answered 429 pinned its worker thread for the whole session.
 constexpr int kMaxRateLimitRetries = 3;
+// How long a parked caller sleeps before it looks at the cancellation scope
+// again. The scope is thread-local and a cancel is a plain atomic store, so it
+// cannot wake the condition variable on its own; a slice this short bounds the
+// delay a Cancel press feels without turning the wait into a poll loop - an
+// exhausted limiter window may be minutes long, and this costs one wakeup per
+// second at most.
+constexpr int kCancelSliceMs = 200;
 
 double monotonicSeconds() {
     static const QElapsedTimer timer = [] {
@@ -96,46 +104,12 @@ std::optional<int> quotaInt(const QString& value) {
     return ok ? std::optional<int>(std::max(0, parsed)) : std::nullopt;
 }
 
-// The .env the Python client wrote next to the repo root. The C++ build has
-// no __file__, so walk up from the executable until a .env shows up and fall
-// back to the current working directory.
-QString envFilePath() {
-    QDir dir = QCoreApplication::applicationDirPath();
-    for (int depth = 0; depth < 4; ++depth) {
-        const QString candidate = dir.filePath(QStringLiteral(".env"));
-        if (QFile::exists(candidate)) {
-            return candidate;
-        }
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-    return QDir::current().filePath(QStringLiteral(".env"));
-}
-
-QString readApiKeyFromEnv() {
-    QFile file(envFilePath());
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return {};
-    }
-    while (!file.atEnd()) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) {
-            continue;
-        }
-        const int equals = line.indexOf(QLatin1Char('='));
-        const int separator = equals >= 0 ? equals : line.indexOf(QLatin1Char(':'));
-        if (separator < 0) {
-            continue;
-        }
-        const QString name = line.left(separator).trimmed().toLower();
-        if (name == QLatin1String("x-api-key") || name == QLatin1String("api_key") ||
-            name == QLatin1String("apikey")) {
-            const QString value = line.mid(separator + 1).trimmed();
-            return value.isEmpty() ? QString{} : value;
-        }
-    }
-    return {};
+// An isolated caller - a test, a probe - installs its own .env location here so
+// the search below can never reach a file that belongs to the repository or to
+// an installed build. An empty override restores the search.
+QString& envOverride() {
+    static QString path;
+    return path;
 }
 
 // A QNetworkAccessManager belongs to the thread that created it, and the
@@ -171,6 +145,7 @@ struct HttpResult {
     QByteArray body;
     QuotaHeaders quota;
     QString error;
+    bool cancelled = false;
 };
 
 HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request, int timeoutMs) {
@@ -181,6 +156,25 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     timer.setSingleShot(true);
     QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    // Cancellation is observed on its own clock rather than only when the reply
+    // finishes: a worker being shut down while a request is parked in DNS or
+    // TLS must not hold its thread until the deadline. Aborting the reply is
+    // what releases the event loop, and the drain below bounds the moment it
+    // takes to unwind.
+    QTimer cancelWatch;
+    cancelWatch.setSingleShot(false);
+    cancelWatch.setInterval(kCancelSliceMs);
+    bool cancelSeen = false;
+    QObject::connect(&cancelWatch, &QTimer::timeout, &loop, [&] {
+        if (WorkCancellationScope::cancellationRequested()) {
+            cancelSeen = true;
+            reply->abort();
+        }
+    });
+    cancelWatch.start();
+    const auto stopWatchers = [&] {
+        cancelWatch.stop();
+    };
     timer.start(timeoutMs);
     loop.exec();
     if (reply->isRunning()) {
@@ -191,7 +185,13 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
         timer.start(kAbortDrainMs);
         loop.exec();
     }
+    stopWatchers();
     timer.stop();
+    // Only a cancel that actually stopped this reply counts: a caller whose
+    // scope happens to be installed while an ordinary reply completes has not
+    // cancelled anything, and reporting it as cancelled would discard a result
+    // the server did send.
+    result.cancelled = cancelSeen;
 
     result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const auto pairs = reply->rawHeaderPairs();
@@ -265,10 +265,117 @@ const QStringList& weekdayOrder() {
 
 }  // namespace
 
+QString envFilePath() {
+    const QString override = envOverride();
+    if (!override.isEmpty()) {
+        return override;
+    }
+    // The .env the Python client wrote next to the repo root. The C++ build has
+    // no __file__, so walk up from the executable until a .env shows up and fall
+    // back to the current working directory.
+    QDir dir = QCoreApplication::applicationDirPath();
+    for (int depth = 0; depth < 4; ++depth) {
+        const QString candidate = dir.filePath(QStringLiteral(".env"));
+        if (QFile::exists(candidate)) {
+            return candidate;
+        }
+        if (!dir.cdUp()) {
+            break;
+        }
+    }
+    return QDir::current().filePath(QStringLiteral(".env"));
+}
+
+void setEnvFilePathOverride(const QString& path) { envOverride() = path; }
+
+namespace {
+
+QString readApiKeyFromEnv() {
+    QFile file(envFilePath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) {
+            continue;
+        }
+        const int equals = line.indexOf(QLatin1Char('='));
+        const int separator = equals >= 0 ? equals : line.indexOf(QLatin1Char(':'));
+        if (separator < 0) {
+            continue;
+        }
+        const QString name = line.left(separator).trimmed().toLower();
+        if (name == QLatin1String("x-api-key") || name == QLatin1String("api_key") ||
+            name == QLatin1String("apikey")) {
+            const QString value = line.mid(separator + 1).trimmed();
+            return value.isEmpty() ? QString{} : value;
+        }
+    }
+    return {};
+}
+
+// The payload the file holds, written through a QSaveFile so a partial write
+// never lands. Clearing the key writes an empty file rather than removing it:
+// the Python client reads the location, not the entry.
+bool writeEnvFile(const QString& path, const QString& apiKey, QString* reason) {
+    QSaveFile file(path);
+    // No direct-write fallback: renaming a temporary onto the target is what
+    // makes a failed replace leave the previous key exactly as it was.
+    file.setDirectWriteFallback(false);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("could not write %1: %2").arg(path, file.errorString());
+        }
+        return false;
+    }
+    const QByteArray payload =
+        apiKey.isEmpty() ? QByteArray{} : QStringLiteral("X-API-Key: %1\n").arg(apiKey).toUtf8();
+    if (!payload.isEmpty() && file.write(payload) != payload.size()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("could not write %1: %2").arg(path, file.errorString());
+        }
+        return false;
+    }
+    if (!file.commit()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("could not save %1: %2").arg(path, file.errorString());
+        }
+        return false;
+    }
+    return true;
+}
+
+// A failure envelope is decoded before anything else is decided about an HTTP
+// answer, so a documented 403/404/422 keeps its code and message. A body that
+// is not an envelope is a transport answer, which stays a transport error.
+MikaiApiError apiErrorFromHttp(const HttpResult& result) {
+    ApiErrorEnvelope envelope;
+    if (parseApiErrorEnvelope(result.body, result.status, &envelope)) {
+        return MikaiApiError(envelope.code, envelope.message, envelope.status);
+    }
+    if (!result.error.isEmpty()) {
+        return MikaiApiError(QStringLiteral("network_error"), result.error, 0);
+    }
+    return MikaiApiError(QStringLiteral("http_error"), reasonFor(result.status), result.status);
+}
+
+}  // namespace
+
 int RateLimiter::acquireSlot() {
     bool waiting = false;
     QMutexLocker locker(&mutex_);
     for (;;) {
+        if (WorkCancellationScope::cancellationRequested()) {
+            // No slot was taken, so no quota update is owed. Throwing is the
+            // only honest answer: the caller asked for a slot that a shutdown
+            // is no longer willing to wait for.
+            if (waiting) {
+                --waiters_;
+            }
+            throw MikaiApiError(QStringLiteral("cancelled"),
+                                QStringLiteral("the request was cancelled before it was sent"), 0);
+        }
         const double now = monotonicSeconds();
         if (resetAt_ != 0.0 && now >= resetAt_) {
             remaining_.reset();
@@ -289,7 +396,16 @@ int RateLimiter::acquireSlot() {
             ++waiters_;
             waiting = true;
         }
-        condition_.wait(&mutex_, QDeadlineTimer(static_cast<int>((delay + 0.05) * 1000.0)));
+        // The wait is sliced so a cancellation is observed within a few hundred
+        // milliseconds even though the advertised window can be minutes long.
+        // The mutex is held across the store, which is what makes the scope
+        // observable exactly once rather than intermittently.
+        const double windowMs = (delay + 0.05) * 1000.0;
+        const int sliceMs =
+            std::max(1, std::min<int>(std::isfinite(windowMs) ? static_cast<int>(windowMs)
+                                                              : kCancelSliceMs,
+                                      kCancelSliceMs));
+        condition_.wait(&mutex_, QDeadlineTimer(sliceMs));
     }
 }
 
@@ -392,6 +508,11 @@ RateLimitState RateLimiter::state(bool keyed) const {
     return snapshot;
 }
 
+int RateLimiter::generation() const {
+    QMutexLocker locker(&mutex_);
+    return generation_;
+}
+
 void RateLimiter::reset() {
     QMutexLocker locker(&mutex_);
     ++generation_;
@@ -399,10 +520,14 @@ void RateLimiter::reset() {
     remaining_.reset();
     resetAt_ = 0.0;
     retryAt_ = 0.0;
+    // Every parked caller is released, so the next one out of the queue takes
+    // the credential snapshot of the new epoch rather than continuing with the
+    // header it captured before the key changed.
     condition_.wakeAll();
 }
 
-MikaiClient::MikaiClient(const QString& apiKey) {
+MikaiClient::MikaiClient(const QString& apiKey, const QString& baseUrl)
+    : baseUrl_(baseUrl.isEmpty() ? kBaseUrl : baseUrl) {
     const QString explicitKey = apiKey.trimmed();
     if (!explicitKey.isEmpty()) {
         apiKey_ = explicitKey;
@@ -416,6 +541,17 @@ MikaiClient::~MikaiClient() = default;
 
 QNetworkAccessManager* MikaiClient::managerForThread() const { return threadManager(); }
 
+CredentialSlot MikaiClient::credentialSlot() const {
+    // One lock for both fields: the key and the epoch it was captured for leave
+    // this function together or not at all, so a caller that parks and resumes
+    // can never send the old header under the new generation.
+    QMutexLocker locker(&keyMutex_);
+    CredentialSlot slot;
+    slot.key = apiKey_;
+    slot.generation = limiter_.generation();
+    return slot;
+}
+
 QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>& params,
                                 const QString& overrideKey, int timeoutMs) const {
     QUrl target(url);
@@ -427,25 +563,46 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         target.setQuery(query);
     }
 
-    QNetworkRequest request(target);
-    request.setRawHeader("Accept", "application/json");
-    request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
-    const QString key = overrideKey.isEmpty() ? apiKey_ : overrideKey;
-    if (!key.isEmpty()) {
-        request.setRawHeader(kApiHeader, key.toUtf8());
-    }
-
     for (int attempt = 0;; ++attempt) {
-        const int generation = limiter_.acquireSlot();
+        // The limiter grants the slot first and the credentials are read after
+        // it: a caller released by a key change resumes with the key that is
+        // current now, not with a header from the epoch it parked under.
+        limiter_.acquireSlot();
+        QNetworkRequest request(target);
+        request.setRawHeader("Accept", "application/json");
+        request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
+        // The credential snapshot carries the generation it was read at, and
+        // this is the generation the reply is charged to. A caller released by a
+        // key change reads the new key and the new epoch together here; a reply
+        // from a superseded epoch takes no quota from the window it does not
+        // describe. An explicit override key is a caller-supplied credential with
+        // no epoch of its own, so it stays with the epoch the limiter granted.
+        const CredentialSlot slot =
+            overrideKey.isEmpty()
+                ? credentialSlot()
+                : CredentialSlot{overrideKey, limiter_.generation()};
+        if (!slot.key.isEmpty()) {
+            request.setRawHeader(kApiHeader, slot.key.toUtf8());
+        }
+
         const HttpResult result = runBlocking(managerForThread(), request, timeoutMs);
         const int status = result.status;
         limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
-                            result.quota.retryAfter, generation, status);
+                            result.quota.retryAfter, slot.generation, status);
+        if (result.cancelled) {
+            throw MikaiApiError(QStringLiteral("cancelled"),
+                                QStringLiteral("the request was cancelled"), 0);
+        }
         if (status == 429 && attempt < kMaxRateLimitRetries) {
             continue;  // the limiter parked us; the same request may now succeed
         }
-        if (!result.error.isEmpty()) {
+        if (!result.error.isEmpty() && !isHttpStatusError(status)) {
             throw MikaiApiError(QStringLiteral("network_error"), result.error, 0);
+        }
+        if (isHttpStatusError(status)) {
+            // The envelope is decoded before the transport classification: a
+            // documented API failure keeps its code, message and status.
+            throw apiErrorFromHttp(result);
         }
         QJsonParseError parseError{};
         const QJsonDocument document = QJsonDocument::fromJson(result.body, &parseError);
@@ -457,14 +614,16 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
 }
 
 QJsonObject MikaiClient::get(const QString& path, const QMap<QString, QString>& params) const {
-    const QJsonObject payload = apiGet(kBaseUrl + path, params);
+    const QJsonObject payload = apiGet(baseUrl_ + path, params);
     if (!payload.value(QStringLiteral("ok")).toBool()) {
         const QJsonObject error = payload.value(QStringLiteral("error")).toObject();
         const QJsonValue code = error.value(QStringLiteral("code"));
         const QJsonValue message = error.value(QStringLiteral("message"));
         throw MikaiApiError(code.isString() ? code.toString() : QStringLiteral("unknown"),
                             message.isString() ? message.toString() : QStringLiteral("request failed"),
-                            0);
+                            payload.value(QStringLiteral("error")).toObject()
+                                .value(QStringLiteral("errorCode"))
+                                .toInt(0));
     }
     return payload;
 }
@@ -548,33 +707,52 @@ QByteArray MikaiClient::fetchBytes(const QString& url, int timeoutMs) const {
     request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
     const int timeout = timeoutMs > 0 ? timeoutMs : kArtworkTimeoutMs;
     const HttpResult result = runBlocking(managerForThread(), request, timeout);
-    if (!result.error.isEmpty() || result.status >= 400) {
-        throw MikaiApiError(QStringLiteral("network_error"),
-                            result.error.isEmpty() ? reasonFor(result.status) : result.error,
-                            result.status);
+    if (result.cancelled) {
+        throw MikaiApiError(QStringLiteral("cancelled"), QStringLiteral("the request was cancelled"),
+                            0);
+    }
+    if (!result.error.isEmpty() && !isHttpStatusError(result.status)) {
+        throw MikaiApiError(QStringLiteral("network_error"), result.error, 0);
+    }
+    if (isHttpStatusError(result.status)) {
+        // Artwork mirrors answer with a bare status, but an API-shaped envelope
+        // would still carry the documented code and message, so it is decoded
+        // here rather than discarded.
+        throw apiErrorFromHttp(result);
     }
     return result.body;
 }
 
-QString MikaiClient::apiKey() const { return apiKey_; }
-
-void MikaiClient::setApiKey(const QString& apiKey) {
-    apiKey_ = apiKey.trimmed();
-    QFile file(envFilePath());
-    if (!apiKey_.isEmpty()) {
-        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-            file.write(QStringLiteral("X-API-Key: %1\n").arg(apiKey_).toUtf8());
-        }
-    } else if (file.exists()) {
-        file.open(QIODevice::WriteOnly | QIODevice::Truncate);
-        file.close();
-    }
-    limiter_.reset();
+QString MikaiClient::apiKey() const {
+    QMutexLocker locker(&keyMutex_);
+    return apiKey_;
 }
 
-QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const {
-    const QString key = apiKey.trimmed();
-    QNetworkRequest request{QUrl(kBaseUrl + QStringLiteral("/me"))};
+ApiKeySaveResult MikaiClient::setApiKey(const QString& apiKey) {
+    const QString candidate = apiKey.trimmed();
+    // The file is written and committed before anything visible changes: a read
+    // only directory, a full disk or an unavailable parent must leave the
+    // previous key on disk and the active key in memory exactly as they were.
+    QString reason;
+    if (!writeEnvFile(envFilePath(), candidate, &reason)) {
+        return ApiKeySaveResult{false, reason};
+    }
+    {
+        // Both halves happen under one lock, in this order, so no caller can
+        // ever observe the new key paired with the old generation or the new
+        // generation paired with the old key. Releasing the parked callers is
+        // part of the same step: they wake up, take the snapshot that is
+        // current now, and send with the key this save just published.
+        QMutexLocker locker(&keyMutex_);
+        apiKey_ = candidate;
+        limiter_.reset();
+    }
+    return ApiKeySaveResult{true, {}};
+}
+
+QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& candidateKey) const {
+    const QString key = candidateKey.trimmed();
+    QNetworkRequest request{QUrl(baseUrl_ + QStringLiteral("/me"))};
     request.setRawHeader("Accept", "application/json");
     request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
     if (!key.isEmpty()) {
@@ -583,7 +761,7 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const
 
     HttpResult result;
     try {
-        if (!key.isEmpty() && key == apiKey_) {
+        if (!key.isEmpty() && key == apiKey()) {
             // The saved key: route it through the limiter so its own quota
             // stays honest.
             const int generation = limiter_.acquireSlot();
@@ -591,13 +769,31 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const
             const int status = result.status;
             limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
                                 result.quota.retryAfter, generation, status);
+            if (result.cancelled) {
+                throw MikaiApiError(QStringLiteral("cancelled"),
+                                    QStringLiteral("the request was cancelled"), 0);
+            }
         } else {
             // A candidate key, anonymous access included, has its own quota:
             // keep its response out of the saved key's counter.
             result = runBlocking(managerForThread(), request, kValidateTimeoutMs);
+            if (result.cancelled) {
+                throw MikaiApiError(QStringLiteral("cancelled"),
+                                    QStringLiteral("the request was cancelled"), 0);
+            }
         }
-        if (!result.error.isEmpty()) {
-            throw MikaiApiError(QStringLiteral("network_error"), result.error, result.status);
+        if (!result.error.isEmpty() && !isHttpStatusError(result.status)) {
+            throw MikaiApiError(QStringLiteral("network_error"), result.error, 0);
+        }
+        if (isHttpStatusError(result.status)) {
+            // A disabled or invalid key is an HTTP answer first, and its
+            // envelope is the only thing that says which of the two it is.
+            const MikaiApiError http = apiErrorFromHttp(result);
+            QMap<QString, QVariant> refused;
+            refused.insert(QStringLiteral("valid"), false);
+            refused.insert(QStringLiteral("error_code"), http.code);
+            refused.insert(QStringLiteral("error"), http.message);
+            return refused;
         }
         QJsonParseError parseError{};
         const QJsonDocument document = QJsonDocument::fromJson(result.body, &parseError);
@@ -634,6 +830,9 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& apiKey) const
     }
 }
 
-RateLimitState MikaiClient::rateLimitState() const { return limiter_.state(!apiKey_.isEmpty()); }
+RateLimitState MikaiClient::rateLimitState() const {
+    QMutexLocker locker(&keyMutex_);
+    return limiter_.state(!apiKey_.isEmpty());
+}
 
 }  // namespace mikai::backend

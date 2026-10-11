@@ -9,12 +9,39 @@
 
 #include <optional>
 
+#include "Cancellation.hpp"
 #include "Errors.hpp"
 #include "Models.hpp"
 
 class QNetworkAccessManager;
 
 namespace mikai::backend {
+
+// One association of a credential snapshot with the rate-limit generation it
+// was captured for. `apiGet()` takes this after the limiter grants a slot and
+// not before: a key change while the caller was parked must not let the request
+// keep a header from a superseded epoch, and must not let a reply from a
+// superseded epoch describe the new key's window either.
+struct CredentialSlot {
+    QString key;
+    int generation = 0;
+};
+
+// The .env the Python client wrote next to the repo root. The C++ build has no
+// __file__, so the search walks up from the executable until a .env shows up
+// and falls back to the current working directory. A caller that must never
+// touch whatever file that search would find - a test, a probe - installs an
+// override instead; an empty override restores the search.
+QString envFilePath();
+void setEnvFilePathOverride(const QString& path);
+
+// The outcome of persisting a key. The .env is replaced through a QSaveFile,
+// which writes a sibling temporary and renames it into place, so a failed save
+// leaves the previous file exactly as it was and the active key untouched.
+struct ApiKeySaveResult {
+    bool ok = false;
+    QString reason;
+};
 
 // The API sits behind a bot filter that challenges requests without a
 // User-Agent. Qt sends none by default, so every request has to carry one;
@@ -39,13 +66,23 @@ class RateLimiter {
 public:
     RateLimiter() = default;
 
+    // Grants a slot and returns the generation it belongs to. Throws
+    // MikaiApiError("cancelled") when the calling thread's cancellation scope
+    // is set, so a shutdown does not wait out an advertised window.
     int acquireSlot();
     // Takes the whole header map and pulls the four quota values out of it in a
     // single pass.
     void finishCall(const QMap<QString, QString>& headers, int generation, int statusCode = 0);
     RateLimitState state(bool keyed) const;
 
+    // The current epoch. Every acquired slot carries it, and every quota update
+    // arriving with a different one is discarded: it describes a window that no
+    // longer belongs to this key.
+    int generation() const;
+
     // Called after the key changes so the next caller starts a fresh window.
+    // This also releases every parked caller, which re-reads its credentials
+    // rather than continuing with a header from the superseded epoch.
     void reset();
 
     // The request path already has the four values in hand, so it applies them
@@ -73,7 +110,7 @@ private:
 // gets its own QNetworkAccessManager, and the limiter is mutex-guarded.
 class MikaiClient {
 public:
-    explicit MikaiClient(const QString& apiKey = {});
+    explicit MikaiClient(const QString& apiKey = {}, const QString& baseUrl = {});
     ~MikaiClient();
     MikaiClient(const MikaiClient&) = delete;
     MikaiClient& operator=(const MikaiClient&) = delete;
@@ -92,8 +129,16 @@ public:
     // timeout keeps the artwork default.
     QByteArray fetchBytes(const QString& url, int timeoutMs = -1) const;
 
+    QString baseUrl() const { return baseUrl_; }
+
+    // The credential snapshot, safe to read from any thread.
     QString apiKey() const;
-    void setApiKey(const QString& apiKey);
+
+    // Persists the key, then publishes it. The .env is replaced through a
+    // QSaveFile and committed before anything visible changes: a write that
+    // fails leaves the previous file intact and the active key as it was, and
+    // reports why rather than pretending the save happened.
+    ApiKeySaveResult setApiKey(const QString& apiKey);
 
     // Returns {valid, authenticated, rate_limit, name, error}.
     QMap<QString, QVariant> validateApiKey(const QString& apiKey) const;
@@ -106,6 +151,13 @@ private:
     QJsonObject apiGet(const QString& url, const QMap<QString, QString>& params = {},
                        const QString& overrideKey = {}, int timeoutMs = 15000) const;
 
+    // The credential snapshot and the limiter generation it was captured for,
+    // read as one unit so a key change cannot hand a request the new epoch with
+    // the old header.
+    CredentialSlot credentialSlot() const;
+
+    const QString baseUrl_;
+    mutable QMutex keyMutex_;
     mutable QString apiKey_;
     mutable RateLimiter limiter_;
 };

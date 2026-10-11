@@ -20,6 +20,7 @@
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
+#include "backend/Diagnostics.hpp"
 #include "native/bundle/NativeBundle.hpp"
 #include "native/status/NativeFilterCommand.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
@@ -296,8 +297,21 @@ void VideoSurface::ensureEngine() {
             const auto* message = static_cast<const mpv_event_log_message*>(event->data);
             const QString line = QString::fromUtf8(message->text == nullptr ? "" : message->text).trimmed();
             const QString prefix = QString::fromUtf8(message->prefix == nullptr ? "" : message->prefix);
-            if (message->log_level <= MPV_LOG_LEVEL_WARN) qWarning().noquote() << "[mpv]" << prefix << line;
-            else qInfo().noquote() << "[mpv]" << prefix << line;
+            // libmpv echoes the URLs it was handed and the filter commands it
+            // was asked to run. Both can carry a signed token, and everything
+            // Qt logging emits is persisted by the session log and carried into
+            // crash reports, so the redaction happens at this boundary rather
+            // than at every reader of a log line. The observation and failure
+            // paths below keep the exact mpv text: matching a status marker or
+            // naming a failure is not a persistence boundary, and redacting
+            // there would change what the player reports to the user.
+            const QString safePrefix = mikai::backend::redactDiagnostic(prefix);
+            const QString safeLine = mikai::backend::redactDiagnostic(line);
+            if (message->log_level <= MPV_LOG_LEVEL_WARN) {
+                qWarning().noquote() << "[mpv]" << safePrefix << safeLine;
+            } else {
+                qInfo().noquote() << "[mpv]" << safePrefix << safeLine;
+            }
             const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
             observeAnimeJanaiBackendLog(prefix, line);
             const bool ajiMessage = lower.contains(QStringLiteral("aji")) ||

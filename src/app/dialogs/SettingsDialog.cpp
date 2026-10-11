@@ -19,6 +19,7 @@
 #include <player/PresetShortcuts.hpp>
 #include <player/ProcessingSettingsIntent.hpp>
 
+#include <QAccessible>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -1422,6 +1423,11 @@ void SettingsDialog::showGeneralError(const QString& message) {
     status_->setText(message);
     status_->show();
     tabs_->setCurrentIndex(0);
+    // Naming the refusal on screen is only half of reporting it: assistive
+    // technology announces what changes under it, and a save that silently
+    // stayed as it was is exactly the case that has to be said out loud.
+    QAccessibleEvent alert(status_, QAccessible::Alert);
+    QAccessible::updateAccessibility(&alert);
 }
 
 void SettingsDialog::showProcessingTab() {
@@ -1487,7 +1493,19 @@ void SettingsDialog::save() {
 
     const QString candidate = token_->text().trimmed();
     if (candidate != client_.apiKey()) {
-        client_.setApiKey(candidate);
+        // The key is persisted first and published only when that succeeded, so
+        // this call either lands or says why it did not. A refusal leaves the
+        // token, the persisted key and the quota window exactly as they were
+        // and keeps the dialog open: the reason belongs beside the field it is
+        // about rather than in a log nobody reads.
+        const backend::ApiKeySaveResult saveResult = client_.setApiKey(candidate);
+        if (!saveResult.ok) {
+            showGeneralError(tr("The API key could not be saved, so it was left unchanged: %1")
+                                 .arg(saveResult.reason.isEmpty()
+                                          ? tr("the key file could not be written")
+                                          : saveResult.reason));
+            return;
+        }
     }
     QSet<QString> chosen;
     for (auto it = feedBoxes_.constBegin(); it != feedBoxes_.constEnd(); ++it) {

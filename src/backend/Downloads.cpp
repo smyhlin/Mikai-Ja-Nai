@@ -1,5 +1,7 @@
 #include "Downloads.hpp"
 
+#include "Cancellation.hpp"
+#include "Diagnostics.hpp"
 #include "Runtime.hpp"
 
 #include <QCryptographicHash>
@@ -7,6 +9,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileDevice>
 #include <QFileInfo>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -15,6 +18,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 
+#include <functional>
 #include <stdexcept>
 
 namespace mikai::backend {
@@ -91,8 +95,11 @@ QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers,
         reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
     reply->deleteLater();
     if (!error.isEmpty()) {
-        throw std::runtime_error(
-            QStringLiteral("GET %1 failed: %2").arg(url.toString(), error).toStdString());
+        // `url` may carry a signed path or query; it never reaches the message
+        // as the transport built it.
+        const QString message = redactDiagnostic(
+            QStringLiteral("GET %1 failed: %2").arg(url.toString(), error));
+        throw std::runtime_error(message.toStdString());
     }
     return body;
 }
@@ -101,20 +108,49 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
                     const QString& expectedSha256,
                     const std::function<void(qint64 received, qint64 total)>& progress,
                     const std::function<bool()>& cancelled, QString* reason) {
-    auto fail = [&](const QString& text) {
-        QFile::remove(destination);
+    bool created = false;
+    // A refusal removes nothing. This invocation owns a file only once it has
+    // opened it with exclusive creation, so that and nothing else is ever
+    // deleted: a destination that already existed - or one that raced into place
+    // between the existence check and the open - belongs to whoever put it
+    // there and is reported untouched.
+    auto refuse = [&](const QString& text) {
         if (reason) {
             *reason = text;
         }
         return false;
     };
+    // `created` tracks this invocation's own partial. It is the only path this
+    // call will ever remove, so a cancellation, a verification failure or a
+    // storage error cannot destroy a neighbour's file.
+    auto fail = [&](const QString& text) {
+        if (created) {
+            created = false;
+            QFile::remove(destination);
+        }
+        if (reason) {
+            *reason = text;
+        }
+        return false;
+    };
+    // Both quoted names are user-visible and loggable text, so both go through
+    // the diagnostic scrubber: a signed asset URL carries its credentials in the
+    // path or query, and quoting it whole would copy a token into a log or a
+    // fault report.
+    const QString namedDestination = redactDiagnostic(destination);
+    const QString namedUrl = redactDiagnostic(url.toString());
     if (QFileInfo::exists(destination)) {
-        return fail(QStringLiteral("refusing to overwrite %1").arg(destination));
+        return refuse(QStringLiteral("refusing to overwrite %1").arg(namedDestination));
     }
+    // NewOnly is the exclusive-create flag: the open fails outright when the path
+    // appeared after the check above, instead of truncating the file that just
+    // arrived. WriteOnly | Truncate cannot make that promise, which is what let a
+    // concurrent writer's data be destroyed by a caller that never touched it.
     QFile file(destination);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return fail(QStringLiteral("could not write %1").arg(destination));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        return refuse(QStringLiteral("could not write %1").arg(namedDestination));
     }
+    created = true;
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "MPVBackend");
@@ -122,6 +158,7 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     QCryptographicHash hash(QCryptographicHash::Sha256);
     qint64 received = 0;
     qint64 total = 0;
+    bool writeError = false;
     QElapsedTimer progressClock;
     progressClock.start();
     const auto maybeReport = [&] {
@@ -141,13 +178,28 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         if (chunk.isEmpty()) {
             return;
         }
-        file.write(chunk);
-        hash.addData(chunk);
-        received += chunk.size();
+        // Bytes count only when the write returned every one of them. A short
+        // write and a storage failure look identical to the network layer, and
+        // the digest below is computed over the chunk rather than over what the
+        // file accepted - so crediting the chunk before it reached disk would
+        // certify a file that is not there.
+        const qint64 written = file.write(chunk);
+        if (written == chunk.size()) {
+            hash.addData(chunk);
+            received += chunk.size();
+        } else {
+            writeError = true;
+        }
         if (total == 0) {
             total = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
         }
         maybeReport();
+        if (writeError) {
+            // Storage is gone; the stall watchdog has nothing left to guard
+            // against. Drop the connection now rather than keep draining bytes
+            // into a file that cannot take them.
+            reply->abort();
+        }
     };
     QEventLoop loop;
     // A stall watchdog, because a connection that is accepted and then goes quiet
@@ -168,22 +220,26 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     // Cancellation is polled on its own clock rather than only when a chunk
     // arrives: a download that has gone quiet is exactly when a viewer presses
     // Cancel, and waiting for the stall watchdog would leave the button dead for
-    // a minute.
+    // a minute. The shared work-cancellation state is consulted as well, so a
+    // cancel that arrived through the Runner's pools - a shutdown, a page that
+    // tore itself down - is answered here without the caller having to rewire its
+    // predicate to see it.
     QTimer cancelPoll;
     cancelPoll.setInterval(kCancelPollMs);
+    const auto cancellationPending = [&] {
+        return (cancelled && cancelled()) || WorkCancellationScope::cancellationRequested();
+    };
     QObject::connect(&cancelPoll, &QTimer::timeout, &loop, [&] {
-        if (cancelled && cancelled()) {
+        if (cancellationPending()) {
             reply->abort();
         }
     });
-    if (cancelled) {
-        cancelPoll.start();
-    }
+    cancelPoll.start();
 
     QObject::connect(reply, &QNetworkReply::readyRead, &loop, [&] {
         stall.start(kStallTimeoutMs);
         consume();
-        if (cancelled && cancelled()) {
+        if (cancellationPending()) {
             reply->abort();
         }
     });
@@ -194,31 +250,41 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     loop.exec();
     stall.stop();
     cancelPoll.stop();
+    // The loop has ended but the file must be settled too: flush pushes the last
+    // buffer out and close reports any deferred failure. Neither was inspected
+    // before, so a full disk could produce a completed download that no later
+    // reader could open.
+    const bool flushed = file.flush();
     file.close();
-    const bool wasCancelled = cancelled && cancelled();
+    const bool storageFinished =
+        flushed && !writeError && file.error() == QFileDevice::NoError;
+    const bool wasCancelled = cancellationPending();
     const QString error =
         reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
     reply->deleteLater();
     if (stalled) {
         return fail(QStringLiteral("%1 sent nothing for %2 seconds")
-                        .arg(url.toString())
+                        .arg(namedUrl)
                         .arg(kStallTimeoutMs / 1000));
     }
     if (wasCancelled) {
-        return fail(QStringLiteral("cancelled while downloading %1").arg(url.toString()));
+        return fail(QStringLiteral("cancelled while downloading %1").arg(namedUrl));
     }
     if (!error.isEmpty()) {
-        return fail(QStringLiteral("GET %1 failed: %2").arg(url.toString(), error));
+        return fail(QStringLiteral("GET %1 failed: %2").arg(namedUrl, error));
+    }
+    if (!storageFinished) {
+        return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
     }
     if (received != expectedBytes) {
         return fail(QStringLiteral("size mismatch for %1: got %2, expected %3")
-                        .arg(destination)
+                        .arg(namedDestination)
                         .arg(received)
                         .arg(expectedBytes));
     }
     if (QString::fromLatin1(hash.result().toHex()).compare(expectedSha256, Qt::CaseInsensitive) !=
         0) {
-        return fail(QStringLiteral("sha256 mismatch for %1").arg(destination));
+        return fail(QStringLiteral("sha256 mismatch for %1").arg(namedDestination));
     }
     if (progress) {
         progress(received, total);
@@ -252,7 +318,7 @@ QString ensureSevenZip() {
             throw std::runtime_error("official 7-Zip download SHA-256 mismatch");
         }
         QFile file(path);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
+        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly) ||
             file.write(bytes) != bytes.size() || !file.flush()) {
             throw std::runtime_error("could not write " + path.toStdString());
         }

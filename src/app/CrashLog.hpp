@@ -24,10 +24,26 @@ QString logPath();
 ///     session log so the crash has context rather than just a code;
 ///   * a session that starts while a previous crash report is still on disk
 ///     says so in the log, so a silent death is never invisible.
+///
+/// The fault handler itself is Win32-only from the moment the exception arrives:
+/// it reads paths and identity that were pre-cached here and writes a fixed
+/// block with CreateFileW/WriteFile, so it touches no Qt object, no
+/// QString/QByteArray, no heap allocation, no logging mutex, no dynamic UTF-8
+/// buffer and no CRT formatting. The report is written without depending on a
+/// working allocator, which is what a corrupt heap cannot survive. It is still
+/// only what an unhandled-exception filter can be: it does not claim to catch
+/// OS fast-fail, RaiseFailFastException or a crash raised while a debugger is
+/// attached, and a heap already too damaged to reach the filter produces no
+/// report at all.
 void installCrashLog();
 
-/// Writes one line to the session log. Safe to call from anywhere on the GUI
-/// thread; it is the same path the Qt message handler takes.
+/// Writes one line to the session log. Safe to call from any thread; it is the
+/// same path the Qt message handler takes.
+///
+/// The one boundary where a received line is redacted: a remote URL loses its
+/// userinfo, path, query and fragment, and a credential loses its value, before
+/// anything is written to disk. The log tail a crash report carries is therefore
+/// already redacted and needs no second pass.
 void writeLogLine(const QString& line);
 
 }  // namespace mikai::app
