@@ -54,7 +54,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 set(AJI_SOURCE_DIR "" CACHE PATH
-  "Read-only pinned animejanai-inference checkout (commit 738ce3b3020b3950c48ce3122a08f32af531d4fa)")
+  "Read-only animejanai-inference source tree. Build input is the official v0.9.0 tag baseline c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3 plus authorized mutable local edits; 738ce3b3020b3950c48ce3122a08f32af531d4fa is the historical baseline comparison only")
 set(AJI_TRT_ROOT "" CACHE PATH
   "TensorRT root: the directory holding include/ and lib/nvinfer_11.lib")
 set(AJI_NVINFER "nvinfer_11" CACHE STRING
@@ -68,10 +68,10 @@ set(AJI_DML_ROOT "" CACHE PATH
 set(AJI_PATCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/patches" CACHE PATH
   "Patch series applied to the staged copy of AJI_SOURCE_DIR")
 set(AJI_PATCH_POLICY "strict" CACHE STRING
-  "strict (default): refuse to configure without the series; warn: configure anyway and warn loudly; off: skip the series")
+  "strict (default): refuse to configure unless a NONEMPTY applicable series applies IN FULL; warn: configure anyway and warn loudly, with no full-series stamp unless every patch applied; off: never apply the series")
 set_property(CACHE AJI_PATCH_POLICY PROPERTY STRINGS strict warn off)
 set(AJI_STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/aji-src" CACHE PATH
-  "Where the read-only source tree is staged before patching")
+  "Where the read-only source tree is staged before patching. MUST NOT equal AJI_SOURCE_DIR, contain it or sit inside it - any overlap is refused before anything is removed. Only a positively owned stage directory is ever deleted")
 option(AJI_RESTAGE "Force a fresh copy of AJI_SOURCE_DIR into AJI_STAGE_DIR on this configure" OFF)
 option(AJI_BUILD_TRT "Build the TensorRT backend (aji_trt)" ON)
 option(AJI_BUILD_DML "Build the DirectML backend (aji_dml) when its roots are set" ON)
@@ -110,14 +110,23 @@ find_package(CUDAToolkit REQUIRED)
 
 if(AJI_SOURCE_DIR STREQUAL "")
   message(FATAL_ERROR
-    "AJI_SOURCE_DIR is required: point it at the pinned animejanai-inference tree "
-    "(commit 738ce3b3020b3950c48ce3122a08f32af531d4fa). See build-msvc.md.")
+    "AJI_SOURCE_DIR is required: point it at the pinned animejanai-inference tree. "
+    "The build input is the official v0.9.0 tag baseline at "
+    "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3 plus authorized mutable local edits; "
+    "the historical 738ce3b3020b3950c48ce3122a08f32af531d4fa baseline comparison "
+    "predates those edits. See build-msvc.md.")
 endif()
 get_filename_component(AJI_SOURCE_DIR "${AJI_SOURCE_DIR}" ABSOLUTE)
 if(NOT EXISTS "${AJI_SOURCE_DIR}/src/aji_dispatch.cpp")
   message(FATAL_ERROR
     "AJI_SOURCE_DIR does not look like animejanai-inference: "
     "${AJI_SOURCE_DIR}/src/aji_dispatch.cpp is missing.")
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/cmake/StageInference.cmake")
+  message(FATAL_ERROR
+    "native/cmake/StageInference.cmake is missing: the staging and patch-policy "
+    "contract lives there and is exercised by tests/cmake/"
+    "NativeStageContracts.cmake. Restore that file.")
 endif()
 
 if(AJI_BUILD_TRT)
@@ -139,141 +148,35 @@ if(AJI_BUILD_TRT)
 endif()
 
 # ---------------------------------------------------------------------------
-# Stage the pinned source, then apply the patch series to the staged copy
-# ---------------------------------------------------------------------------
+# Stage the read-only source, then apply the patch series to the staged copy.
+#
+# The whole contract - overlap refusal, ownership-gated deletion, complete
+# content fingerprint and the strict/warn/off truthfulness rules - lives in
+# native/cmake/StageInference.cmake, which is a production helper shared with
+# tests/cmake/NativeStageContracts.cmake. That script exercises the same code
+# paths against synthetic trees, so the behaviour configured here is the
+# behaviour that is tested.
 
 file(GLOB AJI_PATCH_FILES "${AJI_PATCH_DIR}/*.patch")
 list(SORT AJI_PATCH_FILES)
 
-# The staged tree is described by two markers: .mikai-staged says which source
-# and which series it was produced from, .mikai-patched says the series has
-# actually been applied to it. Both carry the same identity string.
-set(_staged_stamp "${AJI_STAGE_DIR}/.mikai-staged")
-set(_patched_stamp "${AJI_STAGE_DIR}/.mikai-patched")
-set(_identity "")
-foreach(_p IN LISTS AJI_PATCH_FILES)
-  file(SHA256 "${_p}" _digest)
-  get_filename_component(_pname "${_p}" NAME)
-  string(APPEND _identity "${_pname}=${_digest}\n")
-endforeach()
-string(APPEND _identity "source=${AJI_SOURCE_DIR}\n")
-file(READ "${AJI_SOURCE_DIR}/src/aji_trt.cpp" _head HEX LIMIT 16)
-string(APPEND _identity "head=${_head}\n")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/StageInference.cmake")
 
-set(_restage FALSE)
-if(AJI_RESTAGE)
-  set(_restage TRUE)
-elseif(NOT EXISTS "${_staged_stamp}")
-  set(_restage TRUE)
-else()
-  file(READ "${_staged_stamp}" _staged_identity)
-  if(NOT _staged_identity STREQUAL _identity)
-    message(STATUS "Staged source is stale (patch series or source changed); restaging.")
-    set(_restage TRUE)
-  endif()
-endif()
+mikai_stage_inference_source(
+  AJI_SOURCE_DIR  "${AJI_SOURCE_DIR}"
+  AJI_STAGE_DIR   "${AJI_STAGE_DIR}"
+  AJI_PATCH_DIR   "${AJI_PATCH_DIR}"
+  AJI_PATCH_POLICY "${AJI_PATCH_POLICY}"
+  AJI_RESTAGE     "${AJI_RESTAGE}"
+  OUT_STAGE_VALID _MikaiStageValid
+  OUT_PATCH_STATE _MikaiPatchState)
 
-if(_restage)
-  file(REMOVE_RECURSE "${AJI_STAGE_DIR}")
-  file(COPY "${AJI_SOURCE_DIR}/" DESTINATION "${AJI_STAGE_DIR}"
-       PATTERN ".git" EXCLUDE
-       PATTERN "build" EXCLUDE)
-  file(WRITE "${_staged_stamp}" "${_identity}")
-  message(STATUS "Staged animejanai-inference into ${AJI_STAGE_DIR}")
-endif()
-
-find_program(AJI_GIT_EXECUTABLE NAMES git)
-find_program(AJI_PATCH_EXECUTABLE NAMES patch)
-set(_applier "")
-if(AJI_GIT_EXECUTABLE)
-  set(_applier git)
-elseif(AJI_PATCH_EXECUTABLE)
-  set(_applier patch)
-endif()
-
-# A second configure against an unchanged series must not re-apply it to a tree
-# that already carries it.
-set(_already_patched FALSE)
-if(NOT _restage AND EXISTS "${_patched_stamp}")
-  file(READ "${_patched_stamp}" _patched_identity)
-  if(_patched_identity STREQUAL _identity)
-    set(_already_patched TRUE)
-    message(STATUS "Staged tree already carries this patch series; not re-applying.")
-  endif()
-endif()
-
-set(_unpatched TRUE)
-if(_already_patched)
-  set(_unpatched FALSE)
-endif()
-if(NOT AJI_PATCH_FILES)
-  message(WARNING "No patches found in ${AJI_PATCH_DIR}; the staged shim would be unpatched.")
-endif()
-
-if(NOT _already_patched)
-  foreach(_p IN LISTS AJI_PATCH_FILES)
-    get_filename_component(_name "${_p}" NAME)
-    file(READ "${_p}" _text)
-    # An applicable unified diff always opens a hunk with numeric line numbers.
-    # The series currently carries high-level descriptions with bare or
-    # placeholder `@@` headers, which no applier can consume; that is detected
-    # here rather than surfacing as "patch with only garbage" further down.
-    if(NOT _text MATCHES "@@ -[0-9]+(,[0-9]+)? \\+[0-9]+(,[0-9]+)? @@")
-      message(STATUS "${_name} is a patch description, not an applicable diff; not applied.")
-      continue()
-    endif()
-    if(_applier STREQUAL "")
-      message(STATUS "${_name} not applied: neither git nor patch was found on PATH.")
-      continue()
-    endif()
-    if(_applier STREQUAL "git")
-      execute_process(COMMAND "${AJI_GIT_EXECUTABLE}" apply -p1 --whitespace=nowarn "${_p}"
-        WORKING_DIRECTORY "${AJI_STAGE_DIR}"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
-    else()
-      execute_process(COMMAND "${AJI_PATCH_EXECUTABLE}" -p1 -i "${_p}"
-        WORKING_DIRECTORY "${AJI_STAGE_DIR}"
-        RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
-    endif()
-    if(NOT _rc EQUAL 0)
-      # Discard the staged tree: a half-applied series is worse than none,
-      # because the failure would only surface later as wrong behaviour.
-      file(REMOVE_RECURSE "${AJI_STAGE_DIR}")
-      if(AJI_PATCH_POLICY STREQUAL "strict")
-        message(FATAL_ERROR
-          "Failed to apply ${_name} to ${AJI_STAGE_DIR}.\n${_out}\n${_err}\n"
-          "The staged tree has been discarded. Write the diff against the pinned commit "
-          "(738ce3b3020b3950c48ce3122a08f32af531d4fa) and reconfigure.")
-      endif()
-      message(WARNING
-        "Failed to apply ${_name}: ${_err}\nThe staged tree has been discarded; continuing "
-        "unpatched (AJI_PATCH_POLICY=${AJI_PATCH_POLICY}).")
-      break()
-    endif()
-    set(_unpatched FALSE)
-    message(STATUS "Applied ${_name}")
-  endforeach()
-
-  if(NOT _unpatched AND AJI_PATCH_FILES)
-    file(WRITE "${_patched_stamp}" "${_identity}")
-  endif()
-endif()
-
-if(_unpatched AND AJI_PATCH_FILES)
-  if(AJI_PATCH_POLICY STREQUAL "strict")
-    message(FATAL_ERROR
-      "The patch series in ${AJI_PATCH_DIR} is not applicable and AJI_PATCH_POLICY=strict. "
-      "A shim built without it would not answer MP_FILTER_COMMAND_GET_META, would have "
-      "no preparedOnly refusal and would still keep the weak engine cache, so it would "
-      "not be the artefact M04/M05 record. Write the real diffs against the pinned "
-      "commit, or reconfigure with -DAJI_PATCH_POLICY=warn for a toolchain smoke that "
-      "proves nothing about behaviour.")
-  elseif(AJI_PATCH_POLICY STREQUAL "warn")
-    message(WARNING
-      "Configuring WITHOUT the patch series (AJI_PATCH_POLICY=warn). The resulting DLLs "
-      "are a toolchain smoke only and must not be bundled, hashed or recorded as the M04 "
-      "artefact.")
-  endif()
+# A stage that was not produced is not a source tree: the targets below must
+# not silently compile whatever happens to be sitting at AJI_STAGE_DIR.
+if(NOT _MikaiStageValid)
+  message(FATAL_ERROR
+    "The staged tree at ${AJI_STAGE_DIR} is not valid (patch state "
+    "'${_MikaiPatchState}'); the shim cannot be built from it.")
 endif()
 
 # ---------------------------------------------------------------------------

@@ -1224,13 +1224,15 @@
     ]
   },
   "patchSeries": {
-    "baseCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
+    "baseCommit": null,
+    "baseCommitNote": "There is no single git base commit for the shim series and none is recorded. The shim input is NOT a checkout of the mpv fork: it is the official v0.9.0 tag baseline c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3 of the-database/animejanai-inference plus authorized mutable local edits (sources.json#sources[id=animejanai-inference].localSourceReconciliation, matchesPinnedCommit: false). The earlier value 63d127174d8f70336c82a22408929e2bc301edcb is the mpv-FORK revision, which is the base of the separate mpvForkPatchSeries below; it was recorded here by mistake and is corrected, not deleted, so the historical error stays auditable.",
     "targetDir": "native/patches/",
     "identity": "sha256 of the per-file list below, in the order native/CMakeLists.txt globs and sorts native/patches/*.patch",
-    "identityRule": "The series identity is the sha256 of the concatenated 'name=sha256' lines the build itself writes to its .mikai-patched stamp (native/CMakeLists.txt, _identity accumulation over the sorted glob), so the recorded value is exactly what the build compares. A recipient who applies this exact series to this exact base commit obtains the tree that was built.",
-    "status": "MEASURED 2026-10-04 from the current working tree",
-    "identitySha256": "6c95b14e97c76ae24076331559974dd8894030e265cb705ed88134627fcce4c4",
-    "identityComposition": "sha256 of the utf-8 encoding of the three lines below joined by '\\n', each terminated by '\\n'",
+    "identityRule": "The series identity is the sha256 of the concatenated 'name=sha256' lines the production helper native/cmake/StageInference.cmake writes into the .mikai-patched stamp, so the recorded value is exactly what the build compares. A recipient who applies this exact series to this exact source copy obtains the staged tree that was built.",
+    "status": "MEASURED 2026-10-11 from the current working tree; the earlier three-file record was incomplete because 0004 and 0005 were not listed",
+    "identitySha256": "64c1a45046af72012a116f8a58778942b863e9f78f9326570081cf5d02fcb2c2",
+    "identityComposition": "sha256 of the utf-8 encoding of the five lines below joined by '\\n', each terminated by '\\n'",
+    "identityScopeNote": "This identity covers the shim series under native/patches/ that native/cmake/StageInference.cmake applies to the staged inference tree. It does NOT cover native/patches/mpv/, which is a separate directory applied to a separate base (the fork) and is not a shim build input; its per-file digests are recorded under mpvForkPatchSeries.",
     "seriesFiles": [
       {
         "name": "0001-content-addressed-cache-and-prepared-only.patch",
@@ -1255,6 +1257,29 @@
           "src/aji_dispatch.cpp"
         ],
         "summary": "managed prepared-plan admission (aji_native_create_prepared / aji_native_apply_prepared / aji_native_control_on_stream) and the factory capability query; digests compared before any deserialize, no trtexec, no live build, no file deletion"
+      },
+      {
+        "name": "0004-wide-win32-paths-and-loaders.patch",
+        "sha256": "ed11d8541cdb003624fffa6051b7fe84084627eab0f013fef0093c2225f8ec7b",
+        "bytes": 10117,
+        "targets": [
+          "src/aji_conf.cpp",
+          "src/aji_dispatch.cpp",
+          "src/aji_dml.cpp"
+        ],
+        "summary": "strict UTF-8 -> UTF-16 conversion and the wide CRT for conf parsing and library loading, so a non-ASCII conf or library path is not silently read from a different path than the one named"
+      },
+      {
+        "name": "0005-rife-heavy-model-mapping.patch",
+        "sha256": "7dd9e28155acee8ad007393b1b1f88f708440e9ae96668e8ae0d669da076b19d",
+        "bytes": 2045,
+        "targets": [
+          "src/aji_trt.cpp",
+          "src/aji_dml.cpp",
+          "src/aji_dispatch.cpp"
+        ],
+        "summary": "the RIFE v4.26 heavy mapping and the aji_api_version / aji_rife_heavy_supported capability exports; local build source only - the official v0.9.0 downloaded Aji asset does not include this extension, and no claim is made that the packaged author DLL carries it",
+        "notInOfficialAsset": true
       }
     ],
     "identityScopeNote": "This identity covers the shim series under native/patches/ that native/CMakeLists.txt applies to the staged inference tree. It does NOT cover native/patches/mpv/, which is a separate directory applied to a separate base (the fork) and is not a shim build input; its per-file digests are recorded under mpvForkPatchSeries.",
@@ -1288,15 +1313,42 @@
             "video/filter/vf_animejanai.c"
           ],
           "summary": "the native status/control bridge and managed admission path; plain C, AJI ABI-8 unchanged"
+        },
+        {
+          "name": "0003-wide-utf8-library-load.patch",
+          "sha256": "385755952c26ebcfca1189bea9676668d5ce2669b1ad29a59840158d60dbc641",
+          "bytes": 4672,
+          "targets": [
+            "video/filter/vf_animejanai.c"
+          ],
+          "summary": "UTF-8 -> UTF-16 conversion for the shim library path the loader is handed, so a non-ASCII mpv/filter directory loads instead of failing through the narrow API",
+          "scopeNote": "Listed because the file is present in the series directory. This manifest does NOT claim that the shipped author DLL was built with this fourth patch applied: the packaged libmpv-2.dll is the author's binary, and its byte identity is recorded separately under observations. The patchFileIsPresent claim and the shippedBytesWereProducedWithIt claim are deliberately separate, and only the first one is made here."
         }
       ],
-      "orderingNote": "The two 0002-prefixed files sort in the order listed (independent-native-filter-build before managed-native-admission) because the series is applied by sorted filename, as native/CMakeLists.txt does for the shim. Both carry the same numeric prefix deliberately; the sort is lexicographic on the whole name, so 'independent' precedes 'managed'."
+      "identitySha256": "ae0e28323fd6b58b34661399515971f8b8f9648a3ab4760115094386f2d61963",
+      "identityNote": "sha256 of the four 'name=sha256' lines above, joined by '\\n', each terminated by '\\n'. This is the same computation native/cmake/StageInference.cmake performs for the shim series, applied here to the mpv series, so the recorded value describes the complete current file set rather than a subset of it.",
+      "orderingNote": "The two 0002-prefixed files sort in the order listed (independent-native-filter-build before managed-native-admission) because the series is applied by sorted filename, as native/cmake/StageInference.cmake does for the shim. Both carry the same numeric prefix deliberately; the sort is lexicographic on the whole name, so 'independent' precedes 'managed'. The 0003-prefixed file sorts last."
+    },
+    "stagedTreeIdentity": {
+      "owner": "native/cmake/StageInference.cmake (production helper, shared with tests/cmake/NativeStageContracts.cmake)",
+      "algorithm": "For every regular file the configured file(COPY) takes from AJI_SOURCE_DIR (excluding .git, any directory named build, and our own .mikai-* markers), one 'source:<relative-path>=<sha256>' line, in sorted order; preceded by one '<name>=<sha256>' line per patch file; and a 'policy=<AJI_PATCH_POLICY>' line. The .mikai-staged stamp records exactly this string.",
+      "coverage": "Complete, not sampled. The earlier identity hashed only the first 16 bytes of src/aji_trt.cpp plus the patch digests and the source PATH, so a changed header, dispatcher, DML source or late TRT code left the stamp valid and the build silent re-used a stale tree. The fingerprint now covers every copied byte, and it describes content rather than the path the source was read from.",
+      "whyNotAPath": "A source path in the identity only detected a moved tree; it never detected an edited one. Content is what determines the built artefact, so content is what is recorded.",
+      "fullSeriesStampRule": "The .mikai-patched stamp is written only when EVERY applicable patch in the series applied (applied count equals the applicable count, and the applicable count is non-zero). A partial or absent application never receives it, and a deleted or re-staged tree loses it.",
+      "policySemantics": {
+        "strict": "Refuse to configure when the applicable series is empty, when any applicable patch fails, or when not every applicable patch applied. No indistinguishable 'unpatched' output is possible.",
+        "warn": "Configure, but report unpatched/partial/deleted truthfully and write no full-series stamp unless every patch applied.",
+        "off": "Never run the applier. The stage stays unpatched and unstamped, and the series identity still participates in the staged-tree identity so an 'off' tree is not mistaken for a 'strict' one."
+      },
+      "destructiveFrameGuard": "Any stage path that resolves - by equality, ancestry, nesting or a junction/symlink - into AJI_SOURCE_DIR is refused before anything is removed, and only a positively owned stage (absent, or a directory carrying .mikai-staged) is ever deleted. A foreign directory at AJI_STAGE_DIR is refused, not deleted.",
+      "neverModified": "AJI_SOURCE_DIR is never written to. No patch is applied to it and no failure path deletes it."
     },
     "readOnlyInputs": [
-      "animejanai-inference at 738ce3b3020b3950c48ce3122a08f32af531d4fa",
+      "animejanai-inference: the official v0.9.0 tag baseline c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3 plus authorized mutable local edits (the historical 738ce3b3020b3950c48ce3122a08f32af531d4fa baseline comparison predates those edits; matchesPinnedCommit: false)",
+      "mpv fork at 63d127174d8f70336c82a22408929e2bc301edcb",
       "the read-only reference package F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3"
     ],
-    "readOnlyRule": "Both reference trees are inputs only. They are never edited in place; every change this project makes reaches them as a patch file under native/patches/, applied to a fresh checkout at the base commit.",
+    "readOnlyRule": "These trees are inputs only. They are never edited in place; every change this project makes reaches them as a patch file under native/patches/, applied to a staged copy. The production staging helper native/cmake/StageInference.cmake additionally REFUSES a stage path that equals, contains or sits inside the source tree, so AJI_STAGE_DIR can no longer be configured to delete the external source.",
     "patchSeriesEntries": [
       {
         "id": "P01-filter-local-get-meta",
