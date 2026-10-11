@@ -14,8 +14,6 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
-#include <QMetaObject>
-#include <QPointer>
 #include <QTemporaryDir>
 #include <QVariant>
 
@@ -33,8 +31,23 @@ QString translated(const char* message) {
 
 }  // namespace
 
+NativeComponentProvisioner* NativeComponentProvisioner::currentRun_ = nullptr;
+
 NativeComponentProvisioner::NativeComponentProvisioner(Runner& runner, QObject* parent)
-    : QObject(parent), runner_(runner) {}
+    : QObject(parent), runner_(runner) {
+    currentRun_ = this;
+}
+
+NativeComponentProvisioner* NativeComponentProvisioner::currentRun() {
+    // Only ever called from a body the Runner's dispatcher delivered, which is
+    // on the GUI thread, in the one moment the owner is known to be readable.
+    return currentRun_;
+}
+
+void NativeComponentProvisioner::finish(bool ok, bool cancelled, const QString& summary) {
+    running_ = false;
+    emit finished(ok, cancelled, summary);
+}
 
 bool NativeComponentProvisioner::ensure(QString* reason) {
     auto refuse = [&](const char* key, const QString& text) {
@@ -213,14 +226,18 @@ bool NativeComponentProvisioner::needsDownload(QString* reason) const {
 bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
                                                    const QVector<ComponentPack>& packs) {
     running_ = true;
-    cancelled_ = false;
     cancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
     const std::shared_ptr<std::atomic<bool>> flag = cancelFlag_;
 
-    QPointer<NativeComponentProvisioner> self(this);
+    // One GUI dispatch binder, built on the GUI thread before the worker starts.
+    // It is the only route from the worker back to an owner, so no widget
+    // pointer and no raw `this` is ever captured across the thread boundary.
+    const Runner::GuiDispatch post = runner_.post();
+    // The worker captures no owner pointer at all: the binder is its only route
+    // back, and every body it posts resolves the owner on the GUI thread.
     runner_.run(
-        [store, packs, scratchRoot, flag, self]() -> QVariant {
+        [store, packs, scratchRoot, flag, post]() -> QVariant {
             QDir().mkpath(scratchRoot);
             QTemporaryDir scratchDir(
                 QDir(scratchRoot).filePath(QStringLiteral("components-XXXXXX")));
@@ -230,15 +247,16 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
             }
             const ComponentProvisionResult outcome = provisionTensorRtComponents(
                 store, packs, scratchDir.path(),
-                [self](const ComponentProvisionProgress& update) {
-                    NativeComponentProvisioner* target = self.data();
-                    if (target == nullptr) return;
-                    QMetaObject::invokeMethod(
-                        target,
-                        [self, update] {
-                            if (self) self->progress(update.pack, update.received, update.total);
-                        },
-                        Qt::QueuedConnection);
+                [post](const ComponentProvisionProgress& update) {
+                    // A binder call never touches a widget and never reads the
+                    // owner: it hands this body to the GUI thread, where the
+                    // owner is resolved and the delivery either lands or is
+                    // dropped.
+                    post([update]() {
+                        NativeComponentProvisioner* target = currentRun();
+                        if (target == nullptr) return;
+                        emit target->progress(update.pack, update.received, update.total);
+                    });
                 },
                 [flag] { return flag->load(); });
             if (outcome.cancelled) {
@@ -252,14 +270,17 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
             }
             return QVariant{};
         },
-        [this](const QVariant&) {
-            running_ = false;
-            emit finished(true, false, translated("Components installed."));
+        [](const QVariant&) {
+            NativeComponentProvisioner* target = currentRun();
+            if (target == nullptr) return;
+            target->finish(true, false, translated("Components installed."));
         },
-        [this](const QString& error) {
-            running_ = false;
-            emit finished(false, error.startsWith(QStringLiteral("native.components.cancelled")),
-                          error);
+        [](const QString& error) {
+            const bool cancelled =
+                error.startsWith(QStringLiteral("native.components.cancelled"));
+            NativeComponentProvisioner* target = currentRun();
+            if (target == nullptr) return;
+            target->finish(false, cancelled, error);
         });
     return true;
 }
@@ -270,6 +291,22 @@ void NativeComponentProvisioner::cancel() {
     if (cancelFlag_) {
         cancelFlag_->store(true);
     }
+    // A cancelled run is never reported to an owner that asked for the cancel:
+    // the gate is what stops the download, and the deliveries that were still
+    // queued for it are dropped rather than answered with a cancellation nobody
+    // asked to see.
+    if (currentRun_ == this) currentRun_ = nullptr;
+}
+
+NativeComponentProvisioner::~NativeComponentProvisioner() {
+    // An owner going away cancels its download. The worker's own gate is set
+    // here, the Runner's gate then pulls it out of its backend waits rather than
+    // letting it park for a whole quota window, and every queued completion is
+    // suppressed before an owner that no longer exists is touched. Nothing in
+    // this destructor waits for the worker.
+    cancel();
+    runner_.cancel();
+    if (currentRun_ == this) currentRun_ = nullptr;
 }
 
 }  // namespace mikai::app

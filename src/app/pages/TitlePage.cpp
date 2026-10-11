@@ -203,9 +203,16 @@ struct TitlePage::PlayerSession {
     /// The episode the player is on right now, for stream recovery. A dub/sub
     /// switch replaces it, so recovery must not rewind to the opening episode.
     EpisodeEntry* entry = nullptr;
-    /// True while this player's runtime request is in flight, so a second
-    /// request from the same dialog does not start another one.
+    /// True from the moment this player asks for a runtime until the wait has
+    /// been answered, so a second request from the same dialog joins the one
+    /// wait instead of starting another resolution.
     bool runtimePending = false;
+    /// The resolution this session started, valid only while it is still
+    /// waiting. Released on the terminal answer, on disposal and on a superseded
+    /// completion, so a closed player cannot keep the one process resolution -
+    /// and cannot clear the resolution its replacement is running either.
+    mplayer::native::ResolutionLease runtimeResolution;
+    bool runtimeResolutionHeld = false;
     int sourceSequence = 0;
     QVector<QVariantMap> playlist;
 };
@@ -1762,6 +1769,14 @@ void TitlePage::disposeSession(PlayerSession* session, bool forced) {
         }
     }
     session->dialog = nullptr;
+    // The epoch this session was opened under goes with it, so a runtime reply
+    // that is still queued for the disposed player is dropped rather than
+    // starting a player that no longer exists. The resolution it may have started
+    // is released here, which is what keeps a closed player from holding the one
+    // process resolution a later request would need.
+    runtimeSeq_ += 1;
+    session->runtimePending = false;
+    releaseSessionResolution(session);
     if (forced && dialog != nullptr) {
         // A refused close leaves the host bridge live until the core is destroyed.
         const QPointer<mplayer::shell::PlayerDialog> target(dialog);
@@ -1779,52 +1794,159 @@ void TitlePage::requestRuntime(PlayerSession* session) {
         return;
     }
     auto* dialog = session->dialog;
+    // The episode the viewer asked for is shown first, whatever happens below:
+    // a startup that is still validating must not look like a refusal to open.
     dialog->show();
     if (mplayer::native::runtimeSelected()) {
+        // A module is pinned already, so this dialog has no core for the same
+        // reason the dialog itself retries.
         return;
     }
-    if (session->runtimePending || !mplayer::native::beginRecovery()) {
+    if (session->runtimePending) {
+        // This player is already waiting. The dialog can ask more than once (an
+        // open that failed while the wait holds, then a retry chip), so the ask
+        // is answered with the wait's own status, never a second resolution.
+        dialog->showRuntimePendingStatus();
         return;
     }
+    // One resolution per process. The app's own startup validation holds it while
+    // it hashes the bundle: an episode opened during that window joins it, so
+    // the player shows the resolution that is running and plays as soon as the
+    // module is pinned, instead of being told the runtime is missing one turn
+    // before it loads.
+    if (mplayer::native::runtimeResolutionPending()) {
+        session->runtimePending = true;
+        session->runtimeResolutionHeld = false;
+        session->runtimeResolution = mplayer::native::ResolutionLease();
+        dialog->showRuntimePendingStatus();
+        answerSessionWhenSettled(session);
+        return;
+    }
+    // Nothing is running yet: this episode was opened before the startup
+    // validation had taken its resolution. Taking it is the one way to answer the
+    // request at all, and holding the lease is what lets the reply - or the
+    // disposal of this player - hand the resolution back without guessing who
+    // owns it.
+    session->runtimeResolution = mplayer::native::beginResolution();
+    if (!session->runtimeResolution) {
+        // The one process resolution was taken between the check above and here,
+        // so this request joins whatever is running now rather than competing
+        // with it.
+        session->runtimePending = true;
+        session->runtimeResolutionHeld = false;
+        dialog->showRuntimePendingStatus();
+        answerSessionWhenSettled(session);
+        return;
+    }
+    session->runtimeResolutionHeld = true;
     session->runtimePending = true;
+    runSessionRuntimeResolution(session);
+}
+
+void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
+    if (session == nullptr || session->dialog == nullptr || !sessions_.contains(session)) {
+        return;
+    }
     const int seq = ++runtimeSeq_;
+    const int sourceSeq = session->sourceSequence;
+    const EpisodeEntry* entry = session->entry;
     const QPointer<TitlePage> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(dialog);
+    const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_.run(
         [] {
             return QVariant::fromValue(
                 mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
         },
-        [self, target, session, seq](const QVariant& result) {
-            mplayer::native::endRecovery();
-            if (self.isNull() || self->closed_ || seq != self->runtimeSeq_ ||
-                target.isNull() || !self->sessions_.contains(session) ||
-                session->dialog != target.data()) {
+        [self, target, session, sourceSeq, entry, seq](const QVariant& result) {
+            if (self.isNull()) {
                 return;
             }
-            session->runtimePending = false;
-            const mplayer::native::RuntimeSelection resolved =
-                result.value<mplayer::native::RuntimeSelection>();
-            const mplayer::native::RuntimeSelection selection =
-                mplayer::native::commitRuntime(resolved);
-            if (!selection.loaded) {
-                session->dialog->showError(
-                    mplayer::native::runtimeUnavailablePlaybackText(selection.reason));
+            // Publish the terminal state before the session's wait is released,
+            // so a player that opens the moment the module is pinned sees a
+            // module rather than a resolution that just ended.
+            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
+                result.value<mplayer::native::RuntimeSelection>());
+            if (self->closed_ || seq != self->runtimeSeq_ || target.isNull() ||
+                !self->sessions_.contains(session) || session->dialog != target.data() ||
+                sourceSeq != session->sourceSequence || session->entry != entry) {
+                // A superseded player: its episode, its dialog or the whole page
+                // is gone. The resolution it started is already recorded, so the
+                // lease goes back without touching the player that replaced it.
+                self->releaseSessionResolution(session);
                 return;
             }
-            session->dialog->startPlayer();
+            self->answerSessionResolved(session, selection);
         },
-        [self, target, session, seq](const QString& reason) {
-            mplayer::native::endRecovery();
-            if (self.isNull() || self->closed_ || seq != self->runtimeSeq_ ||
-                target.isNull() || !self->sessions_.contains(session) ||
-                session->dialog != target.data()) {
+        [self, target, session, sourceSeq, entry, seq](const QString& reason) {
+            if (self.isNull()) {
                 return;
             }
-            session->runtimePending = false;
-            session->dialog->showError(mplayer::native::runtimeUnavailablePlaybackText(reason));
+            if (self->closed_ || seq != self->runtimeSeq_ || target.isNull() ||
+                !self->sessions_.contains(session) || session->dialog != target.data() ||
+                sourceSeq != session->sourceSequence || session->entry != entry) {
+                self->releaseSessionResolution(session);
+                return;
+            }
+            self->answerSessionResolved(session, mplayer::native::RuntimeSelection(), reason);
         });
+}
+
+void TitlePage::answerSessionWhenSettled(PlayerSession* session) {
+    const QPointer<TitlePage> self(this);
+    mplayer::native::whenRuntimeResolutionFinishes(self.data(), [self, session] {
+        // The wait is answered once, and only while the page and the player that
+        // asked are still the ones on screen: a page that closed, or a source the
+        // viewer switched away from, is answered with nothing.
+        if (self.isNull() || self->closed_ || !self->sessions_.contains(session)) {
+            return;
+        }
+        if (mplayer::native::runtimeSelected()) {
+            self->answerSessionResolved(session, mplayer::native::currentSelection());
+            return;
+        }
+        self->answerSessionResolved(session, mplayer::native::currentSelection(),
+                                   mplayer::native::currentSelection().reason);
+    });
+}
+
+void TitlePage::answerSessionResolved(PlayerSession* session,
+                                      const mplayer::native::RuntimeSelection& selection,
+                                      const QString& reason) {
+    if (closed_ || session == nullptr || !sessions_.contains(session) ||
+        session->dialog == nullptr) {
+        return;
+    }
+    if (!session->runtimePending) {
+        // The wait was already answered - a closed or replaced player, or an
+        // earlier terminal answer. Nothing is replayed.
+        return;
+    }
+    session->runtimePending = false;
+    const bool loaded = selection.loaded || mplayer::native::runtimeSelected();
+    if (!loaded) {
+        const QString detail =
+            reason.isEmpty() ? mplayer::native::currentSelection().reason : reason;
+        const QString text = mplayer::native::runtimeUnavailablePlaybackText(detail);
+        releaseSessionResolution(session);
+        session->dialog->showError(text);
+        return;
+    }
+    releaseSessionResolution(session);
+    // The episode this session is still on opens now that the module exists. It is
+    // the same startPlayer() the dialog itself retries, so the source that was
+    // asked for is the one that plays.
+    session->dialog->startPlayer();
+}
+
+void TitlePage::releaseSessionResolution(PlayerSession* session) {
+    if (session == nullptr || !session->runtimeResolutionHeld) {
+        return;
+    }
+    const mplayer::native::ResolutionLease lease = session->runtimeResolution;
+    session->runtimeResolutionHeld = false;
+    session->runtimeResolution = mplayer::native::ResolutionLease();
+    mplayer::native::endResolution(lease);
 }
 
 void TitlePage::recoverStream(PlayerSession* session) {
@@ -2139,6 +2261,15 @@ bool TitlePage::shutdown(bool forced) {
     trackWaiters_.clear();
     // Bumping the sequence makes any release probe still in flight a no-op.
     releaseProbeSeq_ += 1;
+    // The last runtime wait - a player that was already disposed, or one whose
+    // resolution is still queued - is released rather than left owned by a page
+    // that is gone, so a later request is not locked out of the one process
+    // resolution by a player nobody is watching any more.
+    runtimeSeq_ += 1;
+    for (PlayerSession* session : sessions_) {
+        session->runtimePending = false;
+        releaseSessionResolution(session);
+    }
     qualityCache_.flushNow();
     if (coverViewer_ != nullptr) {
         // close() destroys it via WA_DeleteOnClose, which fires destroyed and

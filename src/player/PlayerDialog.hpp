@@ -241,6 +241,12 @@ public:
     /// Badges one track with the quality a probe found for it.
     void setTrackQuality(const QString& embed, int quality);
     void showError(const QString& message);
+    /// The one informational line the dialog shows while the app is still
+    /// resolving the mpv runtime. It is not a failure: no alert is raised for
+    /// assistive technology, no retry chip is offered and no re-extraction is
+    /// started, because nothing has failed yet. What the pending resolution is
+    /// actually doing is the runtime layer's own sentence, shown verbatim.
+    void showRuntimePendingStatus();
     /// A requested AnimeJaNai preset is saved by stable id and prepared off the
     /// GUI thread; unavailable prerequisites remain visible as a failed request.
     void applyAnimeJanaiRequest(const QString& id);
@@ -632,6 +638,11 @@ private:
     QString lastProcessingReason_;
     bool componentSetupRequestedOnce_ = false;
     bool errorActive_ = false;
+    /// True while the informational "runtime is being resolved" line is the
+    /// dialog's status. Kept apart from `errorActive_`: a resolution in flight
+    /// is not a media failure, so it never arms the retry chip and a real
+    /// failure keeps its own reason when it arrives.
+    bool runtimePendingVisible_ = false;
     bool refreshAttempted_ = false;
     bool closed_ = false;
     bool forwardingKey_ = false;

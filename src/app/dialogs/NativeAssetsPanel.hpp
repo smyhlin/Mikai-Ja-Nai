@@ -200,8 +200,9 @@ class NativeAssetsPanel : public QWidget {
 public:
   explicit NativeAssetsPanel(QWidget* parent = nullptr);
 
-  /// Requests cancellation of any in-flight import before this widget is
-  /// destroyed. The GUI thread never waits for the worker to observe it.
+  /// Requests cancellation of any in-flight import or preparation before this
+  /// widget is destroyed, and drops the deliveries that were still queued for
+  /// it. The GUI thread never waits for the worker to observe it.
   ~NativeAssetsPanel() override;
 
   /// The off-GUI executor imports are submitted to. Without one, importing is
@@ -386,6 +387,13 @@ private:
   struct ImportResult;
   struct PrepareResult;
 
+  /// The one panel a worker's bodies deliver to, or null once it is gone.
+  ///
+  /// A worker captures no widget pointer, so there is nothing off-thread to
+  /// check. Every body a dispatch delivered is read here instead, on the GUI
+  /// thread, which is the one moment a widget is known to be readable.
+  static NativeAssetsPanel* livePanel();
+
   QSize minimumSizeHint() const override;
   void buildUi();
   /// Restates every static caption in place after a LanguageChange: the section
@@ -433,6 +441,12 @@ private:
   bool inspectorBuilds() const;
 
   mikai::app::Runner* runner_ = nullptr;
+  /// Cleared in this widget's destructor, read by a delivered GUI body. Paired
+  /// with the binder, it is what keeps a queued completion from reaching an
+  /// owner that no longer exists.
+  std::shared_ptr<std::atomic_bool> alive_ = std::make_shared<std::atomic_bool>(true);
+  /// The panel the current bodies deliver to, null after the destructor.
+  static NativeAssetsPanel* livePanel_;
   mplayer::native::InspectionRuntime runtime_;
   QString modelRoot_;
   mplayer::native::ArtifactStore artifacts_;

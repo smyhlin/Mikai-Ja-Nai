@@ -122,6 +122,12 @@ MainWindow::~MainWindow() {
     // forced stop named and its own close still run first so the core dies
     // before the widget releases what its filter was holding.
     closeMedia(/*forced=*/true);
+    // The forced close already released this window's resolution and dropped the
+    // pending flag; the guard makes destruction safe even when the close was
+    // refused, so no wait outlives the window that started it.
+    runtimeSeq_ += 1;
+    runtimePending_ = false;
+    releaseRuntimeResolution();
     // The close event covers the ordinary path, but a session that ends any
     // other way (a quit() that never delivers one) would otherwise leave the
     // entries unwritten. flushNow() is a no-op once the cache is clean, so
@@ -220,8 +226,12 @@ bool MainWindow::closeMedia(bool forced) {
         }
         // A runtime reply for this dialog must not reach the next one: bump the
         // sequence and drop the pending flag so the replacement can ask anew.
+        // A resolution this window started is released here rather than at the
+        // reply, so closing the initiating player cannot leave the one process
+        // resolution held by a wait nobody is waiting for any more.
         ++runtimeSeq_;
         runtimePending_ = false;
+        releaseRuntimeResolution();
         if (!accepted) {
             // Visible GL teardown has faulted the driver; forced destruction must hide first.
             if (mediaPlayer_) mediaPlayer_->hide();
@@ -241,17 +251,57 @@ void MainWindow::requestMediaRuntime() {
         return;
     }
     auto* dialog = mediaPlayer_.data();
+    // The requested source is shown first, whatever happens below: the viewer
+    // asked for this file and the window must not look empty while the runtime
+    // is being settled.
     dialog->show();
     if (mplayer::native::runtimeSelected()) {
+        // A module is pinned already, so the only reason this player has no core
+        // is the same open the dialog will retry itself.
         return;
     }
-    if (runtimePending_ || !mplayer::native::beginRecovery()) {
+    if (runtimePending_) {
+        // This dialog is already waiting. The dialog can ask more than once (an
+        // open that failed while the wait holds, then a retry chip), so the ask
+        // is answered with the wait's own status instead of a second resolution.
+        dialog->showRuntimePendingStatus();
         return;
     }
+    // One resolution per process. The app's own startup validation holds it
+    // while it hashes the bundle, and a request that arrives during that window
+    // joins it: the dialog shows what the resolution is doing and plays as soon
+    // as the module is pinned, instead of being told the runtime is missing one
+    // turn before it loads.
+    if (mplayer::native::runtimeResolutionPending()) {
+        runtimePending_ = true;
+        runtimeResolutionHeld_ = false;
+        runtimeResolution_ = mplayer::native::ResolutionLease();
+        answerRuntimeWhenSettled();
+        return;
+    }
+    // Nothing is running yet: this player asked before the startup validation had
+    // taken its resolution. Taking it is the one way to answer the request at
+    // all, and holding the lease is what lets the reply - or the disposal of this
+    // player - hand the resolution back without guessing who owns it.
+    runtimeResolution_ = mplayer::native::beginResolution();
+    if (!runtimeResolution_) {
+        // The one process resolution was taken between the check above and here,
+        // so this request joins whatever is running now rather than competing
+        // with it.
+        runtimePending_ = true;
+        runtimeResolutionHeld_ = false;
+        answerRuntimeWhenSettled();
+        return;
+    }
+    runtimeResolutionHeld_ = true;
     runtimePending_ = true;
+    runMediaRuntimeResolution();
+}
+
+void MainWindow::runMediaRuntimeResolution() {
     const int seq = ++runtimeSeq_;
     const QPointer<MainWindow> self(this);
-    const QPointer<mplayer::shell::PlayerDialog> target(dialog);
+    const QPointer<mplayer::shell::PlayerDialog> target(mediaPlayer_.data());
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_->run(
         [] {
@@ -259,27 +309,94 @@ void MainWindow::requestMediaRuntime() {
                 mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
         },
         [self, target, seq](const QVariant& result) {
-            mplayer::native::endRecovery();
-            if (self.isNull() || seq != self->runtimeSeq_ || target.isNull()) {
+            if (self.isNull()) {
+                return;
+            }
+            // The terminal state is published before this window's wait is
+            // released, so a request that arrives the moment the module is
+            // pinned sees a module, not a resolution that just ended.
+            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
+                result.value<mplayer::native::RuntimeSelection>());
+            if (seq != self->runtimeSeq_ || target.isNull()) {
+                // A superseded dialog: the resolution it started is already
+                // recorded, so this window's lease - if it still owns one - is
+                // released without touching the dialog that replaced it.
+                self->releaseRuntimeResolution();
                 return;
             }
             self->runtimePending_ = false;
-            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
-                result.value<mplayer::native::RuntimeSelection>());
             if (!selection.loaded) {
-                target->showError(mplayer::native::runtimeUnavailablePlaybackText(selection.reason));
+                const QString text =
+                    mplayer::native::runtimeUnavailablePlaybackText(selection.reason);
+                self->releaseRuntimeResolution();
+                target->showError(text);
                 return;
             }
+            self->releaseRuntimeResolution();
+            // The source this dialog actually asked for is the one that plays,
+            // and it opens only after the module is pinned.
             target->startPlayer();
         },
         [self, target, seq](const QString& reason) {
-            mplayer::native::endRecovery();
-            if (self.isNull() || seq != self->runtimeSeq_ || target.isNull()) {
+            if (self.isNull()) {
+                return;
+            }
+            if (seq != self->runtimeSeq_ || target.isNull()) {
+                self->releaseRuntimeResolution();
                 return;
             }
             self->runtimePending_ = false;
-            target->showError(mplayer::native::runtimeUnavailablePlaybackText(reason));
+            const QString text = mplayer::native::runtimeUnavailablePlaybackText(reason);
+            self->releaseRuntimeResolution();
+            target->showError(text);
         });
+}
+
+void MainWindow::answerRuntimeWhenSettled() {
+    // The dialog is shown with the wait already on screen: a viewer who asked for
+    // playback during startup validation must see the resolution that is running,
+    // never a runtime reported as permanently missing.
+    if (mediaPlayer_) {
+        mediaPlayer_->showRuntimePendingStatus();
+    }
+    mplayer::native::whenRuntimeResolutionFinishes(this, [this] {
+        answerMediaRuntimeResolved();
+    });
+}
+
+void MainWindow::releaseRuntimeResolution() {
+    if (runtimeResolutionHeld_) {
+        const mplayer::native::ResolutionLease lease = runtimeResolution_;
+        runtimeResolutionHeld_ = false;
+        runtimeResolution_ = mplayer::native::ResolutionLease();
+        mplayer::native::endResolution(lease);
+    }
+}
+
+void MainWindow::answerMediaRuntimeResolved() {
+    // The wait is answered exactly once and only for the dialog that is still
+    // open: the request sequence is bumped whenever the player is replaced or
+    // closed, so a completion belonging to a source the viewer moved on from
+    // plays nothing and says nothing.
+    if (!runtimePending_) {
+        return;
+    }
+    runtimePending_ = false;
+    const QPointer<mplayer::shell::PlayerDialog> dialog = mediaPlayer_;
+    if (dialog.isNull()) {
+        return;
+    }
+    if (mplayer::native::runtimeSelected()) {
+        // The requested source opens now that the module exists: startPlayer()
+        // is the same call the dialog itself would retry, so the source that was
+        // asked for is the one that plays.
+        dialog->startPlayer();
+        return;
+    }
+    // No module: the recorded terminal state names what was actually wrong, so
+    // the failure is the one truth and never a generic one.
+    dialog->showError(mplayer::native::runtimeUnavailablePlaybackText(
+        mplayer::native::currentSelection().reason));
 }
 
 void MainWindow::ensureNativeComponents() {

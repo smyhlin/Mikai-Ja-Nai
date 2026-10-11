@@ -8,6 +8,8 @@
 #include <optional>
 #include <player/ProcessingSettingsIntent.hpp>
 
+#include <native/bundle/NativeRuntimeSelection.hpp>
+
 class QStackedWidget;
 
 namespace mikai::backend {
@@ -98,6 +100,22 @@ private:
     /// Disposes the title page and every player it owns. False when a player
     /// refused its close: the page and its sessions are kept for a retry.
     bool disposeTitle();
+    /// The runtime wait this window's standalone player is on, answered on the
+    /// GUI thread once the app's resolution has published its terminal state.
+    /// Registered against this window, so a window that goes away takes its
+    /// waiters with it instead of touching a dialog that is gone.
+    void answerRuntimeWhenSettled();
+    /// Runs the resolution the standalone player is waiting on and reports its
+    /// terminal state: plays, or names the reason playback is not possible.
+    void runMediaRuntimeResolution();
+    /// Releases the resolution this window holds when its last waiter is gone or
+    /// the wait was superseded. A stale release never clears a newer owner's
+    /// resolution.
+    void releaseRuntimeResolution();
+    /// The GUI-thread answer to a wait this window joined: play the source that
+    /// is still open, or name the terminal reason on the dialog that is still
+    /// current. Runs once, after the resolution has published its outcome.
+    void answerMediaRuntimeResolved();
 
     backend::MikaiClient& client_;
     Runner* runner_ = nullptr;
@@ -111,7 +129,19 @@ private:
     /// is bumped whenever that dialog goes away, so a completion belonging to a
     /// superseded dialog is dropped instead of starting the new one.
     int runtimeSeq_ = 0;
+    /// True from the moment the standalone player asks for a runtime until the
+    /// wait has been answered. A request that arrives while the app's own
+    /// startup resolution is still running joins that resolution instead of
+    /// starting a second one, so the dialog shows the pending line and plays as
+    /// soon as the module is pinned rather than reporting it as missing.
     bool runtimePending_ = false;
+    /// The resolution this window owns, valid only while the standalone player
+    /// is waiting on it. A stale owner can never release the resolution that
+    /// replaced it, so a discarded player cannot unlock a newer wait.
+    mplayer::native::ResolutionLease runtimeResolution_;
+    /// Whether this window is holding the resolution lease, which is what keeps
+    /// the lease from being released twice.
+    bool runtimeResolutionHeld_ = false;
     bool setupDeclined_ = false;
     bool setupPromptOffered_ = false;
     QString titleRef_;

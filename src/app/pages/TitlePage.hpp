@@ -2,6 +2,8 @@
 
 #include <backend/Models.hpp>
 
+#include <native/bundle/NativeRuntimeSelection.hpp>
+
 #include <QMap>
 #include <QPoint>
 #include <QPointer>
@@ -207,6 +209,23 @@ private:
     /// player's own `playerClosed()` already disposed is left alone.
     void disposeSession(PlayerSession* session, bool forced);
     void requestRuntime(PlayerSession* session);
+    /// Runs the resolution this session answered by starting, and reports its
+    /// terminal state to the same session: play, or name the reason.
+    void runSessionRuntimeResolution(PlayerSession* session);
+    /// Subscribes the session to the resolution the app is already running. The
+    /// subscription is registered against the page, so a page that goes away
+    /// discards its waiters instead of touching players that are gone.
+    void answerSessionWhenSettled(PlayerSession* session);
+    /// Answers one session's runtime wait once the resolution has published its
+    /// terminal state: the session's own source opens, or the named reason is
+    /// shown. Runs at most once per wait.
+    void answerSessionResolved(PlayerSession* session,
+                               const mplayer::native::RuntimeSelection& selection,
+                               const QString& reason = {});
+    /// Releases the resolution a session holds, on its terminal answer, on its
+    /// disposal and on a superseded completion. A stale release is a no-op, so it
+    /// can never clear the resolution a newer owner is running.
+    void releaseSessionResolution(PlayerSession* session);
     void recoverStream(PlayerSession* session);
     void switchPlayerVariant(PlayerSession* session, const QString& embed, const QString& label);
     void probeTrackQuality(PlayerSession* session, const QString& embed);

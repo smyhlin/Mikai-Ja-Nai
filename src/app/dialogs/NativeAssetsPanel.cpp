@@ -23,7 +23,6 @@
 #include <QtCore/QList>
 #include <QtCore/QLocale>
 #include <QtCore/QMetaObject>
-#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QTemporaryDir>
@@ -745,6 +744,9 @@ QString cacheSummaryLine(const QVector<NativeCacheEntry>& entries) {
 
 NativeAssetsPanel::NativeAssetsPanel(QWidget* parent)
     : QWidget(parent), artifacts_(ArtifactStore()) {
+    // The single address a delivered worker body may hand a result to. One panel
+    // owns the import/preparation surface at a time; the destructor clears it.
+    livePanel_ = this;
     modelRoot_ = nativeSubdirectory(QStringLiteral("models"));
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     runtime_ = defaultInspectionRuntime();
@@ -1404,12 +1406,28 @@ QString NativeAssetsPanel::inspectionRuntimeReason() const {
     return {};
 }
 
+NativeAssetsPanel* NativeAssetsPanel::livePanel_ = nullptr;
+
+NativeAssetsPanel* NativeAssetsPanel::livePanel() {
+    // Read only from a body the dispatcher delivered, on the GUI thread, in the
+    // one moment this widget is known to be readable.
+    return livePanel_;
+}
+
 NativeAssetsPanel::~NativeAssetsPanel() {
     // Ask an in-flight worker to stop before this widget goes away. The worker
     // holds its own shared control, so the request is issued here and the GUI
     // thread never waits for the pool to observe it.
     if (importCancel_) importCancel_->cancel();
     if (prepareCancel_) prepareCancel_->cancel();
+    // Anything still queued for this widget is dropped rather than delivered to
+    // an owner that is going away, and a runner that is being retired with it is
+    // cancelled the same way.
+    alive_->store(false);
+    livePanel_ = nullptr;
+    if (runner_ != nullptr) {
+        runner_->cancel();
+    }
 }
 
 bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stageGeometry) {
@@ -1463,6 +1481,10 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
     const QString root = modelRoot_;
     const InspectionRuntime runtime = runtime_;
     const QString path = QFileInfo(sourcePath).absoluteFilePath();
+    // The completions' only reference to this widget is its own alive flag: no
+    // widget pointer is captured off-thread, and the GUI body resolves the
+    // address it is allowed to touch.
+    const std::shared_ptr<std::atomic_bool> alive = alive_;
 
     runner_->run(
         [root, path, stageGeometry, runtime, cancellation, result]() -> QVariant {
@@ -1488,13 +1510,17 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
             if (cancellation->isCancelled()) result->cancelled = true;
             return QVariant();
         },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QVariant&) {
-            if (guard) guard->finishImport(result, generation);
+        [alive, result, generation](const QVariant&) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
+            target->finishImport(result, generation);
         },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QString& message) {
+        [alive, result, generation](const QString& message) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             result->reasonKey = QStringLiteral("native.import.failed");
             result->reason = message;
-            if (guard) guard->finishImport(result, generation);
+            target->finishImport(result, generation);
         });
     return true;
 #else
@@ -1969,11 +1995,15 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
     const ArtifactStore store = artifacts_;
     const NativePreparationContext ctx = *jobContext_;
     const NativePreparationToolchain tools = observedToolchain_;
-    const QPointer<NativeAssetsPanel> panelGuard(this);
+    // The worker's only route back to this widget: a binder built here, on the
+    // GUI thread, plus this widget's own alive flag. Neither is a QPointer, so
+    // neither is copied off-thread.
+    const Runner::GuiDispatch post = runner_->post();
+    const std::shared_ptr<std::atomic_bool> alive = alive_;
 
     runner_->run(
-        [recipeId, modelRoot, runtime, store, ctx, tools, frames, cancellation, result, panelGuard,
-         generation]() -> QVariant {
+        [recipeId, modelRoot, runtime, store, ctx, tools, frames, cancellation, result, post,
+         panelAlive, alive, generation]() -> QVariant {
             if (cancellation->isCancelled()) {
                 result->cancelled = true;
                 result->reasonKey = QStringLiteral("native.prepare.cancelled");
@@ -2095,20 +2125,19 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             // The plan's own stage count travels with every event, so a listener
             // can say "stage 2 of 3" without a percentage nobody measured.
             const int stageCount = static_cast<int>(plan.stages.size());
+            // The binder is the worker's only route back: it posts, so nothing
+            // here touches a widget and nothing reads this panel off-thread.
             const BuilderProgressCallback progress =
-                [panelGuard, generation, stageCount](const BuilderProgress& event) {
-                    if (panelGuard.isNull()) return;
+                [post, panelAlive, generation, stageCount](const BuilderProgress& event) {
                     const int stageIndex = event.stageIndex;
                     const QString phase = event.phase;
                     const QString detail = event.detail;
-                    QMetaObject::invokeMethod(
-                        panelGuard.data(),
-                        [panelGuard, generation, stageIndex, stageCount, phase, detail] {
-                            if (panelGuard.isNull()) return;
-                            if (panelGuard->prepareGeneration_ != generation) return;
-                            panelGuard->applyPrepareProgress(stageIndex, stageCount, phase, detail);
-                        },
-                        Qt::QueuedConnection);
+                    post([panelAlive, generation, stageIndex, stageCount, phase, detail] {
+                        if (!panelAlive->load(std::memory_order_relaxed)) return;
+                        NativeAssetsPanel* target = livePanel();
+                        if (target == nullptr || target->prepareGeneration_ != generation) return;
+                        target->applyPrepareProgress(stageIndex, stageCount, phase, detail);
+                    });
                 };
 
             // The whole-plan lineage: each stage's real CPU output becomes the
@@ -2172,13 +2201,17 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             result->publishedBuildKeys = built.publishedBuildKeys;
             return QVariant();
         },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QVariant&) {
-            if (guard) guard->finishPrepare(result, generation);
+        [alive, result, generation](const QVariant&) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
+            target->finishPrepare(result, generation);
         },
-        [guard = QPointer<NativeAssetsPanel>(this), result, generation](const QString& message) {
+        [alive, result, generation](const QString& message) {
+            NativeAssetsPanel* target = livePanel();
+            if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             result->reasonKey = QStringLiteral("native.prepare.failed");
             result->reason = message;
-            if (guard) guard->finishPrepare(result, generation);
+            target->finishPrepare(result, generation);
         });
 #else
     auto result = std::make_shared<PrepareResult>();

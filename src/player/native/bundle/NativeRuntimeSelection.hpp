@@ -1,8 +1,9 @@
 // Which mpv module this process runs on, decided once, before any core exists.
 //
 // The choice is additive under the `player/native` settings group; nothing else
-// in the saved settings is touched. Standard keeps using the existing backend
-// discovery/provision, so the only thing that changed is that it now ends in a
+// in the saved settings is touched. Standard keeps the existing backend
+// discovery of the mpv modules shipped beside the executable; nothing here
+// provisions, downloads or caches a runtime, so discovery now ends in a
 // `MpvApi::load` instead of a `PATH` edit.
 //
 // One module per process. A successful load pins it; every later call reports
@@ -18,6 +19,10 @@
 
 #include <QtCore/QMetaType>
 #include <QtCore/QString>
+
+#include <functional>
+
+class QObject;
 
 namespace mplayer {
 namespace native {
@@ -48,8 +53,7 @@ bool storeRuntimeChoice(RuntimeChoice choice, QString* reason = nullptr);
 /// to say "restart required" while the dialog is still open, rather than
 /// discovering it from a swap that never happens.
 ///
-/// False when nothing is pinned yet: the next selection reads the stored value,
-/// so no restart is owed to anyone.
+/// False when nothing is pinned yet: the next selection reads whatever was stored.
 bool restartRequiredFor(RuntimeChoice choice);
 
 /// What selection produced. Every field here is observed: the kind and version
@@ -127,6 +131,59 @@ bool isAnimeJanaiForkRuntime(const RuntimeSelection& selection);
 /// what keeps a retry from becoming a second load.
 bool runtimeSelected();
 
+/// True while one runtime resolution is running. Startup resolves on a worker
+/// thread, so this is the question a playback request has to ask before it
+/// reports anything: a resolution that is still hashing is not a missing
+/// runtime, and claiming a module is absent one turn before it loads is the
+/// failure this state exists to prevent.
+bool runtimeResolutionPending();
+
+/// The one line a surface shows while the runtime is still being resolved. It
+/// names the work in progress, never a module that is missing, and it is what
+/// `runtimeStatusText` and `runtimeUnavailablePlaybackText` fall back to while
+/// a resolution is in flight.
+QString runtimePendingPlaybackText();
+
+/// Runs `callback` on the GUI thread once the in-flight resolution has
+/// published its terminal state: a module is pinned, or a named failure is on
+/// record. `context` owns nothing and is never retained; a registration whose
+/// context has been destroyed is discarded rather than delivered, so a caller
+/// that closes mid-resolution cannot be handed a callback it no longer wants.
+///
+/// A registration that arrives while nothing is in flight is queued rather
+/// than called, so a caller never re-enters itself from inside the request
+/// that registered it. `callback` is invoked exactly once; a caller that wants
+/// to be told again registers again.
+void whenRuntimeResolutionFinishes(QObject* context, const std::function<void()>& callback);
+
+/// The owner of the one resolution a process may run at a time. Only
+/// `beginResolution()` produces a valid one and only its holder may end it.
+/// That is what keeps a resolution whose owner was destroyed from leaving
+/// every later caller locked out, and a stale holder from releasing the
+/// resolution that replaced it.
+struct ResolutionLease {
+    ResolutionLease() = default;
+    explicit operator bool() const noexcept { return id_ != 0; }
+    quint64 id() const noexcept { return id_; }
+
+private:
+    friend ResolutionLease beginResolution();
+    friend void endRecovery();
+    explicit ResolutionLease(quint64 id) noexcept : id_(id) {}
+    quint64 id_ = 0;
+};
+
+/// Takes the one resolution, or returns an invalid lease when a module is
+/// already pinned or another resolution owns it. GUI thread only.
+ResolutionLease beginResolution();
+
+/// Releases the resolution `lease` took and wakes the waiters registered
+/// against it after the terminal state has been published by the caller. A
+/// lease that is not the current owner - one that already ended, or one from a
+/// superseded owner - does nothing, so a cancelled recovery can never clear
+/// the resolution that replaced it. GUI thread only.
+void endResolution(const ResolutionLease& lease) noexcept;
+
 /// One line naming the runtime that is loaded and, when it is not the one that
 /// was asked for, why. Safe to show to a user.
 QString runtimeStatusText();
@@ -134,10 +191,29 @@ QString runtimeStatusText();
 /// The single line a player shows when the runtime could not be produced at
 /// all. Shared by the title page and the standalone player so the same failure
 /// reads the same way wherever it surfaces.
+///
+/// It is the pending line, not a missing-runtime error, while a resolution is
+/// in flight: a module that is still being resolved has not been refused, and
+/// reporting it as absent is a lie the user can act on.
 QString runtimeUnavailablePlaybackText(const QString& reason);
 
+/// The Windows system-driver dependencies this module's own PE import table
+/// asks for: read from the image, so a module that declares none is never asked
+/// about a dependency it does not have. Loads nothing and copies nothing.
+///
+/// This is the packaged mpv module's static `vulkan-1.dll` import, which is
+/// present even though the player renders through OpenGL.
+QStringList moduleSystemDriverImports(const QString& modulePath);
+
+/// The named refusal `modulePath` takes when one of those dependencies is not
+/// provided by the trusted Windows system driver path. Empty when the module
+/// needs none, or when every one of them is present there; also empty when the
+/// image cannot be read, so the loader's own refusal speaks for that case
+/// instead of a guess about bytes this function never saw.
+QString runtimeLoaderDependencyRefusal(const QString& modulePath);
+
 /// Guards one recovery attempt per process, so two players asking for a runtime
-/// at once produce one provisioning run and one retry. `beginRecovery()` returns
+/// at once produce one resolution and one retry. `beginRecovery()` returns
 /// false while an attempt is in flight or a module is already pinned: recovery
 /// exists to select, never to reload.
 bool beginRecovery();

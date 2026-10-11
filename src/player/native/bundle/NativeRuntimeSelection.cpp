@@ -1,15 +1,22 @@
 #include "NativeRuntimeSelection.hpp"
 
 #include "MpvApi.hpp"
+#include "NativePeImage.hpp"
 
 #include <backend/Runtime.hpp>
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QMetaObject>
+#include <QtCore/QPointer>
+#include <QtCore/QProcessEnvironment>
 #include <QtCore/QSettings>
 #include <QtCore/QStringList>
 #include <QtCore/QtGlobal>
 
+#include <algorithm>
 #include <atomic>
 #include <optional>
 
@@ -23,6 +30,64 @@ RuntimeSelection& recorded() {
 }
 
 std::atomic_bool g_recoveryInFlight{false};
+/// The one resolution the recovery path currently owns. Zero while no recovery
+/// holds one. The lease, not this, is what a recovery releases, which is what
+/// keeps a suppressed completion from leaving it latched forever.
+std::atomic<quint64> g_recoveryResolution{0};
+
+/// The one resolution a process may run at a time, plus its owner and the
+/// waiters that asked to hear the terminal state. GUI thread only: the atomics
+/// below are a single reader's consistency aid, not a lock.
+std::atomic<quint64> g_resolutionId{0};
+/// Issues lease ids and never repeats one. A counter that restarted at one
+/// would hand a replacement resolution the identity the lease it replaced still
+/// carries, and releasing the stale lease would then release the live one.
+std::atomic<quint64> g_resolutionCounter{0};
+
+/// One waiter for `whenRuntimeResolutionFinishes`. The context is held weakly
+/// and the callback is copied once: a caller whose context dies mid-resolution
+/// is discarded rather than delivered to a dead widget.
+struct ResolutionWaiter {
+    ResolutionWaiter* next = nullptr;
+    QPointer<QObject> context;
+    std::function<void()> callback;
+    /// 0 for a waiter that fires on the next turn even though nothing is in
+    /// flight (an already-settled registration), otherwise the id it waits for.
+    quint64 id = 0;
+};
+
+ResolutionWaiter* g_waiters = nullptr;
+
+/// Takes `waiter` back out of the shared list. Called for a waiter that
+/// resolves instantly, so a registration made while nothing is in flight never
+/// clears the waiters a later resolution still owes.
+void unlinkWaiter(ResolutionWaiter* waiter) {
+    ResolutionWaiter** link = &g_waiters;
+    while (*link != nullptr) {
+        if (*link == waiter) {
+            *link = waiter->next;
+            return;
+        }
+        link = &(*link)->next;
+    }
+}
+
+/// Publishes each waiter once, in registration order, through a queued call so
+/// a registration made from inside another waiter's delivery still runs on its
+/// own turn instead of re-entering the caller that registered it. Waiter nodes
+/// are plain allocations with no owner, so the last one out frees them.
+void deliverWaiters(ResolutionWaiter* first) {
+    while (first != nullptr) {
+        ResolutionWaiter* const waiter = first;
+        first = waiter->next;
+        QObject* const context = waiter->context.data();
+        if (context != nullptr && waiter->callback) {
+            std::function<void()> callback = std::move(waiter->callback);
+            QMetaObject::invokeMethod(context, [callback] { callback(); }, Qt::QueuedConnection);
+        }
+        delete waiter;
+    }
+}
 
 /// The one lookup with this file's context. Every literal it is handed must be
 /// wrapped in QT_TRANSLATE_NOOP: that macro is what lupdate reads, and at run
@@ -173,6 +238,26 @@ QString restartReason(BundleKind pinned, RuntimeChoice requested) {
              runtimeChoiceToString(requested) == QLatin1String("native")
                  ? translated(QT_TRANSLATE_NOOP("RuntimeSelection", "native"))
                  : translated(QT_TRANSLATE_NOOP("RuntimeSelection", "standard")));
+}
+
+/// The one system directory Windows itself owns, which is the only place a
+/// supporting loader may come from: nothing is copied into the bundle, no
+/// dependency is added, and no folder beside the module is searched.
+QString windowsSystemDirectory() {
+    const QString root = qEnvironmentVariable("SystemRoot");
+    const QString system32 =
+        QDir::cleanPath((root.isEmpty() ? QLatin1String("C:/Windows") : root) +
+                        QLatin1String("/System32"));
+    return QFileInfo(system32).isDir() ? system32 : QString();
+}
+
+/// The loader the module's own import table asks for and the Windows system
+/// exceptions already name, so a module that declares no such dependency is
+/// never asked about one it does not have. Read from the image, so a synthetic
+/// fixture with no import table yields an empty answer rather than a guess.
+const QStringList& kSystemDriverImports() {
+    static const QStringList required = {QStringLiteral("vulkan-1.dll")};
+    return required;
 }
 
 }  // namespace
@@ -398,9 +483,58 @@ const RuntimeSelection& currentSelection() { return recorded(); }
 
 bool runtimeSelected() { return recorded().loaded; }
 
+bool runtimeResolutionPending() { return g_resolutionId.load() != 0; }
+
+QString runtimePendingPlaybackText() {
+    return translated(QT_TRANSLATE_NOOP(
+        "RuntimeSelection", "Checking the installed mpv runtime\u2026"));
+}
+
+void whenRuntimeResolutionFinishes(QObject* context, const std::function<void()>& callback) {
+    auto* waiter = new ResolutionWaiter();
+    waiter->context = context;
+    waiter->callback = callback;
+    const quint64 id = g_resolutionId.load();
+    waiter->id = id;
+    waiter->next = g_waiters;
+    g_waiters = waiter;
+    if (id != 0) {
+        // A resolution is in flight, so this waiter waits for its terminal
+        // state with the rest of them.
+        return;
+    }
+    // Nothing is in flight, so the recorded state is already terminal and this
+    // waiter belongs to nobody. It is unlinked and published on its own turn
+    // rather than synchronously: a caller that just registered must not be
+    // re-entered by its own registration, and a verdict snapshotted before the
+    // queued call arrives would go stale.
+    unlinkWaiter(waiter);
+    deliverWaiters(waiter);
+}
+
+ResolutionLease beginResolution() {
+    quint64 current = g_resolutionId.load();
+    for (;;) {
+        if (current != 0 || recorded().loaded) return ResolutionLease();
+        const quint64 next = g_resolutionCounter.fetch_add(1) + 1;
+        if (g_resolutionId.compare_exchange_weak(current, next)) return ResolutionLease(next);
+    }
+}
+
+void endResolution(const ResolutionLease& lease) noexcept {
+    if (!lease) return;
+    const quint64 ended = lease.id();
+    if (g_resolutionId.load() != ended) return;  // Not this lease's resolution.
+    g_resolutionId.store(0);
+    ResolutionWaiter* toDeliver = g_waiters;
+    g_waiters = nullptr;
+    deliverWaiters(toDeliver);
+}
+
 QString runtimeStatusText() {
     const RuntimeSelection& selection = recorded();
     if (!selection.loaded) {
+        if (runtimeResolutionPending()) return runtimePendingPlaybackText();
         return selection.reason.isEmpty() ? translated(QT_TRANSLATE_NOOP(
                                                 "RuntimeSelection", "No mpv runtime is loaded."))
                                           : selection.reason;
@@ -420,20 +554,88 @@ QString runtimeStatusText() {
 
 QString runtimeUnavailablePlaybackText(const QString& reason) {
     const QString detail = reason.isEmpty() ? runtimeStatusText() : reason;
+    if (runtimeResolutionPending()) {
+        // Still resolving. Reporting the runtime as unavailable here would be a
+        // named failure for a module that has not been refused yet.
+        return translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                           "Playback runtime pending — %1"))
+            .arg(runtimePendingPlaybackText());
+    }
     return translated(QT_TRANSLATE_NOOP(
                "RuntimeSelection", "Playback runtime unavailable — %1"))
         .arg(detail);
 }
 
-bool beginRecovery() {
-    if (recorded().loaded) {
-        return false;
+QStringList moduleSystemDriverImports(const QString& modulePath) {
+    QStringList required;
+    if (modulePath.trimmed().isEmpty()) return required;
+    const QString canonical = QFileInfo(modulePath).canonicalFilePath();
+    if (canonical.isEmpty()) return required;
+    QFile image(canonical);
+    if (!image.open(QIODevice::ReadOnly)) return required;
+    const PeImageInfo info = inspectPeImage(image.readAll());
+    if (!info.ok) return required;
+    const QStringList exceptions = systemImportExceptions();
+    for (const QString& imported : info.imports + info.delayImports) {
+        if (!exceptions.contains(imported, Qt::CaseInsensitive)) continue;
+        if (!kSystemDriverImports().contains(imported, Qt::CaseInsensitive)) continue;
+        if (required.contains(imported, Qt::CaseInsensitive)) continue;
+        required.append(imported);
     }
-    bool expected = false;
-    return g_recoveryInFlight.compare_exchange_strong(expected, true);
+    std::sort(required.begin(), required.end());
+    return required;
 }
 
-void endRecovery() { g_recoveryInFlight.store(false); }
+QString runtimeLoaderDependencyRefusal(const QString& modulePath) {
+    const QStringList required = moduleSystemDriverImports(modulePath);
+    if (required.isEmpty()) return QString();
+    const QString system32 = windowsSystemDirectory();
+    if (system32.isEmpty()) {
+        // Without the system directory there is no trusted source for the
+        // loader, so the module cannot be honoured and says so by name rather
+        // than being loaded against something nobody can account for.
+        return translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                            "mpv runtime unavailable: the Windows system directory "
+                                            "could not be determined, so %1 cannot be checked for "
+                                            "the %2 it imports"))
+            .arg(QDir::toNativeSeparators(modulePath), required.join(QLatin1String(", ")));
+    }
+    QStringList missing;
+    for (const QString& name : required) {
+        if (!QFileInfo::exists(QDir(system32).filePath(name))) missing.append(name);
+    }
+    if (missing.isEmpty()) return QString();
+    return translated(QT_TRANSLATE_NOOP(
+               "RuntimeSelection",
+               "mpv runtime unavailable: %1 requires the Windows Vulkan loader (%2), "
+               "which is not installed on this PC; install your graphics driver so the "
+               "module can be loaded"))
+        .arg(QDir::toNativeSeparators(modulePath), missing.join(QLatin1String(", ")));
+}
+
+bool beginRecovery() {
+    // The resolution lease is the owner, so a recovery whose owner is destroyed
+    // still releases the one resolution: the latch records the attempt, it
+    // does not hold it. A recovery that finds a module pinned or another
+    // resolution running starts nothing and holds nothing.
+    const ResolutionLease lease = beginResolution();
+    if (!lease) {
+        return false;
+    }
+    g_recoveryResolution.store(lease.id());
+    g_recoveryInFlight.store(true);
+    return true;
+}
+
+void endRecovery() {
+    // Releases the resolution this recovery took, if it still holds it. A
+    // recovery whose delivery Runner suppressed, or whose owner went away, still
+    // ends here, so the one resolution is never latched forever. A newer
+    // resolution that replaced it is left alone, because releasing is by id.
+    const ResolutionLease lease(g_recoveryResolution.exchange(0));
+    endResolution(lease);
+    g_recoveryInFlight.store(false);
+}
 
 bool recoveryInFlight() { return g_recoveryInFlight.load(); }
 

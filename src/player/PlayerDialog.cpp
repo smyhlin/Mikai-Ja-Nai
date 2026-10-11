@@ -2067,6 +2067,19 @@ void PlayerDialog::onEngineError(const QString& message) {
         return;
     }
     syncPipBar();
+    // No core exists yet because the app has not finished resolving the mpv
+    // runtime. That reason is a wait, not a media failure: showing it as an error
+    // named one turn before the module loads and re-extracting a URL that was
+    // never tried is what made a launch report a runtime as permanently missing.
+    // The pending line goes up instead and the request still goes out, so the
+    // page joins the resolution and answers here when it settles. A dialog that
+    // already HAS a core is reporting a real media failure, which is never
+    // covered by this: it keeps its own reason and its own recovery path.
+    if (!engineReady_ && mplayer::native::runtimeResolutionPending()) {
+        showRuntimePendingStatus();
+        emit runtimeRequested();
+        return;
+    }
     showErrorStatus(message.isEmpty() ? tr("Could not play the stream") : message);
     // One shot: the host re-extracts and reloads, and a second failure must not
     // start the loop over again. Direct media has no anime host, so only the
@@ -2203,6 +2216,9 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
         moveEnginePreparationPause(surface_, rearmCarriedIntent);
     }
     if (engineReady_) {
+        // The runtime wait is over: what was an informational line becomes a
+        // real open, so the pending status must not linger over playback.
+        runtimePendingVisible_ = false;
         // The generation this load's pause is recorded under: a viewer request
         // that lands while the file loads supersedes it, and the deferred
         // restore then drops the recorded value rather than overriding them.
@@ -2848,6 +2864,9 @@ void PlayerDialog::syncStatusVisibility() {
 
 void PlayerDialog::flashStatus(const QString& message, bool failure) {
     if (closed_) return;
+    // Any other status supersedes the runtime wait's line: the wait is over for
+    // this surface, whatever else it now has to say.
+    runtimePendingVisible_ = false;
     statusLabel_->setText(message);
     if (!errorActive_ && !processingActive_) {
         retryButton_->hide();
@@ -2889,6 +2908,17 @@ void PlayerDialog::ensureOpenFailureVisible() {
     if (closed_) {
         return;
     }
+    // No core exists yet because the app has not finished resolving the mpv
+    // runtime: that is a wait, not a failure. The pending line is shown and
+    // nothing else happens - no permanent error, no retry chip and no
+    // re-extraction, because the source was never given a chance to play. The
+    // request still goes out so the page can join the resolution that is
+    // running, and the answer arrives here when that resolution settles.
+    if (!engineReady_ && mplayer::native::runtimeResolutionPending()) {
+        showRuntimePendingStatus();
+        emit runtimeRequested();
+        return;
+    }
     // VideoSurface::open emits the real MpvError reason synchronously through
     // onEngineError before returning false, so errorActive_ already names the
     // cause. The generic text is only for an open that reported false without
@@ -2909,6 +2939,39 @@ void PlayerDialog::ensureOpenFailureVisible() {
 }
 
 void PlayerDialog::showError(const QString& message) { onEngineError(message); }
+
+void PlayerDialog::showRuntimePendingStatus() {
+    if (closed_) {
+        return;
+    }
+    // The runtime layer's own sentence about the work in flight. Nothing here
+    // invents a status or guesses how long it takes: a launch that is still
+    // hashing the bundle is told exactly that, never "runtime missing".
+    const QString text = mplayer::native::runtimePendingPlaybackText();
+    if (runtimePendingVisible_ && statusLabel_->text() == text) {
+        return;
+    }
+    runtimePendingVisible_ = true;
+    statusLabel_->setText(text);
+    statusLabel_->setToolTip(text);
+    // The wait can outlast any status timeout, so it is held without one: an
+    // informational line must not vanish while the resolution is still running
+    // and the viewer is still waiting for the reason nothing plays yet.
+    statusTimer_->stop();
+    // The retry chip is a media failure's affordance. While the runtime is still
+    // being resolved the media never had a chance to fail, so retrying now can
+    // only repeat the same open: the chip stands down, and the failure text it
+    // carries - if any - is left alone for the terminal answer.
+    retryButton_->hide();
+    if (!processingActive_) {
+        processingPrepareButton_->hide();
+        processingProvidersButton_->hide();
+        processingOriginalButton_->hide();
+    }
+    statusPanel_->show();
+    statusPanel_->raise();
+    layoutPanels();
+}
 
 void PlayerDialog::showProcessingStatus(const QString& reason) {
     if (closed_) {
@@ -3311,6 +3374,10 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     }
     shuttingDown_ = true;
     closed_ = true;
+    // Remembered before the flag is cleared: a close that is refused below has to
+    // restore the status this dialog was holding, not leave it blank.
+    const bool runtimePendingWasVisible = runtimePendingVisible_;
+    runtimePendingVisible_ = false;
     enginePreparationActive_ = false;
     if (enginePreparationSurface_ != nullptr) {
         enginePreparationSurface_->setEnginePreparationPaused(false, false);
@@ -3359,7 +3426,14 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
                        "it can be retried."));
         closed_ = false;
         shuttingDown_ = false;
-        if (statusTimerWasActive) statusTimer_->start();
+        // The close was refused, so the dialog keeps the status it had: a
+        // runtime wait that refused to close is still waiting.
+        if (runtimePendingWasVisible && !engineReady_ &&
+            mplayer::native::runtimeResolutionPending()) {
+            showRuntimePendingStatus();
+        } else if (statusTimerWasActive) {
+            statusTimer_->start();
+        }
         event->ignore();
         return;
     }

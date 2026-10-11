@@ -1,6 +1,7 @@
 #pragma once
 
 #include <native/components/AnimeJanaiRuntime.hpp>
+#include <native/models/NativeSpatialAssets.hpp>
 
 #include <QMap>
 #include <QSet>
@@ -10,6 +11,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 class QComboBox;
 class QEvent;
@@ -67,6 +69,7 @@ public:
 
     /// The manual check: re-hashes both AnimeJaNai closures and every installed
     /// component file, and re-proves every stored graph against its digest.
+    /// The hashing runs on an off-GUI worker; only the rendering happens here.
     void verifyAll();
 
     /// Reviews and installs the selected runtime/backend closure, RIFE archive,
@@ -79,6 +82,10 @@ public:
 
     QString statusKey() const { return statusKey_; }
     QString statusReason() const { return statusReason_; }
+    /// The generation every new off-GUI run carries. A delivery whose
+    /// generation is no longer current is discarded rather than rendered, so an
+    /// off-GUI publisher reads it on the GUI thread before it applies.
+    quint64 runGeneration() const { return runGeneration_; }
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -91,6 +98,17 @@ private:
     void updateControls();
     mplayer::native::Backend selectedBackend() const;
     void applyStatus(const QString& key, const QString& reason);
+    /// GUI-thread only: renders one off-GUI acquisition progress event.
+    void applyProvisionProgress(const mplayer::native::ComponentProvisionProgress& progress);
+    /// GUI-thread only: renders one off-GUI graph-archive download event.
+    void applyDownloadProgress(const mplayer::native::ComponentProvisionProgress& progress);
+    /// Publishes one completed off-GUI verification. `verifiedPacks`,
+    /// `verifiedRifeGraphs` and `verifiedBackend` are exactly what the hashing
+    /// proved; a stale run never reaches this.
+    void applyVerifyResult(int verified, int failed, int failedRife, int failedSpatial,
+                           const QStringList& failures, const QSet<QString>& verifiedPacks,
+                           const QSet<QString>& verifiedRifeGraphs,
+                           const std::optional<int>& verifiedBackend);
     void downloadAnimeJanaiRuntime();
     void chooseAnimeJanaiRuntimeDirectory();
     void importAnimeJanaiRuntime(const QString& sourceDirectory);
@@ -99,6 +117,25 @@ private:
     void downloadRifeArchive();
     void downloadNextModel();
     void updateCardStates();
+
+    /// Everything the off-GUI Verify needs, copied on the GUI thread before the
+    /// worker starts. No value here reaches back into a widget, and the copy is
+    /// immutable while the worker hashes, so a late result cannot be mistaken
+    /// for a fresh one.
+    struct VerifyRequest {
+        mplayer::native::ComponentStore store;
+        mplayer::native::RifeArchiveStore rifeStore;
+        QVector<const mplayer::native::ComponentPack*> packs;
+        QVector<mplayer::native::RifeModelPin> rifePins;
+        QVector<mplayer::native::StoredSpatialAsset> storedSpatial;
+        QVector<mplayer::native::SpatialAsset> spatialCatalog;
+        mplayer::native::Backend backend = mplayer::native::Backend::TensorRT;
+    };
+    VerifyRequest captureVerifyRequest() const;
+    void startVerify(const VerifyRequest& request);
+
+    /// Hides the progress readout without touching any run state.
+    void cancelProgress();
 
     Runner* runner_ = nullptr;
     backend::MikaiClient* client_ = nullptr;
@@ -149,6 +186,17 @@ private:
     std::shared_ptr<std::atomic<bool>> animeJanaiCancelFlag_;
     QComboBox* animeJanaiBackendCombo_ = nullptr;
     QLabel* animeJanaiBackendLabel_ = nullptr;
+    /// Liveness of this tab for every off-GUI run. Cleared by the destructor, so
+    /// a completion that was already queued reads a dead owner and never
+    /// dereferences one. A plain atomic copy, never a widget QPointer.
+    std::shared_ptr<std::atomic<bool>> alive_;
+    /// Set while any off-GUI run may still publish. While true no second run may
+    /// start and no result may be rendered: the controls stay disabled and the
+    /// progress bar reports indeterminate activity.
+    bool verifying_ = false;
+    /// Bumped by every new run and by every backend/client/provisioner change.
+    /// A delivery carrying an older generation is discarded rather than rendered.
+    quint64 runGeneration_ = 0;
 };
 
 }  // namespace mikai::app

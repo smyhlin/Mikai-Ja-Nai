@@ -1,6 +1,7 @@
 #include "MpvApi.hpp"
 
 #include "native/bundle/NativePaths.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -216,6 +217,22 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
         }
         cookies.append(cookie);
         registeredDeps.append(canonicalDep);
+    }
+
+    // The module's own PE import table is read before the loader is asked. This
+    // is the deployment caveat the audit recorded: the packaged core statically
+    // imports vulkan-1.dll even though the player renders through OpenGL, so a
+    // target machine without the Vulkan loader refuses the module. It is named
+    // here rather than discovered as an anonymous Win32 error, and the answer
+    // is the driver's own loader: nothing is copied into the bundle, no
+    // dependency is added, and there is no fallback module.
+    {
+        const QString dependencyRefusal =
+            native::runtimeLoaderDependencyRefusal(canonicalModule);
+        if (!dependencyRefusal.isEmpty()) {
+            unregisterAll();
+            return fail(dependencyRefusal);
+        }
     }
 
     // Own directory, the registered dependency dirs and System32 - the one

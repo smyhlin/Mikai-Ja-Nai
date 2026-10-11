@@ -26,6 +26,11 @@ class NativeComponentProvisioner : public QObject {
 
 public:
     explicit NativeComponentProvisioner(Runner& runner, QObject* parent = nullptr);
+    /// An owner that goes away cancels its own download. The worker's gate is
+    /// set here, the Runner's gate then pulls the worker out of its blocking
+    /// backend waits, and every queued completion is suppressed before an owner
+    /// that no longer exists is touched. Nothing here waits for the worker.
+    ~NativeComponentProvisioner() override;
 
     bool ensure(QString* reason);
 
@@ -49,12 +54,24 @@ signals:
     void finished(bool ok, bool cancelled, const QString& summary);
 
 private:
+    /// The one provisioner the current run delivers for, or null once its owner
+    /// has gone away. GUI-thread only: it is read from the bodies the Runner's
+    /// dispatcher delivered, which is the one place the owner is known to be
+    /// readable.
+    static NativeComponentProvisioner* currentRun();
+    /// The one provisioner the current run delivers for, or null once its owner
+    /// has gone away. One run per process, so this is a class-wide slot rather
+    /// than per-instance state: the delivered bodies resolve their owner through
+    /// it on the GUI thread.
+    static NativeComponentProvisioner* currentRun_;
+    /// Applies one settled run. GUI-thread only, for the same reason.
+    void finish(bool ok, bool cancelled, const QString& summary);
+
     bool startProvisioning(const mplayer::native::ComponentStore& store,
                            const QVector<mplayer::native::ComponentPack>& packs);
 
     Runner& runner_;
     bool running_ = false;
-    bool cancelled_ = false;
     std::shared_ptr<std::atomic<bool>> cancelFlag_;
 };
 
