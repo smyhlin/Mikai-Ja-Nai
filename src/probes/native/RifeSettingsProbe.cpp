@@ -42,6 +42,7 @@
 #include "dialogs/SettingsDialog.hpp"
 #include "native/bundle/NativePrefs.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
+#include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
 #include "native/models/NativeRife.hpp"
 #include "dialogs/NativeRifeControls.hpp"
@@ -153,6 +154,20 @@ int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
+    // Real executable-local isolation. Naming an app-local data location only
+    // isolates `QSettings`; every native store this dialog reads and writes -
+    // recipes, models, artifacts, components - is `<applicationDirPath>/native`,
+    // and this probe stores a real recipe and saves a real preference. So it runs
+    // on a staged copy of its own executable whose `native` tree is owned
+    // scratch, exactly as the other mutating probes do.
+    mikai::probes::isolation::Options isolation;
+    isolation.probe = "rife_settings_probe";
+    const mikai::probes::isolation::Gate gate =
+        mikai::probes::isolation::enter(argc, argv, isolation);
+    if (gate != mikai::probes::isolation::Gate::RunHere) {
+        return mikai::probes::isolation::exitCode();
+    }
+
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiRifeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("RifeSettingsProbe"));
     QApplication app(argc, argv);
@@ -173,9 +188,21 @@ int main(int argc, char** argv) {
         settings.sync();
     }
 
+    // The scratch the isolated copy owns: its app-local data location and its
+    // executable-local native tree. Cleanup is scoped to both, so a real install
+    // beside the original build output is never touched.
     const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     check(!appData.isEmpty(), "the probe has an app-local data location");
-    QDir(appData).removeRecursively();
+    if (mikai::probes::isolation::isolatedRoot().isEmpty()) {
+        std::fprintf(stderr, "FAIL the RIFE settings probe is not isolated\n");
+        return 2;
+    }
+    if (mikai::probes::isolation::isOwnedScratch(appData)) {
+        QDir(appData).removeRecursively();
+    }
+    if (mikai::probes::isolation::isOwnedScratch(mplayer::native::nativeRoot())) {
+        QDir(mplayer::native::nativeRoot()).removeRecursively();
+    }
 
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
@@ -740,8 +767,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The tree is this probe's own; it does not outlive the run.
-    QDir(appData).removeRecursively();
+    // Cleanup is scoped to what this process owns: its app-local data location
+    // and its executable-local native tree. The parent removes its own scratch;
+    // a tree this process did not create is never touched.
+    if (mikai::probes::isolation::isOwnedScratch(appData)) {
+        QDir(appData).removeRecursively();
+    }
+    if (mikai::probes::isolation::isOwnedScratch(mplayer::native::nativeRoot())) {
+        QDir(mplayer::native::nativeRoot()).removeRecursively();
+    }
 
     std::fprintf(stderr, "[rife_settings_probe] %s (%d failures)\n",
                  failures == 0 ? "PASS" : "FAIL", failures);

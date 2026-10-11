@@ -33,17 +33,16 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 
-#include "dialogs/NativeAssetsPanel.hpp"
-#include "native/models/NativeModelInventory.hpp"
-#include "native/bundle/NativePaths.hpp"
-#include "native/bundle/NativePrefs.hpp"
-#include "native/models/NativeSpatialAssets.hpp"
-#include "ProbeUi.hpp"
-#include "workers/Runner.hpp"
+// ─────────────────────────────────────────────────────────────────────────────
 
 using namespace mplayer;
 using namespace mplayer::native;
 using mikai::app::NativeAssetsPanel;
+using mikai::probes::isolation::enter;
+using mikai::probes::isolation::exitCode;
+using mikai::probes::isolation::Gate;
+using mikai::probes::isolation::isOwnedScratch;
+using mikai::probes::isolation::Options;
 
 namespace {
 
@@ -159,15 +158,26 @@ int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
+    // Real executable-local isolation, decided before anything reads
+    // `nativeRoot()`: this probe publishes into and wipes the app-owned store, so
+    // it runs on a staged copy of its own executable whose `native` tree is owned
+    // scratch. Nothing beside that directory is written, moved or removed.
+    Options isolation;
+    isolation.probe = "spatial_assets_probe";
+    const Gate gate = enter(argc, argv, isolation);
+    if (gate != Gate::RunHere) return exitCode();
+
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiSpatialAssetsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("SpatialAssetsProbe"));
 
-    // A clean app-owned tree for this probe only: the app/org names above make
-    // AppLocalDataLocation ours, and `native/assets`, `native/models` and the
-    // rest live under it.
-    QDir(nativeRoot()).removeRecursively();
+    // A clean app-owned tree for this probe only: the isolated executable's
+    // `nativeRoot()` IS the scratch this process owns, so clearing it cannot
+    // reach a real install beside the original build output.
+    if (!nativeRoot().isEmpty() && isOwnedScratch(nativeRoot())) {
+        QDir(nativeRoot()).removeRecursively();
+    }
 
     // ── 1. the catalogue is the acquisition record's, to the byte ───────────
     const QVector<SpatialAsset> catalog = spatialAssetCatalog();
@@ -304,7 +314,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "[spatial_assets_probe] SKIP: supply --source-owned-file or publish a "
                          "verified pinned graph through Components to prove publication\n");
-            QDir(nativeRoot()).removeRecursively();
+            if (!nativeRoot().isEmpty() && isOwnedScratch(nativeRoot())) {
+                QDir(nativeRoot()).removeRecursively();
+            }
             return 4;
         }
     }
@@ -393,7 +405,11 @@ int main(int argc, char** argv) {
 
     shoot(&window, QStringLiteral("spatial-assets-probe-final.png"));
 
-    QDir(nativeRoot()).removeRecursively();
+    // Cleanup is scoped to the directory this probe process owns; the parent
+    // removes its own scratch. A tree this process did not create is never touched.
+    if (!nativeRoot().isEmpty() && isOwnedScratch(nativeRoot())) {
+        QDir(nativeRoot()).removeRecursively();
+    }
     std::fprintf(stderr, "[spatial_assets_probe] %s (%d failures)\n",
                  failures == 0 ? "PASS" : "FAIL", failures);
     return failures == 0 ? 0 : 1;

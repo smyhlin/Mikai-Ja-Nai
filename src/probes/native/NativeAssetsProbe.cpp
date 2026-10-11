@@ -39,16 +39,23 @@
 #include "native/bundle/NativePaths.hpp"
 #include "native/prepare/NativePreparationPlan.hpp"
 #include "native/bundle/NativePrefs.hpp"
+#include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
 #include "workers/Runner.hpp"
+
+namespace {
+
+using mikai::probes::isolation::enter;
+using mikai::probes::isolation::exitCode;
+using mikai::probes::isolation::Gate;
+using mikai::probes::isolation::isOwnedScratch;
+using mikai::probes::isolation::Options;
 
 using namespace mplayer;
 using namespace mplayer::native;
 using mikai::app::NativeAssetsPanel;
 using mikai::app::NativeCacheEntry;
 using mikai::app::NativeModelView;
-
-namespace {
 
 int failures = 0;
 
@@ -346,6 +353,15 @@ QString publishFixtureArtifact(const ArtifactStore& store, const QString& scratc
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Real executable-local isolation, decided before anything reads
+    // `nativeRoot()`: this probe imports into and wipes the app-owned model store,
+    // so it runs on a staged copy of its own executable whose `native` tree is
+    // owned scratch. Nothing beside that directory is written, moved or removed.
+    Options isolation;
+    isolation.probe = "native_assets_probe";
+    const Gate gate = enter(argc, argv, isolation);
+    if (gate != Gate::RunHere) return exitCode();
+
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
@@ -362,9 +378,12 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    // A clean app-owned tree for this probe only: the app/org names above make
-    // AppLocalDataLocation ours, and every root the panel uses lives under it.
-    QDir(nativeRoot()).removeRecursively();
+    // A clean app-owned tree for this probe only: the isolated executable's
+    // `nativeRoot()` IS the scratch this process owns, so clearing it cannot
+    // reach a real install beside the original build output.
+    if (!nativeRoot().isEmpty() && isOwnedScratch(nativeRoot())) {
+        QDir(nativeRoot()).removeRecursively();
+    }
 
     QTemporaryDir sources;
     if (!sources.isValid()) {
@@ -684,7 +703,11 @@ int main(int argc, char** argv) {
 
     shoot(&window, QStringLiteral("native-assets-probe.png"));
 
-    QDir(nativeRoot()).removeRecursively();
+    // Cleanup is scoped to the directory this probe process owns; the parent
+    // removes its own scratch. A tree this process did not create is never touched.
+    if (!nativeRoot().isEmpty() && isOwnedScratch(nativeRoot())) {
+        QDir(nativeRoot()).removeRecursively();
+    }
     std::fprintf(stderr, "[native_assets_probe] %s (%d failures)\n",
                  failures == 0 ? "PASS" : "FAIL", failures);
     return failures == 0 ? 0 : 1;

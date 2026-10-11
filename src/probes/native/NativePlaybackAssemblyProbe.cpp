@@ -50,11 +50,17 @@
 #include <native/status/NativeTypes.hpp>
 #include <native/models/NativeUserRecipes.hpp>
 
+#include "ProbeIsolation.hpp"
 #include "ProbeRuntime.hpp"
 #include "ProbeUi.hpp"
 #include "dialogs/NativeAssetsPanel.hpp"
 #include "state/NativePlaybackAssembly.hpp"
 #include "workers/Runner.hpp"
+
+using mikai::probes::isolation::exitCode;
+using mikai::probes::isolation::Gate;
+using mikai::probes::isolation::enter;
+using mikai::probes::isolation::Options;
 
 using mplayer::native::ArtifactStore;
 using mplayer::native::Backend;
@@ -229,7 +235,12 @@ void runBinderChecks(Runner& runner) {
 /// refusal matrix and the binder checks. No prepared engine is published, so
 /// nothing here claims a whole plan can be admitted.
 int runIsolated() {
-    QDir(mplayer::native::nativeRoot()).removeRecursively();
+    // The isolated copy's `nativeRoot()` IS the scratch this process owns, so a
+    // clean start cannot reach a real install beside the original build output.
+    const QString ownedRoot = mplayer::native::nativeRoot();
+    if (!ownedRoot.isEmpty() && mikai::probes::isolation::isOwnedScratch(ownedRoot)) {
+        QDir(ownedRoot).removeRecursively();
+    }
 
     const QByteArray graphBytes = QByteArrayLiteral("probe-owned-graph-bytes");
     InspectionResult inspection;
@@ -344,7 +355,12 @@ int runIsolated() {
     Runner runner;
     runBinderChecks(runner);
 
-    QDir(mplayer::native::nativeRoot()).removeRecursively();
+    // Cleanup is scoped to the directory this probe process owns; the parent
+    // removes its own scratch. A tree this process did not create is never touched.
+    const QString cleanedRoot = mplayer::native::nativeRoot();
+    if (!cleanedRoot.isEmpty() && mikai::probes::isolation::isOwnedScratch(cleanedRoot)) {
+        QDir(cleanedRoot).removeRecursively();
+    }
     return failures == 0 ? 0 : 1;
 }
 
@@ -435,6 +451,26 @@ int main(int argc, char** argv) {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
+    // Real executable-local isolation, decided before anything reads
+    // `nativeRoot()`: the isolated mode publishes into and wipes the app-owned
+    // store, so it runs on a staged copy of its own executable whose `native`
+    // tree is owned scratch. The positive mode explicitly targets the caller's
+    // own real prepared tree - publishing nothing and wiping nothing - so it
+    // runs here, which is the only way the store and bundle under test are the
+    // real ones rather than an empty scratch stand-in.
+    Options isolation;
+    isolation.probe = "native_playback_assembly_probe";
+    for (int i = 1; i < argc; ++i) {
+        const QString argument = QString::fromLocal8Bit(argv[i]);
+        if (argument == QLatin1String("--recipe") ||
+            argument.startsWith(QLatin1String("--recipe="))) {
+            isolation.runInPlace = true;
+            break;
+        }
+    }
+    const Gate gate = enter(argc, argv, isolation);
+    if (gate != Gate::RunHere) return exitCode();
+
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
 

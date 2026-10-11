@@ -24,12 +24,11 @@
 #include <QSettings>
 #include <QStyle>
 #include <QStyleOptionFrame>
-#include <QStandardPaths>
 #include <QThread>
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QToolButton>
-#include <QUuid>
+#include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
 
 #include <cstdio>
@@ -562,9 +561,21 @@ bool clearActionInside(QKeySequenceEdit& field) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
-        qputenv("QT_QPA_PLATFORM", "offscreen");
-    }
+    // This probe runs scenarios that write an app-owned native store. Production
+    // `nativeRoot()` is `<applicationDirPath>/native`, so an org name, an app
+    // name and a redirected QSettings path buy exactly nothing: the only real
+    // boundary is the executable directory. The physical isolation helper stakes
+    // that boundary, so the whole probe - the mutating Verify fixture included -
+    // runs from an owned copy of this executable in its own empty native store.
+    using mikai::probes::isolation::Gate;
+    using mikai::probes::isolation::enter;
+    using mikai::probes::isolation::exitCode;
+    using mikai::probes::isolation::Options;
+    Options isolationOptions;
+    isolationOptions.probe = "native_settings_probe";
+    const Gate gate = enter(argc, argv, isolationOptions);
+    if (gate != Gate::RunHere) return exitCode();
+
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     QCommandLineParser parser;
@@ -938,13 +949,19 @@ int main(int argc, char** argv) {
         }
     }
     {
-        const QString previousApplicationName = QCoreApplication::applicationName();
-        const QString isolatedName =
-            QStringLiteral("MikaiNativeSettingsProbeVerify_%1")
-                .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
-        QCoreApplication::setApplicationName(isolatedName);
-        const QString isolatedAppData =
-            QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        // This scenario writes a deliberately corrupt backend record and, on
+        // request, installs a real runtime. Both mutate app-owned state, and
+        // `nativeRoot()` is `<applicationDirPath>/native`: an org name, an app
+        // name and a redirected `AppLocalDataLocation` all still resolve to the
+        // real adjacent store, so none of them is isolation. `isolation::enter`
+        // at the top of main put this whole process on an owned copy of the
+        // executable, whose own native store is empty scratch, so the write
+        // below lands there and nowhere else.
+        const QString isolatedRoot = mikai::probes::isolation::isolatedRoot();
+        check(!isolatedRoot.isEmpty() &&
+                  mplayer::native::pathWithinRoot(isolatedRoot,
+                                                  mplayer::native::nativeRoot()),
+              "the mutating fixture's native store is inside the owned isolate");
         const auto selectedBackend = mplayer::native::Backend::DirectML;
         const auto inactiveBackend = mplayer::native::Backend::TensorRT;
         const auto selectedBefore =
@@ -954,8 +971,10 @@ int main(int argc, char** argv) {
         bool corruptFixtureReady = false;
         if (!selectedBefore.root.isEmpty() && !inactiveBefore.root.isEmpty() &&
             selectedBefore.root != inactiveBefore.root &&
-            selectedBefore.reasonKey == QLatin1String("animejanai.installation.recordMissing") &&
-            inactiveBefore.reasonKey == QLatin1String("animejanai.installation.recordMissing") &&
+            selectedBefore.reasonKey ==
+                QLatin1String("animejanai.installation.recordMissing") &&
+            inactiveBefore.reasonKey ==
+                QLatin1String("animejanai.installation.recordMissing") &&
             QDir().mkpath(inactiveBefore.root)) {
             const QString corruptRecord =
                 QDir(inactiveBefore.root).filePath(QStringLiteral("install.json"));
@@ -966,14 +985,12 @@ int main(int argc, char** argv) {
             record.close();
         }
         check(corruptFixtureReady,
-              "Verify isolation requires an executable stage with no existing backend records");
+              "the isolated stage starts with no existing backend records");
         if (corruptFixtureReady) {
             SettingsDialog dialog(client, runner);
             exerciseVerifyBackendIsolation(dialog, selectedBackend, inactiveBackend,
                                             installRuntime);
         }
-        if (!isolatedAppData.isEmpty()) QDir(isolatedAppData).removeRecursively();
-        QCoreApplication::setApplicationName(previousApplicationName);
     }
 
     std::fprintf(stderr, "[native_settings_probe] %s (%d failures)\n",
