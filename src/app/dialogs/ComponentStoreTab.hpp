@@ -35,8 +35,8 @@ class MikaiClient;
 namespace mikai::app {
 
 /// The Components tab: downloadable Aji runtime/backend closures, pinned
-/// GPU-matched TensorRT packs and RIFE graphs presented as three selectable
-/// cards, with manual Verify and Apply changes actions.
+/// GPU-matched TensorRT packs, RIFE graphs and AnimeJaNai upscaling graphs
+/// presented as four selectable cards, with manual Verify and Apply changes actions.
 ///
 /// Nothing listed here ships in a portable build or an installer. Every element
 /// is either GPU-specific (a builder resource for one compute capability) or
@@ -70,10 +70,11 @@ public:
     void verifyAll();
 
     /// Reviews and installs the selected runtime/backend closure, RIFE archive,
-    /// and any selected model downloads.
+    /// and the complete pinned AnimeJaNai upscaling-model pack.
     void downloadMissing();
-    /// Selects the GPU-matched backend and applies the checked cards without a
-    /// second confirmation.
+    /// Selects the GPU-matched backend and currently missing recommended packs
+    /// after explicit setup confirmation, without a second confirmation.
+    /// The tab's Apply changes action instead preserves the user's selections.
     void installRecommended();
 
     QString statusKey() const { return statusKey_; }
@@ -109,9 +110,11 @@ private:
     QLabel* recommendationBanner_ = nullptr;
     QCheckBox* runtimeCheck_ = nullptr;
     QCheckBox* rifeCheck_ = nullptr;
+    QCheckBox* spatialCheck_ = nullptr;
     QCheckBox* kernelsCheck_ = nullptr;
     QLabel* runtimeState_ = nullptr;
     QLabel* rifeState_ = nullptr;
+    QLabel* spatialState_ = nullptr;
     QLabel* kernelsState_ = nullptr;
     QPushButton* verifyButton_ = nullptr;
     QPushButton* downloadButton_ = nullptr;
@@ -134,7 +137,8 @@ private:
     /// Which catalogue rows the current download run still has to fetch, as
     /// indices into spatialAssetCatalog().
     QVector<int> pendingModels_;
-    QSet<QString> selectedModelIds_;
+    /// User-selected acquisition groups; graph IDs belong only to the catalogue.
+    QSet<QString> selectedPacks_;
     std::shared_ptr<std::atomic<bool>> rifeCancelFlag_;
     std::shared_ptr<std::atomic<bool>> modelCancelFlag_;
     QString rifeFailure_;

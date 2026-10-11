@@ -1,14 +1,20 @@
 #include "TestNativeComponents.hpp"
 
+#include "dialogs/ComponentStoreTab.hpp"
+
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentStore.hpp"
 #include "native/components/NativeComponentToolchain.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
 
 #include "native/bundle/NativePaths.hpp"
 
 #include <iterator>
 
 #include <QtCore/QCryptographicHash>
+#include <QtCore/QCoreApplication>
+#include <QtCore/QEvent>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -17,6 +23,14 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QLocale>
+#include <QtCore/QTimer>
+#include <QtCore/qscopeguard.h>
+#include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QPushButton>
 
 using namespace mplayer::native;
 
@@ -139,6 +153,167 @@ QString resourceNameOf(const ComponentPack* pack) {
 }
 
 }  // namespace
+
+void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs_data() {
+    QTest::addColumn<bool>("corruptRow");
+    QTest::newRow("all-five-absent") << false;
+    QTest::newRow("one-corrupt-four-absent") << true;
+}
+
+void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
+    QFETCH(bool, corruptRow);
+    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+    QCOMPARE(catalog.size(), 5);
+    // The parent launcher supplies a physically isolated application directory.
+    // Never replace or delete an existing graph to arrange this consumer test.
+    QVERIFY(storedSpatialAssets().isEmpty());
+    const QString root = spatialAssetRoot();
+    const bool rootExisted = QFileInfo::exists(root);
+    const QString corruptDirectory =
+        QDir(root).filePath(SpatialAssetStore::directoryName(catalog.first().id));
+    QVERIFY(!QFileInfo::exists(corruptDirectory));
+    const auto cleanup = qScopeGuard([&] {
+        if (corruptRow) QDir(corruptDirectory).removeRecursively();
+        if (!rootExisted) QDir().rmdir(root);
+    });
+    if (corruptRow) {
+        QVERIFY(writeBytes(QDir(corruptDirectory).filePath(
+                               SpatialAssetStore::manifestFileName()),
+                           QByteArrayLiteral("{}")));
+        QVERIFY(writeBytes(QDir(corruptDirectory).filePath(
+                               SpatialAssetStore::graphFileName()),
+                           QByteArrayLiteral("not a pinned graph")));
+        const QVector<StoredSpatialAsset> stored = storedSpatialAssets();
+        QCOMPARE(stored.size(), 1);
+        QVERIFY(!stored.first().verified);
+    }
+
+    mikai::app::ComponentStoreTab tab;
+    auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
+    auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
+    auto* apply = tab.findChild<QPushButton*>(QStringLiteral("primary"));
+    auto* cancel = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
+    QVERIFY(pack != nullptr);
+    QVERIFY(status != nullptr);
+    auto* packState = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
+    auto* packSize = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"));
+    QVERIFY(packState != nullptr);
+    QVERIFY(packSize != nullptr);
+    QVERIFY(packState->text().contains(
+        QStringLiteral("%1/%2").arg(corruptRow ? 1 : 0).arg(catalog.size())));
+    QVERIFY(packState->text().contains(QStringLiteral("0/%1").arg(catalog.size())));
+    QVERIFY(apply != nullptr);
+    QVERIFY(cancel != nullptr);
+    QVERIFY(pack->isChecked());
+    QVERIFY(!pack->accessibleName().isEmpty());
+    QVERIFY(pack->focusPolicy() != Qt::NoFocus);
+    QVERIFY(!pack->testAttribute(Qt::WA_TransparentForMouseEvents));
+    QVERIFY(status->text().isEmpty());  // Construction never initiates acquisition.
+    for (QCheckBox* box : tab.findChildren<QCheckBox*>()) {
+        if (box->isChecked()) box->click();
+    }
+    QVERIFY(!pack->isChecked());
+    pack->click();
+    QVERIFY(pack->isChecked());
+    for (QCheckBox* box : tab.findChildren<QCheckBox*>()) {
+        if (box != pack) QVERIFY(!box->isChecked());
+    }
+
+    qint64 expectedBytes = 0;
+    for (const SpatialAsset& asset : catalog) expectedBytes += asset.bytes;
+    QCOMPARE(packSize->text(), QLocale().formattedDataSize(expectedBytes));
+    bool reviewTimedOut = false;
+    auto review = [&](QMessageBox::StandardButton answer) {
+        QString prompt;
+        reviewTimedOut = false;
+        QElapsedTimer elapsed;
+        elapsed.start();
+        QTimer modalResponse;
+        connect(&modalResponse, &QTimer::timeout, &tab, [&] {
+            // Ownership identifies this real review even when Windows has not
+            // registered it as the application's active modal widget yet.
+            auto* dialog = tab.findChild<QMessageBox*>();
+            if (elapsed.hasExpired(5000)) {
+                reviewTimedOut = true;
+                if (dialog != nullptr) {
+                    modalResponse.stop();
+                    dialog->reject();
+                }
+                return;
+            }
+            if (dialog == nullptr || !dialog->isVisible() || !prompt.isEmpty()) return;
+            QAbstractButton* button = dialog->button(answer);
+            if (button == nullptr) return;
+            prompt = dialog->text();
+            // Keep the deadline armed until the synchronous review returns:
+            // a click that fails to close the dialog must fail, not hang.
+            button->click();
+        });
+        modalResponse.start(10);
+        tab.downloadMissing();
+        return prompt;
+    };
+
+    for (QMessageBox::StandardButton answer : {QMessageBox::Cancel, QMessageBox::Yes}) {
+        const QString prompt = review(answer);
+        QVERIFY2(!reviewTimedOut, "The Components installation review could not be answered within 5 seconds.");
+        QVERIFY(!prompt.isEmpty());
+        for (const SpatialAsset& asset : catalog) {
+            QVERIFY2(prompt.contains(asset.name), qPrintable(prompt));
+        }
+        QVERIFY2(prompt.contains(QLocale().formattedDataSize(expectedBytes)), qPrintable(prompt));
+        if (answer == QMessageBox::Cancel) {
+            QVERIFY(status->text().isEmpty());
+            QVERIFY(tab.statusKey().isEmpty());
+            QVERIFY(pack->isChecked());
+        }
+    }
+    // A null client/runner stops before any network request, but only after the
+    // real consumer has reviewed and queued the selected pinned models.
+    QCOMPARE(tab.statusKey(), QStringLiteral("native.components.noClient"));
+    QVERIFY(!status->text().isEmpty());
+    QCOMPARE(status->text(), tab.statusReason());
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
+    QVERIFY(apply->isEnabled());
+    QVERIFY(pack->isEnabled());
+    QVERIFY(!cancel->isEnabled());
+
+    apply->click();
+    QCOMPARE(tab.statusKey(), QStringLiteral("native.components.noClient"));
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
+    QVERIFY(pack->isChecked());
+}
+
+void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFailVerification() {
+    QVERIFY(storedSpatialAssets().isEmpty());
+    mikai::app::ComponentStoreTab tab;
+    auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
+    auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
+    QVERIFY(pack != nullptr);
+    QVERIFY(status != nullptr);
+    QVERIFY(pack->isChecked());
+    pack->click();
+    QVERIFY(!pack->isChecked());
+    tab.refresh();
+    QVERIFY(!pack->isChecked());
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&tab, &languageChange);
+    QVERIFY(!pack->isChecked());
+    QVERIFY(!pack->accessibleName().isEmpty());
+    tab.verifyAll();
+    QCOMPARE(tab.statusKey(), QStringLiteral("native.components.digest"));
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
+    QVERIFY(!status->text().isEmpty());
+    QVERIFY(!pack->isChecked());
+    QVERIFY(pack->isEnabled());
+
+    // A separate, explicit setup confirmation re-evaluates recommendations;
+    // refresh, retranslation and the normal Apply action never do so.
+    tab.installRecommended();
+    QVERIFY(pack->isChecked());
+    QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
+    QVERIFY(!status->text().isEmpty());
+}
 
 void TestNativeComponents::selectionUsesTheExactPack() {
     struct Generation {

@@ -19,6 +19,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDebug>
 #include <QtCore/QEvent>
+#include <QtCore/QFileInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QMetaObject>
 #include <QtCore/QPointer>
@@ -90,6 +91,14 @@ ComponentBinDirs installedComponentBinDirs(const GpuComputeCapability& gpu,
 
 /// A model graph is ~2 MB but the link may be slow; 20 s was an artwork budget.
 constexpr int kModelDownloadTimeoutMs = 120000;
+
+const StoredSpatialAsset* spatialInventoryRow(const QVector<StoredSpatialAsset>& stored,
+                                             const QString& id) {
+    for (const StoredSpatialAsset& row : stored) {
+        if (row.asset.id == id) return &row;
+    }
+    return nullptr;
+}
 }  // namespace
 
 ComponentStoreTab::ComponentStoreTab(QWidget* parent) : QWidget(parent) {
@@ -153,6 +162,23 @@ QString animeJanaiSetupPrompt(qint64* bytes) {
     }
     if (rifeMissing) append(translate("RIFE interpolation models"),
                             rifeArchivePack().assetBytes);
+    const QVector<StoredSpatialAsset> spatialStored = storedSpatialAssets();
+    const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
+    qint64 missingSpatialBytes = 0;
+    int missingSpatialCount = 0;
+    for (const SpatialAsset& asset : spatialCatalog) {
+        const StoredSpatialAsset* row = spatialInventoryRow(spatialStored, asset.id);
+        if (row == nullptr || !row->verified) {
+            missingSpatialBytes += asset.bytes;
+            ++missingSpatialCount;
+        }
+    }
+    if (missingSpatialCount > 0)
+        append(QCoreApplication::translate(
+                   "mikai::app::ComponentStoreTab",
+                   "AnimeJaNai upscaling models (%1 of %2 missing)")
+                   .arg(missingSpatialCount).arg(spatialCatalog.size()),
+               missingSpatialBytes);
     if (bytes != nullptr) *bytes = totalBytes;
     if (missing.isEmpty()) return {};
     return translate("Components recommended for this PC are not installed:")
@@ -221,8 +247,7 @@ void ComponentStoreTab::buildUi() {
                                        theme::kSpacingMedium, theme::kSpacingMedium);
         cardLayout->setSpacing(theme::kSpacingMedium);
         *checkBox = new QCheckBox(card);
-        (*checkBox)->setFocusPolicy(Qt::NoFocus);
-        (*checkBox)->setAttribute(Qt::WA_TransparentForMouseEvents);
+        (*checkBox)->setObjectName(objectName + QStringLiteral("Check"));
         cardLayout->addWidget(*checkBox, 0, Qt::AlignVCenter);
         auto* details = new QWidget(card);
         auto* detailsLayout = new QVBoxLayout(details);
@@ -232,12 +257,14 @@ void ComponentStoreTab::buildUi() {
         titleRow->setSpacing(theme::kSpacingSmall);
         auto* title = new QLabel(details);
         title->setObjectName(objectName + QStringLiteral("Title"));
+        title->setWordWrap(true);
         QFont titleFont = title->font();
         titleFont.setBold(true);
         title->setFont(titleFont);
         titleRow->addWidget(title);
         *stateLabel = new QLabel(details);
         (*stateLabel)->setObjectName(objectName + QStringLiteral("State"));
+        (*stateLabel)->setWordWrap(true);
         titleRow->addWidget(*stateLabel);
         titleRow->addStretch();
         detailsLayout->addLayout(titleRow);
@@ -249,16 +276,19 @@ void ComponentStoreTab::buildUi() {
         cardLayout->addWidget(details, 1);
         auto* size = new QLabel(card);
         size->setObjectName(objectName + QStringLiteral("Size"));
+        size->setWordWrap(true);
         cardLayout->addWidget(size, 0, Qt::AlignVCenter);
         root->addWidget(card);
         return card;
     };
     auto* runtimeCard = makeCard(QStringLiteral("tensorRtRuntimeCard"),
                                  &runtimeCheck_, &runtimeState_);
+    auto* spatialCard = makeCard(QStringLiteral("animeJanaiModelsCard"),
+                                 &spatialCheck_, &spatialState_);
     auto* rifeCard = makeCard(QStringLiteral("rifeModelsCard"), &rifeCheck_, &rifeState_);
     auto* kernelsCard = makeCard(QStringLiteral("tensorRtKernelsCard"),
                                  &kernelsCheck_, &kernelsState_);
-    for (auto* card : {runtimeCard, rifeCard, kernelsCard}) {
+    for (auto* card : {runtimeCard, spatialCard, rifeCard, kernelsCard}) {
         card->setProperty("componentCard", true);
     }
     auto setCardText = [](QGroupBox* card, const QString& titleText,
@@ -272,24 +302,31 @@ void ComponentStoreTab::buildUi() {
                 tr("Fastest NVIDIA upscaling engine; without it NVIDIA falls back to DirectML."));
     setCardText(rifeCard, tr("RIFE interpolation models"),
                 tr("Frame interpolation, not needed for upscale only."));
+    setCardText(spatialCard, tr("AnimeJaNai upscaling models"),
+                tr("All five pinned HD and SD graphs required by the built-in AnimeJaNai profiles."));
     setCardText(kernelsCard, tr("TensorRT kernels for this GPU"),
                 tr("Engine-builder kernels matched to this GPU generation."));
     auto updateRuntimeSelection = [this](bool checked) {
-        if (checked) selectedModelIds_.insert(QStringLiteral("component:runtime"));
-        else selectedModelIds_.remove(QStringLiteral("component:runtime"));
+        if (checked) selectedPacks_.insert(QStringLiteral("component:runtime"));
+        else selectedPacks_.remove(QStringLiteral("component:runtime"));
     };
     connect(runtimeCheck_, &QCheckBox::toggled, this, [this, updateRuntimeSelection](bool checked) {
         updateRuntimeSelection(checked);
         updateControls();
     });
     connect(rifeCheck_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (checked) selectedModelIds_.insert(QStringLiteral("rife:archive"));
-        else selectedModelIds_.remove(QStringLiteral("rife:archive"));
+        if (checked) selectedPacks_.insert(QStringLiteral("rife:archive"));
+        else selectedPacks_.remove(QStringLiteral("rife:archive"));
+        updateControls();
+    });
+    connect(spatialCheck_, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked) selectedPacks_.insert(QStringLiteral("component:spatial"));
+        else selectedPacks_.remove(QStringLiteral("component:spatial"));
         updateControls();
     });
     connect(kernelsCheck_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (checked) selectedModelIds_.insert(QStringLiteral("component:kernels"));
-        else selectedModelIds_.remove(QStringLiteral("component:kernels"));
+        if (checked) selectedPacks_.insert(QStringLiteral("component:kernels"));
+        else selectedPacks_.remove(QStringLiteral("component:kernels"));
         updateControls();
     });
 
@@ -340,7 +377,8 @@ void ComponentStoreTab::buildUi() {
     connect(animeJanaiBackendCombo_, qOverload<int>(&QComboBox::currentIndexChanged), this,
             [this](int) { refresh(); });
     connect(verifyButton_, &QPushButton::clicked, this, &ComponentStoreTab::verifyAll);
-    connect(downloadButton_, &QPushButton::clicked, this, &ComponentStoreTab::installRecommended);
+    connect(downloadButton_, &QPushButton::clicked, this,
+            [this] { downloadMissing(false); });
     connect(findChild<QPushButton*>(QStringLiteral("refreshComponentsButton")),
             &QPushButton::clicked, this, &ComponentStoreTab::refresh);
     connect(importAnimeJanaiButton_, &QPushButton::clicked, this,
@@ -381,7 +419,7 @@ void ComponentStoreTab::buildUi() {
 
 void ComponentStoreTab::retranslateUi() {
     heading_->setText(tr("Backend components"));
-    hint_->setText(tr("Choose which recommended components and optional RIFE models to install."));
+    hint_->setText(tr("Choose which recommended components, AnimeJaNai upscaling models and optional RIFE models to install."));
     auto setCardText = [this](const QString& objectName, const QString& title,
                               const QString& description) {
         findChild<QLabel*>(objectName + QStringLiteral("Title"))->setText(title);
@@ -391,6 +429,8 @@ void ComponentStoreTab::retranslateUi() {
                 tr("Fastest NVIDIA upscaling engine; without it NVIDIA falls back to DirectML."));
     setCardText(QStringLiteral("rifeModelsCard"), tr("RIFE interpolation models"),
                 tr("Frame interpolation, not needed for upscale only."));
+    setCardText(QStringLiteral("animeJanaiModelsCard"), tr("AnimeJaNai upscaling models"),
+                tr("All five pinned HD and SD graphs required by the built-in AnimeJaNai profiles."));
     setCardText(QStringLiteral("tensorRtKernelsCard"),
                 tr("TensorRT kernels for this GPU"),
                 tr("Engine-builder kernels matched to this GPU generation."));
@@ -404,6 +444,11 @@ void ComponentStoreTab::retranslateUi() {
         tr("Choose a local AnimeJaNai runtime directory and install its selected backend closure"));
     cancelButton_->setText(tr("Cancel"));
     cancelButton_->setAccessibleName(tr("Cancel the running download"));
+    status_->setAccessibleName(tr("Components status"));
+    animeJanaiBackendCombo_->setAccessibleName(
+        tr("AnimeJaNai backend used by Apply changes and Verify"));
+    animeJanaiBackendCombo_->setItemText(0, tr("TensorRT (CUDA / NVDEC)"));
+    animeJanaiBackendCombo_->setItemText(1, tr("DirectML (D3D11VA)"));
     if (animeJanaiBackendLabel_ != nullptr) {
         animeJanaiBackendLabel_->setText(tr("AnimeJaNai backend:"));
     }
@@ -507,6 +552,21 @@ void ComponentStoreTab::updateCardStates() {
             break;
         }
     }
+    const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
+    const QVector<StoredSpatialAsset> spatialStored = storedSpatialAssets();
+    int installedSpatial = 0;
+    int verifiedSpatial = 0;
+    qint64 spatialBytes = 0;
+    for (const SpatialAsset& asset : spatialCatalog) {
+        spatialBytes += asset.bytes;
+        const StoredSpatialAsset* row = spatialInventoryRow(spatialStored, asset.id);
+        if (row != nullptr) {
+            if (QFileInfo(row->graphPath).isFile()) ++installedSpatial;
+            if (row->verified) ++verifiedSpatial;
+        }
+    }
+    const bool spatialRecommended = verifiedSpatial != spatialCatalog.size();
+
     const ComponentPack* kernelsPack =
         tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     const StoredPack kernelsStored = kernelsPack != nullptr
@@ -529,6 +589,12 @@ void ComponentStoreTab::updateCardStates() {
     findChild<QLabel*>(QStringLiteral("tensorRtKernelsCardSize"))
         ->setText(tr("%1 MB").arg(QLocale().toString(kernelsBytes / 1048576)));
 
+    findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"))
+        ->setText(QLocale().formattedDataSize(spatialBytes));
+    setState(spatialState_,
+             tr("%1/%2 installed; %3/%2 verified")
+                 .arg(installedSpatial).arg(spatialCatalog.size()).arg(verifiedSpatial));
+
     setState(runtimeState_,
              runtimeRecommended ? tr("recommended for this PC")
                                 : (runtimeInstalled ? tr("installed") : tr("optional")));
@@ -546,30 +612,36 @@ void ComponentStoreTab::updateCardStates() {
     };
     setBadgeRole(runtimeState_, runtimeRecommended);
     setBadgeRole(rifeState_, false);
+    setBadgeRole(spatialState_, spatialRecommended);
     setBadgeRole(kernelsState_, kernelsRecommended);
 
     runtimeCheck_->setAccessibleName(tr("TensorRT runtime"));
     rifeCheck_->setAccessibleName(tr("RIFE interpolation models"));
+    spatialCheck_->setAccessibleName(tr("AnimeJaNai upscaling models"));
+    spatialCheck_->setAccessibleDescription(
+        tr("Select all five pinned upscaling graphs for download or repair."));
     kernelsCheck_->setAccessibleName(tr("TensorRT kernels for this GPU"));
     kernelsCheck_->setVisible(gpu.nvidia && kernelsPack != nullptr);
     if (!componentSelectionsInitialized_) {
         componentSelectionsInitialized_ = true;
-        if (runtimeRecommended) selectedModelIds_.insert(QStringLiteral("component:runtime"));
-        if (kernelsRecommended) selectedModelIds_.insert(QStringLiteral("component:kernels"));
-        if (!rifeInstalled) selectedModelIds_.insert(QStringLiteral("rife:archive"));
+        if (runtimeRecommended) selectedPacks_.insert(QStringLiteral("component:runtime"));
+        if (kernelsRecommended) selectedPacks_.insert(QStringLiteral("component:kernels"));
+        if (!rifeInstalled) selectedPacks_.insert(QStringLiteral("rife:archive"));
+        if (spatialRecommended) selectedPacks_.insert(QStringLiteral("component:spatial"));
     }
-    auto showInstalled = [](QCheckBox* box, bool installed) {
-        if (box == nullptr) return;
+    auto showSelection = [this](QCheckBox* box, const QString& pack) {
         box->blockSignals(true);
-        box->setChecked(installed);
+        box->setChecked(selectedPacks_.contains(pack));
         box->blockSignals(false);
     };
-    showInstalled(runtimeCheck_, runtimeInstalled);
-    showInstalled(rifeCheck_, rifeInstalled);
-    showInstalled(kernelsCheck_, kernelsInstalled);
-    const bool showBanner = runtimeRecommended || kernelsRecommended;
+    showSelection(runtimeCheck_, QStringLiteral("component:runtime"));
+    showSelection(rifeCheck_, QStringLiteral("rife:archive"));
+    showSelection(spatialCheck_, QStringLiteral("component:spatial"));
+    showSelection(kernelsCheck_, QStringLiteral("component:kernels"));
+    const bool showBanner = runtimeRecommended || kernelsRecommended || spatialRecommended;
     recommendationBanner_->setVisible(showBanner);
     runtimeCheck_->parentWidget()->setProperty("recommended", runtimeRecommended);
+    spatialCheck_->parentWidget()->setProperty("recommended", spatialRecommended);
     kernelsCheck_->parentWidget()->setProperty("recommended", kernelsRecommended);
 }
 
@@ -640,8 +712,9 @@ void ComponentStoreTab::verifyAll() {
 
     int failedSpatialModels = 0;
     const QVector<StoredSpatialAsset> models = storedSpatialAssets();
-    for (const StoredSpatialAsset& model : models) {
-        if (model.verified) {
+    for (const SpatialAsset& asset : spatialAssetCatalog()) {
+        const StoredSpatialAsset* model = spatialInventoryRow(models, asset.id);
+        if (model != nullptr && model->verified) {
             ++verified;
         } else {
             ++failed;
@@ -673,6 +746,26 @@ void ComponentStoreTab::installRecommended() {
     const int backendIndex = animeJanaiBackendCombo_->findData(
         static_cast<int>(gpu.nvidia ? Backend::TensorRT : Backend::DirectML));
     if (backendIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(backendIndex);
+    refresh();
+
+    // Explicit setup confirmation is distinct from Apply changes, which keeps
+    // the user's checked cards and backend unchanged.
+    runtimeCheck_->setChecked(
+        !describeAnimeJanaiInstallation(selectedBackend(), false).installed ||
+        runtimeCheck_->parentWidget()->property("recommended").toBool());
+    kernelsCheck_->setChecked(
+        kernelsCheck_->parentWidget()->property("recommended").toBool());
+    spatialCheck_->setChecked(
+        spatialCheck_->parentWidget()->property("recommended").toBool());
+    bool rifeMissing = false;
+    const RifeArchiveStore archive = rifeArchiveStore();
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        if (!storedRifeGraph(archive, pin).installed) {
+            rifeMissing = true;
+            break;
+        }
+    }
+    rifeCheck_->setChecked(rifeMissing);
 
     downloadMissing(false);
 }
@@ -683,13 +776,11 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     pendingModels_.clear();
     const QVector<StoredSpatialAsset> stored = storedSpatialAssets();
     const QVector<SpatialAsset> catalog = spatialAssetCatalog();
-    for (int index = 0; index < catalog.size(); ++index) {
-        bool present = false;
-        for (const StoredSpatialAsset& candidate : stored) {
-            if (candidate.asset.id == catalog.at(index).id && candidate.verified) present = true;
+    if (selectedPacks_.contains(QStringLiteral("component:spatial"))) {
+        for (int index = 0; index < catalog.size(); ++index) {
+            const StoredSpatialAsset* row = spatialInventoryRow(stored, catalog.at(index).id);
+            if (row == nullptr || !row->verified) pendingModels_.append(index);
         }
-        if (selectedModelIds_.contains(catalog.at(index).id) && !present)
-            pendingModels_.append(index);
     }
 
     const Backend backend = selectedBackend();
@@ -697,9 +788,9 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
         describeAnimeJanaiInstallation(backend, false);
     const GpuComputeCapability& gpu = observeComputeCapability();
     const bool runtimeSelected =
-        selectedModelIds_.contains(QStringLiteral("component:runtime"));
+        selectedPacks_.contains(QStringLiteral("component:runtime"));
     const bool kernelsSelected =
-        selectedModelIds_.contains(QStringLiteral("component:kernels"));
+        selectedPacks_.contains(QStringLiteral("component:kernels"));
     const bool componentMissing = backend == Backend::TensorRT &&
         (runtimeSelected || kernelsSelected) && gpu.smMajor > 0 &&
         !installedComponentBinDirs(gpu, componentStore()).reasonKey.isEmpty();
@@ -713,7 +804,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     }
     for (int index : pendingModels_) review.append(catalog.at(index).name);
     bool selectedRifeMissing = false;
-    if (selectedModelIds_.contains(QStringLiteral("rife:archive"))) {
+    if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
         const RifeArchiveStore archive = rifeArchiveStore();
         for (const RifeModelPin& pin : rifeModelPins()) {
             const StoredRifeGraph graph = verifyRifeGraph(archive, pin);
@@ -969,8 +1060,8 @@ void ComponentStoreTab::downloadRemainingComponents() {
         installedComponentBinDirs(observeComputeCapability(), componentStore());
     const bool componentMissing =
         selectedBackend() == Backend::TensorRT &&
-        (selectedModelIds_.contains(QStringLiteral("component:runtime")) ||
-         selectedModelIds_.contains(QStringLiteral("component:kernels"))) &&
+        (selectedPacks_.contains(QStringLiteral("component:runtime")) ||
+         selectedPacks_.contains(QStringLiteral("component:kernels"))) &&
         observeComputeCapability().smMajor > 0 && !verdict.reasonKey.isEmpty();
     if (componentMissing && provisioner_ == nullptr) {
         pendingModels_.clear();
@@ -999,7 +1090,7 @@ void ComponentStoreTab::downloadRifeArchive() {
     bool missing = false;
     const RifeArchiveStore store = rifeArchiveStore();
     const QVector<RifeModelPin> pins = rifeModelPins();
-    if (selectedModelIds_.contains(QStringLiteral("rife:archive"))) {
+    if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
         for (const RifeModelPin& pin : pins) {
             const StoredRifeGraph stored = storedRifeGraph(store, pin);
             if (!stored.installed || stored.bytes != pin.bytes ||
@@ -1100,7 +1191,7 @@ void ComponentStoreTab::downloadNextModel() {
             return;
         }
         const bool runtimeSelected =
-            selectedModelIds_.contains(QStringLiteral("component:runtime"));
+            selectedPacks_.contains(QStringLiteral("component:runtime"));
         const AnimeJanaiInstallation backend =
             describeAnimeJanaiInstallation(selectedBackend(), true);
         if (runtimeSelected && !backend.installed) {
@@ -1114,8 +1205,8 @@ void ComponentStoreTab::downloadNextModel() {
             return;
         }
         const GpuComputeCapability& gpu = observeComputeCapability();
-        if ((selectedModelIds_.contains(QStringLiteral("component:runtime")) ||
-             selectedModelIds_.contains(QStringLiteral("component:kernels"))) &&
+        if ((selectedPacks_.contains(QStringLiteral("component:runtime")) ||
+             selectedPacks_.contains(QStringLiteral("component:kernels"))) &&
             selectedBackend() == Backend::TensorRT && gpu.smMajor > 0 &&
             !installedComponentBinDirs(gpu, componentStore()).reasonKey.isEmpty()) {
             applyStatus(QStringLiteral("native.components.missing"),
@@ -1124,7 +1215,7 @@ void ComponentStoreTab::downloadNextModel() {
             return;
         }
         const RifeArchiveStore archiveStore = rifeArchiveStore();
-        if (selectedModelIds_.contains(QStringLiteral("rife:archive"))) {
+        if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
             for (const RifeModelPin& pin : rifeModelPins()) {
                 const StoredRifeGraph graph = verifyRifeGraph(archiveStore, pin);
                 if (!graph.installed) {
@@ -1136,12 +1227,19 @@ void ComponentStoreTab::downloadNextModel() {
                 rifeVerificationErrors_.remove(pin.fileName);
             }
         }
-        for (const StoredSpatialAsset& asset : storedSpatialAssets()) {
-            if (!selectedModelIds_.contains(asset.asset.id)) continue;
-            if (!asset.verified) {
-                applyStatus(QStringLiteral("native.components.digest"), asset.reason);
-                refresh();
-                return;
+        if (selectedPacks_.contains(QStringLiteral("component:spatial"))) {
+            const QVector<StoredSpatialAsset> stored = storedSpatialAssets();
+            for (const SpatialAsset& asset : spatialAssetCatalog()) {
+                const StoredSpatialAsset* row = spatialInventoryRow(stored, asset.id);
+                if (row == nullptr || !row->verified) {
+                    applyStatus(QStringLiteral("native.components.digest"),
+                                row == nullptr
+                                    ? tr("The requested upscaling model is not installed: %1")
+                                          .arg(asset.name)
+                                    : QStringLiteral("%1: %2").arg(asset.name, row->reason));
+                    refresh();
+                    return;
+                }
             }
         }
         applyStatus(QString(), tr("Every selected pack is installed and verified."));
@@ -1187,7 +1285,7 @@ void ComponentStoreTab::downloadNextModel() {
                 self->modelCancelFlag_.reset();
                 self->pendingModels_.clear();
                 self->applyStatus(QStringLiteral("native.components.cancelled"), QString());
-                self->updateControls();
+                self->refresh();
                 return;
             }
             self->downloadNextModel();
@@ -1201,7 +1299,7 @@ void ComponentStoreTab::downloadNextModel() {
                                   ? QStringLiteral("native.components.cancelled")
                                   : QStringLiteral("native.components.fetch"),
                               cancelFlag->load() ? QString() : error);
-            self->updateControls();
+            self->refresh();
         });
 }
 
@@ -1215,6 +1313,7 @@ void ComponentStoreTab::updateControls() {
     cancelButton_->setEnabled(busy);
     if (runtimeCheck_ != nullptr) runtimeCheck_->setEnabled(!busy);
     if (rifeCheck_ != nullptr) rifeCheck_->setEnabled(!busy);
+    if (spatialCheck_ != nullptr) spatialCheck_->setEnabled(!busy);
     if (kernelsCheck_ != nullptr) kernelsCheck_->setEnabled(!busy);
     if (auto* refreshButton = findChild<QPushButton*>(QStringLiteral("refreshComponentsButton")))
         refreshButton->setEnabled(!busy);
