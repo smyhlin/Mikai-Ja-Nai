@@ -174,8 +174,9 @@
       "finding": "The TensorRT Supplement makes the runtime .so/.dll files distributable. trtexec.exe is a developer tool, and SLA 1.2.1.4 states that unless a developer tool is identified in the Agreement as distributable it is delivered for internal use only. The Agreement text located does not identify trtexec.exe as distributable.",
       "consequence": "The official upstream configuration invokes trtexec.exe for TensorRT engine first-build. The private prepared-helper path builds engines in-process and does not need trtexec, but that alternative architecture does not describe the upstream-config path. No NVIDIA developer-tool redistribution clearance has been established; do not ship trtexec or claim it is cleared.",
       "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or an upstream-config design that avoids invoking it while preserving the required first-build behavior.",
-      "designNote": "The ESC-5 architecture resolution applies only to the private prepared-helper path. The official v0.9.0 conf/config path invokes trtexec for TensorRT first-build, so that path retains an unresolved developer-tool redistribution question.",
+      "designNote": "The ESC-5 architecture resolution applies ONLY to the private in-process prepared-helper path. It is NOT a general answer. The official v0.9.0 conf/config path still invokes trtexec for TensorRT first-build, so that path retains an unresolved developer-tool redistribution question, and the phrase 'ESC-5 is resolved' is only ever true when it names the private helper specifically.",
       "resolution": "UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH. tool.trtexec remains external and not in a public bundle; the private prepared-helper path can avoid it but does not clear the upstream-config path.",
+      "privateHelperScope": "The in-process helper builds engines through the TensorRT builder API and launches no external process, so on that path alone trtexec is not used. This is a statement about the private helper's implementation, not a third-party redistribution clearance and not a property of the official config path.",
       "whatDidNotChange": "The located TensorRT Supplement makes runtime .dll files distributable; it does not establish trtexec.exe redistribution. No NVIDIA developer-tool clearance has been obtained.",
       "note": "Keep the prior architecture conclusion narrowly scoped: ESC-5 is avoided by architecture only when using the private prepared-helper path. Any path using upstream configuration and first-build trtexec remains blocked pending written clearance or an implementation that no longer requires trtexec."
     },
@@ -582,8 +583,9 @@
       },
       "redistribution": "external",
       "inBundle": false,
-      "architecturePath": "The private prepared-helper path builds engines in-process via the TensorRT builder API and avoids trtexec.exe. The official upstream v0.9.0 configuration path invokes trtexec.exe for TensorRT first-build, so this architecture exception does not apply there.",
-      "resolution": "No NVIDIA developer-tool redistribution clearance is established. The official upstream-config path invokes trtexec.exe on TensorRT first-build. The private prepared-helper path avoids trtexec by building in-process; that does not resolve or clear the upstream-config path. trtexec remains external, not included in public bundles."
+      "architecturePath": "The private prepared-helper path builds engines in-process via the TensorRT builder API and avoids trtexec.exe. The official upstream v0.9.0 configuration path invokes trtexec.exe for TensorRT first-build, so this architecture exception does not apply there. The private path's implementation is not a licence and clears nothing for the official path.",
+      "resolution": "No NVIDIA developer-tool redistribution clearance is established. The official upstream-config path invokes trtexec.exe on TensorRT first-build. The private prepared-helper path avoids trtexec by building in-process; that does not resolve or clear the upstream-config path. trtexec remains external, not included in public bundles.",
+      "privateHelperNotices": "The private helper is this repository's own integration code (projectIntegrationGrant). It neither bundles nor redistributes trtexec, and it does not alter what the located TensorRT SLA permits for the developer tool."
     },
     {
       "id": "models.animejanai-onnx",

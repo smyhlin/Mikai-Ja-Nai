@@ -33,7 +33,9 @@ struct PackRow {
 /// `-linux-x64` variants of the same packs; those are not this build's
 /// platform and are not part of the catalogue.
 constexpr PackRow kRows[] = {
-    // trtexec.exe is deliberately excluded: nothing in this build invokes it.
+    // trtexec.exe is not a pack member: the private prepared-helper path builds
+    // plans in process and never invokes it, while the official v0.9.0
+    // config/first-build path still requires and receives it from this archive.
     {"trt-runtime", "component-trt-runtime.7z", 186822775,
      "282cb9b178db241f61f7aedf1ef214af56c2a342428253d04a8d8916d6729373",
      {"cudart64_13.dll", "CUDA_LICENSE.txt", "DirectML_LICENSE.txt", "nvinfer_11.dll",

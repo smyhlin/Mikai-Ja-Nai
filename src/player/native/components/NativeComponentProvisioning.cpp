@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QScopeGuard>
@@ -135,7 +136,8 @@ bool validateRifeArchiveListing(const QString& sevenZip, const QString& archive,
 ComponentProvisionResult provisionTensorRtComponents(
     const ComponentStore& store, const QVector<ComponentPack>& packs, const QString& scratchDirectory,
     const std::function<void(const ComponentProvisionProgress&)>& progress,
-    const std::function<bool()>& cancelled) {
+    const std::function<bool()>& cancelled,
+    const VerifiedComponentArchive* reusedArchive) {
     ComponentProvisionResult result;
     auto fail = [&result](const QString& key, const QString& text) {
         result.ok = false;
@@ -180,19 +182,30 @@ ComponentProvisionResult provisionTensorRtComponents(
     }
 
     for (const ComponentPack& pack : packs) {
-        const QString archive = scratch.filePath(pack.asset);
-        QString downloadReason;
-        const bool downloaded = mikai::backend::downloadToFile(
-            QUrl(pack.url), archive, pack.assetBytes, pack.assetSha256,
-            [&](qint64 received, qint64 total) {
-                if (progress) progress({pack.name, received, total});
-            },
-            cancelled, &downloadReason);
-        if (!downloaded) {
-            const bool wasCancelled = cancelled && cancelled();
-            return fail(wasCancelled ? QStringLiteral("native.components.cancelled")
-                                     : QStringLiteral("native.components.fetch"),
-                        downloadReason);
+        const bool reuseThisPack = reusedArchive != nullptr &&
+            !reusedArchive->packName.isEmpty() && reusedArchive->packName == pack.name;
+        const QString archive = reuseThisPack ? reusedArchive->path : scratch.filePath(pack.asset);
+        if (reuseThisPack) {
+            const QFileInfo reused(archive);
+            if (!reused.isFile() || !reused.isReadable()) {
+                return fail(QStringLiteral("native.components.fetch"),
+                            QStringLiteral("the verified component archive is not readable: %1")
+                                .arg(archive));
+            }
+        } else {
+            QString downloadReason;
+            const bool downloaded = mikai::backend::downloadToFile(
+                QUrl(pack.url), archive, pack.assetBytes, pack.assetSha256,
+                [&](qint64 received, qint64 total) {
+                    if (progress) progress({pack.name, received, total});
+                },
+                cancelled, &downloadReason);
+            if (!downloaded) {
+                const bool wasCancelled = cancelled && cancelled();
+                return fail(wasCancelled ? QStringLiteral("native.components.cancelled")
+                                         : QStringLiteral("native.components.fetch"),
+                            downloadReason);
+            }
         }
 
         const QString extractDir = scratch.filePath(QStringLiteral("extract"));
@@ -210,7 +223,7 @@ ComponentProvisionResult provisionTensorRtComponents(
         }
         result.installedPacks.append(pack.name);
 
-        QFile::remove(archive);
+        if (!reuseThisPack) QFile::remove(archive);
         QDir(extractDir).removeRecursively();
     }
 

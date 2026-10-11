@@ -38,6 +38,8 @@ namespace mplayer::native {
 namespace {
 
 constexpr auto kAjiBytes = qint64(657798);
+constexpr qint64 kOrtBytes = 12458649;
+constexpr qint64 kDirectMlBytes = 202292617;
 constexpr auto kAjiSha = "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586";
 constexpr auto kAjiUrl = "https://github.com/the-database/animejanai-inference/releases/download/v0.9.0/aji-windows-x64.zip";
 constexpr auto kAjiSchema = "mikai.native.animejanai/2";
@@ -627,6 +629,31 @@ AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool reha
     return result;
 }
 
+QVector<AnimeJanaiMissingDownload> animeJanaiMissingDownloads(Backend backend) {
+    QVector<AnimeJanaiMissingDownload> missing;
+    const AnimeJanaiInstallation installation = describeAnimeJanaiInstallation(backend, false);
+    if (!installation.installed) missing.append({QStringLiteral("aji-v0.9.0"), kAjiBytes});
+    if (backend == Backend::TensorRT) {
+        const ComponentStore store = componentStore();
+        const ComponentPack* runtime = tensorRtRuntimePack();
+        if (runtime != nullptr && !storedPack(store, *runtime).installed)
+            missing.append({runtime->name, runtime->assetBytes});
+        const ComponentPack* resource = selectedTensorRtResource();
+        if (resource != nullptr && !storedPack(store, *resource).installed)
+            missing.append({resource->name, resource->assetBytes});
+    } else if (!installation.installed) {
+        missing.append({QStringLiteral("onnxruntime-directml-1.24.4"), kOrtBytes});
+        missing.append({QStringLiteral("directml-1.15.4"), kDirectMlBytes});
+    }
+    return missing;
+}
+
+qint64 animeJanaiMissingDownloadBytes(Backend backend) {
+    qint64 total = 0;
+    for (const AnimeJanaiMissingDownload& item : animeJanaiMissingDownloads(backend)) total += item.bytes;
+    return total;
+}
+
 ComponentProvisionResult importAnimeJanaiRuntime(const QString& sourceDir, Backend backend,
     const std::function<void(const ComponentProvisionProgress&)>& progress,
     const std::function<bool()>& cancelled) {
@@ -770,8 +797,29 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
             if (verifyPack(store, *pack).installed) verifiedPacks.insert(pack->name);
             else missingPacks.append(*pack);
         }
+        // One archive serves two consumers - the pack install and the trtexec
+        // extraction - so a missing runtime pack is fetched once here and handed
+        // to provisioning, which then leaves the file in place for extraction.
+        const QString runtimeArchive = scratch.filePath(runtime->asset);
+        bool runtimeArchiveReady = false;
+        for (const ComponentPack& missing : missingPacks) {
+            if (missing.name != runtime->name) continue;
+            if (!mikai::backend::downloadToFile(QUrl(runtime->url), runtimeArchive, runtime->assetBytes,
+                runtime->assetSha256, [&](qint64 received, qint64 total) {
+                    if (progress) progress({QStringLiteral("trt-runtime"), received, total});
+                }, cancelled, &error)) {
+                const bool wasCancelled = isCancelled();
+                return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
+                              error, wasCancelled);
+            }
+            runtimeArchiveReady = true;
+            break;
+        }
         if (!missingPacks.isEmpty()) {
-            ComponentProvisionResult dependencies = provisionTensorRtComponents(store, missingPacks, scratch.path(), progress, cancelled);
+            const VerifiedComponentArchive reuse{runtime->name, runtimeArchive};
+            ComponentProvisionResult dependencies = provisionTensorRtComponents(
+                store, missingPacks, scratch.path(), progress, cancelled,
+                runtimeArchiveReady ? &reuse : nullptr);
             if (!dependencies.ok) return dependencies;
         }
         for (const ComponentPack* pack : selected) {
@@ -786,11 +834,11 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
         for (const ComponentPack* pack : selected)
             acquisitions.append(acquisition(pack->name, pack->url, pack->assetBytes, pack->assetSha256));
 
-        const QString runtimeArchive = scratch.filePath(runtime->asset);
-        if (!mikai::backend::downloadToFile(QUrl(runtime->url), runtimeArchive, runtime->assetBytes,
-            runtime->assetSha256, [&](qint64 received, qint64 total) {
-                if (progress) progress({QStringLiteral("trt-runtime-trtexec"), received, total});
-            }, cancelled, &error)) {
+        if (!runtimeArchiveReady &&
+            !mikai::backend::downloadToFile(QUrl(runtime->url), runtimeArchive, runtime->assetBytes,
+                runtime->assetSha256, [&](qint64 received, qint64 total) {
+                    if (progress) progress({QStringLiteral("trt-runtime-trtexec"), received, total});
+                }, cancelled, &error)) {
             const bool wasCancelled = isCancelled();
             return failed(wasCancelled ? QStringLiteral("animejanai.installation.cancelled") : QStringLiteral("animejanai.installation.download"),
                           error, wasCancelled);
@@ -804,9 +852,7 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
         if (!mikai::backend::extractArchive(sevenZip, runtimeArchive, packageExtract, &error))
             return failed(QStringLiteral("animejanai.installation.extract"), error);
     } else {
-        constexpr qint64 kOrtBytes = 12458649;
         constexpr auto kOrtSha = "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681";
-        constexpr qint64 kDirectMlBytes = 202292617;
         constexpr auto kDirectMlSha = "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9";
         const QString ortUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg");
         const QString directMlUrl = QStringLiteral("https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg");

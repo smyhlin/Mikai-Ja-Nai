@@ -33,6 +33,18 @@ struct AnimeJanaiInstallation {
     bool heavyRifeSupported = false;
 };
 
+/// One still-missing acquisition item, priced at its pinned transfer size.
+struct AnimeJanaiMissingDownload {
+    QString label;
+    qint64 bytes = 0;
+};
+
+/// The exact queue `provisionAnimeJanaiRuntime()` would fetch right now: it
+/// answers from install records and stored-pack state only, so it neither
+/// rehashes nor downloads.
+QVector<AnimeJanaiMissingDownload> animeJanaiMissingDownloads(Backend backend);
+qint64 animeJanaiMissingDownloadBytes(Backend backend);
+
 AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool rehash = false);
 ComponentProvisionResult provisionAnimeJanaiRuntime(
     Backend backend, const std::function<void(const ComponentProvisionProgress&)>& progress,
