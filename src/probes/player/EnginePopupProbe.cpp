@@ -486,7 +486,7 @@ int runRuntimeRefusal(const QString& clip) {
     const int failuresBeforeDrop = host.playbackFailures;
     QMimeData droppedMedia;
     droppedMedia.setUrls({QUrl::fromLocalFile(clip)});
-    QDragEnterEvent dragEnter(QPoint(10, 10), Qt::CopyAction, &droppedMedia,
+    QDragEnterEvent dragEnter(QPointF(10, 10), Qt::CopyAction, &droppedMedia,
                               Qt::LeftButton, Qt::NoModifier);
     QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &droppedMedia,
                     Qt::LeftButton, Qt::NoModifier);
