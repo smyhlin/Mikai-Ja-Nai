@@ -49,9 +49,20 @@ Layering is strict and enforced by tests:
   (12) for artwork only. `fetchBytes` bypasses the client's rate limiter
   entirely, so posters cost no API budget and are pure latency. `waitForDone(ms)`
   drains the bulk, stream and image pools first, then the shared one.
-  The owning widget parents `Runner`, which parents its pools. Its dispatcher
-  has no QObject parent: only `shared_ptr` owns that allocation, including
-  while completions are queued.
+  Destroying a Runner never waits: it cancels, drops the completions that were
+  still queued, and hands the pools to whoever referenced them last, which
+  retires them on the GUI event queue. `cancel()` retires not-yet-started work
+  and makes `backend::WorkCancellationScope::cancellationRequested()` true for
+  the workers that are running, so a blocking backend wait (rate-limit parking,
+  chunked download polling) unwinds within a slice; `Runner::shutdownAll(done)`
+  drains every live Runner on a detached thread and reports once on the GUI
+  thread, which is what `main()` calls from `lastWindowClosed`.
+  A worker reaches the GUI through `post()`, a copyable binder that carries only
+  shared state: the body it posts resolves its owner on the GUI thread and
+  re-reads the cancellation gate there, so invoking it after the Runner died is
+  a no-op rather than a dangling dereference. The scope chain consults every
+  enclosing scope, so an uncancelled inner unit of work cannot mask a cancelled
+  outer one.
 - **A `WA_DeleteOnClose` dialog is destroyed the moment it closes, so the page
   must not keep a pointer to it.** `TitlePage::coverViewer_` had exactly that
   bug: closing the cover freed the dialog, and the next open called `close()` on
@@ -204,6 +215,20 @@ Layering is strict and enforced by tests:
   check passes 5/5. That mode excludes subtitles and does not close the original
   captioned-player/Compare corruption gate. Exact current and failed runtime
   evidence is in `native/README.md`, not inferred from this contract.
+- **Startup resolves the runtime off the GUI thread and says so while it runs.**
+  `main()` shows the window first, submits `resolveRuntime(storedRuntimeChoice())`
+  as Runner work, and commits on the GUI thread; nothing hashes or loads a module
+  on the GUI thread. One `ResolutionLease` owns the single process resolution
+  (`beginResolution`/`endResolution`, ids never reused, so a stale lease cannot
+  release the resolution that replaced it) and `whenRuntimeResolutionFinishes`
+  delivers once, after the terminal state, to a still-live context. A playback
+  request made while that is in flight joins it instead of failing: the dialog
+  shows `runtimePendingPlaybackText()` — never a missing-runtime error — and
+  starts its own still-open source once the module is pinned, or names the
+  recorded reason. Before `LoadLibraryExW`, `MpvApi::load` reads the module's own
+  PE import table and refuses by name when a required Windows system driver
+  (today the Vulkan loader that `libmpv-2.dll` imports) is absent from
+  `%SystemRoot%\System32`; nothing is copied and no substitute module is tried.
 
 ## Key Directories
 
@@ -227,13 +252,19 @@ Layering is strict and enforced by tests:
     It never downloads mpv or falls back to a stock cache; a missing packaged
     module is unavailable.
   - `Downloads.hpp/cpp` — the one transport every downloader shares:
-    `fetchUrlBytes` (one GET, whole body in memory), `downloadToFile` (streams to
-    a file, hashes as it writes, refuses a size or digest mismatch, removes the
-    partial file on every failure path including cancellation, and bounds silence
-    with a 60 s stall watchdog restarted per chunk while polling cancellation
-    every 200 ms), `ensureSevenZip`, `extractArchive`. Progress is throttled to
-    one report per 100 ms plus a guaranteed terminal one: a per-chunk report
-    posts a GUI update for every few kilobytes of a 400 MB asset.
+    `fetchUrlBytes` (one GET, whole body in memory), `downloadToFile` (creates the
+    destination exclusively, hashes as it writes, refuses a size or digest
+    mismatch, and removes only its own partial file on a failure or cancellation
+    path — a destination that already existed is refused untouched, never
+    deleted). Every chunk's write result, the final flush and the close error are
+    checked before any verified verdict, and the connection is dropped as soon as
+    a write fails. It bounds silence with a 60 s stall watchdog restarted per
+    chunk, polls cancellation every 200 ms and honours the shared work-cancellation
+    state as well as the caller's own callback, and every URL-bearing string in a
+    reason is run through `redactDiagnostic` so a signed asset URL never reaches a
+    log or a fault report), `ensureSevenZip`, `extractArchive`. Progress is
+    throttled to one report per 100 ms plus a guaranteed terminal one: a per-chunk
+    report posts a GUI update for every few kilobytes of a 400 MB asset.
     The component download helpers are for explicit native/model assets only;
     there is no app-launch mpv download path.
 - `src/app/` — the Qt Widgets frontend, namespace `mikai::app`:
@@ -388,7 +419,16 @@ Layering is strict and enforced by tests:
   offering rows that cannot work. Loose shader files are resolver inputs, not
   additional player/Compare menu leaves.
 - `src/probes/` — hand-run CMake targets (`EXCLUDE_FROM_ALL`; nothing in
-  `tests/` runs them). The GUI ones build a real window and check pixels:
+  `tests/` runs them). A probe that mutates the native store enters
+  `mikai::probes::isolation` (`src/probes/shared/ProbeIsolation.hpp`) first: it
+  copies itself into an owned `QTemporaryDir`, re-anchors the relative bundle
+  paths to the original module directory and relaunches, and the child runs only
+  when a marker proves the directory it was loaded from is that verified
+  scratch. Every mutating wipe and every cleanup is gated on
+  `isOwnedScratch(nativeRoot())`, so launching one of these beside a real store
+  either refuses or works on its own copy — changing the application name or the
+  CWD never isolates anything. The GUI ones build a real window and check
+  pixels:
   `mpv_surface_smoke`, `headless_pixel_probe`, `widget_pixel_probe`,
   `shell_probe`, `dialog_probe`, `InteractionProbe`, `anime4k_menu_probe`,
   `compare_probe`, `compare_shot_probe`, `external_media_probe`,
@@ -488,7 +528,12 @@ Layering is strict and enforced by tests:
 ## Development Commands
 
 Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`) and Qt 6.8.x
-(`C:/temp/qt6/6.8.3/mingw_64`). CMake acquires the pinned Windows x64 mpv
+(`C:/temp/qt6/6.8.3/mingw_64`); CMake 3.25 or newer, because `CMakePresets.json`
+is schema 6 and that is the version which introduced it. Release tuning is
+`-march=x86-64` (the Microsoft x64 ABI floor: x64 plus SSE2), never
+`-march=native` and never a newer baseline, so the project's own GNU release
+objects do not require an instruction set the platform does not guarantee.
+CMake acquires the pinned Windows x64 mpv
 developer archive or validates `MIKAI_DIST_MPV_ARCHIVE` against its pinned
 SHA-256, extracts matching headers, and compiles against them; no manual
 `MPV_INCLUDE_DIR` is used. The app uses the libmpv C/render API in its existing
@@ -526,9 +571,17 @@ packaged module. It never ships the downloadable elements — the AnimeJaNai
 and removes any `components/` or `assets/` tree a copied native bundle carried.
 `MIKAI_DIST_NATIVE` (OFF by default) additionally copies `native/runtime`.
 
-The `dist` target recreates its output directory. Do not run it over a user's
-installed `dist-mikai`: preserve components/assets and install records, and copy
-only the verified executable in place for a UI-only update.
+`dist` refuses to run into a populated output directory at all — it names what
+it found and stops, with no bypass flag — because recreating the output is what
+destroyed adjacent installed state before. Its native root is executable-local
+(`<exe dir>/native`, with `MIKAI_DIST_NATIVE_ROOT` as the explicit override,
+forwarded to the child `cmake -P`), a missing runtime under an explicitly
+requested root is a hard failure rather than a silent skip, and the source and
+output trees may not contain one another. Downloadable payload directories
+(`components`, `assets`, `models`, `records`) are removed by name from the whole
+copied tree at any depth, and a post-sweep re-glob fails the assembly if one
+survived. For a UI-only update, copy just the verified executable into the
+installed folder.
 
 `mikai.exe` links Qt dynamically, so the Qt runtime has to sit beside it or be
 on `PATH`; a fresh tree needs `windeployqt build/release/mikai.exe`. The mpv DLL
@@ -584,6 +637,14 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
   sequence-token pattern, `QTimer::singleShot`, and `QPointer` guards before
   touching a widget that may have been deleted mid-flight.
 - Logging: `qWarning()`/`qInfo()` with context; do not swallow errors silently.
+- Translation: a user-visible string must be extractable by `lupdate`. A file
+  that funnels its literals through a local helper (a `translate()` wrapper, a
+  `QT_TRANSLATE_NOOP`-carrying constant) has to keep the macro inside that
+  helper, because a bare `tr()`/`QObject::tr()` in a file whose convention is the
+  helper is never extracted and can only ever render English — that is exactly
+  how three setup-prompt strings were missing from the catalogue. After adding
+  or changing strings, run `lupdate` and fill the new entries, then `lrelease`
+  and check the catalogue reports zero unfinished translations.
 
 ## Important Files
 
@@ -617,8 +678,9 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - `src/app/state/NativeComponentProvisioner.cpp` — the component driver, and the
   only place the app starts a component download.
 - `src/backend/Downloads.cpp` — the one transport; `downloadToFile` is where the
-  stall watchdog, the cancellation poll, the digest proof and the throttled
-  progress all live.
+  exclusive-create guard, the write/flush/close proof, the stall watchdog, the
+  cancellation poll, the digest proof, the throttled progress and the
+  URL-bearing redaction all live.
 - `src/player/native/components/` — the pinned catalogue, the NVML probe, the
   component store, the toolchain decision and the single-flight provisioner.
 - `cmake/dist.cmake` — the `dist` assembly, including the rule that no
@@ -659,13 +721,22 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 ctest --test-dir build/release -R mikai_tests
 ```
 
-CTest runs a physical test-executable copy through `mikai_test_launcher` in a
-unique `build/release/_test-runs/mikai-tests-XXXXXX` directory and removes it
-after success or failure. Direct test execution refuses a nonempty or unsafe
-adjacent `native/` tree before any suite runs. Never run mutating test/probe
-binaries from `dist-mikai`: changing CWD or the application name does not change
-the executable-local native root. Supply Qt DLLs/plugins through the configured
-Qt paths instead; see `readme.md` for the isolated commands.
+CTest runs four entries: `mikai_tests` (the whole suite, through the launcher),
+`NativeStageContracts` (the staging/patch-policy helper, script-mode CMake),
+`LauncherContracts` (the launcher's deadline, process-tree kill and cleanup
+against a real hung child) and `DistContracts` (the distribution refusals, the
+payload sweep and byte-preservation of a populated output). The launcher copies
+the test executable into a unique `build/release/_test-runs/mikai-tests-XXXXXX`
+directory and removes it on every return path. It owns an internal deadline
+(`MIKAI_TEST_TIMEOUT_MS`, default 600000 ms; `--launcher-timeout-ms` overrides
+it) and joins the suspended child to a kill-on-close Win32 job before resuming
+it, so a hung suite and every descendant it started are killed and the run exits
+3; CTest's own TIMEOUT is deliberately larger. Direct test execution refuses a
+nonempty or unsafe adjacent `native/` tree before any suite runs. Never run
+mutating test/probe binaries from `dist-mikai`: changing CWD or the application
+name does not change the executable-local native root. Supply Qt DLLs/plugins
+through the configured Qt paths instead; see `readme.md` for the isolated
+commands.
 
 Keep diagnostic outputs under `.probe-out/<run>/`, not the repository root.
 The root screenshot batch is archived or deduplicated with exact retained paths
@@ -687,8 +758,20 @@ and scenario manifests remain in place.
   window 7, 55/140-per-page labels, the numbers overload for cours starting
   mid-hundreds), `TestQualityCache` (TTL expiry, 240-entry oldest-first cap,
   page-lifetime `no_source`, `forget()`), `TestRateLimiter` (429 parking on
-  `Retry-After`, reset expiry, queued callers), `TestLayering` (no Qt GUI
-  headers in the domain, no app-layer names), `TestClipboard`.
+  `Retry-After`, reset expiry, queued callers, cancellation unwinding a parked
+  caller inside the window), `TestLayering` (no Qt GUI headers in the domain, no
+  app-layer names), `TestClipboard`, `TestDownloads` (a pre-existing
+  destination survives a refusal byte-for-byte, exclusive creation, checked
+  writes, digest/size/cancellation cleanup, redacted reasons),
+  `TestDiagnostics` (every credential spelling and signed-URL shape is redacted,
+  ordinary text passes through byte-for-byte, the log file itself carries no
+  token), `TestApiClient` (a loopback server proves the stable error envelope
+  survives with its HTTP status, a parked caller resumes with the new key and
+  the new quota generation, `setApiKey` is atomic and a failed save keeps the
+  old key) and `TestRunner` (destroying a Runner returns promptly, cancel
+  retires queued work and unwinds a running one through the real backend gate,
+  `shutdownAll` drains without blocking the GUI, and no delivery reaches a dead
+  owner).
 - `TestLiveOracle` (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`): BLACK TORCH /
   «Чорний смолоскип» → ref `7428`; 7 releases with 4 dubs / 3 subs; one dub
   carrying episodes 1–12 with real embeds; a live 480/720/1080 ladder from
@@ -701,6 +784,26 @@ and scenario manifests remain in place.
   hermetic run needs no network and finishes in ~15 s.
 
 ### Observed acceptance state
+
+**Remediation session (2026-10-11, latest observed results; the blocks below are
+the earlier player-flow record).** Every finding in `known_bugs.md` was fixed and
+the fixes were exercised. `cmake --preset release` configures, and `mikai`,
+`mikai_tests` and every affected probe build with zero errors and zero warnings
+under `-Wall -Wextra`. `ctest --test-dir build/release` is **4/4 PASS**:
+`mikai_tests` (all suites PASS, `TestLiveOracle` SKIP without a key),
+`NativeStageContracts` (86/86), `LauncherContracts` (real hung child: exit 3, the
+child and its descendant gone by PID+creation-time identity, the owned scratch
+removed, neighbouring files byte-identical) and `DistContracts` (83 checks,
+including byte-preservation of a populated output). New suites carry the
+remediation: `TestDownloads`, `TestDiagnostics`, `TestApiClient`, `TestRunner`
+(21/21) and `TestRuntimeSelection`. `crash_probe --crash` wrote a real report
+through the unhandled-exception filter with none of its planted tokens and the
+redaction markers present; running a mutating native probe beside the populated
+`build/release/native` refused and left the store byte-identical;
+`widget_pixel_probe` passed 25/25 (0 skipped, the on-screen pixel readback
+unavailable); a 25 s app smoke reached its runtime line about 0.7 s after
+`mikai started` with no crash report; and `lrelease` reports 1016 finished, 0
+unfinished translations.
 
 **Latest composed evidence (2026-10-10):** the captioned chroma corruption was
 diagnosed as Qt blending left enabled before libmpv rendering. The current

@@ -48,6 +48,31 @@ not just records already present. Closing Settings reprobes the same settled
 unavailable request without restarting healthy/pending plans or saving
 cancelled preference edits.
 
+**Asynchronous work and shutdown contract.** Startup runtime resolution and
+acquisition/verification work run off the GUI thread on the app's worker pools
+(shared 4, bulk 3, stream 2, image 12 per runner), with GUI commits handed back
+through a copyable dispatch closure: a worker copies only shared state plus the
+closure, never a widget pointer, bodies run on the GUI thread, each delivered
+body re-checks its owner's alive flag together with a GUI-thread-only address
+lookup and drops itself when the owner is gone, and invoking the closure after
+its runner is gone is a safe no-op. Every worker body is wrapped in a
+work-cancellation scope over its runner's flag, so a verifier or preparation
+job aborts at its blocking points (the HTTP wait, the rate-limit window, a
+download's own cancel poll); a cancelled build publishes nothing and leaves
+prior artifacts and source bytes unchanged. On shutdown the app asks for an
+asynchronous drain (`Runner::shutdownAll`) before `QApplication` quits — the GUI
+loop stays responsive and the drain's completion runs once on the GUI thread
+after every pool has retired — so no backend reference outlives the task that
+owns it. Component verification is served from a stat-only cache under the
+executable-local native root, so a repeat start does not re-hash the whole store.
+
+**Pending, not failed.** Startup runtime resolution runs as a worker task whose
+result is committed on the GUI thread, and the time between the two is a
+*distinct* state: the surface reports that resolution is in flight with its own
+truthful line rather than a "runtime unavailable" error, never claims a module
+exists, and a callback registered against the resolution fires once the terminal
+state is published (a destroyed recipient or a dead subscription discards).
+
 The installed source-asset store was repaired through the production
 `SpatialAssetStore::publish` API using existing verified original graph bytes.
 All five size/SHA-256 checks passed, with provenance/notice retained
@@ -250,9 +275,13 @@ Use the application README's [Tests](../readme.md#tests) commands. CTest keeps
 the name `mikai_tests` but launches `mikai_test_launcher`, which stages only
 the test executable, shaders and the configured pinned API DLL into a unique
 `build/release/_test-runs/mikai-tests-XXXXXX/` directory. It runs with a fresh
-native root and removes that owned directory after success or failure.
-Direct `mikai_tests.exe` invocation refuses an existing nonempty or unsafe
-adjacent native tree before starting suites; a renamed app or changed CWD is
+native root and removes that owned directory on every return path — success,
+suite failure, child crash, timeout kill or staging failure. The launcher applies
+an internal deadline (`MIKAI_TEST_TIMEOUT_MS` in milliseconds, default 600000),
+kills the child on expiry — inside a Win32 Job object on Windows so grandchildren
+die with it — and exits nonzero (2 for a timeout) even when the killed child
+reported 0. Direct `mikai_tests.exe` invocation refuses an existing nonempty or
+unsafe adjacent native tree before starting suites; a renamed app or changed CWD is
 not an isolation substitute.
 
 The matching configured Qt runtime `bin` supplies `Qt6Test.dll` through
@@ -806,6 +835,11 @@ fresh run (artifact 366, 88.63 seconds, stage 7) passed. Its selected-engine
 directory began with zero engines/logs; Qt worker → vf → local custom ABI-8 →
 `trtexec` built a request-bound TensorRT engine in 38.932 seconds (9.12264 MiB;
 9,565,780 bytes), SHA-256
+**This is an official/upstream-config observation, not the private prepared
+helper:** it is exactly the path that keeps ESC-5 unresolved, because that
+configuration still invokes the `trtexec` developer tool. Do not read this
+record as evidence that the private helper shells out, nor as any
+redistribution clearance for `trtexec.exe`. SHA-256
 `e1a4421a3634df8fedaf9d45f1ecc5120aa371e41beb26612ffd7fdfa98dee22`, retained under
 `.probe-out/natural-rife-a45/native/animejanai/models/rife/`; the full log is
 `.probe-out/natural-rife-a45/qt-flow-proof.log`. The engine used the
@@ -1033,16 +1067,24 @@ This section is recorded because several findings turn on the difference between
   (ESC-1), and the drafted request in `permission-request.md` remains unsent; a
   shipped notice must not claim an MIT licence from upstream.
 
-## Status: ESC-1/2/3 are open (blocking); ESC-4/ESC-5 are resolved
+## Status: ESC-1/2/3 are open (blocking); ESC-4 is resolved; ESC-5 is resolved for the private prepared-helper path only
 
 ESC-1, ESC-2 and ESC-3 carry `severity: blocking` in
-`manifest/components.json`; ESC-4 is `RESOLVED` (licence obtained) and ESC-5 is
-`RESOLVED` (architecture — `trtexec` is not shipped); ESC-6 is advisory. The
-2026-10-04 owner grant is recorded at
-`components.json#projectIntegrationGrant` and covers this project's own
-integration code, patch series and recorded decisions only. Read the findings,
-resolutions, `scopeNote`/`noticeBasis` and `residualAccepted` fields there
-rather than a summary here.
+`manifest/components.json`; ESC-4 is `RESOLVED` (licence obtained); ESC-6 is
+advisory. **ESC-5 is not globally resolved.** In `components.json` its
+`resolution` reads `UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH`: the
+private prepared-helper path avoids `trtexec.exe` by architecture, while the
+official v0.9.0 configuration/first-build path still invokes it, and no
+developer-tool redistribution clearance for `trtexec.exe` has been obtained.
+Do not read "not shipped" as "no longer needed". The 2026-10-04 owner grant is
+recorded at `components.json#projectIntegrationGrant` and covers this project's
+own integration code, patch series and recorded decisions only. Read the
+findings, resolutions, `scopeNote`/`noticeBasis` and `residualAccepted` fields
+there rather than a summary here.
+That applies to ESC-5 as well: the in-process helper's architecture resolution
+is private-path only. It does not clear the official upstream-config first-build
+path, which still requires and receives `trtexec.exe` and still has no
+NVIDIA redistribution clearance on record.
 
 These points must not be lost in that summary:
 
@@ -1065,7 +1107,7 @@ These points must not be lost in that summary:
 
 | Piece | State |
 |---|---|
-| Shim source at the pinned commit | pinned, digest-verified, staged and patched by `native/CMakeLists.txt` |
+| Shim source | staged and patched by `native/CMakeLists.txt` from a locally mutable tree at the official v0.9.0 tag baseline `c7f56baf…` + authorized edits; the historical `738ce3b3…` baseline comparison predates those edits (`matchesPinnedCommit: false`) |
 | Shim patch | one applicable diff applied under `AJI_PATCH_POLICY=strict`; **not** the full M14 SHA-256 `buildKey` integration |
 | mpv-fork `GET_META` patch | current typed Probe diff applies against the immutable pin; current owned fork compiles and private real-CUDA lifecycle smoke passes 14/14 (`build-msvc.md`) |
 | The pinned mpv fork core | **built** here from the pinned source (273 steps, Release) |
@@ -1073,7 +1115,13 @@ These points must not be lost in that summary:
 | The original `Win127` load failure | **UNRESOLVED** as to the missing symbol; completing the stage closure fixed this scenario, but no particular missing export has been identified |
 | Preparation helper `mikai_native_prep` | built and working; builds a plan **in-process** through the TensorRT builder API — no `--trtexec`, no child process |
 | TensorRT components the app needs (per machine) | **provisioned, not shipped** — the AnimeJaNai 3.7.0 pack sizes and SHA-256 digests are pinned; the app reads the compute capability from the driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx` when the release publishes none for that generation), downloads the missing set on this machine, proves every file by digest into the app-owned store, and uses the bundle's own resource as-is when the bundle already declares it. This closes the sm120-only bundle gap by provisioning and redistributes nothing. The 3.7.0 archive store is installed per machine by explicit user request; its
-SHA-256 is checked before install and can be rechecked with **Verify**. No
+SHA-256 is checked before install and can be rechecked with **Verify**. A cold
+setup downloads each archive once: the TensorRT runtime archive is fetched to a
+scratch path, digest-verified, and the same verified bytes serve both the
+component install and the `trtexec.exe` extraction, rather than the pack being
+downloaded twice; `mplayer::native::animeJanaiMissingDownloads` /
+`animeJanaiMissingDownloadBytes` report the real queued-transfer total (and `0`
+with an empty list on a warm store) from store/installation metadata alone. No
 inference binaries or model payloads are shipped. The recorded `--fetch` and
 real-builder results apply to historical 3.6.3 pack measurements, not the 3.7.0 payloads |
 | RIFE component archive | **47-model store** — the official 3.7.0 `component-rife.7z` archive is SHA-256 checked, manually verifiable, and downloaded only on user request. The upstream v0.9.0 filter lacks the v4.26 heavy mapping; a separate local verified import maps it, but missing metadata/ref-inspection proof leaves it not Ready. |
@@ -1244,11 +1292,14 @@ tree, so nothing can be committed or accidentally vendored.
   conditions, with the notice *"This software contains source code provided by
   NVIDIA Corporation."* and NVIDIA's `Acknowledgements.txt` verbatim. The
   package was acquired (anonymous 302 → 200, `application/zip`,
-  1 985 279 435 bytes). `trtexec.exe` is **not used at all** on this path: the
-  preparation helper builds in-process through the TensorRT builder API and
+  1 985 279 435 bytes) and it ships `trtexec.exe` as one of its seven members.
+  On the private prepared-helper path `trtexec.exe` is **not used at all**:
+  the preparation helper builds in-process through the TensorRT builder API and
   launches no external executable. That is what ESC-5's architecture resolution
-  rests on, and it holds with room to spare — the developer tool is neither a
-  build-time input nor a run-time dependency.
+  rests on — and it is scoped to this path only. The official v0.9.0
+  config/first-build path still invokes `trtexec.exe`, so its
+  developer-tool redistribution question under the TensorRT SLA stays
+  unresolved, and no NVIDIA clearance has been obtained.
 - **Anime4K shaders** — MIT (47 files) and Unlicense (2 files), read directly
   from the files. Out of native scope, so no `components.json` row.
 
@@ -1257,10 +1308,10 @@ tree, so nothing can be committed or accidentally vendored.
 | Pin | Value |
 |---|---|
 | mpv fork | `63d127174d8f70336c82a22408929e2bc301edcb` (signed, 2026-09-17) — current owned patched fork built and Probe-exercised privately; not a root CMake build target or shipped Native bundle |
-| inference shim | `738ce3b3020b3950c48ce3122a08f32af531d4fa` — **verified**: all nine key source files hash identically to upstream at this commit. Upstream declares no licence; adopted on the owner's determination (ESC-1) |
+| inference shim | historical baseline `738ce3b3020b3950c48ce3122a08f32af531d4fa`; current build input is the official v0.9.0 tag commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3` **plus authorized mutable local edits** (`sources.json` records `matchesPinnedCommit: false`). `include/aji.h`, `src/aji_conf.cpp` and `src/aji_dispatch.cpp` were byte-identical to v0.9.0 at the historical baseline comparison; the TRT implementation and CMake files are fork-modified. Upstream declares no licence; adopted on the owner's determination (ESC-1) |
 | patch series | `patches/0001-content-addressed-cache-and-prepared-only.patch` then `patches/0002-native-snapshot-and-control.patch` applied; `patches/notes/` and `patches/mpv/` not applied by the shim build |
 | C ABI | version **8**, 17 exports, 3 of them optional for older callers |
-| `AJI_NVINFER` | `nvinfer_11` — the default is `nvinfer_10` and TensorRT 10 is **not** a dependency |
+| `AJI_NVINFER` | `nvinfer_11` — the value this project's configure commands pass; `native/CMakeLists.txt` itself defaults to `nvinfer_11`, and TensorRT 10 is **not** a dependency. The configure check requires `${AJI_TRT_ROOT}/lib/${AJI_NVINFER}.lib` to exist |
 | CUDA architectures | `75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual` |
 | CUDA flavour | **13.4** — never inferred from the TensorRT version |
 | TensorRT | 11.3.0.99 |
@@ -1593,8 +1644,9 @@ Manifest hashes were computed with `sha256sum` and download accessibility with
 
 ### Which tasks the escalations bind
 
-ESC-1, ESC-2 and ESC-3 are `blocking`; ESC-4 and ESC-5 are `RESOLVED`; ESC-6 is
-advisory. None of them binds **local build/use** on rights grounds (the
+ESC-1, ESC-2 and ESC-3 are `blocking`; ESC-4 is `RESOLVED`; **ESC-5 is
+`UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH`** and is avoided by
+architecture on the private prepared-helper path only; ESC-6 is advisory. None of them binds **local build/use** on rights grounds (the
 2026-10-04 owner grant covers this project's own integration), but each of
 ESC-1/2/3 binds **bundle clearance** for its third-party component. What still
 gates those tasks is **build output and capability proof**, plus third-party
@@ -1611,7 +1663,7 @@ summary of what remains outstanding, not of what is permitted:
 | RIFE assets (M12) | all four graphs run a real CPU reference; all four serialized on GPU | full and ensemble rejected on `maxAbsoluteError`; lite and lite-ensemble verify but are not `Prepared`/`Ready`; M12 not done |
 | Native execution (M15–M32, M43–M45, M48, M49) | rights do not block independent player-side implementation; direct-CAPI prepared inference is observed separately | no complete installed-core Qt prepared recipe or accepted inference framebuffer; CAPI activation is not Qt playback activation |
 | Contracts (M08–M10, M13, M14, M33–M42) | unchanged and unaffected | — |
-| `trtexec.exe` (ESC-5) | resolved by architecture, and now more strongly: the helper builds **in-process** and never invokes it at all | that resolution would lapse if the design ever shelled out to `trtexec` |
+| `trtexec.exe` (ESC-5) | **partially** resolved: the private prepared-helper path builds **in-process** and never invokes it at all, so ESC-5 does not bind that path | the official v0.9.0 upstream-config first-build path still invokes `trtexec.exe`; `components.json` records it `UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH`, so no bundle carrying that path is cleared by architecture alone |
 
 **M50 and M52** depend on a bundle that does not exist yet — a sequencing
 consequence of M04/M05 — and, for anything **shipped**, on redistribution

@@ -8,10 +8,35 @@ Needs MinGW-w64 g++, Qt 6.8.x with LinguistTools, and the MinGW toolchain
 paths configured by `CMakePresets.json`. During configure, CMake acquires the
 pinned Windows x64 mpv developer archive or validates the supplied
 `MIKAI_DIST_MPV_ARCHIVE` against its pinned SHA-256, extracts that release's
-headers, and compiles against them. The root build copies only
-`libmpv-2.dll` beside the app; it does not package `mpv.exe` or use IPC.
+headers, and compiles against them; no `MPV_INCLUDE_DIR` input exists any more.
+The root build copies only `libmpv-2.dll` beside the app; it does not package
+`mpv.exe` or use IPC.
 The toolchain paths have to be passed explicitly — a bare `-G "MinGW Makefiles"`
 fails with `CMAKE_MAKE_PROGRAM is not set` when the toolchain is not on `PATH`.
+`CMakePresets.json` declares preset schema version 6, so configure needs
+CMake 3.25 or newer.
+
+The project's own release-compiled app objects are tuned with `-march=x86-64`
+(the SSE2 baseline) — the tuning deliberately avoids `-march=native` and any
+newer instruction-set baseline. That claim is about these objects only and is
+not a compatibility guarantee: the Qt runtime, the MinGW runtime, the packaged
+`libmpv-2.dll` and its dependency closure, and the supported Windows version
+each carry their own prerequisites that must still be met.
+
+`libmpv-2.dll` itself imports `vulkan-1.dll` (see
+`native/manifest/THIRD_PARTY_NOTICES.md`), so the runtime machine needs the
+Windows Vulkan loader present in `%SystemRoot%\System32` even though the app
+renders through OpenGL. This is a supporting-loader prerequisite derived from
+the module's own PE imports, not a new renderer and not a fallback path: the
+module's import table is read before the loader is asked, and when a required
+system driver (such as the Vulkan loader) is not installed, the module is
+refused by name — no DLL is copied into the package, no dependency is added, and
+no substitute module is tried. The refusal says which import is missing and that
+installing the graphics driver fixes it.
+
+Python is required only by the optional external media probe scripts, not by
+the app build.
+
 The API DLL is from the official `the-database/mpv-winbuild` release
 `2026-10-07-d6d93599d5` (`mpv-dev-x86_64-20261007-git-d6d93599d5.7z`,
 SHA-256 `077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`).
@@ -37,7 +62,11 @@ mpv and has no stock-cache fallback: when the packaged module is absent,
 playback is unavailable. A probe or test can pin a module with
 `MIKAI_MPV_MODULE`. The selected module is pinned for the process — main
 playback and the PiP float share it — and changing the runtime takes effect only
-after a restart.
+after a restart. Startup resolves the runtime off the GUI thread and commits it
+on the GUI thread, so a slow first start shows a *pending* line while it is
+checking rather than a "runtime unavailable" error; a module that is genuinely
+absent or refused is named, and a module whose own imports need a Windows system
+driver that is not installed (the Vulkan loader) is refused before it is loaded.
 
 ## Interface languages
 
@@ -50,6 +79,8 @@ cmake --build build/release --target update_translations
 ```
 
 Keep stable IDs, API values, file patterns, URLs, and dynamic title/team/provider names untranslated. Preserve Qt placeholders such as `%1` and `%n`, HTML markup, and all numerus forms. The app build compiles and embeds the application catalog; Qt omits unfinished entries, which then fall back to the English source text. Before release, check that the catalog contains no unfinished entries.
+
+Strings are extracted only from `tr()`/`QCoreApplication::translate()` contexts the build knows about, so a user-facing runtime string must live in a `QT_TRANSLATE_NOOP(…)`-carried context — the runtime-selection strings carry the `RuntimeSelection` context, and their pending/refused variants (the startup pending line, the Vulkan-loader refusal, the undetermined-system-directory refusal) need Ukrainian entries in `translations/mikai_uk.ts` like any other new string. Qt never extracts a plain `QObject::tr()` from those files, so an untranslated entry can only ever render English.
 
 A new language needs a TS file added to `qt_add_translations()` in `CMakeLists.txt`, a runtime translator and language option in `src/app/main.cpp` and `SettingsDialog`, and its system-language mapping in `src/app/I18n.cpp`. English remains the source-language fallback and does not need a separate catalog.
 
@@ -114,8 +145,25 @@ configured Qt installation into the executable's `translations` directory.
 to `mikai.log` beside the exe, not to stdout: every Qt message is appended
 there, it rotates to `mikai.log.1` past 2 MB, and an unhandled exception also
 writes `mikai-crash-<timestamp>.txt` carrying the exception code, the faulting
-module, and the tail of the session log. A session that starts with an old
-crash report still on disk says so in the log.
+module, the log path and the tail of the session log. A session that starts
+with an old crash report still on disk says so in the log.
+
+Redaction is enforced at the Qt/mpv/transport boundary, not inside the fault
+handler. Text crossing the logging and transport boundaries — received mpv log
+messages and transport error strings — passes
+`mikai::backend::redactDiagnostic()`, which strips a signed URL's
+path/query/userinfo and any key or credential header material while preserving
+the scheme, the host and the useful failure text, so a media URL's token and the
+API key do not enter the session log in the first place. Each sensitive run is
+replaced by one fixed `<redacted>` marker — which says something was removed
+without revealing what — and text carrying nothing sensitive is returned
+unchanged, byte for byte, so the boundary never damages an ordinary message.
+The unhandled-exception filter itself is deliberately different: it runs where the heap may already be
+corrupt, so it appends to the session log through a fixed-buffer Win32 path
+(`CreateFileW`/`WriteFile`, no Qt allocation) and reads the tail with
+`CreateFileW`/`ReadFile`/`SetFilePointer` into a fixed byte budget. It therefore
+consumes that already-redacted tail verbatim and does not itself call the Qt
+`QString` helper, which would be a second, unsafe allocation on a corrupt heap.
 
 The `dist` target assembles a self-contained folder into `dist-mikai/` instead:
 
@@ -128,14 +176,35 @@ the 49 shaders, translations and only `libmpv-2.dll` under `mpv/`, and writes
 `run.bat` and `VERSION`. No `mpv.exe`, developer archive, or IPC runtime is
 included, and runtime discovery never provisions a replacement: if the API DLL
 is absent, playback is unavailable. `MIKAI_DIST_NATIVE` (OFF by default)
-additionally copies the installed `native/runtime`. The dist never ships the
-downloadable elements — GPU-specific TensorRT packs and licence-restricted
-model graphs remain per-machine assets — and any `components/` or `assets/`
-tree a copied native bundle carried is removed.
+additionally copies the installed `native/runtime` from the **executable-local**
+native root that production `nativeRoot()` uses, derived from the packaged
+executable (`MIKAI_DIST_NATIVE_ROOT` names a different source root when needed).
+The dist never ships the downloadable elements — GPU-specific TensorRT packs
+and licence-restricted model graphs remain per-machine assets — and every
+`components/`, `assets/`, `models/` or `records/` tree at the native root, one
+level or two levels below it (deep enough to cover the runtime plus every bundle
+it names) is stripped, with a fatal post-sweep re-glob that fails the assemble
+if any survived.
 
-This target recreates `dist-mikai/`. Do not run it over a user's installed
-folder: an executable-only UI update copies the verified `mikai.exe` in place
-without replacing downloaded assets or install records. Earlier such updates
+The output directory is the `MIKAI_DIST_DIR` cache variable, forwarded to the
+script as `DIST_DIR`, and it is a **guarded scratch-assembly** target: a
+populated output directory is a hard refusal that names the contents found,
+never a wipe, and there is no destructive bypass and no opt-in flag. Verification
+runs therefore point it at a fresh, empty directory (for example an owned
+`build/release/_dist-out` scratch path, or an emptied `dist-mikai/` before a real
+package run), and an installed folder cannot be destroyed by running `dist`.
+Two further overlap guards are fatal too: the output directory must not sit
+inside the native root, and the native root must not sit inside the output
+directory, because the script rewrites its output. If `MIKAI_DIST_NATIVE=ON` and
+no `native/runtime` exists at the resolved root, the assemble **fails** rather
+than silently skipping the copy. Before writing anything the script also
+validates that the packaged DLL is a valid x64 `libmpv-2.dll` copied from the
+pinned archive.
+
+The recommended in-place update over an installed folder is an executable-only
+UI update that copies the verified `mikai.exe` without replacing downloaded
+assets or install records; `dist` itself cannot quietly rebuild a populated
+folder, because it refuses the output directory rather than bypassing it. Earlier such updates
 preserved the three recorded component digests and the installed app painted a
 visible Ukrainian feed and closed normally
 (`.probe-out/ui-audit-installed-app-startup-current.log`,
@@ -172,11 +241,26 @@ CTest's `mikai_tests` entry uses `mikai_test_launcher`, built as a dependency of
 the test target. It copies the test executable, shaders and the configured
 pinned `mpv/libmpv-2.dll` into a unique
 `build/release/_test-runs/mikai-tests-XXXXXX/` directory, then runs that copy
-with no installed `native/` tree. The owned run directory is removed after
-success or failure; the empty `_test-runs/` parent may remain. The public
+with no installed `native/` tree. The owned run directory is removed on every
+return path — success, suite failure, child crash, timeout kill or staging
+failure; the empty `_test-runs/` parent may remain. The public
 `build/release/mikai_tests.exe` path and suite/QTest arguments remain available,
 but direct execution refuses a nonempty or unsafe adjacent `native/` tree
-with exit 2 before any suite runs. Do not copy tests into `dist-mikai/`.
+with exit 2 before any suite runs — the launcher isolates the executable's
+directory physically, not just the working directory, so a physically mutating
+probe cannot reach installed assets. Do not copy tests into `dist-mikai/`.
+
+The launcher carries an internal deadline: `MIKAI_TEST_TIMEOUT_MS` (integer
+milliseconds) overrides the default 600000 ms for the whole run. The deadline is
+enforced by polling `QProcess::waitForFinished(remaining)` in slices, so the
+console launcher needs no event loop while the child runs. On expiry the child is
+killed (`TerminateProcess` on Windows, `SIGKILL` on Unix), with a short grace
+wait afterwards; on Windows the child runs inside a Win32 Job object so its
+grandchildren die with the launcher, and that handle is closed on every exit
+path. A timeout exits `2` — distinguishable from a suite failure — and exits
+nonzero even when the killed child reported 0. CTest's own `TIMEOUT` for the
+entry is deliberately larger than this deadline, so the launcher's deadline and
+its nonzero exit are what a hung run records.
 
 For an explicitly hermetic Windows PowerShell invocation:
 
@@ -292,16 +376,30 @@ usually means giving that widget an `objectName` first; a control a manifest has
 to write also needs its `Q_PROPERTY` exposed, so the manifest drives the real
 setter and sees the same signal a user would.
 
-The optional `external_media_probe` target exercises the actual home file/URL dialogs,
-video rendering, Compare, Anime4K menu, standalone control visibility, error recovery,
-and close/reopen/shutdown. Run it with a 320×180 clip longer than 10 seconds and
-its HTTP URL. The fixture lives in the repository: build
+`probe_runner` and the individual probe targets are built by name; they are not
+in `all`. `release` in `CMakePresets.json` is a **configure** preset, not a build
+preset, and the four build presets are `app`, `tests`, `app-native` and
+`tests-native` — so `cmake --build --preset release --target …` is not a valid
+command. Build a single target from the configured tree instead:
+
+```sh
+cmake --build build/release --target probe_runner --parallel
+cmake --build build/release --target external_media_probe --parallel
+cmake --build build/release --target mikai_http_fixture --parallel
+```
+
+The optional `external_media_probe` target exercises the actual home file/URL
+dialogs, video rendering, Compare, Anime4K menu, standalone control visibility,
+error recovery, and close/reopen/shutdown. Run it with a 320×180 clip longer
+than 10 seconds and its HTTP URL. The fixture lives in the repository: build
 `cmake --build build/release --target mikai_http_fixture` and start
 `build/release/tests/fixtures/mikai_http_fixture.exe --port 0 --facts facts.json
---require-accept-language`; it serves the real clips under `tests/fixtures/media/`
-and the three HLS renditions under `tests/fixtures/hls/`, with `/media.mp4` as the
-plain clip and `/retry.mp4` as the same bytes after one deliberate 404, which is
-what the retry phase needs.
+--require-accept-language`. That target is declared in `tests/fixtures/` with no
+root output-directory override, so its executable is in the nested
+`build/release/tests/fixtures/` directory — not in the build root. It serves the
+real clips under `tests/fixtures/media/` and the three HLS renditions under
+`tests/fixtures/hls/`, with `/media.mp4` as the plain clip and `/retry.mp4` as
+the same bytes after one deliberate 404, which is what the retry phase needs.
 
 Refused actions have independent scenarios rather than a combined browser/
 clipboard mode:
@@ -478,7 +576,7 @@ Labels shown in these examples use Ukrainian; the interface can also run in Engl
 - **Player** — a player built around the same Qt event loop as the app: the `PlayerDialog` composition root drives the `PlayerShell` chrome and the mpv-backed `VideoSurface` in-process. It opens full screen, and the `><` / `<>` buttons beside the PiP icon — or a double click on the picture, or `F` / `F11` — toggle a real decorated native window, so leaving full screen restores the previous windowed geometry and the OS titlebar handles dragging, resizing, snap layouts and moving the window to another monitor. The toggle is scoped to the player; the app's main window is unaffected. The picture fills the window edge to edge, while a two-row dock keeps the large play control and permanent volume slider above a full-width timeline. The chrome fades after a couple of seconds of stillness and returns on the next mouse move. A top-left chip reports available throughput, estimated filter FPS and source-to-output resolution; official Aji status distinguishes filter configuration from observed backend processing and clears stale evidence on Off/source changes. Click the picture to pause, step through episodes from the drawer (S), switch the dub/sub track (T) or the stream quality (Q) without leaving the player. A picture-in-picture float has its own playback core and overlaid controls — click to pause, hold and drag to move it. Drops are freely placed without corner snapping; pooled hide/reentry preserves custom size and position, correcting only placement unreachable from every monitor work area.
 - **Anime4K** — the dock's sparkle button opens **Покращення**. Anime4K presets remain live-core shader choices; the official AnimeJaNai ABI-8 filter is a separate enhancement path, not the project's private-prepared Native protocol. The menu offers spatial choices and RIFE choices from the official 47-model archive. The upstream v0.9.0 Aji path is distinct from the private prepared Native path; its 4262 heavy-model extension exists only in the local custom import, not the public downloader's pinned upstream v0.9.0 package. The custom import has an observed ABI-8 install record and supports the heavy selection, but configuration/import does not establish a Ready or Active inference chain. Unsupported choices report their reason rather than substituting another model. Keep `vo=libmpv` on the existing Qt OpenGL surface; no gpu-next-only subtitle capability is claimed.
 - **Settings** — the API token with its live quota, a checklist of home blocks, and an **Interface language** selector for system, English, or Ukrainian. A disabled block is never requested. **Presets** assigns Anime4K shortcuts; duplicate assignments and reserved player keys are rejected. **Processing** shows the runtime choice and the official AnimeJaNai entry points on Standard. The separate private-prepared editor, model import, preparation/cancellation and artifact cleanup appear only when Native is deliberately selected or already loaded. The private inventory refreshes lazily when its visible Processing surface needs it, not on ordinary Standard settings opens. There is no Native processing checkbox; Save and Cancel preserve hidden private requests and unrelated settings. Runtime changes require a restart. **Components** owns user-initiated installation and verification of backend packs, five AnimeJaNai HD/SD upscaling models and the 47-model RIFE archive; startup downloads nothing.
-- **Backend components** — Settings → Components describes user-initiated downloads of the pinned AnimeJaNai 3.7.0 TensorRT runtime/resource archives and 47-model `component-rife.7z` archive (462,444,035 bytes; SHA-256 `d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251`). On the RTX 5090 (SM 12.0), the upstream component query recommends `trt-runtime` and `trt-sm120`; `trt-sm120` is preselected for a new install. That query is discovery only and installs nothing. Optional existing notice files are preserved; the acquired TensorRT component archive itself has no package-wide notice members. The local custom ABI-8 import adds v4.26 heavy mapping not present in public upstream v0.9.0; the public downloader remains pinned to v0.9.0 and does not fetch the custom import by default. Archives/models in the per-machine store do not establish private prepared-engine capability or public redistribution clearance. `dist` remains API-DLL-only: inference binaries and model payloads are not shipped. ESC-1/2/3 remain open; no FPS claim is made.
+- **Backend components** — Settings → Components describes user-initiated downloads of the pinned AnimeJaNai 3.7.0 TensorRT runtime/resource archives and 47-model `component-rife.7z` archive (462,444,035 bytes; SHA-256 `d41de2b56972cb3c446d9830bd5c5e7257e6e099ef0e7a2d5770ec01a9bf7251`). On the RTX 5090 (SM 12.0), the upstream component query recommends `trt-runtime` and `trt-sm120`; `trt-sm120` is preselected for a new install. That query is discovery only and installs nothing. Optional existing notice files are preserved; the acquired TensorRT component archive itself has no package-wide notice members. The local custom ABI-8 import adds v4.26 heavy mapping not present in public upstream v0.9.0; the public downloader remains pinned to v0.9.0 and does not fetch the custom import by default. Archives/models in the per-machine store do not establish private prepared-engine capability or public redistribution clearance. A cold setup downloads each verified archive once, and the initial setup prompt reports the honest total from the real acquisition queue rather than an invented figure: `mplayer::native::animeJanaiMissingDownloadBytes(Backend)` (with `animeJanaiMissingDownloads` naming each queued transfer and its bytes) counts the Aji archive, the backend's runtime and the model packs each exactly once, never re-counting the TensorRT runtime pack that a single scratch download now serves for both the component install and the `trtexec.exe` extraction. It returns `0` with an empty list when the runtime is already installed and its pinned closure verified, reads store/installation metadata only — no network, no full-size rehash on the GUI thread — and is a current queued-transfer estimate, not a guarantee, since a pack later found corrupt re-queues its transfer. `dist` remains API-DLL-only: inference binaries and model payloads are not shipped. ESC-1/2/3 remain open; ESC-5 is unresolved for the official upstream-config first-build path; no FPS claim is made.
 
 For **“A model required by the built-in AnimeJaNai profiles is not installed”**,
 open Settings → Components, select **AnimeJaNai upscaling models** and press
@@ -526,7 +624,44 @@ backend does not provide a measurable percentage, so its build remains
 indeterminate; plan stage counts are not invented engine-build progress. The
 actual playback owner stays paused throughout official or private engine work.
 Explicit Play/Pause intent is retained until terminal acknowledgement; source
-replacement clears the old hold. A cold player build was observed paused but
+replacement clears the old hold. Cancellation is real, not advisory: a
+`mikai::backend::WorkCancellationScope` installs the operation's
+`std::atomic_bool` on the calling thread (nested scopes chain and restore the
+outer one), and `mikai::backend::WorkCancellationScope::cancellationRequested()`
+answers it. The backend's blocking points — the rate-limit window inside the
+limiter and the HTTP wait in the transport loop — return rather than park once
+that flag is set, and a download polls it on its own clock, so a quiet transfer
+still answers Cancel, and a cancel arriving through the worker pools (a
+shutdown, a page that tore itself down) is honoured without the caller rewiring
+its predicate. A cancelled build publishes nothing, and prior artifacts and
+source bytes stay unchanged. A transport/HTTP failure reports a decodable API
+error envelope (code/message/status) when the server sent one, `network_error`
+only when the failure is genuinely transport, and `cancelled` only when this
+request interrupted its own wait; the credential snapshot is published only
+after a committed `.env` write.
+
+Off-thread work stays off-thread. Every worker body is wrapped in a
+`WorkCancellationScope` over its Runner's cancellation flag, so a blocking
+rate-limit or download wait aborts on cancel, and GUI results are handed back
+through `Runner::post` — a copyable dispatch closure anchored by a retained
+dispatcher. A worker copies only shared state plus the dispatch closure, never a
+widget pointer: nothing off-thread touches a `QPointer` or reads a widget, the
+bodies execute on the GUI thread, and each delivered body re-checks its owner's
+alive flag together with a GUI-thread-only address lookup, dropping itself when
+the owner is gone. Invoking the closure after its Runner is destroyed is a safe
+no-op, never a dangling dereference. Per-Runner concurrency is unchanged
+(shared 4, bulk 3, stream 2, image 12), and `Runner::cancel()` drops queued
+tasks and unwinds active work without blocking.
+
+On shutdown the app asks for that drain before `QApplication` quits: closing the
+last window requests the drain instead of quitting immediately, the GUI event
+loop stays responsive while every live Runner is cancelled and drained on a
+background thread, and `finished` runs once on the GUI thread — quitting only
+then — so backend objects a worker still references outlive the last task. That
+drain is `Runner::shutdownAll`; a second, loop-external call after `exec()`
+returns is a safety net, and nothing in teardown blocks the GUI thread.
+
+A cold player build was observed paused but
 stalled before completion because its filter poll command omitted a mandatory
 empty argument. That argument is fixed, and the traversal correction landed since.
 The current attached-console natural-player runs complete fresh RIFE and spatial
@@ -676,17 +811,30 @@ are recorded in [the native guide](native/README.md#current-observed-integration
 
 The **RPM** indicator beside Settings shows the server-reported requests used in the current minute and the limit that applies. Calls wait for the server's reset window instead of failing when the allowance is spent. An optional API key raises the standard limit from 60 to 300 requests per minute and is stored locally in `.env`, which is never committed.
 
+Saving the token is atomic: the `.env` file is written through `QSaveFile` to a temporary file and replaced only on success, and the in-process credential snapshot is published and the rate limiter reset only after that write has committed. A failed save therefore leaves the previously stored key in force and names its reason instead of reporting success, and an unreadable `.env` is reported rather than silently treated as "no key".
+
+Failures name what actually happened. A server error envelope is decoded before transport classification, so a rejected key, a disabled key, a missing title or a bad parameter still carries the server's own code, message and HTTP status; `network_error` means the request never got an answer; `cancelled` means this client interrupted its own wait.
+
 ## Layout
 
 `src/backend/` is the domain — `MikaiClient` (rate-limited Qt Network calls), models and HLS extraction (`ashdi`/`moon`/`tortuga`) — and `src/app/` is the Qt Widgets frontend (`MainWindow`, `SearchPage`, `TitlePage`, dialogs, theme tokens), with the player (`src/player/`: `PlayerDialog` → `PlayerShell` → mpv-backed `VideoSurface`, over the once-pinned `MpvApi` dynamic module loader) driven in-process through a `PlayerHost` bridge, and `shaders/` holding the Anime4K `.glsl` presets that CMake copies next to the executable. `docs.md` is the authoritative API contract and `AGENTS.md` the map for contributors: architecture, conventions, build commands and the testing setup. Run the checks with `ctest --test-dir build/release -R mikai_tests`.
+
+The caller-facing backend surface is small: `MikaiClient::baseUrl()`,
+`MikaiClient::apiKey()` (a mutex-guarded snapshot), `MikaiClient::setApiKey()`
+returning an `ApiKeySaveResult{ok, reason}` rather than a bare bool, and an
+`.env` path override that exists for tests and probes rather than for users.
 
 `native/README.md` distinguishes official AnimeJaNai ABI-8 filtering from the
 private prepared-Native track and records acquisition/build/playback evidence
 with its limits. Keep public Aji v0.9.0 downloads separate from explicit local
 custom ABI-8 imports. Third-party redistribution issues ESC-1/2/3 remain open;
-project-owned integration permission does not clear upstream terms. Exact
-digests and model-rights reasoning belong in the acquisition records and
-manifests rather than a duplicate acceptance ledger here.
+project-owned integration permission does not clear upstream terms. **ESC-5 is
+unresolved for the official upstream-config first-build path**, which still
+invokes the developer tool `trtexec.exe`; the private prepared-helper path avoids
+it in-process, so ESC-5's architecture resolution must not be read as a global
+resolution or as any NVIDIA redistribution clearance. Exact digests and
+model-rights reasoning belong in the acquisition records and manifests rather
+than a duplicate acceptance ledger here.
 
 Generated probe screenshots and logs belong in `.probe-out/`. The completed
 root cleanup moved 14 unique PNGs to `.probe-out/root-screenshots/` and removed

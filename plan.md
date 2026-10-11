@@ -66,9 +66,13 @@ is tracked in `tasks.md`.
 ### 2.1 Explicit libmpv module selection (landed)
 
 The load-time libmpv import and startup `PATH` mutation are removed.
-`CMakeLists.txt` requires only `MPV_INCLUDE_DIR` for build-time headers;
-`MpvApi` loads and pins one selected module explicitly. `MpvHandle` and
-`MpvRenderContext` use that table, including the multiple handles needed for PiP.
+Root `CMakeLists.txt` acquires the pinned Windows x64 developer archive
+(`MIKAI_DIST_MPV_ARCHIVE` names an optional local copy, otherwise the pinned
+release URL is fetched), validates its SHA-256, extracts that release's
+`include/mpv` headers and derives the matching `libmpv-2.dll` from it — there is
+no manual header variable to set. `MpvApi` loads and pins one selected module
+explicitly. `MpvHandle` and `MpvRenderContext` use that table, including the
+multiple handles needed for PiP.
 The isolated OFF/ON executable import lists recorded in
 [tasks.md §1.6](./tasks.md#status) contain no libmpv import.
 
@@ -78,6 +82,21 @@ identity → locale/theme setup → `selectPlayerRuntime()` /
 runs after the identity required by `QSettings`/`QStandardPaths`, and before any
 `VideoSurface::ensureEngine()`. Missing or refused runtimes are named rather
 than treated as a successful load.
+
+**Runtime resolution validates installed bytes and never provisions or downloads
+a module.** Resolution (`resolveRuntime`) decides which *already installed*
+module this process will use — reading the stored choice and validating the
+bundle's descriptor, per-file hashes, closure and protocol against bytes on
+disk — while the actual `LoadLibraryExW` pin happens later, on the GUI thread,
+in `commitRuntime`. Nothing in that path fetches an archive, extracts one,
+copies a missing DLL beside the executable, or retries against a different
+source: an absent, incomplete or corrupt module is a named failure, and a module
+whose own PE imports need a Windows system driver that is not installed (for
+example `vulkan-1.dll` in the system directory) is refused by name before the
+loader is asked, rather than satisfied by a copied dependency — nothing is
+copied into the bundle, no dependency is added and no substitute module is
+tried. A resolution in flight is a pending state with its own truthful text, not
+a "missing runtime" error, and never a claim that a module exists.
 
 This is Standard playback delivery, not Native inference delivery.
 `VideoSurface::paintGL()` still renders libmpv directly into Qt's framebuffer.
@@ -97,7 +116,7 @@ recovery acceptance are not discharged by the loader proof. See §8.1 and
 | `PlayerDialog` (`src/player/PlayerDialog.cpp`) | shell, surface, status panel, retry button, `pip_` (active float), `pipPool_` (parked float) | GUI thread |
 | `PipFloat` (`src/player/PlayerDialog.hpp:72-173`) | its **own** `VideoSurface` and therefore its **own** mpv core | GUI thread |
 | `VideoSurface::statePump_` (`QTimer`) | playback clock, duration, `playing_` | GUI thread |
-| `Runner` (`src/app/workers/Runner.hpp`) | three `QThreadPool`s: shared 4, bulk 3, image 12 | worker threads; every completion is discardable |
+| `Runner` (`src/app/workers/Runner.hpp`) | four `QThreadPool`s: shared 4, bulk 3, stream 2, image 12 | worker threads; every completion is discardable, GUI results dispatched by a copyable closure that carries no widget pointer, and `Runner::shutdownAll` cancels and drains every pool before the application quits |
 
 Events are **polled, not edge-triggered**: `MpvHandle` never calls
 `mpv_set_wakeup_callback` (the header's opening comment mentions it, but no call
@@ -302,7 +321,8 @@ Current build/run status, the isolated suite ledgers and the observed native
 probes are tracked in **[tasks.md §1.6](./tasks.md#status)** and in each task's
 `Status` line. This plan records only the durable source evidence (§4) and the
 stated proof limits (§3.3). Configure commands live in `readme.md`; after the
-loader cutover the build uses `MPV_INCLUDE_DIR` (headers only).
+loader cutover the build derives its mpv headers from the pinned developer
+archive and no `MPV_INCLUDE_DIR` input is used.
 
 ---
 
@@ -331,6 +351,15 @@ close. No cryptographic source→binary reproduction was proved; the package was
 confirmed by the user to be built from
 `C:/Users/myhli/Downloads/janai/animejanai-inference-main`, but a rebuild from
 that tree has **not** been reproduced and byte-matched.
+
+The inference source identity is deliberately stated in two parts, and only
+together: the **historical** upstream baseline `738ce3b3…` (nine key source files
+hashed against upstream at that commit, before authorized local edits) and the
+**current build input**, which is the official v0.9.0 tag commit `c7f56baf…`
+plus the authorized mutable local edits recorded in
+`sources.json#localSourceReconciliation` (`matchesPinnedCommit: false`). Quoting
+`738ce3b3…` as the current source identity overstates reproducibility — the
+mutations are authorized and recorded, not absent.
 
 ### 3.3 Observed research evidence
 
@@ -502,8 +531,8 @@ is stated here so no task re-opens it as a question.
 Build requirements from that tree's `CMakeLists.txt`: `LANGUAGES C CXX CUDA`,
 C++17, `CMAKE_CUDA_ARCHITECTURES 75-real 80-real 86-real 89-real 90-real
 100-real 120-real 120-virtual`, `find_package(CUDAToolkit REQUIRED)`, and
-`AJI_NVINFER` defaulting to `nvinfer_10` (a tested TensorRT 11.3.0.99 setup needs
-`nvinfer_11` explicitly). **A CUDA minor version is never inferred from the
+`AJI_NVINFER` defaulting to `nvinfer_11` on this project's TensorRT 11.3.0.99 tree
+(an upstream default of `nvinfer_10` must not be relied on silently). **A CUDA minor version is never inferred from the
 TensorRT version.** `aji_trt` links `AJI_NVINFER` + `CUDA::cuda_driver` +
 `CUDA::cudart`; `aji` is a thin dispatcher with no CUDA/TRT/ORT dependency of its
 own that `LoadLibraryExA`s the chosen backend from its own directory; `aji_dml`
@@ -926,22 +955,30 @@ reference behaviour rather than being reinterpreted.
 }
 ```
 
-**One hierarchy, one location.** Everything the app owns lives under
-`QStandardPaths::AppLocalDataLocation()/native/`, in exactly this tree:
+**One hierarchy, one location.** Everything the app owns lives under the
+**executable-local** native root `<applicationDir>/native/`, in exactly this
+tree (`nativeRoot()` in `src/player/native/bundle/NativePaths.cpp` resolves it
+from `QCoreApplication::applicationDirPath()`):
 
 ```
-<QStandardPaths::AppLocalDataLocation()>/native/
+<applicationDir>/native/
   runtime/        installed runtime bundles (Standard and Native)
   models/         imported/builtin model files the app manages
   artifacts/      prepared engines + their manifests
   scratch/        per-job build scratch, never published
   logs/           preparation and native diagnostics
+  components/     per-machine GPU component packs acquired on user request
 ```
 
-On Windows `QStandardPaths::AppLocalDataLocation()` resolves under
-`%LOCALAPPDATA%` (the same API, and it is deliberately **not**
-`AppDataLocation()`, which is the roaming variant). The same path is written in
-every document — §6.6, §8, §9.2 — so there is exactly one hierarchy.
+The landed implementation is **executable-local, not** `%LOCALAPPDATA%`: the
+native root moves with the installed app and TestSettings/CWD changes do not
+relocate it, which is exactly why the test launcher isolates the executable's
+directory rather than only the working directory. The
+`QStandardPaths::AppLocalDataLocation()/native/…` scheme that appears below in
+§8.2 and §9.2 (and in the pre-cutover snapshot sections) is **historical
+proposal text**, not the shipped contract, and none of the surviving
+`%LOCALAPPDATA%/MPVBackend/runtime` stock-cache language describes current
+runtime discovery.
 
 Rules:
 
@@ -1339,8 +1376,9 @@ before the GPU work is drained; the correct order is:
 
 There is **no Qt-side GPU wait** — the GUI thread never blocks on a CUDA or D3D
 operation — and no `QObject` worker or widget is destroyed from a native
-callback thread; teardown is marshalled onto the owning thread in the existing
-`QPointer`-guarded style.
+callback thread; teardown is marshalled onto the owning thread, with the
+delivery re-checking the owner's alive flag and a GUI-thread-only address lookup
+before touching anything.
 
 **Honest limit.** A fatal driver fault or an in-process crash cannot be promised
 to recover. The mitigations are `CrashLog` (already installed first in
@@ -1424,12 +1462,16 @@ Rules:
    Standard with a visible `RuntimeUnavailable` + `NativeNotApplied` reason.
 5. `MikaiClient`, `MainWindow`.
 
-The existing stock discovery in `src/backend/Runtime.cpp` stays as the read-only
-fallback for the Standard path. Its current behaviour — resolve the **latest**
-`mpv-dev-x86_64-*.7z` release at runtime, download it, extract with 7-Zip,
-stage into `%LOCALAPPDATA%/MPVBackend/runtime` — is **not** native bundle
-provisioning and is **not** modified by this work beyond what the loader
-prerequisite requires.
+**The former stock discovery was removed with this cutover.** It used to resolve
+the **latest** `mpv-dev-x86_64-*.7z` release at runtime, download it, extract it
+with 7-Zip and stage it into `%LOCALAPPDATA%/MPVBackend/runtime`; that behaviour
+is historical and is preserved here only so the deletion is auditable. Current
+`Runtime.cpp` discovery is packaged/local-hint only: with no
+`MIKAI_MPV_MODULE`-style hint it enumerates only `<applicationDir>/mpv`, and it
+never downloads a module and never falls back to an arbitrary stock cache. When
+the packaged module is absent, playback is unavailable. Build-time headers come
+from the pinned developer archive through root CMake (§2.1), not from runtime
+discovery.
 
 ### 8.3 What is deleted in the cutover
 
@@ -1437,16 +1479,25 @@ Once `MpvHandle`, `MpvRenderContext`, the probes and `mikai_app` all go through
 `MpvApi`:
 
 * the `MPV_LIBRARY` import and its `PUBLIC` link on `mikai_player`;
-* the old `MPV_RUNTIME_DIR` cache variable name, replaced by
-  `MPV_INCLUDE_DIR` (SDK headers only) — `MPV_RUNTIME_DIR` is **deleted**, not
-  aliased, with build docs and every call site updated;
-* `provisionMpvRuntime()`'s `PATH` mutation in `src/app/main.cpp`.
+* the old `MPV_RUNTIME_DIR` cache variable name, replaced first by
+  `MPV_INCLUDE_DIR` (SDK headers only) and then removed entirely when root
+  CMake began deriving the headers from the pinned archive — both names are
+  **deleted**, not aliased, with build docs and every call site updated; the
+  landed configure takes no mpv header variable at all;
+* `provisionMpvRuntime()`'s `PATH` mutation and its whole latest-release
+  download/stage path in `src/app/main.cpp` (see §8.2).
 
 There is **no** decorative loader left beside static imports, and no second code
 path. `PlayerDialog::runtimeRequested` currently only re-shows the dialog
-(`TitlePage.cpp:1593`); with provisioning in place it means *the runtime could
-not be created*, and the visible message says which runtime is selected and what
-is missing — provisioning is no longer a `show()` side effect.
+(`TitlePage.cpp:1593`); with the loader in place it means *the runtime could not
+be created*, and the visible message says which runtime is selected and what is
+missing — loading is no longer a `show()` side effect.
+
+The provisioning assumption this section originally carried is gone: startup
+resolution reads installed bytes only, and no module is provisioned, downloaded
+or copied at startup or at first playback (§2.1). A module that cannot be
+produced is a named, refusable state, not something the app assembles for the
+user.
 
 ### 8.4 Failure and recovery
 
@@ -1486,8 +1537,12 @@ configures and builds the app unchanged.
 4. emits a bundle directory plus its manifest.
 
 The two external trees (`C:/Users/myhli/Downloads/janai/animejanai-inference-main`
-and the 3.6.3 package) are **read-only inputs**. No file in either is modified,
-and neither is a runtime dependency of the shipped app.
+and the 3.6.3 package) are **read-only inputs** to the build: `native/CMakeLists.txt`
+stages the inference tree into the build directory and patches the *staged copy*,
+never the source. The staged input tree carries authorized mutable local edits
+(see §3.2), so it is a mutable compile input with a recorded reconciliation, not
+a byte-identical upstream checkout, and it is not a runtime dependency of the
+shipped app.
 
 ### 9.2 Bundle layout and dependency closure
 
@@ -1506,11 +1561,14 @@ Rules:
   `AddDllDirectory` into an existing TensorRT/torch-runtime tree; production does
   not. No Conda, no Torch, no Python, no system-wide CUDA requirement beyond the
   driver.
-* **Atomic install.** Staged into `…/native/runtime/.staging-<id>/`, verified,
-  then renamed; a partial install is never selected.
+* **Atomic install.** Staged into `…/native/runtime/.staging-<id>/` under the
+  executable-local native root of §6.6, verified, then renamed; a partial
+  install is never selected.
 * **Standard and Native are separate bundles.** The native addon is never written
-  into the existing `%LOCALAPPDATA%/MPVBackend/runtime` tree, and the stock
-  discovery/download logic there is untouched.
+  into the historical stock `%LOCALAPPDATA%/MPVBackend/runtime` tree — which the
+  current Standard path no longer provisions, downloads into, or discovers from
+  (see §8.2). The old stock discovery/download logic was removed with the loader
+  cutover.
 * `bundle.json` lists every file with size and SHA-256; the loader refuses a
   bundle whose recorded hash does not match.
 
@@ -1592,7 +1650,7 @@ offscreen-GPU proof exists on this machine.
 | Reparse point / junction escaping an owned root | reject reparse points in ownership checks |
 | Untrusted ONNX parsed by the inspector | inspect in the isolated preparation process; refuse unknown operators rather than guessing |
 | Command injection through filter options | command-node construction or `%`-escaped UTF-8-byte values; never a shell string |
-| Token or key leakage into logs, manifests or diagnostics | URL tokens and API keys never enter native prefs, manifests, logs or exported diagnostics; native inference receives only media metadata libmpv already provides |
+| Token or key leakage into native logs, manifests or exported diagnostics | URL tokens and API keys never enter native prefs, manifests, or the native tool's own logs/manifests; native inference receives only media metadata libmpv already provides. This row is a **native-track requirement and does not describe the Qt logging boundaries**: mpv log text forwarded to Qt logging, the crash log, and transport error strings are redacted by `mikai::backend::redactDiagnostic()` (signed-URL path/query/userinfo plus key/header secrets), which is the actual enforcement point on the application side |
 | Resource exhaustion from a runaway build | process-wide lease, cancel, scratch cleanup, bounded timeouts |
 | Deleting a user file | only app-owned artifacts with a valid manifest are ever removable |
 
@@ -1600,9 +1658,10 @@ offscreen-GPU proof exists on this machine.
 
 Native is **additive**. Rolling back means: set the runtime choice back to
 Standard, restart. Nothing in `player/anime4k`, `player/presetShortcuts`, the
-quality cache, feeds or language is touched, the native addon folder can be
-deleted independently, and the stock `%LOCALAPPDATA%/MPVBackend/runtime` path is
-untouched throughout.
+quality cache, feeds or language is touched, and the native addon folder under
+the executable-local root of §6.6 can be deleted independently. The historical
+`%LOCALAPPDATA%/MPVBackend/runtime` stock cache is no longer written, read or
+required by the current Standard path (§8.2).
 
 ---
 
@@ -1686,7 +1745,7 @@ These are durable and checked at every task; the full acceptance catalog is in
   snapshot (§6.11) — never guessed, never defaulted to device 0; probe state is
   never `Active`; no CUDA call or hardware-context pointer crosses the Qt thread.
 - [ ] Every native storage path resolves to the single
-  `AppLocalDataLocation()/native/{runtime,models,assets,artifacts,recipes,scratch,logs,components}`
+  executable-local `<applicationDir>/native/{runtime,models,assets,artifacts,recipes,scratch,logs,components}`
   hierarchy (§6.6). The set grew as the work did - `assets` and `recipes` with
   the model stores, `components` with the per-machine GPU component packs - and
   the check is the containment itself, not the count.

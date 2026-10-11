@@ -99,15 +99,21 @@ Three independent confirmations that this is the right pin:
    from matching size and line count; it corroborates package identity from an
    independent copy.
 
-`AJI_NVINFER` must be `nvinfer_11` — `nvinfer_11.lib` is what exists here, and
-`nvinfer_10` remains a default that must be overridden.
+`AJI_NVINFER` must name `nvinfer_11` — `nvinfer_11.lib` is what exists in this
+TensorRT 11.3 tree, and `native/CMakeLists.txt` defaults the cache variable to
+`nvinfer_11` and refuses to fall back to TensorRT 10 silently; the configure
+check requires `${AJI_TRT_ROOT}/lib/${AJI_NVINFER}.lib` to exist.
 
 `trtexec.exe` **was** extracted, because it ships in this package. That does
-not resolve **`ESC-5`**: `trtexec.exe` is a developer tool and its redistributability
-is unverified. It is a build-time convenience only and must stay out of any
-shipped bundle. (`ESC-6` is a different finding — the mpv fork's GPL/LGPL
-obligations — and has nothing to do with `trtexec`.) See
-`native/manifest/components.json#ESC-5`.
+not resolve **`ESC-5`**: `trtexec.exe` is a developer tool and its
+redistributability is unverified. It is a build-time convenience only and must
+stay out of any shipped bundle. The project's private prepared helper avoids
+invoking it (in-process builder API), which resolves ESC-5 for **that path
+only**; the official upstream-config first-build path still requires and
+receives `trtexec.exe`, and no NVIDIA developer-tool clearance has been
+obtained, so `components.json` records that path as unresolved. (`ESC-6` is a
+different finding — the mpv fork's GPL/LGPL obligations — and has nothing to do
+with `trtexec`.) See `native/manifest/components.json#ESC-5`.
 
 ### Terms
 
@@ -506,8 +512,11 @@ Stated plainly, because a download is not a configuration:
   covers this project's own integration code only and does not supply the
   upstream grant. `sources.json#patchSeries` is still `PENDING`.
 - **Redistribution positions are unchanged.** TensorRT/CUDA remain `external`,
-  and `trtexec.exe` is not shipped (the helper now builds in-process and never
-  invokes it, so `ESC-5` is resolved by architecture rather than by permission).
+  and `trtexec.exe` is not shipped: the private prepared helper builds in-process
+  and never invokes it, so **ESC-5 is avoided by architecture on that path only**
+  rather than by permission. The official upstream-config first-build path still
+  invokes `trtexec.exe` and its developer-tool redistribution question remains
+  unresolved in `components.json`.
   The CC BY-NC-SA spatial graphs (`ESC-2`) are usable locally without any
   ShareAlike condition attaching, but redistribution of those five files is
   **not cleared** under the recorded scope: the §3 Attribution/ShareAlike

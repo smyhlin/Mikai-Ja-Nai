@@ -119,8 +119,12 @@ are globbed, sorted and applied to the staged shim; `patches/notes/` and
 
 ### Applied: `patches/0001-content-addressed-cache-and-prepared-only.patch`
 
-One applicable unified diff against `src/aji_trt.cpp` at the pinned commit
-`738ce3b3020b3950c48ce3122a08f32af531d4fa`. It:
+One applicable unified diff against `src/aji_trt.cpp`. Its recorded base is the
+historical `738ce3b3020b3950c48ce3122a08f32af531d4fa` baseline; the current
+build input is the official v0.9.0 tag commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3`
+plus authorized mutable local edits (`matchesPinnedCommit: false`), so treat the
+`738ce3…` identity as the historical diff base, not the current tree identity.
+It:
 
 - derives the engine cache key from an **FNV-1a token over the ONNX bytes**
   (plus the byte length) instead of the basename, and keeps the existing CRC32
@@ -489,10 +493,20 @@ cmake -S . -B build-native -G "Visual Studio 17 2022" -DMIKAI_WITH_NATIVE=ON ^
 ```
 
 The root application build obtains its mpv headers from the pinned developer
-archive through `MIKAI_DIST_MPV_ARCHIVE`; do not pass the obsolete
-`MPV_INCLUDE_DIR`. This optional MSVC native project builds a separate,
-project-patched Native core from its older base; it is not the official API DLL
-packaged by the root app.
+archive — `MIKAI_DIST_MPV_ARCHIVE` names an optional local copy, otherwise
+CMake fetches the pinned release and verifies its SHA-256 — so no
+`MPV_INCLUDE_DIR` (or any other mpv header variable) is passed. Its own
+release-compiled objects use `-march=x86-64`, the SSE2 baseline, avoiding
+`-march=native` and any newer baseline; that is a statement about these objects
+only — the Qt/MinGW runtime, the packaged mpv module and its dependency closure,
+and the supported Windows version remain separate prerequisites. The packaged
+module additionally imports `vulkan-1.dll`, so the target machine needs the
+Windows Vulkan loader in the system directory; the loader path reads the module's
+PE import table before `LoadLibraryExW` and refuses the module by name when a
+required system driver is absent — nothing is copied into the bundle, no
+dependency is added and no substitute module is tried. This optional MSVC native
+project builds a separate, project-patched Native core from its older base; it is
+not the official API DLL packaged by the root app.
 The standalone route is preferred: one toolchain per build directory.
 
 ## Effect on the MinGW/Qt build
