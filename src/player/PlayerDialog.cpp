@@ -1411,12 +1411,6 @@ void PlayerDialog::pushNativeInputs() {
 }
 
 void PlayerDialog::refreshStoredSettings() {
-    // The store is shared with the settings dialog, so a save made there is
-    // invisible here until the bindings are read again. Both loaders are
-    // whole-store reads that reinstall idempotently, and refreshNativeInputs()
-    // deduplicates the announcement, so a save that changed nothing costs a store
-    // read and announces nothing. Nothing here reopens the stream, calls the API,
-    // touches the quality cache, or replaces an effective native plan.
     loadPresetShortcuts();
     QSettings animeJanaiSettings;
     const QString preset = animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString();
@@ -1428,7 +1422,10 @@ void PlayerDialog::refreshStoredSettings() {
     if (backend.has_value()) animeJanaiBackend_ = *backend;
     shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
     refreshNativeInputs();
-    if (changed) applyAnimeJanaiRequest(animeJanaiPresetId_);
+    // Components can install missing dependencies without changing the request.
+    const bool retryUnavailable = animeJanaiPlan_.enabled && !animeJanaiPlan_.available &&
+                                  animeJanaiPlanGeneration_ == animeJanaiSequence_;
+    if (changed || retryUnavailable) applyAnimeJanaiRequest(animeJanaiPresetId_);
 }
 
 void PlayerDialog::refreshNativeInputs() {

@@ -1,5 +1,7 @@
 #include "TestAnimeJanaiRuntime.hpp"
 
+#include "PlayerDialog.hpp"
+#include "VideoSurface.hpp"
 #include "native/bundle/NativePaths.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 
@@ -14,8 +16,13 @@
 #include <QtCore/QLibraryInfo>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QScopeGuard>
+#include <QtCore/QSettings>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QProcess>
+
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 using namespace mplayer::native;
 
@@ -196,6 +203,59 @@ void TestAnimeJanaiRuntime::missingRequiredBackendDependencyIsNotReady() {
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
     QVERIFY(result.reason.contains(QStringLiteral("DirectML.dll")));
+}
+
+void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() {
+    QVERIFY(writeRecord(Backend::DirectML));
+    const QString dependency = QDir(runtimePath(Backend::DirectML))
+        .filePath(QStringLiteral("DirectML.dll"));
+    QVERIFY(QFile::remove(dependency));
+
+    QSettings settings;
+    const QString presetKey = QStringLiteral("player/animejanai/preset");
+    const QString backendKey = QStringLiteral("player/animejanai/backend");
+    const QVariant priorPreset = settings.value(presetKey);
+    const QVariant priorBackend = settings.value(backendKey);
+    const auto restoreSettings = qScopeGuard([&] {
+        if (priorPreset.isValid()) settings.setValue(presetKey, priorPreset);
+        else settings.remove(presetKey);
+        if (priorBackend.isValid()) settings.setValue(backendKey, priorBackend);
+        else settings.remove(backendKey);
+    });
+    settings.setValue(presetKey, QStringLiteral("builtin1002"));
+    settings.setValue(backendKey, QStringLiteral("directml"));
+
+#ifdef Q_OS_WIN
+    // The worker deliberately loads a fake PE; keep its expected loader refusal
+    // out of Windows hard-error UI for this isolated test process.
+    const UINT priorErrorMode = SetErrorMode(
+        GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+    const auto restoreErrorMode = qScopeGuard([priorErrorMode] {
+        SetErrorMode(priorErrorMode);
+    });
+#endif
+
+    mplayer::shell::PlayerDialog dialog(QStringLiteral("Dependency retry"), QString());
+    auto* surface = dialog.findChild<mplayer::VideoSurface*>();
+    QVERIFY(surface != nullptr);
+    QTRY_COMPARE(surface->animeJanaiPlan().reasonKey,
+                 QStringLiteral("animejanai.installation.fileInvalid"));
+    QVERIFY(surface->animeJanaiPlan().enabled);
+    QVERIFY(!surface->animeJanaiPlan().available);
+    QVERIFY(surface->animeJanaiPlan().reason.contains(QStringLiteral("DirectML.dll")));
+
+    QVERIFY(writeFile(dependency, minimalX64Pe()));
+    dialog.refreshStoredSettings();
+
+    // The fake dispatcher cannot load, but restoring its dependency must expose
+    // that next consumer failure instead of retaining the missing-file result.
+    QTRY_COMPARE(surface->animeJanaiPlan().reasonKey,
+                 QStringLiteral("animejanai.installation.abiInvalid"));
+    QVERIFY(surface->animeJanaiPlan().enabled);
+    QVERIFY(!surface->animeJanaiPlan().available);
+    QCOMPARE(surface->animeJanaiPlan().presetId, QStringLiteral("builtin1002"));
+    QCOMPARE(settings.value(presetKey).toString(), QStringLiteral("builtin1002"));
+    QCOMPARE(settings.value(backendKey).toString(), QStringLiteral("directml"));
 }
 
 void TestAnimeJanaiRuntime::backendMismatchIsNotReady() {

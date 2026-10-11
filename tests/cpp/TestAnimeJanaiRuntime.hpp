@@ -13,6 +13,7 @@ class TestAnimeJanaiRuntime : public QObject {
   void directRunRefusesExistingNativeTreeWithoutMutation();
   void missingInstallIsNotReady();
   void missingRequiredBackendDependencyIsNotReady();
+  void storedFailedRequestReprobesAfterDependencyInstall();
   void backendMismatchIsNotReady();
   void sizeAndDigestCorruptionAreRejected();
   void badPeAndUnsafeRecordPathAreRejected();

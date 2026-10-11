@@ -691,22 +691,11 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
 
     if (dialog.exec() == QDialog::Accepted) {
         search_->refreshFeedSettings();
-        // Every accepted Save has to reach the running core, not only a remedy's:
-        // the dialog writes the same native request and the same shortcut bindings
-        // either way, and only a live core can pick them up. The originating core
-        // wins when a remedy raised this dialog, otherwise the core on screen is
-        // used, and either way only while it is alive and still owns a stream.
-        // The refresh is idempotent - it dedups the request announcement and
-        // reinstalls bindings - so a Save that changed nothing native announces
-        // nothing. It never reopens the URL, never calls the API and never touches
-        // the quality cache or the plan already running.
-        if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
-            core->refreshStoredSettings();
-        }
     }
-    // Opening the settings surface must not arm anything by itself: the
-    // preparation panel arms the probe only on an explicit Prepare click, and
-    // every handler above is only reachable from that click.
+    // Components publish installs even when preference edits are cancelled.
+    if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
+        core->refreshStoredSettings();
+    }
 }
 
 bool MainWindow::openTitle(const QString& ref, const QString& poster, bool preserveHistory) {

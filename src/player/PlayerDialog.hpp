@@ -282,15 +282,8 @@ public:
     /// request; a status change arrives through `VideoSurface::nativeStatusChanged`
     /// instead.
     void refreshNativeInputs();
-    /// Re-reads every stored player preference and installs what changed: the
-    /// Anime4K preset bindings and stored native request, then the native inputs
-    /// plus the deduplicated request
-    /// announcement. This is what an application owner calls after a settings
-    /// save is accepted, because the store is shared and only the running
-    /// process can pick the save up. It is idempotent, so a save that changed
-    /// nothing announces nothing; it never reopens the stream, never calls the
-    /// API, never touches the quality cache and never replaces an effective
-    /// native plan.
+    /// Components persist immediately even when Settings is cancelled; retry
+    /// settled unavailable requests without replacing healthy or pending plans.
     void refreshStoredSettings();
     /// Opens the first stream; the engine exists from the shell's surface.
     void startPlayer();
