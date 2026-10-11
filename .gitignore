@@ -18,6 +18,14 @@ _ui_geometry.json
 _grab_*.png
 _*.log
 
+# Generated translation binaries: the .ts is the source, lrelease produces the .qm
+translations/*.qm
+
+# Test-contract scratch: a contract or launcher run started from the repository
+# root leaves these here, and they are disposable by construction
+/LauncherContracts/
+/mikai-tests-*/
+
 dist-mikai/
 .probe-out/
 .omp/
