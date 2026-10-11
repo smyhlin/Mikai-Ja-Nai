@@ -9,9 +9,14 @@ carousels (recently opened / ongoing / popular) plus updates and schedule rows;
 search with a format filter bar; a title page with detail, related titles,
 per-release tabs, and a compact episode grid where a click fetches that
 episode's qualities once and opens the built-in player. Settings carries four tabs — General, Presets, Processing and **Components** —
-and the Components tab lists the pinned GPU-specific TensorRT packs and RIFE
-model archive with install state, digest verification and explicit
-user-initiated downloads. Public Aji component downloads remain pinned to
+and the Components tab lists the pinned GPU-specific TensorRT packs, five
+AnimeJaNai HD/SD upscaling graphs and RIFE model archive with install state,
+digest verification and explicit user-initiated downloads. The spatial pack
+is separate from the backend and RIFE packs; built-in profiles need its SD
+graph for low-resolution HLS. Checkboxes select acquisition, not installed
+state. Closing Settings retries only a settled unavailable AnimeJaNai request;
+component installs persist after Cancel/X, while unsaved preferences do not.
+Public Aji component downloads remain pinned to
 upstream v0.9.0; a locally imported custom ABI-8 package is separate and is not
 the default download source. `docs.md` is the authoritative API
 contract; `.env` holds the optional key; `skills/design-ui/` carries OS-native UI

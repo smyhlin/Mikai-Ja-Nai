@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QThread>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QDirIterator>
@@ -45,6 +46,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -569,14 +571,13 @@ bool chooseEnhancementMenu(PlayerDialog* dialog, const QStringList& path,
     dialog->raise();
     dialog->activateWindow();
     QCoreApplication::processEvents();
-    shell::IconButton* trigger = nullptr;
-    for (auto* button : dialog->findChildren<shell::IconButton*>()) {
-        if (button->isVisible() && button->icon() == &shell::IconPainter::spark) {
-            trigger = button;
-            break;
-        }
+    auto* trigger = playerShell->findChild<shell::IconButton*>(
+        QStringLiteral("playerEnhanceButton"));
+    if (trigger == nullptr || !trigger->isVisible() || !trigger->isEnabled() ||
+        trigger->icon() != &shell::IconPainter::spark) {
+        std::fprintf(stderr, "FAIL visible enabled playerEnhanceButton IconButton unavailable\n");
+        return false;
     }
-    if (trigger == nullptr) return false;
 #ifdef Q_OS_WIN
     const HWND dialogHwnd = reinterpret_cast<HWND>(dialog->winId());
     if (!nativeActivateForeground(dialog, 1000)) return false;
@@ -599,14 +600,32 @@ bool chooseEnhancementMenu(PlayerDialog* dialog, const QStringList& path,
     const QPoint actualDialogLocal = dialog->mapFromGlobal(actualQtGlobal);
     const QRect triggerLocal(trigger->mapTo(dialog, QPoint(0, 0)), trigger->size());
     const HWND triggerHit = nativeWindowAt(actualNative);
+    const NativeWindowFacts triggerHitFacts = nativeWindowFacts(triggerHit);
+    QWidget* triggerChildHit = deepestChildAt(dialog, actualQtGlobal);
     const bool cursorOnTrigger = triggerLocal.contains(actualDialogLocal);
-    if (!cursorOnTrigger ||
-        (triggerHit != dialogHwnd && !IsChild(dialogHwnd, triggerHit)) ||
-        !sendNativeClick(dialog, trigger)) {
+    const bool qtTriggerExposed = triggerChildHit == trigger ||
+        (triggerChildHit != nullptr && trigger->isAncestorOf(triggerChildHit));
+    // This is a Qt-targeted button event, not a SendInput/WindowFromPoint test.
+    // A native HWND lookup does not identify the non-native Qt button. Record
+    // that lookup without mistaking it for evidence that clicked() was refused.
+    std::fprintf(stderr,
+                 "[AnimeJanaiProbe] menu-root-input delivery=QTest target=%s "
+                 "qtHit=%s/%s qtExposed=%d nativeHit=%p nativeHitPid=%lu "
+                 "nativeHitClass=%s nativeHitRoot=%p nativeHitOwner=%p\n",
+                 qPrintable(trigger->objectName()),
+                 triggerChildHit != nullptr ? triggerChildHit->metaObject()->className() : "<none>",
+                 triggerChildHit != nullptr ? qPrintable(triggerChildHit->objectName()) : "<none>",
+                 qtTriggerExposed ? 1 : 0, static_cast<void*>(triggerHit),
+                 static_cast<unsigned long>(triggerHitFacts.pid),
+                 triggerHitFacts.className.isEmpty() ? "<unavailable>"
+                                                     : qPrintable(triggerHitFacts.className),
+                 static_cast<void*>(GetAncestor(triggerHit, GA_ROOT)),
+                 static_cast<void*>(GetWindow(triggerHit, GW_OWNER)));
+    if (!cursorOnTrigger || !qtTriggerExposed || !nativeForegroundOwned(dialog)) {
         RECT client{};
         GetClientRect(dialogHwnd, &client);
         std::fprintf(stderr,
-                     "FAIL native foreground click missed enhancement trigger: "
+                     "FAIL Qt-targeted click proof missed enhancement trigger: "
                      "active=%d foreground=%p dialog=%p triggerQt=(%d,%d %dx%d) "
                      "cursorPhysical=(%d,%d) expectedPhysical=(%d,%d) "
                      "cursorDialogQt=(%d,%d) clientPhysical=%ldx%ld qtClient=%dx%d "
@@ -624,9 +643,12 @@ bool chooseEnhancementMenu(PlayerDialog* dialog, const QStringList& path,
     }
 #else
     if (!movePointerTo(trigger, trigger->rect().center(), dialog)) return false;
-    QTest::mouseClick(trigger, Qt::LeftButton);
 #endif
-    std::fprintf(stderr, "[AnimeJanaiProbe] menu-root-open\n");
+    // Deliver the real press/release to the production enhancement QPushButton;
+    // its clicked -> openEnhancements connection must create the visible menu.
+    QTest::mouseClick(trigger, Qt::LeftButton, Qt::NoModifier, trigger->rect().center());
+    QCoreApplication::processEvents();
+    std::fprintf(stderr, "[AnimeJanaiProbe] menu-root-click-delivered\n");
     for (const QString& payload : path) {
         std::fprintf(stderr, "[AnimeJanaiProbe] menu-row-begin payload=%s\n",
                      qPrintable(payload));
@@ -735,6 +757,18 @@ bool chooseEnhancementMenu(PlayerDialog* dialog, const QStringList& path,
             QPoint nativeCenter;
             if (!nativeScreenPoint(dialog, center, &nativeCenter)) return false;
             const HWND nativeCenterHit = nativeWindowAt(nativeCenter);
+            const NativeWindowFacts centerHitFacts = nativeWindowFacts(nativeCenterHit);
+            std::fprintf(stderr,
+                         "     scaled-row-hit pid=%lu class=%s root=%p owner=%p "
+                         "sameProcess=%d visible=%d childOfDialog=%d\n",
+                         static_cast<unsigned long>(centerHitFacts.pid),
+                         centerHitFacts.className.isEmpty() ? "<unavailable>"
+                                                           : qPrintable(centerHitFacts.className),
+                         static_cast<void*>(GetAncestor(nativeCenterHit, GA_ROOT)),
+                         static_cast<void*>(GetWindow(nativeCenterHit, GW_OWNER)),
+                         centerHitFacts.pid == GetCurrentProcessId() ? 1 : 0,
+                         nativeCenterHit != nullptr && IsWindowVisible(nativeCenterHit) ? 1 : 0,
+                         IsChild(own, nativeCenterHit) ? 1 : 0);
             const HWND rawCenterHit = WindowFromPoint(POINT{center.x(), center.y()});
             RECT windowRect{};
             GetWindowRect(own, &windowRect);
@@ -1021,21 +1055,21 @@ QString selectedModelIdentity(const native::AnimeJanaiPlan& plan) {
         }
         return {};
     }
+    if (plan.presetId.startsWith(QStringLiteral("builtin"))) {
+        // A builtin config contains multiple slots and resolution-dependent chains.
+        // Its first model key is not evidence of the graph selected by the backend.
+        return {};
+    }
     QFile config(plan.configPath);
     if (!config.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
     const QString contents = QString::fromUtf8(config.readAll());
-    const QStringList keys = plan.presetId.startsWith(QStringLiteral("rife:"))
-        ? QStringList{QStringLiteral("chain_1_rife_model=")}
-        : QStringList{QStringLiteral("chain_1_model_1_name=")};
-    for (const QString& key : keys) {
-        const int start = contents.indexOf(key);
-        if (start < 0) continue;
-        const int valueStart = start + key.size();
-        int end = contents.indexOf(QLatin1Char('\n'), valueStart);
-        if (end < 0) end = contents.size();
-        return contents.mid(valueStart, end - valueStart).trimmed();
-    }
-    return {};
+    const QString key = QStringLiteral("chain_1_model_1_name=");
+    const int start = contents.indexOf(key);
+    if (start < 0) return {};
+    const int valueStart = start + key.size();
+    int end = contents.indexOf(QLatin1Char('\n'), valueStart);
+    if (end < 0) end = contents.size();
+    return contents.mid(valueStart, end - valueStart).trimmed();
 }
 
 QString normalizedArtifactPath(QString path, const QString& baseDirectory) {
@@ -1777,7 +1811,8 @@ int main(int argc, char** argv) {
     QCommandLineOption naturalOption(QStringLiteral("natural-player"),
                                      QStringLiteral("Exercise the actual hostless PlayerDialog"));
     QCommandLineOption requireBuildOption(QStringLiteral("require-engine-build"),
-                                          QStringLiteral("Require a fresh TensorRT engine build in this run"));
+                                          QStringLiteral("Require a fresh request-bound TensorRT engine build; "
+                                                         "builtin selected-engine identity proof is unsupported"));
     QCommandLineOption validatePlansOption(QStringLiteral("validate-model-plans"),
                                            QStringLiteral("Validate every real prepared RIFE plan; does not build engines"));
     QCommandLineOption captureProcessedRawOption(
@@ -1787,7 +1822,8 @@ int main(int argc, char** argv) {
                        "frame at one identical paused time under one source epoch. Diagnostic "
                        "only: the raw frame is a postfilter observation and is never an Original "
                        "reference. With no --capture-at the capture holds the position the core "
-                       "was already parked at."));
+                       "was already parked at; HTTP/HTTPS sources use the same live-core capture "
+                       "and require a known media position."));
     QCommandLineOption captureAtOption(
         QStringLiteral("capture-at"),
         QStringLiteral("Non-negative seconds to hold for the --capture-processed-raw triplet. One "
@@ -1816,7 +1852,8 @@ int main(int argc, char** argv) {
     parser.addOption(captureAtOption);
     parser.addOption(subtitleIsolationOption);
     parser.addOption(glTexturesOption);
-    parser.addPositionalArgument(QStringLiteral("video"), QStringLiteral("Local video file"));
+    parser.addPositionalArgument(QStringLiteral("video"),
+                                 QStringLiteral("Local video file or HTTP/HTTPS media URL (including HLS)"));
     parser.addPositionalArgument(QStringLiteral("preset"), QStringLiteral("Prepared preset id"),
                                  QStringLiteral("[preset]"));
     parser.addPositionalArgument(QStringLiteral("backend"), QStringLiteral("Backend: tensorrt or directml"),
@@ -1845,15 +1882,35 @@ int main(int argc, char** argv) {
     const bool validatePlansOnly = parser.isSet(validatePlansOption);
     const QStringList positional = parser.positionalArguments();
     if (positional.isEmpty() && !validatePlansOnly) {
-        std::fprintf(stderr, "SKIP missing prerequisite: provide a local video file\n");
+        std::fprintf(stderr, "SKIP missing prerequisite: provide a local video file or HTTP/HTTPS media URL\n");
         return 77;
     }
-    const QString file = positional.isEmpty() ? QString() : positional.first();
-    if (!validatePlansOnly && !QFileInfo(file).isFile()) {
+    const QString mediaInput = positional.isEmpty() ? QString() : positional.first();
+    const QUrl mediaUrl(mediaInput, QUrl::StrictMode);
+    const bool remoteMedia =
+        mediaInput.startsWith(QStringLiteral("http:"), Qt::CaseInsensitive) ||
+        mediaInput.startsWith(QStringLiteral("https:"), Qt::CaseInsensitive);
+    if (!validatePlansOnly && remoteMedia &&
+        (!mediaUrl.isValid() || mediaUrl.host().isEmpty() ||
+         (mediaUrl.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) != 0 &&
+          mediaUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0))) {
+        std::fprintf(stderr,
+                     "FAIL invalid HTTP/HTTPS media URL: a valid URL with a host is required: %s\n",
+                     qPrintable(mediaInput));
+        return 1;
+    }
+    if (!validatePlansOnly && !remoteMedia && !QFileInfo(mediaInput).isFile()) {
         std::fprintf(stderr, "SKIP missing prerequisite: video file does not exist: %s\n",
-                     qPrintable(file));
+                     qPrintable(mediaInput));
         return 77;
     }
+    // Use QUrl only for validation: reserialization or QFileInfo would alter the
+    // request (notably signed HLS URLs). Keep the exact input for every open/log.
+    const QString mediaSource = validatePlansOnly ? QString()
+        : remoteMedia ? mediaInput : QFileInfo(mediaInput).absoluteFilePath();
+    if (!validatePlansOnly)
+        std::fprintf(stderr, "[AnimeJanaiProbe] source-kind=%s source=%s\n",
+                     remoteMedia ? "http-media" : "local-file", qPrintable(mediaSource));
     if (validatePlansOnly &&
         (parser.isSet(naturalOption) || parser.isSet(requireBuildOption) ||
          parser.isSet(presetOption) || positional.size() > 1)) {
@@ -1897,7 +1954,7 @@ int main(int argc, char** argv) {
     }
     if (parser.isSet(captureProcessedRawOption) && positional.isEmpty()) {
         std::fprintf(stderr,
-                     "FAIL --capture-processed-raw needs a local video file to capture from\n");
+                     "FAIL --capture-processed-raw needs a media source to capture from\n");
         return 1;
     }
     if (parser.isSet(captureProcessedRawOption) && parser.isSet(requireBuildOption)) {
@@ -1953,6 +2010,18 @@ int main(int argc, char** argv) {
     const QString presetId = parser.isSet(presetOption) ? parser.value(presetOption)
                                                        : (positional.size() > 1 ? positional.at(1)
                                                                                 : QString());
+    if (parser.isSet(requireBuildOption) &&
+        presetId.startsWith(QStringLiteral("builtin"))) {
+        std::fprintf(stderr,
+                     "FAIL --require-engine-build [builtin-selected-engine-identity-unavailable]: "
+                     "builtin slots select resolution-dependent chains; the probe has no "
+                     "request-bound active graph identity observation. Use --natural-player "
+                     "--preset %s without --require-engine-build for backend processing, "
+                     "geometry, and moving nonblack framebuffer evidence; no engine identity "
+                     "is claimed by that run.\n",
+                     qPrintable(presetId));
+        return 1;
+    }
     const auto progress = [](const native::ComponentProvisionProgress& item) {
         std::fprintf(stderr, "[AnimeJanaiProbe] component=%s received=%lld total=%lld\n",
                      qPrintable(item.pack), static_cast<long long>(item.received),
@@ -2020,7 +2089,7 @@ int main(int argc, char** argv) {
     VideoSurface* surface = nullptr;
     if (parser.isSet(naturalOption)) {
         naturalDialog = new PlayerDialog(QStringLiteral("AnimeJaNai natural-player probe"),
-                                         QFileInfo(file).absoluteFilePath());
+                                         mediaSource);
         naturalDialog->setWindowFlag(Qt::WindowStaysOnTopHint, true);
         naturalDialog->resize(800, 450);
         naturalDialog->show();
@@ -2188,7 +2257,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!parser.isSet(naturalOption) &&
-        !surface->open(QFileInfo(file).absoluteFilePath())) {
+        !surface->open(mediaSource)) {
         std::fprintf(stderr, "FAIL embedded libmpv rejected the source before dispatch: %s\n",
                      qPrintable(mediaErrors.isEmpty() ? QStringLiteral("no surface error reported")
                                                       : mediaErrors.constLast()));
@@ -2199,16 +2268,16 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "FAIL Qt OpenGL render context unavailable after source dispatch; "
                              "contextReady=%d source=%s\n",
                      surface->isContextReady() ? 1 : 0,
-                     qPrintable(QFileInfo(file).absoluteFilePath()));
+                     qPrintable(mediaSource));
         surface->close();
         return 1;
     }
     if (!waitUntil([&] { return surface->hasVideo(); }, 30000)) {
         std::fprintf(stderr,
-                     "FAIL embedded libmpv did not decode the supplied file within 30s; "
+                     "FAIL embedded libmpv did not decode the supplied media source within 30s; "
                      "contextReady=%d hasVideo=%d source=%s",
                      surface->isContextReady() ? 1 : 0, surface->hasVideo() ? 1 : 0,
-                     qPrintable(QFileInfo(file).absoluteFilePath()));
+                     qPrintable(mediaSource));
         if (!mediaErrors.isEmpty())
             std::fprintf(stderr, " last-error=%s", qPrintable(mediaErrors.constLast()));
         std::fprintf(stderr, "\n");
@@ -2280,10 +2349,54 @@ int main(int argc, char** argv) {
     result(moving, "moving video frames reached the actual OpenGL framebuffer");
     if (!moving) ++failures;
 
-    const auto audioId = surface->probeMpvProperty(QStringLiteral("aid"), ProbePropertyKind::Number);
-    const auto subtitleId = surface->probeMpvProperty(QStringLiteral("sid"), ProbePropertyKind::Number);
-    exerciseTrack(surface, QStringLiteral("aid"), audioId, "audio", &failures);
-    exerciseTrack(surface, QStringLiteral("sid"), subtitleId, "subtitle", &failures);
+    const auto trackCount = numericProperty(surface, QStringLiteral("track-list/count"));
+    bool trackInventoryKnown = trackCount && std::isfinite(*trackCount) &&
+        *trackCount >= 0 && *trackCount <= std::numeric_limits<int>::max() &&
+        std::floor(*trackCount) == *trackCount;
+    int audioTrackCount = 0;
+    int subtitleTrackCount = 0;
+    if (trackInventoryKnown) {
+        for (int index = 0; index < static_cast<int>(*trackCount); ++index) {
+            const auto type = textProperty(
+                surface, QStringLiteral("track-list/%1/type").arg(index));
+            if (!type) {
+                trackInventoryKnown = false;
+                break;
+            }
+            if (*type == QLatin1String("audio")) ++audioTrackCount;
+            if (*type == QLatin1String("sub")) ++subtitleTrackCount;
+        }
+    }
+    if (!trackInventoryKnown) {
+        std::fprintf(stderr,
+                     "FAIL source track inventory is unavailable; optional track applicability "
+                     "cannot be determined\n");
+        ++failures;
+    } else {
+        std::fprintf(stderr, "[AnimeJanaiProbe] source-track-inventory audio=%d subtitle=%d\n",
+                     audioTrackCount, subtitleTrackCount);
+        if (audioTrackCount >= 2) {
+            const auto audioId = surface->probeMpvProperty(
+                QStringLiteral("aid"), ProbePropertyKind::Number);
+            exerciseTrack(surface, QStringLiteral("aid"), audioId, "audio", &failures);
+        } else {
+            std::fprintf(stderr,
+                         "NOT-APPLICABLE alternate audio track exercise: source has %d audio "
+                         "track(s); two selected-track candidates are required; not exercised\n",
+                         audioTrackCount);
+        }
+        if (subtitleTrackCount >= 2) {
+            const auto subtitleId = surface->probeMpvProperty(
+                QStringLiteral("sid"), ProbePropertyKind::Number);
+            exerciseTrack(surface, QStringLiteral("sid"), subtitleId, "subtitle", &failures);
+        } else {
+            std::fprintf(stderr,
+                         "NOT-APPLICABLE alternate subtitle track exercise: source has %d "
+                         "subtitle track(s); two selected-track candidates are required; "
+                         "not exercised\n",
+                         subtitleTrackCount);
+        }
+    }
 
     reportPlaybackMetrics(surface, "baseline");
     const int baselinePtsChanges = observedPtsChanges(surface, 3000);
@@ -2658,7 +2771,9 @@ int main(int argc, char** argv) {
                     ? (rifeGraphEvidence.isEmpty()
                            ? QString()
                            : rifeGraphEvidence.constFirst().section(QLatin1Char('|'), 0, 0))
-                    : QDir(selectedPlanModelDir).filePath(modelIdentity + QStringLiteral(".onnx"));
+                    : (modelIdentity.isEmpty()
+                           ? QString()
+                           : QDir(selectedPlanModelDir).filePath(modelIdentity + QStringLiteral(".onnx")));
                 const QStringList freshEngines = parser.isSet(requireBuildOption)
                     ? freshEngineFiles(artifactModelDir, engineFilesBefore) : QStringList{};
                 const QStringList selectedBuildLogs =
@@ -2669,7 +2784,8 @@ int main(int argc, char** argv) {
                     selectedFreshEngineFiles(freshEngines, selectedBuildLogs);
                 std::fprintf(stderr,
                              "[AnimeJanaiProbe] live-config=%s model-family=%s model-directory=%s artifact-scan-directory=%s stats=%s\n",
-                             qPrintable(livePlan.configPath), qPrintable(modelIdentity),
+                             qPrintable(livePlan.configPath),
+                             modelIdentity.isEmpty() ? "unobserved" : qPrintable(modelIdentity),
                              qPrintable(selectedPlanModelDir), qPrintable(artifactModelDir),
                              qPrintable(livePlan.statsPath));
                 std::fprintf(stderr, "[AnimeJanaiProbe] stats-file=%s sha256=%s\n",
@@ -2677,6 +2793,11 @@ int main(int argc, char** argv) {
                 if (rifePreset)
                     std::fprintf(stderr,
                                  "[AnimeJanaiProbe] RIFE active factor plus request-bound model-family evidence; engine-to-active-model link is inferred from exact live config/fresh artifact because the core does not expose an engine identity event\n");
+                if (livePlan.presetId.startsWith(QStringLiteral("builtin")))
+                    std::fprintf(stderr,
+                                 "[AnimeJanaiProbe] builtin-selected-engine-identity-unavailable: "
+                                 "observing requested slot, backend processing, output geometry, "
+                                 "and framebuffer only; no active chain/model/engine identity is claimed\n");
                 for (const QString& proof : rifeStatsEvidence)
                     std::fprintf(stderr, "[AnimeJanaiProbe] selected-rife-stats-log=%s\n",
                                  qPrintable(proof));
@@ -2936,9 +3057,9 @@ int main(int argc, char** argv) {
     }
 
     surface->close();
-    surface->open(QFileInfo(file).absoluteFilePath());
+    surface->open(mediaSource);
     const bool changedSource = waitUntil([&] { return surface->hasVideo(); }, 15000);
-    result(changedSource, "source change reopened the same real file without an external player or IPC");
+    result(changedSource, "source change reopened the same real media source without an external player or IPC");
     if (!changedSource) ++failures;
     result(!surface->animeJanaiProcessingObserved(),
            "a reopened Original source does not inherit the prior processing observation");

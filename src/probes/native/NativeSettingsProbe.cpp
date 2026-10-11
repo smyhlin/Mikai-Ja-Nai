@@ -407,6 +407,11 @@ void exerciseComponents(SettingsDialog& dialog, QSize requestedSize, const QStri
     check(componentCardReachable(
               *componentTab,
               QCoreApplication::translate("mikai::app::ComponentStoreTab",
+                                          "AnimeJaNai upscaling models")),
+          "the AnimeJaNai upscaling models card title is reachable");
+    check(componentCardReachable(
+              *componentTab,
+              QCoreApplication::translate("mikai::app::ComponentStoreTab",
                                           "RIFE interpolation models")),
           "the RIFE card title is reachable");
     const QString screenshot =
@@ -458,11 +463,10 @@ void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
                (currentStatus->accessibleDescription() != statusSeverityBefore ||
                 componentTab->statusReason() != statusReasonBefore);
     }, 5000);
-    QLabel* status = statusSeverityLabel(*componentTab);
     check(verifyCompleted, "Verify completion was observed through the Components status surface");
-    check(status != nullptr &&
-              status->accessibleDescription() == QLatin1String("success"),
-          "Verify reports success for the selected backend despite an inactive corrupt record");
+    check(backend->currentData().toInt() == static_cast<int>(selected) &&
+              !mplayer::native::describeAnimeJanaiInstallation(selected, false).installed,
+          "Verify preserves the selected missing backend without installing it");
 
     if (installRuntime) {
         QPushButton* install = accessibleAction(
@@ -474,14 +478,12 @@ void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
             check(backend->currentData().toInt() == static_cast<int>(selected),
                   "Verify preserves the selected backend before Apply changes");
             install->click();
-            const auto gpuBackend = mplayer::native::observeComputeCapability().nvidia
-                                        ? mplayer::native::Backend::TensorRT
-                                        : mplayer::native::Backend::DirectML;
+            const auto requestedBackend = selected;
             const bool installCompleted = waitForUi([&] {
                 QLabel* currentStatus = statusSeverityLabel(*componentTab);
                 const QString severity = currentStatus != nullptr
                     ? currentStatus->accessibleDescription() : QString();
-                return mplayer::native::describeAnimeJanaiInstallation(gpuBackend, true).installed ||
+                return mplayer::native::describeAnimeJanaiInstallation(requestedBackend, true).installed ||
                        severity == QLatin1String("failure");
             }, 300000);
             bool cancelClicked = false;
@@ -504,7 +506,7 @@ void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
                 }, 60000);
             }
             const auto installed =
-                mplayer::native::describeAnimeJanaiInstallation(gpuBackend, true);
+                mplayer::native::describeAnimeJanaiInstallation(requestedBackend, true);
             const auto inactiveInstallation =
                 mplayer::native::describeAnimeJanaiInstallation(inactive, true);
             const QString recordPath =
@@ -512,12 +514,12 @@ void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
             const bool recordExists = QFileInfo(recordPath).isFile();
             const QString recordSha256 = recordExists ? fileSha256(recordPath) : QString();
             const QString actualBackend = installed.installed
-                ? backendIdentity(gpuBackend)
+                ? backendIdentity(requestedBackend)
                 : (inactiveInstallation.installed
                        ? backendIdentity(inactive)
                        : QStringLiteral("none"));
-            check(backend->currentData().toInt() == static_cast<int>(gpuBackend),
-                  "Apply changes selects the backend matched to this GPU");
+            check(backend->currentData().toInt() == static_cast<int>(requestedBackend),
+                  "Apply changes preserves the explicitly selected backend");
             check(installCompleted && installed.installed && recordExists &&
                       !recordSha256.isEmpty(),
                   "the real Apply changes install produced a verified GPU-backend record");
@@ -526,7 +528,7 @@ void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
                 ? finalStatus->accessibleDescription() : QStringLiteral("unavailable");
             std::fprintf(stderr,
                          "[native_settings_probe] apply-changes requested-backend=%s actual-backend=%s completed=%d status-reason=%s severity=%s cancel-clicked=%d installed=%d root=%s record=%s record-sha256=%s\\n",
-                         qPrintable(backendIdentity(gpuBackend)),
+                         qPrintable(backendIdentity(requestedBackend)),
                          qPrintable(actualBackend), installCompleted ? 1 : 0,
                          qPrintable(componentTab->statusReason()), qPrintable(severity),
                          cancelClicked ? 1 : 0, installed.installed ? 1 : 0,

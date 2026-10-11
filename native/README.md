@@ -32,6 +32,96 @@ about processed GUI playback.
 the final UI-cleanup tree. The production source pass was finished before the
 following verification; no probes ran during that implementation pass.
 
+### Built-in AnimeJaNai model acquisition repair
+
+The reported built-in-profile refusal on 480p HLS came from an absent installed
+`dist-mikai/native/assets` store. Components previously exposed backend, RIFE
+and GPU-kernel cards but no spatial selection; its spatial download queue
+therefore could not be reached from the UI.
+
+Components now exposes one explicit **AnimeJaNai upscaling models** pack for
+all five pinned HD/SD graphs (6,637,479 bytes). Apply preserves the selected
+packs/backend; accepted initial setup includes missing spatial graphs. Refresh
+does not download or reset subsequent selections. Installation state and
+acquisition selection are separate. Verification covers absent catalogue rows,
+not just records already present. Closing Settings reprobes the same settled
+unavailable request without restarting healthy/pending plans or saving
+cancelled preference edits.
+
+The installed source-asset store was repaired through the production
+`SpatialAssetStore::publish` API using existing verified original graph bytes.
+All five size/SHA-256 checks passed, with provenance/notice retained
+(`.probe-out/janai-model-pack-installed-publication-1791679240471.log`);
+all 15 pre-existing protected executable/module/component files remained
+unchanged
+(`.probe-out/janai-model-pack-protected-publication-1791679240471.json`).
+This is local acquisition, not a distribution, private Ready/Active claim,
+numerical-fidelity proof or licence clearance.
+
+The natural-player probe now accepts an unchanged HTTP/HTTPS media URL instead
+of coercing it through `QFileInfo`. Built-in IDs are `builtin1001`,
+`builtin1002`, `builtin1003`. It does not infer their active graph from the
+first model key in a multi-slot configuration. `--require-engine-build` refuses
+built-in profiles with `builtin-selected-engine-identity-unavailable`; normal
+built-in playback still requires real observed processing and rendered frames.
+Fresh selected-engine identity evidence remains supported for individual
+spatial/RIFE requests.
+
+Observed after the repair, on the user's unchanged HLS source:
+
+- Separate natural-player runs of Quality (`builtin1001`), Balanced
+  (`builtin1002`) and Performance (`builtin1003`) exit 0. Each selects the real
+  menu, observes backend spatial processing and moving/nonblack rendered output,
+  removes the filter through Off, reopens the same source and closes cleanly.
+  Input is H.264/NVDEC 640×480 at 23.976 fps; processed output is 1280×960.
+  Logs are `.probe-out/janai-hls-1791679240471/exact-hls-natural-player-unobstructed.log`
+  and `exact-hls-builtin100{1,3}.log` in the same directory. The source has one
+  audio track and no subtitles; alternate-track exercises are explicitly
+  not applicable, not passes.
+- The uncached Balanced request starts a real TensorRT build, shows an
+  indeterminate operation window, writes `pause=true`, reports build completion,
+  shows success and then writes `pause=false`. The retained operation image is
+  `builtin1002-fresh-build-progress.png` in that directory. Configuration/log
+  evidence does not establish an independent active-engine identity event or
+  numerical fidelity.
+- The actual public Components Apply action downloads all five graphs from
+  their pinned upstream URLs into an owned physical helper root, verifies all
+  original sizes/digests and retains exact notices/provenance. Only the spatial
+  card is selected, 0/5 becomes 5/5, and the visible Ukrainian 760×932 surface is
+  unclipped (`.probe-out/janai-public-download-1791679240471/public-ui-spatial-download.log`
+  and its before/final PNGs). This is network acquisition, not just direct
+  publication.
+- Full hermetic CTest passes in 24.45 s: 32 suites PASS, LiveOracle SKIP.
+  Missing/corrupt spatial selection and unchanged failed-request recovery have
+  consumer regressions
+  (`.probe-out/janai-model-pack-hermetic-windows-1791679240471.log`).
+  Settings passes 133 checks with no failures
+  (`.probe-out/janai-components-final-1791679240471/components-settings-final.log`).
+  Its former empty-inventory Verify-success assertion was removed: absent
+  spatial graphs are now reported rather than falsely verified.
+- The production targets build without warnings/errors; the Ukrainian
+  catalogue has 1004 finished entries and zero unfinished. The verified
+  executable and catalogue are copied in place, without `dist`, and the actual
+  installed app paints a readable Ukrainian feed and closes normally, exit 0.
+  Native-DPI screen evidence is
+  `.probe-out/janai-installed-startup-native-dpi-1791679240471.{log,png}`.
+  The final integrity record
+  `.probe-out/janai-model-pack-final-integrity-1791679240471.json` confirms
+  the intended executable/catalogue replacement and all 14 other protected
+  existing files unchanged.
+
+Earlier attempts are not rendering acceptance: the first Windows-QPA fixture
+run hung while loading a deliberately fake PE and left an owned
+`mikai_tests.exe - Bad Image` CSRSS dialog. That dialog obstructed the next
+native menu checks; HWND ownership and its text identified the test fixture.
+Only the owned dialog was dismissed, not CSRSS or unrelated windows. The
+async fixture now suppresses expected loader-error UI with a scoped Windows
+process error mode. A separate one-shot modal-review hazard was bounded;
+neither failure is presented as an HLS transport or production-menu defect.
+Throwaway publication/download helper sources and binaries were removed after
+proof; graph/runtime/model evidence stays under `.probe-out/`.
+
+
 ### Latest observed player and Compare acceptance
 
 The normal API-module contract is unchanged: the official published

@@ -196,6 +196,21 @@ membership, model inventory correction, explicit custom Aji import, and
 plan-only run are recorded in `native/manifest/sources.json` and
 `native/README.md`.
 
+- **Built-in Janai/HLS model repair:** Components now has a separate explicit
+  five-graph upscaling pack; the previously absent installed spatial store is
+  repaired with pinned original bytes and notices. Apply preserves selected
+  packs/backend, and Settings closure retries only a settled unavailable
+  request without saving cancelled edits or cancelling healthy/pending work.
+  The user's exact HLS passes separate Quality/Balanced/Performance natural
+  runs at 640×480 → 1280×960, with observed processing and clean Off/reopen/close.
+  Actual UI network acquisition verifies all five graphs. Full Windows-QPA
+  CTest passes 32 suites plus LiveOracle SKIP in 24.45 s; Settings passes 133
+  checks; the catalogue is 1004 finished / 0 unfinished. The verified app and
+  catalogue are installed in place; native-DPI startup/close and 14 unchanged
+  protected module/component files are observed. Exact logs and the initial
+  test-owned bad-image obstruction are in `native/README.md`. No numerical
+  fidelity, all-47 inference, independent active-engine identity, private
+  Ready/Active or redistribution clearance is claimed.
 - **Source-first follow-up:** production implementation finished before probes
   resumed. Earlier desktop-OpenGL and held-Play PiP fixes compiled without
   warnings after the interrupted parallel build completed at `--parallel 1`.
