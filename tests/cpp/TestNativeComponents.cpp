@@ -1,6 +1,7 @@
 #include "TestNativeComponents.hpp"
 
 #include "dialogs/ComponentStoreTab.hpp"
+#include "workers/Runner.hpp"
 
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentStore.hpp"
@@ -27,6 +28,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/qscopeguard.h>
 #include <QtWidgets/QAbstractButton>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMessageBox>
@@ -300,12 +302,31 @@ void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFail
     QCoreApplication::sendEvent(&tab, &languageChange);
     QVERIFY(!pack->isChecked());
     QVERIFY(!pack->accessibleName().isEmpty());
-    tab.verifyAll();
+
+    // Verify is an off-GUI run: the inventories are hashed on a worker and the
+    // verdict is published on the GUI thread. The assertion waits for that
+    // publication with a bounded deadline, so a run that never completes fails
+    // the test instead of hanging it, and a verdict that never names a digest
+    // failure is not accepted as one.
+    mikai::app::Runner verifyRunner;
+    tab.setRunner(&verifyRunner);
+    auto* verifyButton = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentVerifyButton"));
+    QVERIFY(verifyButton != nullptr);
+    verifyButton->click();
+    QElapsedTimer verifyDeadline;
+    verifyDeadline.start();
+    while (tab.statusKey().isEmpty() && verifyDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QApplication::processEvents();
     QCOMPARE(tab.statusKey(), QStringLiteral("native.components.digest"));
     QCOMPARE(status->accessibleDescription(), QStringLiteral("failure"));
     QVERIFY(!status->text().isEmpty());
     QVERIFY(!pack->isChecked());
     QVERIFY(pack->isEnabled());
+    QVERIFY(verifyButton->isEnabled());
+    verifyRunner.waitForDone(5000);
 
     // A separate, explicit setup confirmation re-evaluates recommendations;
     // refresh, retranslation and the normal Apply action never do so.

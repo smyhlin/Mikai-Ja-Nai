@@ -87,7 +87,7 @@ measured from the real segment sizes on disk rather than invented.
 CMake target `mikai_http_fixture`, built with:
 
 ```sh
-cmake --build build-cmake --target mikai_http_fixture
+cmake --build build/release --target mikai_http_fixture
 ```
 
 It links only `Qt6::Core` and `Qt6::Network`, listens on `127.0.0.1`, and makes
@@ -95,7 +95,8 @@ no outbound connections. Console target: it prints its bound port and URL list
 on stdout.
 
 ```sh
-build-cmake/mikai_http_fixture.exe --port 0 --facts header-facts.json
+cmake -E make_directory .probe-out
+build/release/tests/fixtures/mikai_http_fixture.exe --port 0 --facts .probe-out/header-facts.json
 ```
 
 | Option | Meaning |

@@ -14,6 +14,10 @@
 #include "TestQualityCache.hpp"
 #include "TestRateLimiter.hpp"
 #include "TestReleases.hpp"
+#include "TestDownloads.hpp"
+#include "TestDiagnostics.hpp"
+#include "TestApiClient.hpp"
+#include "TestRunner.hpp"
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
 #include "TestNativeAssets.hpp"
@@ -41,6 +45,7 @@
 #endif
 
 #include <cstdio>
+#include <vector>
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -58,6 +63,14 @@
 #include <QtCore/qt_windows.h>
 #endif
 
+// Regression suites backed by their own runner functions rather than a
+// main()-driven QObject, because they need per-suite setup/teardown around the
+// QTest call. Declared here so kSuites and the executable set stay in one place.
+int runTestDownloads(int argc, char** argv);
+int runTestDiagnostics(int argc, char** argv);
+int runTestApiClient(int argc, char** argv);
+int runTestRunner(int argc, char** argv);
+
 namespace {
 
 constexpr const char* kSuites[] = {
@@ -72,7 +85,9 @@ constexpr const char* kSuites[] = {
     "TestNativeCatalog",
 #endif
     "TestModels", "TestReleases", "TestAnime4K", "TestI18n", "TestStreams", "TestPagers",
-    "TestQualityCache", "TestRateLimiter", "TestLayering", "TestClipboard", "TestLiveOracle"};
+    "TestQualityCache", "TestRateLimiter", "TestDownloads", "TestDiagnostics", "TestApiClient",
+    "TestRunner",
+    "TestLayering", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
@@ -268,6 +283,25 @@ int main(int argc, char** argv) {
       failures |= runOne(name, suite, qtestArgs, admitted);
     }
   };
+  // Function-backed suites: the suite owns its own report capture and verdict
+  // line, so this records the same execution evidence a QObject suite gets -
+  // without it the name would be selectable but never run. The C-string vector
+  // is rebuilt from qtestArgs so the wrapper sees QTest's arguments exactly as
+  // a QObject suite does, with the suite selector already stripped out.
+  std::vector<QByteArray> wrapperArgStorage;
+  wrapperArgStorage.reserve(static_cast<size_t>(qtestArgs.size()));
+  for (const QString& argument : qtestArgs) wrapperArgStorage.push_back(argument.toLocal8Bit());
+  std::vector<char*> wrapperArgv;
+  wrapperArgv.reserve(wrapperArgStorage.size() + 1);
+  for (QByteArray& storage : wrapperArgStorage) wrapperArgv.push_back(storage.data());
+  wrapperArgv.push_back(nullptr);
+  const auto runWrapper = [&](const char* name, int (*wrapper)(int, char**)) {
+    executed.insert(QString::fromLatin1(name));
+    if (!filtered || wantsSuite(arguments, name)) {
+      const int rc = wrapper(static_cast<int>(qtestArgs.size()), wrapperArgv.data());
+      failures |= rc;
+    }
+  };
   run("TestAnimeJanaiRuntime", &animeJanaiRuntime, true);
   run("TestRuntimeSelection", &runtimeSelection, true);
   run("TestNativeTypes", &nativeTypes, true);
@@ -290,6 +324,10 @@ int main(int argc, char** argv) {
   run("TestNativeUserRecipes", &nativeUserRecipes, true);
   run("TestNativeAssets", &nativeAssets, true);
   run("TestMpvAsync", &mpvAsync, true);
+  runWrapper("TestDownloads", runTestDownloads);
+  runWrapper("TestDiagnostics", runTestDiagnostics);
+  runWrapper("TestApiClient", runTestApiClient);
+  runWrapper("TestRunner", runTestRunner);
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   run("TestNativeCatalog", &nativeCatalog, true);
 #endif

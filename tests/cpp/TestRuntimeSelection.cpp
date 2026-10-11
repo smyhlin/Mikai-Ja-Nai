@@ -10,9 +10,11 @@
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
+#include <QtCore/QEventLoop>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
+#include <QtCore/QObject>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QSettings>
@@ -728,6 +730,232 @@ void TestRuntimeSelection::anUnresolvedSelectionNeverReachesTheLoaderWithACapabi
     QVERIFY(refused.runtimeUnavailable);
     QVERIFY(!refused.reason.isEmpty());
     QCOMPARE(refused.apiVersion, quint64(0));
+    QVERIFY(!mplayer::native::runtimeSelected());
+}
+
+/// The startup state a player sees while the cold hash is still running. It is
+/// a truthful wait, never the missing-runtime failure, and the wait cannot be
+/// reported as unavailable one turn before the module loads.
+void TestRuntimeSelection::aPendingResolutionNamesTheWaitRatherThanAMissingRuntime() {
+    QVERIFY(!mplayer::native::runtimeSelected());
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    const mplayer::native::ResolutionLease lease = mplayer::native::beginResolution();
+    QVERIFY2(lease, "no module is pinned and no resolution is running, so one may be taken");
+    QVERIFY(mplayer::native::runtimeResolutionPending());
+
+    // One resolution per process: a second owner joins nothing and starts nothing.
+    QVERIFY(!mplayer::native::beginResolution());
+    QVERIFY(mplayer::native::runtimeResolutionPending());
+
+    // The pending line is not a refusal: it names the work in flight, and both
+    // surfaces that would otherwise say "unavailable" say "pending" instead.
+    const QString pending = mplayer::native::runtimePendingPlaybackText();
+    QVERIFY2(!pending.isEmpty(), "a pending resolution names its wait");
+    QVERIFY(!pending.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive));
+    const QString status = mplayer::native::runtimeStatusText();
+    QVERIFY2(status == pending, qPrintable(status));
+
+    const QString played = mplayer::native::runtimeUnavailablePlaybackText(QString());
+    QVERIFY2(played.contains(pending), qPrintable(played));
+    QVERIFY(!played.contains(QStringLiteral("unavailable"), Qt::CaseInsensitive));
+
+    // A named reason still does not get reported as unavailable while the
+    // resolution that would produce it has not published yet.
+    const QString named = mplayer::native::runtimeUnavailablePlaybackText(QStringLiteral("x"));
+    QVERIFY2(!named.contains(QStringLiteral("x")), qPrintable(named));
+
+    mplayer::native::endResolution(lease);
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+    // With nothing in flight and nothing failed, the surface is the plain
+    // unloaded state rather than a lie in either direction.
+    QVERIFY(!mplayer::native::runtimeSelected());
+    QVERIFY(!mplayer::native::runtimeUnavailablePlaybackText(QString())
+                 .contains(QStringLiteral("pending"), Qt::CaseInsensitive));
+}
+
+/// A waiter is published exactly once, and only after the terminal state is on
+/// record. A callback registered after everything settled is still queued, so
+/// the caller that just asked is never re-entered by its own question.
+void TestRuntimeSelection::aResolutionWaiterIsPublishedOnceAfterTheTerminalState() {
+    int calls = 0;
+    {
+        // A destroyed context discards its waiter instead of delivering it.
+        auto* context = new QObject();
+        mplayer::native::whenRuntimeResolutionFinishes(context, [&calls] { ++calls; });
+        delete context;
+    }
+
+    // A waiter whose context is alive. Registration is synchronous bookkeeping
+    // only: the counter does not move until the event loop runs the delivery.
+    auto* context = new QObject();
+    auto* other = new QObject();
+    int otherCalls = 0;
+    bool settled = false;
+
+    const mplayer::native::ResolutionLease lease = mplayer::native::beginResolution();
+    QVERIFY(lease);
+    mplayer::native::whenRuntimeResolutionFinishes(context, [&] {
+        ++calls;
+        // The waiter sees the terminal state, not the in-flight one.
+        settled = !mplayer::native::runtimeResolutionPending();
+    });
+    mplayer::native::whenRuntimeResolutionFinishes(other, [&otherCalls] { ++otherCalls; });
+
+    // Clearing the lease publishes the waiters, but they are still only queued.
+    mplayer::native::endResolution(lease);
+    QCOMPARE(calls, 0);
+    QCOMPARE(otherCalls, 0);
+
+    // Run the GUI event loop until both deliveries have landed.
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCOMPARE(calls, 1);
+    QCOMPARE(otherCalls, 1);
+    QVERIFY2(settled, "a waiter sees the settled state, never the in-flight one");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCOMPARE(calls, 1);
+
+    // A registration made after everything settled is queued once, not called
+    // synchronously: the queue runs and the callback arrives exactly once.
+    mplayer::native::whenRuntimeResolutionFinishes(context, [&calls] { ++calls; });
+    QCOMPARE(calls, 1);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCOMPARE(calls, 2);
+
+    // A destroyed context is discarded rather than delivered to a dead widget.
+    mplayer::native::whenRuntimeResolutionFinishes(other, [&otherCalls] { ++otherCalls; });
+    delete other;
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QCOMPARE(otherCalls, 1);
+
+    delete context;
+}
+
+/// The shape a playback request actually takes while startup is still hashing:
+/// its own resolution is refused, so it joins the one already running instead of
+/// starting a second one, and it answers only once the terminal state is on
+/// record. It releases nothing itself, which is what keeps a request that is
+/// cancelled mid-wait from ending someone else's resolution.
+void TestRuntimeSelection::aRefusedRequestJoinsTheRunningResolutionAndAnswersLate() {
+    QVERIFY(!mplayer::native::runtimeSelected());
+
+    auto* context = new QObject();
+    bool answered = false;
+    bool sawPending = false;
+
+    // Startup owns the one resolution; a request arriving during it must be
+    // refused, not given its own.
+    const mplayer::native::ResolutionLease startup = mplayer::native::beginResolution();
+    QVERIFY(startup);
+    QVERIFY(!mplayer::native::beginResolution());
+
+    // What the request does with that refusal: it waits on the running one.
+    // Nothing may be pinned here, so the answer it sees is the settled absence
+    // rather than a module; the point is when it arrives, not what it carries.
+    mplayer::native::whenRuntimeResolutionFinishes(context, [&] {
+        answered = true;
+        sawPending = mplayer::native::runtimeResolutionPending();
+    });
+
+    // Still running, so the request has heard nothing and the process is not
+    // holding a second resolution.
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY(!answered);
+    QVERIFY(mplayer::native::runtimeResolutionPending());
+
+    // The running resolution finishes; only then does the request answer, and
+    // it sees the settled state rather than the in-flight one.
+    mplayer::native::endResolution(startup);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QVERIFY2(answered, "a joined request answers after the running resolution settles");
+    QVERIFY2(!sawPending, "the answer never observes the in-flight state");
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    // The request released nothing of its own, so the next request can take the
+    // one resolution rather than finding it latched forever.
+    const mplayer::native::ResolutionLease next = mplayer::native::beginResolution();
+    QVERIFY(next);
+    mplayer::native::endResolution(next);
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    delete context;
+}
+
+/// A lease from a superseded owner must not release the resolution that
+/// replaced it. That is what keeps a cancelled recovery - one whose delivery
+/// Runner suppressed, or whose owner was destroyed - from either locking every
+/// later caller out or cutting short the resolution in its place.
+void TestRuntimeSelection::aStaleLeaseNeverReleasesTheResolutionThatReplacedIt() {
+    const mplayer::native::ResolutionLease first = mplayer::native::beginResolution();
+    QVERIFY(first);
+    // A later owner cannot take the one resolution while the first holds it.
+    QVERIFY(!mplayer::native::beginResolution());
+
+    // Ending the first lease publishes its waiters; the stale lease below is
+    // then a no-op, and the resolution that replaced it is untouched.
+    mplayer::native::endResolution(first);
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    const mplayer::native::ResolutionLease second = mplayer::native::beginResolution();
+    QVERIFY(second);
+    mplayer::native::endResolution(first);
+    QVERIFY2(mplayer::native::runtimeResolutionPending(),
+             "a stale lease must not release the resolution that replaced it");
+    mplayer::native::endResolution(second);
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    // A module already pinned refuses a resolution outright, which is what
+    // keeps a retry from becoming a second load.
+    if (mplayer::native::runtimeSelected()) {
+        QVERIFY(!mplayer::native::beginResolution());
+    }
+
+    // A lease whose owner went away can still be used to release: the lease is
+    // the token, not the widget, so a suppressed recovery never latches the
+    // one resolution forever.
+    const mplayer::native::ResolutionLease orphan = mplayer::native::beginResolution();
+    QVERIFY(orphan);
+    mplayer::native::endResolution(orphan);
+    QVERIFY(!mplayer::native::runtimeResolutionPending());
+}
+
+/// The loader preflight reads the module's own PE import table. A module that
+/// declares no system-driver dependency is never asked about one, and a
+/// synthetic module that declares the Vulkan loader is asked about exactly
+/// that. No DLL is loaded and no dependency is copied.
+void TestRuntimeSelection::aModuleSystemDriverImportIsReadFromItsOwnImage() {
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+
+    // A module with only Windows system imports needs no supporting loader.
+    const QString plain = QDir(temp.path()).filePath(QStringLiteral("plain/libmpv-2.dll"));
+    QVERIFY(writeFileBytes(plain, syntheticPe({QStringLiteral("kernel32.dll")})));
+    QVERIFY(mplayer::native::moduleSystemDriverImports(plain).isEmpty());
+    QVERIFY(mplayer::native::runtimeLoaderDependencyRefusal(plain).isEmpty());
+
+    // A module that statically imports the Vulkan loader is asked about it:
+    // either it is refused by name, or the loader this machine supplies is
+    // recorded. Never a silent load and never a copied DLL.
+    const QString needsLoader = QDir(temp.path()).filePath(QStringLiteral("vulkan/libmpv-2.dll"));
+    QVERIFY(writeFileBytes(needsLoader, syntheticPe({QStringLiteral("kernel32.dll"),
+                                                    QStringLiteral("vulkan-1.dll")})));
+    const QStringList required = mplayer::native::moduleSystemDriverImports(needsLoader);
+    QVERIFY2(required.contains(QStringLiteral("vulkan-1.dll")),
+             qPrintable(required.join(QLatin1Char(','))));
+    const QString refusal = mplayer::native::runtimeLoaderDependencyRefusal(needsLoader);
+    if (!refusal.isEmpty()) {
+        // Refused: the reason names the dependency and the module, and it is a
+        // refusal rather than a fallback.
+        QVERIFY2(refusal.contains(QStringLiteral("vulkan"), Qt::CaseInsensitive),
+                 qPrintable(refusal));
+        QVERIFY2(refusal.contains(QStringLiteral("libmpv-2.dll")), qPrintable(refusal));
+    }
+
+    // A module that cannot be read at all is never guessed about: the loader's
+    // own refusal speaks for that case, so this answers nothing.
+    QVERIFY(mplayer::native::moduleSystemDriverImports(
+                QDir(temp.path()).filePath(QStringLiteral("absent/libmpv-2.dll")))
+                .isEmpty());
     QVERIFY(!mplayer::native::runtimeSelected());
 }
 

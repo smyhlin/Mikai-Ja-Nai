@@ -30,6 +30,15 @@ class TestRuntimeSelection : public QObject {
     void anUnresolvedSelectionNeverReachesTheLoaderWithACapabilityClaim();
     void theUnavailablePlaybackLineNamesTheSameReasonAsTheStatusLine();
 
+    // The startup state, before any of the live cases: an in-flight resolution
+    // is a pending state, not a missing-runtime error, and one resolution
+    // cannot be released or taken by a stale owner.
+    void aPendingResolutionNamesTheWaitRatherThanAMissingRuntime();
+    void aResolutionWaiterIsPublishedOnceAfterTheTerminalState();
+    void aRefusedRequestJoinsTheRunningResolutionAndAnswersLate();
+    void aStaleLeaseNeverReleasesTheResolutionThatReplacedIt();
+    void aModuleSystemDriverImportIsReadFromItsOwnImage();
+
     void selectingThePackagedForkLoadsWithoutMutation();
     void aDifferentChoiceNeverHotSwapsThePinnedModule();
 };
