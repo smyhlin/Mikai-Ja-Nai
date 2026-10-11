@@ -10,7 +10,7 @@
       "cacheVariables": {
         "CMAKE_MAKE_PROGRAM": "C:/temp/w64dev/w64devkit/bin/make.exe",
         "CMAKE_CXX_COMPILER": "C:/temp/w64dev/w64devkit/bin/g++.exe",
-        "CMAKE_PREFIX_PATH": "C:/temp/qt6/6.8.3/mingw_64",
+        "CMAKE_PREFIX_PATH": "C:/temp/qt6/6.12.0/mingw_64",
         "MIKAI_BUILD_PROBES": "ON"
       }
     },

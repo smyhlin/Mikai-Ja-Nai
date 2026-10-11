@@ -15,6 +15,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type)
 endif()
+
+# Deprecated Qt APIs are errors, not warnings. 0x060C00 is Qt 6.12.0: anything
+# Qt deprecated up to and including the version this tree is built against
+# disappears from the headers, so a use fails the build here instead of
+# surfacing after the next framework bump. It applies to every target in this
+# directory and in native/, which keeps the whole tree on one deprecation level.
+add_compile_definitions(QT_DISABLE_DEPRECATED_UP_TO=0x060C00)
+
+# And the next bump's deprecations are visible now, so the tree is not surprised
+# by them: 0x060D00 is Qt 6.13, which Qt 6.12's headers already annotate. The
+# unversioned QT_DEPRECATED_VERSION_X_* markers warn regardless of this.
+add_compile_definitions(QT_WARN_DEPRECATED_UP_TO=0x060D00)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -106,7 +118,7 @@ endfunction()
 # Qt6Widgets pulls in OpenGL; QOpenGLWidget itself lives in Qt6OpenGLWidgets.
 # Test is deliberately not in this list: it is only needed by the QA probes and
 # mikai_tests, so the app itself configures on a Qt install without it.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
+find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
 
 # Derived at top level, before any guard: both the launcher contract test (which
 # runs even when the probes are off) and the mikai_tests entry need the same Qt
