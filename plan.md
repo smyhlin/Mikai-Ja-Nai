@@ -13,7 +13,7 @@ delivery remains gated by rights, preparation and producer prerequisites.
 
 ## 1. Conclusion and no-break scope
 
-Mikai (`F:/ZKS/mikai_janai`, C++20 / Qt 6.8 / MinGW-w64, in-process `libmpv`)
+Mikai (`F:/ZKS/mikai_janai`, C++20 / Qt 6.12 / MinGW-w64, in-process `libmpv`)
 gains the original Janai AnimeJaNai neural pipeline — generic spatial ONNX
 chains, original RIFE v4.x interpolation, and combined recipes — by shipping a
 **pinned, patched mpv fork that carries the native `animejanai` vf**, loading
@@ -338,7 +338,7 @@ in this plan is unverified.
 | GPU | NVIDIA GeForce RTX 5090 |
 | Driver | 616.92 |
 | OpenGL | 4.6 (NVIDIA) |
-| Qt | 6.8.x MinGW (`<qt>/6.8.3/mingw_64`) |
+| Qt | 6.12.x MinGW (`<qt>/6.12.0/mingw_64`) |
 | Host toolchain | MinGW-w64 g++ (`<w64devkit>/bin/g++.exe`) |
 
 ### 3.2 Artifact identity
@@ -1516,7 +1516,7 @@ user.
 
 ### 9.1 Two toolchains, one repository
 
-The Qt application keeps building with MinGW-w64 g++ / Qt 6.8 / CMake. The
+The Qt application keeps building with MinGW-w64 g++ / Qt 6.12 / CMake. The
 native addon is a **separate, optional** build with **MSVC + nvcc** for C, C++17
 and CUDA. Nothing in the default `cmake --build --preset app`
 depends on CUDA, TensorRT, MSVC or nvcc; a machine without the native SDK

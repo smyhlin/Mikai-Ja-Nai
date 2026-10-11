@@ -4,7 +4,7 @@ A C++/Qt6 desktop client for the [Mikai public API](https://api.mikai.me/public/
 
 ## Build
 
-Needs MinGW-w64 g++, Qt 6.8.x with LinguistTools, and the MinGW toolchain
+Needs MinGW-w64 g++, Qt 6.12.x with LinguistTools, and the MinGW toolchain
 paths configured by `CMakePresets.json`. During configure, CMake acquires the
 pinned Windows x64 mpv developer archive or validates the supplied
 `MIKAI_DIST_MPV_ARCHIVE` against its pinned SHA-256, extracts that release's
@@ -92,11 +92,15 @@ install has **no WebP decoder** — its `imageformats` folder holds only `qgif`,
 network still works, and every image is simply blank: `QPixmap` returns a null
 image for a format it has no handler for and reports nothing at all.
 
+The same is true of `lupdate`: Qt 6.11 moved it onto the QML parser, so it
+imports `Qt6Qml.dll` and silently exits 53 — no message, no catalogue — when
+`qtdeclarative` is not installed beside `qttools`. `lrelease` does not need it.
+
 So `qwebp.dll` is a hard runtime dependency. It has to be in the Qt install, or
 `windeployqt` has nothing to copy:
 
 ```
-<qt>/6.8.3/mingw_64/plugins/imageformats/qwebp.dll
+<qt>/6.12.0/mingw_64/plugins/imageformats/qwebp.dll
 ```
 
 The plugin must match the Qt build's toolchain. A MinGW app needs the
@@ -108,9 +112,9 @@ A Qt installed with `aqtinstall` has no Maintenance Tool, so the module comes
 from the Qt online repository:
 
 ```sh
-curl -LO https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_680/qt6_680/qt.qt6.680.addons.qtimageformats.win64_mingw/6.8.0-0-202410030750qtimageformats-Windows-Windows_10_22H2-Mingw-Windows-Windows_10_22H2-X86_64.7z
-tar -xf 6.8.0-*.7z            # bsdtar reads 7z
-cp 6.8.0/mingw_64/plugins/imageformats/qwebp.dll <qt>/6.8.3/mingw_64/plugins/imageformats/
+curl -LO https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/qt6_6120_mingw/qt.qt6.6120.addons.qtimageformats.win64_mingw/6.12.0-0-202609280346qtimageformats-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+tar -xf 6.12.0-*.7z           # bsdtar reads 7z
+cp 6.12.0/mingw_64/plugins/imageformats/qwebp.dll <qt>/6.12.0/mingw_64/plugins/imageformats/
 ```
 
 The suite fails if the plugin is missing, so a missing one is a red test rather
@@ -286,7 +290,7 @@ from the repository root (use your configured Qt paths for a different preset):
 
 ```powershell
 $repo = (Get-Location).Path
-$qt = 'C:\temp\qt6\6.8.3\mingw_64'
+$qt = 'C:\temp\qt6\6.12.0\mingw_64'
 $env:PATH = "$qt\bin;$env:PATH"
 $env:QT_QPA_PLATFORM = 'offscreen'
 Remove-Item Env:MIKAI_LIVE -ErrorAction SilentlyContinue

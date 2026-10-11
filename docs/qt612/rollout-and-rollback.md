@@ -8,7 +8,7 @@ changes:
 
 | Artifact | Where it stands |
 |---|---|
-| Baseline source | commit `6bfa80f` on `main` (Qt 6.8.3, 4/4 ctest PASS) |
+| Baseline source | commit `6bfa80f` on `main` (Qt 6.8.3, 4/4 ctest PASS), tagged `pre-qt612-migration` |
 | Migration source | branch `migrate-to-qt-6.12` |
 | Previous Qt SDK | still installed at `C:/temp/qt6/6.8.3/mingw_64`, untouched |
 | Previous packaged app | `dist-mikai/mikai.exe` and its Qt 6.8.3 runtime, untouched (byte-identical, see below) |

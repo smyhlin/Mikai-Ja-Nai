@@ -527,9 +527,15 @@ Layering is strict and enforced by tests:
 
 ## Development Commands
 
-Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`) and Qt 6.8.x
-(`C:/temp/qt6/6.8.3/mingw_64`); CMake 3.25 or newer, because `CMakePresets.json`
-is schema 6 and that is the version which introduced it. Release tuning is
+Toolchain: MinGW-w64 g++ (`C:/temp/w64dev/w64devkit/bin`) and Qt 6.12.x
+(`C:/temp/qt6/6.12.0/mingw_64`, an official MinGW build of GCC 15.1 beside a
+GCC 16.2 compiler); CMake 3.25 or newer, because `CMakePresets.json`
+is schema 6 and that is the version which introduced it. `CMakeLists.txt` pins
+`find_package(Qt6 6.12 ...)` and compiles the whole tree — app, tests, probes and
+`native/` — with `QT_DISABLE_DEPRECATED_UP_TO=0x060C00` (a use of anything Qt
+6.12 deprecated is a build error, not a warning) and
+`QT_WARN_DEPRECATED_UP_TO=0x060D00` (Qt 6.13's deprecations are visible now).
+Release tuning is
 `-march=x86-64` (the Microsoft x64 ABI floor: x64 plus SSE2), never
 `-march=native` and never a newer baseline, so the project's own GNU release
 objects do not require an instruction set the platform does not guarantee.
@@ -694,10 +700,16 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
   `mikai_model_inspection` library, `native_inspect` and `TestNativeCatalog`.
 - `docs.md` — authoritative API contract (Ukrainian); `.env` — single
   `X-API-Key: mk_…` line, never commit.
+- `docs/qt612/` — the Qt 6.12 migration record: `inventory.md` (build, Qt
+  surface, deployment, persisted data), `impact-ledger.csv` (40 hazards from
+  Qt 6.9–6.12 with evidence and verdicts), `implementation-plan.md` (decisions
+  and what was deferred), `validation-report.md` (every gate with its observed
+  result), `release-evidence.md` (the commands and their output) and
+  `rollout-and-rollback.md`.
 
 ## Runtime/Tooling Preferences
 
-- C++20, Qt 6.8.x, MinGW-w64. No Python anywhere: no `pyproject.toml`, no
+- C++20, Qt 6.12.x, MinGW-w64. No Python anywhere: no `pyproject.toml`, no
   `uv.lock`, no `.venv`, no `pytest`. The only runtimes beside Qt are the mpv
   runtime dir and the deployed Qt DLLs next to the exe.
 - The API key is optional and only raises limits. Resolution order in
@@ -784,6 +796,35 @@ and scenario manifests remain in place.
   hermetic run needs no network and finishes in ~15 s.
 
 ### Observed acceptance state
+
+**Qt 6.12 migration (2026-10-11, branch `migrate-to-qt-6.12`; the block below is
+the pre-migration record).** The tree builds, tests and runs on **Qt 6.12.0 LTS**
+from the official MinGW package set (`C:/temp/qt6/6.12.0/mingw_64`, built with
+GCC 15.1.0) under the same w64devkit GCC 16.2 compiler — the same mixed-runtime
+shape the tree already had on 6.8.3 (GCC 13.1.0), proven by the gates below and
+not assumed. `CMakeLists.txt` pins `find_package(Qt6 6.12 …)` and compiles the
+app, the tests, the probes and `native/` with `QT_DISABLE_DEPRECATED_UP_TO=0x060C00`
+(a use of anything 6.12 deprecated is an error) and `QT_WARN_DEPRECATED_UP_TO=0x060D00`
+(6.13's deprecations are visible now); the whole tree is clean under both. One
+source fix was needed: `QDragEnterEvent`'s `QPoint` constructor in
+`EnginePopupProbe`, deprecated in 6.16 but warned unconditionally by the
+`QT_DEPRECATED_VERSION_X_*` marker. Observed on this branch: `mikai`,
+`mikai_tests` and all 34 probes build with 0 errors and 0 warnings; `ctest` is
+4/4 with 35 suites PASS and `TestLiveOracle` SKIP; the GUI probes pass 803 checks
+in total — `widget_pixel_probe` 25/25 (1 instrumentation unavailable, no display
+for on-screen readback), `shell_probe` 10/10, `dialog_probe` 20/20,
+`anime4k_menu_probe` 132/132, `engine_popup_probe` 93/93, `compare_probe` 343/343,
+`interaction_probe` 180/180 — and a real app run reaches its runtime line 0.76 s
+after `mikai started` with no crash report. The 6.12 `lupdate`/`lrelease`
+round-trip leaves `translations/mikai_uk.ts` byte-unchanged (1016 source texts,
+0 unfinished), and `windeployqt` deploys the 6.8.3 plugin set plus four image
+formats with the MinGW runtime byte-identical to the Qt prefix's, so the app also
+starts with no `QT_PLUGIN_PATH` in the deployed layout. Migration records:
+`docs/qt612/` (`inventory.md`, `impact-ledger.csv`, `implementation-plan.md`,
+`validation-report.md`, `release-evidence.md`, `rollout-and-rollback.md`). Not
+verified: clean-machine install, a 6.8.3-vs-6.12 pixel diff, and performance
+beyond startup. A GUI binary launched from a non-interactive shell exits 53
+before `main()` — a launch-context property, not a Qt 6.12 regression.
 
 **Remediation session (2026-10-11, latest observed results; the blocks below are
 the earlier player-flow record).** Every finding in `known_bugs.md` was fixed and
