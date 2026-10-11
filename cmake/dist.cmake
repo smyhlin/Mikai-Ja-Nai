@@ -1,9 +1,17 @@
 # Assembles the self-contained dist folder. Run through the `dist` target:
 #   cmake --build <build-dir> --target dist
 # Required inputs: DIST_DIR, EXE, WINDEPLOYQT, SHADERS, SOURCE_DIR.
-# Optional: MIKAI_DIST_NATIVE=ON copies the installed native runtime pointer and
-# every bundle it names. The mpv runtime is always the SHA-pinned API DLL below.
-
+# Optional: MIKAI_DIST_NATIVE=ON copies the installed native runtime, defaulting
+# to the executable-local store that production nativeRoot() uses
+# (<EXE dir>/native); MIKAI_DIST_NATIVE_ROOT overrides that root.
+# The mpv runtime is always the SHA-pinned API DLL below.
+#
+# Two safety boundaries this script enforces rather than assumes:
+#   * MIKAI_DIST_DIR must be fresh. An existing populated directory is a refusal,
+#     never a wipe: the in-place update path owns installed state, so a
+#     verification run points DIST_DIR at scratch space.
+#   * MIKAI_DIST_DIR must not be inside MIKAI_DIST_NATIVE_ROOT, nor the reverse.
+# 
 if(NOT DEFINED DIST_DIR OR DIST_DIR STREQUAL "")
   message(FATAL_ERROR "dist: DIST_DIR is not set")
 endif()
@@ -94,7 +102,63 @@ endif()
 get_filename_component(qt_bin_dir "${WINDEPLOYQT}" DIRECTORY)
 get_filename_component(qt_prefix "${qt_bin_dir}" DIRECTORY)
 
-file(REMOVE_RECURSE "${DIST_DIR}")
+# Production nativeRoot() is executable-local (NativePaths.cpp), so the optional
+# copy follows the same rule and derives its default from the staged executable
+# rather than an obsolete %LOCALAPPDATA% profile path. An explicit
+# MIKAI_DIST_NATIVE_ROOT overrides it; an absent store is decided below, only
+# when the copy was actually requested.
+set(dist_native_root "${MIKAI_DIST_NATIVE_ROOT}")
+if(dist_native_root STREQUAL "")
+  get_filename_component(dist_exe_dir "${EXE}" DIRECTORY)
+  set(dist_native_root "${dist_exe_dir}/native")
+endif()
+# The executable and its store are the inputs; the assembly must never delete
+# its own input. Creating ${DIST_DIR} by first removing anything already there
+# is the behaviour that destroyed adjacent installed state, so the script now
+# refuses to recreate any directory that already carries an installed app.
+if(EXISTS "${DIST_DIR}")
+  file(GLOB dist_existing LIST_DIRECTORIES TRUE "${DIST_DIR}/*")
+  if(dist_existing)
+    list(JOIN dist_existing "\n  " dist_existing_text)
+    message(FATAL_ERROR
+      "dist: refusing to recreate ${DIST_DIR} - it already contains:\n  ${dist_existing_text}\n"
+      "The installer updates the app in place, so this script must never wipe an "
+      "existing installation. Choose a fresh MIKAI_DIST_DIR (for example a "
+      "scratch directory) for verification runs, or move the old folder aside "
+      "deliberately.")
+  endif()
+endif()
+
+# Both inputs are validated before the first write. A refusal that fired after
+# the output had been assembled would already have written a folder into the
+# input tree it exists to protect.
+if(MIKAI_DIST_NATIVE)
+  # Executable-local is the production rule (see above); a missing runtime under
+  # an explicitly requested root is a hard failure, not a silent skip, because
+  # "MIKAI_DIST_NATIVE=ON packaged nothing" is exactly the failure the option
+  # exists to prevent.
+  if(NOT IS_DIRECTORY "${dist_native_root}/runtime")
+    message(FATAL_ERROR
+      "dist: the native runtime was not found at ${dist_native_root}/runtime. Nothing was "
+      "assembled. Set MIKAI_DIST_NATIVE_ROOT to the executable-local native store that "
+      "actually holds it, or turn MIKAI_DIST_NATIVE off.")
+  endif()
+  # The output must not be inside the input: copying a store into itself would
+  # let a later strip walk the real installed tree.
+  get_filename_component(dist_abs "${DIST_DIR}" ABSOLUTE)
+  get_filename_component(input_abs "${dist_native_root}" ABSOLUTE)
+  if(dist_abs STREQUAL input_abs OR dist_abs MATCHES "^${input_abs}/")
+    message(FATAL_ERROR
+      "dist: MIKAI_DIST_DIR (${dist_abs}) must not be inside MIKAI_DIST_NATIVE_ROOT "
+      "(${input_abs}); the script rewrites its output")
+  endif()
+  if(input_abs MATCHES "^${dist_abs}/")
+    message(FATAL_ERROR
+      "dist: MIKAI_DIST_NATIVE_ROOT (${input_abs}) must not be inside MIKAI_DIST_DIR "
+      "(${dist_abs}); the script rewrites its output")
+  endif()
+endif()
+
 file(MAKE_DIRECTORY "${DIST_DIR}")
 
 file(COPY "${EXE}" DESTINATION "${DIST_DIR}")
@@ -145,17 +209,9 @@ message(STATUS
   "(archive SHA-256 ${mpv_archive_sha256})")
 
 if(MIKAI_DIST_NATIVE)
-  set(native_root "${MIKAI_DIST_NATIVE_ROOT}")
-  if(native_root STREQUAL "")
-    set(native_root "$ENV{LOCALAPPDATA}/Mikai/Mikai Wrapper/native")
-  endif()
-  if(IS_DIRECTORY "${native_root}/runtime")
-    file(MAKE_DIRECTORY "${DIST_DIR}/native")
-    file(COPY "${native_root}/runtime" DESTINATION "${DIST_DIR}/native")
-    message(STATUS "dist: copied the native runtime from ${native_root}/runtime")
-  else()
-    message(STATUS "dist: no native runtime at ${native_root}/runtime; skipped")
-  endif()
+  file(MAKE_DIRECTORY "${DIST_DIR}/native")
+  file(COPY "${dist_native_root}/runtime" DESTINATION "${DIST_DIR}/native")
+  message(STATUS "dist: copied the native runtime from ${dist_native_root}/runtime")
 endif()
 
 # The GPU-specific TensorRT components and the licence-restricted model graphs
@@ -163,12 +219,43 @@ endif()
 # a portable folder or an installer must not carry them. The app-owned stores
 # live under %LOCALAPPDATA% and are not inside the tree copied above, but a
 # native bundle may carry its own copies, so any that arrived are removed here.
-foreach(forbidden components assets)
-  file(GLOB_RECURSE stray "${DIST_DIR}/native/*/${forbidden}")
-  foreach(path ${stray})
-    file(REMOVE_RECURSE "${path}")
-    message(STATUS "dist: removed ${path}; downloadable elements are never shipped")
+#
+# The sweep is name-based over the whole copied tree, never a glob whose
+# expression *ends* in the forbidden name: file(GLOB_RECURSE) recurses from the
+# glob's base and reports the literal's parents and siblings too, so removing
+# what such a glob returns deletes the runtime the payload arrived in. Each
+# subtree is enumerated once, the directories whose own name is forbidden are
+# collected, and only those are removed - a nested occurrence is found because
+# the enumeration recurses, not because the name is repeated in the pattern.
+function(dist_collect_forbidden out_var)
+  file(GLOB_RECURSE native_entries LIST_DIRECTORIES TRUE "${DIST_DIR}/native/*")
+  set(found)
+  foreach(entry ${native_entries})
+    if(IS_DIRECTORY "${entry}")
+      get_filename_component(entry_name "${entry}" NAME)
+      if(entry_name IN_LIST dist_forbidden)
+        list(APPEND found "${entry}")
+      endif()
+    endif()
   endforeach()
+  list(REMOVE_DUPLICATES found)
+  set(${out_var} "${found}" PARENT_SCOPE)
+endfunction()
+
+set(dist_forbidden components assets models records)
+dist_collect_forbidden(dist_forbidden_entries)
+foreach(path ${dist_forbidden_entries})
+  file(REMOVE_RECURSE "${path}")
+  message(STATUS "dist: removed ${path}; downloadable elements are never shipped")
 endforeach()
+
+# Nothing above is allowed to be skipped silently. Verify rather than assume.
+dist_collect_forbidden(dist_stowaway)
+if(dist_stowaway)
+  list(JOIN dist_stowaway "\n  " dist_stowaway_text)
+  message(FATAL_ERROR
+    "dist: the assembled folder still contains forbidden payload:\n  ${dist_stowaway_text}\n"
+    "These are per-machine downloads, never shipped bytes.")
+endif()
 
 message(STATUS "dist: assembled ${DIST_DIR}")

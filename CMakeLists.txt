@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.24)
+# Schema version 6 in CMakePresets.json was introduced in CMake 3.25, so the
+# declared minimum and the preset format must agree: a 3.24 minimum with a
+# schema-6 preset is a range the project cannot actually configure.
+cmake_minimum_required(VERSION 3.25)
 project(mikai LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -105,29 +108,59 @@ endfunction()
 # mikai_tests, so the app itself configures on a Qt install without it.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network LinguistTools)
 
+# Derived at top level, before any guard: both the launcher contract test (which
+# runs even when the probes are off) and the mikai_tests entry need the same Qt
+# install prefix.
+get_filename_component(MIKAI_TEST_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+
 # The QA probes and the C++ test runner. ON by default so the tree configures
 # exactly as it did before, but the probe *executables* are EXCLUDE_FROM_ALL: a
 # bare `cmake --build --preset app` no longer pays for eleven extra Qt link
-# steps just to produce mikai.exe. Build them by name instead:
-#   cmake --build --preset release --target title_page_probe
-#   cmake --build --preset release --target widget_pixel_probe
-#   cmake --build --preset release --target shell_probe
-#   cmake --build --preset release --target dialog_probe
-#   cmake --build --preset release --target interaction_probe
-#   cmake --build --preset release --target compare_probe
-#   cmake --build --preset release --target compare_shot_probe
-#   cmake --build --preset release --target anime4k_menu_probe
-#   cmake --build --preset release --target mpv_surface_smoke
-#   cmake --build --preset release --target headless_pixel_probe
-#   cmake --build --preset release --target crash_probe
-#   cmake --build --preset release --target resolver_probe
+# steps just to produce mikai.exe. Build them by name instead, using one of the
+# four *build* presets (`release` is a configure preset and cannot be built):
+#   cmake --build --preset app --target <probe>
+#   cmake --build --preset tests --target <probe>
+# e.g.
+#   cmake --build --preset tests --target title_page_probe
+#   cmake --build --preset tests --target widget_pixel_probe
+#   cmake --build --preset tests --target shell_probe
+#   cmake --build --preset tests --target dialog_probe
+#   cmake --build --preset tests --target interaction_probe
+#   cmake --build --preset tests --target compare_probe
+#   cmake --build --preset tests --target compare_shot_probe
+#   cmake --build --preset tests --target anime4k_menu_probe
+#   cmake --build --preset tests --target mpv_surface_smoke
+#   cmake --build --preset tests --target headless_pixel_probe
+#   cmake --build --preset tests --target crash_probe
+#   cmake --build --preset tests --target resolver_probe
 add_executable(mikai_manifest_check EXCLUDE_FROM_ALL native/tools/manifest_check.cpp)
 target_link_libraries(mikai_manifest_check PRIVATE Qt6::Core)
 
 option(MIKAI_BUILD_PROBES "Build the QA probes and mikai_tests" ON)
+# Top level, before any guard: tests that need neither the probes nor mikai_tests
+# still have to be registerable, and add_test() requires this to have run.
+enable_testing()
 if(MIKAI_BUILD_PROBES)
   find_package(Qt6 REQUIRED COMPONENTS Test)
-  enable_testing()
+  # The native staging/patch-policy contract. It is registered *within* this
+  # block only because add_test() needs enable_testing() to have run; nothing
+  # about the entry depends on the probes or on MIKAI_WITH_NATIVE. The default
+  # build never configures native/ at all, so gating the contract on
+  # MIKAI_WITH_NATIVE would register a test nobody ever runs.
+  #
+  # It needs no compiler, no Qt and no nvcc - only script-mode CMake - and it
+  # builds its own synthetic sources, so the baseline build's real runtime,
+  # components and models are never touched.
+  add_test(NAME NativeStageContracts
+    COMMAND ${CMAKE_COMMAND}
+      -DAJI_STAGE_CONTRACT_PROJECT=ON
+      -DAJI_STAGE_HELPER=${CMAKE_CURRENT_SOURCE_DIR}/native/cmake/StageInference.cmake
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/NativeStageContracts.cmake
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  # No external timeout is needed: this runs a handful of configure-scale passes
+  # over small synthetic files. A hung pass must still surface, so it is bounded.
+  set_tests_properties(NativeStageContracts PROPERTIES TIMEOUT 300)
+
   # Shared probe helpers (ProbeRuntime/ProbeUi/ProbePicture). One include dir
   # for all probe targets so grouped sources keep bare `#include "ProbeX.hpp"`.
   add_library(mikai_probe_shared INTERFACE)
@@ -196,12 +229,73 @@ if(NOT MIKAI_MPV_DLL_COUNT EQUAL 1)
 endif()
 list(GET MIKAI_MPV_DLL_CANDIDATES 0 MIKAI_MPV_DLL)
 
+# The launcher's deadline/kill/scratch contract, verified by running the real
+# launcher binary against a disposable child. Unconditional on purpose: the
+# launcher and its fixture child are QtCore-only console targets, so a
+# probes=OFF configure still exercises KB-26 - and a hung child is exactly the
+# case where the probes being off must not also mean the bound being off.
+#
+# The script drives the launcher through its real positional protocol, so it is
+# handed the same staging inputs the mikai_tests entry passes; it owns only the
+# scratch parent it creates for itself. Registered here (not earlier) because it
+# consumes the verified pinned libmpv path, which is only known by now.
+add_test(NAME LauncherContracts
+  COMMAND ${CMAKE_COMMAND}
+    -DFIXTURE_EXE=$<TARGET_FILE:mikai_launcher_child>
+    -DLAUNCHER_EXE=$<TARGET_FILE:mikai_test_launcher>
+    -DSHADERS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/shaders
+    -DMPV_DLL=${MIKAI_MPV_DLL}
+    -DQT_BIN_DIR=$<TARGET_FILE_DIR:Qt6::Core>
+    -DQT_PLUGIN_DIR=${MIKAI_TEST_QT_PREFIX}/plugins
+    -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/LauncherContracts.cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# The launcher deadline the scenario uses is 1.5 s, so the entry is internally
+# bounded; the outer timeout only has to catch a script that wedges. CTest's
+# timeout must stay well above the launcher deadline, for the same reason the
+# mikai_tests entry's does.
+# The launcher itself links QtCore, so its DLL search path has to be set before
+# it starts; the contract script then drives it through the real protocol.
+set_tests_properties(LauncherContracts PROPERTIES
+  TIMEOUT 180
+  ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+)
+
+# The dist safety-boundary contract: the populated-output refusal, the source/
+# output overlap guards in both directions, the explicit MIKAI_DIST_NATIVE=ON
+# missing-runtime failure, and the forbidden-payload sweep at any nesting depth
+# - all driven against scratch directories this script owns, never the installed
+# dist-mikai output. Unconditional: script-mode CMake needs no compiler, no Qt
+# and no windeployqt, so the boundaries are verified whatever else is configured.
+set(MIKAI_DIST_CONTRACT_PE_SOURCE "${CMAKE_SOURCE_DIR}/dist-mikai/libwinpthread-1.dll"
+  CACHE FILEPATH
+  "Genuine read-only x64 PE DLL the DistContracts script re-uses as its archive member")
+# Optional. The contract resolves a genuine PE on its own when this is absent
+# (the in-tree dist-mikai, then a build/* glob) and then fails loudly with a
+# named missing prerequisite rather than substituting a fake module, so passing
+# the -D only when the file exists is a preference, not a requirement.
+set(dist_contract_pe_args)
+if(MIKAI_DIST_CONTRACT_PE_SOURCE AND EXISTS "${MIKAI_DIST_CONTRACT_PE_SOURCE}")
+  list(APPEND dist_contract_pe_args
+    -DDIST_CONTRACT_PE_SOURCE=${MIKAI_DIST_CONTRACT_PE_SOURCE})
+endif()
+add_test(NAME DistContracts
+  COMMAND ${CMAKE_COMMAND}
+    -DDIST_CONTRACT_PROJECT=ON
+    -DDIST_CONTRACT_SCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/dist.cmake
+    ${dist_contract_pe_args}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/DistContracts.cmake
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(DistContracts PROPERTIES TIMEOUT 300)
+
 # mikai_backend first: mikai_native_support links it (bundle runtime resolution
 # calls mikai::backend helpers), so it must be declared before use.
 add_library(mikai_backend STATIC
   src/backend/Models.cpp
   src/backend/Models.hpp
   src/backend/Errors.hpp
+  src/backend/Errors.cpp
+  src/backend/Cancellation.hpp
   src/backend/Releases.cpp
   src/backend/Releases.hpp
   src/backend/Streams.cpp
@@ -212,10 +306,12 @@ add_library(mikai_backend STATIC
   src/backend/Runtime.hpp
   src/backend/Downloads.cpp
   src/backend/Downloads.hpp
+  src/backend/Diagnostics.hpp
 )
-# No AUTOMOC: src/backend declares no Q_OBJECT/Q_GADGET, so the autogen step
-# would scan all nine headers and moc each one into nothing.
-set_target_properties(mikai_backend PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# No AUTOMOC: src/backend declares no Q_OBJECT/Q_GADGET (Cancellation.hpp and
+# Diagnostics.hpp are header-only, thread_local state and QtCore-only helpers
+# respectively), so the autogen step would scan every header and moc each one
+# into nothing.
 target_include_directories(mikai_backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(mikai_backend PUBLIC Qt6::Core Qt6::Network)
 
@@ -328,15 +424,12 @@ if(MIKAI_WITH_MODEL_INSPECTION)
   target_link_libraries(native_inspect PRIVATE mikai_model_inspection)
 endif()
 
+# Player-only translation units. The native-backed units below (runtime selection,
+# status/HUD, playback controller, prefs, capabilities, menu) are compiled exactly
+# once, inside mikai_native_support, which this target links; listing them here too
+# gave them two compilation owners with different release tuning.
 set(PLAYER_SOURCES
   src/player/MpvApi.cpp
-  src/player/native/bundle/NativeRuntimeSelection.cpp
-  src/player/native/status/NativeStatus.cpp
-  src/player/native/status/NativePlaybackController.cpp
-  src/player/native/status/NativePlaybackController.hpp
-  src/player/native/bundle/NativePrefs.cpp
-  src/player/native/bundle/NativeCapabilities.cpp
-  src/player/native/status/NativeMenu.cpp
   src/player/PresetShortcuts.cpp
   src/player/MpvHandle.cpp
   src/player/MpvRenderContext.cpp
@@ -359,7 +452,6 @@ set(PLAYER_SOURCES
 
 set(PLAYER_HEADERS
   src/player/MpvApi.hpp
-  src/player/native/status/NativeTypes.hpp
   src/player/native/models/NativeCatalog.hpp
   src/player/native/bundle/NativeBundle.hpp
   src/player/native/bundle/NativePaths.hpp
@@ -423,7 +515,12 @@ add_executable(mpv_loader_probe EXCLUDE_FROM_ALL src/probes/native/MpvLoaderProb
 target_link_libraries(mpv_loader_probe PRIVATE mikai_player mikai_probe_shared)
 set_target_properties(mpv_loader_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(runtime_selection_probe EXCLUDE_FROM_ALL src/probes/native/RuntimeSelectionProbe.cpp)
-target_link_libraries(runtime_selection_probe PRIVATE mikai_player mikai_probe_shared)
+# native_support comes first: its selection TU drives the module loader that
+# lives in the player, and a static archive is only searched for symbols a later
+# archive asked for. Listing the player first would leave those references
+# unresolved, which is exactly what happened before this order was fixed.
+target_link_libraries(runtime_selection_probe PRIVATE
+  mikai_native_support mikai_player mikai_probe_shared)
 set_target_properties(runtime_selection_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(runtime_recovery_probe EXCLUDE_FROM_ALL src/probes/native/RuntimeRecoveryProbe.cpp)
 target_link_libraries(runtime_recovery_probe PRIVATE mikai_player mikai_backend mikai_probe_shared)
@@ -593,6 +690,16 @@ add_executable(mikai_tests
   tests/cpp/TestQualityCache.cpp
   tests/cpp/TestRateLimiter.hpp
   tests/cpp/TestRateLimiter.cpp
+  # Function-backed regression suites (own report capture and verdict), still
+  # driven from tests/cpp/main.cpp so ctest keeps one hermetic command.
+  tests/cpp/TestDownloads.hpp
+  tests/cpp/TestDownloads.cpp
+  tests/cpp/TestDiagnostics.hpp
+  tests/cpp/TestDiagnostics.cpp
+  tests/cpp/TestApiClient.hpp
+  tests/cpp/TestApiClient.cpp
+  tests/cpp/TestRunner.hpp
+  tests/cpp/TestRunner.cpp
   tests/cpp/TestLayering.hpp
   tests/cpp/TestLayering.cpp
   tests/cpp/TestLiveOracle.hpp
@@ -615,26 +722,42 @@ target_compile_definitions(mikai_tests PRIVATE
 )
 target_link_libraries(mikai_tests PRIVATE mikai_player mikai_app mikai_backend Qt6::Test Qt6::Widgets)
 
-# nativeRoot() is intentionally executable-local in production and in tests.
-# Run a physical copy, never a cwd/environment illusion or the app's output
-# directory: runtime fixtures are allowed to mutate only this owned scratch.
+# Declared outside the probes guard: it is a QtCore-only console target, and the
+# launcher's own deadline/kill/cleanup contract is verified by the unconditional
+# LauncherContracts test even when neither the probes nor mikai_tests are built.
 add_executable(mikai_test_launcher cmake/MikaiTestLauncher.cpp)
 target_link_libraries(mikai_test_launcher PRIVATE Qt6::Core)
-add_dependencies(mikai_tests mikai_test_launcher)
-get_filename_component(MIKAI_TEST_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
-add_test(NAME mikai_tests COMMAND mikai_test_launcher
-  "$<TARGET_FILE:mikai_tests>"
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-  "${MIKAI_MPV_DLL}"
-  "$<TARGET_FILE_DIR:Qt6::Core>"
-  "${MIKAI_TEST_QT_PREFIX}/plugins"
-  "${CMAKE_CURRENT_BINARY_DIR}/_test-runs"
-)
-# The launcher itself links QtCore, so its DLL search path must be set before
-# it starts; it supplies the same exact Qt runtime/plugin paths to the child.
-set_tests_properties(mikai_tests PROPERTIES
-  ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-)
+if(TARGET mikai_tests)
+  # `all` builds the runner before the suite that ctest invokes through it.
+  add_dependencies(mikai_tests mikai_test_launcher)
+endif()
+
+if(MIKAI_BUILD_PROBES)
+  # nativeRoot() is intentionally executable-local in production and in tests.
+  # Run a physical copy, never a cwd/environment illusion or the app's output
+  # directory: runtime fixtures are allowed to mutate only this owned scratch.
+  add_test(NAME mikai_tests COMMAND mikai_test_launcher
+    "$<TARGET_FILE:mikai_tests>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    "${MIKAI_MPV_DLL}"
+    "$<TARGET_FILE_DIR:Qt6::Core>"
+    "${MIKAI_TEST_QT_PREFIX}/plugins"
+    "${CMAKE_CURRENT_BINARY_DIR}/_test-runs"
+  )
+  # The launcher itself links QtCore, so its DLL search path must be set before
+  # it starts; it supplies the same exact Qt runtime/plugin paths to the child.
+  #
+  # CTest's own deadline must be strictly greater than the launcher's internal
+  # one (cmake/MikaiTestLauncher.cpp, default 600000 ms). Ordered this way, a
+  # hung suite is attributed to the launcher, which names the deadline in its
+  # message and exits nonzero after killing the child and removing its owned
+  # scratch. A CTest-side timeout would instead kill the launcher itself,
+  # leaving the child and the scratch directory behind.
+  set_tests_properties(mikai_tests PROPERTIES
+    TIMEOUT 900
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
+endif() # the mikai_tests ctest entry needs the probes guard
 endif() # MIKAI_BUILD_PROBES
 
 
@@ -836,8 +959,19 @@ if(TARGET mikai_backend)
   # The self-contained dist folder: the app, its Qt runtime, the shaders, the
   # translations, and the pinned AnimeJaNai-compatible libmpv API DLL.
   option(MIKAI_DIST_NATIVE "Copy the installed Native bundle into the dist folder" OFF)
+  # The assembly is refused if this directory already contains anything: the
+  # installer updates an installed app in place, so a populate-and-wipe default
+  # would destroy the user's installed state. Point it at scratch space for a
+  # verification run.
   set(MIKAI_DIST_DIR "${CMAKE_SOURCE_DIR}/dist-mikai" CACHE PATH
-    "Where the deploy target assembles the app")
+    "Where the deploy target assembles the app (must not already exist)")
+  # Production nativeRoot() is executable-local, so the dist script derives the
+  # same root from the staged executable. This override exists for the case
+  # where the store genuinely lives elsewhere; an empty value means "use the
+  # executable-local store", which is what the packaged app resolves.
+  set(MIKAI_DIST_NATIVE_ROOT "" CACHE PATH
+    "Override the executable-local native store that MIKAI_DIST_NATIVE copies "
+    "(empty: <EXE dir>/native, matching production nativeRoot())")
   get_target_property(MIKAI_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
   if(MIKAI_QMAKE_EXECUTABLE)
     get_filename_component(MIKAI_QT_BIN_DIR "${MIKAI_QMAKE_EXECUTABLE}" DIRECTORY)
@@ -851,6 +985,7 @@ if(TARGET mikai_backend)
       -DSHADERS=${CMAKE_CURRENT_SOURCE_DIR}/shaders
       -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -DMIKAI_DIST_NATIVE=${MIKAI_DIST_NATIVE}
+      "-DMIKAI_DIST_NATIVE_ROOT=${MIKAI_DIST_NATIVE_ROOT}"
       "-DMIKAI_DIST_MPV_ARCHIVE=${MIKAI_PINNED_MPV_ARCHIVE}"
       "-DMIKAI_DIST_CACHE_DIR=${MIKAI_DIST_MPV_CACHE_DIR}"
       "-DMIKAI_MPV_ARCHIVE_NAME=${MIKAI_MPV_ARCHIVE_NAME}"
@@ -868,8 +1003,12 @@ endif()
 # Generator expressions keep this inert for Debug and for any non-GNU/Clang
 # toolchain, so the build commands in readme.md/AGENTS.md need no extra flags.
 #
-# -march=x86-64-v2 (SSE4.2 + POPCNT) is the ceiling that keeps the deploy
-# folder handable to any Windows x64 box; -march=native would not be.
+# The baseline is x86-64 + SSE2, which is what "any Windows x64 box" means: the
+# Microsoft x64 ABI defines SSE2, and it is the wholesale floor for the
+# architecture. x86-64-v2 (SSE4.2/POPCNT) is NOT implied by x64 and would
+# exclude older-but-x64 CPUs, so it is deliberately not requested. There is no
+# native/v2-only tuning claim here at all: -march=native and -march=x86-64-v2
+# would both be stronger than the advertised baseline.
 # -ffunction-sections/-fdata-sections plus -Wl,--gc-sections drop the player and
 # compare code that is unreachable from the home path. GCC 16 MinGW accepts all
 # four. The link option belongs only on the executable, not on the archives.
@@ -892,8 +1031,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   endif()
 endif()
 
+# Unconditional: tests/fixtures defines the disposable child the launcher
+# contract test drives (mikai_launcher_child) and the hermetic media/HLS fixture
+# server. Neither belongs to the probe set only, so a probes=OFF configure still
+# gets them.
+add_subdirectory(tests/fixtures)
+
 if(MIKAI_BUILD_PROBES)
-  add_subdirectory(tests/fixtures)
   foreach(target IN ITEMS mikai_tests mpv_surface_smoke animejanai_probe headless_pixel_probe
       widget_pixel_probe shell_probe dialog_probe interaction_probe compare_probe
       compare_shot_probe anime4k_menu_probe resolver_probe title_page_probe external_media_probe)
@@ -915,7 +1059,7 @@ foreach(t IN LISTS MIKAI_TUNED_TARGETS)
       set_property(TARGET ${t} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     endif()
     target_compile_options(${t} PRIVATE
-      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-march=x86-64-v2>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-march=x86-64>
       $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-ffunction-sections>
       $<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-fdata-sections>
     )
