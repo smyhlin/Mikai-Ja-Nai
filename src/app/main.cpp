@@ -66,12 +66,13 @@ void startRuntimeResolution(mikai::app::Runner& runner, mikai::app::MainWindow* 
                 qWarning().noquote() << "mikai: mpv runtime unavailable:" << selection.reason;
             }
         },
-        [lease, target](const QString& reason) {
+        [lease, target](const mikai::backend::Failure& failure) {
             // A worker that threw never resolved a module: the runtime is still
             // absent, so the reason is named as one and the resolution ends.
             mplayer::native::endResolution(lease);
             if (target.isNull()) return;
-            qWarning().noquote() << "mikai: mpv runtime unavailable:" << reason;
+            qWarning().noquote() << "mikai: mpv runtime unavailable:"
+                                 << mikai::backend::failureLine(failure);
         });
 }
 

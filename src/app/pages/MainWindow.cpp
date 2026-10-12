@@ -337,7 +337,7 @@ void MainWindow::runMediaRuntimeResolution() {
             // and it opens only after the module is pinned.
             target->startPlayer();
         },
-        [self, target, seq](const QString& reason) {
+        [self, target, seq](const backend::Failure& failure) {
             if (self.isNull()) {
                 return;
             }
@@ -346,7 +346,8 @@ void MainWindow::runMediaRuntimeResolution() {
                 return;
             }
             self->runtimePending_ = false;
-            const QString text = mplayer::native::runtimeUnavailablePlaybackText(reason);
+            const QString text =
+                mplayer::native::runtimeUnavailablePlaybackText(backend::failureLine(failure));
             self->releaseRuntimeResolution();
             target->showError(text);
         });

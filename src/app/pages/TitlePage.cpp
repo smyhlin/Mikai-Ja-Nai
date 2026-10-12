@@ -10,6 +10,7 @@
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
+#include "widgets/FailureView.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "workers/Runner.hpp"
@@ -367,6 +368,10 @@ void TitlePage::buildUi() {
     textColumn->addWidget(heading_);
     textColumn->addWidget(subtitle_);
 
+    failure_ = new FailureView(this);
+    connect(failure_, &FailureView::retryRequested, this, &TitlePage::load);
+    textColumn->addWidget(failure_);
+
     facts_ = new QLabel(this);
     facts_->setObjectName(QStringLiteral("titleFacts"));
     facts_->setWordWrap(true);
@@ -488,6 +493,7 @@ void TitlePage::buildUi() {
 
 void TitlePage::load() {
     setStatus(tr("Loading…"));
+    failure_->clear();
     // A task can outlive the page: the worker lambda runs on a pool thread, and
     // the delivery lambdas are queued to the GUI thread, so both may fire after
     // the widget is gone. The worker captures the client and ref by value (the
@@ -506,9 +512,9 @@ void TitlePage::load() {
                 }
                 self->onLoaded(detail, result.value<backend::PlayerResult>());
             },
-            [self](const QString& message) {
+            [self](const backend::Failure& failure) {
                 if (!self.isNull() && !self->closed_) {
-                    self->onError(message);
+                    self->onError(failure);
                 }
             });
         return;
@@ -524,12 +530,12 @@ void TitlePage::load() {
             state->hasDetail = true;
             self->joinLoad(state);
         },
-        [self, state](const QString& message) {
+        [self, state](const backend::Failure& failure) {
             if (self.isNull() || self->closed_ || !state->error.isEmpty()) {
                 return;
             }
-            state->error = message;
-            self->onError(message);
+            state->error = backend::failureLine(failure);
+            self->onError(failure);
         });
     runner_.run(
         [client, ref] { return QVariant::fromValue(client->getPlayer(ref)); },
@@ -541,12 +547,12 @@ void TitlePage::load() {
             state->hasPlayer = true;
             self->joinLoad(state);
         },
-        [self, state](const QString& message) {
+        [self, state](const backend::Failure& failure) {
             if (self.isNull() || self->closed_ || !state->error.isEmpty()) {
                 return;
             }
-            state->error = message;
-            self->onError(message);
+            state->error = backend::failureLine(failure);
+            self->onError(failure);
         });
 }
 
@@ -562,6 +568,7 @@ void TitlePage::joinLoad(const std::shared_ptr<LoadState>& state) {
 
 void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player) {
     rateLabel_->refresh();
+    failure_->clear();
     const QString name = backend::displayName(detail.titles);
     heading_->setText(name == QLatin1String("?") ? ref_ : name);
     subtitle_->setText(detail.titles.english.isEmpty() ? detail.titles.original
@@ -602,9 +609,10 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     fillEpisodes(0);
 }
 
-void TitlePage::onError(const QString& message) {
+void TitlePage::onError(const backend::Failure& failure) {
     rateLabel_->refresh();
-    setStatus(message);
+    setStatus(backend::failureLine(failure));
+    failure_->showFailure(failure, tr("Could not open this title"));
     cover_->setZoomable(false);
     cover_->setText(tr("No cover"));
 }
@@ -778,7 +786,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
                 self->buildRelatedCarousel(tr("Recommended on Mikai"), entries));
             self->setRelatedExpanded(expand, false);
         },
-        [](const QString&) {});
+        [](const backend::Failure&) {});
 }
 
 QWidget* TitlePage::buildRelatedCarousel(
@@ -874,7 +882,7 @@ QWidget* TitlePage::buildRelatedCarousel(
                             Qt::SmoothTransformation));
                     }
                 },
-                [](const QString&) {});
+                [](const backend::Failure&) {});
         }
     }
     track->adjustSize();
@@ -1390,9 +1398,9 @@ void TitlePage::ensureQualities(
                     self->finishFetch(embed, result.value<QMap<int, QString>>(), QString());
                 }
             },
-            [self, embed](const QString& message) {
+            [self, embed](const backend::Failure& failure) {
                 if (!self.isNull()) {
-                    self->finishFetch(embed, QMap<int, QString>(), message);
+                    self->finishFetch(embed, QMap<int, QString>(), backend::failureLine(failure));
                 }
             });
     }
@@ -1585,7 +1593,7 @@ void TitlePage::probeReleaseQualities() {
                     self->applyReleaseQuality(index, result.value<QMap<int, QString>>(), seq);
                 }
             },
-            [self, index, seq](const QString&) {
+            [self, index, seq](const backend::Failure&) {
                 if (!self.isNull()) {
                     self->applyReleaseQuality(index, QMap<int, QString>(), seq);
                 }
@@ -1878,7 +1886,7 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
             }
             self->answerSessionResolved(session, selection);
         },
-        [self, target, session, sourceSeq, entry, seq](const QString& reason) {
+        [self, target, session, sourceSeq, entry, seq](const backend::Failure& failure) {
             if (self.isNull()) {
                 return;
             }
@@ -1888,7 +1896,8 @@ void TitlePage::runSessionRuntimeResolution(PlayerSession* session) {
                 self->releaseSessionResolution(session);
                 return;
             }
-            self->answerSessionResolved(session, mplayer::native::RuntimeSelection(), reason);
+            self->answerSessionResolved(session, mplayer::native::RuntimeSelection(),
+                                        backend::failureLine(failure));
         });
 }
 
@@ -1980,18 +1989,21 @@ void TitlePage::recoverStream(PlayerSession* session) {
             self->qualityCache_.remember(embed, qualities);
             target->applyRefreshedStreams(toQualities(qualities), target->currentHeight());
         },
-        [self, target, session, failedEntry, seq](const QString& message) {
+        [self, target, session, failedEntry, seq](const backend::Failure& failure) {
             if (self.isNull() || self->closed_ || target.isNull() ||
                 !self->sessions_.contains(session) || session->dialog != target.data() ||
                 seq != session->sourceSequence || session->entry != failedEntry) {
                 return;
             }
-            session->dialog->showError(
-                message.contains(QStringLiteral("no_source"), Qt::CaseInsensitive)
+            const QString line =
+                failure.message.contains(QStringLiteral("no_source"), Qt::CaseInsensitive)
                     ? QCoreApplication::translate("TitlePage",
                                                   "This player has no video any more.")
                     : QCoreApplication::translate("TitlePage",
-                                                  "Could not refresh the stream link."));
+                                                  "Could not refresh the stream link.");
+            const QString code = backend::failureCodeLabel(failure);
+            session->dialog->showError(code.isEmpty() ? line
+                                                      : QStringLiteral("%1 · %2").arg(line, code));
         });
 }
 
@@ -2062,7 +2074,7 @@ void TitlePage::probeTrackQuality(PlayerSession* session, const QString& embed) 
             self->qualityCache_.remember(embed, qualities);
             session->dialog->setTrackQuality(embed, maxQuality(qualities));
         },
-        [self, target, session, embed](const QString&) {
+        [self, target, session, embed](const backend::Failure&) {
             if (self.isNull() || target.isNull() || !self->sessions_.contains(session) ||
                 session->dialog != target.data()) {
                 return;
@@ -2130,7 +2142,7 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
                                                       Qt::SmoothTransformation));
             }
         },
-        [self, url, allowHint](const QString&) {
+        [self, url, allowHint](const backend::Failure&) {
             if (self.isNull() || self->closed_) {
                 return;
             }

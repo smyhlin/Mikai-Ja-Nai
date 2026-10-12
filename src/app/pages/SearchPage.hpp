@@ -1,5 +1,6 @@
 #pragma once
 
+#include <backend/Errors.hpp>
 #include <backend/Models.hpp>
 
 #include <QHash>
@@ -35,6 +36,7 @@ class MikaiClient;
 
 namespace mikai::app {
 
+class FailureView;
 class RangePager;
 class RateLimitLabel;
 class Runner;
@@ -86,7 +88,7 @@ private:
         QHBoxLayout* cards = nullptr;
         QScrollArea* scroll = nullptr;
         QLabel* state = nullptr;
-        QPushButton* retry = nullptr;
+        FailureView* failure = nullptr;
         QPushButton* previous = nullptr;
         QPushButton* next = nullptr;
     };
@@ -96,6 +98,7 @@ private:
         QWidget* section = nullptr;
         QLabel* state = nullptr;
         QPushButton* retry = nullptr;
+        FailureView* failure = nullptr;
         QWidget* rowsHost = nullptr;
         QVBoxLayout* rows = nullptr;
     };
@@ -138,8 +141,18 @@ private:
     void showDiscovery();
     void showSearchResults();
     void onResults(const backend::SearchResult& result, int requestedPage);
-    void onError(const QString& message);
+    void onError(const backend::Failure& failure);
+    void reportFailure(const backend::Failure& failure);
+    /// A refusal this page generated itself - a clipboard or browser hand-off
+    /// that came back false. There is no backend code to name, so the line is
+    /// the whole message.
     void reportFailure(const QString& message);
+
+    /// A block keeps its own line for progress and empty states; the failure
+    /// surface takes over while there is a failure, and hands it back after.
+    void showBlockFailure(FailureView* view, QLabel* state, const backend::Failure& failure,
+                          const QString& context);
+    void clearBlockFailure(FailureView* view, QLabel* state);
     void rebuildFormatBar();
     void applyFormatFilter();
     void populateRows();

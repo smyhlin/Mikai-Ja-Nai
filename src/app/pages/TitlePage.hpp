@@ -1,5 +1,6 @@
 #pragma once
 
+#include <backend/Errors.hpp>
 #include <backend/Models.hpp>
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -45,6 +46,7 @@ namespace mikai::app {
 
 class CoverLabel;
 class CoverViewer;
+class FailureView;
 class QualityCache;
 class RangePager;
 class RateLimitLabel;
@@ -144,7 +146,7 @@ private:
     /// Hand the page its title once both halves of a two-task load have landed.
     void joinLoad(const std::shared_ptr<LoadState>& state);
     void onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player);
-    void onError(const QString& message);
+    void onError(const backend::Failure& failure);
 
     void populateDetail(const backend::AnimeDetail& detail);
     void populateRelated(const backend::AnimeDetail& detail);
@@ -258,6 +260,10 @@ protected:
     CoverLabel* cover_ = nullptr;
     QLabel* heading_ = nullptr;
     QLabel* subtitle_ = nullptr;
+    /// The page's own failure surface: a title that could not be loaded says so
+    /// where the title would have been, with the code and a retry, instead of
+    /// leaving the cover on its loading text.
+    FailureView* failure_ = nullptr;
     QLabel* facts_ = nullptr;
     QLabel* scores_ = nullptr;
     QLabel* description_ = nullptr;

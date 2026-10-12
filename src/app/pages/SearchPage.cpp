@@ -7,6 +7,7 @@
 #include "theme/Metrics.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
+#include "widgets/FailureView.hpp"
 #include "widgets/TitleCard.hpp"
 #include "workers/Runner.hpp"
 #include "ShellWidgets.hpp"
@@ -297,12 +298,11 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     section->state = new QLabel(tr("Collection not loaded yet"), section->section);
     section->state->setObjectName(QStringLiteral("muted"));
     section->state->setWordWrap(true);
-    section->retry = new QPushButton(tr("Retry"), section->section);
-    section->retry->hide();
-    connect(section->retry, &QPushButton::clicked, this,
+    section->failure = new FailureView(section->section);
+    connect(section->failure, &FailureView::retryRequested, this,
             [this, key] { requestRecommendation(key); });
     stateRow->addWidget(section->state, 1);
-    stateRow->addWidget(section->retry);
+    stateRow->addWidget(section->failure, 1);
     layout->addLayout(stateRow);
 
     section->scroll = new QScrollArea(section->section);
@@ -426,6 +426,12 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
     section->state->setObjectName(QStringLiteral("muted"));
     layout->addWidget(section->state);
 
+    // The row already carries its own always-visible Refresh, so this surface
+    // names the cause without putting a second retry beside it.
+    section->failure = new FailureView(section->section);
+    section->failure->setRetryVisible(false);
+    layout->addWidget(section->failure);
+
     section->rowsHost = new QWidget(section->section);
     section->rows = new QVBoxLayout(section->rowsHost);
     section->rows->setContentsMargins(0, 0, 0, 0);
@@ -530,7 +536,7 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
         return;
     }
     section->section->show();
-    section->retry->hide();
+    clearBlockFailure(section->failure, section->state);
     QList<backend::AnimeSummary> shown = items;
     while (shown.size() > theme::kHomeCarouselMaxTitles) {
         shown.removeLast();
@@ -626,7 +632,7 @@ void SearchPage::requestCardDetail(const QString& ref) {
         [this, ref](const QVariant& result) {
             applyCardDetail(ref, result.value<backend::AnimeDetail>());
         },
-        [](const QString&) {});
+        [](const backend::Failure&) {});
 }
 
 void SearchPage::applyCardDetail(const QString& ref, const backend::AnimeDetail& detail) {
@@ -765,7 +771,7 @@ void SearchPage::requestRecommendation(const QString& key) {
         return;
     }
     section->state->setText(tr("Loading collection…"));
-    section->retry->hide();
+    clearBlockFailure(section->failure, section->state);
     if (carouselEntries_.value(key).isEmpty()) {
         section->scroll->hide();
     }
@@ -782,14 +788,13 @@ void SearchPage::requestRecommendation(const QString& key) {
             rateLabel_->refresh();
             showCarousel(key, result.value<backend::SearchResult>().items);
         },
-        [this, key, seq](const QString& message) {
+        [this, key, seq](const backend::Failure& failure) {
             if (seq != feedSeq_[key]) {
                 return;
             }
             rateLabel_->refresh();
             CarouselSection* current = carouselSection(key);
-            current->state->setText(tr("Failed to load: %1").arg(message));
-            current->retry->show();
+            showBlockFailure(current->failure, current->state, failure, tr("Failed to load"));
         });
 }
 
@@ -859,15 +864,16 @@ void SearchPage::loadUpdates() {
                              ? tr("No updates yet.")
                              : tr("%n recent update(s)", nullptr, static_cast<int>(rows.size())));
         },
-        [this, seq](const QString& message) {
+        [this, seq](const backend::Failure& failure) {
             if (seq != feedSeq_[QStringLiteral("updates")]) {
                 return;
             }
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
-            current->state->setText(tr("Failed to load updates: %1").arg(message));
             current->rowsHost->hide();
+            showBlockFailure(current->failure, current->state, failure,
+                             tr("Failed to load updates"));
         });
 }
 
@@ -931,15 +937,16 @@ void SearchPage::loadSchedule() {
                              : tr("%n upcoming airing(s)", nullptr,
                                   static_cast<int>(rows.size())));
         },
-        [this, seq](const QString& message) {
+        [this, seq](const backend::Failure& failure) {
             if (seq != feedSeq_[QStringLiteral("schedule")]) {
                 return;
             }
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("schedule"));
             current->retry->setEnabled(true);
-            current->state->setText(tr("Failed to load schedule: %1").arg(message));
             current->rowsHost->hide();
+            showBlockFailure(current->failure, current->state, failure,
+                             tr("Failed to load schedule"));
         });
 }
 
@@ -954,6 +961,7 @@ void SearchPage::showFeedRows(
         }
     }
     feedPosterLabels_.insert(key, {});
+    section->failure->clear();
     if (entries.isEmpty()) {
         section->state->setText(emptyText);
         section->state->show();
@@ -1031,9 +1039,9 @@ void SearchPage::runResultsRequest(int page) {
                 onResults(result.value<backend::SearchResult>(), page);
             }
         },
-        [this, seq](const QString& message) {
+        [this, seq](const backend::Failure& failure) {
             if (seq == requestSeq_) {
-                onError(message);
+                onError(failure);
             }
         });
 }
@@ -1178,16 +1186,31 @@ void SearchPage::populateRows() {
     }
 }
 
-void SearchPage::onError(const QString& message) {
+void SearchPage::onError(const backend::Failure& failure) {
     rateLabel_->refresh();
-    reportFailure(message);
+    reportFailure(failure);
     updatePager();
 }
 
-void SearchPage::reportFailure(const QString& message) {
-    status_->setText(message);
+void SearchPage::reportFailure(const backend::Failure& failure) {
+    status_->setText(backend::failureLine(failure));
     QAccessibleEvent event(status_, QAccessible::Alert);
     QAccessible::updateAccessibility(&event);
+}
+
+void SearchPage::reportFailure(const QString& message) {
+    reportFailure(backend::Failure{QString(), message, 0});
+}
+
+void SearchPage::showBlockFailure(FailureView* view, QLabel* state, const backend::Failure& failure,
+                                  const QString& context) {
+    state->hide();
+    view->showFailure(failure, context);
+}
+
+void SearchPage::clearBlockFailure(FailureView* view, QLabel* state) {
+    view->clear();
+    state->show();
 }
 
 void SearchPage::updatePager() {
@@ -1340,7 +1363,7 @@ void SearchPage::requestThumb(const QString& url) {
             thumbCache_.insert(url, result.toByteArray());
             applyThumb(url, result.toByteArray());
         },
-        [this, url](const QString&) { thumbsInFlight_.remove(url); });
+        [this, url](const backend::Failure&) { thumbsInFlight_.remove(url); });
 }
 
 void SearchPage::applyThumb(const QString& url, const QByteArray& data) {
