@@ -297,11 +297,18 @@ int main(int argc, char** argv) {
   wrapperArgv.reserve(wrapperArgStorage.size() + 1);
   for (QByteArray& storage : wrapperArgStorage) wrapperArgv.push_back(storage.data());
   wrapperArgv.push_back(nullptr);
+  // Wrapper suites own their report capture; the verdict line is the runner's to
+  // write, exactly as for an object suite. Without it a wrapper suite runs
+  // silently: a pass is indistinguishable from a suite that never executed, which
+  // is what hid TestFeedRender's results.
   const auto runWrapper = [&](const char* name, int (*wrapper)(int, char**)) {
     executed.insert(QString::fromLatin1(name));
     if (!filtered || wantsSuite(arguments, name)) {
       const int rc = wrapper(static_cast<int>(qtestArgs.size()), wrapperArgv.data());
       failures |= rc;
+      const char* verdict = rc != 0 ? "FAIL" : "PASS";
+      std::fprintf(stderr, "[mikai_tests] %s: %s (rc=%d)\n", name, verdict, rc);
+      std::fflush(stderr);
     }
   };
   run("TestAnimeJanaiRuntime", &animeJanaiRuntime, true);

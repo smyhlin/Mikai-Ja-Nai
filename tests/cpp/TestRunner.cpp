@@ -161,7 +161,7 @@ Runner::OnOk okDelivery(Ledger* ledger) {
 }
 
 Runner::OnErr errDelivery(Ledger* ledger) {
-  return [ledger](const QString&) { ++ledger->failures; };
+  return [ledger](const backend::Failure&) { ++ledger->failures; };
 }
 
 // ── the post() contract under test ─────────────────────────────────────────
@@ -254,9 +254,9 @@ void TestRunner::anErrorFromWorkReachesTheErrorCallback() {
   runner.run(
       []() -> QVariant { throw std::runtime_error("work refused"); },
       okDelivery(&ledger),
-      [&message, &ledger](const QString& why) {
+      [&message, &ledger](const backend::Failure& failure) {
         ++ledger.failures;
-        message = why;
+        message = failure.message;
       });
 
   QVERIFY2(spinUntil([&ledger] { return ledger.failures.load() == 1; }),
@@ -272,6 +272,7 @@ void TestRunner::theTwoTaggedErrorsReachTheirHandlerAndLaterTasksStillRun() {
   Runner runner;
   Ledger ledger;
   QString apiMessage;
+  QString apiCode;
   QString noSourceMessage;
 
   runner.run(
@@ -282,12 +283,15 @@ void TestRunner::theTwoTaggedErrorsReachTheirHandlerAndLaterTasksStillRun() {
         throw error;
       },
       [](const QVariant&) {},
-      [&apiMessage](const QString& why) { apiMessage = why; });
+      [&apiMessage, &apiCode](const backend::Failure& failure) {
+        apiMessage = failure.message;
+        apiCode = failure.code;
+      });
 
   runner.run(
       []() -> QVariant { throw backend::NoSourceError("this provider has no video"); },
       [](const QVariant&) {},
-      [&noSourceMessage](const QString& why) { noSourceMessage = why; });
+      [&noSourceMessage](const backend::Failure& failure) { noSourceMessage = failure.message; });
 
   runner.run(countedWork(&ledger, nullptr), okDelivery(&ledger), errDelivery(&ledger));
 
@@ -295,6 +299,9 @@ void TestRunner::theTwoTaggedErrorsReachTheirHandlerAndLaterTasksStillRun() {
            "a later task still ran after two error paths");
   QVERIFY2(spinUntil([&apiMessage] { return !apiMessage.isEmpty(); }, kShortBudgetMs),
            "the API error reached its own handler");
+  // The code is what a surface needs to say why, so it has to survive the
+  // boundary that used to flatten it into the message.
+  QCOMPARE(apiCode, QStringLiteral("rate_limited"));
   QVERIFY2(spinUntil([&noSourceMessage] { return !noSourceMessage.isEmpty(); }, kShortBudgetMs),
            "the no-source error reached its own handler");
   QCOMPARE(ledger.deliveries.load(), 1);
@@ -390,7 +397,7 @@ void TestRunner::aPostFromAWorkerThreadOutlivesTheTaskThatPostedIt() {
         }
         return QVariant::fromValue(1);
       },
-      [](const QVariant&) {}, [](const QString&) {});
+      [](const QVariant&) {}, [](const backend::Failure&) {});
 
   QVERIFY2(spinUntil([&arrivals] { return arrivals.load() >= 3; }),
            "every body posted from inside one task arrived");
@@ -428,7 +435,7 @@ void TestRunner::cancelRetiresWorkThatHasNotStarted() {
         return QVariant::fromValue(1);
       },
       [&queuedDelivered](const QVariant&) { ++queuedDelivered; },
-      [&queuedDelivered](const QString&) { ++queuedDelivered; });
+      [&queuedDelivered](const backend::Failure&) { ++queuedDelivered; });
 
   runner.cancel();
   hold.release();
@@ -575,7 +582,7 @@ void TestRunner::cancelDuringWorkStopsLaterStagesOfTheSameTask() {
         ++outcomes;
         return QVariant::fromValue(1);
       },
-      [&outcomes](const QVariant&) { ++outcomes; }, [](const QString&) {});
+      [&outcomes](const QVariant&) { ++outcomes; }, [](const backend::Failure&) {});
 
   QVERIFY2(spinUntil([&reachedMidpoint] { return reachedMidpoint.load() != 0; }),
            "the task parked part-way through its stages");
@@ -637,7 +644,7 @@ void TestRunner::deletingAnOwnerReturnsPromptlyWhileWorkIsStillRunning() {
   Runner other;
   std::atomic_int survived{0};
   other.run([]() -> QVariant { return QVariant::fromValue(1); },
-             [&survived](const QVariant&) { ++survived; }, [](const QString&) {});
+             [&survived](const QVariant&) { ++survived; }, [](const backend::Failure&) {});
   QVERIFY2(spinUntil([&survived] { return survived.load() >= 1; }),
            "a fresh runner still answers after an owner was deleted mid-work");
   QCOMPARE(survived.load(), 1);
@@ -657,7 +664,7 @@ void TestRunner::deletingAnOwnerNeverDeliversToTheDeadOwner() {
     runner->run(
         countedWork(&ledger, &hold),
         [&late](const QVariant&) { ++late; },
-        [&late](const QString&) { ++late; });
+        [&late](const backend::Failure&) { ++late; });
     QVERIFY2(spinUntil([&ledger] { return ledger.workEntries.load() == 1; }),
              "the held task entered its work");
     // The owner goes while its task is still parked on the gate.
@@ -703,7 +710,8 @@ void TestRunner::deletingAnOwnerLeavesOtherOwnersAnswering() {
 
   Runner keeper;
   keeper.run([]() -> QVariant { return QVariant::fromValue(1); },
-             [&keeperDelivered](const QVariant&) { ++keeperDelivered; }, [](const QString&) {});
+             [&keeperDelivered](const QVariant&) { ++keeperDelivered; },
+             [](const backend::Failure&) {});
   QVERIFY2(spinUntil([&keeperDelivered] { return keeperDelivered.load() >= 1; }),
            "a surviving runner still answers after its neighbour was deleted");
   QCOMPARE(keeperDelivered.load(), 1);
@@ -725,7 +733,8 @@ void TestRunner::aSecondOwnerSeesAResponsiveGuiThreadWhileTheFirstOneWorkIs() {
 
   std::atomic_int idleDelivered{0};
   idle.run([]() -> QVariant { return QVariant::fromValue(1); },
-           [&idleDelivered](const QVariant&) { ++idleDelivered; }, [](const QString&) {});
+           [&idleDelivered](const QVariant&) { ++idleDelivered; },
+           [](const backend::Failure&) {});
   QVERIFY2(spinUntil([&idleDelivered] { return idleDelivered.load() >= 1; }),
            "a second runner delivers while the first one is held");
   QCOMPARE(busyLedger.deliveries.load(), 0);
@@ -810,7 +819,7 @@ void TestRunner::workCancelledBeforeShutdownNeverDelivers() {
   // One task carries callbacks of its own so the delivery being watched is
   // specific to this case, and one uses the shared ledger counters.
   runner.run(countedWork(&ledger, &hold),
-             [&late](const QVariant&) { ++late; }, [&late](const QString&) { ++late; });
+             [&late](const QVariant&) { ++late; }, [&late](const backend::Failure&) { ++late; });
   runner.run(countedWork(&ledger, &hold), okDelivery(&ledger), errDelivery(&ledger));
   QVERIFY2(spinUntil([&ledger] { return ledger.workEntries.load() == 2; }),
            "both held tasks entered their work");

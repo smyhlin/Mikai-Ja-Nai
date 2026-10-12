@@ -203,23 +203,32 @@ class CannedApi : public QObject {
   }
 
   void onReadyRead(QTcpSocket* socket) {
+    // QNetworkAccessManager pipelines and reuses connections, so one readyRead
+    // can hold several requests and one response must not eat the next
+    // request's bytes. Every complete head is answered in turn; the connection
+    // stays open until the test tears the server down.
     buffers_[socket].append(socket->readAll());
-    const QByteArray buffered = buffers_[socket];
-    const int end = buffered.indexOf("\r\n\r\n");
-    if (end < 0) {
-      return;
-    }
-    buffers_[socket].clear();
+    for (;;) {
+      QByteArray& buffered = buffers_[socket];
+      const int end = buffered.indexOf("\r\n\r\n");
+      if (end < 0) {
+        return;
+      }
+      const QByteArray requestLine = buffered.left(buffered.indexOf("\r\n"));
+      buffered = buffered.mid(end + 4);
 
-    const QByteArray requestLine = buffered.left(buffered.indexOf("\r\n"));
-    const QList<QByteArray> parts = requestLine.split(' ');
-    const QString target = QString::fromLatin1(parts.value(1));
-    {
-      QMutexLocker locker(&mutex_);
-      ++requests_;
-      paths_.append(target);
+      const QList<QByteArray> parts = requestLine.split(' ');
+      const QString target = QString::fromLatin1(parts.value(1));
+      {
+        QMutexLocker locker(&mutex_);
+        ++requests_;
+        paths_.append(target);
+      }
+      answer(socket, target);
     }
+  }
 
+  void answer(QTcpSocket* socket, const QString& target) {
     if (mode_ == Mode::Fails) {
       send(socket, 522, QStringLiteral("text/plain"), QByteArrayLiteral("error code: 522"));
       return;
@@ -341,11 +350,10 @@ class CannedApi : public QObject {
     head += contentType.toLatin1();
     head += QByteArrayLiteral("\r\nContent-Length: ");
     head += QByteArray::number(body.size());
-    head += QByteArrayLiteral("\r\nConnection: close\r\n\r\n");
+    head += QByteArrayLiteral("\r\nConnection: keep-alive\r\n\r\n");
     socket->write(head);
     socket->write(body);
     socket->flush();
-    socket->disconnectFromHost();
   }
 
   QTcpServer server_;
@@ -373,6 +381,17 @@ int visibleCarouselRetries(const SearchPage& page) {
     }
   }
   return visible;
+}
+
+/// The visible code chip inside a page's failure surface: what names the cause
+/// ("HTTP 522"), as opposed to the line that says something failed.
+QString visibleFailureCode(const QWidget& page) {
+  for (QLabel* label : page.findChildren<QLabel*>(QStringLiteral("failureCode"))) {
+    if (label->isVisible() && !label->text().isEmpty()) {
+      return label->text();
+    }
+  }
+  return {};
 }
 
 /// What a failing feed assertion needs to say: what every visible block state
@@ -458,6 +477,14 @@ void TestFeedRender::aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage() {
   QTRY_VERIFY_WITH_TIMEOUT(visibleCarouselRetries(feed) > 0, 30000);
   QCOMPARE(feed.findChildren<TitleCard*>().size(), 0);
 
+  // "Something failed" is not an answer: the surface has to name the cause, and
+  // a 522 has to read 522. This is the assertion the old suite had no way to
+  // make, because the status never reached a widget.
+  QTRY_VERIFY_WITH_TIMEOUT(!visibleFailureCode(feed).isEmpty(), 30000);
+  QVERIFY2(visibleFailureCode(feed).contains(QStringLiteral("522")),
+           qPrintable(QStringLiteral("the feed's failure code reads: %1")
+                          .arg(visibleFailureCode(feed))));
+
   // The title page: the status line has to move off its loading text and name
   // something. A page that sits on "Loading…" forever is the failure this
   // asserts against.
@@ -475,6 +502,46 @@ void TestFeedRender::aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage() {
   QTRY_VERIFY_WITH_TIMEOUT(label->text() != loading, 30000);
   QVERIFY2(!label->text().isEmpty(), "the title page cleared its status instead of naming a failure");
   QCOMPARE(page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size(), 0);
+
+  // And the page's own surface names the cause too, not just its corner status.
+  QTRY_VERIFY_WITH_TIMEOUT(!visibleFailureCode(page).isEmpty(), 30000);
+  QVERIFY2(visibleFailureCode(page).contains(QStringLiteral("522")),
+           qPrintable(QStringLiteral("the title page's failure code reads: %1")
+                          .arg(visibleFailureCode(page))));
+}
+
+void TestFeedRender::everyRouteReportsTheStatusUnderADeadOrigin() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setMode(CannedApi::Mode::Fails);
+
+  MikaiClient client(QString(), api.baseUrl());
+
+  struct Attempt {
+    QString name;
+    std::function<void()> call;
+  };
+  const QList<Attempt> attempts = {
+      {QStringLiteral("ongoing"), [&] { client.browseOngoing(1, 6); }},
+      {QStringLiteral("popular"), [&] { client.browsePopular(1, 6); }},
+      {QStringLiteral("updates"), [&] { client.getUpdates(1, 12); }},
+      {QStringLiteral("schedule"), [&] { client.getSchedule(); }},
+      {QStringLiteral("detail"), [&] { client.getAnime(QStringLiteral("7428")); }},
+      {QStringLiteral("player"), [&] { client.getPlayer(QStringLiteral("7428")); }},
+  };
+  for (const Attempt& attempt : attempts) {
+    try {
+      attempt.call();
+      QFAIL(qPrintable(QStringLiteral("a dead origin answered %1").arg(attempt.name)));
+    } catch (const mikai::backend::MikaiApiError& failure) {
+      QVERIFY2(failure.status == 522,
+               qPrintable(QStringLiteral("%1 lost its status: code=%2 status=%3")
+                              .arg(attempt.name, failure.code)
+                              .arg(failure.status)));
+      QCOMPARE(failure.code, QStringLiteral("http_error"));
+    }
+  }
 }
 
 int runTestFeedRender(int argc, char** argv) {

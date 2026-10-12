@@ -33,6 +33,11 @@ class TestFeedRender : public QObject {
   // must produce a visible failure on both pages. A page that stays on its
   // loading text - which is what a dead API looked like - fails here.
   void aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage();
+
+  // The chip's contract at the transport boundary: under a dead origin every
+  // request the pages make must come back as an http_error that keeps the
+  // status, so a 522 reads 522 however the block reached the backend.
+  void everyRouteReportsTheStatusUnderADeadOrigin();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries
