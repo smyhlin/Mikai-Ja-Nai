@@ -1,5 +1,7 @@
 #pragma once
 
+#include "backend/Errors.hpp"
+
 #include <QObject>
 #include <QVariant>
 
@@ -49,7 +51,10 @@ public:
     /// Work to run on a pool thread. Whatever it returns lands on the GUI thread.
     using Work = std::function<QVariant()>;
     using OnOk = std::function<void(const QVariant&)>;
-    using OnErr = std::function<void(const QString&)>;
+    /// The failure callback. It carries the backend's code and HTTP status
+    /// alongside the line, so a surface can say *why* something failed instead
+    /// of only that it did.
+    using OnErr = std::function<void(const backend::Failure&)>;
     /// A GUI-thread callback: it runs where the widgets it touches live.
     using OnGui = std::function<void()>;
     /// The copyable GUI dispatch binder `post()` returns. A worker holds one of

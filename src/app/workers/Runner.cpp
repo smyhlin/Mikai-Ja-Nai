@@ -196,7 +196,7 @@ public:
         settled_ = true;
         QVariant result;
         bool ok = true;
-        QString message;
+        backend::Failure failure;
         try {
             if (work_) {
                 // The gate is installed for this worker only. Every blocking
@@ -210,23 +210,27 @@ public:
         } catch (const backend::MikaiApiError& error) {
             ok = false;
             qWarning().noquote() << "Mikai API error:" << error.code << error.message;
-            message = localizedApiError(error.code);
-            if (message.isEmpty()) {
-                message = error.message.isEmpty() ? error.code : error.message;
+            failure.code = error.code;
+            failure.status = error.status;
+            failure.message = localizedApiError(error.code);
+            if (failure.message.isEmpty()) {
+                failure.message =
+                    error.message.isEmpty() ? error.code : error.message;
             }
         } catch (const backend::NoSourceError& error) {
-            // Tagged so the title page can tell "this provider has no video"
-            // apart from "the extraction failed".
+            // Tagged in the message rather than in `code`, because the title
+            // page and the quality fetch both branch on that prefix and the tag
+            // has to survive wherever the message goes.
             ok = false;
-            message = QStringLiteral("no_source: %1").arg(QString::fromUtf8(error.what()));
+            failure.message = QStringLiteral("no_source: %1").arg(QString::fromUtf8(error.what()));
         } catch (const std::exception& error) {
             ok = false;
-            message = QString::fromUtf8(error.what());
+            failure.message = QString::fromUtf8(error.what());
         } catch (...) {
             // The one message this file generates rather than forwarding from
             // the backend, so it is the one message it owns end to end.
             ok = false;
-            message = QCoreApplication::translate("Runner", "Unknown error");
+            failure.message = QCoreApplication::translate("Runner", "Unknown error");
         }
         // A queued call on the dispatcher: the pool thread hands the result
         // over and returns immediately, and the body runs on the GUI thread.
@@ -234,7 +238,7 @@ public:
         // work was submitted for may have been destroyed while this was queued.
         QMetaObject::invokeMethod(
             shared_->dispatcher.get(),
-            [shared = shared_, delivery = delivery_, result, ok, message]() {
+            [shared = shared_, delivery = delivery_, result, ok, failure]() {
                 if (shared->suppressed()) {
                     return;
                 }
@@ -243,7 +247,7 @@ public:
                         delivery->onOk(result);
                     }
                 } else if (delivery->onErr) {
-                    delivery->onErr(message);
+                    delivery->onErr(failure);
                 }
             },
             Qt::QueuedConnection);

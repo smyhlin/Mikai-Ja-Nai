@@ -348,13 +348,14 @@ bool writeEnvFile(const QString& path, const QString& apiKey, QString* reason) {
 
 // A failure envelope is decoded before anything else is decided about an HTTP
 // answer, so a documented 403/404/422 keeps its code and message. A body that
-// is not an envelope is a transport answer, which stays a transport error.
+// is not an envelope is an infrastructure answer - a proxy page, a gateway
+// error - which keeps the HTTP status that names it.
 MikaiApiError apiErrorFromHttp(const HttpResult& result) {
     ApiErrorEnvelope envelope;
     if (parseApiErrorEnvelope(result.body, result.status, &envelope)) {
         return MikaiApiError(envelope.code, envelope.message, envelope.status);
     }
-    if (!result.error.isEmpty()) {
+    if (!result.error.isEmpty() && !isHttpStatusError(result.status)) {
         return MikaiApiError(QStringLiteral("network_error"), result.error, 0);
     }
     return MikaiApiError(QStringLiteral("http_error"), reasonFor(result.status), result.status);

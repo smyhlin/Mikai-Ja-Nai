@@ -46,4 +46,35 @@ bool parseApiErrorEnvelope(const QByteArray& body, int status, ApiErrorEnvelope*
     return true;
 }
 
+QString failureLine(const Failure& failure) {
+    const QString code = failureCodeLabel(failure);
+    if (code.isEmpty()) {
+        return failure.message;
+    }
+    if (failure.message.isEmpty()) {
+        return code;
+    }
+    return QStringLiteral("%1 · %2").arg(failure.message, code);
+}
+
+QString failureCodeLabel(const Failure& failure) {
+    // `http_error` is the client's own name for "the server answered, and the
+    // answer was not the API's envelope" - a proxy page, a gateway error. The
+    // status is the whole story there, so it is shown alone rather than beside
+    // a code that says nothing the status does not.
+    if (failure.code == QLatin1String("http_error") && failure.status > 0) {
+        return QStringLiteral("HTTP %1").arg(failure.status);
+    }
+    if (!failure.code.isEmpty() && failure.status > 0) {
+        return QStringLiteral("%1 · HTTP %2").arg(failure.code).arg(failure.status);
+    }
+    if (!failure.code.isEmpty()) {
+        return failure.code;
+    }
+    if (failure.status > 0) {
+        return QStringLiteral("HTTP %1").arg(failure.status);
+    }
+    return {};
+}
+
 }  // namespace mikai::backend
