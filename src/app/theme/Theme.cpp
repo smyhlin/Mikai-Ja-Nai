@@ -19,6 +19,8 @@ QLabel#titleHeading { font-size: 22px; font-weight: 700; }
 QLabel#sectionHeading { font-size: 16px; font-weight: 600; padding-top: %3px; }
 QLabel#titleSectionHeading, QLabel#episodeSectionHeading { font-size: 15px; font-weight: 700; }
 QLabel#muted, QLabel#status { color: %4; }
+QLabel#failureCode { color: %4; border: 1px solid %10; border-radius: %6px;
+    padding: 1px %3px; }
 QLabel#descriptionPanel { background: %5; color: %2; border: none;
     border-radius: %6px; padding: %7px; }
 QGroupBox#nativeComponentPackCard { background: transparent; color: %2;

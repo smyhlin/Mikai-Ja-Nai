@@ -795,6 +795,7 @@ if(TARGET mikai_backend)
     src/app/workers/Runner.cpp
     src/app/widgets/RangePager.cpp
     src/app/widgets/TitleCard.cpp
+    src/app/widgets/FailureView.cpp
     src/app/widgets/RateLimitLabel.cpp
     src/app/dialogs/SettingsDialog.cpp
     src/app/dialogs/ComponentStoreTab.cpp
