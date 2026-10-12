@@ -27,6 +27,13 @@ Results are reported as observed; the raw commands are in `release-evidence.md`.
 | 17 | Application run | PASS — real window (`Qt6120QWindowIcon`, title "Mikai"), `mikai.log` reaches `[INFO] mikai: player runtime standard stock-20c217472c01` 0.76 s after `---- mikai started ----`, no `mikai-crash-*.txt` |
 | 18 | `TestFeedRender` (new) | PASS — 5/5. The home feed renders 6/6 canned cards and shows no carousel retry; a title page renders 12/12 episode pills with distinct numbers; and a backend that answers 522 produces a visible failure on **both** pages — the carousel's retry appears and the title page's status line moves off its loading text |
 | 19 | `TestFeedRender` dead-origin routes | PASS — every route the two pages use (`ongoing`, `popular`, `updates`, `schedule`, `detail`, `player`) comes back from a 522 origin as `http_error` **with status 522**, and the code chip visible on each page reads `522` |
+| 20 | Live application run (real API, real window) | PASS — `build/release/mikai.exe` started, resolved its runtime in 0.6 s and rendered a fully populated Ukrainian feed against the live API: "Нещодавно відкриті" (Бліч, Людина-бензопила), "Зараз виходить" with episode progress, "Популярне на Mikai" (Ван Піс, Магічна битва), "Останні оновлення" and "Графік виходу". Inspected screenshot `.probe-out/qt612-live-app.png`; no new crash report |
+
+Gate 20 is the one gate no suite can replace here: `TestLiveOracle` is keyless on this
+machine and would skip, so the live path is proven by observation — a real process,
+a real window and an inspected screenshot — rather than by a fixture. The API was
+verified reachable first (`/meta` and `/anime` both 200), and the log records each
+run reaching its runtime line with no crash report.
 
 ### The gap this suite closes
 
