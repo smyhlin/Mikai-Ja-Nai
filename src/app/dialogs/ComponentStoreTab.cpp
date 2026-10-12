@@ -963,13 +963,14 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
                               QSet<QString>(rifeGraphs.cbegin(), rifeGraphs.cend()),
                               provedBackend);
         },
-        [this, alive = alive_, generation](const QString& error) {
+        [this, alive = alive_, generation](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             verifying_ = false;
             ++runGeneration_;
             if (progress_ != nullptr) progress_->hide();
             applyStatus(QStringLiteral("native.components.fetch"),
-                        tr("The components could not be verified: %1").arg(error));
+                        tr("The components could not be verified: %1")
+                            .arg(backend::failureLine(failure)));
             updateControls();
         });
 }
@@ -1168,7 +1169,7 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
             }
             refresh();
         },
-        [this, alive = alive_, generation, cancelFlag, backend](const QString& error) {
+        [this, alive = alive_, generation, cancelFlag, backend](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
@@ -1180,7 +1181,8 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
                                                 ? tr("TensorRT / CUDA 13")
                                                 : tr("DirectML");
                 applyStatus(QStringLiteral("native.components.fetch"),
-                            tr("%1 installation failed: %2").arg(backendName, error));
+                            tr("%1 installation failed: %2")
+                                .arg(backendName, backend::failureLine(failure)));
             }
             refresh();
         });
@@ -1257,7 +1259,7 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
             }
             refresh();
         },
-        [this, alive = alive_, generation, cancelFlag, backend](const QString& error) {
+        [this, alive = alive_, generation, cancelFlag, backend](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
@@ -1268,7 +1270,8 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
                                                 ? tr("TensorRT / CUDA 13")
                                                 : tr("DirectML");
                 applyStatus(QStringLiteral("native.components.fetch"),
-                            tr("%1 installation failed: %2").arg(backendName, error));
+                            tr("%1 installation failed: %2")
+                                .arg(backendName, backend::failureLine(failure)));
             }
             refresh();
         });
@@ -1373,7 +1376,7 @@ void ComponentStoreTab::downloadRifeArchive() {
             refresh();
             if (!cancelFlag->load()) downloadNextModel();
         },
-        [this, alive = alive_, generation, cancelFlag](const QString& error) {
+        [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             rifeDownloading_ = false;
             rifeCancelFlag_.reset();
@@ -1381,9 +1384,10 @@ void ComponentStoreTab::downloadRifeArchive() {
                 pendingModels_.clear();
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
             } else {
-                rifeFailure_ = error;
+                rifeFailure_ = backend::failureLine(failure);
                 pendingModels_.clear();
-                applyStatus(QStringLiteral("native.components.fetch"), error);
+                applyStatus(QStringLiteral("native.components.fetch"),
+                            backend::failureLine(failure));
                 updateControls();
             }
             refresh();
@@ -1501,7 +1505,7 @@ void ComponentStoreTab::downloadNextModel() {
             }
             downloadNextModel();
         },
-        [this, alive = alive_, generation, cancelFlag](const QString& error) {
+        [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             modelsDownloading_ = false;
             modelCancelFlag_.reset();
@@ -1509,7 +1513,7 @@ void ComponentStoreTab::downloadNextModel() {
             applyStatus(cancelFlag->load()
                             ? QStringLiteral("native.components.cancelled")
                             : QStringLiteral("native.components.fetch"),
-                        cancelFlag->load() ? QString() : error);
+                        cancelFlag->load() ? QString() : backend::failureLine(failure));
             refresh();
         });
 }

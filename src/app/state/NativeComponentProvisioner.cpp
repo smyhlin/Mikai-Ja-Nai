@@ -275,12 +275,14 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
             if (target == nullptr) return;
             target->finish(true, false, translated("Components installed."));
         },
-        [](const QString& error) {
+        [](const backend::Failure& failure) {
+            // The downloader tags a cancelled run in its own message, so this
+            // stays a message check rather than a code one.
             const bool cancelled =
-                error.startsWith(QStringLiteral("native.components.cancelled"));
+                failure.message.startsWith(QStringLiteral("native.components.cancelled"));
             NativeComponentProvisioner* target = currentRun();
             if (target == nullptr) return;
-            target->finish(false, cancelled, error);
+            target->finish(false, cancelled, failure.message);
         });
     return true;
 }

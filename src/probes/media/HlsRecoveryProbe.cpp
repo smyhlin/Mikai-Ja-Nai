@@ -301,8 +301,8 @@ private:
             [self](const QVariant& result) {
                 if (!self.isNull()) self->finishRecovery(result.value<QMap<int, QString>>());
             },
-            [self](const QString& message) {
-                if (!self.isNull()) self->failRecovery(message);
+            [self](const backend::Failure& failure) {
+                if (!self.isNull()) self->failRecovery(backend::failureLine(failure));
             });
     }
 

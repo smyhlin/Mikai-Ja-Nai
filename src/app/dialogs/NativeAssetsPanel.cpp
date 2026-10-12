@@ -1515,11 +1515,11 @@ bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stag
             if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             target->finishImport(result, generation);
         },
-        [alive, result, generation](const QString& message) {
+        [alive, result, generation](const backend::Failure& failure) {
             NativeAssetsPanel* target = livePanel();
             if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             result->reasonKey = QStringLiteral("native.import.failed");
-            result->reason = message;
+            result->reason = backend::failureLine(failure);
             target->finishImport(result, generation);
         });
     return true;
@@ -2206,11 +2206,11 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             target->finishPrepare(result, generation);
         },
-        [alive, result, generation](const QString& message) {
+        [alive, result, generation](const backend::Failure& failure) {
             NativeAssetsPanel* target = livePanel();
             if (target == nullptr || !alive->load(std::memory_order_relaxed)) return;
             result->reasonKey = QStringLiteral("native.prepare.failed");
-            result->reason = message;
+            result->reason = backend::failureLine(failure);
             target->finishPrepare(result, generation);
         });
 #else

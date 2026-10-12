@@ -1181,10 +1181,10 @@ void SettingsDialog::testToken() {
                 self->status_->setText(tr("Error: %1").arg(displayError));
             }
         },
-        [self](const QString& message) {
+        [self](const backend::Failure& failure) {
             if (!self) return;
             self->testButton_->setEnabled(true);
-            self->status_->setText(tr("Connection error: %1").arg(message));
+            self->status_->setText(tr("Connection error: %1").arg(backend::failureLine(failure)));
         });
 }
 

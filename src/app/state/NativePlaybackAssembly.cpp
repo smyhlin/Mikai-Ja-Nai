@@ -813,7 +813,7 @@ void bindNativePlaybackAssembly(Runner& runner, mplayer::shell::PlayerDialog& di
             [state, guard, generation, outcome](const QVariant&) {
               deliverAssembly(state, guard, generation, outcome);
             },
-            [state, guard, generation, outcome](const QString&) {
+            [state, guard, generation, outcome](const backend::Failure&) {
               // The pool failed to run the work at all; there is no assembled
               // request, and the refusal is still delivered under the same
               // guards rather than silently dropped.

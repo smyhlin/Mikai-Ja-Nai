@@ -549,8 +549,8 @@ int runProof(const Options& options) {
             return QVariant();
         },
         [](const QVariant&) {},
-        [job](const QString& error) {
-            job->workerError = error;
+        [job](const backend::Failure& failure) {
+            job->workerError = backend::failureLine(failure);
             job->workerFailed = true;
             job->done.store(true);
         });
