@@ -334,6 +334,37 @@ staging/backups, media and installed native assets were not cleanup targets.
 Installed `dist-mikai/packaged-app-startup.png` remains a separate installed-app
 artifact, not a root screenshot.
 
+### Distribution folder carried per-machine payload (2026-10-12, resolved)
+
+`dist-mikai/` was assembled on 2026-10-11 from a native bundle copied with
+`MIKAI_DIST_NATIVE` on an earlier run, so the result carried the downloadable
+elements the dist contract exists to keep out:
+
+| Path | Size |
+| --- | --- |
+| `native/components/aji` | 689 MB |
+| `native/components/tensorrt` | 687 MB |
+| `native/components/rife` | 484 MB |
+| `native/animejanai/models/spatial` | 25 MB |
+| `native/assets` | 6.4 MB |
+
+`dist` itself never produces that: it strips every directory whose own name is
+in `components assets models records` and then hard-fails if one survives, and
+`MIKAI_DIST_NATIVE` defaults to OFF so no store is copied at all. The payload
+arrived because a copied native bundle had been placed into the output by hand
+or by an earlier run with the option on.
+
+Corrected on 2026-10-12. The folder now holds only the portable elements — the
+verified `libmpv-2.dll`, the 49 shaders, the Qt runtime and the Ukrainian
+catalogues — with no `components`, `assets`, `models` or `records` at any depth.
+Size went from ~63 GB to 195 MB. The installed executable starts from it,
+resolves its runtime, and writes no crash report.
+
+The installed exe was also stale by then (an Oct 11 binary for an Oct 12 tree),
+so it was replaced in the same pass. The refusal rules are unchanged: `dist`
+still refuses to recreate a populated output directory, because that is what
+destroyed adjacent installed state before.
+
 ### Source-first follow-up (chronology; later results above supersede open gates)
 
 The initial source-freeze build passed with zero warnings/errors
