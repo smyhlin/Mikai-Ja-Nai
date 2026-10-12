@@ -706,6 +706,8 @@ add_executable(mikai_tests
   # driven from tests/cpp/main.cpp so ctest keeps one hermetic command.
   tests/cpp/TestDownloads.hpp
   tests/cpp/TestDownloads.cpp
+  tests/cpp/TestFeedRender.hpp
+  tests/cpp/TestFeedRender.cpp
   tests/cpp/TestDiagnostics.hpp
   tests/cpp/TestDiagnostics.cpp
   tests/cpp/TestApiClient.hpp

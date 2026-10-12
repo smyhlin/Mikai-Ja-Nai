@@ -508,7 +508,11 @@ Layering is strict and enforced by tests:
   each suite and prints a per-suite PASS/FAIL/SKIP line). Domain and UI suites:
   `TestModels`, `TestReleases`, `TestAnime4K`, `TestI18n`, `TestStreams`,
   `TestPagers`, `TestQualityCache`, `TestRateLimiter`, `TestLayering`,
-  `TestClipboard`. Runtime and native-contract suites: `TestRuntimeSelection`,
+  `TestClipboard`, `TestFeedRender` (the home feed and a title page rendered
+  from canned payloads over a loopback socket — the one suite that answers "does
+  the app show the feed, and does a title page show its episodes", and that
+  fails when a failed backend leaves a page on its loading text).
+  Runtime and native-contract suites: `TestRuntimeSelection`,
   `TestMpvAsync`, `TestNativeTypes`, `TestNativeRecipe`, `TestNativeProfiles`,
   `TestNativeRife`, `TestNativeBundle`, `TestNativePrepPlan`,
   `TestNativeManifest`, `TestNativeStatus`, `TestNativePrefs`,

@@ -17,6 +17,7 @@
 #include "TestDownloads.hpp"
 #include "TestDiagnostics.hpp"
 #include "TestApiClient.hpp"
+#include "TestFeedRender.hpp"
 #include "TestRunner.hpp"
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
@@ -67,6 +68,7 @@
 // main()-driven QObject, because they need per-suite setup/teardown around the
 // QTest call. Declared here so kSuites and the executable set stay in one place.
 int runTestDownloads(int argc, char** argv);
+int runTestFeedRender(int argc, char** argv);
 int runTestDiagnostics(int argc, char** argv);
 int runTestApiClient(int argc, char** argv);
 int runTestRunner(int argc, char** argv);
@@ -86,7 +88,7 @@ constexpr const char* kSuites[] = {
 #endif
     "TestModels", "TestReleases", "TestAnime4K", "TestI18n", "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestDownloads", "TestDiagnostics", "TestApiClient",
-    "TestRunner",
+    "TestFeedRender", "TestRunner",
     "TestLayering", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
@@ -327,6 +329,7 @@ int main(int argc, char** argv) {
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);
+  runWrapper("TestFeedRender", runTestFeedRender);
   runWrapper("TestRunner", runTestRunner);
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   run("TestNativeCatalog", &nativeCatalog, true);
