@@ -70,27 +70,27 @@ QStringList chipLabels(const RangePager& pager) {
 }  // namespace
 
 void TestPagers::searchRangeLabelCountsFiftyFivePerPage() {
-  // The search pager holds SEARCH_RESULTS_PER_PAGE rows; a 132-title answer at
-  // the live API's own page size must still be cut into 55-row pages.
-  QCOMPARE(mikai::app::theme::kSearchResultsPerPage, 55);
-  QCOMPARE(pageRangeLabel(1, 55, 132), QStringLiteral("1 – 55"));
-  QCOMPARE(pageRangeLabel(2, 55, 132), QStringLiteral("56 – 110"));
-  QCOMPARE(pageRangeLabel(3, 55, 132), QStringLiteral("111 – 132"));
+  // The API serves at most 50 rows a page and strides pages at the size it
+  // served, so the client asks for 50 and its ranges must follow that.
+  QCOMPARE(mikai::app::theme::kSearchResultsPerPage, 50);
+  QCOMPARE(pageRangeLabel(1, 50, 132), QStringLiteral("1 – 50"));
+  QCOMPARE(pageRangeLabel(2, 50, 132), QStringLiteral("51 – 100"));
+  QCOMPARE(pageRangeLabel(3, 50, 132), QStringLiteral("101 – 132"));
 }
 
 void TestPagers::searchRangeLabelClampsTheLastPageToTheTotal() {
-  // 132 rows in pages of 55: the third page holds 22, not 55, and the chip must
+  // 132 rows in pages of 50: the third page holds 32, not 50, and the chip must
   // say so rather than claim rows the list will not show.
-  QCOMPARE(pageRangeLabel(3, 55, 132), QStringLiteral("111 – 132"));
-  QCOMPARE(pageRangeLabel(2, 55, 100), QStringLiteral("56 – 100"));
-  QCOMPARE(pageRangeLabel(1, 55, 55), QStringLiteral("1 – 55"));
+  QCOMPARE(pageRangeLabel(3, 50, 132), QStringLiteral("101 – 132"));
+  QCOMPARE(pageRangeLabel(2, 50, 100), QStringLiteral("51 – 100"));
+  QCOMPARE(pageRangeLabel(1, 50, 50), QStringLiteral("1 – 50"));
 }
 
 void TestPagers::searchRangeLabelHandlesAnEmptyResultSet() {
   // An empty result set collapses to the single row the page would hold rather
   // than the "1 - 0" range a naive start/end computation prints.
-  QCOMPARE(pageRangeLabel(1, 55, 0), QStringLiteral("1"));
-  QCOMPARE(pageRangeLabel(1, 55, 1), QStringLiteral("1 – 1"));
+  QCOMPARE(pageRangeLabel(1, 50, 0), QStringLiteral("1"));
+  QCOMPARE(pageRangeLabel(1, 50, 1), QStringLiteral("1 – 1"));
 }
 
 void TestPagers::episodeRangeLabelCountsOneFortyPerPage() {
@@ -104,13 +104,14 @@ void TestPagers::episodeRangeLabelCountsOneFortyPerPage() {
 }
 
 void TestPagers::pagerLabelsEachPageWithItsRange() {
-  RangePager pager(55);
+  RangePager pager(mikai::app::theme::kSearchResultsPerPage);
   pager.setState(1, 3, 132);
   QCOMPARE(chipCount(pager), 3);
-  QCOMPARE(chipLabels(pager), (QStringList{QStringLiteral("1 – 55"), QStringLiteral("56 – 110"),
-                                          QStringLiteral("111 – 132")}));
-  // A 132-title answer is three pages at 55 a page, whatever the server counted.
-  QCOMPARE(pager.pageSize(), 55);
+  QCOMPARE(chipLabels(pager), (QStringList{QStringLiteral("1 – 50"), QStringLiteral("51 – 100"),
+                                          QStringLiteral("101 – 132")}));
+  // A 132-title answer is three pages at the size the API serves, whatever the
+  // server itself counted pages at.
+  QCOMPARE(pager.pageSize(), mikai::app::theme::kSearchResultsPerPage);
 }
 
 void TestPagers::pagerUsesRealNumbersWhenGiven() {
@@ -126,26 +127,26 @@ void TestPagers::pagerUsesRealNumbersWhenGiven() {
 }
 
 void TestPagers::pagerWindowScrollsWithTheCurrentPage() {
-  RangePager pager(55);
-  // 4000 rows at 55 a page is 73 pages, so only a window of chips is shown and
+  RangePager pager(mikai::app::theme::kSearchResultsPerPage);
+  // 4000 rows at 50 a page is 80 pages, so only a window of chips is shown and
   // it has to follow the current page with the active chip in the middle.
-  pager.setState(40, 73, 4000);
+  pager.setState(40, 80, 4000);
   QCOMPARE(chipCount(pager), mikai::app::theme::kPagerChipWindow);
   QCOMPARE(mikai::app::theme::kPagerChipWindow, 7);
   const QStringList labels = chipLabels(pager);
   QCOMPARE(static_cast<int>(labels.size()), 7);
-  QCOMPARE(labels.first(), QStringLiteral("1981 – 2035"));
-  QCOMPARE(labels.last(), QStringLiteral("2311 – 2365"));
+  QCOMPARE(labels.first(), QStringLiteral("1801 – 1850"));
+  QCOMPARE(labels.last(), QStringLiteral("2101 – 2150"));
 }
 
 void TestPagers::pagerWindowClampsAtTheEnd() {
-  RangePager pager(55);
+  RangePager pager(mikai::app::theme::kSearchResultsPerPage);
   // The last pages have no room to centre the active chip, so the window slides
   // back instead of running off the end of the page list.
-  pager.setState(73, 73, 4000);
+  pager.setState(80, 80, 4000);
   QCOMPARE(chipCount(pager), 7);
   const QStringList labels = chipLabels(pager);
-  QCOMPARE(labels.last(), QStringLiteral("3961 – 4000"));
+  QCOMPARE(labels.last(), QStringLiteral("3951 – 4000"));
 }
 
 void TestPagers::pagerEmitsTheRequestedPage() {

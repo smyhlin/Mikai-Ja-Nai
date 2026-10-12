@@ -3338,9 +3338,8 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         <translation>Колекцію ще не завантажено</translation>
     </message>
     <message>
-        <location filename="../tests/cpp/TestFeedRender.cpp" line="376"/>
         <source>Retry</source>
-        <translation>Повторити</translation>
+        <translation type="vanished">Повторити</translation>
     </message>
     <message>
         <location filename="../src/app/pages/SearchPage.cpp" line="325"/>
@@ -3377,54 +3376,54 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="755"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="756"/>
         <source>Recommendations</source>
         <translation>Рекомендації</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="757"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="758"/>
         <source>Click a card to open a title · search by title is available above</source>
         <translation>Клацніть картку, щоб відкрити тайтл · пошук за назвою доступний вище</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="773"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1021"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="774"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1022"/>
         <source>Loading collection…</source>
         <translation>Завантаження колекції…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="808"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="809"/>
         <source>Loading new episodes…</source>
         <translation>Завантаження нових серій…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="839"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="840"/>
         <source>dub</source>
         <translation>дуб</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="840"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="841"/>
         <source>subs</source>
         <translation>суб</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="843"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="844"/>
         <source>New episode</source>
         <translation>Нова серія</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="844"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="926"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="845"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="927"/>
         <source>Episode %1</source>
         <translation>Серія %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="864"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="865"/>
         <source>No updates yet.</source>
         <translation>Оновлень ще немає.</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="865"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="866"/>
         <source>%n recent update(s)</source>
         <translation>
             <numerusform>%n недавнє оновлення</numerusform>
@@ -3433,52 +3432,52 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="887"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="888"/>
         <source>Loading schedule…</source>
         <translation>Завантаження графіка…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="902"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
         <source>Mon</source>
         <translation>Пн</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="902"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
         <source>Tue</source>
         <translation>Вт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="902"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
         <source>Wed</source>
         <translation>Ср</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="902"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
         <source>Thu</source>
         <translation>Чт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="904"/>
         <source>Fri</source>
         <translation>Пт</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="904"/>
         <source>Sat</source>
         <translation>Сб</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="903"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="904"/>
         <source>Sun</source>
         <translation>Нд</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="936"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="937"/>
         <source>No airings in the schedule yet.</source>
         <translation>У графіку ще немає показань.</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="937"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="938"/>
         <source>%n upcoming airing(s)</source>
         <translation>
             <numerusform>%n найближче показання</numerusform>
@@ -3487,47 +3486,47 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="797"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="798"/>
         <source>Failed to load</source>
         <translation>Не вдалося завантажити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="876"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="877"/>
         <source>Failed to load updates</source>
         <translation>Не вдалося завантажити оновлення</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="949"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="950"/>
         <source>Failed to load schedule</source>
         <translation>Не вдалося завантажити графік</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1021"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1022"/>
         <source>Searching…</source>
         <translation>Пошук…</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1063"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1067"/>
         <source>Search results</source>
         <translation>Результати пошуку</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1093"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1108"/>
         <source>Nothing found</source>
         <translation>Нічого не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1094"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1109"/>
         <source>Found: %1</source>
         <translation>Знайдено: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1121"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1141"/>
         <source>All (%1)</source>
         <translation>Усі (%1)</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/app/pages/SearchPage.cpp" line="1166"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1248"/>
         <source>%n episode(s)</source>
         <translation>
             <numerusform>%n серія</numerusform>
@@ -3536,68 +3535,68 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         </translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1249"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1267"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1331"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1349"/>
         <source>Open</source>
         <translation>Відкрити</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1250"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1268"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1332"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1350"/>
         <source>Open the title page</source>
         <translation>Відкрити сторінку тайтла</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1252"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1270"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1334"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1352"/>
         <location filename="../src/probes/media/ExternalMediaProbe.cpp" line="855"/>
         <source>Copy link</source>
         <translation>Копіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1253"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1271"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1335"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1353"/>
         <source>Copy the page address on mikai.me</source>
         <translation>Копіювати адресу сторінки на mikai.me</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1255"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1273"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1337"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1355"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1257"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1275"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1339"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1357"/>
         <location filename="../src/probes/media/ExternalMediaProbe.cpp" line="867"/>
         <source>Copy ID</source>
         <translation>Копіювати ID</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1258"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1276"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1340"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1358"/>
         <source>Copy the title identifier</source>
         <translation>Копіювати ідентифікатор тайтла</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1260"/>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1278"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1342"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1360"/>
         <source>Failed to copy ID</source>
         <translation>Не вдалося скопіювати ID</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1280"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1362"/>
         <location filename="../src/probes/media/ExternalMediaProbe.cpp" line="824"/>
         <source>Open in browser</source>
         <translation>Відкрити в браузері</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1281"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1363"/>
         <source>Open the page on mikai.me</source>
         <translation>Відкрити сторінку на mikai.me</translation>
     </message>
     <message>
-        <location filename="../src/app/pages/SearchPage.cpp" line="1284"/>
+        <location filename="../src/app/pages/SearchPage.cpp" line="1366"/>
         <source>Failed to open in browser</source>
         <translation>Не вдалося відкрити в браузері</translation>
     </message>

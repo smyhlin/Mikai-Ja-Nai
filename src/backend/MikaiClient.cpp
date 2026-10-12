@@ -629,13 +629,17 @@ QJsonObject MikaiClient::get(const QString& path, const QMap<QString, QString>& 
     return payload;
 }
 
-SearchResult MikaiClient::search(const QString& query, int page, int limit) const {
+SearchResult MikaiClient::search(const QString& query, int page, int limit,
+                                 const QString& formats) const {
     QMap<QString, QString> params;
     params.insert(QStringLiteral("page"), QString::number(page));
     params.insert(QStringLiteral("limit"), QString::number(limit));
     const QString trimmed = query.trimmed();
     if (!trimmed.isEmpty()) {
         params.insert(QStringLiteral("search"), trimmed);
+    }
+    if (!formats.isEmpty()) {
+        params.insert(QStringLiteral("formats"), formats);
     }
     return searchFromPayload(get(QStringLiteral("/anime"), params), page);
 }

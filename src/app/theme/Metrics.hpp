@@ -44,7 +44,10 @@ inline constexpr int kMenuItemMinHeight = 34;
 inline constexpr int kSearchPosterWidth = 56;
 inline constexpr int kSearchPosterHeight = 78;
 inline constexpr int kSearchRowMinHeight = 92;
-inline constexpr int kSearchResultsPerPage = 55;
+// The API serves at most 50 `/anime` rows per request whatever `limit` asks
+// for, and it strides pages at the size it served. Asking for anything larger
+// only makes the client count pages the server will never agree with.
+inline constexpr int kSearchResultsPerPage = 50;
 
 inline constexpr int kPagerChipWindow = 7;
 

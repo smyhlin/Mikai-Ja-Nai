@@ -115,7 +115,11 @@ public:
     MikaiClient(const MikaiClient&) = delete;
     MikaiClient& operator=(const MikaiClient&) = delete;
 
-    SearchResult search(const QString& query, int page = 1, int limit = 20) const;
+    /// `formats` is a comma-joined list of the API's own format values; the
+    /// server filters on it, so a filtered result keeps its true total and page
+    /// count instead of the one-page subset a client filter would leave.
+    SearchResult search(const QString& query, int page = 1, int limit = 20,
+                        const QString& formats = QString()) const;
     SearchResult browseOngoing(int page = 1, int limit = 24) const;
     SearchResult browsePopular(int page = 1, int limit = 18) const;
     UpdatesResult getUpdates(int page = 1, int limit = 12) const;

@@ -745,6 +745,7 @@ void SearchPage::loadOngoing() {
     browseMode_ = true;
     showDiscovery();
     currentQuery_.clear();
+    activeFormat_.clear();
     pageSize_ = theme::kSearchResultsPerPage;
     page_ = 1;
     pages_ = 1;
@@ -1027,11 +1028,13 @@ void SearchPage::runResultsRequest(int page) {
     const int seq = requestSeq_;
     const int pageSize = pageSize_;
     const QString query = currentQuery_;
+    const QString format = activeFormat_;
     const bool browse = browseMode_;
     runner_.run(
-        [this, query, page, pageSize, browse] {
-            const backend::SearchResult result = browse ? client_.browseOngoing(page, pageSize)
-                                                        : client_.search(query, page, pageSize);
+        [this, query, page, pageSize, format, browse] {
+            const backend::SearchResult result =
+                browse ? client_.browseOngoing(page, pageSize)
+                       : client_.search(query, page, pageSize, format);
             return QVariant::fromValue(result);
         },
         [this, seq, page](const QVariant& result) {
@@ -1054,6 +1057,7 @@ void SearchPage::search() {
     }
     browseMode_ = false;
     currentQuery_ = query;
+    activeFormat_.clear();
     page_ = 1;
     pages_ = 1;
     total_ = 0;
@@ -1087,13 +1091,25 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
     page_ = result.page.value_or(requestedPage);
     entries_ = result.items;
     total_ = result.total.value_or(entries_.size());
-    // The server counts pages at its own page size, so the count is ours to
-    // make: asked for 55, it answers pages:15 for a 132-title result set.
-    pages_ = qMax(1, (total_ + pageSize_ - 1) / pageSize_);
+    // The server strides pages at the size it actually served, which is not
+    // always the one asked for, so its own count is the authority. Falling back
+    // to a local count is only safe when the same size was served back.
+    pages_ = result.pages.value_or(qMax(1, (total_ + pageSize_ - 1) / pageSize_));
+    if (pages_ < page_) {
+        pages_ = page_;
+    }
+    // A different query, or the same query under a filter, is a different result
+    // set, so its cached counts describe nothing the bar now shows.
+    if (!activeFormat_.isEmpty() || formatTotalsQuery_ != currentQuery_) {
+        formatTotals_.clear();
+        formatTotalsSeq_ += 1;
+        formatTotalsQuery_ = currentQuery_;
+    }
     status_->setText(entries_.isEmpty() ? tr("Nothing found")
                                         : tr("Found: %1").arg(total_));
     rebuildFormatBar();
     populateRows();
+    refreshFormatTotals();
     updatePager();
 }
 
@@ -1104,7 +1120,11 @@ void SearchPage::rebuildFormatBar() {
                                        QStringLiteral("other"),  QStringLiteral("unknown")};
     QHash<QString, int> counts;
     for (const backend::AnimeSummary& entry : entries_) {
-        const QString format = entry.format.isEmpty() ? QStringLiteral("unknown") : entry.format;
+        // The API's own filter values are lower case, and the server only
+        // accepts those, so a row's spelling is normalised before it is offered
+        // as a tab or sent back as a filter.
+        const QString format =
+            entry.format.isEmpty() ? QStringLiteral("unknown") : entry.format.toLower();
         counts[format] += 1;
     }
     QStringList present;
@@ -1118,13 +1138,31 @@ void SearchPage::rebuildFormatBar() {
         formatBar_->removeTab(0);
     }
     if (present.size() >= 2) {
-        formatBar_->addTab(tr("All (%1)").arg(entries_.size()));
+        formatBar_->addTab(tr("All (%1)").arg(total_));
         formatBar_->setTabData(0, QStringLiteral("all"));
         for (const QString& format : present) {
-            formatBar_->addTab(QStringLiteral("%1 (%2)").arg(format.toUpper()).arg(counts[format]));
+            // The count for a format is the result set's own once it has been
+            // asked for; until then the page's figure is the honest answer.
+            const int count = formatTotals_.value(format, counts.value(format));
+            formatBar_->addTab(QStringLiteral("%1 (%2)").arg(format.toUpper()).arg(count));
             formatBar_->setTabData(formatBar_->count() - 1, format);
         }
-        formatBar_->setCurrentIndex(0);
+        // The request that just landed may have carried the filter, so the tab
+        // it belongs to has to be the one shown rather than "All".
+        int restore = 0;
+        if (!activeFormat_.isEmpty()) {
+            restore = formatBar_->count() - 1;
+            while (restore > 0 && formatBar_->tabData(restore).toString() != activeFormat_) {
+                --restore;
+            }
+            if (formatBar_->tabData(restore).toString() != activeFormat_) {
+                restore = 0;
+                activeFormat_.clear();
+            }
+        }
+        formatBar_->blockSignals(true);
+        formatBar_->setCurrentIndex(restore);
+        formatBar_->blockSignals(false);
         formatBar_->show();
     } else {
         formatBar_->hide();
@@ -1132,22 +1170,66 @@ void SearchPage::rebuildFormatBar() {
     formatBar_->blockSignals(false);
 }
 
-void SearchPage::applyFormatFilter() { populateRows(); }
+void SearchPage::applyFormatFilter() {
+    const int index = formatBar_->currentIndex();
+    if (index < 0) {
+        return;
+    }
+    // The filter is the server's, so picking a format is a new request over the
+    // whole result set, not a re-read of the single page in hand.
+    activeFormat_ = formatBar_->tabData(index).toString();
+    if (activeFormat_ == QLatin1String("all")) {
+        activeFormat_.clear();
+    }
+    fetchPage(1);
+}
+
+void SearchPage::refreshFormatTotals() {
+    // Browse and filtered results already describe their own total, and only a
+    // search over several formats has counts worth asking for.
+    if (browseMode_ || currentQuery_.isEmpty() || !formatBar_->isVisible()) {
+        return;
+    }
+    QStringList formats;
+    for (int index = 0; index < formatBar_->count(); ++index) {
+        const QString value = formatBar_->tabData(index).toString();
+        if (value != QLatin1String("all")) {
+            formats << value;
+        }
+    }
+    if (formats.isEmpty()) {
+        return;
+    }
+    const QString query = currentQuery_;
+    const int seq = ++formatTotalsSeq_;
+    formatTotalsQuery_ = query;
+    runner_.run(
+        [this, query, formats] {
+            QHash<QString, int> totals;
+            for (const QString& format : formats) {
+                const backend::SearchResult one = client_.search(query, 1, 1, format);
+                if (one.total.has_value()) {
+                    totals.insert(format, *one.total);
+                }
+            }
+            return QVariant::fromValue(totals);
+        },
+        [this, seq, query](const QVariant& result) {
+            if (seq != formatTotalsSeq_ || query != formatTotalsQuery_) {
+                return;
+            }
+            formatTotals_ = result.value<QHash<QString, int>>();
+            rebuildFormatBar();
+        },
+        [](const backend::Failure&) {
+            // A count is a label, not a result: leaving the page-local figure in
+            // place beats an empty bar.
+        });
+}
 
 void SearchPage::populateRows() {
     results_->clear();
-    QString wanted = QStringLiteral("all");
-    if (formatBar_->isVisible()) {
-        const int index = formatBar_->currentIndex();
-        if (index >= 0) {
-            wanted = formatBar_->tabData(index).toString();
-        }
-    }
     for (const backend::AnimeSummary& entry : entries_) {
-        const QString format = entry.format.isEmpty() ? QStringLiteral("unknown") : entry.format;
-        if (wanted != QLatin1String("all") && format != wanted) {
-            continue;
-        }
         // List responses already carry the airing status and the planned episode
         // count, so a search row reads like a home card without a detail call.
         QStringList parts;

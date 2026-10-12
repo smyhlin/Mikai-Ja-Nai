@@ -154,6 +154,10 @@ private:
                           const QString& context);
     void clearBlockFailure(FailureView* view, QLabel* state);
     void rebuildFormatBar();
+    /// Refresh the per-format counts from the whole result set. Each count is a
+    /// one-row request, so this is only worth running for the formats the
+    /// current page actually shows.
+    void refreshFormatTotals();
     void applyFormatFilter();
     void populateRows();
     void updatePager();
@@ -183,6 +187,17 @@ private:
     int pages_ = 1;
     int total_ = 0;
     int pageSize_ = 0;
+    /// The format tab the last request was made with, as the API's own value.
+    /// Empty means no filtering; the server applies it, so a result set's total
+    /// and page count are the filtered ones.
+    QString activeFormat_;
+    /// Per-format totals for the result set in hand, keyed by the API's format
+    /// value. The bar labels these; a missing key means "not counted yet".
+    QHash<QString, int> formatTotals_;
+    /// Guards the count requests so a tab change cannot re-label the bar with
+    /// counts from the result set it just replaced.
+    int formatTotalsSeq_ = 0;
+    QString formatTotalsQuery_;
 
     QHash<QString, QByteArray> thumbCache_;
     QSet<QString> thumbsInFlight_;

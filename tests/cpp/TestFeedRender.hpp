@@ -38,6 +38,14 @@ class TestFeedRender : public QObject {
   // request the pages make must come back as an http_error that keeps the
   // status, so a 522 reads 522 however the block reached the backend.
   void everyRouteReportsTheStatusUnderADeadOrigin();
+
+  // The format tab must ask the server, so the result set, its total and its
+  // page count are the filtered ones rather than the one page in hand.
+  void theFormatFilterIsAskedOfTheServer();
+
+  // The pager must count pages the way the server strides them, not the way the
+  // client asked, or the tail of a result set has no page to sit on.
+  void thePagerTrustsTheServersOwnPageCount();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries

@@ -28,6 +28,7 @@ using mikai::app::Runner;
 using mikai::app::SearchPage;
 using mikai::app::TitleCard;
 using mikai::app::TitlePage;
+using mikai::backend::SearchResult;
 using mikai::backend::MikaiClient;
 
 namespace {
@@ -73,7 +74,7 @@ QJsonObject titles(const QString& ua, const QString& english, const QString& ori
   return out;
 }
 
-QJsonObject summary(int id, const QString& name, const QString& poster) {
+QJsonObject summary(int id, const QString& name, const QString& poster, const QString& format) {
   QJsonObject ids;
   ids.insert(QStringLiteral("mikai"), id);
 
@@ -84,15 +85,32 @@ QJsonObject summary(int id, const QString& name, const QString& poster) {
   entry.insert(QStringLiteral("ids"), ids);
   entry.insert(QStringLiteral("titles"), titles(name, name, name));
   entry.insert(QStringLiteral("year"), 2026);
-  entry.insert(QStringLiteral("format"), QStringLiteral("TV"));
+  entry.insert(QStringLiteral("format"), format);
   entry.insert(QStringLiteral("status"), QStringLiteral("ongoing"));
   entry.insert(QStringLiteral("episodes"), kEpisodes);
   entry.insert(QStringLiteral("images"), images);
   return entry;
 }
 
+/// The values one query parameter carried, so a canned answer can react to a
+/// filter the way the real API does.
+QStringList queryValue(const QString& target, const QString& key) {
+  const int query = target.indexOf(QLatin1Char('?'));
+  if (query < 0) {
+    return {};
+  }
+  const QStringList pairs = target.mid(query + 1).split(QLatin1Char('&'));
+  for (const QString& pair : pairs) {
+    const int eq = pair.indexOf(QLatin1Char('='));
+    if (eq > 0 && pair.left(eq) == key) {
+      return pair.mid(eq + 1).split(QLatin1Char(','));
+    }
+  }
+  return {};
+}
+
 QJsonObject detail(int id, const QString& name, const QString& poster) {
-  QJsonObject out = summary(id, name, poster);
+  QJsonObject out = summary(id, name, poster, QStringLiteral("tv"));
   out.insert(QStringLiteral("description"), QStringLiteral("Опис для тесту."));
   out.insert(QStringLiteral("startDate"), QStringLiteral("2026-01-04"));
   out.insert(QStringLiteral("source"), QStringLiteral("manga"));
@@ -254,21 +272,29 @@ class CannedApi : public QObject {
       return onePixelPng();
     }
     if (rest == QStringLiteral("/anime")) {
+      // The canned rows are half TV and half MOVIE, so a `formats` filter is
+      // answerable the way the real API answers it: half the set, and a page
+      // count that counts the filtered set rather than everything.
+      const QStringList fmt = queryValue(target, QStringLiteral("formats"));
+      const bool filtered = !fmt.isEmpty() && fmt.constFirst() == QLatin1String("movie");
+      const int served = filtered ? kCards / 2 : kCards;
       QJsonArray items;
-      for (int index = 0; index < kCards; ++index) {
-        items.append(summary(kRef + index, QStringLiteral("Canned %1").arg(index + 1), imageUrl()));
+      for (int index = 0; index < served; ++index) {
+        items.append(summary(kRef + index, QStringLiteral("Canned %1").arg(index + 1), imageUrl(),
+                             filtered ? QStringLiteral("movie") : QStringLiteral("tv")));
       }
       QJsonObject payload;
       payload.insert(QStringLiteral("ok"), true);
       payload.insert(QStringLiteral("result"), items);
-      payload.insert(QStringLiteral("total"), kCards);
+      payload.insert(QStringLiteral("total"), served);
       payload.insert(QStringLiteral("page"), 1);
-      payload.insert(QStringLiteral("pages"), 1);
+      payload.insert(QStringLiteral("pages"), served == 0 ? 0 : 1);
       return QJsonDocument(payload).toJson(QJsonDocument::Compact);
     }
     if (rest == QStringLiteral("/updates")) {
       QJsonObject entry;
-      entry.insert(QStringLiteral("anime"), summary(kRef, QStringLiteral("Canned 1"), imageUrl()));
+      entry.insert(QStringLiteral("anime"),
+                   summary(kRef, QStringLiteral("Canned 1"), imageUrl(), QStringLiteral("tv")));
       entry.insert(QStringLiteral("teamName"), QStringLiteral("Test Team"));
       entry.insert(QStringLiteral("kind"), QStringLiteral("voice"));
       entry.insert(QStringLiteral("provider"), QStringLiteral("ashdi"));
@@ -286,7 +312,8 @@ class CannedApi : public QObject {
     }
     if (rest == QStringLiteral("/schedule")) {
       QJsonObject airing;
-      airing.insert(QStringLiteral("anime"), summary(kRef, QStringLiteral("Canned 1"), imageUrl()));
+      airing.insert(QStringLiteral("anime"),
+                   summary(kRef, QStringLiteral("Canned 1"), imageUrl(), QStringLiteral("tv")));
       airing.insert(QStringLiteral("episode"), 3);
       airing.insert(QStringLiteral("airing"), QStringLiteral("2026-01-04T12:00:00Z"));
       airing.insert(QStringLiteral("finished"), false);
@@ -407,6 +434,56 @@ QString describeBlockStates(const SearchPage& page) {
 }
 
 }  // namespace
+
+void TestFeedRender::theFormatFilterIsAskedOfTheServer() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+
+  // Without the filter the full canned set comes back.
+  const SearchResult everything = client.search(QStringLiteral("canned"), 1, 20);
+  QCOMPARE(everything.total.value_or(-1), kCards);
+  QCOMPARE(static_cast<int>(everything.items.size()), kCards);
+
+  // With it, the server's own answer: half the set, and a page count that counts
+  // the filtered result rather than everything. A client-side filter would have
+  // reported the unfiltered total, so this is the assertion that catches it.
+  const SearchResult filtered =
+      client.search(QStringLiteral("canned"), 1, 20, QStringLiteral("movie"));
+  QCOMPARE(filtered.total.value_or(-1), kCards / 2);
+  QCOMPARE(static_cast<int>(filtered.items.size()), kCards / 2);
+  QCOMPARE(filtered.pages.value_or(-1), 1);
+  for (const mikai::backend::AnimeSummary& item : filtered.items) {
+    QCOMPARE(item.format, QStringLiteral("movie"));
+  }
+
+  // The filter reached the transport: the request that answered it carried it.
+  const QStringList filteredRequests = api.requestedPaths().filter(QLatin1String("formats=movie"));
+  QVERIFY2(!filteredRequests.isEmpty(),
+           qPrintable(QStringLiteral("no request carried the filter; requests: %1")
+                          .arg(api.requestedPaths().join(QLatin1Char('|')))));
+}
+
+void TestFeedRender::thePagerTrustsTheServersOwnPageCount() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+
+  // The canned API answers `pages` as its own count at the size it served. A
+  // client that recomputed that count from its own page size used to disagree
+  // with the server and lost the tail of the catalog.
+  const SearchResult first = client.search(QStringLiteral("canned"), 1, 50);
+  QVERIFY2(first.pages.has_value(), "the payload carried no page count to trust");
+  QCOMPARE(first.pages.value_or(-1), 1);
+
+  // A page request the server agrees with returns its own rows.
+  const SearchResult served = client.search(QStringLiteral("canned"), first.pages.value_or(1), 50);
+  QCOMPARE(served.page.value_or(-1), first.pages.value_or(1));
+}
 
 void TestFeedRender::theHomeFeedRendersItsCards() {
   CannedApi api;
