@@ -282,7 +282,9 @@ Layering is strict and enforced by tests:
     in-process `PlayerDialog` via `Host`, episode context menu,
     external-player hand-off via `QProcess::startDetached(mpv|vlc)`).
   - `widgets/` — `TitleCard` (360×140 home card), `RangePager`,
-    `RateLimitLabel` (RPM indicator).
+    `RateLimitLabel` (RPM indicator), `FailureView` (the one failure surface:
+    the backend's line, its code chip, and a retry the owner wires up; hidden
+    until there is a failure, so the host keeps owning progress and empty states).
   - `dialogs/` — `SettingsDialog` (API key + quota + feed toggles, preset
     shortcuts, and the Standard/Native **Runtime module** choice),
     `ComponentStoreTab` (the Components tab: AnimeJaNai 3.7.0 TensorRT packs and the
@@ -511,7 +513,10 @@ Layering is strict and enforced by tests:
   `TestClipboard`, `TestFeedRender` (the home feed and a title page rendered
   from canned payloads over a loopback socket — the one suite that answers "does
   the app show the feed, and does a title page show its episodes", and that
-  fails when a failed backend leaves a page on its loading text).
+  fails when a failed backend leaves a page on its loading text). `main.cpp`'s
+  `runWrapper` prints a verdict for wrapper-backed suites too: without it a
+  wrapper suite ran silently and a pass was indistinguishable from a suite that
+  never executed.
   Runtime and native-contract suites: `TestRuntimeSelection`,
   `TestMpvAsync`, `TestNativeTypes`, `TestNativeRecipe`, `TestNativeProfiles`,
   `TestNativeRife`, `TestNativeBundle`, `TestNativePrepPlan`,

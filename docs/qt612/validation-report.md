@@ -26,6 +26,7 @@ Results are reported as observed; the raw commands are in `release-evidence.md`.
 | 16 | Plugin discovery | PASS — the app starts with **no** `QT_PLUGIN_PATH` in the deployed layout (the 6.8.3 development tree needed it) |
 | 17 | Application run | PASS — real window (`Qt6120QWindowIcon`, title "Mikai"), `mikai.log` reaches `[INFO] mikai: player runtime standard stock-20c217472c01` 0.76 s after `---- mikai started ----`, no `mikai-crash-*.txt` |
 | 18 | `TestFeedRender` (new) | PASS — 5/5. The home feed renders 6/6 canned cards and shows no carousel retry; a title page renders 12/12 episode pills with distinct numbers; and a backend that answers 522 produces a visible failure on **both** pages — the carousel's retry appears and the title page's status line moves off its loading text |
+| 19 | `TestFeedRender` dead-origin routes | PASS — every route the two pages use (`ongoing`, `popular`, `updates`, `schedule`, `detail`, `player`) comes back from a 522 origin as `http_error` **with status 522**, and the code chip visible on each page reads `522` |
 
 ### The gap this suite closes
 
@@ -43,6 +44,21 @@ The retry is found by its label rather than its object name, because the updates
 and schedule rows carry an always-visible "Refresh" action under the same
 `textAction` name — an object-name query would count a button that is supposed to
 be on screen.
+
+### Why a failure says what it says
+
+A failure reaching the UI used to be flattened to a sentence at the `Runner`
+boundary, so a Cloudflare 522, a rate limit and a cancelled request could all
+read the same. `backend::Failure` now carries the stable code and the HTTP
+status beside the message, and `FailureView` renders them: the backend's line,
+the machine token (`HTTP 522`, `rate_limited · HTTP 429`, `network_error`) and
+a retry. The token is deliberately untranslated — it is the part of the line
+that has to survive a screenshot.
+
+`apiErrorFromHttp` also dropped the status: a non-envelope body — a proxy page,
+a gateway error — took the transport branch and reported `network_error`
+with status 0, losing the one fact that names it. That is what a Cloudflare 522
+looked like from inside the app, and gate 19 pins it.
 
 Deployed file set, 6.12 vs the installed 6.8.3 dist: identical for every DLL and
 plugin directory, with `imageformats/` gaining `qicns`, `qtga`, `qtiff`, `qwbmp`
