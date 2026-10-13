@@ -42,13 +42,15 @@ Layering is strict and enforced by tests:
   Shared GUI helpers live in `src/gui/`, including `Clipboard.hpp` in
   `mikai::gui`; player widgets remain in `src/player/`.
 - UI never blocks the GUI thread: pages submit work to `Runner`
-  (`src/app/workers/Runner.hpp`) with four `QThreadPool`s — shared (4),
+  (`src/app/workers/Runner.hpp`) with five `QThreadPool`s — shared (4),
   bulk (3) for feed fan-out so a title the user just opened is not queued
   behind the whole feed, stream (2) for stream extraction, which is
-  latency-critical and holds its thread across two sequential GETs, and image
-  (12) for artwork only. `fetchBytes` bypasses the client's rate limiter
+  latency-critical and holds its thread across two sequential GETs, image
+  (12) for artwork only, and transfer (4) for component and model downloads
+  so several independent packs stream at once without borrowing a thread the
+  catalogue needs. `fetchBytes` bypasses the client's rate limiter
   entirely, so posters cost no API budget and are pure latency. `waitForDone(ms)`
-  drains the bulk, stream and image pools first, then the shared one.
+  drains the bulk, stream, image and transfer pools first, then the shared one.
   Destroying a Runner never waits: it cancels, drops the completions that were
   still queued, and hands the pools to whoever referenced them last, which
   retires them on the GUI event queue. `cancel()` retires not-yet-started work
@@ -289,7 +291,11 @@ Layering is strict and enforced by tests:
     shortcuts, and the Standard/Native **Runtime module** choice),
     `ComponentStoreTab` (the Components tab: AnimeJaNai 3.7.0 TensorRT packs and the
     47-model RIFE archive, with install state, digest verification and
-    user-initiated download), `NativeAssetsPanel` (the Processing tab's
+    user-initiated download; Apply runs its independent units — the backend
+    closure, the RIFE archive and the upscaling graphs — concurrently on the
+    transfer pool, one Cancel arms every unit, and the run survives Settings
+    close/reopen on the main window's acquisition bar),
+    `NativeAssetsPanel` (the Processing tab's
     lazily refreshed owned-model inventory, artifact cache and source-asset store),
     `CoverViewer` (chromeless full-screen cover with zoom/pan).
   - `state/` — `Feeds` (home-block toggles), `QualityCache`,
@@ -689,7 +695,11 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
 - `src/app/dialogs/ComponentStoreTab.cpp` — the Components tab. Availability is
   the toolchain's verdict rather than the store's contents: asking the store alone
   reported a resource the installed bundle already carries as "Not installed" and
-  made Download-missing fetch hundreds of megabytes it did not need.
+  made Download-missing fetch hundreds of megabytes it did not need. The
+  acquisition is concurrent: units run side by side on the transfer pool under
+  one shared generation, each settles independently, and only the last one
+  finalizes (re-hashing before claiming success). The 7-Zip bootstrap lives in
+  `<applicationDir>/native/tools`, never `%LOCALAPPDATA%`.
 - `src/app/state/NativeComponentProvisioner.cpp` — the component driver, and the
   only place the app starts a component download.
 - `src/backend/Downloads.cpp` — the one transport; `downloadToFile` is where the

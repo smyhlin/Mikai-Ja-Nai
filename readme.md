@@ -595,6 +595,23 @@ edits. Healthy and pending processing plans are not restarted. Low-resolution
 HLS needs the SD graph too; installing only an HD model does not satisfy the
 built-in profile closure.
 
+Apply runs its independent units concurrently on the transfer pool: the
+backend closure, the 47-model RIFE archive and the five upscaling graphs share
+no scratch, destination or record, so they download side by side instead of
+queuing one behind the other. The run finishes when the last unit settles, at
+which point the installed elements are re-hashed before any "installed and
+verified" claim is shown. A single Cancel arms every unit's gate at once, so
+one press unwinds the whole concurrent set, and the per-unit callbacks carry
+one shared generation so the first unit to finish never invalidates the ones
+still running. Closing Settings hands the tab back to the main window and the
+run continues on the window's acquisition bar.
+
+The 7-Zip bootstrap the archive extraction needs also lives under the
+application folder: `<applicationDir>/native/tools/7zip-26.03`, seeded with the
+same digest-verified `7zr.exe` and self-extracting installer when no installed
+`7z.exe` is found, and never in `%LOCALAPPDATA%`. Every downloaded or extracted
+element the Components flow produces stays inside `<applicationDir>/native`.
+
 The Qt video surface disables blending before each mpv render: Qt enables it
 for painting, but libmpv replacement passes require it off. Leaving it enabled
 corrupted the floating-point chroma intermediate. The fix preserves the packaged
@@ -857,7 +874,9 @@ asset byte counts and SHA-256; the app reads the compute capability from the
 installed driver's NVML, selects the exact `trt-sm{MA}{MI}` pack (or `trt-ptx`
 when the release publishes none for that generation), downloads the missing
 set on this machine, and proves every file by digest into the app-owned
-`<applicationDir>/native/components` store. A bundle that already declares this GPU's
+`<applicationDir>/native/components` store. Its extractor bootstrap is app-owned
+too (`native/tools/7zip-26.03`), so a machine with no system 7-Zip still gets a
+verified one without any payload landing outside the application folder. A bundle that already declares this GPU's
 resource is used as-is and nothing is downloaded. Bundle validation is served
 from a stat-only cache (`verified.json` under the app-owned native root): the
 first start after a change re-hashes (about 18 s here), every start after lands
