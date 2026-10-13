@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
@@ -1084,7 +1085,10 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
                                   .arg(QFileInfo(file.path).fileName(), imported));
         }
     }
-    bundle.deps = depSet.values();
+    // Qt 6.12's QSet::values() on an rvalue moves the set's storage into the
+    // returned list, so the dependency names are not copied one by one; the set
+    // is not used again.
+    bundle.deps = std::move(depSet).values();
     std::sort(bundle.deps.begin(), bundle.deps.end());
 
     // A stable identity for bytes that carry no manifest: derived from what is

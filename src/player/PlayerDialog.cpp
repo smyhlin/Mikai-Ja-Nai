@@ -2778,7 +2778,7 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
 }
 
 void PlayerDialog::onTrackPicked(const QVariant& payload) {
-    if (closed_ || directMedia_ || payload.userType() != QMetaType::QVariantMap) {
+    if (closed_ || directMedia_ || payload.typeId() != QMetaType::QVariantMap) {
         return;
     }
     const QVariantMap map = payload.toMap();
@@ -2796,7 +2796,7 @@ void PlayerDialog::onTrackPicked(const QVariant& payload) {
 
 
 void PlayerDialog::onQualityPicked(const QVariant& payload) {
-    if (closed_ || payload.userType() != QMetaType::Int) {
+    if (closed_ || payload.typeId() != QMetaType::Int) {
         return;
     }
     const int height = payload.toInt();

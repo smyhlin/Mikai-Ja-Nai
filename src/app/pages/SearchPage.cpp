@@ -15,9 +15,12 @@
 #include <backend/MikaiClient.hpp>
 
 #include <QAccessible>
+#include <QAccessibilityHints>
 #include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include <QHBoxLayout>
 #include <QImageReader>
 #include <QJsonArray>
@@ -85,11 +88,16 @@ QPixmap pixmapFrom(const QByteArray& data, const QSize& target) {
         return {};
     }
     QImageReader reader(&buffer);
+    // Posters are WebP and may carry an EXIF orientation. Honouring it keeps a
+    // rotated artwork upright, and Qt 6.12's effectiveSize() (unlike size())
+    // reports the post-rotation dimensions, so the decode-to-target decision is
+    // made against the size the pixels actually have.
+    reader.setAutoTransform(true);
     // Scaling during the decode is far cheaper than decoding a full cover and
     // then throwing nearly all of it away, and the two agree on the result to
     // within a rounding step. Artwork already at or below the display rect is
     // decoded whole: scaling it up first would only cost time.
-    const QSize source = reader.size();
+    const QSize source = reader.effectiveSize();
     if (source.isValid() && !target.isEmpty() &&
         (source.width() > target.width() || source.height() > target.height())) {
         reader.setScaledSize(source.scaled(target, Qt::KeepAspectRatioByExpanding));
@@ -351,6 +359,17 @@ void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
     const int start = bar->value();
     const int target = qBound(bar->minimum(), start + delta, bar->maximum());
     if (start == target) {
+        return;
+    }
+    // Qt 6.12 surfaces the system reduced-motion preference through
+    // QStyleHints::accessibility(); when it is set, jump instead of animating
+    // so the carousel respects the same OS setting the rest of the UI does. Both
+    // pointers are platform-owned and checked rather than assumed.
+    const QStyleHints* hints = QGuiApplication::styleHints();
+    const QAccessibilityHints* accessibility = hints != nullptr ? hints->accessibility() : nullptr;
+    if (accessibility != nullptr &&
+        accessibility->motionPreference() == Qt::MotionPreference::ReducedMotion) {
+        bar->setValue(target);
         return;
     }
     auto* anim = new QPropertyAnimation(bar, "value", this);
