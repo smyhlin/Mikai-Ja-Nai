@@ -70,14 +70,18 @@ public:
         clip_ = clip;
         update();
     }
+    void setSmoothScaling(bool smooth) { smooth_ = smooth; }
     QRectF boundingRect() const override { return clip_; }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override {
-        if (!image_.isNull() && !clip_.isEmpty()) painter->drawImage(clip_, image_, clip_);
+        if (image_.isNull() || clip_.isEmpty()) return;
+        painter->setRenderHint(QPainter::SmoothPixmapTransform, smooth_);
+        painter->drawImage(clip_, image_, clip_);
     }
 
 private:
     QImage image_;
     QRectF clip_;
+    bool smooth_ = true;
 };
 
 CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
@@ -434,6 +438,9 @@ void CompareCanvas::applyView() {
 
 void CompareCanvas::setSmoothScaling(bool smooth) {
     setRenderHint(QPainter::SmoothPixmapTransform, smooth);
+    for (CompareImageItem* item : {itemA_, itemB_, itemDifference_}) {
+        if (item != nullptr) item->setSmoothScaling(smooth);
+    }
     if (viewport() != nullptr) {
         viewport()->update();
     }

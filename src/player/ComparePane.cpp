@@ -53,6 +53,7 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
 ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
     scene_ = new QGraphicsScene(this);
     item_ = new QGraphicsPixmapItem();
+    item_->setTransformationMode(Qt::SmoothTransformation);
     scene_->addItem(item_);
     setScene(scene_);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
@@ -148,6 +149,10 @@ void ComparePane::setLocalView(double zoom, const std::optional<QPointF>& center
 
 void ComparePane::setSmoothScaling(bool smooth) {
     setRenderHint(QPainter::SmoothPixmapTransform, smooth);
+    if (item_ != nullptr) {
+        item_->setTransformationMode(smooth ? Qt::SmoothTransformation
+                                            : Qt::FastTransformation);
+    }
     if (viewport() != nullptr) {
         viewport()->update();
     }
