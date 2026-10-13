@@ -122,21 +122,124 @@ void ScrubBar::paintEvent(QPaintEvent* event) {
     p.drawText(QRectF(x, 0, tw, th), Qt::AlignCenter, label);
 }
 
-// ── VolumeGroup ────────────────────────────────────────────────────────────
+// ── VolumeTrack ────────────────────────────────────────────────────────────
 
 namespace {
-constexpr int kSpeakerW = 28;  // hit zone of the speaker glyph
-constexpr int kTrackX = 30;    // left edge of the track
-constexpr double kTrackY = 13;
-constexpr double kKnobR = 4;
+// The disc is this wide. The pad is one disc-radius plus a pixel, on both
+// ends, so a knob sitting on 0 or on 1 is still entirely inside the widget.
+constexpr int kKnobR = 5;
+constexpr int kKnobRHot = 6;
+constexpr int kEndPad = kKnobRHot + 2;
+constexpr int kGroove = 4;
+constexpr int kSpeakerW = 28;
+constexpr int kSpeakerGap = 6;
 }  // namespace
+
+VolumeTrack::VolumeTrack(QWidget* parent) : QWidget(parent) {
+    setMouseTracking(true);
+    setCursor(Qt::CursorShape::PointingHandCursor);
+    setMinimumHeight(kKnobRHot * 2 + 4);
+    setAttribute(Qt::WA_StyledBackground, false);
+    setStyleSheet(QStringLiteral("background: transparent;"));
+}
+
+void VolumeTrack::setValue(double v, bool notify) {
+    v = qBound(0.0, v, 1.0);
+    if (qAbs(v - v_) <= 1e-4) {
+        return;
+    }
+    v_ = v;
+    if (notify) {
+        emit valueChanged(v_);
+    }
+    update();
+}
+
+double VolumeTrack::span() const {
+    return qMax(1.0, static_cast<double>(width()) - 2.0 * kEndPad);
+}
+
+double VolumeTrack::at(qreal x) const {
+    return qBound(0.0, (x - kEndPad) / span(), 1.0);
+}
+
+void VolumeTrack::mousePressEvent(QMouseEvent* event) {
+    if (event->button() != Qt::LeftButton) {
+        return;
+    }
+    drag_ = true;
+    emit pressed();
+    setValue(at(event->position().x()), true);
+}
+
+void VolumeTrack::mouseMoveEvent(QMouseEvent* event) {
+    if (drag_ && (event->buttons() & Qt::LeftButton)) {
+        setValue(at(event->position().x()), true);
+    }
+    update();
+}
+
+void VolumeTrack::mouseReleaseEvent(QMouseEvent* event) {
+    if (drag_) {
+        drag_ = false;
+        setValue(at(event->position().x()), true);
+        emit released();
+    }
+    update();
+}
+
+void VolumeTrack::leaveEvent(QEvent* event) {
+    QWidget::leaveEvent(event);
+    update();
+}
+
+void VolumeTrack::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+
+    const double travel = span();
+    const double y = height() / 2.0 - kGroove / 2.0;
+    const double cy = height() / 2.0;
+    const double x = kEndPad + travel * v_;
+    const double r = (underMouse() || drag_) ? kKnobRHot : kKnobR;
+
+    paintRounded(p, QRectF(kEndPad, y, travel, kGroove), kGroove / 2.0, w25());
+    if (v_ > 0.0) {
+        paintRounded(p, QRectF(kEndPad, y, travel * v_, kGroove), kGroove / 2.0, w95());
+    }
+
+    // Shadow, then a dark ring, then the face. The fill is the same white as
+    // the face, so without the ring a full track swallows the knob.
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 110));
+    p.drawEllipse(QPointF(x, cy + 1.0), r, r);
+    p.setPen(QPen(QColor(0, 0, 0, 150), 1.0));
+    p.setBrush(w95());
+    p.drawEllipse(QPointF(x, cy), r - 0.5, r - 0.5);
+}
+
+// ── VolumeGroup ────────────────────────────────────────────────────────────
 
 VolumeGroup::VolumeGroup(QWidget* parent) : QWidget(parent) {
     setCursor(Qt::CursorShape::PointingHandCursor);
     setMouseTracking(true);
-    setFixedSize(kSpeakerW + kTrack, 32);
+    setFixedSize(kSpeakerW + kSpeakerGap + kTrack, 32);
     setAttribute(Qt::WA_StyledBackground, false);
     setStyleSheet(QStringLiteral("background: transparent;"));
+    track_ = new VolumeTrack(this);
+    track_->setGeometry(kSpeakerW + kSpeakerGap, 0, kTrack, height());
+    track_->setValueSilent(effective());
+    connect(track_, &VolumeTrack::valueChanged, this, [this](double v) {
+        vol_ = v;
+        emit volumeChanged(vol_);
+        update();
+    });
+}
+
+void VolumeGroup::showLevel() {
+    if (track_ != nullptr) {
+        track_->setValueSilent(effective());
+    }
 }
 
 void VolumeGroup::setVolume(double v) {
@@ -147,9 +250,11 @@ void VolumeGroup::setVolume(double v) {
     // own volume back down here, and without it every push would echo straight
     // into onVolume and on into mpv.
     if (qAbs(next - vol_) <= 1e-4) {
+        showLevel();
         return;
     }
     vol_ = next;
+    showLevel();
     emit volumeChanged(vol_);
     update();
 }
@@ -160,55 +265,32 @@ void VolumeGroup::setVolume(double v) {
 // of what was just set.
 void VolumeGroup::setMuted(bool m) {
     muted_ = m;
+    showLevel();
     update();
 }
 
+bool VolumeGroup::isDragging() const {
+    return track_ != nullptr && track_->isDragging();
+}
+
 void VolumeGroup::mousePressEvent(QMouseEvent* event) {
-    if (event->button() != Qt::LeftButton) {
-        return;
-    }
-    const double x = event->position().x();
-    if (x < kSpeakerW) {
+    if (event->button() == Qt::LeftButton && event->position().x() < kSpeakerW) {
         emit muteClicked();
-    } else if (x >= kTrackX && x <= kTrackX + kTrack) {
-        drag_ = true;
-        emit volumeChanged(qBound(0.0, (x - kTrackX) / kTrack, 1.0));
     }
-}
-
-void VolumeGroup::mouseMoveEvent(QMouseEvent* event) {
-    if (drag_ && (event->buttons() & Qt::LeftButton)) {
-        const double x = event->position().x();
-        emit volumeChanged(qBound(0.0, (x - kTrackX) / kTrack, 1.0));
-    }
-}
-
-void VolumeGroup::mouseReleaseEvent(QMouseEvent* event) {
-    drag_ = false;
-    QWidget::mouseReleaseEvent(event);
 }
 
 void VolumeGroup::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const double eff = effective();
-
+    const int iconY = (height() - 16) / 2;
     if (eff == 0.0) {
-        IconPainter::mute(p, 6, 7, 16);
+        IconPainter::mute(p, 6, iconY, 16);
     } else if (eff < 0.5) {
-        IconPainter::volumeLow(p, 6, 7, 16);
+        IconPainter::volumeLow(p, 6, iconY, 16);
     } else {
-        IconPainter::volume(p, 6, 7, 16);
+        IconPainter::volume(p, 6, iconY, 16);
     }
-
-    const double w = kTrack;
-    paintRounded(p, QRectF(kTrackX, kTrackY, w, 4), 2, w25());
-    if (eff > 0) {
-        paintRounded(p, QRectF(kTrackX, kTrackY, w * eff, 4), 2, w95());
-    }
-    p.setPen(Qt::NoPen);
-    p.setBrush(w95());
-    p.drawEllipse(QPointF(kTrackX + w * eff, kTrackY + 2), kKnobR, kKnobR);
 }
 
 }  // namespace shell

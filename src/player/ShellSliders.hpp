@@ -1,9 +1,10 @@
 // The two slider families of the bottom dock: the 0..1 RangeSlider (with the
-// ScrubBar timeline built on it) and the VolumeGroup, which is a speaker glyph
-// that expands into a 45 px track on hover.
+// ScrubBar timeline built on it) and the VolumeGroup, a speaker glyph beside
+// an always-visible track.
 //
-// Both are painted from scratch in paintEvent, so neither has a stylesheet or a
-// style-sheet dependency: every pixel is the palette in ShellTheme.hpp.
+// Painted from scratch in paintEvent, so there is no stylesheet: every pixel is
+// the palette in ShellTheme.hpp. The volume knob is inset by its own radius,
+// so a level of 0 or 1 still draws the whole disc.
 
 #pragma once
 
@@ -89,6 +90,41 @@ private:
     QFont font_;
 };
 
+/// A horizontal level. The knob travels inside the widget, so at 0 and at full
+/// the whole disc is painted, not the half that used to fall past the edge.
+class VolumeTrack : public QWidget {
+    Q_OBJECT
+    Q_PROPERTY(double volume READ value WRITE setValue)
+
+public:
+    explicit VolumeTrack(QWidget* parent = nullptr);
+
+    double value() const { return v_; }
+    void setValue(double v) { setValue(v, true); }
+    void setValueSilent(double v) { setValue(v, false); }
+    bool isDragging() const { return drag_; }
+
+signals:
+    void valueChanged(double v);
+    void pressed();
+    void released();
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    void setValue(double v, bool notify);
+    double span() const;
+    double at(qreal x) const;
+
+    double v_ = 0.7;
+    bool drag_ = false;
+};
+
 /// Speaker button plus an always-visible volume track.
 class VolumeGroup : public QWidget {
     Q_OBJECT
@@ -105,7 +141,7 @@ public:
     double effective() const { return muted_ ? 0.0 : vol_; }
     bool isMuted() const { return muted_; }
 
-    bool isDragging() const { return drag_; }
+    bool isDragging() const;
 
 signals:
     void volumeChanged(double v);
@@ -113,14 +149,14 @@ signals:
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void showLevel();
+
+    VolumeTrack* track_ = nullptr;
     double vol_ = 0.7;
     bool muted_ = false;
-    bool drag_ = false;
 };
 
 }  // namespace shell

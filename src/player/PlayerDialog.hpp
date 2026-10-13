@@ -90,6 +90,8 @@ public:
 /// must share pixels with a work area, or it cannot be clicked or dragged back.
 /// A pooled float re-enters at the exact position and size the viewer last left
 /// it; only an unreachable position (a monitor that went away) is corrected.
+class VolumeTrack;
+
 class PipFloat : public QWidget {
     Q_OBJECT
 
@@ -170,7 +172,7 @@ private:
     QWidget* overlay_ = nullptr;
     QPushButton* muteButton_ = nullptr;
     QWidget* volumeChip_ = nullptr;
-    QSlider* volumeSlider_ = nullptr;
+    VolumeTrack* volumeSlider_ = nullptr;
     QPushButton* restoreButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;
     QPushButton* playButton_ = nullptr;
@@ -299,6 +301,14 @@ public:
     /// actually has a video loaded. The dialog hides itself for PiP, so this,
     /// not isVisible(), is what says it still owns a running stream.
     bool hasActiveSource() const;
+    /// Pauses the core that owns playback when it is actually playing. False when
+    /// nothing was playing, including a core an engine build is already holding
+    /// paused, so the caller does not resume a pause it did not take.
+    bool pauseIfPlaying();
+    /// Starts the owning core again. A no-op when that core is already playing
+    /// or there is no core, so a pause the viewer made themselves is left alone
+    /// and nothing starts that was not playing.
+    void resumePlayback();
     /// The observed source/device facts of the core that owns playback right
     /// now, for the preparation path. Nullopt - never a guessed UUID, cadence or
     /// module path - whenever that core has not actually observed them. Forwarded

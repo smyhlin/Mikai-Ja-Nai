@@ -37,6 +37,14 @@ inline constexpr int kInfoChipHeight = 32;
 // Holds the two chain lines plus the wrapped native-base and queued-change
 // lines, so a frozen native recipe caption is never clipped.
 inline constexpr int kCompareInfoHeight = 72;
+// Selector row under the picture. It sits in the view's bottom margin, so it
+// never covers the image.
+inline constexpr int kCompareSelectorBarHeight = 32;
+inline constexpr int kCompareSelectorInset = 8;
+inline constexpr int kCompareSelectorArrow = 14;
+inline constexpr int kCompareSelectorGap = 4;
+inline constexpr int kCompareSelectorMinWidth = 24;
+inline constexpr int kCompareDividerHit = 12;
 inline constexpr double kAspectFallback = 16.0 / 9.0;
 
 // ── palette ────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@
 #include "PlayerShell.hpp"
 #include "PresetShortcuts.hpp"
 #include "gui/Clipboard.hpp"
+#include "ShellSliders.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
@@ -192,15 +193,6 @@ QString pipQss() {
                "  background: rgba(0, 0, 0, 0.75);"
                "  border-color: rgba(255, 255, 255, 0.35); }"
                "QWidget#pipVolumeChip { background: transparent; border: none; }"
-               "QSlider#pipVolume { background: transparent; }"
-               "QSlider#pipVolume::groove:horizontal {"
-               "  height: 4px; background: rgba(255, 255, 255, 0.22); border-radius: 2px; }"
-               "QSlider#pipVolume::sub-page:horizontal {"
-               "  background: rgba(255, 255, 255, 0.92); border-radius: 2px; }"
-               "QSlider#pipVolume::handle:horizontal {"
-               "  background: #ffffff; width: 12px; height: 12px;"
-               "  margin: -4px 0; border-radius: 6px; }"
-               "QSlider#pipVolume::groove:horizontal:disabled { background: rgba(255, 255, 255, 0.10); }"
                "QSlider#pipScrub { background: transparent; }"
                "QSlider#pipScrub::groove:horizontal {"
                "  height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; }"
@@ -225,6 +217,9 @@ QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text)
 
 /// Seconds as m:ss, gaining an hours field only when it is needed.
 QString pipFormatSeconds(double value) {
+    // A non-finite or negative timestamp (an mpv property spike before the
+    // core settles) must not overflow the cast or show a negative clock.
+    if (!std::isfinite(value) || value <= 0.0) return QStringLiteral("0:00");
     const qint64 total = static_cast<qint64>(std::max(0.0, value));
     const qint64 hours = total / 3600;
     const qint64 rest = total % 3600;
@@ -362,30 +357,31 @@ void PipFloat::buildChrome() {
     });
     chipLayout->addWidget(muteButton_);
 
-    volumeSlider_ = new QSlider(Qt::Horizontal, volumeChip_);
+    volumeSlider_ = new VolumeTrack(volumeChip_);
     volumeSlider_->setObjectName(QStringLiteral("pipVolume"));
     volumeSlider_->setFocusPolicy(Qt::NoFocus);
     volumeSlider_->setMouseTracking(true);
-    volumeSlider_->setRange(0, 100);
-    volumeSlider_->setFixedWidth(kPipVolumeWidth);
-    volumeSlider_->setValue(static_cast<int>(std::lround(volume_ * 100.0)));
-    connect(volumeSlider_, &QSlider::sliderPressed, this, [this] { draggingVolume_ = true; });
-    connect(volumeSlider_, &QSlider::sliderReleased, this, [this] {
+    volumeSlider_->setFixedSize(kPipVolumeWidth, kPipFieldHeight);
+    volumeSlider_->setValueSilent(volume_);
+    connect(volumeSlider_, &VolumeTrack::pressed, this, [this] {
+        draggingVolume_ = true;
+        revealControls();
+    });
+    connect(volumeSlider_, &VolumeTrack::released, this, [this] {
         draggingVolume_ = false;
-        setVolume(volumeSlider_->value() / 100.0);
+        setVolume(volumeSlider_->value());
         emit volumeChanged(volume_);
         revealControls();
     });
-    // The level reaches mpv at the release, not on every tick. A QSlider emits
-    // valueChanged per pixel of travel, and each one was a synchronous property
-    // write plus a groove relayout; on a slow core that queue is what reads as
-    // lag. The handle still tracks the pointer - that is the widget painting
-    // itself - and the sound lands the moment the button is let go.
-    connect(volumeSlider_, &QSlider::valueChanged, this, [this](int value) {
+    // The level reaches mpv at the release, not on every tick. Writing the
+    // core on each pixel of travel queued a property change per move, and on
+    // a slow core that queue is what reads as lag. The knob still tracks the
+    // pointer, and the sound lands the moment the button is let go.
+    connect(volumeSlider_, &VolumeTrack::valueChanged, this, [this](double value) {
         if (!draggingVolume_) {
             return;
         }
-        volume_ = std::clamp(value / 100.0, 0.0, 1.0);
+        volume_ = std::clamp(value, 0.0, 1.0);
     });
     chipLayout->addWidget(volumeSlider_);
 
@@ -561,7 +557,7 @@ void PipFloat::updateVolumeChip() {
     // each write re-lays the groove out. The slider is the source of truth
     // mid-drag; this only mirrors an outside change.
     if (!draggingVolume_) {
-        volumeSlider_->setValue(static_cast<int>(std::lround(volume_ * 100.0)));
+        volumeSlider_->setValueSilent(volume_);
     }
 }
 
@@ -1731,6 +1727,21 @@ void PlayerDialog::submitNativeAdmission(const native::PreparedAdmissionRequest&
 bool PlayerDialog::hasActiveSource() const {
     VideoSurface* owner = playbackSurface();
     return owner != nullptr && owner->hasVideo();
+}
+
+bool PlayerDialog::pauseIfPlaying() {
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr || !owner->isPlaying()) return false;
+    // setPaused announces playingChanged, which is what paints the shell and
+    // the PiP control. A second write here would fight that signal.
+    owner->setPaused(true);
+    return true;
+}
+
+void PlayerDialog::resumePlayback() {
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr || owner->isPlaying()) return;
+    owner->setPaused(false);
 }
 
 VideoSurface* PlayerDialog::playbackSurface() const {
