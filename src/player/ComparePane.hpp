@@ -7,11 +7,10 @@
 // scrolls the pane and the drag only pans it, so neither can rescale a
 // comparison out from under the eye.
 //
-// The badge is a viewport child, re-anchored after every scroll: QAbstract-
-// ScrollArea moves the viewport's children along with the scene, so a badge
-// placed once would ride out of view on the first pan - which is how a pane
-// ends up labelled with a picture it is not showing. The badge menu offers
-// every candidate the grid feeds it, with the shown one checked.
+// The model selector is a row under the picture, in the view's bottom margin.
+// It is exactly as wide as the picture and flush with its left and right
+// edges, and the name fills that row. Zoom never lays it over the image. The
+// menu offers every candidate the grid feeds it, with the shown one checked.
 #pragma once
 
 #include <QGraphicsView>
@@ -31,6 +30,7 @@ class QGraphicsPixmapItem;
 class QGraphicsScene;
 class QMenu;
 class QToolButton;
+class QWidget;
 
 namespace mplayer::shell {
 
@@ -50,6 +50,8 @@ public:
     void setLocalView(double zoom, const std::optional<QPointF>& center);
     /// Re-fit to the picture; the shared zoom and centre survive it.
     void fit();
+    /// Bilinear when true, nearest neighbor when false.
+    void setSmoothScaling(bool smooth);
 
     double zoom() const { return zoom_; }
     std::optional<QPointF> center() const;
@@ -59,7 +61,7 @@ public:
 signals:
     /// The user panned here; the grid reconciles the shared centre.
     void viewChanged();
-    /// The badge menu asked for another candidate in this pane.
+    /// The selector asked for another candidate in this pane.
     void choiceChosen(const QString& id);
 
 protected:
@@ -69,18 +71,23 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void refreshBadge();
     void syncBadgeMenu();
-    void anchorBadge();
+    void placeSelector();
+    void layoutSelectorRow();
+    QRect imageBarRect() const;
     QSize imageSize() const;
     QPointF centerNormalized() const;
 
     QGraphicsScene* scene_ = nullptr;
     QGraphicsPixmapItem* item_ = nullptr;
+    QWidget* selectorBar_ = nullptr;
     QToolButton* badge_ = nullptr;
     QMenu* menu_ = nullptr;
+    QString label_;
 
     QString key_;
     QImage image_;

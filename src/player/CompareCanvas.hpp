@@ -3,19 +3,15 @@
 // Adapted from AnimeInterp's CompareCanvas. It owns the scene, the camera and
 // the gesture rules, and two of those rules are easy to get wrong:
 //
-//  * **The wheel does not zoom.** The view is the fit and nothing else: a
-//    comparison judged on a picture the viewer has silently rescaled is a
-//    comparison of the interpolation, not of the chain.
-//  * **Fit never upscales past 1:1.** A 480p frame blown up to a large window
-//    shows interpolation artefacts, not detail.
-//  * **The side badges are viewport children, re-anchored after every scroll.**
-//    QAbstractScrollArea moves the viewport's children along with the scene, so
-//    a badge placed once rides out of view on the first pan - and, once the
-//    offset is large, clean off the edge entirely, which is how a pane ends up
-//    labelled with a different picture than it is showing.
+//  * **The wheel zooms about the cursor.** Fit never upscales past 1:1: a 480p
+//    frame blown up to a large window shows interpolation, not detail.
+//  * **The selectors are a row under the picture.** The row is as wide as the
+//    picture and flush with its left and right edges. Each name fills the
+//    width of the side it belongs to.
 #pragma once
 
 #include <QGraphicsView>
+#include <QRgb>
 #include <QImage>
 #include <QPoint>
 #include <QString>
@@ -27,8 +23,10 @@
 class QAction;
 class QGraphicsLineItem;
 class QGraphicsSimpleTextItem;
+class QLabel;
 class QMenu;
 class QToolButton;
+class QWidget;
 
 namespace mplayer::shell {
 
@@ -45,7 +43,7 @@ public:
 
     void setSideImages(const QImage& a, const QImage& b, const QImage& difference);
     void setSideNames(const QString& a, const QString& b);
-    /// What the two badges offer; each badge opens its own menu, grouped by the
+    /// What the two selectors offer; each opens its own menu, grouped by the
     /// entry's own menu path.
     void setChoices(const QVector<ChoiceEntry>& choices, const QString& selectedA,
                     const QString& selectedB);
@@ -64,14 +62,17 @@ public:
 
     void fitToContent();
     void applyView();
+    /// Bilinear when true, nearest neighbor when false.
+    void setSmoothScaling(bool smooth);
 
     QPointF scenePointAt(const QPoint& widgetPoint) const;
-    bool pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b, uchar& g, uchar& r) const;
+    bool pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b, uchar& g, uchar& r,
+                 QRgb* argb = nullptr) const;
 
 signals:
     void zoomChanged(int percent);
     void splitDragged(double fraction);
-    void hoverPixel(int x, int y, bool valid);
+    void hoverPixel(int x, int y, bool valid, QRgb rgb);
     void candidateChosen(int side, const QString& id);
 
 protected:
@@ -80,21 +81,30 @@ protected:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
-    void scrollContentsBy(int dx, int dy) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     bool viewTouched_ = false;
     void applyLayout();
     void placeBadges();
+    void layoutSelectorRow();
+    QRect imageBarRect() const;
     void updateBadge(QToolButton* badge, int side);
+    void placeBadge(QToolButton* badge, const QString& label, bool prominent);
+    void showStatus(const QString& text);
+    bool nearDivider(const QPoint& viewportPos) const;
 
     CompareImageItem* itemA_ = nullptr;
     CompareImageItem* itemB_ = nullptr;
     CompareImageItem* itemDifference_ = nullptr;
     QGraphicsLineItem* divider_ = nullptr;
     QGraphicsSimpleTextItem* message_ = nullptr;
+    QLabel* status_ = nullptr;
+    QWidget* selectorRow_ = nullptr;
     QToolButton* badgeA_ = nullptr;
     QToolButton* badgeB_ = nullptr;
+    QString labelA_;
+    QString labelB_;
     QMenu* menuA_ = nullptr;
     QMenu* menuB_ = nullptr;
 

@@ -2,9 +2,12 @@
 
 #include "ComparePane.hpp"
 
+#include "ShellTheme.hpp"
+
 #include <QGridLayout>
 
 #include <algorithm>
+#include <cmath>
 
 namespace mplayer::shell {
 
@@ -12,6 +15,10 @@ CompareGrid::CompareGrid(QWidget* parent) : QWidget(parent) {
     grid_ = new QGridLayout(this);
     grid_->setContentsMargins(0, 0, 0, 0);
     grid_->setSpacing(2);
+    setAutoFillBackground(true);
+    QPalette surface = palette();
+    surface.setColor(QPalette::Window, bg0());
+    setPalette(surface);
 }
 
 void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& images,
@@ -40,6 +47,15 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
         pane->setContent(ids.at(i), images.at(i), names.value(i));
         pane->setChoices(choices_, ids.at(i));
         pane->setLocalView(zoom_, center_);
+        pane->setSmoothScaling(smoothScaling_);
+    }
+    emit zoomChanged(static_cast<int>(std::lround(zoom_ * 100.0)));
+}
+
+void CompareGrid::setSmoothScaling(bool smooth) {
+    smoothScaling_ = smooth;
+    for (ComparePane* pane : panes_) {
+        pane->setSmoothScaling(smooth);
     }
 }
 
@@ -57,6 +73,7 @@ void CompareGrid::fitToContent() {
         pane->fit();
         pane->setLocalView(zoom_, center_);
     }
+    emit zoomChanged(static_cast<int>(std::lround(zoom_ * 100.0)));
 }
 
 void CompareGrid::reconcile() {
@@ -76,6 +93,7 @@ void CompareGrid::reconcile() {
             pane->setLocalView(zoom_, center_);
         }
     }
+    emit zoomChanged(static_cast<int>(std::lround(zoom_ * 100.0)));
 }
 
 }  // namespace mplayer::shell

@@ -8,6 +8,7 @@
 #pragma once
 
 #include <QImage>
+#include <QRect>
 #include <QSize>
 
 namespace mplayer::shell {
@@ -94,6 +95,9 @@ inline constexpr int kDiffGainMax = 64;
 /// The whole view state. Value semantics: copy it, store it, restore it.
 struct Camera {
     double zoom = 1.0;
+    /// Zoom recorded by the last fit. The readout is zoom / fitZoom, so Fit
+    /// reads 100% and a wheel step reads 125% on every mode.
+    double fitZoom = 1.0;
     double panX = 0.0;
     double panY = 0.0;
     double split = 0.5;
@@ -101,6 +105,9 @@ struct Camera {
     int diffGain = 1;
 
     double clampedZoom() const;
+    /// 1.0 is the last fit. A wheel notch in either direction moves this by
+    /// kCompareWheelStep.
+    double relativeZoom() const;
     double clampedSplit() const;
     double clampedFlickerHz() const;
     int clampedGain() const;

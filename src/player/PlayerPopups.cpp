@@ -77,16 +77,9 @@ QString captionQss(int size) {
 //  GROUPED CHOICE MENUS
 // ═══════════════════════════════════════════════════════════════════════════
 
-void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
-                    QVector<QAction*>* leaves) {
-    // Rebuilding destroys actions, so the caller keeps what this returns and
-    // moves the checks with markChoice() while its list is unchanged.
-    if (leaves != nullptr) {
-        leaves->clear();
-        leaves->reserve(entries.size());
-    }
+void clearChoiceMenu(QMenu* menu) {
     // The submenus are widgets owned by this menu: clear() drops the actions,
-    // so they are deleted explicitly or a rebuild would leak a tree each time.
+    // so they are deleted explicitly or a rebuild/shrink would leak a tree.
     QVector<QMenu*> stale;
     for (QAction* action : menu->actions()) {
         if (QMenu* submenu = action->menu()) {
@@ -97,6 +90,17 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
         delete submenu;
     }
     menu->clear();
+}
+
+void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
+                    QVector<QAction*>* leaves) {
+    // Rebuilding destroys actions, so the caller keeps what this returns and
+    // moves the checks with markChoice() while its list is unchanged.
+    if (leaves != nullptr) {
+        leaves->clear();
+        leaves->reserve(entries.size());
+    }
+    clearChoiceMenu(menu);
 
     // One submenu per distinct path, not one per entry: addMenu() always
     // creates a new menu, so walking the path per entry would put a second

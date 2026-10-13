@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QRgb>
 #include <QHash>
 #include <QImage>
 #include <QPointer>
@@ -72,7 +73,7 @@ private slots:
     void onGainChanged(int value);
     void onFlickerTimeout();
     void onCandidateChosen(int side, const QString& id);
-    void onHoverPixel(int x, int y, bool valid);
+    void onHoverPixel(int x, int y, bool valid, QRgb rgb);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -117,14 +118,18 @@ private:
     CompareGrid* grid_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     QComboBox* modeBox_ = nullptr;
+    QComboBox* filterBox_ = nullptr;
     QLabel* splitLabel_ = nullptr;
     QLabel* flickerLabel_ = nullptr;
     QLabel* gainLabel_ = nullptr;
     QDoubleSpinBox* split_ = nullptr;
     QSpinBox* flicker_ = nullptr;
     QSpinBox* gain_ = nullptr;
+    QWidget* modeControls_ = nullptr;
     QLabel* info_ = nullptr;
     QLabel* hover_ = nullptr;
+    QLabel* hoverSwatch_ = nullptr;
+    QLabel* zoom_ = nullptr;
     QTimer* flickerTimer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
     bool buildOperationActive_ = false;

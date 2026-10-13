@@ -1,13 +1,16 @@
 #include "ComparePane.hpp"
 
 #include <QAction>
+#include <QFontMetrics>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
+#include <QHBoxLayout>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QSizePolicy>
 #include <QToolButton>
 #include <QTransform>
 #include <QWheelEvent>
@@ -16,12 +19,35 @@
 #include <cmath>
 
 #include "CompareLayout.hpp"
+#include "ShellTheme.hpp"
 
 namespace mplayer::shell {
 
 namespace {
-constexpr int kBadgeX = 6;
-constexpr int kBadgeY = 4;
+
+QString selectorBarStyle() {
+    const QColor bar(dock().red(), dock().green(), dock().blue());
+    return QStringLiteral(
+               "QWidget#compareSelectorBar { background-color: %1; border: none;"
+               " border-top: 1px solid %2; }"
+               "QToolButton { background: transparent; color: %3; border: none;"
+               " border-radius: 0px; padding: 0px %4px; padding-right: %5px;"
+               " text-align: left; }"
+               "QToolButton:hover { background-color: %6; }"
+               "QToolButton::menu-indicator { subcontrol-position: right center;"
+               " width: %7px; }")
+        .arg(bar.name(), w15().name(QColor::HexArgb), w95().name(),
+             QString::number(kCompareSelectorInset),
+             QString::number(kCompareSelectorInset + kCompareSelectorArrow),
+             white(26).name(QColor::HexArgb), QString::number(kCompareSelectorArrow));
+}
+
+void fitSelectorLabel(QToolButton* button, const QString& full) {
+    const int pad = kCompareSelectorInset * 2 + kCompareSelectorArrow;
+    const int width = std::max(0, button->width() - pad);
+    button->setText(QFontMetrics(button->font()).elidedText(full, Qt::ElideRight, width));
+}
+
 }  // namespace
 
 ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
@@ -34,19 +60,28 @@ ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
     setDragMode(QGraphicsView::ScrollHandDrag);
     setRenderHint(QPainter::SmoothPixmapTransform, true);
     setFrameShape(QFrame::NoFrame);
-    setBackgroundBrush(Qt::black);
+    setBackgroundBrush(bg0());
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setMouseTracking(true);
 
-    badge_ = new QToolButton(viewport());
+    selectorBar_ = new QWidget(this);
+    selectorBar_->setObjectName(QStringLiteral("compareSelectorBar"));
+    selectorBar_->setAttribute(Qt::WA_StyledBackground, true);
+    selectorBar_->setStyleSheet(selectorBarStyle());
+    selectorBar_->hide();
+    selectorBar_->installEventFilter(this);
+    auto* row = new QHBoxLayout(selectorBar_);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(0);
+    badge_ = new QToolButton(selectorBar_);
     badge_->setCursor(Qt::PointingHandCursor);
+    badge_->setFont(uiFont(9));
     badge_->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    badge_->setStyleSheet(QStringLiteral(
-        "QToolButton { background: rgba(16,16,16,190); color: #E8EAED;"
-        " border: 1px solid rgba(255,255,255,60); border-radius: 4px;"
-        " padding: 2px 8px; text-align: left; }"
-        "QToolButton:hover { border-color: #7AB7FF; }"));
+    badge_->setMinimumWidth(0);
+    badge_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    badge_->installEventFilter(this);
+    row->addWidget(badge_, 1);
 
     menu_ = new QMenu(badge_);
     badge_->setMenu(menu_);
@@ -108,7 +143,14 @@ void ComparePane::setLocalView(double zoom, const std::optional<QPointF>& center
         centerOn(cx, cy);
     }
     syncing_ = wasSyncing;
-    anchorBadge();
+    placeSelector();
+}
+
+void ComparePane::setSmoothScaling(bool smooth) {
+    setRenderHint(QPainter::SmoothPixmapTransform, smooth);
+    if (viewport() != nullptr) {
+        viewport()->update();
+    }
 }
 
 void ComparePane::fit() {
@@ -135,6 +177,7 @@ void ComparePane::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::AltModifier)) {
         altPanning_ = true;
         lastPanPoint_ = event->position().toPoint();
+        setCursor(Qt::ClosedHandCursor);
         event->accept();
         return;
     }
@@ -157,6 +200,7 @@ void ComparePane::mouseMoveEvent(QMouseEvent* event) {
 void ComparePane::mouseReleaseEvent(QMouseEvent* event) {
     if (altPanning_ && event->button() == Qt::LeftButton) {
         altPanning_ = false;
+        unsetCursor();
         event->accept();
         return;
     }
@@ -205,18 +249,18 @@ void ComparePane::refreshBadge() {
     if (shown.isEmpty()) {
         shown = current_;
     }
-    badge_->setText(shown);
-    badge_->adjustSize();
+    label_ = shown;
+    badge_->setText(label_);
     badge_->setToolTip(tr("Select comparison"));
     badge_->setAccessibleName(tr("Select %1").arg(shown));
-    anchorBadge();
+    placeSelector();
 }
 
 void ComparePane::syncBadgeMenu() {
     if (choices_.size() < 2) {
         // One result on screen leaves no choice to offer, so the badge stays
         // the plain label it always was.
-        menu_->clear();
+        clearChoiceMenu(menu_);
         builtChoices_.clear();
         leaves_.clear();
         badge_->setPopupMode(QToolButton::DelayedPopup);
@@ -233,29 +277,84 @@ void ComparePane::syncBadgeMenu() {
     }
 }
 
-void ComparePane::anchorBadge() {
-    if (badge_ != nullptr) {
-        badge_->move(kBadgeX, kBadgeY);
-        badge_->raise();
+QRect ComparePane::imageBarRect() const {
+    if (item_ == nullptr || item_->pixmap().isNull() || viewport() == nullptr) {
+        return {};
     }
+    const QRect visible =
+        mapFromScene(item_->sceneBoundingRect()).boundingRect().intersected(viewport()->rect());
+    if (visible.width() < 1) {
+        return {};
+    }
+    return QRect(viewport()->pos().x() + visible.left(),
+                 std::max(0, height() - kCompareSelectorBarHeight), visible.width(),
+                 kCompareSelectorBarHeight);
+}
+
+void ComparePane::layoutSelectorRow() {
+    const bool show = !image_.isNull();
+    const int bar = show ? kCompareSelectorBarHeight : 0;
+    if (viewportMargins().bottom() != bar) {
+        setViewportMargins(0, 0, 0, bar);
+    }
+    if (selectorBar_ == nullptr) {
+        return;
+    }
+    if (!show) {
+        selectorBar_->hide();
+        return;
+    }
+    const QRect span = imageBarRect();
+    if (span.isEmpty()) {
+        selectorBar_->hide();
+        return;
+    }
+    selectorBar_->setGeometry(span);
+    selectorBar_->show();
+    selectorBar_->raise();
+}
+
+void ComparePane::placeSelector() {
+    if (selectorBar_ == nullptr || badge_ == nullptr) {
+        return;
+    }
+    layoutSelectorRow();
+    if (image_.isNull() || selectorBar_->isHidden()) {
+        badge_->hide();
+        return;
+    }
+    badge_->setMaximumWidth(QWIDGETSIZE_MAX);
+    badge_->show();
+    if (QLayout* layout = selectorBar_->layout()) {
+        layout->activate();
+    }
+    fitSelectorLabel(badge_, label_);
+}
+
+bool ComparePane::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::Wheel && (watched == selectorBar_ || watched == badge_)) {
+        wheelEvent(static_cast<QWheelEvent*>(event));
+        return true;
+    }
+    return QGraphicsView::eventFilter(watched, event);
 }
 
 void ComparePane::resizeEvent(QResizeEvent* event) {
     // The base resize moves the scrollbars before fit() runs, and an unguarded
-    // pane would report that transient position as its own view.
+    // pane would report that transient position as its own view. The selector
+    // row claims its margin before the fit, so the picture is fitted to the
+    // area above the bar.
     const bool wasSyncing = syncing_;
     syncing_ = true;
     QGraphicsView::resizeEvent(event);
+    layoutSelectorRow();
     syncing_ = wasSyncing;
     fit();
 }
 
 void ComparePane::scrollContentsBy(int dx, int dy) {
-    // The base moves every child of the viewport by the scroll delta, the badge
-    // included; this is the one point where that happens for a pan and a fit
-    // alike, so it is the one place to undo it.
     QGraphicsView::scrollContentsBy(dx, dy);
-    anchorBadge();
+    placeSelector();
 }
 
 }  // namespace mplayer::shell

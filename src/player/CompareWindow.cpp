@@ -11,9 +11,11 @@
 
 #include <QCloseEvent>
 #include <QKeyEvent>
+#include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDoubleSpinBox>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
@@ -288,9 +290,8 @@ void CompareWindow::buildUi() {
     root->setContentsMargins(kGap, kGap, kGap, kGap);
     root->setSpacing(kGapSmall);
 
-    // No candidate sidebar: both sides are picked from the badges on the
-    // pictures themselves, so the list of every chain in the catalogue is a
-    // second copy of a choice the picture already offers.
+    // No candidate sidebar: both sides are picked from the row under the
+    // picture, so the catalogue is not listed twice.
     auto* right = new QVBoxLayout();
     right->setSpacing(kGapSmall);
 
@@ -313,54 +314,92 @@ void CompareWindow::buildUi() {
     connect(modeBox_, qOverload<int>(&QComboBox::currentIndexChanged), this,
             &CompareWindow::onModeChanged);
     header->addWidget(modeBox_);
-    hover_ = new QLabel(this);
-    hover_->setObjectName(QStringLiteral("compareHover"));
-    header->addWidget(hover_, 1);
 
-    right->addLayout(header);
-
-    // --- view controls: one per mode that has a value --------------------
-    auto* view = new QHBoxLayout();
-    view->setSpacing(kGapSmall);
-
-    splitLabel_ = new QLabel(tr("Split:"), this);
-    view->addWidget(splitLabel_);
-    split_ = new QDoubleSpinBox(this);
-    split_->setObjectName(QStringLiteral("compareSplit"));
-    split_->setRange(0.0, 1.0);
-    split_->setSingleStep(0.01);
-    split_->setValue(0.5);
-    connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
-    view->addWidget(split_);
-
-    flickerLabel_ = new QLabel(tr("Flicker, Hz:"), this);
-    view->addWidget(flickerLabel_);
-    flicker_ = new QSpinBox(this);
-    flicker_->setObjectName(QStringLiteral("compareFlicker"));
-    flicker_->setRange(1, 30);
-    flicker_->setValue(1);
-    connect(flicker_, &QSpinBox::valueChanged, this, &CompareWindow::onFlickerChanged);
-    view->addWidget(flicker_);
-
-    gainLabel_ = new QLabel(tr("Gain:"), this);
-    view->addWidget(gainLabel_);
-    gain_ = new QSpinBox(this);
-    gain_->setObjectName(QStringLiteral("compareGain"));
-    gain_->setRange(kDiffGainMin, kDiffGainMax);
-    gain_->setValue(kDiffGainMin);
-    connect(gain_, &QSpinBox::valueChanged, this, &CompareWindow::onGainChanged);
-    view->addWidget(gain_);
+    header->addWidget(new QLabel(tr("Filter:"), this));
+    filterBox_ = new QComboBox(this);
+    filterBox_->setObjectName(QStringLiteral("compareFilter"));
+    filterBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    filterBox_->addItem(tr("Bilinear"), true);
+    filterBox_->addItem(tr("Nearest Neighbor"), false);
+    filterBox_->setToolTip(tr("How the picture is scaled"));
+    filterBox_->setAccessibleName(tr("Filter"));
+    header->addWidget(filterBox_);
 
     auto* fit = new QToolButton(this);
     fit->setObjectName(QStringLiteral("compareFit"));
     fit->setText(tr("Fit"));
+    fit->setToolTip(tr("Fit the picture"));
+    fit->setAccessibleName(tr("Fit the picture"));
     connect(fit, &QToolButton::clicked, this, [this] {
         if (mode_ == CompareMode::SideBySide) grid_->fitToContent();
         else canvas_->fitToContent();
     });
-    header->insertWidget(2, fit);
+    header->addWidget(fit);
 
-    right->addLayout(view);
+    zoom_ = new QLabel(tr("%1%").arg(100), this);
+    zoom_->setObjectName(QStringLiteral("compareZoom"));
+    zoom_->setFont(uiFont(10));
+    zoom_->setToolTip(tr("View scale"));
+    zoom_->setAccessibleName(tr("View scale"));
+    zoom_->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(w90().name()));
+    zoom_->setMinimumWidth(QFontMetrics(zoom_->font()).horizontalAdvance(QStringLiteral("999%")));
+    header->addWidget(zoom_);
+
+    header->addStretch(1);
+    hoverSwatch_ = new QLabel(this);
+    hoverSwatch_->setObjectName(QStringLiteral("compareHoverSwatch"));
+    hoverSwatch_->setFixedSize(14, 14);
+    hoverSwatch_->hide();
+    header->addWidget(hoverSwatch_);
+    hover_ = new QLabel(this);
+    hover_->setObjectName(QStringLiteral("compareHover"));
+    hover_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    hover_->setFont(uiFont(10));
+    header->addWidget(hover_);
+
+    right->addLayout(header);
+
+    // Mode knobs live on their own row so side-by-side, which uses none of
+    // them, does not leave an empty strip under the header.
+    modeControls_ = new QWidget(this);
+    auto* view = new QHBoxLayout(modeControls_);
+    view->setContentsMargins(0, 0, 0, 0);
+    view->setSpacing(kGapSmall);
+
+    splitLabel_ = new QLabel(tr("Split:"), modeControls_);
+    view->addWidget(splitLabel_);
+    split_ = new QDoubleSpinBox(modeControls_);
+    split_->setObjectName(QStringLiteral("compareSplit"));
+    split_->setRange(0.0, 1.0);
+    split_->setSingleStep(0.01);
+    split_->setValue(0.5);
+    split_->setToolTip(tr("Divider position"));
+    connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
+    view->addWidget(split_);
+
+    flickerLabel_ = new QLabel(tr("Flicker, Hz:"), modeControls_);
+    view->addWidget(flickerLabel_);
+    flicker_ = new QSpinBox(modeControls_);
+    flicker_->setObjectName(QStringLiteral("compareFlicker"));
+    flicker_->setRange(1, 30);
+    flicker_->setValue(1);
+    flicker_->setToolTip(tr("How fast the two pictures alternate"));
+    connect(flicker_, &QSpinBox::valueChanged, this, &CompareWindow::onFlickerChanged);
+    view->addWidget(flicker_);
+
+    gainLabel_ = new QLabel(tr("Gain:"), modeControls_);
+    view->addWidget(gainLabel_);
+    gain_ = new QSpinBox(modeControls_);
+    gain_->setObjectName(QStringLiteral("compareGain"));
+    gain_->setRange(kDiffGainMin, kDiffGainMax);
+    gain_->setValue(kDiffGainMin);
+    gain_->setToolTip(tr("Amplify the difference"));
+    connect(gain_, &QSpinBox::valueChanged, this, &CompareWindow::onGainChanged);
+    view->addWidget(gain_);
+    view->addStretch(1);
+    modeControls_->hide();
+
+    right->addWidget(modeControls_);
 
     canvas_ = new CompareCanvas(this);
     canvas_->setObjectName(QStringLiteral("compareCanvas"));
@@ -371,6 +410,11 @@ void CompareWindow::buildUi() {
     });
     connect(canvas_, &CompareCanvas::candidateChosen, this, &CompareWindow::onCandidateChosen);
     connect(canvas_, &CompareCanvas::hoverPixel, this, &CompareWindow::onHoverPixel);
+    connect(canvas_, &CompareCanvas::zoomChanged, this, [this](int percent) {
+        if (mode_ != CompareMode::SideBySide && zoom_ != nullptr) {
+            zoom_->setText(tr("%1%").arg(percent));
+        }
+    });
     canvas_->setStyleSheet(
         QStringLiteral("QGraphicsView#compareCanvas { background: %1; border: 1px solid %2;"
                        " border-radius: %3px; }")
@@ -379,12 +423,22 @@ void CompareWindow::buildUi() {
             .arg(kGap));
     stack_ = new QStackedWidget(this);
     stack_->addWidget(canvas_);
-    // Side-by-side is the multi-pane surface: one pane per side, each with its
-    // own corner badge and candidate menu. The other modes render on the single
-    // canvas, exactly like the reference's stacked surfaces.
+    // Side-by-side is the multi-pane surface: one pane per side, each with the
+    // selector row under its picture. The other modes share one row under the
+    // single canvas.
     grid_ = new CompareGrid(this);
     stack_->addWidget(grid_);
     connect(grid_, &CompareGrid::choiceChosen, this, &CompareWindow::onCandidateChosen);
+    connect(grid_, &CompareGrid::zoomChanged, this, [this](int percent) {
+        if (mode_ == CompareMode::SideBySide && zoom_ != nullptr) {
+            zoom_->setText(tr("%1%").arg(percent));
+        }
+    });
+    connect(filterBox_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+        const bool smooth = filterBox_->currentData().toBool();
+        canvas_->setSmoothScaling(smooth);
+        grid_->setSmoothScaling(smooth);
+    });
     right->addWidget(stack_, 1);
 
     info_ = new QLabel(this);
@@ -1160,6 +1214,7 @@ void CompareWindow::onModeChanged(int index) {
     flicker_->setVisible(isFlicker);
     gainLabel_->setVisible(isDifference);
     gain_->setVisible(isDifference);
+    modeControls_->setVisible(isSplit || isFlicker || isDifference);
     canvas_->setSplit(split_->value());
     canvas_->setFlickerRate(flicker_->value());
     canvas_->setDiffGain(gain_->value());
@@ -1268,8 +1323,18 @@ void CompareWindow::flushDeferredGridClear() {
     grid_->setItems({}, {}, {});
 }
 
-void CompareWindow::onHoverPixel(int x, int y, bool valid) {
-    hover_->setText(valid ? QStringLiteral("%1, %2").arg(x).arg(y) : QString());
+void CompareWindow::onHoverPixel(int x, int y, bool valid, QRgb rgb) {
+    if (!valid) {
+        hover_->clear();
+        hoverSwatch_->hide();
+        return;
+    }
+    const QColor color(rgb);
+    hover_->setText(tr("%1, %2 · %3").arg(x).arg(y).arg(color.name()));
+    hoverSwatch_->setStyleSheet(
+        QStringLiteral("background: %1; border: 1px solid %2; border-radius: 2px;")
+            .arg(color.name(), white(40).name()));
+    hoverSwatch_->show();
 }
 
 void CompareWindow::updateInfo() {

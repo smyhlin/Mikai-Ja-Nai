@@ -66,6 +66,11 @@ struct ChoiceEntry {
 void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
                     QVector<QAction*>* leaves = nullptr);
 
+/// Removes every action and deletes the submenu tree `menu` owns. Distinct from
+/// `menu->clear()`, which drops the actions but leaks the submenu widgets; the
+/// shrink paths (one choice left) use it too, not only the rebuild paths.
+void clearChoiceMenu(QMenu* menu);
+
 /// Moves only the check marks, using the leaves of a previous fill: no action
 /// is created or destroyed, which is what makes it safe to call from a menu
 /// action's own handler.

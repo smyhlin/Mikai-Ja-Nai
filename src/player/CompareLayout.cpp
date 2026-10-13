@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QColor>
 #include <QCoreApplication>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -70,11 +71,16 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, boo
 
     const double s = std::clamp(split, 0.0, 1.0);
 
-    // Space hides the second side everywhere alike: A takes the whole frame and
-    // the divider and the second name go with it. Geometry and the stored mode
-    // are untouched, so releasing restores everything, zoom and pan included.
+    // Space hides the other side everywhere alike: the held side takes the whole
+    // frame and the divider and the other name go with it. Geometry and the
+    // stored mode are untouched, so releasing restores everything, zoom and pan
+    // included.
     if (heldSide >= 0) {
-        out.a.visible = true;
+        out.b.visible = heldSide == 1;
+        out.b.hasClip = false;
+        out.b.clipFull(size);
+        out.a.visible = !out.b.visible;
+        out.a.hasClip = false;
         out.a.clipFull(size);
         out.heldSide = heldSide;
         out.scene = size;
@@ -232,6 +238,11 @@ double Camera::clampedZoom() const {
     return std::clamp(zoom, kCompareZoomMin, kCompareZoomMax);
 }
 
+double Camera::relativeZoom() const {
+    const double base = fitZoom > 0.0 ? fitZoom : 1.0;
+    return clampedZoom() / base;
+}
+
 double Camera::clampedSplit() const { return std::clamp(split, 0.0, 1.0); }
 double Camera::clampedFlickerHz() const { return std::clamp(flickerHz, 1.0, 30.0); }
 int Camera::clampedGain() const { return std::clamp(diffGain, kDiffGainMin, kDiffGainMax); }
@@ -266,12 +277,14 @@ void Camera::fit(const QSize& content, double viewportWidth, double viewportHeig
     const double scale =
         std::min(1.0, std::min(viewportWidth / content.width(), viewportHeight / content.height()));
     zoom = scale;
+    fitZoom = scale;
     panX = (viewportWidth - content.width() * scale) / 2.0;
     panY = (viewportHeight - content.height() * scale) / 2.0;
 }
 
 void Camera::reset() {
     zoom = 1.0;
+    fitZoom = 1.0;
     panX = 0.0;
     panY = 0.0;
     split = 0.5;
