@@ -1,5 +1,6 @@
 #include "CrashLog.hpp"
 #include "I18n.hpp"
+#include "WindowRaisePolicy.hpp"
 #include "pages/MainWindow.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
@@ -98,6 +99,15 @@ int main(int argc, char** argv) {
 
     app.setStyle(QStringLiteral("Fusion"));
     app.setStyleSheet(mikai::app::theme::buildStylesheet());
+
+    // After the application object exists (the policy installs an event filter
+    // on it) and before any window is shown, so the first window - the shell -
+    // already behaves like every window that follows it: a newly opened player,
+    // settings or cover arrives above the app's other windows and is usable
+    // immediately. The deliberately non-activating windows (the engine build
+    // overlay, a parked PiP float) keep their behaviour; see the policy's own
+    // exemption list.
+    mikai::app::WindowRaisePolicy::install();
 
     // The drain runs while the event loop is still alive, never after it: the
     // completion shutdownAll() reports is delivered to the GUI thread, so a call

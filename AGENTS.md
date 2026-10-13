@@ -349,6 +349,14 @@ Layering is strict and enforced by tests:
   Progress follows the float's own `positionChanged`, and `setTime` shows the
   position whenever it is known - blanking it because the *duration* was not
   threw away the only number a viewer can read.
+  **A PiP entry never starts a second official engine build.** Entering PiP
+  while one surface's `animeJanaiEngineBuildChanged(true)` is active leaves the
+  other core's filter off and records it as the waiting owner; the plan reaches
+  it only when the owning build settles successfully, and a failed build leaves
+  the waiter unclaimed rather than claimed. `main()` installs `WindowRaisePolicy`
+  once on the QApplication: a newly shown top-level window raises over the app's
+  own windows and takes activation, while the engine-build overlay and a parked
+  PiP float keep their deliberately non-activating behaviour.
   `Anime4K` — one declarative catalogue (id, label, hint, category, ordered
   chain) in `Anime4K.cpp` plus the menu tree above it: ten built-in presets
   (`Mode::Off`..`HqCA`, ids frozen), fourteen experiments grouped under
@@ -809,7 +817,15 @@ and scenario manifests remain in place.
   old key) and `TestRunner` (destroying a Runner returns promptly, cancel
   retires queued work and unwinds a running one through the real backend gate,
   `shutdownAll` drains without blocking the GUI, and no delivery reaches a dead
-  owner).
+  owner). Plus, in `src/app/`, `TestWindowRaise`: a newly shown top-level window
+  raises over the app's other windows and takes activation (installed once on
+  the QApplication from `main()`), while `WA_ShowWithoutActivating`, the
+  stay-on-top flag and the `mikaiNoActivateOnShow` property keep their windows
+  quiet, a child-widget show moves nothing, the overlay never steals the
+  working window's activation on re-show, and the install is idempotent. The
+  no-activate half is asserted on a real window manager only: offscreen and
+  minimal activate every shown window, so there the suite proves the exemption
+  classification and the visibility instead.
 - `TestLiveOracle` (gated on `MIKAI_LIVE=1` + `MIKAI_API_KEY`): BLACK TORCH /
   «Чорний смолоскип» → ref `7428`; 7 releases with 4 dubs / 3 subs; one dub
   carrying episodes 1–12 with real embeds; a live 480/720/1080 ladder from

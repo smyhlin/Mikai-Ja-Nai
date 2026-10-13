@@ -166,7 +166,8 @@ private:
 /// popover here, because a build is started from the settings dialog and that
 /// dialog is modal: a child of the player would sit behind it and the work would
 /// be invisible for the whole build. Staying on top of the player is what makes
-/// a long compile visible while the viewer keeps watching.
+/// a long compile visible while the viewer keeps watching. The window manager
+/// must not activate it: viewers can continue using PiP while the build runs.
 ///
 /// No percentage is invented. The bar steps over the plan's own stage count -
 /// `BuilderProgress::stageIndex` against `PreparationPlan::stages` - and a stage

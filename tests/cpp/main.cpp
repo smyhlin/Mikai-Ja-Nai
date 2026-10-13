@@ -8,6 +8,7 @@
 #include "TestAnime4K.hpp"
 #include "TestI18n.hpp"
 #include "TestLayering.hpp"
+#include "TestWindowRaise.hpp"
 #include "TestLiveOracle.hpp"
 #include "TestModels.hpp"
 #include "TestPagers.hpp"
@@ -89,7 +90,7 @@ constexpr const char* kSuites[] = {
     "TestModels", "TestReleases", "TestAnime4K", "TestI18n", "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestDownloads", "TestDiagnostics", "TestApiClient",
     "TestFeedRender", "TestRunner",
-    "TestLayering", "TestClipboard", "TestLiveOracle"};
+    "TestLayering", "TestWindowRaise", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
@@ -242,6 +243,7 @@ int main(int argc, char** argv) {
   TestQualityCache qualityCache;
   TestRateLimiter rateLimiter;
   TestLayering layering;
+  TestWindowRaise windowRaise;
   TestClipboard clipboard;
   TestLiveOracle liveOracle;
 
@@ -350,6 +352,7 @@ int main(int argc, char** argv) {
   run("TestQualityCache", &qualityCache, true);
   run("TestRateLimiter", &rateLimiter, true);
   run("TestLayering", &layering, true);
+  run("TestWindowRaise", &windowRaise, true);
   run("TestClipboard", &clipboard, true);
   // Last, and off unless MIKAI_LIVE=1 with a key: it needs the network and the
   // quota, and a hermetic run must not be recorded as having exercised either.

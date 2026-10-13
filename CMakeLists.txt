@@ -721,6 +721,8 @@ add_executable(mikai_tests
   tests/cpp/TestRunner.cpp
   tests/cpp/TestLayering.hpp
   tests/cpp/TestLayering.cpp
+  tests/cpp/TestWindowRaise.hpp
+  tests/cpp/TestWindowRaise.cpp
   tests/cpp/TestLiveOracle.hpp
   tests/cpp/TestLiveOracle.cpp
 )
@@ -790,6 +792,7 @@ if(TARGET mikai_backend)
   set(APP_SOURCES
     src/app/CrashLog.cpp
     src/app/I18n.cpp
+    src/app/WindowRaisePolicy.cpp
     src/app/theme/Theme.cpp
     src/app/theme/Icons.cpp
     src/app/Labels.cpp
@@ -817,6 +820,7 @@ if(TARGET mikai_backend)
     src/app/CrashLog.hpp
     src/app/I18n.hpp
     src/app/Labels.hpp
+    src/app/WindowRaisePolicy.hpp
     src/app/theme/Theme.hpp
     src/app/theme/Colors.hpp
     src/app/theme/Metrics.hpp
