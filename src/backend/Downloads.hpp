@@ -35,7 +35,7 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
                     const std::function<void(qint64 received, qint64 total)>& progress,
                     const std::function<bool()>& cancelled, QString* reason);
 
-QString ensureSevenZip();
+QString ensureSevenZip(const QString& toolsDirectory);
 
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,
                     QString* reason);

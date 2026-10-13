@@ -120,6 +120,7 @@ QStringList nativeSubdirectoryNames();
 /// `nativeRoot()/<name>` for a name from `nativeSubdirectoryNames()`, or empty
 /// with `reason` set for anything else. Never created by this call.
 QString nativeSubdirectory(const QString& name, QString* reason = nullptr);
+QString nativeToolsDirectory();
 
 }  // namespace native
 }  // namespace mplayer

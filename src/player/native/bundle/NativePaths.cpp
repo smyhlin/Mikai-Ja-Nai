@@ -308,7 +308,7 @@ QString nativeRoot() {
 QStringList nativeSubdirectoryNames() {
     return {QStringLiteral("runtime"), QStringLiteral("models"),  QStringLiteral("assets"),
             QStringLiteral("artifacts"), QStringLiteral("recipes"), QStringLiteral("scratch"),
-            QStringLiteral("logs"), QStringLiteral("components")};
+            QStringLiteral("logs"), QStringLiteral("components"), QStringLiteral("tools")};
 }
 
 QString nativeSubdirectory(const QString& name, QString* reason) {
@@ -320,6 +320,11 @@ QString nativeSubdirectory(const QString& name, QString* reason) {
         return {};
     }
     return QDir(nativeRoot()).filePath(name);
+}
+
+QString nativeToolsDirectory() {
+    const QString root = nativeRoot();
+    return root.isEmpty() ? QString{} : QDir(root).filePath(QStringLiteral("tools/7zip-26.03"));
 }
 
 }  // namespace native

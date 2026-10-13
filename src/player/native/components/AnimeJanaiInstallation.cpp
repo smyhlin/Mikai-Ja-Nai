@@ -730,7 +730,7 @@ ComponentProvisionResult provisionAnimeJanaiRuntime(Backend backend,
 
     QString sevenZip;
     try {
-        sevenZip = mikai::backend::ensureSevenZip();
+        sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     } catch (const std::exception& error) {
         return failed(QStringLiteral("animejanai.installation.extractor"), QString::fromLocal8Bit(error.what()));
     }

@@ -53,7 +53,10 @@ QString sha256(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
-QString findSevenZip() {
+QString findSevenZip(const QString& toolsDirectory) {
+    // An empty application tree yields a CWD-relative "7z.exe" probe; that
+    // would let a planted binary in the working directory pass as trusted.
+    if (toolsDirectory.isEmpty()) return {};
     const QString found = QStandardPaths::findExecutable(QStringLiteral("7z.exe"));
     if (!found.isEmpty()) {
         return found;
@@ -64,9 +67,8 @@ QString findSevenZip() {
             return candidate;
         }
     }
-    const QString cached = QDir::cleanPath(
-        cacheDir().filePath(QStringLiteral("../tools/7zip-26.03/7z.exe")));
-    return QFileInfo::exists(cached) ? cached : QString{};
+    const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
+    return QFileInfo::exists(bundled) ? bundled : QString{};
 }
 
 }  // namespace
@@ -292,8 +294,9 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     return true;
 }
 
-QString ensureSevenZip() {
-    const QString found = findSevenZip();
+QString ensureSevenZip(const QString& toolsDirectory) {
+    if (toolsDirectory.isEmpty()) return {};
+    const QString found = findSevenZip(toolsDirectory);
     if (!found.isEmpty()) {
         return found;
     }
@@ -303,7 +306,7 @@ QString ensureSevenZip() {
     // artifacts before executing/extracting anything from them.
     constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
     constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
-    const QString tools = QDir::cleanPath(cacheDir().filePath(QStringLiteral("../tools/7zip-26.03")));
+    const QString tools = toolsDirectory;
     const QString bootstrap = QDir(tools).filePath(QStringLiteral("7zr.exe"));
     const QString installer = QDir(tools).filePath(QStringLiteral("7z2603-x64.exe"));
     if (!QDir().mkpath(tools)) {

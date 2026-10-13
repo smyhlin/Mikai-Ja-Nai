@@ -169,7 +169,7 @@ ComponentProvisionResult provisionTensorRtComponents(
                     QStringLiteral("no component packs were named"));
     }
 
-    const QString sevenZip = mikai::backend::ensureSevenZip();
+    const QString sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     if (sevenZip.isEmpty()) {
         return fail(QStringLiteral("native.components.extract"),
                     translated("7-Zip is not available to unpack the component archive."));
@@ -261,7 +261,7 @@ ComponentProvisionResult provisionRifeArchive(
         return fail(QStringLiteral("native.components.install"),
                     translated("The pinned RIFE archive inventory is unavailable."));
     }
-    const QString sevenZip = mikai::backend::ensureSevenZip();
+    const QString sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     if (sevenZip.isEmpty()) {
         return fail(QStringLiteral("native.components.extract"),
                     translated("7-Zip is not available to unpack the RIFE archive."));

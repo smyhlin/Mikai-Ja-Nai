@@ -1584,7 +1584,7 @@ void TestNativeBundle::theNativeLayoutResolvesUnderOneAppLocalHierarchy() {
     QCOMPARE(runtimeStorageRoot(), QDir::cleanPath(QDir(storage).filePath(QStringLiteral("runtime"))));
 
     const QStringList names = nativeSubdirectoryNames();
-    QCOMPARE(names.size(), 8);
+    QCOMPARE(names.size(), 9);
     for (const QString& name : names) {
         const QString resolved = nativeSubdirectory(name);
         QCOMPARE(resolved, QDir::cleanPath(QDir(storage).filePath(name)));
