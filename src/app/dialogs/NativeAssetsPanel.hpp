@@ -198,7 +198,7 @@ class NativeAssetsPanel : public QWidget {
   Q_OBJECT
 
 public:
-  explicit NativeAssetsPanel(QWidget* parent = nullptr);
+    explicit NativeAssetsPanel(QWidget* parent = nullptr);
 
   /// Requests cancellation of any in-flight import or preparation before this
   /// widget is destroyed, and drops the deliveries that were still queued for
@@ -440,7 +440,7 @@ private:
   /// True when this translation unit is compiled with the model inspector.
   bool inspectorBuilds() const;
 
-  mikai::app::Runner* runner_ = nullptr;
+  Runner* runner_ = nullptr;
   /// Cleared in this widget's destructor, read by a delivered GUI body. Paired
   /// with the binder, it is what keeps a queued completion from reaching an
   /// owner that no longer exists.

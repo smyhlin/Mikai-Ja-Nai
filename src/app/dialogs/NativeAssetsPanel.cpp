@@ -1421,13 +1421,9 @@ NativeAssetsPanel::~NativeAssetsPanel() {
     if (importCancel_) importCancel_->cancel();
     if (prepareCancel_) prepareCancel_->cancel();
     // Anything still queued for this widget is dropped rather than delivered to
-    // an owner that is going away, and a runner that is being retired with it is
-    // cancelled the same way.
+    // an owner that is going away.
     alive_->store(false);
     livePanel_ = nullptr;
-    if (runner_ != nullptr) {
-        runner_->cancel();
-    }
 }
 
 bool NativeAssetsPanel::importModel(const QString& sourcePath, const QSize& stageGeometry) {
