@@ -3,6 +3,11 @@
 # schema-6 preset is a range the project cannot actually configure.
 cmake_minimum_required(VERSION 3.25)
 project(mikai LANGUAGES CXX)
+# The RC language lets MinGW compile the .rc that embeds the auto-generated
+# Windows manifest (long paths + Win10/11 compatibility) into mikai.exe.
+if(WIN32)
+  enable_language(RC)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -857,9 +862,32 @@ if(TARGET mikai_backend)
     endif()
   endif()
 
-  add_executable(mikai src/app/main.cpp)
-  set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
+  # A Windows application manifest that declares Windows 10/11 compatibility,
+  # long-path awareness and an asInvoker execution level. The app is a media
+  # client that opens deep local trees through the standard Qt APIs, so the
+  # long-path declaration is what keeps the 260-char legacy ceiling from
+  # truncating those paths; the native store's own Win32 wide-path handling is
+  # separate and unaffected. Qt 6.12's qt_add_executable generates its own
+  # manifest, but only its MSVC link path embeds it and its finalizer skips
+  # regenerating once a .manifest source exists. Generating the manifest here
+  # makes both deterministic: it carries a real assembly identity, it is added
+  # as a target source (which also makes Qt's finalizer stand aside), and a
+  # generated RC compiles it into the exe as RT_MANIFEST through windres.
+  qt_add_executable(mikai src/app/main.cpp)
   target_link_libraries(mikai PRIVATE mikai_app)
+  set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
+  if(WIN32)
+    set(mikai_manifest "${CMAKE_CURRENT_BINARY_DIR}/mikai.exe.manifest")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/mikai.exe.manifest.in"
+                   "${mikai_manifest}" @ONLY)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/mikai_manifest.rc.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/mikai_manifest.rc" @ONLY)
+    target_sources(mikai PRIVATE "${mikai_manifest}"
+                                 "${CMAKE_CURRENT_BINARY_DIR}/mikai_manifest.rc")
+    set_source_files_properties("${mikai_manifest}"
+                                "${CMAKE_CURRENT_BINARY_DIR}/mikai_manifest.rc"
+                                PROPERTIES GENERATED TRUE)
+  endif()
 
   set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_player mikai_native_support)
   if(TARGET mikai_model_inspection)

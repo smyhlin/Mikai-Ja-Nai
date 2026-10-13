@@ -550,7 +550,14 @@ is schema 6 and that is the version which introduced it. `CMakeLists.txt` pins
 `native/` — with `QT_DISABLE_DEPRECATED_UP_TO=0x060C00` (a use of anything Qt
 6.12 deprecated is a build error, not a warning) and
 `QT_WARN_DEPRECATED_UP_TO=0x060D00` (Qt 6.13's deprecations are visible now).
-Release tuning is
+`mikai` carries a Windows application manifest declaring Win10/11
+compatibility, `longPathAware` and `asInvoker`, generated from
+`cmake/mikai.exe.manifest.in` and embedded through a generated `RT_MANIFEST`
+RC compiled with `windres` (the `RC` language is enabled on Windows). This is
+deliberately owned here rather than left to Qt 6.12's `qt_add_executable`
+auto-manifest: that path only embeds on MSVC and its finalizer skips once a
+`.manifest` source exists, so the generated manifest is made deterministic
+with a real assembly identity (`me.mikai.wrapper`). Release tuning is
 `-march=x86-64` (the Microsoft x64 ABI floor: x64 plus SSE2), never
 `-march=native` and never a newer baseline, so the project's own GNU release
 objects do not require an instruction set the platform does not guarantee.
