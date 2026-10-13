@@ -33,7 +33,7 @@ public:
 
 namespace {
 
-// The pools cap the three kinds of work. Artwork gets a wide pool on purpose:
+// The pools cap the kinds of work. Artwork gets a wide pool on purpose:
 // poster downloads spend no API budget and only wait on the network, so sixty
 // of them at four at a time is what made the home page look unfinished.
 constexpr int kSharedThreads = 4;
@@ -43,6 +43,14 @@ constexpr int kImageThreads = 12;
 // to answer now, not after the feed fan-out sharing the bulk pool. Two threads
 // is all one user clicking one episode at a time can spend.
 constexpr int kStreamThreads = 2;
+// Model transfers are independent of each other and of the shared pools, so
+// several Components-tab downloads can run at once instead of queuing behind
+// each other. Conflicting installs cannot happen anyway: per-component
+// acquisition is single-flight in the UI/provisioner layer, and the native
+// runtime and RIFE archive installers keep their own mutex guards. Sharing this
+// pool with anything else is not allowed - it must not borrow a shared-pool
+// thread that `getAnime` / `getPlayer` need while a pack downloads.
+constexpr int kTransferThreads = 4;
 
 /// The result of one task and the handlers waiting for it. Held by shared_ptr
 /// so a completion that is still queued keeps the callbacks alive.
@@ -106,6 +114,7 @@ std::shared_ptr<Shared> makeShared() {
     add(kBulkThreads);
     add(kStreamThreads);
     add(kImageThreads);
+    add(kTransferThreads);
     return shared;
 }
 
@@ -422,6 +431,10 @@ void Runner::runImage(Work work, OnOk onOk, OnErr onErr) {
     start(impl_->shared->pools[3].get(), std::move(work), std::move(onOk), std::move(onErr));
 }
 
+void Runner::runTransfer(Work work, OnOk onOk, OnErr onErr) {
+    start(impl_->shared->pools[4].get(), std::move(work), std::move(onOk), std::move(onErr));
+}
+
 bool Runner::waitForDone(int timeoutMs) {
     QElapsedTimer budget;
     budget.start();
@@ -438,7 +451,8 @@ bool Runner::waitForDone(int timeoutMs) {
     const bool bulk = impl_->shared->pools[1]->waitForDone(left());
     const bool stream = impl_->shared->pools[2]->waitForDone(left());
     const bool image = impl_->shared->pools[3]->waitForDone(left());
-    return impl_->shared->pools[0]->waitForDone(left()) && bulk && stream && image;
+    const bool transfer = impl_->shared->pools[4]->waitForDone(left());
+    return impl_->shared->pools[0]->waitForDone(left()) && bulk && stream && image && transfer;
 }
 
 }  // namespace mikai::app

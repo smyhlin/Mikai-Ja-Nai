@@ -14,7 +14,7 @@ namespace mikai::app {
 
 /// Off-thread work for the UI. Nothing here ever blocks the GUI thread.
 ///
-/// Four pools, because the work has four different shapes:
+/// Five pools, because the work has five different shapes:
 ///  * the shared pool bounds concurrent API calls,
 ///  * the bulk pool carries feed fan-out (one task per home card), so a title the
 ///    user just opened is not queued behind the whole feed,
@@ -22,7 +22,10 @@ namespace mikai::app {
 ///    single-user, and it holds its thread across two sequential GETs, so it must
 ///    not queue behind the feed,
 ///  * the image pool carries artwork only. `fetchBytes` bypasses the client's
-///    rate limiter entirely, so posters cost no API budget and are pure latency.
+///    rate limiter entirely, so posters cost no API budget and are pure latency,
+///  * the transfer pool carries component and model downloads only. One of those
+///    holds its thread for the whole file, so it must not take a thread the
+///    shared pool needs to open a title.
 ///
 /// Lifetime, which is the whole point of this class:
 ///
@@ -99,9 +102,13 @@ public:
     void runBulk(Work work, OnOk onOk, OnErr onErr);
     void runStream(Work work, OnOk onOk, OnErr onErr);
     void runImage(Work work, OnOk onOk, OnErr onErr);
+    /// Component and model downloads. Never the shared API pool: a pack transfer
+    /// occupies its thread until the file is proved, and title navigation has to
+    /// keep fetching while that runs.
+    void runTransfer(Work work, OnOk onOk, OnErr onErr);
 
-    /// Drains the bulk, stream and image pools first, then the shared one, and
-    /// reports whether the shared pool finished inside the budget.
+    /// Drains the bulk, stream, image and transfer pools first, then the shared
+    /// one, and reports whether every pool finished inside the budget.
     ///
     /// Blocking by design: this is what an explicit probe asks for.
     /// `-1` waits for the last thread to exit (practically infinite); `0` does

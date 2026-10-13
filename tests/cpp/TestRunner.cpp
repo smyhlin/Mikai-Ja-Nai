@@ -228,8 +228,8 @@ void TestRunner::workRunsOffTheGuiThreadAndDeliversOnIt() {
 }
 
 void TestRunner::eachPoolAnswersTheCallerThatQueuedOnIt() {
-  // Four pools, four entry points. Each one has to submit work rather than
-  // quietly routing everything through one of them, and all four are awaited
+  // Five pools, five entry points. Each one has to submit work rather than
+  // quietly routing everything through one of them, and all five are awaited
   // on the same loop so they are observed running, not merely constructed.
   Runner runner;
   Ledger ledger;
@@ -238,11 +238,12 @@ void TestRunner::eachPoolAnswersTheCallerThatQueuedOnIt() {
   runner.runBulk(countedWork(&ledger, nullptr), okDelivery(&ledger), errDelivery(&ledger));
   runner.runStream(countedWork(&ledger, nullptr), okDelivery(&ledger), errDelivery(&ledger));
   runner.runImage(countedWork(&ledger, nullptr), okDelivery(&ledger), errDelivery(&ledger));
+  runner.runTransfer(countedWork(&ledger, nullptr), okDelivery(&ledger), errDelivery(&ledger));
 
-  QVERIFY2(spinUntil([&ledger] { return ledger.deliveries.load() == 4; }, kBudgetMs),
-           "all four pools answered the work queued on them");
-  QCOMPARE(ledger.workEntries.load(), 4);
-  QCOMPARE(ledger.deliveries.load(), 4);
+  QVERIFY2(spinUntil([&ledger] { return ledger.deliveries.load() == 5; }, kBudgetMs),
+           "all five pools answered the work queued on them");
+  QCOMPARE(ledger.workEntries.load(), 5);
+  QCOMPARE(ledger.deliveries.load(), 5);
   QCOMPARE(ledger.failures.load(), 0);
 }
 

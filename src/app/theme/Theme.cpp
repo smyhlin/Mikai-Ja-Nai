@@ -146,6 +146,8 @@ QScrollBar:vertical { background: %1; width: 10px; margin: 0; }
 QScrollBar::handle:vertical { background: %10; border-radius: 5px; min-height: 30px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QToolTip { background: %8; color: %2; border: 1px solid %10; padding: %15px %3px; }
+QWidget#componentAcquisitionBar { background: %5; border-top: 1px solid %10; }
+QWidget#componentAcquisitionBar QLabel { background: transparent; }
 QDialog#coverViewer { background: %20; }
 QWidget#coverViewerView { background: transparent; border: none; }
 )QSS");
