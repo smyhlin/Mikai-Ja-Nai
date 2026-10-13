@@ -59,6 +59,9 @@ private:
     /// dispatcher delivered, which is the one place the owner is known to be
     /// readable.
     static NativeComponentProvisioner* currentRun();
+    /// Frees the shared run slot when a run settles. GUI thread only, for the
+    /// same reason as `currentRun()`.
+    static void runFinished();
     /// The one provisioner the current run delivers for, or null once its owner
     /// has gone away. One run per process, so this is a class-wide slot rather
     /// than per-instance state: the delivered bodies resolve their owner through

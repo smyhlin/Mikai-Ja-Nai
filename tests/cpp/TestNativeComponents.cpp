@@ -190,13 +190,26 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
         QVERIFY(!stored.first().verified);
     }
 
+    mikai::app::Runner runner;
     mikai::app::ComponentStoreTab tab;
+    tab.setRunner(&runner);
     auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
     auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
     auto* apply = tab.findChild<QPushButton*>(QStringLiteral("primary"));
     auto* cancel = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
     QVERIFY(pack != nullptr);
     QVERIFY(status != nullptr);
+    // The inventory now lands on a worker; the card state and the recommended
+    // selections are published only when it does. Constructions must read that
+    // state, so the first assertions wait for the snapshot with a bounded
+    // deadline rather than reading whatever the constructor rendered.
+    QElapsedTimer inventoryDeadline;
+    inventoryDeadline.start();
+    while (!tab.inventoryReady() && inventoryDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(tab.inventoryReady());
     auto* packState = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardState"));
     auto* packSize = tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardSize"));
     QVERIFY(packState != nullptr);
@@ -253,6 +266,12 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
         });
         modalResponse.start(10);
         tab.downloadMissing();
+        QElapsedTimer checkDeadline;
+        checkDeadline.start();
+        while (prompt.isEmpty() && !reviewTimedOut && checkDeadline.elapsed() < 5000) {
+            QApplication::processEvents();
+            QTest::qWait(10);
+        }
         return prompt;
     };
 
@@ -265,13 +284,23 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
         }
         QVERIFY2(prompt.contains(QLocale().formattedDataSize(expectedBytes)), qPrintable(prompt));
         if (answer == QMessageBox::Cancel) {
-            QVERIFY(status->text().isEmpty());
             QVERIFY(tab.statusKey().isEmpty());
+            // The transient "Checking selected components..." label must be
+            // gone after the user declines the review.
+            QVERIFY(status->text().isEmpty());
             QVERIFY(pack->isChecked());
         }
     }
-    // A null client/runner stops before any network request, but only after the
-    // real consumer has reviewed and queued the selected pinned models.
+    QElapsedTimer idleDeadline;
+    idleDeadline.start();
+    while (tab.acquisitionRunning() && idleDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(!tab.acquisitionRunning());
+    runner.waitForDone(5000);
+    // A null client stops before any network request, but only after the real
+    // consumer has reviewed and queued the selected pinned models.
     QCOMPARE(tab.statusKey(), QStringLiteral("native.components.noClient"));
     QVERIFY(!status->text().isEmpty());
     QCOMPARE(status->text(), tab.statusReason());
@@ -286,13 +315,101 @@ void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs() {
     QVERIFY(pack->isChecked());
 }
 
+void TestNativeComponents::concurrentUnitsSettleOnceEachAndCancelArmsEveryUnit() {
+    // The acquisition units now run side by side instead of as one chain, so
+    // the run's lifecycle has its own public shape: one Apply starts the
+    // selected work, the run settles exactly once through its own finalizer,
+    // and while a run is up the Cancel action is armed. A null client makes
+    // the spatial unit refuse before any network, which is what this test
+    // watches without touching a mirror.
+    mikai::app::Runner runner;
+    mikai::app::ComponentStoreTab tab;
+    tab.setRunner(&runner);
+    auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
+    auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
+    auto* cancel = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentTabCancelButton"));
+    QVERIFY(pack != nullptr);
+    QVERIFY(status != nullptr);
+    QVERIFY(cancel != nullptr);
+    QElapsedTimer inventoryDeadline;
+    inventoryDeadline.start();
+    while (!tab.inventoryReady() && inventoryDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(tab.inventoryReady());
+
+    // Only the spatial unit refuses hermetically; the backend and RIFE units
+    // would hit the network, so the coordination contract is exercised with
+    // the spatial unit and the null client.
+    for (QCheckBox* box : tab.findChildren<QCheckBox*>()) {
+        if (box->isChecked()) box->click();
+    }
+    pack->setChecked(true);
+    bool answered = false;
+    QTimer modalResponse;
+    connect(&modalResponse, &QTimer::timeout, &tab, [&] {
+        auto* dialog = tab.findChild<QMessageBox*>();
+        if (dialog == nullptr || !dialog->isVisible()) return;
+        QAbstractButton* button = dialog->button(QMessageBox::Yes);
+        if (button == nullptr) return;
+        answered = true;
+        button->click();
+    });
+    modalResponse.start(10);
+    tab.downloadMissing();
+    QElapsedTimer settleDeadline;
+    settleDeadline.start();
+    while (tab.acquisitionRunning() && settleDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(answered);
+    QVERIFY(!tab.acquisitionRunning());
+    runner.waitForDone(5000);
+    QVERIFY(!cancel->isEnabled());
+    QCOMPARE(tab.statusKey(), QStringLiteral("native.components.noClient"));
+    QVERIFY(!status->text().isEmpty());
+
+    // A second Apply must be accepted after the run settled: the finalizer
+    // cleared every busy latch, so the surface is not permanently stuck.
+    tab.downloadMissing();
+    QElapsedTimer refill;
+    refill.start();
+    while (!tab.acquisitionRunning() && refill.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(tab.acquisitionRunning());
+    QVERIFY(cancel->isEnabled());
+    cancel->click();
+    QElapsedTimer idleDeadline;
+    idleDeadline.start();
+    while (tab.acquisitionRunning() && idleDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(!tab.acquisitionRunning());
+    QVERIFY(!cancel->isEnabled());
+    runner.waitForDone(5000);
+}
+
 void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFailVerification() {
     QVERIFY(storedSpatialAssets().isEmpty());
+    mikai::app::Runner inventoryRunner;
     mikai::app::ComponentStoreTab tab;
+    tab.setRunner(&inventoryRunner);
     auto* pack = tab.findChild<QCheckBox*>(QStringLiteral("animeJanaiModelsCardCheck"));
     auto* status = tab.findChild<QLabel*>(QStringLiteral("nativeComponentStatus"));
     QVERIFY(pack != nullptr);
     QVERIFY(status != nullptr);
+    QElapsedTimer inventoryDeadline;
+    inventoryDeadline.start();
+    while (!tab.inventoryReady() && inventoryDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(tab.inventoryReady());
     QVERIFY(pack->isChecked());
     pack->click();
     QVERIFY(!pack->isChecked());
@@ -303,15 +420,24 @@ void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFail
     QVERIFY(!pack->isChecked());
     QVERIFY(!pack->accessibleName().isEmpty());
 
-    // Verify is an off-GUI run: the inventories are hashed on a worker and the
-    // verdict is published on the GUI thread. The assertion waits for that
-    // publication with a bounded deadline, so a run that never completes fails
-    // the test instead of hanging it, and a verdict that never names a digest
-    // failure is not accepted as one.
+    // Verify is off-GUI: the inventories are hashed on a worker and the verdict
+    // is published on the GUI thread. The refresh above starts its own
+    // inventory scan, which disables the Verify action until it lands, so the
+    // click below waits for the surface to be idle again. Every assertion then
+    // waits with a bounded deadline for the publication, so a run that never
+    // completes fails the test instead of hanging it.
+    QElapsedTimer idleDeadline;
+    idleDeadline.start();
+    while (tab.acquisitionRunning() && idleDeadline.elapsed() < 5000) {
+        QApplication::processEvents();
+        QTest::qWait(10);
+    }
+    QVERIFY(!tab.acquisitionRunning());
     mikai::app::Runner verifyRunner;
     tab.setRunner(&verifyRunner);
     auto* verifyButton = tab.findChild<QPushButton*>(QStringLiteral("nativeComponentVerifyButton"));
     QVERIFY(verifyButton != nullptr);
+    QVERIFY(verifyButton->isEnabled());
     verifyButton->click();
     QElapsedTimer verifyDeadline;
     verifyDeadline.start();

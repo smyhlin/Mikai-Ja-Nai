@@ -44,7 +44,14 @@ NativeComponentProvisioner* NativeComponentProvisioner::currentRun() {
     return currentRun_;
 }
 
+void NativeComponentProvisioner::runFinished() {
+    // One settled run frees the slot so the same owner can run again. GUI thread
+    // only: every delivery arrives through the Runner's dispatcher.
+    currentRun_ = nullptr;
+}
+
 void NativeComponentProvisioner::finish(bool ok, bool cancelled, const QString& summary) {
+    runFinished();
     running_ = false;
     emit finished(ok, cancelled, summary);
 }
@@ -227,6 +234,10 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
                                                    const QVector<ComponentPack>& packs) {
     running_ = true;
     cancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+    // Each run re-claims the shared delivery slot: `finish()` clears it when a
+    // run settles, so without this re-claim the second run's completion would
+    // find no owner and `running_` would stay true forever.
+    currentRun_ = this;
     const QString scratchRoot = nativeSubdirectory(QStringLiteral("scratch"));
     const std::shared_ptr<std::atomic<bool>> flag = cancelFlag_;
 
@@ -236,7 +247,7 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
     const Runner::GuiDispatch post = runner_.post();
     // The worker captures no owner pointer at all: the binder is its only route
     // back, and every body it posts resolves the owner on the GUI thread.
-    runner_.run(
+    runner_.runTransfer(
         [store, packs, scratchRoot, flag, post]() -> QVariant {
             QDir().mkpath(scratchRoot);
             QTemporaryDir scratchDir(
@@ -293,21 +304,18 @@ void NativeComponentProvisioner::cancel() {
     if (cancelFlag_) {
         cancelFlag_->store(true);
     }
-    // A cancelled run is never reported to an owner that asked for the cancel:
-    // the gate is what stops the download, and the deliveries that were still
-    // queued for it are dropped rather than answered with a cancellation nobody
-    // asked to see.
-    if (currentRun_ == this) currentRun_ = nullptr;
+    // Cancel stops the transfer; the run still settles itself through its own
+    // completion, which is what frees the shared run slot and tells the owner
+    // the download is really over.
 }
 
 NativeComponentProvisioner::~NativeComponentProvisioner() {
-    // An owner going away cancels its download. The worker's own gate is set
-    // here, the Runner's gate then pulls it out of its backend waits rather than
-    // letting it park for a whole quota window, and every queued completion is
-    // suppressed before an owner that no longer exists is touched. Nothing in
-    // this destructor waits for the worker.
+    // An owner going away cancels its own download: the worker's gate is set
+    // here and the Runner's cancellation scope pulls it out of blocking backend
+    // waits. The Runner itself is borrowed, never owned - cancelling it here
+    // would retire the shared pools' queues for every other owner, so this
+    // destructor only sets the run's own gate.
     cancel();
-    runner_.cancel();
     if (currentRun_ == this) currentRun_ = nullptr;
 }
 

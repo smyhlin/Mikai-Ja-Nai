@@ -30,6 +30,7 @@
 #include <QtGui/QResizeEvent>
 #include <QtCore/QVariant>
 #include <QtCore/QVariantMap>
+#include <utility>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFileDialog>
@@ -103,6 +104,102 @@ const StoredSpatialAsset* spatialInventoryRow(const QVector<StoredSpatialAsset>&
     return nullptr;
 }
 
+QVariantMap inventorySnapshot(const GpuComputeCapability& gpu, bool verifyRife,
+                              bool rehashBackend, const std::atomic<bool>* cancelled) {
+    const auto isCancelled = [cancelled] {
+        return cancelled != nullptr && cancelled->load();
+    };
+    QVariantMap result;
+    const ComponentStore store = componentStore();
+    const RifeArchiveStore rifeStore = rifeArchiveStore();
+    const ComponentPack* runtimePack = tensorRtRuntimePack();
+    const ComponentPack* kernelsPack = tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+    const StoredPack runtimeStored = runtimePack != nullptr ? storedPack(store, *runtimePack)
+                                                             : StoredPack{};
+    const StoredPack kernelsStored = kernelsPack != nullptr ? storedPack(store, *kernelsPack)
+                                                             : StoredPack{};
+    const AnimeJanaiInstallation trt =
+        describeAnimeJanaiInstallation(Backend::TensorRT, rehashBackend);
+    const AnimeJanaiInstallation directMl =
+        describeAnimeJanaiInstallation(Backend::DirectML, rehashBackend);
+    const ComponentBinDirs dirs = installedComponentBinDirs(gpu, store);
+    const bool componentDirsAvailable = dirs.reasonKey.isEmpty();
+    const bool runtimeInstalled = trt.installed &&
+                                  (runtimeStored.installed || componentDirsAvailable);
+    const bool kernelsInstalled = kernelsPack == nullptr || kernelsStored.installed ||
+                                  componentDirsAvailable;
+    result.insert(QStringLiteral("trtInstalled"), trt.installed);
+    result.insert(QStringLiteral("trtReasonKey"), trt.reasonKey);
+    result.insert(QStringLiteral("trtReason"), trt.reason);
+    result.insert(QStringLiteral("directMlInstalled"), directMl.installed);
+    result.insert(QStringLiteral("directMlReasonKey"), directMl.reasonKey);
+    result.insert(QStringLiteral("directMlReason"), directMl.reason);
+    result.insert(QStringLiteral("runtimePackInstalled"), runtimeStored.installed);
+    result.insert(QStringLiteral("kernelsPackInstalled"), kernelsStored.installed);
+    result.insert(QStringLiteral("componentDirsAvailable"), componentDirsAvailable);
+    result.insert(QStringLiteral("runtimeRecommended"), gpu.nvidia && !runtimeInstalled);
+    result.insert(QStringLiteral("kernelsRecommended"),
+                  gpu.nvidia && kernelsPack != nullptr && !kernelsInstalled);
+    result.insert(QStringLiteral("tensorRtClosureBytes"), animeJanaiMissingDownloadBytes(Backend::TensorRT));
+    result.insert(QStringLiteral("directMlClosureBytes"), animeJanaiMissingDownloadBytes(Backend::DirectML));
+    result.insert(QStringLiteral("componentReasonKey"), dirs.reasonKey);
+    result.insert(QStringLiteral("componentReason"), dirs.reason);
+    QVariantList componentFailures;
+    if (rehashBackend) {
+        for (const ComponentPack* pack : compatiblePacksFor(gpu.smMajor, gpu.smMinor)) {
+            if (isCancelled()) {
+                result.insert(QStringLiteral("cancelled"), true);
+                return result;
+            }
+            if (storedPack(store, *pack).installed && !verifyPack(store, *pack).installed)
+                componentFailures.append(pack->name);
+        }
+    }
+    result.insert(QStringLiteral("componentFailures"), componentFailures);
+
+    bool rifeInstalled = !rifeModelPins().isEmpty();
+    bool rifeVerified = true;
+    QVariantList rifeFailures;
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        if (isCancelled()) {
+            result.insert(QStringLiteral("cancelled"), true);
+            return result;
+        }
+        const StoredRifeGraph stored = storedRifeGraph(rifeStore, pin);
+        rifeInstalled = rifeInstalled && stored.installed;
+        if (!verifyRife) continue;
+        if (!stored.installed) {
+            rifeVerified = false;
+            continue;
+        }
+        const StoredRifeGraph graph = verifyRifeGraph(rifeStore, pin);
+        if (!graph.installed) {
+            rifeVerified = false;
+            rifeFailures.append(QVariantMap{{QStringLiteral("file"), pin.fileName},
+                                            {QStringLiteral("reason"), graph.reason}});
+        }
+    }
+    result.insert(QStringLiteral("rifeInstalled"), rifeInstalled);
+    result.insert(QStringLiteral("rifeVerified"), rifeVerified);
+    result.insert(QStringLiteral("rifeFailures"), rifeFailures);
+
+    QVariantList spatialRows;
+    for (const StoredSpatialAsset& row : storedSpatialAssets()) {
+        if (isCancelled()) {
+            result.insert(QStringLiteral("cancelled"), true);
+            return result;
+        }
+        spatialRows.append(QVariantMap{{QStringLiteral("id"), row.asset.id},
+                                       {QStringLiteral("path"), row.graphPath},
+                                       {QStringLiteral("verified"), row.verified},
+                                       {QStringLiteral("reasonKey"), row.reasonKey},
+                                       {QStringLiteral("reason"), row.reason}});
+    }
+    result.insert(QStringLiteral("spatial"), spatialRows);
+    result.insert(QStringLiteral("cancelled"), false);
+    return result;
+}
+
 /// One off-GUI run's GUI publisher.
 ///
 /// `post` is the Runner's dispatch binder, taken on the GUI thread before the
@@ -142,30 +239,33 @@ ComponentStoreTab::ComponentStoreTab(QWidget* parent) : QWidget(parent) {
     alive_ = std::make_shared<std::atomic<bool>>(true);
     buildUi();
     refresh();
+    scheduleInventoryRefresh();
 }
 
 ComponentStoreTab::~ComponentStoreTab() {
     // Every queued completion and every in-flight worker checks this before it
     // touches the tab, so destruction can never race a delivery: the flag goes
     // first, then the generation is bumped so a body already past the flag
-    // still finds a run that can no longer be rendered.
+    // still finds a run that can no longer be rendered. Closing Settings does
+    // not destroy the app-owned tab; this runs when the process exits and when
+    // a dialog that created its own tab (a probe) is destroyed. The Cancel
+    // button is the viewer's stop.
     if (alive_) alive_->store(false);
     ++runGeneration_;
     verifying_ = false;
     if (provisioner_ != nullptr) provisioner_->cancel();
+    if (acquisitionCheckCancelFlag_) acquisitionCheckCancelFlag_->store(true);
     if (animeJanaiCancelFlag_) animeJanaiCancelFlag_->store(true);
     if (rifeCancelFlag_) rifeCancelFlag_->store(true);
     if (modelCancelFlag_) modelCancelFlag_->store(true);
 }
 
-QString animeJanaiSetupPrompt(qint64* bytes) {
+QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
     if (bytes != nullptr) *bytes = 0;
+    if (!inventoryReady_) return {};
     const GpuComputeCapability& gpu = observeComputeCapability();
     QStringList missing;
     qint64 totalBytes = 0;
-    /// The one lookup with this file's context. Every literal handed here MUST
-    /// be wrapped in QT_TRANSLATE_NOOP, which is what lupdate reads; at run
-    /// time the macro is the literal itself.
     auto translate = [](const char* source) {
         return QCoreApplication::translate("mikai::app::ComponentStoreTab", source);
     };
@@ -177,54 +277,30 @@ QString animeJanaiSetupPrompt(qint64* bytes) {
     };
 
     if (gpu.nvidia) {
-        // The closure acquisition is one queue, so it is priced by the very
-        // function the installer derives that queue from. It is never re-summed
-        // here: the shared runtime archive serves both the pack install and the
-        // trtexec extraction, so a second sum would double-count the 186 MB
-        // runtime, and it always includes the mandatory Aji release the previous
-        // estimate omitted. Warm state prices at exactly nothing.
-        const qint64 closureBytes = animeJanaiMissingDownloadBytes(Backend::TensorRT);
-        if (closureBytes > 0) {
+        if (tensorRtClosureBytes_ > 0) {
             append(translate(QT_TRANSLATE_NOOP(
                        "mikai::app::ComponentStoreTab", "AnimeJaNai TensorRT closure")),
-                   closureBytes);
-        } else {
-            // The closure is installed; a still-missing builder resource keeps
-            // showing as its own row, exactly as the pack store reports it.
-            const ComponentBinDirs dirs = installedComponentBinDirs(gpu, componentStore());
-            if (!dirs.reasonKey.isEmpty()) {
-                const ComponentPack* kernel =
-                    tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
-                if (kernel != nullptr) append(kernel->name, kernel->assetBytes);
-            }
+                   tensorRtClosureBytes_);
+        } else if (!componentDirsAvailable_) {
+            const ComponentPack* kernel =
+                tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
+            if (kernel != nullptr) append(kernel->name, kernel->assetBytes);
         }
-    } else {
-        const qint64 closureBytes = animeJanaiMissingDownloadBytes(Backend::DirectML);
-        if (closureBytes > 0) {
-            append(translate(QT_TRANSLATE_NOOP(
-                       "mikai::app::ComponentStoreTab", "AnimeJaNai DirectML closure")),
-                   closureBytes);
-        }
+    } else if (directMlClosureBytes_ > 0) {
+        append(translate(QT_TRANSLATE_NOOP(
+                   "mikai::app::ComponentStoreTab", "AnimeJaNai DirectML closure")),
+               directMlClosureBytes_);
     }
 
-    const RifeArchiveStore archive = rifeArchiveStore();
-    bool rifeMissing = false;
-    for (const RifeModelPin& pin : rifeModelPins()) {
-        if (!storedRifeGraph(archive, pin).installed) {
-            rifeMissing = true;
-            break;
-        }
-    }
-    if (rifeMissing) append(translate(QT_TRANSLATE_NOOP(
-                                "mikai::app::ComponentStoreTab",
-                                "RIFE interpolation models")),
-                            rifeArchivePack().assetBytes);
-    const QVector<StoredSpatialAsset> spatialStored = storedSpatialAssets();
-    const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
+    if (!rifeInstalled_)
+        append(translate(QT_TRANSLATE_NOOP(
+                   "mikai::app::ComponentStoreTab", "RIFE interpolation models")),
+               rifeArchivePack().assetBytes);
     qint64 missingSpatialBytes = 0;
     int missingSpatialCount = 0;
+    const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
     for (const SpatialAsset& asset : spatialCatalog) {
-        const StoredSpatialAsset* row = spatialInventoryRow(spatialStored, asset.id);
+        const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, asset.id);
         if (row == nullptr || !row->verified) {
             missingSpatialBytes += asset.bytes;
             ++missingSpatialCount;
@@ -435,11 +511,32 @@ void ComponentStoreTab::buildUi() {
     scroll->setWidget(content);
     outer->addWidget(scroll);
 
+    trackedBackend_ = animeJanaiBackendCombo_->currentData().toInt();
     connect(animeJanaiBackendCombo_, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this](int) {
+            [this](int index) {
+                if (index < 0) return;
+                const QVariant data = animeJanaiBackendCombo_->itemData(index);
+                if (!data.isValid()) return;
+                const int backend = data.toInt();
+                // Closing Settings reparents this tab, and showing it again can
+                // emit this for the row that is already selected. That is not a
+                // backend change: retiring the generation here hid the bar and
+                // dropped every later progress update while the download ran on.
+                if (backend == trackedBackend_) return;
+                trackedBackend_ = backend;
                 // A different backend answers a different question: any run still
                 // in flight was hashing the previous one, so its results are
-                // discarded instead of being rendered as fresh evidence.
+                // discarded instead of being rendered as fresh evidence. The
+                // concurrent acquisition's callbacks carry the old generation
+                // and are dropped, so its units are settled here instead of
+                // leaving a run nobody can finish.
+                if (animeJanaiCancelFlag_) animeJanaiCancelFlag_->store(true);
+                if (rifeCancelFlag_) rifeCancelFlag_->store(true);
+                if (modelCancelFlag_) modelCancelFlag_->store(true);
+                acquisitionUnitsPending_ = 0;
+                acquisitionSequenceActive_ = false;
+                modelsDownloading_ = false;
+                animeJanaiRuntimeDownloading_ = false;
                 ++runGeneration_;
                 verifying_ = false;
                 cancelProgress();
@@ -452,48 +549,7 @@ void ComponentStoreTab::buildUi() {
             &QPushButton::clicked, this, &ComponentStoreTab::refresh);
     connect(importAnimeJanaiButton_, &QPushButton::clicked, this,
             &ComponentStoreTab::chooseAnimeJanaiRuntimeDirectory);
-    connect(cancelButton_, &QPushButton::clicked, this, [this] {
-        if (provisioner_ != nullptr) provisioner_->cancel();
-        if (verifying_) {
-            // The in-flight hash run's delivery is discarded rather than
-            // published: nothing proves a verdict from a run nobody waited for,
-            // and no partial result may be mistaken for the answer.
-            ++runGeneration_;
-            verifying_ = false;
-            cancelProgress();
-            applyStatus(QStringLiteral("native.components.cancelled"),
-                        tr("Verification was cancelled."));
-            updateControls();
-            return;
-        }
-        if (animeJanaiCancelFlag_) {
-            animeJanaiCancelFlag_->store(true);
-            pendingModels_.clear();
-            applyStatus(QStringLiteral("native.components.cancelled"),
-                        tr("Cancelling AnimeJaNai runtime installation..."));
-            updateControls();
-            return;
-        }
-        if (rifeCancelFlag_) {
-            rifeCancelFlag_->store(true);
-            pendingModels_.clear();
-            applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            updateControls();
-            return;
-        }
-        if (modelCancelFlag_) {
-            modelCancelFlag_->store(true);
-            pendingModels_.clear();
-            applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            updateControls();
-            return;
-        }
-        modelsDownloading_ = false;
-        pendingModels_.clear();
-        if (progress_ != nullptr) progress_->hide();
-        applyStatus(QStringLiteral("native.components.cancelled"), QString());
-        updateControls();
-    });
+    connect(cancelButton_, &QPushButton::clicked, this, &ComponentStoreTab::cancelAcquisition);
 
     retranslateUi();
 }
@@ -560,6 +616,7 @@ void ComponentStoreTab::setRunner(Runner* runner) {
     }
     runner_ = runner;
     updateControls();
+    scheduleInventoryRefresh();
 }
 
 void ComponentStoreTab::setClient(backend::MikaiClient* client) {
@@ -584,23 +641,27 @@ void ComponentStoreTab::setComponentProvisioner(NativeComponentProvisioner* prov
     if (provisioner_ != nullptr) {
         connect(provisioner_, &NativeComponentProvisioner::progress, this,
                 [this](const QString& pack, qint64 received, qint64 total) {
+                    progress_->show();
                     progress_->setRange(0, 100);
                     progress_->setValue(total > 0 ? static_cast<int>(received * 100 / total) : 0);
                     status_->setText(tr("Downloading %1: %2 of %3")
                                          .arg(pack, QLocale().formattedDataSize(received),
                                               QLocale().formattedDataSize(total)));
+                    publishAcquisition();
                 });
         connect(provisioner_, &NativeComponentProvisioner::finished, this,
                 [this](bool ok, bool cancelled, const QString& summary) {
                     if (progress_ != nullptr) progress_->hide();
                     if (cancelled) {
-                        applyStatus(QStringLiteral("native.components.cancelled"), summary);
+                        pendingModels_.clear();
+                        finishAcquisitionUnit(QString(), true);
                     } else if (!ok) {
                         pendingModels_.clear();
-                        applyStatus(QStringLiteral("native.components.fetch"), summary);
+                        finishAcquisitionUnit(summary, false,
+                                              QStringLiteral("native.components.fetch"));
                     } else {
-                        refresh();
-                        downloadRifeArchive();
+                        pendingModels_.clear();
+                        finishAcquisitionUnit(QString(), false);
                     }
                     refresh();
                 });
@@ -614,7 +675,99 @@ void ComponentStoreTab::refresh() {
     }
     updateCardStates();
     updateControls();
+    scheduleInventoryRefresh();
 }
+
+void ComponentStoreTab::scheduleInventoryRefresh() {
+    if (runner_ == nullptr || inventoryScanning_ || downloadActive() || verifying_) return;
+    inventoryScanning_ = true;
+    const bool acquisitionInventory = componentStagePending_;
+    if (acquisitionInventory) {
+        acquisitionSequenceActive_ = true;
+        updateControls();
+    }
+    const quint64 generation = ++inventoryGeneration_;
+    const auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    inventoryCancelFlag_ = cancelled;
+    const GpuComputeCapability gpu = observeComputeCapability();
+    const std::shared_ptr<std::atomic<bool>> live = alive_;
+    runner_->runTransfer(
+        [gpu, cancelled] {
+            return inventorySnapshot(gpu, false, false, cancelled.get());
+        },
+        [this, live, generation, cancelled, acquisitionInventory](const QVariant& value) {
+            if (!live->load() || generation != inventoryGeneration_) return;
+            inventoryScanning_ = false;
+            inventoryCancelFlag_.reset();
+            if (!cancelled->load()) applyInventorySnapshot(value);
+            if (recommendedInstallPending_) finishRecommendedInstall();
+            if (componentStagePending_) {
+                componentStagePending_ = false;
+                downloadRemainingComponents();
+            } else if (acquisitionInventory) {
+                acquisitionSequenceActive_ = false;
+                updateControls();
+            }
+        },
+        [this, live, generation, acquisitionInventory](const backend::Failure& failure) {
+            if (!live->load() || generation != inventoryGeneration_) return;
+            inventoryScanning_ = false;
+            inventoryCancelFlag_.reset();
+            if (acquisitionInventory) {
+                componentStagePending_ = false;
+                acquisitionSequenceActive_ = false;
+            }
+            applyStatus(QStringLiteral("native.components.fetch"),
+                        tr("Component inventory failed: %1")
+                            .arg(backend::failureLine(failure)));
+            updateControls();
+            emit inventoryUpdated();
+        });
+}
+
+void ComponentStoreTab::applyInventorySnapshot(const QVariant& value) {
+    const QVariantMap result = value.toMap();
+    storedSpatial_.clear();
+    for (const QVariant& item : result.value(QStringLiteral("spatial")).toList()) {
+        const QVariantMap row = item.toMap();
+        StoredSpatialAsset stored;
+        stored.asset.id = row.value(QStringLiteral("id")).toString();
+        stored.graphPath = row.value(QStringLiteral("path")).toString();
+        stored.verified = row.value(QStringLiteral("verified")).toBool();
+        stored.reasonKey = row.value(QStringLiteral("reasonKey")).toString();
+        stored.reason = row.value(QStringLiteral("reason")).toString();
+        if (const SpatialAsset* asset = findSpatialAsset(stored.asset.id)) stored.asset = *asset;
+        storedSpatial_.append(std::move(stored));
+    }
+    animeJanaiTensorRtInstalled_ = result.value(QStringLiteral("trtInstalled")).toBool();
+    animeJanaiDirectMlInstalled_ = result.value(QStringLiteral("directMlInstalled")).toBool();
+    componentDirsAvailable_ = result.value(QStringLiteral("componentDirsAvailable")).toBool();
+    rifeInstalled_ = result.value(QStringLiteral("rifeInstalled")).toBool();
+    rifeVerified_ = result.value(QStringLiteral("rifeVerified")).toBool();
+    tensorRtClosureBytes_ = result.value(QStringLiteral("tensorRtClosureBytes")).toLongLong();
+    directMlClosureBytes_ = result.value(QStringLiteral("directMlClosureBytes")).toLongLong();
+    runtimeRecommended_ = result.value(QStringLiteral("runtimeRecommended")).toBool();
+    kernelsRecommended_ = result.value(QStringLiteral("kernelsRecommended")).toBool();
+    spatialRecommended_ = false;
+    for (const SpatialAsset& asset : spatialAssetCatalog()) {
+        const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, asset.id);
+        if (row == nullptr || !row->verified) {
+            spatialRecommended_ = true;
+            break;
+        }
+    }
+    rifeVerificationErrors_.clear();
+    for (const QVariant& item : result.value(QStringLiteral("rifeFailures")).toList()) {
+        const QVariantMap failure = item.toMap();
+        rifeVerificationErrors_.insert(failure.value(QStringLiteral("file")).toString(),
+                                       failure.value(QStringLiteral("reason")).toString());
+    }
+    inventoryReady_ = true;
+    updateCardStates();
+    updateControls();
+    emit inventoryUpdated();
+}
+
 mplayer::native::Backend ComponentStoreTab::selectedBackend() const {
     if (animeJanaiBackendCombo_ == nullptr) return Backend::TensorRT;
     return static_cast<Backend>(animeJanaiBackendCombo_->currentData().toInt());
@@ -626,29 +779,18 @@ void ComponentStoreTab::renderCards() {
 
 void ComponentStoreTab::updateCardStates() {
     const GpuComputeCapability& gpu = observeComputeCapability();
-    const ComponentStore store = componentStore();
     const ComponentPack* runtimePack = tensorRtRuntimePack();
     const StoredPack runtimeStored = runtimePack != nullptr
-                                         ? storedPack(store, *runtimePack)
+                                         ? storedPack(componentStore(), *runtimePack)
                                          : StoredPack{};
-    const AnimeJanaiInstallation trt =
-        describeAnimeJanaiInstallation(Backend::TensorRT, false);
-    const ComponentBinDirs dirs = installedComponentBinDirs(gpu, store);
-    const bool runtimeInstalled = trt.installed &&
-                                  (runtimeStored.installed || dirs.reasonKey.isEmpty());
-    const bool runtimeRecommended = gpu.nvidia && !runtimeInstalled;
-
-    const QVector<RifeModelPin>& pins = rifeModelPins();
-    const RifeArchiveStore rifeStore = rifeArchiveStore();
-    bool rifeInstalled = !pins.isEmpty();
-    for (const RifeModelPin& pin : pins) {
-        if (!storedRifeGraph(rifeStore, pin).installed) {
-            rifeInstalled = false;
-            break;
-        }
-    }
+    const bool runtimeInstalled = gpu.nvidia
+                                      ? animeJanaiTensorRtInstalled_ &&
+                                            (runtimeStored.installed || componentDirsAvailable_)
+                                      : animeJanaiTensorRtInstalled_;
+    const bool runtimeRecommended = gpu.nvidia && runtimeRecommended_;
+    const bool rifeInstalled = rifeInstalled_;
     const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
-    const QVector<StoredSpatialAsset> spatialStored = storedSpatialAssets();
+    const QVector<StoredSpatialAsset>& spatialStored = storedSpatial_;
     int installedSpatial = 0;
     int verifiedSpatial = 0;
     qint64 spatialBytes = 0;
@@ -660,17 +802,17 @@ void ComponentStoreTab::updateCardStates() {
             if (row->verified) ++verifiedSpatial;
         }
     }
-    const bool spatialRecommended = verifiedSpatial != spatialCatalog.size();
+    const bool spatialRecommended = spatialRecommended_;
 
     const ComponentPack* kernelsPack =
         tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     const StoredPack kernelsStored = kernelsPack != nullptr
-                                         ? storedPack(store, *kernelsPack)
+                                         ? storedPack(componentStore(), *kernelsPack)
                                          : StoredPack{};
-    const bool kernelsInstalled = kernelsPack == nullptr ||
-                                  kernelsStored.installed || dirs.reasonKey.isEmpty();
+    const bool kernelsInstalled = kernelsPack == nullptr || kernelsStored.installed ||
+                                  componentDirsAvailable_;
     const bool kernelsRecommended = gpu.nvidia && kernelsPack != nullptr &&
-                                    !kernelsInstalled;
+                                    kernelsRecommended_;
 
     auto setState = [](QLabel* label, const QString& state) {
         if (label != nullptr) label->setText(state);
@@ -717,7 +859,7 @@ void ComponentStoreTab::updateCardStates() {
         tr("Select all five pinned upscaling graphs for download or repair."));
     kernelsCheck_->setAccessibleName(tr("TensorRT kernels for this GPU"));
     kernelsCheck_->setVisible(gpu.nvidia && kernelsPack != nullptr);
-    if (!componentSelectionsInitialized_) {
+    if (!componentSelectionsInitialized_ && inventoryReady_) {
         componentSelectionsInitialized_ = true;
         if (runtimeRecommended) selectedPacks_.insert(QStringLiteral("component:runtime"));
         if (kernelsRecommended) selectedPacks_.insert(QStringLiteral("component:kernels"));
@@ -751,7 +893,6 @@ ComponentStoreTab::VerifyRequest ComponentStoreTab::captureVerifyRequest() const
     const GpuComputeCapability& gpu = observeComputeCapability();
     request.packs = compatiblePacksFor(gpu.smMajor, gpu.smMinor);
     request.rifePins = rifeModelPins();
-    request.storedSpatial = storedSpatialAssets();
     request.spatialCatalog = spatialAssetCatalog();
     request.backend = selectedBackend();
     return request;
@@ -773,6 +914,7 @@ void ComponentStoreTab::verifyAll() {
 
 void ComponentStoreTab::applyProvisionProgress(
     const ComponentProvisionProgress& progress) {
+    progress_->show();
     progress_->setRange(0, 100);
     progress_->setValue(progress.total > 0
                             ? static_cast<int>(progress.received * 100 / progress.total)
@@ -781,9 +923,11 @@ void ComponentStoreTab::applyProvisionProgress(
                          .arg(progress.pack,
                               QLocale().formattedDataSize(progress.received),
                               QLocale().formattedDataSize(progress.total)));
+    publishAcquisition();
 }
 
 void ComponentStoreTab::applyDownloadProgress(const ComponentProvisionProgress& progress) {
+    progress_->show();
     progress_->setRange(0, 100);
     progress_->setValue(progress.total > 0
                             ? static_cast<int>(progress.received * 100 / progress.total)
@@ -792,6 +936,7 @@ void ComponentStoreTab::applyDownloadProgress(const ComponentProvisionProgress& 
                          .arg(progress.pack,
                               QLocale().formattedDataSize(progress.received),
                               QLocale().formattedDataSize(progress.total)));
+    publishAcquisition();
 }
 void ComponentStoreTab::applyVerifyResult(int verified, int failed, int failedRife,
                                           int failedSpatial, const QStringList& failures,
@@ -857,7 +1002,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
     status_->setText(tr("Verifying the installed components..."));
     updateControls();
 
-    runner_->run(
+    runner_->runTransfer(
         [request, alive = alive_]() -> QVariant {
             const ComponentStore store = request.store;
             const RifeArchiveStore rifeStore = request.rifeStore;
@@ -917,10 +1062,11 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
                 }
             }
             int failedSpatialModels = 0;
+            const QVector<StoredSpatialAsset> storedSpatial = storedSpatialAssets();
             for (const SpatialAsset& asset : request.spatialCatalog) {
                 if (!alive->load()) return QVariant{};
                 const StoredSpatialAsset* model =
-                    spatialInventoryRow(request.storedSpatial, asset.id);
+                    spatialInventoryRow(storedSpatial, asset.id);
                 if (model != nullptr && model->verified) {
                     ++verified;
                 } else {
@@ -980,115 +1126,159 @@ void ComponentStoreTab::downloadMissing() {
 }
 
 void ComponentStoreTab::installRecommended() {
+    if (acquisitionChecking_ || downloadActive() || verifying_) return;
+    recommendedInstallPending_ = true;
     const GpuComputeCapability& gpu = observeComputeCapability();
     const int backendIndex = animeJanaiBackendCombo_->findData(
         static_cast<int>(gpu.nvidia ? Backend::TensorRT : Backend::DirectML));
     if (backendIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(backendIndex);
+    if (inventoryReady_) finishRecommendedInstall();
+    else scheduleInventoryRefresh();
+}
+
+void ComponentStoreTab::finishRecommendedInstall() {
+    if (!recommendedInstallPending_ || !inventoryReady_) return;
+    recommendedInstallPending_ = false;
     refresh();
-
-    // Explicit setup confirmation is distinct from Apply changes, which keeps
-    // the user's checked cards and backend unchanged.
     runtimeCheck_->setChecked(
-        !describeAnimeJanaiInstallation(selectedBackend(), false).installed ||
-        runtimeCheck_->parentWidget()->property("recommended").toBool());
-    kernelsCheck_->setChecked(
-        kernelsCheck_->parentWidget()->property("recommended").toBool());
-    spatialCheck_->setChecked(
-        spatialCheck_->parentWidget()->property("recommended").toBool());
-    bool rifeMissing = false;
-    const RifeArchiveStore archive = rifeArchiveStore();
-    for (const RifeModelPin& pin : rifeModelPins()) {
-        if (!storedRifeGraph(archive, pin).installed) {
-            rifeMissing = true;
-            break;
-        }
-    }
-    rifeCheck_->setChecked(rifeMissing);
-
+        selectedBackend() == Backend::TensorRT ? runtimeRecommended_ :
+                                                   !animeJanaiDirectMlInstalled_);
+    kernelsCheck_->setChecked(kernelsRecommended_);
+    spatialCheck_->setChecked(spatialRecommended_);
+    rifeCheck_->setChecked(!rifeInstalled_ || !rifeVerified_);
     downloadMissing(false);
 }
 
 void ComponentStoreTab::downloadMissing(bool showReview) {
-    rifeFailure_.clear();
-
-    pendingModels_.clear();
-    const QVector<StoredSpatialAsset> stored = storedSpatialAssets();
-    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
-    if (selectedPacks_.contains(QStringLiteral("component:spatial"))) {
-        for (int index = 0; index < catalog.size(); ++index) {
-            const StoredSpatialAsset* row = spatialInventoryRow(stored, catalog.at(index).id);
-            if (row == nullptr || !row->verified) pendingModels_.append(index);
-        }
+    if (acquisitionChecking_ || acquisitionSequenceActive_ || downloadActive() || verifying_) return;
+    if (runner_ == nullptr) {
+        applyStatus(QStringLiteral("native.components.noClient"),
+                    tr("Checking selected component state needs a runner."));
+        return;
     }
-
+    if (inventoryScanning_) {
+        if (inventoryCancelFlag_) inventoryCancelFlag_->store(true);
+        ++inventoryGeneration_;
+        inventoryScanning_ = false;
+    }
+    acquisitionChecking_ = true;
+    acquisitionCheckCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+    const auto cancelled = acquisitionCheckCancelFlag_;
+    const quint64 generation = ++runGeneration_;
     const Backend backend = selectedBackend();
-    const AnimeJanaiInstallation animeJanai =
-        describeAnimeJanaiInstallation(backend, false);
-    const GpuComputeCapability& gpu = observeComputeCapability();
-    const bool runtimeSelected =
-        selectedPacks_.contains(QStringLiteral("component:runtime"));
-    const bool kernelsSelected =
-        selectedPacks_.contains(QStringLiteral("component:kernels"));
-    const bool componentMissing = backend == Backend::TensorRT &&
-        (runtimeSelected || kernelsSelected) && gpu.smMajor > 0 &&
-        !installedComponentBinDirs(gpu, componentStore()).reasonKey.isEmpty();
-    const bool backendWork = (runtimeSelected && !animeJanai.installed) ||
-                             componentMissing;
-    QStringList review;
-    if (backendWork) {
-        review.append(backend == Backend::TensorRT
-                          ? tr("AnimeJaNai TensorRT / CUDA backend closure")
-                          : tr("AnimeJaNai DirectML backend closure"));
-    }
-    for (int index : pendingModels_) review.append(catalog.at(index).name);
-    bool selectedRifeMissing = false;
-    if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
-        const RifeArchiveStore archive = rifeArchiveStore();
-        for (const RifeModelPin& pin : rifeModelPins()) {
-            const StoredRifeGraph graph = verifyRifeGraph(archive, pin);
-            if (graph.installed) {
-                verifiedRifeGraphs_.insert(pin.fileName);
-                rifeVerificationErrors_.remove(pin.fileName);
-            } else {
-                selectedRifeMissing = true;
-                verifiedRifeGraphs_.remove(pin.fileName);
-                rifeVerificationErrors_.insert(pin.fileName, graph.reason);
+    const GpuComputeCapability gpu = observeComputeCapability();
+    const QSet<QString> selected = selectedPacks_;
+    progress_->show();
+    progress_->setRange(0, 0);
+    status_->setText(tr("Checking selected components..."));
+    updateControls();
+    acquisitionSequenceActive_ = true;
+    updateControls();
+    const std::shared_ptr<std::atomic<bool>> live = alive_;
+    runner_->runTransfer(
+        [backend, gpu, cancelled] {
+            return inventorySnapshot(gpu, true, false, cancelled.get());
+        },
+        [this, live, generation, cancelled, backend, selected, showReview,
+         gpu](const QVariant& value) {
+            if (!live->load() || generation != runGeneration_) return;
+            if (cancelled->load()) {
+                acquisitionChecking_ = false;
+                acquisitionSequenceActive_ = false;
+                acquisitionCheckCancelFlag_.reset();
+                pendingModels_.clear();
+                applyStatus(QStringLiteral("native.components.cancelled"), QString());
+                updateControls();
+                return;
             }
-        }
-    }
-    if (selectedRifeMissing) review.append(tr("RIFE 3.7.0 archive pack (all 47 graphs)"));
-    if (review.isEmpty()) {
-        applyStatus(QString(), tr("No selected missing packs need installation."));
-        return;
-    }
-    qint64 bytes = 0;
-    for (int index : pendingModels_) bytes += catalog.at(index).bytes;
-    if (selectedRifeMissing) bytes += rifeArchivePack().assetBytes;
-    if (showReview) {
-        const QString prompt = tr("The following selected packs are missing or need repair:\n%1\n\nEstimated download size: %2\n\nContinue?")
-            .arg(review.join(QStringLiteral("\n")),
-                 backendWork
-                     ? tr("Unknown")
-                     : QLocale().formattedDataSize(bytes));
-        if (QMessageBox::question(this, tr("Review installation"), prompt,
-                                  QMessageBox::Yes | QMessageBox::Cancel,
-                                  QMessageBox::Cancel) != QMessageBox::Yes) {
+            applyInventorySnapshot(value);
+            const QVariantMap inventory = value.toMap();
+            const QVector<SpatialAsset> catalog = spatialAssetCatalog();
             pendingModels_.clear();
-            return;
-        }
-    }
-    modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
-    if (runtimeSelected && !animeJanai.installed) {
-        downloadAnimeJanaiRuntime();
-        return;
-    }
-    if (componentMissing && provisioner_ == nullptr) {
-        applyStatus(QStringLiteral("native.components.missing"),
-                    tr("The compatible TensorRT component pack is missing, but no component provisioner is available."));
-        pendingModels_.clear();
-        return;
-    }
-    downloadRemainingComponents();
+            if (selected.contains(QStringLiteral("component:spatial"))) {
+                for (int index = 0; index < catalog.size(); ++index) {
+                    const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, catalog.at(index).id);
+                    if (row == nullptr || !row->verified) pendingModels_.append(index);
+                }
+            }
+            const bool runtimeSelected = selected.contains(QStringLiteral("component:runtime"));
+            const bool kernelsSelected = selected.contains(QStringLiteral("component:kernels"));
+            const bool componentMissing = backend == Backend::TensorRT &&
+                (runtimeSelected || kernelsSelected) && gpu.smMajor > 0 &&
+                !inventory.value(QStringLiteral("componentDirsAvailable")).toBool();
+            const bool backendWork = (runtimeSelected &&
+                !inventory.value(backend == Backend::TensorRT ? QStringLiteral("trtInstalled")
+                                                               : QStringLiteral("directMlInstalled")).toBool()) ||
+                componentMissing;
+            const bool selectedRifeMissing = selected.contains(QStringLiteral("rife:archive")) &&
+                !inventory.value(QStringLiteral("rifeVerified")).toBool();
+            QStringList review;
+            if (backendWork) {
+                review.append(backend == Backend::TensorRT
+                                  ? tr("AnimeJaNai TensorRT / CUDA backend closure")
+                                  : tr("AnimeJaNai DirectML backend closure"));
+            }
+            for (int index : pendingModels_) review.append(catalog.at(index).name);
+            if (selectedRifeMissing)
+                review.append(tr("RIFE 3.7.0 archive pack (all 47 graphs)"));
+            if (review.isEmpty()) {
+                acquisitionChecking_ = false;
+                acquisitionSequenceActive_ = false;
+                acquisitionCheckCancelFlag_.reset();
+                if (progress_ != nullptr) progress_->hide();
+                applyStatus(QString(), tr("No selected missing packs need installation."));
+                updateControls();
+                return;
+            }
+            qint64 bytes = 0;
+            for (int index : pendingModels_) bytes += catalog.at(index).bytes;
+            if (selectedRifeMissing) bytes += rifeArchivePack().assetBytes;
+            acquisitionChecking_ = false;
+            acquisitionCheckCancelFlag_.reset();
+            if (progress_ != nullptr) progress_->hide();
+            updateControls();
+            if (showReview) {
+                const QString prompt = tr("The following selected packs are missing or need repair:\n%1\n\nEstimated download size: %2\n\nContinue?")
+                    .arg(review.join(QStringLiteral("\n")),
+                         backendWork ? tr("Unknown") : QLocale().formattedDataSize(bytes));
+                if (QMessageBox::question(this, tr("Review installation"), prompt,
+                                          QMessageBox::Yes | QMessageBox::Cancel,
+                                          QMessageBox::Cancel) != QMessageBox::Yes) {
+                    pendingModels_.clear();
+                    acquisitionSequenceActive_ = false;
+                    // The transient "Checking selected components..." label was
+                    // set before the check ran; a cancelled review must clear it
+                    // so the surface reads idle, not stuck mid-check.
+                    applyStatus(QString(), QString());
+                    updateControls();
+                    return;
+                }
+            }
+            modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+            acquisitionSequenceActive_ = true;
+            acquisitionGeneration_ = runGeneration_;
+            acquisitionCancelled_ = false;
+            acquisitionFailures_.clear();
+            acquisitionFailureKey_.clear();
+            pendingBackendWork_ = backendWork;
+            pendingRuntimeClosure_ =
+                runtimeSelected &&
+                !inventory.value(backend == Backend::TensorRT ? QStringLiteral("trtInstalled")
+                                                              : QStringLiteral("directMlInstalled"))
+                     .toBool();
+            pendingRifeArchive_ = selectedRifeMissing;
+            downloadRemainingComponents();
+        },
+        [this, live, generation](const backend::Failure& failure) {
+            if (!live->load() || generation != runGeneration_) return;
+            acquisitionChecking_ = false;
+            acquisitionSequenceActive_ = false;
+            acquisitionCheckCancelFlag_.reset();
+            pendingModels_.clear();
+            applyStatus(QStringLiteral("native.components.fetch"),
+                        tr("Component check failed: %1").arg(backend::failureLine(failure)));
+            updateControls();
+        });
 }
 
 void ComponentStoreTab::downloadAnimeJanaiRuntime() {
@@ -1108,8 +1298,8 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     animeJanaiCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = animeJanaiCancelFlag_;
     const Backend backend = selectedBackend();
-    ++runGeneration_;
-    const quint64 generation = runGeneration_;
+    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+                                                           : acquisitionGeneration_;
     progress_->show();
     progress_->setRange(0, 100);
     progress_->setValue(0);
@@ -1123,7 +1313,7 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     // The binder is taken on the GUI thread, before the work starts; the
     // worker only ever calls it.
     ProgressPublisher publish{runner_->post(), this, alive_, generation};
-    runner_->run(
+    runner_->runTransfer(
         [backend, cancelFlag, publish]() -> QVariant {
             const ComponentProvisionResult result = provisionAnimeJanaiRuntime(
                 backend,
@@ -1144,47 +1334,40 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
             if (cancelFlag->load() || value.toMap().value(QStringLiteral("cancelled")).toBool()) {
-                pendingModels_.clear();
-                applyStatus(QStringLiteral("native.components.cancelled"), QString());
+                finishAcquisitionUnit(QString(), true);
             } else if (!value.toMap().value(QStringLiteral("ok")).toBool()) {
                 const QString reason = value.toMap().value(QStringLiteral("reason")).toString();
                 const QString reasonKey =
                     value.toMap().value(QStringLiteral("reasonKey")).toString();
-                pendingModels_.clear();
                 const QString backendName = backend == Backend::TensorRT
                                                 ? tr("TensorRT / CUDA 13")
                                                 : tr("DirectML");
-                applyStatus(
-                    reasonKey.isEmpty() ? QStringLiteral("native.components.fetch") : reasonKey,
+                finishAcquisitionUnit(
                     tr("%1 installation failed: %2")
                         .arg(backendName,
                              reason.isEmpty()
                                  ? tr("AnimeJaNai runtime installation failed.")
-                                 : reason));
+                                 : reason),
+                    false, reasonKey);
             } else {
                 verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
                 animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
-                refresh();
-                downloadRemainingComponents();
+                finishAcquisitionUnit(QString(), false);
             }
-            refresh();
         },
         [this, alive = alive_, generation, cancelFlag, backend](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
-            pendingModels_.clear();
             if (cancelFlag->load()) {
-                applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            } else {
-                const QString backendName = backend == Backend::TensorRT
-                                                ? tr("TensorRT / CUDA 13")
-                                                : tr("DirectML");
-                applyStatus(QStringLiteral("native.components.fetch"),
-                            tr("%1 installation failed: %2")
-                                .arg(backendName, backend::failureLine(failure)));
+                finishAcquisitionUnit(QString(), true);
+                return;
             }
-            refresh();
+            const QString backendName =
+                backend == Backend::TensorRT ? tr("TensorRT / CUDA 13") : tr("DirectML");
+            finishAcquisitionUnit(tr("%1 installation failed: %2")
+                                      .arg(backendName, backend::failureLine(failure)),
+                                  false);
         });
 }
 
@@ -1218,7 +1401,7 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
     // The binder is taken on the GUI thread, before the work starts; the
     // worker only ever calls it.
     ProgressPublisher publish{runner_->post(), this, alive_, generation};
-    runner_->run(
+    runner_->runTransfer(
         [sourceDirectory, backend, cancelFlag, publish]() -> QVariant {
             const ComponentProvisionResult result = mplayer::native::importAnimeJanaiRuntime(
                 sourceDirectory, backend,
@@ -1278,67 +1461,88 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
 }
 
 void ComponentStoreTab::downloadRemainingComponents() {
-    const ComponentBinDirs verdict =
-        installedComponentBinDirs(observeComputeCapability(), componentStore());
+    if (!inventoryReady_) {
+        componentStagePending_ = true;
+        scheduleInventoryRefresh();
+        return;
+    }
+    acquisitionUnitsPending_ = 0;
+    acquisitionFailures_.clear();
     const bool componentMissing =
         selectedBackend() == Backend::TensorRT &&
         (selectedPacks_.contains(QStringLiteral("component:runtime")) ||
          selectedPacks_.contains(QStringLiteral("component:kernels"))) &&
-        observeComputeCapability().smMajor > 0 && !verdict.reasonKey.isEmpty();
+        observeComputeCapability().smMajor > 0 && !componentDirsAvailable_;
     if (componentMissing && provisioner_ == nullptr) {
         pendingModels_.clear();
+        acquisitionSequenceActive_ = false;
         applyStatus(QStringLiteral("native.components.missing"),
                     tr("The compatible TensorRT component pack is missing, but no component provisioner is available."));
         updateControls();
         return;
     }
-    if (componentMissing && provisioner_ != nullptr) {
-        QString reason;
-        if (!provisioner_->ensureStore(&reason)) {
-            pendingModels_.clear();
-            applyStatus(QStringLiteral("native.components.missing"), reason);
-            updateControls();
-            return;
-        }
-        progress_->show();
-        progress_->setValue(0);
-        updateControls();
-        return;
-    }
-    downloadRifeArchive();
-}
-
-void ComponentStoreTab::downloadRifeArchive() {
-    bool missing = false;
-    const RifeArchiveStore store = rifeArchiveStore();
-    const QVector<RifeModelPin> pins = rifeModelPins();
-    if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
-        for (const RifeModelPin& pin : pins) {
-            const StoredRifeGraph stored = storedRifeGraph(store, pin);
-            if (!stored.installed || stored.bytes != pin.bytes ||
-                rifeVerificationErrors_.contains(pin.fileName)) {
-                missing = true;
-                break;
+    // The independent units run at the same time: the backend closure, the RIFE
+    // archive and the spatial graphs share no scratch, no destination and no
+    // record, so serialising them only made the whole acquisition as slow as the
+    // sum of its parts. The run is over when the last unit settles, which is
+    // what lets the window bar stay honest while several transfers run at once.
+    //
+    // The backend closure is a single unit, not two: the AnimeJaNai runtime
+    // installer and the component provisioner both drive
+    // `provisionTensorRtComponents`, whose process-wide gate allows one run, so
+    // the runtime path owns the packs whenever it has to fetch them.
+    // Every unit is counted before any starts: a unit that refuses synchronously
+    // settles its own count immediately, and counting first keeps that refusal
+    // from ending a run whose other units have not been handed their work yet.
+    if (pendingBackendWork_) noteAcquisitionUnitStarted();
+    if (pendingRifeArchive_) noteAcquisitionUnitStarted();
+    if (!pendingModels_.isEmpty()) noteAcquisitionUnitStarted();
+    if (pendingBackendWork_) {
+        if (pendingRuntimeClosure_) {
+            downloadAnimeJanaiRuntime();
+        } else if (provisioner_ == nullptr) {
+            finishAcquisitionUnit(
+                tr("The compatible TensorRT component pack is missing, but no component "
+                   "provisioner is available."),
+                false);
+        } else {
+            QString reason;
+            if (!provisioner_->ensureStore(&reason)) {
+                finishAcquisitionUnit(reason, false);
+            } else {
+                progress_->show();
+                progress_->setValue(0);
+                updateControls();
             }
         }
     }
-    if (!missing) {
+    if (pendingRifeArchive_) downloadRifeArchive();
+    if (!pendingModels_.isEmpty()) downloadNextModel();
+    // A unit that refused synchronously already settled itself (and finalized
+    // when it brought the count to zero), so only an empty count that no
+    // callback consumed can start the cycle here.
+    if (acquisitionUnitsPending_ == 0 && acquisitionSequenceActive_)
+        finalizeAcquisition();
+}
+
+void ComponentStoreTab::downloadRifeArchive() {
+    if (!pendingRifeArchive_) {
         downloadNextModel();
         return;
     }
+    const RifeArchiveStore store = rifeArchiveStore();
+    const QVector<RifeModelPin> pins = rifeModelPins();
     if (runner_ == nullptr) {
-        applyStatus(QStringLiteral("native.components.noClient"),
-                    tr("The RIFE archive download needs a runner."));
-        pendingModels_.clear();
-        updateControls();
+        finishAcquisitionUnit(tr("The RIFE archive download needs a runner."), false,
+                              QStringLiteral("native.components.noClient"));
         return;
     }
 
     rifeDownloading_ = true;
     rifeCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
     const auto cancelFlag = rifeCancelFlag_;
-    ++runGeneration_;
-    const quint64 generation = runGeneration_;
+    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+                                                           : acquisitionGeneration_;
     progress_->show();
     progress_->setRange(0, 100);
     progress_->setValue(0);
@@ -1348,7 +1552,7 @@ void ComponentStoreTab::downloadRifeArchive() {
     // The binder is taken on the GUI thread, before the work starts; the
     // worker only ever calls it.
     ProgressPublisher publish{runner_->post(), this, alive_, generation};
-    runner_->run(
+    runner_->runTransfer(
         [store, pins, cancelFlag, publish]() -> QVariant {
             const ComponentProvisionResult result = provisionRifeArchive(
                 store, pins,
@@ -1372,150 +1576,263 @@ void ComponentStoreTab::downloadRifeArchive() {
                 verifiedRifeGraphs_.insert(pin.fileName);
                 rifeVerificationErrors_.remove(pin.fileName);
             }
-            applyStatus(QString(), tr("The RIFE 3.7.0 archive graphs are installed."));
-            refresh();
-            if (!cancelFlag->load()) downloadNextModel();
+            pendingRifeArchive_ = false;
+            finishAcquisitionUnit(QString(), false);
         },
         [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             rifeDownloading_ = false;
             rifeCancelFlag_.reset();
             if (cancelFlag->load()) {
-                pendingModels_.clear();
-                applyStatus(QStringLiteral("native.components.cancelled"), QString());
-            } else {
-                rifeFailure_ = backend::failureLine(failure);
-                pendingModels_.clear();
-                applyStatus(QStringLiteral("native.components.fetch"),
-                            backend::failureLine(failure));
-                updateControls();
+                finishAcquisitionUnit(QString(), true);
+                return;
             }
-            refresh();
+            rifeFailure_ = backend::failureLine(failure);
+            finishAcquisitionUnit(rifeFailure_, false);
         });
 }
 
 void ComponentStoreTab::downloadNextModel() {
     if (pendingModels_.isEmpty()) {
-        modelsDownloading_ = false;
-        modelCancelFlag_.reset();
-        if (progress_ != nullptr) progress_->hide();
-        if (!rifeFailure_.isEmpty()) {
-            applyStatus(QStringLiteral("native.components.fetch"), rifeFailure_);
-            refresh();
-            return;
-        }
-        const bool runtimeSelected =
-            selectedPacks_.contains(QStringLiteral("component:runtime"));
-        const AnimeJanaiInstallation backend =
-            describeAnimeJanaiInstallation(selectedBackend(), true);
-        if (runtimeSelected && !backend.installed) {
-            applyStatus(backend.reasonKey.isEmpty()
-                            ? QStringLiteral("native.components.fetch")
-                            : backend.reasonKey,
-                        backend.reason.isEmpty()
-                            ? tr("The requested backend installation could not be verified.")
-                            : backend.reason);
-            refresh();
-            return;
-        }
-        const GpuComputeCapability& gpu = observeComputeCapability();
-        if ((selectedPacks_.contains(QStringLiteral("component:runtime")) ||
-             selectedPacks_.contains(QStringLiteral("component:kernels"))) &&
-            selectedBackend() == Backend::TensorRT && gpu.smMajor > 0 &&
-            !installedComponentBinDirs(gpu, componentStore()).reasonKey.isEmpty()) {
-            applyStatus(QStringLiteral("native.components.missing"),
-                        tr("The requested TensorRT component pack is not installed."));
-            refresh();
-            return;
-        }
-        const RifeArchiveStore archiveStore = rifeArchiveStore();
-        if (selectedPacks_.contains(QStringLiteral("rife:archive"))) {
-            for (const RifeModelPin& pin : rifeModelPins()) {
-                const StoredRifeGraph graph = verifyRifeGraph(archiveStore, pin);
-                if (!graph.installed) {
-                    applyStatus(QStringLiteral("native.components.digest"), graph.reason);
-                    refresh();
-                    return;
-                }
-                verifiedRifeGraphs_.insert(pin.fileName);
-                rifeVerificationErrors_.remove(pin.fileName);
-            }
-        }
-        if (selectedPacks_.contains(QStringLiteral("component:spatial"))) {
-            const QVector<StoredSpatialAsset> stored = storedSpatialAssets();
-            for (const SpatialAsset& asset : spatialAssetCatalog()) {
-                const StoredSpatialAsset* row = spatialInventoryRow(stored, asset.id);
-                if (row == nullptr || !row->verified) {
-                    applyStatus(QStringLiteral("native.components.digest"),
-                                row == nullptr
-                                    ? tr("The requested upscaling model is not installed: %1")
-                                          .arg(asset.name)
-                                    : QStringLiteral("%1: %2").arg(asset.name, row->reason));
-                    refresh();
-                    return;
-                }
-            }
-        }
-        applyStatus(QString(), tr("Every selected pack is installed and verified."));
-        refresh();
+        finishModelDownloads();
         return;
     }
     if (runner_ == nullptr || client_ == nullptr) {
         modelsDownloading_ = false;
         modelCancelFlag_.reset();
-        applyStatus(QStringLiteral("native.components.noClient"),
-                    tr("A model download needs the backend client and a runner."));
         pendingModels_.clear();
-        updateControls();
+        finishAcquisitionUnit(tr("A model download needs the backend client and a runner."),
+                              false, QStringLiteral("native.components.noClient"));
         return;
     }
-    const SpatialAsset asset = spatialAssetCatalog().at(pendingModels_.takeFirst());
-    modelsDownloading_ = true;
-    if (!modelCancelFlag_) modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+    const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+    if (!modelsDownloading_) {
+        modelsDownloading_ = true;
+        modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+        modelDownloadsInFlight_ = 0;
+        modelDownloadsCompleted_ = 0;
+        modelDownloadsTotal_ = pendingModels_.size();
+        modelFailure_.clear();
+        modelCancelled_ = false;
+    }
+    const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
+                                                           : acquisitionGeneration_;
     const auto cancelFlag = modelCancelFlag_;
-    ++runGeneration_;
-    const quint64 generation = runGeneration_;
+    progress_->show();
+    progress_->setRange(0, modelDownloadsTotal_);
+    progress_->setValue(modelDownloadsCompleted_);
+    updateControls();
+    backend::MikaiClient* client = client_;
+    const QVector<int> batch = std::exchange(pendingModels_, {});
+    modelDownloadsInFlight_ += batch.size();
+    for (int index : batch) {
+        const SpatialAsset asset = catalog.at(index);
+        status_->setText(tr("Downloading %1 (%2 of %3)...")
+                             .arg(asset.name)
+                             .arg(modelDownloadsCompleted_ + modelDownloadsInFlight_)
+                             .arg(modelDownloadsTotal_));
+        runner_->runTransfer(
+            [client, asset, cancelFlag]() -> QVariant {
+                if (cancelFlag->load()) return QVariant{};
+                // The fetch's blocking wait observes a nested scope over the
+                // tab's own gate, so Cancel pierces the transfer on the same
+                // clock the runtime/RIFE downloads use instead of waiting for
+                // the whole file or the artwork timeout.
+                const backend::WorkCancellationScope tabCancel(cancelFlag.get());
+                const QByteArray bytes =
+                    client->fetchBytes(asset.url, kModelDownloadTimeoutMs);
+                if (cancelFlag->load()) return QVariant{};
+                const SpatialAssetPublication published =
+                    publishSpatialAssetBytes(asset, bytes, QString());
+                if (!published.ok) {
+                    throw std::runtime_error(
+                        QStringLiteral("%1: %2").arg(published.reasonKey, published.reason)
+                            .toStdString());
+                }
+                return QVariant{};
+            },
+            [this, alive = alive_, generation, cancelFlag, asset](const QVariant&) {
+                if (!alive->load() || runGeneration_ != generation) return;
+                --modelDownloadsInFlight_;
+                if (cancelFlag->load()) {
+                    modelCancelled_ = true;
+                } else {
+                    ++modelDownloadsCompleted_;
+                    status_->setText(tr("Installed %1 (%2 of %3)")
+                                         .arg(asset.name)
+                                         .arg(modelDownloadsCompleted_)
+                                         .arg(modelDownloadsTotal_));
+                    progress_->setValue(modelDownloadsCompleted_);
+                }
+                if (modelDownloadsInFlight_ == 0) finishModelDownloads();
+                else publishAcquisition();
+            },
+            [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
+                if (!alive->load() || runGeneration_ != generation) return;
+                --modelDownloadsInFlight_;
+                if (cancelFlag->load()) modelCancelled_ = true;
+                else if (modelFailure_.isEmpty()) modelFailure_ = backend::failureLine(failure);
+                if (modelDownloadsInFlight_ == 0) finishModelDownloads();
+            });
+    }
+}
+
+void ComponentStoreTab::finishModelDownloads() {
+    if (modelDownloadsInFlight_ > 0) return;
+    modelsDownloading_ = false;
+    modelCancelFlag_.reset();
+    if (!modelFailure_.isEmpty()) {
+        pendingModels_.clear();
+        finishAcquisitionUnit(modelFailure_, false);
+        return;
+    }
+    if (modelCancelled_) {
+        pendingModels_.clear();
+        finishAcquisitionUnit(QString(), true);
+        return;
+    }
+    pendingModels_.clear();
+    finishAcquisitionUnit(QString(), false);
+}
+
+void ComponentStoreTab::startAcquisitionVerification() {
+    if (runner_ == nullptr) {
+        acquisitionSequenceActive_ = false;
+        applyStatus(QStringLiteral("native.components.noRunner"),
+                    tr("Verifying the installed components needs a runner."));
+        refresh();
+        return;
+    }
+    modelsDownloading_ = true;
+    modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+    const quint64 generation = ++runGeneration_;
+    const auto cancelled = modelCancelFlag_;
+    const GpuComputeCapability gpu = observeComputeCapability();
     progress_->show();
     progress_->setRange(0, 0);
-    status_->setText(tr("Downloading %1...").arg(asset.name));
+    status_->setText(tr("Verifying installed components..."));
     updateControls();
-
-    backend::MikaiClient* client = client_;
-    runner_->run(
-        [client, asset, cancelFlag]() -> QVariant {
-            const QByteArray bytes = client->fetchBytes(asset.url, kModelDownloadTimeoutMs);
-            if (cancelFlag->load()) return QVariant{};
-            const SpatialAssetPublication published =
-                publishSpatialAssetBytes(asset, bytes, QString());
-            if (!published.ok) {
-                throw std::runtime_error(
-                    QStringLiteral("%1: %2").arg(published.reasonKey, published.reason).toStdString());
-            }
-            return QVariant{};
+    const std::shared_ptr<std::atomic<bool>> live = alive_;
+    runner_->runTransfer(
+        [gpu, cancelled] {
+            return inventorySnapshot(gpu, true, true, cancelled.get());
         },
-        [this, alive = alive_, generation, cancelFlag](const QVariant&) {
-            if (!alive->load() || runGeneration_ != generation) return;
-            if (cancelFlag->load()) {
-                modelsDownloading_ = false;
-                modelCancelFlag_.reset();
-                pendingModels_.clear();
+        [this, live, generation, cancelled, gpu](const QVariant& value) {
+            if (!live->load() || generation != runGeneration_) return;
+            const QVariantMap result = value.toMap();
+            modelsDownloading_ = false;
+            modelCancelFlag_.reset();
+            acquisitionSequenceActive_ = false;
+            if (cancelled->load() || result.value(QStringLiteral("cancelled")).toBool()) {
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
                 refresh();
                 return;
             }
-            downloadNextModel();
+            applyInventorySnapshot(value);
+            const bool runtimeSelected =
+                selectedPacks_.contains(QStringLiteral("component:runtime"));
+            const bool kernelsSelected =
+                selectedPacks_.contains(QStringLiteral("component:kernels"));
+            const bool rifeSelected = selectedPacks_.contains(QStringLiteral("rife:archive"));
+            const bool spatialSelected =
+                selectedPacks_.contains(QStringLiteral("component:spatial"));
+            QStringList failures = acquisitionFailures_;
+            const Backend backend = selectedBackend();
+            if (runtimeSelected && !result.value(
+                    backend == Backend::TensorRT ? QStringLiteral("trtInstalled")
+                                                 : QStringLiteral("directMlInstalled")).toBool()) {
+                const QString reason = result.value(
+                    backend == Backend::TensorRT ? QStringLiteral("trtReason")
+                                                 : QStringLiteral("directMlReason")).toString();
+                failures.append(reason.isEmpty()
+                                    ? tr("The requested backend installation could not be verified.")
+                                    : reason);
+            }
+            if ((runtimeSelected || kernelsSelected) && backend == Backend::TensorRT &&
+                gpu.smMajor > 0 &&
+                !result.value(QStringLiteral("componentDirsAvailable")).toBool()) {
+                failures.append(tr("The requested TensorRT component pack is not installed."));
+            }
+            if (rifeSelected && !result.value(QStringLiteral("rifeVerified")).toBool()) {
+                for (const QVariant& entry : result.value(QStringLiteral("rifeFailures")).toList()) {
+                    const QVariantMap failure = entry.toMap();
+                    failures.append(QStringLiteral("%1: %2")
+                                        .arg(failure.value(QStringLiteral("file")).toString(),
+                                             failure.value(QStringLiteral("reason")).toString()));
+                }
+                if (failures.isEmpty()) failures.append(tr("The RIFE archive could not be verified."));
+            }
+            if (spatialSelected) {
+                for (const SpatialAsset& asset : spatialAssetCatalog()) {
+                    const StoredSpatialAsset* row = spatialInventoryRow(storedSpatial_, asset.id);
+                    if (row == nullptr || !row->verified)
+                        failures.append(row == nullptr
+                                            ? tr("The requested upscaling model is not installed: %1")
+                                                  .arg(asset.name)
+                                            : QStringLiteral("%1: %2").arg(asset.name, row->reason));
+                }
+            }
+            acquisitionFailures_.clear();
+            if (failures.isEmpty()) {
+                if (rifeSelected) rifeVerified_ = true;
+                applyStatus(QString(), tr("Every selected pack is installed and verified."));
+            } else {
+                applyStatus(QStringLiteral("native.components.digest"),
+                            failures.join(QStringLiteral("; ")));
+            }
+            refresh();
         },
-        [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
-            if (!alive->load() || runGeneration_ != generation) return;
+        [this, live, generation, cancelled](const backend::Failure& failure) {
+            if (!live->load() || generation != runGeneration_) return;
             modelsDownloading_ = false;
             modelCancelFlag_.reset();
-            pendingModels_.clear();
-            applyStatus(cancelFlag->load()
+            acquisitionSequenceActive_ = false;
+            applyStatus(cancelled->load()
                             ? QStringLiteral("native.components.cancelled")
-                            : QStringLiteral("native.components.fetch"),
-                        cancelFlag->load() ? QString() : backend::failureLine(failure));
+                            : QStringLiteral("native.components.digest"),
+                        cancelled->load() ? QString() : backend::failureLine(failure));
             refresh();
         });
+}
+
+void ComponentStoreTab::finalizeAcquisition() {
+    acquisitionSequenceActive_ = false;
+    if (acquisitionCancelled_) {
+        acquisitionFailures_.clear();
+        applyStatus(QStringLiteral("native.components.cancelled"), QString());
+        refresh();
+        return;
+    }
+    if (!acquisitionFailures_.isEmpty()) {
+        const QString key = acquisitionFailureKey_.isEmpty()
+                                ? QStringLiteral("native.components.fetch")
+                                : acquisitionFailureKey_;
+        applyStatus(key, acquisitionFailures_.join(QStringLiteral("; ")));
+        acquisitionFailures_.clear();
+        acquisitionFailureKey_.clear();
+        refresh();
+        return;
+    }
+    acquisitionFailureKey_.clear();
+    startAcquisitionVerification();
+}
+
+void ComponentStoreTab::noteAcquisitionUnitStarted() { ++acquisitionUnitsPending_; }
+
+void ComponentStoreTab::finishAcquisitionUnit(const QString& failure, bool cancelled) {
+    finishAcquisitionUnit(failure, cancelled, QString());
+}
+
+void ComponentStoreTab::finishAcquisitionUnit(const QString& failure, bool cancelled,
+                                              const QString& failureKey) {
+    if (cancelled) acquisitionCancelled_ = true;
+    if (!failure.isEmpty()) {
+        acquisitionFailures_.append(failure);
+        if (acquisitionFailureKey_.isEmpty()) acquisitionFailureKey_ = failureKey;
+    }
+    if (acquisitionUnitsPending_ > 0) --acquisitionUnitsPending_;
+    updateControls();
+    if (acquisitionUnitsPending_ == 0 && acquisitionSequenceActive_) finalizeAcquisition();
 }
 
 void ComponentStoreTab::cancelProgress() {
@@ -1532,7 +1849,8 @@ void ComponentStoreTab::updateControls() {
     // actions that would start another one: the surface is non-reentrant while
     // any worker is alive.
     const bool busy = provisioning || animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
-                      modelsDownloading_ || verifying_;
+                      modelsDownloading_ || verifying_ || acquisitionChecking_ || inventoryScanning_ ||
+                      acquisitionSequenceActive_;
     downloadButton_->setEnabled(!busy);
     verifyButton_->setEnabled(!busy);
     cancelButton_->setEnabled(busy);
@@ -1544,7 +1862,101 @@ void ComponentStoreTab::updateControls() {
         refreshButton->setEnabled(!busy);
     if (animeJanaiBackendCombo_ != nullptr) animeJanaiBackendCombo_->setEnabled(!busy);
     if (importAnimeJanaiButton_ != nullptr) importAnimeJanaiButton_->setEnabled(!busy);
-    if (!busy && progress_ != nullptr) progress_->hide();
+    if (progress_ == nullptr) return;
+    // Reopening Settings shows this same tab. A download that outlived the
+    // dialog must put its bar back; idle is the only state that hides it.
+    if (busy) progress_->show();
+    else progress_->hide();
+    publishAcquisition();
+}
+
+void ComponentStoreTab::cancelAcquisition() {
+    if (provisioner_ != nullptr) provisioner_->cancel();
+    if (inventoryScanning_) {
+        if (inventoryCancelFlag_) inventoryCancelFlag_->store(true);
+        ++inventoryGeneration_;
+        inventoryScanning_ = false;
+        componentStagePending_ = false;
+        acquisitionSequenceActive_ = false;
+        if (recommendedInstallPending_) recommendedInstallPending_ = false;
+        updateControls();
+        return;
+    }
+    if (acquisitionChecking_) {
+        if (acquisitionCheckCancelFlag_) acquisitionCheckCancelFlag_->store(true);
+        acquisitionChecking_ = false;
+        acquisitionSequenceActive_ = false;
+        pendingModels_.clear();
+        applyStatus(QStringLiteral("native.components.cancelled"), QString());
+        updateControls();
+        return;
+    }
+    if (verifying_) {
+        // The in-flight hash run's delivery is discarded rather than
+        // published: nothing proves a verdict from a run nobody waited for,
+        // and no partial result may be mistaken for the answer.
+        ++runGeneration_;
+        verifying_ = false;
+        cancelProgress();
+        applyStatus(QStringLiteral("native.components.cancelled"),
+                    tr("Verification was cancelled."));
+        updateControls();
+        return;
+    }
+    // The units run at the same time, so one Cancel arms every unit's gate: the
+    // run stays in flight until each worker observes it and settles, which is
+    // what keeps the bar honest while several transfers unwind.
+    bool anyArmed = false;
+    if (animeJanaiCancelFlag_) {
+        animeJanaiCancelFlag_->store(true);
+        anyArmed = true;
+    }
+    if (rifeCancelFlag_) {
+        rifeCancelFlag_->store(true);
+        anyArmed = true;
+    }
+    if (modelCancelFlag_) {
+        modelCancelFlag_->store(true);
+        anyArmed = true;
+    }
+    pendingModels_.clear();
+    if (anyArmed) {
+        applyStatus(QStringLiteral("native.components.cancelled"),
+                    tr("Cancelling the running downloads..."));
+        updateControls();
+        return;
+    }
+    modelsDownloading_ = false;
+    acquisitionUnitsPending_ = 0;
+    pendingModels_.clear();
+    if (progress_ != nullptr) progress_->hide();
+    applyStatus(QStringLiteral("native.components.cancelled"), QString());
+    updateControls();
+}
+
+void ComponentStoreTab::syncAcquisitionState() {
+    publishAcquisition();
+}
+
+void ComponentStoreTab::publishAcquisition() {
+    const bool downloading = (provisioner_ != nullptr && provisioner_->running()) ||
+                             animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
+                             modelsDownloading_ || acquisitionSequenceActive_;
+    if (!downloading) {
+        if (!acquisitionAnnounced_) return;
+        acquisitionAnnounced_ = false;
+        emit acquisitionIdle();
+        return;
+    }
+    const bool started = !acquisitionAnnounced_;
+    acquisitionAnnounced_ = true;
+    int percent = -1;
+    if (progress_ != nullptr && progress_->maximum() > progress_->minimum()) {
+        percent = progress_->value();
+    }
+    QString status = status_ != nullptr ? status_->text() : QString();
+    if (status.isEmpty()) status = tr("Downloading components…");
+    emit acquisitionProgress(status, percent, started);
 }
 
 void ComponentStoreTab::applyStatus(const QString& key, const QString& reason) {
