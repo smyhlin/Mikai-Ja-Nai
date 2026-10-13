@@ -577,6 +577,7 @@ private:
     SeriesDrawer* seriesDrawer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
     QPointer<VideoSurface> animeJanaiBuildingSurface_;
+    QPointer<VideoSurface> animeJanaiPlanWaitSurface_;
     /// The core the running engine operation holds paused, and the source epoch
     /// that hold was taken under: 0 means the hold predates any source, so a
     /// completion restores the intent instead of being treated as stale.
@@ -597,6 +598,8 @@ private:
     /// is the only way to name it once the outgoing hold is already gone.
     void moveEnginePreparationPause(VideoSurface* owner,
                                     std::optional<bool> carriedIntent = std::nullopt);
+    void applyAnimeJanaiPlanToFloat(VideoSurface* target);
+    void settleAnimeJanaiPlanOnSurface(VideoSurface* completed, bool succeeded);
     QWidget* strip_ = nullptr;
     QFrame* statusPanel_ = nullptr;
     QPushButton* seriesButton_ = nullptr;

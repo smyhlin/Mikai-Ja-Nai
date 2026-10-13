@@ -200,6 +200,13 @@ void clickCancel(ProcessingOverlay* overlay) {
     }
 }
 
+bool announceAnimeJanaiBuild(mplayer::VideoSurface* surface, bool active, bool succeeded,
+                             const QString& detail) {
+    return surface != nullptr && QMetaObject::invokeMethod(
+        surface, "animeJanaiEngineBuildChanged", Qt::DirectConnection,
+        Q_ARG(bool, active), Q_ARG(bool, succeeded), Q_ARG(QString, detail));
+}
+
 PipFloat* activeFloat() {
     for (QWidget* window : QApplication::topLevelWidgets()) {
         if (auto* pip = qobject_cast<PipFloat*>(window); pip != nullptr && pip->isVisible()) {
@@ -626,6 +633,10 @@ int main(int argc, char** argv) {
     const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                  : QStringLiteral("av://lavfi:testsrc2=size=640x360:rate=25");
     const QList<QualityEntry> qualities = {{360, url}};
+    QSettings().setValue(QStringLiteral("player/animejanai/preset"),
+                         QStringLiteral("builtin1001"));
+    QSettings().setValue(QStringLiteral("player/animejanai/backend"),
+                         QStringLiteral("tensorrt"));
     auto* dialog = new PlayerDialog(QStringLiteral("probe 360p"), url, qualities, 360, &host);
     dialog->startPlayer();
     dialog->show();
@@ -651,6 +662,12 @@ int main(int argc, char** argv) {
     }
     verdict.require(!dialog->enginePreparationVisible(),
                     QStringLiteral("no operation window appears before work starts"));
+    const bool animeJanaiPlanReady = surface != nullptr && waitFor([dialog, surface] {
+        return dialog->animeJanaiPlanGeneration() > 0 &&
+               surface->animeJanaiPlan().presetId == QStringLiteral("builtin1001");
+    });
+    verdict.require(animeJanaiPlanReady,
+                    QStringLiteral("configured AnimeJaNai plan reaches the actual player core"));
 
     bool cancelSeen = false;
     QObject::connect(dialog, &PlayerDialog::enginePreparationCancelRequested, dialog,
@@ -781,7 +798,9 @@ int main(int argc, char** argv) {
         return corePaused(surface, false) && surface->isPlaying();
     }), QStringLiteral("terminal applies Play requested during the replacement load"));
 
-    dialog->beginEnginePreparation(QStringLiteral("Owner handoff"));
+    const QString buildDetail = QStringLiteral("Compiling spatial test engine");
+    verdict.require(announceAnimeJanaiBuild(surface, true, false, buildDetail),
+                    QStringLiteral("real player receives an official engine-build start"));
     dialog->togglePip();
     PipFloat* pip = nullptr;
     const bool floated = waitFor([&pip] {
@@ -791,6 +810,15 @@ int main(int argc, char** argv) {
     verdict.require(floated, QStringLiteral("real PiP owner loads during preparation"));
     if (floated) {
         requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP receives active preparation hold"));
+        verdict.require(!pip->videoSurface()->animeJanaiPlan().enabled,
+                        QStringLiteral("PiP does not attach a second AnimeJaNai engine build"));
+        verdict.require(announceAnimeJanaiBuild(surface, false, true,
+                                                 QStringLiteral("TensorRT engine ready")),
+                        QStringLiteral("engine completion settles through the owning core"));
+        verdict.require(waitFor([pip] {
+            const auto plan = pip->videoSurface()->animeJanaiPlan();
+            return plan.enabled && plan.presetId == QStringLiteral("builtin1001");
+        }), QStringLiteral("PiP receives the plan only after the existing engine build settles"));
         dialog->endEnginePreparation(true, QStringLiteral("Complete"));
         verdict.require(waitFor([pip, surface] {
             return corePaused(pip->videoSurface(), false) && corePaused(surface, true);

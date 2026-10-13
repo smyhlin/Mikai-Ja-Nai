@@ -1628,6 +1628,33 @@ void PlayerDialog::onAnimeJanaiFailure(const QString& reason) {
     showProcessingFailure(QStringLiteral("animejanai.failure"), reason);
 }
 
+void PlayerDialog::applyAnimeJanaiPlanToFloat(VideoSurface* target) {
+    if (closed_ || target == nullptr) return;
+    if (animeJanaiBuildingSurface_ != nullptr && animeJanaiBuildingSurface_ != target) {
+        native::AnimeJanaiPlan off;
+        target->setAnimeJanaiPlan(off);
+        animeJanaiPlanWaitSurface_ = target;
+        return;
+    }
+    target->setAnimeJanaiPlan(animeJanaiPlan_);
+    if (animeJanaiPlanWaitSurface_ == target) animeJanaiPlanWaitSurface_.clear();
+}
+
+void PlayerDialog::settleAnimeJanaiPlanOnSurface(VideoSurface* completed, bool succeeded) {
+    if (completed == nullptr) return;
+    if (!succeeded) {
+        if (animeJanaiPlanWaitSurface_ == playbackSurface()) {
+            animeJanaiPlanWaitSurface_.clear();
+        }
+        return;
+    }
+    if (animeJanaiPlanWaitSurface_ == playbackSurface()) {
+        VideoSurface* waiting = animeJanaiPlanWaitSurface_;
+        animeJanaiPlanWaitSurface_.clear();
+        applyAnimeJanaiPlanToFloat(waiting);
+    }
+}
+
 void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
                                                  const QString& detail) {
     auto* owner = qobject_cast<VideoSurface*>(sender());
@@ -1644,6 +1671,7 @@ void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
     }
     if (animeJanaiBuildingSurface_ != owner) return;
     animeJanaiBuildingSurface_.clear();
+    settleAnimeJanaiPlanOnSurface(owner, succeeded);
     // A superseded build reports itself but cannot end the operation owning the
     // window now: whatever superseded it already released the hold it held.
     if (animeJanaiBuildGeneration_ != enginePreparationGeneration_) {
@@ -3614,6 +3642,14 @@ void PlayerDialog::enterPip() {
                 &PlayerDialog::onAnimeJanaiFailure);
         connect(window->videoSurface(), &VideoSurface::animeJanaiEngineBuildChanged, this,
                 &PlayerDialog::onAnimeJanaiEngineBuildChanged);
+        connect(window->videoSurface(), &VideoSurface::animeJanaiStatusChanged, this,
+                [this](const QString&) {
+                    VideoSurface* current = playbackSurface();
+                    if (current == animeJanaiPlanWaitSurface_) {
+                        animeJanaiPlanWaitSurface_.clear();
+                        applyAnimeJanaiPlanToFloat(current);
+                    }
+                });
         // The float's own probe observation is what makes its source/device
         // ready, and its own factory observation is what names the current
         // source's availability while it owns playback. The slot drops the
@@ -3627,9 +3663,7 @@ void PlayerDialog::enterPip() {
         connect(window->videoSurface(), &VideoSurface::nativeReferenceFrameFailed, this,
                 &PlayerDialog::onNativeReferenceFrameFailed);
     }
-    // Each pooled surface owns independent filter state; copy the complete
-    // prepared plan before opening its core rather than inheriting main status.
-    window->videoSurface()->setAnimeJanaiPlan(animeJanaiPlan_);
+    applyAnimeJanaiPlanToFloat(window->videoSurface());
     // The float owns a second core, so it needs the chain separately: the mode
     // alone would drop a chain the compare window applied. It is pooled, so the
     // recorded id is compared rather than assumed - "off" clears whatever a
@@ -3809,6 +3843,9 @@ void PlayerDialog::leavePip(bool closing) {
                surface_->nativePlaybackStatus().state ==
                    native::NativePlaybackController::State::Suspended) {
         surface_->resumeNativeProcessing();
+    }
+    if (animeJanaiPlanWaitSurface_ == window->videoSurface()) {
+        animeJanaiPlanWaitSurface_.clear();
     }
     // The main core owns playback again from here, so the HUD, the menu and the
     // availability go back to its own observation instead of the float's. The

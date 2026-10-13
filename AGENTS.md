@@ -464,7 +464,13 @@ Layering is strict and enforced by tests:
   resource that is missing, which is what proves the selection decides the
   outcome. `engine_popup_probe` drives the player's preparation window through its
   public API, including completion/failure visibility and a second build
-  reopening the window with working cancellation. `native_prep_probe` links only
+  reopening the window with working cancellation. Its 2026-10-13 pass is 98/98
+  on the current tree: beyond the operation-window cases it configures the
+  `builtin1001`/tensorrt preference, proves the prepared AnimeJaNai plan reaches
+  the playing core, starts a real official engine build from the main surface,
+  enters PiP while that build is active, proves the float's core holds no second
+  build, settles completion through the owning core, and proves the float
+  receives the plan only then. `native_prep_probe` links only
   `Qt6::Core` and takes
   `<helper.exe> <graph.onnx> <GPU-uuid> <named-input-shapes>`, driving the
   native preparation helper against a real CUDA device; it is Windows-only and
