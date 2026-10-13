@@ -15,7 +15,10 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <functional>
@@ -68,7 +71,8 @@ QString findSevenZip(const QString& toolsDirectory) {
         }
     }
     const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
-    return QFileInfo::exists(bundled) ? bundled : QString{};
+    const QString library = QDir(toolsDirectory).filePath(QStringLiteral("7z.dll"));
+    return QFileInfo(bundled).isFile() && QFileInfo(library).isFile() ? bundled : QString{};
 }
 
 }  // namespace
@@ -296,6 +300,8 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
 
 QString ensureSevenZip(const QString& toolsDirectory) {
     if (toolsDirectory.isEmpty()) return {};
+    static QMutex bootstrapMutex;
+    const QMutexLocker locker(&bootstrapMutex);
     const QString found = findSevenZip(toolsDirectory);
     if (!found.isEmpty()) {
         return found;
@@ -307,11 +313,15 @@ QString ensureSevenZip(const QString& toolsDirectory) {
     constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
     constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
     const QString tools = toolsDirectory;
-    const QString bootstrap = QDir(tools).filePath(QStringLiteral("7zr.exe"));
-    const QString installer = QDir(tools).filePath(QStringLiteral("7z2603-x64.exe"));
     if (!QDir().mkpath(tools)) {
         throw std::runtime_error("could not create " + tools.toStdString());
     }
+    QTemporaryDir staging(QDir(tools).filePath(QStringLiteral(".7zip-bootstrap-XXXXXX")));
+    if (!staging.isValid()) {
+        throw std::runtime_error("could not create a temporary 7-Zip bootstrap directory");
+    }
+    const QString bootstrap = QDir(staging.path()).filePath(QStringLiteral("7zr.exe"));
+    const QString installer = QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe"));
 
     auto writeVerified = [](const QString& path, const QUrl& url, const char* digest) {
         const QByteArray bytes =
@@ -346,6 +356,7 @@ QString ensureSevenZip(const QString& toolsDirectory) {
     }
     QFile::remove(bootstrap);
     QFile::remove(installer);
+    staging.remove();
     return tool;
 }
 
