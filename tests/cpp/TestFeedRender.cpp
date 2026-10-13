@@ -1,6 +1,9 @@
 #include "TestFeedRender.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <dialogs/ComponentStoreTab.hpp>
+#include <dialogs/SettingsDialog.hpp>
+#include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
 #include <state/QualityCache.hpp>
@@ -8,23 +11,39 @@
 #include <workers/Runner.hpp>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
 #include <QtCore/QHash>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
+#include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtCore/QStringList>
+#include <QtCore/QTemporaryFile>
+#include <QtCore/QTimer>
 #include <QtNetwork/QHostAddress>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#include <cstdio>
+
+#include <QtGui/QGuiApplication>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QDialog>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QWidget>
 
+using mikai::app::ComponentStoreTab;
+using mikai::app::MainWindow;
 using mikai::app::QualityCache;
 using mikai::app::Runner;
+using mikai::app::SettingsDialog;
 using mikai::app::SearchPage;
 using mikai::app::TitleCard;
 using mikai::app::TitlePage;
@@ -485,6 +504,97 @@ void TestFeedRender::thePagerTrustsTheServersOwnPageCount() {
   QCOMPARE(served.page.value_or(-1), first.pages.value_or(1));
 }
 
+void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  MainWindow window(client);
+  QTimer dismissSetupPrompt;
+  dismissSetupPrompt.setInterval(10);
+  connect(&dismissSetupPrompt, &QTimer::timeout, &window, [&window] {
+    QDialog* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+    if (modal != nullptr && qobject_cast<SettingsDialog*>(modal) == nullptr) modal->reject();
+  });
+  dismissSetupPrompt.start();
+  window.resize(900, 700);
+  window.show();
+  QApplication::processEvents();
+
+  QPushButton* settingsButton = nullptr;
+  for (QPushButton* button : window.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
+    if (button->accessibleName() == QStringLiteral("API token settings")) {
+      settingsButton = button;
+      break;
+    }
+  }
+  QVERIFY(settingsButton != nullptr);
+  // The shortcuts overlay steals focus and never closes itself. Open it first
+  // so the regression covers the real stuck state: Settings opening and closing
+  // over a live overlay.
+  QPushButton* keysButton = nullptr;
+  for (QPushButton* button : window.findChildren<QPushButton*>(QStringLiteral("settingsChip"))) {
+    if (button->accessibleName() == QStringLiteral("Keyboard shortcuts")) {
+      keysButton = button;
+      break;
+    }
+  }
+  QVERIFY(keysButton != nullptr);
+  QTest::mouseClick(keysButton, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      window.findChild<QWidget*>(QStringLiteral("playerKeyHints")) != nullptr, 5000);
+  QPointer<SettingsDialog> settings;
+  bool acquisitionStarted = false;
+  QTimer::singleShot(100, &window, [&window, &settings, &acquisitionStarted] {
+    settings = window.findChild<SettingsDialog*>();
+    auto* components = window.findChild<ComponentStoreTab*>();
+    acquisitionStarted = !settings.isNull() && components != nullptr;
+    if (acquisitionStarted) {
+      QMetaObject::invokeMethod(components, "acquisitionProgress", Qt::DirectConnection,
+                                Q_ARG(QString, QStringLiteral("Downloading test pack")),
+                                Q_ARG(int, 42), Q_ARG(bool, true));
+    }
+  });
+  QTest::mouseClick(settingsButton, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(acquisitionStarted, 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(settings.isNull(), 5000);
+  dismissSetupPrompt.stop();
+  auto* acquisitionBar = window.findChild<QWidget*>(QStringLiteral("componentAcquisitionBar"));
+  QVERIFY(acquisitionBar != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(acquisitionBar->isVisible(), 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(QApplication::activeModalWidget() == nullptr, 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SettingsDialog*>() == nullptr, 5000);
+  if (QWidget* hints = window.findChild<QWidget*>(QStringLiteral("playerKeyHints"))) {
+    QVERIFY(!hints->isVisible());
+  }
+  QTest::qWait(50);
+  QVERIFY(window.isEnabled());
+  QVERIFY(window.findChild<QWidget*>(QStringLiteral("componentAcquisitionBar")) != nullptr);
+  QVERIFY(settingsButton->isEnabled());
+#ifdef Q_OS_WIN
+  // A real HWND only exists on the windows platform. Under offscreen/minimal
+  // winId() is not a real window and IsWindowEnabled on it is meaningless, so
+  // the native check runs only where the handle is real. The Qt-level
+  // isEnabled plus the search interaction below already prove input works.
+  if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+    const HWND windowHandle = reinterpret_cast<HWND>(window.winId());
+    QVERIFY(windowHandle != nullptr);
+    QVERIFY2(IsWindowEnabled(windowHandle) != FALSE,
+             "closing Settings left the native MainWindow disabled");
+  }
+#endif
+
+  auto* query = window.findChild<QLineEdit*>();
+  QVERIFY(query != nullptr);
+  QTest::mouseClick(query, Qt::LeftButton);
+  QTest::keyClicks(query, QStringLiteral("interactive"));
+  QTest::keyClick(query, Qt::Key_Return);
+  QTRY_VERIFY_WITH_TIMEOUT(api.requestedPaths().join(QLatin1Char('|')).contains(
+                               QStringLiteral("search")),
+                           5000);
+}
+
 void TestFeedRender::theHomeFeedRendersItsCards() {
   CannedApi api;
   QString error;
@@ -622,6 +732,35 @@ void TestFeedRender::everyRouteReportsTheStatusUnderADeadOrigin() {
 }
 
 int runTestFeedRender(int argc, char** argv) {
+  // Same capture pattern as runTestDownloads: without it a crash or deadline
+  // kill under the launcher discards QTest's console output and only the
+  // bare FAIL line survives.
   TestFeedRender suite;
-  return QTest::qExec(&suite, argc, argv);
+  QStringList arguments;
+  arguments.reserve(argc + 1);
+  arguments << QString::fromLocal8Bit(argv[0]);
+  for (int i = 1; i < argc; ++i) arguments << QString::fromLocal8Bit(argv[i]);
+  QTemporaryFile report;
+  const bool captureReport = !arguments.contains(QStringLiteral("-o"));
+  if (captureReport) {
+    if (!report.open()) {
+      std::fprintf(stderr, "[mikai_tests] cannot create report for TestFeedRender\n");
+      return 2;
+    }
+    report.close();
+    arguments << QStringLiteral("-o") << report.fileName() + QStringLiteral(",txt");
+  }
+  const int rc = QTest::qExec(&suite, arguments);
+  if (captureReport && rc != 0) {
+    QFile output(report.fileName());
+    if (output.open(QIODevice::ReadOnly)) {
+      const QByteArray text = output.readAll();
+      std::fwrite(text.constData(), 1, static_cast<size_t>(text.size()), stderr);
+    } else {
+      std::fprintf(stderr, "[mikai_tests] cannot read report for TestFeedRender\n");
+    }
+  }
+  std::fprintf(stderr, "[mikai_tests] TestFeedRender: %s (rc=%d)\n", rc != 0 ? "FAIL" : "PASS", rc);
+  std::fflush(stderr);
+  return rc;
 }

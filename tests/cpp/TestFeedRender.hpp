@@ -24,6 +24,7 @@ class TestFeedRender : public QObject {
   // The feed's blocks are driven by /anime. When it answers, the page must hold
   // real cards, not a retry affordance.
   void theHomeFeedRendersItsCards();
+  void settingsClosingDuringAcquisitionRestoresMainWindowInput();
 
   // A title page's episode pills come from the release payload. When it answers,
   // every canned episode must have a button, and the heading must be the title's.
