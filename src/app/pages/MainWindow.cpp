@@ -10,6 +10,7 @@
 #include <native/components/NativeGpuProbe.hpp>
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
+#include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
@@ -39,6 +40,8 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSizePolicy>
+#include <QHBoxLayout>
+#include <QProgressBar>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -100,6 +103,24 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
 
     runner_ = new Runner(this);
     componentProvisioner_ = new NativeComponentProvisioner(*runner_, this);
+    // Owned for the process, not for one Settings dialog. The dialog borrows
+    // it and hands it back on close, so Cancel/X there does not stop a download.
+    componentsTab_ = new ComponentStoreTab(this);
+    componentsTab_->hide();
+    componentsTab_->setRunner(runner_);
+    componentsTab_->setClient(&client_);
+    componentsTab_->setComponentProvisioner(componentProvisioner_);
+    connect(componentsTab_, &ComponentStoreTab::inventoryUpdated, this, [this] {
+        if (setupDeclined_ || setupPromptOffered_ || componentsTab_ == nullptr ||
+            !componentsTab_->inventoryReady() || componentsTab_->acquisitionRunning() ||
+            componentsTab_->setupPrompt().isEmpty()) return;
+        if (!settingsDialog_.isNull()) showAnimeJanaiSetupPrompt(settingsDialog_.data());
+        else showAnimeJanaiSetupPrompt(nullptr);
+    });
+    connect(componentsTab_, &ComponentStoreTab::acquisitionProgress, this,
+            &MainWindow::noteComponentAcquisition);
+    connect(componentsTab_, &ComponentStoreTab::acquisitionIdle, this,
+            &MainWindow::noteComponentAcquisitionIdle);
     qualityCache_ = new QualityCache(this);
     qualityCache_->load();
 
@@ -107,6 +128,39 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     root->setContentsMargins(0, 0, 0, 0);
     stack_ = new QStackedWidget(this);
     root->addWidget(stack_);
+
+    // The download's own readout. Settings is not where it lives: that dialog
+    // is modal for as long as it is open, and a pack transfer has to leave the
+    // catalogue clickable.
+    acquisitionBar_ = new QWidget(this);
+    acquisitionBar_->setObjectName(QStringLiteral("componentAcquisitionBar"));
+    auto* acquisitionLayout = new QHBoxLayout(acquisitionBar_);
+    acquisitionLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
+                                          theme::kSpacingMedium, theme::kSpacingSmall);
+    acquisitionLayout->setSpacing(theme::kSpacingSmall);
+    acquisitionStatus_ = new QLabel(acquisitionBar_);
+    acquisitionStatus_->setObjectName(QStringLiteral("status"));
+    acquisitionProgress_ = new QProgressBar(acquisitionBar_);
+    acquisitionProgress_->setObjectName(QStringLiteral("nativeComponentTabProgress"));
+    acquisitionProgress_->setTextVisible(false);
+    acquisitionProgress_->setFixedWidth(theme::kAcquisitionProgressWidth);
+    acquisitionProgress_->setRange(0, 100);
+    auto* acquisitionDetails = new QPushButton(tr("Components"), acquisitionBar_);
+    auto* acquisitionCancel = new QPushButton(tr("Cancel"), acquisitionBar_);
+    acquisitionCancel->setObjectName(QStringLiteral("componentAcquisitionCancel"));
+    acquisitionLayout->addWidget(acquisitionStatus_, 1);
+    acquisitionLayout->addWidget(acquisitionProgress_);
+    acquisitionLayout->addWidget(acquisitionDetails);
+    acquisitionLayout->addWidget(acquisitionCancel);
+    acquisitionBar_->hide();
+    root->addWidget(acquisitionBar_);
+    connect(acquisitionDetails, &QPushButton::clicked, this, &MainWindow::openComponentSettings);
+    connect(acquisitionCancel, &QPushButton::clicked, this, [this] {
+        componentsTab_->cancelAcquisition();
+        // A failure left on the bar after the download stopped is dismissed
+        // here. A download that is still winding down keeps the bar.
+        if (!componentsTab_->downloadActive()) acquisitionBar_->hide();
+    });
 
     search_ = new SearchPage(*runner_, client_, stack_);
     connect(search_, &SearchPage::openRequested, this,
@@ -145,6 +199,14 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // ignored and the window stays usable for a retry. The same holds for a
     // reentrant close arriving through the player's own settling pump, which
     // finds the same refusal and returns without recursing.
+    if (!settingsDialog_.isNull()) {
+        // Settings is non-modal now, so the window can be asked to close while
+        // `openSettingsImpl` is still blocked inside the dialog's `exec()`.
+        // Destroying the dialog underneath that loop would tear the window down
+        // mid-callback, so the close is refused until the dialog is gone.
+        event->ignore();
+        return;
+    }
     if (!closeMedia() || !disposeTitle()) {
         event->ignore();
         return;
@@ -452,6 +514,7 @@ void MainWindow::ensureNativeComponents() {
     prompt.addButton(tr("Skip for now"), QMessageBox::RejectRole);
     prompt.addButton(tr("Skip and never ask"), QMessageBox::DestructiveRole);
     prompt.setDefaultButton(download);
+    pausePlaybackForComponentAsk(false);
     prompt.exec();
     // Roles, not pointers: only QAbstractButton is declared here, and the role
     // is exactly the viewer's choice rather than which widget instance it was.
@@ -466,13 +529,18 @@ void MainWindow::ensureNativeComponents() {
             if (!componentProvisioner_->ensure(&downloadReason)) {
                 qInfo().noquote() << "mikai: native components:" << downloadReason;
             }
-            openComponentSettings();
+            // The transfer keeps running on its own worker. Opening Settings
+            // here used to cover the catalogue for the whole download.
+            componentsTab_->syncAcquisitionState();
             break;
         }
         default:
             qInfo() << "mikai: native components download skipped for this run";
             break;
     }
+    // The Download path resumes when the settings dialog it opened closes.
+    // Skip, and a Download that never opened settings, resume here.
+    resumePlaybackAfterComponentAsk();
 }
 
 void MainWindow::openSettings() {
@@ -490,9 +558,21 @@ void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent 
 
 void MainWindow::offerAnimeJanaiSetup(SettingsDialog* settings) {
     if (setupDeclined_ || setupPromptOffered_) return;
-    const QString promptBody = mikai::app::animeJanaiSetupPrompt();
-    if (promptBody.isEmpty()) return;
+    if (componentsTab_ == nullptr || !componentsTab_->inventoryReady()) return;
+    showAnimeJanaiSetupPrompt(settings);
+}
 
+void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
+    if (setupDeclined_ || setupPromptOffered_ || componentsTab_ == nullptr ||
+        componentsTab_->acquisitionRunning()) return;
+    // The inventory was hashed by ComponentStoreTab's worker; prompt construction
+    // uses only that published snapshot and never probes the stores on the GUI thread.
+    const QString promptBody = componentsTab_->setupPrompt();
+    if (promptBody.isEmpty()) return;
+    // AnimeJaNai is released when this ask finishes so the viewer can keep
+    // watching on a shader while the packs download. The pause itself happens
+    // only when a video is already playing.
+    pausePlaybackForComponentAsk(true);
     QWidget* parent = QApplication::activeWindow();
     if (parent == nullptr) parent = this;
 
@@ -543,16 +623,130 @@ void MainWindow::offerAnimeJanaiSetup(SettingsDialog* settings) {
     } else if (notNowChosen) {
         setupDeclined_ = true;
     }
+    // A prompt opened from inside Settings waits for that dialog to close.
+    // Resuming here would start the video behind the still-modal page.
+    if (settings == nullptr) resumePlaybackAfterComponentAsk();
+}
+
+void MainWindow::pausePlaybackForComponentAsk(bool releaseAnimeJanai) {
+    if (componentAskHeld_) {
+        // A second prompt opened from inside the first (both run at startup)
+        // must not upgrade the first prompt's release decision: the resume the
+        // first prompt expects would then clear AnimeJaNai the viewer never
+        // answered about. Only the prompt that owns the hold may extend it, and
+        // that is never the case here because a nested prompt never takes it
+        // back over. Keep the original decision untouched.
+        return;
+    }
+    mplayer::shell::PlayerDialog* player = owningPlaybackPlayer(
+        stack_ != nullptr ? stack_->currentWidget() : nullptr, mediaPlayer_.data());
+    const bool paused = player != nullptr && player->pauseIfPlaying();
+    if (!paused && !releaseAnimeJanai) return;
+    componentAskHeld_ = true;
+    componentAskPlayer_ = player;
+    componentAskPausedPlayback_ = paused;
+    componentAskReleaseAnimeJanai_ = releaseAnimeJanai;
+}
+
+void MainWindow::resumePlaybackAfterComponentAsk() {
+    if (!componentAskHeld_) return;
+    const bool releaseAnimeJanai = componentAskReleaseAnimeJanai_;
+    const bool paused = componentAskPausedPlayback_;
+    const QPointer<mplayer::shell::PlayerDialog> player = componentAskPlayer_;
+    componentAskHeld_ = false;
+    componentAskPausedPlayback_ = false;
+    componentAskReleaseAnimeJanai_ = false;
+    componentAskPlayer_.clear();
+    if (player.isNull()) return;
+    // Clear the missing AnimeJaNai request before playback resumes, so the
+    // failure row does not come back over a shader the viewer is watching.
+    if (releaseAnimeJanai) player->applyAnimeJanaiRequest(QString());
+    if (paused) player->resumePlayback();
+}
+
+void MainWindow::noteComponentAcquisition(const QString& status, int percent, bool started) {
+    if (acquisitionBar_ == nullptr) return;
+    acquisitionStatus_->setText(status);
+    acquisitionProgress_->show();
+    if (auto* cancel = acquisitionBar_->findChild<QPushButton*>(
+            QStringLiteral("componentAcquisitionCancel"))) {
+        cancel->show();
+    }
+    if (percent < 0) {
+        acquisitionProgress_->setRange(0, 0);
+    } else {
+        acquisitionProgress_->setRange(0, 100);
+        acquisitionProgress_->setValue(percent);
+    }
+    acquisitionBar_->show();
+    if (started) releaseSettingsForAcquisition();
+}
+
+void MainWindow::noteComponentAcquisitionIdle() {
+    if (acquisitionBar_ == nullptr || componentsTab_ == nullptr) return;
+    const QString key = componentsTab_->statusKey();
+    const bool failure = !key.isEmpty() &&
+                         key != QStringLiteral("native.components.cancelled");
+    // A failure has to stay readable after Settings has already closed.
+    // Cancel dismisses it; a cancelled or finished run just leaves.
+    if (!failure) {
+        acquisitionBar_->hide();
+        return;
+    }
+    acquisitionStatus_->setText(componentsTab_->statusReason());
+    acquisitionProgress_->hide();
+    acquisitionBar_->show();
+}
+
+void MainWindow::releaseSettingsForAcquisition() {
+    const QPointer<SettingsDialog> dialog = settingsDialog_;
+    if (dialog.isNull()) return;
+    QTimer::singleShot(0, this, [dialog] {
+        if (dialog.isNull()) return;
+        // Rejected drops unsaved preference edits. The component tab is handed
+        // back to the main window by the dialog destructor, and that path does
+        // not cancel the download.
+        dialog->done(QDialog::Rejected);
+    });
 }
 
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
                                   QPointer<mplayer::shell::PlayerDialog> preferredCore,
                                   bool showComponentsFirst,
                                   bool installAnimeJanaiRecommended) {
-    SettingsDialog dialog(client_, *runner_, this);
+    if (!settingsDialog_.isNull()) {
+        settingsDialog_->raise();
+        settingsDialog_->activateWindow();
+        if (showComponentsFirst) settingsDialog_->showComponentsTab();
+        if (installAnimeJanaiRecommended) settingsDialog_->installRecommended();
+        // A remedy pressed while Settings is already open must not vanish: the
+        // live dialog has its preparation providers installed, so the intent is
+        // forwarded to it the same way the fresh path dispatches one turn later.
+        if (intent.has_value()) {
+            const mplayer::shell::ProcessingSettingsIntent requested = *intent;
+            const QPointer<SettingsDialog> target = settingsDialog_;
+            QTimer::singleShot(0, this, [target, requested] {
+                if (!target.isNull()) target->applyProcessingIntent(requested);
+            });
+        }
+        return;
+    }
+    SettingsDialog dialog(client_, *runner_, this, componentsTab_);
+    settingsDialog_ = &dialog;
     dialog.setComponentProvisioner(componentProvisioner_);
     connect(&dialog, &SettingsDialog::componentsTabOpened, this,
-            [this](SettingsDialog* settings) { offerAnimeJanaiSetup(settings); });
+            [this](SettingsDialog* settings) {
+                if (componentsTab_ == nullptr) return;
+                if (componentsTab_->inventoryReady()) {
+                    offerAnimeJanaiSetup(settings);
+                    return;
+                }
+                const QPointer<SettingsDialog> target(settings);
+                connect(componentsTab_, &ComponentStoreTab::inventoryUpdated, settings,
+                        [this, target] {
+                            if (!target.isNull()) offerAnimeJanaiSetup(target.data());
+                        }, Qt::SingleShotConnection);
+            });
     if (showComponentsFirst) {
         dialog.showComponentsTab();
     }
@@ -807,9 +1001,24 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         });
     }
 
+    // `exec()` makes the dialog application-modal. A download has to leave the
+    // main window able to open titles, so the modality is taken off on the
+    // first turn. Closing the dialog, when a download starts, is what actually
+    // uncovers the catalogue.
+    QTimer::singleShot(0, &dialog, [target = QPointer<SettingsDialog>(&dialog)] {
+        if (target.isNull()) return;
+        target->setAttribute(Qt::WA_ShowModal, false);
+        target->setWindowModality(Qt::NonModal);
+    });
     if (dialog.exec() == QDialog::Accepted) {
         search_->refreshFeedSettings();
     }
+    settingsDialog_.clear();
+    // Before refreshStoredSettings, so a prompt that turned AnimeJaNai off is
+    // what the refresh reads. A settings open that never asked installs nothing
+    // and does not pause. The dialog destructor then returns the Components tab
+    // to this window without cancelling a download it started.
+    resumePlaybackAfterComponentAsk();
     // Components publish installs even when preference edits are cancelled.
     if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
         core->refreshStoredSettings();

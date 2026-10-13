@@ -8,6 +8,7 @@
 #include <player/ProcessingSettingsIntent.hpp>
 
 #include <QDialog>
+#include <QPointer>
 #include <functional>
 #include <QMap>
 #include <QSet>
@@ -50,7 +51,11 @@ class SettingsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent = nullptr);
+    /// `adoptedComponents` is the app-owned Components tab. The dialog shows it
+    /// and gives it back, still running, when the dialog closes. Null builds a
+    /// tab this dialog owns and destroys, which is what probes use.
+    SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent = nullptr,
+                   ComponentStoreTab* adoptedComponents = nullptr);
     ~SettingsDialog() override;
 
     /// True when the feed selection now differs from what was stored when the
@@ -175,6 +180,8 @@ private:
     QWidget* buildPresetsTab();
     QWidget* buildProcessingTab();
     QWidget* buildComponentsTab();
+    /// Detaches an adopted Components tab before this dialog deletes its children.
+    void releaseAdoptedComponentsTab();
     void testToken();
     void refreshQuota();
 
@@ -327,6 +334,15 @@ private:
     NativeAssetsPanel* assetsPanel_ = nullptr;
     NativeComponentProvisioner* componentProvisioner_ = nullptr;
     ComponentStoreTab* componentStoreTab_ = nullptr;
+    /// The Components tab handed in at construction, when this dialog is showing
+    /// the app-owned one instead of a tab it created.
+    ComponentStoreTab* adoptedComponents_ = nullptr;
+    /// Parent that tab returns to. Kept separately so a release still happens
+    /// when that parent is the main window; a QPointer because the home can go
+    /// away while the dialog is open (non-modal Settings runs beside the main
+    /// window), and reparenting onto freed memory is a use-after-free.
+    QPointer<QWidget> adoptedComponentsHome_;
+    bool adoptedComponentsTab_ = false;
     NativePreparationContextProvider preparationContextProvider_;
     NativePreparationSourcePresence preparationSourcePresence_;
     NativePreparationContextRequest preparationContextRequest_;

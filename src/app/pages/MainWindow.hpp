@@ -10,6 +10,8 @@
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
+class QLabel;
+class QProgressBar;
 class QStackedWidget;
 
 namespace mikai::backend {
@@ -23,6 +25,7 @@ class PlayerDialog;
 namespace mikai::app {
 
 class SettingsDialog;
+class ComponentStoreTab;
 class NativeComponentProvisioner;
 class QualityCache;
 class Runner;
@@ -69,6 +72,26 @@ private:
                                QPointer<mplayer::shell::PlayerDialog> core);
     /// Offers the AnimeJaNai component setup once while it is recommended.
     void offerAnimeJanaiSetup(SettingsDialog* settings = nullptr);
+    void showAnimeJanaiSetupPrompt(SettingsDialog* settings);
+    /// Pauses the player that is actually playing, once, for a component prompt.
+    /// `releaseAnimeJanai` turns AnimeJaNai off when the prompt is finished so
+    /// playback can continue on a shader while the packs are still downloading.
+    /// A prompt that finds nothing playing and does not release AnimeJaNai
+    /// records nothing.
+    void pausePlaybackForComponentAsk(bool releaseAnimeJanai);
+    /// Undoes `pausePlaybackForComponentAsk` on the player it paused. A player
+    /// that is already playing is left playing. Safe to call when no prompt held
+    /// anything.
+    void resumePlaybackAfterComponentAsk();
+    /// Shows the download on the main window. The first tick of a run closes
+    /// Settings when it is open, so the catalogue can take clicks while the
+    /// packs keep downloading.
+    void noteComponentAcquisition(const QString& status, int percent, bool started);
+    void noteComponentAcquisitionIdle();
+    /// Hides Settings without cancelling the download it started. Queued so a
+    /// download that begins before `exec()` still closes the dialog on the
+    /// first turn of that loop, instead of being shown again by it.
+    void releaseSettingsForAcquisition();
     /// The one settings surface. `intent` is present only when the viewer
     /// pressed a processing-failure remedy, and `preferredCore` then names the
     /// dialog that raised it; it is consulted only while it still owns a
@@ -120,6 +143,15 @@ private:
     backend::MikaiClient& client_;
     Runner* runner_ = nullptr;
     NativeComponentProvisioner* componentProvisioner_ = nullptr;
+    /// Outlives Settings. Closing the dialog gives this tab back instead of
+    /// destroying it, so a download the viewer started keeps running.
+    ComponentStoreTab* componentsTab_ = nullptr;
+    /// The settings dialog `openSettingsImpl` is inside, when one is open.
+    /// A second open raises this one instead of nesting another modal loop.
+    QPointer<SettingsDialog> settingsDialog_;
+    QWidget* acquisitionBar_ = nullptr;
+    QLabel* acquisitionStatus_ = nullptr;
+    QProgressBar* acquisitionProgress_ = nullptr;
     QualityCache* qualityCache_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     SearchPage* search_ = nullptr;
@@ -144,6 +176,12 @@ private:
     bool runtimeResolutionHeld_ = false;
     bool setupDeclined_ = false;
     bool setupPromptOffered_ = false;
+    /// The player a component prompt paused, and whether that prompt must turn
+    /// AnimeJaNai off when it finishes. Cleared by the matching resume.
+    QPointer<mplayer::shell::PlayerDialog> componentAskPlayer_;
+    bool componentAskHeld_ = false;
+    bool componentAskPausedPlayback_ = false;
+    bool componentAskReleaseAnimeJanai_ = false;
     QString titleRef_;
     QString titlePoster_;
     QList<QPair<QString, QString>> titleHistory_;

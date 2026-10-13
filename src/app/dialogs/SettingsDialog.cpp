@@ -31,6 +31,7 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
+#include <QLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
@@ -189,8 +190,9 @@ QString presetLoadMessage(const mplayer::shell::ShortcutConflict& conflict,
 
 }  // namespace
 
-SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent)
-    : QDialog(parent), client_(client), runner_(runner) {
+SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent,
+                                 ComponentStoreTab* adoptedComponents)
+    : QDialog(parent), client_(client), runner_(runner), adoptedComponents_(adoptedComponents) {
     setWindowTitle(tr("Settings"));
     QScreen* targetScreen = parent != nullptr ? parent->screen() : QGuiApplication::primaryScreen();
     QSize initialSize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
@@ -276,7 +278,31 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     refreshQuota();
 }
 
-SettingsDialog::~SettingsDialog() = default;
+SettingsDialog::~SettingsDialog() {
+    // Before QObject deletes children. An adopted tab is the app's, so closing
+    // Settings must not destroy it or cancel the download it is running.
+    releaseAdoptedComponentsTab();
+}
+
+void SettingsDialog::releaseAdoptedComponentsTab() {
+    if (!adoptedComponentsTab_ || componentStoreTab_ == nullptr) return;
+    adoptedComponentsTab_ = false;
+    // Process shutdown destroys this dialog as a child. Leaving the tab where
+    // it is cancels with the process; reparenting onto a window that is already
+    // going away is not safe.
+    if (QCoreApplication::closingDown() || adoptedComponentsHome_ == nullptr) {
+        adoptedComponentsHome_ = nullptr;
+        return;
+    }
+    ComponentStoreTab* tab = componentStoreTab_;
+    componentStoreTab_ = nullptr;
+    tab->hide();
+    if (QWidget* parent = tab->parentWidget()) {
+        if (QLayout* layout = parent->layout()) layout->removeWidget(tab);
+    }
+    tab->setParent(adoptedComponentsHome_);
+    adoptedComponentsHome_ = nullptr;
+}
 
 void SettingsDialog::setComponentProvisioner(NativeComponentProvisioner* provisioner) {
     // The Components tab owns every download, so the provisioner lands there.
@@ -954,9 +980,20 @@ QWidget* SettingsDialog::buildComponentsTab() {
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    auto* tab = new mikai::app::ComponentStoreTab(page);
-    tab->setRunner(&runner_);
-    tab->setClient(&client_);
+    ComponentStoreTab* tab = nullptr;
+    if (adoptedComponents_ != nullptr) {
+        // Same tab the app already started. Reparenting it in does not bump its
+        // run generation, so a download that is already going keeps its chain.
+        adoptedComponentsTab_ = true;
+        adoptedComponentsHome_ = adoptedComponents_->parentWidget();
+        tab = adoptedComponents_;
+        tab->setParent(page);
+        tab->show();
+    } else {
+        tab = new ComponentStoreTab(page);
+        tab->setRunner(&runner_);
+        tab->setClient(&client_);
+    }
     componentStoreTab_ = tab;
     if (componentProvisioner_ != nullptr) tab->setComponentProvisioner(componentProvisioner_);
     root->addWidget(tab);
