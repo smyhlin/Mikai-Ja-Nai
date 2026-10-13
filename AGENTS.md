@@ -719,8 +719,14 @@ UI (`skills/design-ui/SKILL.md`, depth in `skills/design-ui/references/`):
   made Download-missing fetch hundreds of megabytes it did not need. The
   acquisition is concurrent: units run side by side on the transfer pool under
   one shared generation, each settles independently, and only the last one
-  finalizes (re-hashing before claiming success). The 7-Zip bootstrap lives in
-  `<applicationDir>/native/tools`, never `%LOCALAPPDATA%`.
+  finalizes (re-hashing before claiming success). Closing Settings returns the
+  Components tab to the main window while its app-owned acquisition continues;
+  preserve `QDialog::exec()` modality through close so Qt sends the modal-unblock
+  transition to the native window, and close the shortcuts overlay first so no
+  focus-stealing orphan survives under the modal dialog. The 7-Zip bootstrap lives in
+  `<applicationDir>/native/tools`, never `%LOCALAPPDATA%`; downloads are staged
+  in a unique temporary subdirectory so an interrupted attempt cannot block a
+  later install.
 - `src/app/state/NativeComponentProvisioner.cpp` — the component driver, and the
   only place the app starts a component download.
 - `src/backend/Downloads.cpp` — the one transport; `downloadToFile` is where the

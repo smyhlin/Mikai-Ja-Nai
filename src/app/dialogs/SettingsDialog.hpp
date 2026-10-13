@@ -339,8 +339,8 @@ private:
     ComponentStoreTab* adoptedComponents_ = nullptr;
     /// Parent that tab returns to. Kept separately so a release still happens
     /// when that parent is the main window; a QPointer because the home can go
-    /// away while the dialog is open (non-modal Settings runs beside the main
-    /// window), and reparenting onto freed memory is a use-after-free.
+    /// away while the dialog is open, and reparenting onto freed memory is a
+    /// use-after-free.
     QPointer<QWidget> adoptedComponentsHome_;
     bool adoptedComponentsTab_ = false;
     NativePreparationContextProvider preparationContextProvider_;

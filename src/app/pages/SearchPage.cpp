@@ -281,6 +281,10 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
 
 SearchPage::~SearchPage() = default;
 
+void SearchPage::closeTransientOverlays() {
+    if (keyHints_ != nullptr) keyHints_->close();
+}
+
 SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
                                                        const QString& key) {
     auto* section = new CarouselSection();

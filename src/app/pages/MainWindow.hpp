@@ -83,15 +83,14 @@ private:
     /// that is already playing is left playing. Safe to call when no prompt held
     /// anything.
     void resumePlaybackAfterComponentAsk();
-    /// Shows the download on the main window. The first tick of a run closes
-    /// Settings when it is open, so the catalogue can take clicks while the
-    /// packs keep downloading.
+    /// Shows the download on the main window; the first tick also closes
+    /// Settings so its catalogue stays clickable while the packs download.
     void noteComponentAcquisition(const QString& status, int percent, bool started);
-    void noteComponentAcquisitionIdle();
-    /// Hides Settings without cancelling the download it started. Queued so a
-    /// download that begins before `exec()` still closes the dialog on the
-    /// first turn of that loop, instead of being shown again by it.
+    /// Hides Settings without cancelling its download. Queued so a download
+    /// that begins before `exec()` still closes the dialog on the first turn
+    /// of that loop, instead of being shown again by it.
     void releaseSettingsForAcquisition();
+    void noteComponentAcquisitionIdle();
     /// The one settings surface. `intent` is present only when the viewer
     /// pressed a processing-failure remedy, and `preferredCore` then names the
     /// dialog that raised it; it is consulted only while it still owns a

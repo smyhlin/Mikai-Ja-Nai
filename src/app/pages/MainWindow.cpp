@@ -200,10 +200,8 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // reentrant close arriving through the player's own settling pump, which
     // finds the same refusal and returns without recursing.
     if (!settingsDialog_.isNull()) {
-        // Settings is non-modal now, so the window can be asked to close while
-        // `openSettingsImpl` is still blocked inside the dialog's `exec()`.
-        // Destroying the dialog underneath that loop would tear the window down
-        // mid-callback, so the close is refused until the dialog is gone.
+        // Settings is inside its nested exec() loop: tearing the window down
+        // underneath it would destroy the dialog mid-callback.
         event->ignore();
         return;
     }
@@ -665,6 +663,7 @@ void MainWindow::resumePlaybackAfterComponentAsk() {
 }
 
 void MainWindow::noteComponentAcquisition(const QString& status, int percent, bool started) {
+    if (started) releaseSettingsForAcquisition();
     if (acquisitionBar_ == nullptr) return;
     acquisitionStatus_->setText(status);
     acquisitionProgress_->show();
@@ -679,7 +678,15 @@ void MainWindow::noteComponentAcquisition(const QString& status, int percent, bo
         acquisitionProgress_->setValue(percent);
     }
     acquisitionBar_->show();
-    if (started) releaseSettingsForAcquisition();
+}
+
+void MainWindow::releaseSettingsForAcquisition() {
+    const QPointer<SettingsDialog> dialog = settingsDialog_;
+    if (dialog.isNull()) return;
+    QTimer::singleShot(0, this, [dialog] {
+        if (dialog.isNull()) return;
+        dialog->done(QDialog::Rejected);
+    });
 }
 
 void MainWindow::noteComponentAcquisitionIdle() {
@@ -696,18 +703,6 @@ void MainWindow::noteComponentAcquisitionIdle() {
     acquisitionStatus_->setText(componentsTab_->statusReason());
     acquisitionProgress_->hide();
     acquisitionBar_->show();
-}
-
-void MainWindow::releaseSettingsForAcquisition() {
-    const QPointer<SettingsDialog> dialog = settingsDialog_;
-    if (dialog.isNull()) return;
-    QTimer::singleShot(0, this, [dialog] {
-        if (dialog.isNull()) return;
-        // Rejected drops unsaved preference edits. The component tab is handed
-        // back to the main window by the dialog destructor, and that path does
-        // not cancel the download.
-        dialog->done(QDialog::Rejected);
-    });
 }
 
 void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettingsIntent> intent,
@@ -731,6 +726,11 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         }
         return;
     }
+    // The shortcuts overlay is a focus-stealing child of the search page that
+    // never closes itself. Left open under modal Settings it keeps keyboard
+    // focus while the dialog owns the window, and after the dialog closes the
+    // window reads enabled while its controls answer to the orphan.
+    if (search_ != nullptr) search_->closeTransientOverlays();
     SettingsDialog dialog(client_, *runner_, this, componentsTab_);
     settingsDialog_ = &dialog;
     dialog.setComponentProvisioner(componentProvisioner_);
@@ -1001,25 +1001,9 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
         });
     }
 
-    // `exec()` makes the dialog application-modal. A download has to leave the
-    // main window able to open titles, so the modality is taken off on the
-    // first turn. Closing the dialog, when a download starts, is what actually
-    // uncovers the catalogue.
-    QTimer::singleShot(0, &dialog, [target = QPointer<SettingsDialog>(&dialog)] {
-        if (target.isNull()) return;
-        target->setAttribute(Qt::WA_ShowModal, false);
-        target->setWindowModality(Qt::NonModal);
-    });
-    if (dialog.exec() == QDialog::Accepted) {
-        search_->refreshFeedSettings();
-    }
+    if (dialog.exec() == QDialog::Accepted) search_->refreshFeedSettings();
     settingsDialog_.clear();
-    // Before refreshStoredSettings, so a prompt that turned AnimeJaNai off is
-    // what the refresh reads. A settings open that never asked installs nothing
-    // and does not pause. The dialog destructor then returns the Components tab
-    // to this window without cancelling a download it started.
     resumePlaybackAfterComponentAsk();
-    // Components publish installs even when preference edits are cancelled.
     if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
         core->refreshStoredSettings();
     }

@@ -72,6 +72,11 @@ public:
         return it == cardDetails_.constEnd() ? nullptr : &it.value();
     }
 
+    /// Closes the keyboard-shortcuts overlay when one is open. A focus-stealing
+    /// overlay left open under modal Settings keeps keyboard focus while the
+    /// dialog owns the window.
+    void closeTransientOverlays();
+
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void settingsRequested();
