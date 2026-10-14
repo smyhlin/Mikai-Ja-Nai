@@ -1,3 +1,4 @@
+#include <utility>
 #include "PlayerShell.hpp"
 
 #include "PlayerPopups.hpp"
@@ -166,8 +167,8 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
             entries.append(entry);
         }
     } else if (levelId == QLatin1String(kAnimeJanaiBackend)) {
-        for (const auto& item : {qMakePair(native::Backend::TensorRT, QObject::tr("TensorRT")),
-                                 qMakePair(native::Backend::DirectML, QObject::tr("DirectML"))}) {
+        for (const auto& item : {std::make_pair(native::Backend::TensorRT, QObject::tr("TensorRT")),
+                                 std::make_pair(native::Backend::DirectML, QObject::tr("DirectML"))}) {
             MenuEntry entry;
             entry.text = item.second;
             const QString backend = item.first == native::Backend::TensorRT
@@ -777,6 +778,10 @@ void PlayerShell::applyState() {
     btnNext_->setVisible(!hidden && hasNextEpisode_);
     dock_->setVisible(!hidden);
     footerLeft_->setVisible(!hidden);
+    if (center_ != nullptr) {
+        center_->setKind((hidden || playing_ || !hasMedia_) ? CenterGlyph::Kind::None
+                                                            : CenterGlyph::Kind::Play);
+    }
     if (hidden) {
         dismissOverlay();
     }
@@ -1025,7 +1030,11 @@ void PlayerShell::setPosition(double seconds) {
 void PlayerShell::setPlaying(bool playing) {
     playing_ = playing;
     updatePlayIcon();
-    center_->setKind(playing ? CenterGlyph::Kind::None : CenterGlyph::Kind::Play);
+    center_->setKind((playing || hudHidden_ || !hasMedia_) ? CenterGlyph::Kind::None
+                                                           : CenterGlyph::Kind::Play);
+    if (!hudHidden_) {
+        hideTimer_.start(kAutohideMs);
+    }
 }
 
 void PlayerShell::updatePlayIcon() {
@@ -1193,9 +1202,53 @@ void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& statu
         if (id.isEmpty()) {
             lblAnimeJanai_->hide();
         } else {
-            const QString visibleStatus = status.startsWith(QLatin1String("Configured;"))
-                                              ? tr("Preparing…") : status;
-            lblAnimeJanai_->setText(QStringLiteral("│ AnimeJaNai %1").arg(visibleStatus));
+            const QString backendShort =
+                animeJanaiBackend_.compare(QLatin1String("directml"), Qt::CaseInsensitive) == 0
+                    ? QStringLiteral("DML")
+                    : QStringLiteral("TRT");
+            QString presetLabel = id;
+            for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+                if (preset.id.compare(id, Qt::CaseInsensitive) == 0) {
+                    presetLabel = preset.label;
+                    break;
+                }
+            }
+            QString visibleStatus = status;
+            if (status.startsWith(QLatin1String("Configured;"))) {
+                if (id.startsWith(QLatin1String("rife:"), Qt::CaseInsensitive)) {
+                    const double srcFps = streamFramesPerSecond_ > 0.0 ? streamFramesPerSecond_ : 23.98;
+                    const double outFps = srcFps * 2.0;
+                    if (sourceHeight_ > 0) {
+                        visibleStatus = QStringLiteral("%1 · %2 · %3p · %4 → %5 FPS")
+                                            .arg(backendShort, presetLabel)
+                                            .arg(sourceHeight_)
+                                            .arg(srcFps, 0, 'f', 2)
+                                            .arg(outFps, 0, 'f', 2);
+                    } else {
+                        visibleStatus = QStringLiteral("%1 · %2 · %3")
+                                            .arg(backendShort, presetLabel, tr("Preparing…"));
+                    }
+                } else if (sourceHeight_ > 0) {
+                    const int outH = sourceHeight_ * 2;
+                    const int outW = (sourceWidth_ > 0 ? sourceWidth_ : (sourceHeight_ * 16 / 9)) * 2;
+                    visibleStatus = QStringLiteral("%1 · %2 · %3p → %4p (%5×%4)")
+                                        .arg(backendShort, presetLabel)
+                                        .arg(sourceHeight_)
+                                        .arg(outH)
+                                        .arg(outW);
+                } else {
+                    visibleStatus = QStringLiteral("%1 · %2 · %3")
+                                        .arg(backendShort, presetLabel, tr("Preparing…"));
+                }
+            }
+            const bool alreadyPrefixed =
+                visibleStatus.startsWith(QLatin1String("TRT ")) ||
+                visibleStatus.startsWith(QLatin1String("DML ")) ||
+                visibleStatus.startsWith(QLatin1String("AnimeJaNai"), Qt::CaseInsensitive);
+            lblAnimeJanai_->setText(
+                alreadyPrefixed
+                    ? QStringLiteral("│ %1").arg(visibleStatus)
+                    : QStringLiteral("│ %1 · %2").arg(backendShort, visibleStatus));
             lblAnimeJanai_->setToolTip(status);
             lblAnimeJanai_->setAccessibleName(visibleStatus);
             lblAnimeJanai_->show();
@@ -1451,7 +1504,28 @@ void PlayerShell::updateInfoChip() {
         streamFramesPerSecond_ > 0.0
             ? QStringLiteral("%1 FPS").arg(streamFramesPerSecond_, 0, 'f', 2)
             : QStringLiteral("— FPS");
-    lblNetworkStats_->setText(QStringLiteral("%1 × %2").arg(throughput, fps));
+    const bool hasEnhancement =
+        anime4kMode_ != anime4k::Mode::Off || !animeJanaiPresetId_.isEmpty() ||
+        (lblNative_ != nullptr && lblNative_->isVisible());
+    if (networkBytesPerSecond_ > 0.0) {
+        if (!hasEnhancement && sourceHeight_ > 0) {
+            lblNetworkStats_->setText(
+                QStringLiteral("%1p · %2 × %3").arg(sourceHeight_).arg(throughput, fps));
+        } else {
+            lblNetworkStats_->setText(QStringLiteral("%1 × %2").arg(throughput, fps));
+        }
+    } else if (streamFramesPerSecond_ > 0.0) {
+        if (!hasEnhancement && sourceHeight_ > 0) {
+            lblNetworkStats_->setText(QStringLiteral("%1p · %2").arg(sourceHeight_).arg(fps));
+        } else {
+            lblNetworkStats_->setText(fps);
+        }
+    } else {
+        lblNetworkStats_->setText(
+            !hasEnhancement && sourceHeight_ > 0
+                ? QStringLiteral("%1p · %2").arg(sourceHeight_).arg(fps)
+                : fps);
+    }
     QString fpsProvenance;
     switch (streamFpsSource_) {
         case StreamFpsSource::MpvOutput:
@@ -1478,13 +1552,23 @@ void PlayerShell::updateInfoChip() {
         }
         const int sourceWidth = sourceWidth_ > 0 ? sourceWidth_ : outputWidth_;
         const int sourceHeight = sourceHeight_ > 0 ? sourceHeight_ : outputHeight_;
-        lblEnhancement_->setText(
-            QStringLiteral("│ Anime4K %1 · %2×%3 → %4×%5")
-                .arg(label)
-                .arg(sourceWidth)
-                .arg(sourceHeight)
-                .arg(outputWidth_)
-                .arg(outputHeight_));
+        if (sourceHeight > 0 && outputHeight_ > 0) {
+            lblEnhancement_->setText(
+                QStringLiteral("│ Anime4K · %1 · %2p → %3p (%4×%2 → %5×%3)")
+                    .arg(label)
+                    .arg(sourceHeight)
+                    .arg(outputHeight_)
+                    .arg(sourceWidth)
+                    .arg(outputWidth_));
+        } else {
+            lblEnhancement_->setText(
+                QStringLiteral("│ Anime4K · %1 · %2×%3 → %4×%5")
+                    .arg(label)
+                    .arg(sourceWidth)
+                    .arg(sourceHeight)
+                    .arg(outputWidth_)
+                    .arg(outputHeight_));
+        }
         lblEnhancement_->show();
     }
     // The native chip is a separate line of truth, and it is re-derived with
@@ -1568,11 +1652,7 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             if (dismissOverlay()) {
                 break;
             }
-            if (fullscreen_) {
-                windowModeToggled();
-            } else {
-                exitViewer();
-            }
+            exitViewer();
             break;
         case Qt::Key_Right:
             if (duration_ > 0) {
@@ -1851,6 +1931,22 @@ void PlayerShell::dropEvent(QDropEvent* event) {
 //  PAINT & LIFECYCLE
 // ═════════════════════════════════════════════════════════════════════════════
 
+bool PlayerShell::event(QEvent* event) {
+    // Prevent QWidget::event from calling update() on the full-screen shell
+    // whenever focus moves between the shell and a child popup/button.
+    if (event->type() == QEvent::FocusIn) {
+        focusInEvent(static_cast<QFocusEvent*>(event));
+        event->accept();
+        return true;
+    }
+    if (event->type() == QEvent::FocusOut) {
+        focusOutEvent(static_cast<QFocusEvent*>(event));
+        event->accept();
+        return true;
+    }
+    return QWidget::event(event);
+}
+
 void PlayerShell::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
@@ -1870,6 +1966,9 @@ void PlayerShell::retranslateUi() {
     btnPrev_->setToolTip(tr("Previous episode  (←)"));
     btnNext_->setToolTip(tr("Next episode  (→)"));
     btnPlay_->setToolTip(tr("Play / pause  (Space)"));
+    btnPlay_->setAccessibleName(tr("Play / pause  (Space)"));
+    vol_->setAccessibleName(tr("Volume"));
+    scrub_->setAccessibleName(tr("Timeline"));
     btnPip_->setToolTip(tr("Picture in picture"));
     btnAudio_->setToolTip(tr("Audio — choose a dub  (T)"));
     btnSubs_->setToolTip(tr("Subtitles — choose a track  (C)"));
@@ -1900,8 +1999,8 @@ void PlayerShell::paintEvent(QPaintEvent*) {
     }
 
     // Chevron discs sit under their buttons.
-    if (btnPrev_->isVisible()) {
-        for (IconButton* button : {btnPrev_, btnNext_}) {
+    for (IconButton* button : {btnPrev_, btnNext_}) {
+        if (button->isVisible()) {
             paintRounded(p, QRectF(button->geometry()), 21, QColor(0, 0, 0, 110), w15());
         }
     }

@@ -126,9 +126,9 @@ constexpr int kPipBoundsOffset = 24;
 constexpr int kPipBarFadeMs = 160;
 constexpr int kPipBarRevealHoldMs = 1600;
 constexpr int kPipDragThresholdPx = 6;
-constexpr int kPipCenterButtonSize = 72;
-constexpr int kPipCenterIconSize = 30;
-constexpr int kPipFieldHeight = 28;
+constexpr int kPipCenterButtonSize = 68;
+constexpr int kPipCenterIconSize = 28;
+constexpr int kPipFieldHeight = 32;
 // The level pill is always this size: the mute button, a gap, and a slider wide
 // enough to aim at. It was built to grow on hover, which resized the window
 // content under the pointer on every enter and leave.
@@ -170,36 +170,49 @@ QString pipQss() {
     return QStringLiteral(
                "QWidget#pipOverlay { background: transparent; border: none; }"
                "QLabel#pipElapsed, QLabel#pipRemaining {"
-               "  background: transparent; color: #ffffff; font-size: 11px; font-weight: 600;"
-               "  font-family: monospace; }"
+               "  background: transparent; color: #ffffff; font-size: 11px; font-weight: 700;"
+               "  font-family: \"Segoe UI\", system-ui, sans-serif; }"
                "QPushButton#pipPlay {"
                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-               "    stop:0 rgba(0, 0, 0, 0.42), stop:1 rgba(0, 0, 0, 0.58));"
-               "  border: 1px solid rgba(255, 255, 255, 0.26);"
-               "  border-radius: %1px; padding: 0;"
+               "    stop:0 rgba(12, 13, 19, 0.56), stop:1 rgba(12, 13, 19, 0.74));"
+               "  border: 1.5px solid rgba(255, 255, 255, 0.30);"
+               "  border-radius: %1px; padding: 0px; margin: 0px; outline: none;"
                "  min-width: %2px; max-width: %2px;"
                "  min-height: %2px; max-height: %2px; }"
                "QPushButton#pipPlay:hover {"
                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-               "    stop:0 rgba(0, 0, 0, 0.60), stop:1 rgba(0, 0, 0, 0.76));"
-               "  border-color: rgba(255, 255, 255, 0.46); }"
+               "    stop:0 rgba(20, 22, 32, 0.76), stop:1 rgba(20, 22, 32, 0.88));"
+               "  border-color: rgba(255, 255, 255, 0.55); }"
                "QPushButton#pipPlay:pressed {"
-               "  background: rgba(0, 0, 0, 0.80); }"
-               "QPushButton#pipMute, QPushButton#pipRestore, QPushButton#pipClose {"
-               "  background: rgba(0, 0, 0, 0.45);"
-               "  border: 1px solid rgba(255, 255, 255, 0.15);"
-               "  border-radius: 6px; padding: 0; }"
-               "QPushButton#pipMute:hover, QPushButton#pipRestore:hover, QPushButton#pipClose:hover {"
-               "  background: rgba(0, 0, 0, 0.75);"
-               "  border-color: rgba(255, 255, 255, 0.35); }"
-               "QWidget#pipVolumeChip { background: transparent; border: none; }"
+               "  background: rgba(10, 11, 16, 0.90); }"
+               "QWidget#pipVolumeChip {"
+               "  background: rgba(12, 13, 19, 0.64);"
+               "  border: 1px solid rgba(255, 255, 255, 0.18);"
+               "  border-radius: 10px; }"
+               "QPushButton#pipMute {"
+               "  background: transparent; border: none;"
+               "  border-radius: 7px; padding: 0px; margin: 0px; outline: none;"
+               "  min-width: 0px; min-height: 0px; }"
+               "QPushButton#pipMute:hover {"
+               "  background: rgba(255, 255, 255, 0.14); }"
+               "QPushButton#pipRestore, QPushButton#pipClose {"
+               "  background: rgba(12, 13, 19, 0.64);"
+               "  border: 1px solid rgba(255, 255, 255, 0.20);"
+               "  border-radius: 8px; padding: 0px; margin: 0px; outline: none;"
+               "  min-width: 0px; min-height: 0px; }"
+               "QPushButton#pipRestore:hover {"
+               "  background: rgba(24, 26, 36, 0.88);"
+               "  border-color: rgba(255, 255, 255, 0.42); }"
+               "QPushButton#pipClose:hover {"
+               "  background: rgba(220, 53, 69, 0.85);"
+               "  border-color: rgba(255, 255, 255, 0.45); }"
                "QSlider#pipScrub { background: transparent; }"
                "QSlider#pipScrub::groove:horizontal {"
-               "  height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; }"
-               "QSlider#pipScrub::sub-page:horizontal { background: #5865F2; border-radius: 2px; }"
+               "  height: 4px; background: rgba(255, 255, 255, 0.28); border-radius: 2px; }"
+               "QSlider#pipScrub::sub-page:horizontal { background: #7289ff; border-radius: 2px; }"
                "QSlider#pipScrub::handle:horizontal {"
-               "  background: #ffffff; width: 10px; height: 10px;"
-               "  margin: -3px 0; border-radius: 5px; }")
+               "  background: #ffffff; width: 12px; height: 12px;"
+               "  margin: -4px 0; border-radius: 6px; }")
         .arg(kPipCenterButtonSize / 2)
         .arg(kPipCenterButtonSize);
 }
@@ -239,16 +252,26 @@ QString pipFormatSeconds(double value) {
 /// Rasterises one painted glyph into an icon. IconPainter already draws into a
 /// 24-unit grid, so this is a straight scale-and-tint with no SVG pipeline.
 QIcon glyphIcon(void (*glyph)(QPainter&, qreal, qreal, qreal, const QColor&), qreal size) {
-    const QColor normal(kText);
+    const QColor normal(QStringLiteral("#ffffff"));
     const QColor disabled(kIconDisabled);
     QIcon icon;
     for (const QColor& color : {normal, disabled}) {
-        QPixmap pixmap(QSize(static_cast<int>(size), static_cast<int>(size)));
-        pixmap.fill(Qt::transparent);
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        glyph(painter, 0.0, 0.0, size, color);
-        icon.addPixmap(pixmap, color == normal ? QIcon::Normal : QIcon::Disabled);
+        const QIcon::Mode mode = (color == normal) ? QIcon::Normal : QIcon::Disabled;
+        for (const int dpr : {1, 2, 3}) {
+            const int px = std::max(1, static_cast<int>(std::lround(size * dpr)));
+            QImage img(QSize(px, px), QImage::Format_ARGB32_Premultiplied);
+            img.fill(Qt::transparent);
+            {
+                QPainter painter(&img);
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+                painter.scale(dpr, dpr);
+                glyph(painter, 0.0, 0.0, size, color);
+            }
+            QPixmap pixmap = QPixmap::fromImage(img);
+            pixmap.setDevicePixelRatio(dpr);
+            icon.addPixmap(pixmap, mode);
+        }
     }
     return icon;
 }
@@ -276,6 +299,7 @@ PipFloat::PipFloat(QWidget* parent)
 
     overlayEffect_ = new QGraphicsOpacityEffect(overlay_);
     overlayEffect_->setOpacity(1.0);
+    overlayEffect_->setEnabled(false);
     overlay_->setGraphicsEffect(overlayEffect_);
 
     overlayFade_ = new QVariantAnimation(this);
@@ -349,7 +373,8 @@ void PipFloat::buildChrome() {
 
     muteButton_ = buildButton(QStringLiteral("pipMute"), tr("Mute audio"),
                               kPipFieldHeight, volumeChip_);
-    muteButton_->setIcon(glyphIcon(&IconPainter::volume, 16));
+    muteButton_->setIconSize(QSize(18, 18));
+    muteButton_->setIcon(glyphIcon(&IconPainter::volume, 18));
     connect(muteButton_, &QPushButton::clicked, this, [this] {
         setMuted(!muted_);
         revealControls();
@@ -390,17 +415,21 @@ void PipFloat::buildChrome() {
     restoreButton_ =
         buildButton(QStringLiteral("pipRestore"), tr("Return to the window"),
                     kPipFieldHeight);
-    restoreButton_->setIcon(glyphIcon(&IconPainter::expand, 15));
+    restoreButton_->setIconSize(QSize(17, 17));
+    restoreButton_->setIcon(glyphIcon(&IconPainter::expand, 17));
     connect(restoreButton_, &QPushButton::clicked, this, &PipFloat::restoreRequested);
 
     closeButton_ = buildButton(QStringLiteral("pipClose"), tr("Close (Esc)"),
                                kPipFieldHeight);
-    closeButton_->setIcon(glyphIcon(&IconPainter::close, 15));
+    closeButton_->setIconSize(QSize(17, 17));
+    closeButton_->setIcon(glyphIcon(&IconPainter::close, 17));
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
 
     playButton_ = new QPushButton(overlay_);
     playButton_->setObjectName(QStringLiteral("pipPlay"));
     playButton_->setFixedSize(kPipCenterButtonSize, kPipCenterButtonSize);
+    playButton_->setIconSize(QSize(kPipCenterIconSize, kPipCenterIconSize));
+    playButton_->setCursor(Qt::PointingHandCursor);
     playButton_->setIcon(glyphIcon(&IconPainter::pause, kPipCenterIconSize));
     playButton_->setToolTip(tr("Pause (Space)"));
     playButton_->setAccessibleName(tr("Pause"));
@@ -456,6 +485,7 @@ QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qre
     button->setFixedSize(QSize(static_cast<int>(size), static_cast<int>(size)));
     button->setToolTip(hint);
     button->setAccessibleName(hint);
+    button->setCursor(Qt::PointingHandCursor);
     button->setFocusPolicy(Qt::NoFocus);
     button->setMouseTracking(true);
     return button;
@@ -530,7 +560,7 @@ void PipFloat::setMuted(bool muted) {
     surface_->setMuted(muted);
     surface_->setVolume(volume_ * 100.0);
     const QString hint = muted ? tr("Unmute audio") : tr("Mute audio");
-    muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 16));
+    muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 18));
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
     updateVolumeChip();
@@ -564,8 +594,13 @@ void PipFloat::updateVolumeChip() {
 // ── the controls come and go with the pointer ───────────────────────────
 
 void PipFloat::setOverlayOpacity(double value) {
-    overlayOpacity_ = value;
+    overlayOpacity_ = std::clamp(value, 0.0, 1.0);
     overlayEffect_->setOpacity(overlayOpacity_);
+    const bool needEffect = overlayOpacity_ < 0.99;
+    if (overlayEffect_->isEnabled() != needEffect) {
+        overlayEffect_->setEnabled(needEffect);
+    }
+    overlay_->setVisible(overlayOpacity_ > 0.01);
 }
 
 void PipFloat::revealControls() {
@@ -2333,25 +2368,13 @@ void PlayerDialog::onShellStateChanged(const QString& state) {
     // dialog-owned panels ride along: a strip floating over a blank screen is a
     // stray panel.
     if (state == QStringLiteral("FULLSCREEN_AUTO_HIDDEN")) {
-        // Popovers close with the chrome, not with fullscreen. Closing them on
-        // "fullscreen" looked right and was wrong: the player is always
-        // fullscreen, so every idle/hide transition killed a popover that had
-        // just been opened, and the selector appeared not to work at all.
-        //
-        // The dialog-owned panels stay mounted: the strip, the status panel
-        // and the drawer are separate top-level overlays the shell never owns,
-        // so a shell broadcast about its own chrome cannot unmount them. Each
-        // hides on its own rule (popovers on open, the toast on its timer, the
-        // retry chip only when a new stream displaces it).
         audioPopup_->close();
         subtitlesPopup_->close();
-        // The episode drawer stays. It is a layout sibling of the video, not a
-        // floating panel, and the user opened it deliberately - closing it here
-        // made an explicitly expanded list blink out from under someone
-        // reading it, which is how "the player has no episode list" gets
-        // reported. The idle timer may take the chrome; it does not get to
-        // overrule that choice.
+        strip_->hide();
+        seriesDrawer_->hide();
     } else {
+        strip_->setVisible(!playlist_.isEmpty());
+        seriesDrawer_->setVisible(seriesExpanded_ && !playlist_.isEmpty());
         syncStatusVisibility();
     }
     layoutPanels();
@@ -2404,11 +2427,17 @@ void PlayerDialog::openCompareWindow() {
     }
     // One window, kept and reused: it borrows the surface, and a second one
     // would fight the first for the same core while it swaps chains.
+    const bool wasVisible = compare_ != nullptr && compare_->isVisible();
     if (compare_ == nullptr) {
         compare_ = new CompareWindow(surface_, anime4kChainId_, this, animeJanaiBackend_);
+    } else if (!wasVisible) {
+        compare_->setCurrentCandidateId(anime4kChainId_);
     }
     compare_->setAjiBackend(animeJanaiBackend_);
     compare_->show();
+    if (wasVisible && !compare_->comparisonPending()) {
+        compare_->captureNow();
+    }
     compare_->raise();
     compare_->activateWindow();
 }
@@ -2470,10 +2499,12 @@ void PlayerDialog::setPlaylist(const QVector<QVariantMap>& playlist, int index) 
     if (playlist_.isEmpty()) {
         seriesExpanded_ = false;
     }
-    // The only writer: the strip follows the playlist, never the shell's
-    // idle chrome, so the check above about who owns what holds by
-    // construction instead of by convention.
-    strip_->setVisible(!playlist_.isEmpty());
+    if (!playlist_.isEmpty() && shell_ != nullptr) {
+        shell_->wake();
+    }
+    const bool autoHidden =
+        shell_ != nullptr && shell_->stateName() == QStringLiteral("FULLSCREEN_AUTO_HIDDEN");
+    strip_->setVisible(!playlist_.isEmpty() && !autoHidden);
     episodeIndex_ = (index >= 0 && index < playlist_.size()) ? index : 0;
     seriesButton_->setVisible(!playlist_.isEmpty());
 
@@ -2755,6 +2786,9 @@ void PlayerDialog::setVariants(const QVector<QVariantMap>& variants, const QStri
     }
     currentEmbed_ = currentEmbed;
     setVariantsVisibility();
+    if (audioPopup_->isVisible()) {
+        audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
+    }
     if (subtitlesPopup_->isVisible()) {
         subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
     }
@@ -2799,6 +2833,9 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
         if (variant.embed == embed) {
             variant.quality = quality;
         }
+    }
+    if (audioPopup_->isVisible()) {
+        audioPopup_->setEntries(trackEntries(QStringLiteral("voice")));
     }
     if (subtitlesPopup_->isVisible()) {
         subtitlesPopup_->setEntries(trackEntries(QStringLiteral("sub")));
@@ -2864,9 +2901,13 @@ void PlayerDialog::setSeriesExpanded(bool expanded) {
     seriesExpanded_ = expanded && !directMedia_ && !playlist_.isEmpty();
     if (seriesExpanded_) {
         shell_->dismissOverlay();
+        shell_->wake();
     }
+    const bool autoHidden =
+        shell_ != nullptr && shell_->stateName() == QStringLiteral("FULLSCREEN_AUTO_HIDDEN");
+    strip_->setVisible(!playlist_.isEmpty() && !autoHidden);
     updateSeriesToggle();
-    seriesDrawer_->setVisible(seriesExpanded_);
+    seriesDrawer_->setVisible(seriesExpanded_ && !autoHidden);
     layoutPanels();
 }
 
@@ -3269,13 +3310,22 @@ void PlayerDialog::changeEvent(QEvent* event) {
     if (event->type() != QEvent::LanguageChange) {
         return;
     }
-    seriesButton_->setToolTip(tr("Episode list (S)"));
-    seriesButton_->setAccessibleName(tr("Episode list"));
+    updateSeriesToggle();
+    audioPopup_->setTitle(tr("AUDIO"));
+    subtitlesPopup_->setTitle(tr("SUBTITLES"));
+    retryButton_->setText(tr("Retry"));
+    retryButton_->setToolTip(tr("Retry playback"));
+    retryButton_->setAccessibleName(tr("Retry playback"));
     processingPrepareButton_->setText(tr("Prepare"));
     processingPrepareButton_->setToolTip(tr("Prepare the selected recipe"));
-    processingProvidersButton_->setText(tr("Providers"));
-    processingProvidersButton_->setToolTip(tr("Choose the processing provider"));
-    processingOriginalButton_->setText(tr("Original"));
+    const bool animeJanaiFailure =
+        lastProcessingReasonKey_.startsWith(QLatin1String("animejanai."));
+    processingProvidersButton_->setText(animeJanaiFailure ? tr("Settings") : tr("Providers"));
+    processingProvidersButton_->setToolTip(
+        animeJanaiFailure ? tr("Open processing and component settings")
+                          : tr("Choose the processing provider"));
+    processingOriginalButton_->setText(
+        animeJanaiFailure ? tr("Turn off AnimeJaNai") : tr("Original"));
     processingOriginalButton_->setToolTip(tr("Stay on the Original picture"));
     layoutPanels();
 }
@@ -3310,9 +3360,6 @@ bool PlayerDialog::onShellKey(QKeyEvent* event) {
         } else if (subtitlesPopup_->isVisible()) {
             subtitlesPopup_->close();
         } else if (!shell_->dismissOverlay()) {
-            if (fullscreen_) {
-                return false;
-            }
             if (seriesExpanded_) {
                 setSeriesExpanded(false);
             } else {

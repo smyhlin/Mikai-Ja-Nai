@@ -1,3 +1,4 @@
+#include <utility>
 #include "ShellWidgets.hpp"
 
 #include <QCoreApplication>
@@ -93,6 +94,7 @@ IconButton::IconButton(IconFn icon, const QString& tooltip, int size, int glyph,
         setAccessibleName(tooltip);
     }
     setCursor(Qt::PointingHandCursor);
+    setFocusPolicy(Qt::NoFocus);
     setFlat(true);
 }
 
@@ -179,10 +181,11 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
         btn->setFont(uiFont(10));
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFixedHeight(26);
+        btn->setFocusPolicy(Qt::NoFocus);
         const double speed = preset.speed;
         connect(btn, &QPushButton::clicked, this, [this, speed] { pick(speed); });
         lay->addWidget(btn);
-        rows_.append(qMakePair(speed, btn));
+        rows_.append(std::make_pair(speed, btn));
     }
 
     auto* sep2 = new QFrame(this);
@@ -471,7 +474,7 @@ StateHUD::StateHUD(QWidget* parent) : Panel(blackSoft(), 9.0, w15(), parent) {
         row->addStretch();
         row->addWidget(v, 0);
         lay->addLayout(row);
-        rows_.append(qMakePair(k, v));
+        rows_.append(std::make_pair(k, v));
     }
 
     auto* foot = new QLabel(tr("D — hide · manifest v2.0.0"));
@@ -484,7 +487,7 @@ StateHUD::StateHUD(QWidget* parent) : Panel(blackSoft(), 9.0, w15(), parent) {
     adjustSize();
 }
 
-void StateHUD::updateData(const QString& state, const QVector<QPair<QString, QString>>& data) {
+void StateHUD::updateData(const QString& state, const QVector<std::pair<QString, QString>>& data) {
     title_->setText(state);
     for (int i = 0; i < rows_.size(); ++i) {
         if (i < data.size()) {
@@ -643,7 +646,7 @@ void Toast::flash(const QString& text, int ms) {
 //  KEY HINTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-QVector<QPair<QString, QString>> KeyHints::shortcutTable() {
+QVector<std::pair<QString, QString>> KeyHints::shortcutTable() {
     return {
         {QStringLiteral("Space"), tr("Pause / play")},
         {QStringLiteral("F"), tr("Fullscreen / windowed")},
@@ -674,7 +677,7 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
     lay->addWidget(caption_);
     lay->addSpacing(2);
 
-    const QVector<QPair<QString, QString>> table = shortcutTable();
+    const QVector<std::pair<QString, QString>> table = shortcutTable();
     descriptions_.reserve(table.size());
     for (const auto& entry : table) {
         auto* row = new QHBoxLayout();

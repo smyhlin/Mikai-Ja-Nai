@@ -82,16 +82,18 @@ inline QString systemUiFamily() {
     return QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
 }
 
-inline QFont monoFont(int pointSize = 10) {
+inline QFont monoFont(int pointSize = 10, bool bold = false) {
     QFont font(systemMonoFamily());
     font.setPointSize(pointSize);
+    font.setBold(bold);
     font.setStyleHint(QFont::Monospace);
     return font;
 }
 
-inline QFont uiFont(int pointSize = 10) {
+inline QFont uiFont(int pointSize = 10, bool bold = false) {
     QFont font(systemUiFamily());
     font.setPointSize(pointSize);
+    font.setBold(bold);
     font.setFamilies({systemUiFamily(), QStringLiteral("Inter"), QStringLiteral("Segoe UI"),
                       QStringLiteral("Noto Sans"), QStringLiteral("DejaVu Sans")});
     return font;

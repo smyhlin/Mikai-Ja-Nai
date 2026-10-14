@@ -8,7 +8,7 @@
 
 #include <QColor>
 #include <QFrame>
-#include <QPair>
+#include <utility>
 #include <QPoint>
 #include <QPushButton>
 #include <QString>
@@ -130,7 +130,7 @@ private:
     QLabel* badge_ = nullptr;
     QLabel* qualityLabel_ = nullptr;
     RangeSlider* slider_ = nullptr;
-    QVector<QPair<double, QPushButton*>> rows_;
+    QVector<std::pair<double, QPushButton*>> rows_;
 
     QWidget* qualitySection_ = nullptr;
     QVBoxLayout* qualityBody_ = nullptr;
@@ -164,11 +164,11 @@ class StateHUD : public Panel {
 public:
     explicit StateHUD(QWidget* parent = nullptr);
 
-    void updateData(const QString& state, const QVector<QPair<QString, QString>>& data);
+    void updateData(const QString& state, const QVector<std::pair<QString, QString>>& data);
 
 private:
     QLabel* title_ = nullptr;
-    QVector<QPair<QLabel*, QLabel*>> rows_;
+    QVector<std::pair<QLabel*, QLabel*>> rows_;
 };
 
 /// Big translucent play/pause disc shown when paused.
@@ -236,7 +236,7 @@ public:
     void popupNear(const QPoint& anchorGlobal);
 
     /// The shortcut table, in display order.
-    static QVector<QPair<QString, QString>> shortcutTable();
+    static QVector<std::pair<QString, QString>> shortcutTable();
 
 protected:
     void changeEvent(QEvent* event) override;

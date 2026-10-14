@@ -200,6 +200,7 @@ signals:
     void nativeActionRequested(native::menu::Action action, const QString& value);
 
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
