@@ -19,6 +19,7 @@
 #include <QMutexLocker>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 
 #include <functional>
@@ -42,6 +43,7 @@ constexpr int kCancelPollMs = 200;
 /// consuming it re-format and repaint on each one.
 constexpr int kProgressIntervalMs = 100;
 
+#ifdef Q_OS_WIN
 const QUrl& sevenZipUrl() {
     static const QUrl url(QStringLiteral("https://github.com/ip7z/7zip/releases/download/26.03/7zr.exe"));
     return url;
@@ -51,6 +53,12 @@ const QUrl& sevenZipInstallerUrl() {
     static const QUrl url(QStringLiteral("https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe"));
     return url;
 }
+#else
+const QUrl& sevenZipLinuxUrl() {
+    static const QUrl url(QStringLiteral("https://github.com/ip7z/7zip/releases/download/26.03/7z2603-linux-x64.tar.xz"));
+    return url;
+}
+#endif
 
 QString sha256(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
@@ -60,6 +68,7 @@ QString findSevenZip(const QString& toolsDirectory) {
     // An empty application tree yields a CWD-relative "7z.exe" probe; that
     // would let a planted binary in the working directory pass as trusted.
     if (toolsDirectory.isEmpty()) return {};
+#ifdef Q_OS_WIN
     const QString found = QStandardPaths::findExecutable(QStringLiteral("7z.exe"));
     if (!found.isEmpty()) {
         return found;
@@ -73,24 +82,68 @@ QString findSevenZip(const QString& toolsDirectory) {
     const QString bundled = QDir(toolsDirectory).filePath(QStringLiteral("7z.exe"));
     const QString library = QDir(toolsDirectory).filePath(QStringLiteral("7z.dll"));
     return QFileInfo(bundled).isFile() && QFileInfo(library).isFile() ? bundled : QString{};
+#else
+    for (const QString& name : {QStringLiteral("7zz"), QStringLiteral("7zzs"), QStringLiteral("7z")}) {
+        const QString bundled = QDir(toolsDirectory).filePath(name);
+        const QFileInfo info(bundled);
+        if (info.isFile() && info.isExecutable()) {
+            return bundled;
+        }
+    }
+    for (const QString& name : {QStringLiteral("7zz"), QStringLiteral("7z"), QStringLiteral("7za")}) {
+        const QString found = QStandardPaths::findExecutable(name);
+        if (!found.isEmpty()) {
+            return found;
+        }
+    }
+    for (const QString& candidate : {QStringLiteral("/usr/bin/7zz"),
+                                     QStringLiteral("/usr/bin/7z"),
+                                     QStringLiteral("/usr/local/bin/7zz"),
+                                     QStringLiteral("/usr/local/bin/7z")}) {
+        const QFileInfo info(candidate);
+        if (info.isFile() && info.isExecutable()) {
+            return candidate;
+        }
+    }
+    return {};
+#endif
+}
+
+QNetworkAccessManager& managerForThread() {
+    static thread_local QNetworkAccessManager* manager = [] {
+        auto* created = new QNetworkAccessManager;
+        if (QThread* thread = QThread::currentThread()) {
+            QObject::connect(thread, &QThread::finished, created, &QObject::deleteLater);
+        }
+        return created;
+    }();
+    return *manager;
 }
 
 }  // namespace
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs) {
-    QNetworkAccessManager manager;
     QNetworkRequest request(url);
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
     }
-    QNetworkReply* reply = manager.get(request);
+    QNetworkReply* reply = managerForThread().get(request);
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
+    QTimer cancelTimer;
+    cancelTimer.setInterval(kCancelPollMs);
     QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(&cancelTimer, &QTimer::timeout, &loop, [&]() {
+        if (WorkCancellationScope::cancellationRequested()) {
+            loop.quit();
+        }
+    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     timer.start(timeoutMs);
+    cancelTimer.start();
     loop.exec();
+    cancelTimer.stop();
     if (reply->isRunning()) {
         reply->abort();
         loop.exec();
@@ -157,6 +210,65 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         return refuse(QStringLiteral("could not write %1").arg(namedDestination));
     }
     created = true;
+
+    // Support upstream ANIMEJANAI_PACKS_DIR local directory override and file:// URLs
+    // while enforcing the exact same size, SHA-256, and cancellation contracts.
+    QString localSourcePath;
+    if (url.isLocalFile()) {
+        localSourcePath = url.toLocalFile();
+    } else {
+        const QString packsDir = qEnvironmentVariable("ANIMEJANAI_PACKS_DIR").trimmed();
+        if (!packsDir.isEmpty()) {
+            const QString assetName = QFileInfo(url.path()).fileName();
+            const QString candidate = QDir(packsDir).filePath(assetName);
+            if (!assetName.isEmpty() && QFileInfo(candidate).isFile()) {
+                localSourcePath = candidate;
+            }
+        }
+    }
+    if (!localSourcePath.isEmpty()) {
+        QFile localIn(localSourcePath);
+        if (!localIn.open(QIODevice::ReadOnly)) {
+            file.close();
+            return fail(QStringLiteral("could not read local pack %1").arg(redactDiagnostic(localSourcePath)));
+        }
+        QCryptographicHash localHash(QCryptographicHash::Sha256);
+        const qint64 localTotal = localIn.size();
+        qint64 localReceived = 0;
+        QByteArray buffer(64 * 1024, Qt::Uninitialized);
+        while (!localIn.atEnd()) {
+            if ((cancelled && cancelled()) || WorkCancellationScope::cancellationRequested()) {
+                file.close();
+                return fail(QStringLiteral("cancelled while copying %1").arg(namedDestination));
+            }
+            const qint64 n = localIn.read(buffer.data(), buffer.size());
+            if (n < 0 || file.write(buffer.constData(), n) != n) {
+                file.close();
+                return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
+            }
+            localHash.addData(QByteArrayView(buffer.constData(), static_cast<qsizetype>(n)));
+            localReceived += n;
+            if (progress) progress(localReceived, localTotal);
+        }
+        const bool flushed = file.flush();
+        file.close();
+        if (!flushed || file.error() != QFileDevice::NoError) {
+            return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
+        }
+        if (expectedBytes > 0 && localReceived != expectedBytes) {
+            return fail(QStringLiteral("size mismatch for %1: got %2, expected %3")
+                            .arg(namedDestination).arg(localReceived).arg(expectedBytes));
+        }
+        if (expectedBytes <= 0 && localReceived <= 0) {
+            return fail(QStringLiteral("size mismatch for %1: got %2, expected %3")
+                            .arg(namedDestination).arg(localReceived).arg(localTotal));
+        }
+        if (QString::fromLatin1(localHash.result().toHex()).compare(expectedSha256, Qt::CaseInsensitive) != 0) {
+            return fail(QStringLiteral("sha256 mismatch for %1").arg(namedDestination));
+        }
+        return true;
+    }
+
     QNetworkAccessManager manager;
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "MPVBackend");
@@ -282,11 +394,17 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
     if (!storageFinished) {
         return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
     }
-    if (received != expectedBytes) {
+    if (expectedBytes > 0 && received != expectedBytes) {
         return fail(QStringLiteral("size mismatch for %1: got %2, expected %3")
                         .arg(namedDestination)
                         .arg(received)
                         .arg(expectedBytes));
+    }
+    if (expectedBytes <= 0 && (received <= 0 || (total > 0 && received != total))) {
+        return fail(QStringLiteral("size mismatch for %1: got %2, expected %3")
+                        .arg(namedDestination)
+                        .arg(received)
+                        .arg(total));
     }
     if (QString::fromLatin1(hash.result().toHex()).compare(expectedSha256, Qt::CaseInsensitive) !=
         0) {
@@ -307,11 +425,6 @@ QString ensureSevenZip(const QString& toolsDirectory) {
         return found;
     }
 
-    // 7zr can unpack the official self-extracting installer, but cannot handle
-    // ZIP/NuGet archives used by runtime provisioning. Verify both official
-    // artifacts before executing/extracting anything from them.
-    constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
-    constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
     const QString tools = toolsDirectory;
     if (!QDir().mkpath(tools)) {
         throw std::runtime_error("could not create " + tools.toStdString());
@@ -320,8 +433,6 @@ QString ensureSevenZip(const QString& toolsDirectory) {
     if (!staging.isValid()) {
         throw std::runtime_error("could not create a temporary 7-Zip bootstrap directory");
     }
-    const QString bootstrap = QDir(staging.path()).filePath(QStringLiteral("7zr.exe"));
-    const QString installer = QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe"));
 
     auto writeVerified = [](const QString& path, const QUrl& url, const char* digest) {
         const QByteArray bytes =
@@ -336,6 +447,15 @@ QString ensureSevenZip(const QString& toolsDirectory) {
             throw std::runtime_error("could not write " + path.toStdString());
         }
     };
+
+#ifdef Q_OS_WIN
+    // 7zr can unpack the official self-extracting installer, but cannot handle
+    // ZIP/NuGet archives used by runtime provisioning. Verify both official
+    // artifacts before executing/extracting anything from them.
+    constexpr auto bootstrapSha = "ad4c82fadcbdf93c03b4fc440f300509c7d60c5c2f4d183e35d9d70d6957037d";
+    constexpr auto installerSha = "0859c524b8a63551848f0c246abddcb1d0b7b656b0fbfe879f8d85e61a9e6edd";
+    const QString bootstrap = QDir(staging.path()).filePath(QStringLiteral("7zr.exe"));
+    const QString installer = QDir(staging.path()).filePath(QStringLiteral("7z2603-x64.exe"));
 
     writeVerified(bootstrap, sevenZipUrl(), bootstrapSha);
     writeVerified(installer, sevenZipInstallerUrl(), installerSha);
@@ -358,22 +478,110 @@ QString ensureSevenZip(const QString& toolsDirectory) {
     QFile::remove(installer);
     staging.remove();
     return tool;
+#else
+    constexpr auto linuxTarSha = "dc99eff5008f1ab79bd7084c68513701547a808a89502bf4133683535ab3c695";
+    const QString archive = QDir(staging.path()).filePath(QStringLiteral("7z2603-linux-x64.tar.xz"));
+    writeVerified(archive, sevenZipLinuxUrl(), linuxTarSha);
+    QProcess extract;
+    extract.start(QStringLiteral("tar"),
+                  {QStringLiteral("-xJf"), archive, QStringLiteral("-C"), tools});
+    if (!extract.waitForStarted(5000) || !extract.waitForFinished(60000) ||
+        extract.exitStatus() != QProcess::NormalExit || extract.exitCode() != 0) {
+        const QString details = QString::fromLocal8Bit(extract.readAllStandardError()).right(500);
+        throw std::runtime_error(
+            QStringLiteral("could not extract the verified Linux x64 7-Zip package: %1")
+                .arg(details).toStdString());
+    }
+    for (const QString& candidateName : {QStringLiteral("7zz"), QStringLiteral("7zzs")}) {
+        const QString tool = QDir(tools).filePath(candidateName);
+        if (QFileInfo::exists(tool)) {
+            QFile::setPermissions(tool, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                        QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                                        QFileDevice::ExeGroup | QFileDevice::ReadOther |
+                                        QFileDevice::ExeOther);
+            if (QFileInfo(tool).isFile() && QFileInfo(tool).isExecutable()) {
+                QFile::remove(archive);
+                staging.remove();
+                return tool;
+            }
+        }
+    }
+    throw std::runtime_error("verified Linux x64 7-Zip package did not contain 7zz or 7zzs");
+#endif
 }
 
 bool extractArchive(const QString& sevenZip, const QString& archive, const QString& destination,
                     QString* reason) {
-    QProcess process;
-    process.start(sevenZip, {QStringLiteral("x"),
-                             QStringLiteral("-o%1").arg(QDir(destination).absolutePath()),
-                             QStringLiteral("-y"), archive});
-    if (!process.waitForFinished(300000) || process.exitCode() != 0) {
-        const QString tail = QString::fromUtf8(process.readAllStandardError()).right(500);
-        if (reason) {
-            *reason = QStringLiteral("7-Zip extraction failed (exit %1): %2")
-                          .arg(process.exitCode())
-                          .arg(tail);
+#ifndef Q_OS_WIN
+    if (archive.endsWith(QLatin1String(".tar.zst"), Qt::CaseInsensitive)) {
+        QProcess tarProcess;
+        tarProcess.start(QStringLiteral("tar"),
+                         {QStringLiteral("--zstd"), QStringLiteral("-xf"), archive,
+                          QStringLiteral("-C"), QDir(destination).absolutePath()});
+        if (tarProcess.waitForStarted(3000) && tarProcess.waitForFinished(300000) &&
+            tarProcess.exitStatus() == QProcess::NormalExit && tarProcess.exitCode() == 0) {
+            return true;
         }
+    }
+#endif
+    auto runSevenZip = [&](const QString& inputArchive, const QString& outDir) -> bool {
+        QProcess process;
+        QStringList args{QStringLiteral("x"),
+                         QStringLiteral("-o%1").arg(QDir(outDir).absolutePath())};
+#ifndef Q_OS_WIN
+        // Restore symlinks as links on POSIX (matches AnimeJaNaiUpdater Extract -snl).
+        args << QStringLiteral("-snl");
+#endif
+        args << QStringLiteral("-y") << inputArchive;
+        process.start(sevenZip, args);
+        if (!process.waitForStarted(5000)) {
+            if (reason) {
+                *reason = QStringLiteral("7-Zip failed to start: %1").arg(process.errorString());
+            }
+            return false;
+        }
+        if (!process.waitForFinished(300000)) {
+            process.kill();
+            process.waitForFinished(2000);
+            if (reason) {
+                *reason = QStringLiteral("7-Zip extraction timed out for %1").arg(inputArchive);
+            }
+            return false;
+        }
+        if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+            const QString tail = QString::fromUtf8(process.readAllStandardError()).right(500);
+            if (reason) {
+                *reason = QStringLiteral("7-Zip extraction failed (exit %1): %2")
+                              .arg(process.exitCode())
+                              .arg(tail);
+            }
+            return false;
+        }
+        return true;
+    };
+
+    if (!runSevenZip(archive, destination)) {
         return false;
+    }
+
+    // Compound tarballs (e.g. aji-linux-x64.tar.zst) unpack to an intermediate
+    // .tar archive on the first 7-Zip pass; unpack the inner .tar automatically.
+    const QString lower = archive.toLower();
+    if (lower.endsWith(QLatin1String(".tar.zst")) ||
+        lower.endsWith(QLatin1String(".tar.xz")) ||
+        lower.endsWith(QLatin1String(".tar.gz")) ||
+        lower.endsWith(QLatin1String(".tgz"))) {
+        const QStringList entries =
+            QDir(destination).entryList(QStringList{QStringLiteral("*.tar")},
+                                        QDir::Files | QDir::NoSymLinks);
+        if (entries.size() == 1) {
+            const QString innerTar = QDir(destination).filePath(entries.first());
+            if (!runSevenZip(innerTar, destination)) {
+                QFile::remove(innerTar);
+                return false;
+            }
+            QFile::remove(innerTar);
+        }
     }
     return true;
 }

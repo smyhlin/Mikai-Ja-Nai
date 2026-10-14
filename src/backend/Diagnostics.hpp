@@ -7,7 +7,7 @@
 // request line it failed on, and a filter quotes the command it was asked to
 // run. Any of those can carry a signed download URL (its token lives in the
 // path as well as the query), an API key or an `Authorization: Bearer` value.
-// `plan.md` records the boundary: those tokens never enter a log, a manifest or
+// `AGENTS.md` records the boundary: those tokens never enter a log, a manifest or
 // an exported diagnostic. This unit is what enforces it, so the enforcement is
 // written once instead of once per caller.
 //

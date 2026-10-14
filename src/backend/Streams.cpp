@@ -1,5 +1,7 @@
 #include "Streams.hpp"
 
+#include "Cancellation.hpp"
+
 #include <QByteArray>
 #include <QEventLoop>
 #include <QNetworkAccessManager>
@@ -45,12 +47,14 @@ bool retryableStatus(int status) {
 // Retry-After is advisory and sometimes nonsense, so clamp it the way the
 // Python client does; fall back to a growing linear backoff.
 double retryDelaySeconds(const QMap<QString, QString>& headers, int attempt) {
-    const auto it = headers.constFind(QStringLiteral("Retry-After"));
-    if (it != headers.constEnd() && !it->isEmpty()) {
-        bool ok = false;
-        const double seconds = it->toDouble(&ok);
-        if (ok && std::isfinite(seconds)) {
-            return std::min(2.0, std::max(0.25, seconds));
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        if (it.key().compare(QLatin1String("Retry-After"), Qt::CaseInsensitive) == 0 &&
+            !it.value().isEmpty()) {
+            bool ok = false;
+            const double seconds = it.value().toDouble(&ok);
+            if (ok && std::isfinite(seconds)) {
+                return std::min(2.0, std::max(0.25, seconds));
+            }
         }
     }
     return 0.4 * (attempt + 1);
@@ -72,10 +76,19 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
+    QTimer cancelTimer;
+    cancelTimer.setInterval(200);
     QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(&cancelTimer, &QTimer::timeout, &loop, [&]() {
+        if (WorkCancellationScope::cancellationRequested()) {
+            loop.quit();
+        }
+    });
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     timer.start(kTimeoutMs);
+    cancelTimer.start();
     loop.exec();
+    cancelTimer.stop();
     if (reply->isRunning()) {
         // The deadline fired first: abort so the reply cannot outlive us. The
         // drain is on the same timer rather than an unbounded wait, because an
@@ -366,9 +379,17 @@ QMap<int, QString> qualityStreams(const QString& pageUrl) {
                                                                              : mediaHeaderSet();
     const QVector<QualityVariant> variants =
         parseVariants(fetchText(manager, master, headers), master);
+    auto isSafeStreamUrl = [](const QString& rawUrl) -> bool {
+        const QUrl parsed(rawUrl, QUrl::StrictMode);
+        if (!parsed.isValid() || parsed.host().isEmpty()) {
+            return false;
+        }
+        const QString scheme = parsed.scheme().toLower();
+        return scheme == QLatin1String("https") || scheme == QLatin1String("http");
+    };
     QMap<int, QString> streams;
     for (const QualityVariant& variant : variants) {
-        if (variant.height > 0 && !variant.url.isEmpty()) {
+        if (variant.height > 0 && !variant.url.isEmpty() && isSafeStreamUrl(variant.url)) {
             streams.insert(variant.height, variant.url);
         }
     }
