@@ -1,7 +1,7 @@
 
-#include "native/NativeBundle.hpp"
-#include "native/NativePaths.hpp"
-#include "native/NativePeImage.hpp"
+#include "native/bundle/NativeBundle.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/bundle/NativePeImage.hpp"
 
 // The real native producer ABI, taken from its own header so a signature drift
 // is a compile error here rather than a reinterpret_cast that faults at the
@@ -27,7 +27,18 @@
 #include <QtCore/QSet>
 #include <QtCore/QTextStream>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+#include <dlfcn.h>
+using HMODULE = void*;
+inline void FreeLibrary(HMODULE m) {
+    if (m != nullptr) ::dlclose(m);
+}
+#endif
 
 namespace {
 
@@ -39,6 +50,7 @@ using namespace mplayer;
 /// reports those records as unrecorded rather than as matching.
 const QString kUnrecordedDigest(64, QLatin1Char('0'));
 
+#ifdef _WIN32
 QString win32ErrorText(DWORD code) {
     wchar_t* buffer = nullptr;
     const DWORD length =
@@ -53,6 +65,7 @@ QString win32ErrorText(DWORD code) {
     if (text.isEmpty()) text = QStringLiteral("unknown Windows error");
     return QStringLiteral("%1 (Win32 %2)").arg(text).arg(code);
 }
+#endif
 
 /// The dependency directories of one bundle, registered for exactly as long as
 /// this object lives. Identical flags to the loader, so a bundle that verifies
@@ -73,6 +86,7 @@ public:
                                   .arg(dep);
                 return;
             }
+#ifdef _WIN32
             const HANDLE cookie = AddDllDirectory(reinterpret_cast<LPCWSTR>(canonical.utf16()));
             if (cookie == nullptr) {
                 if (reason != nullptr)
@@ -82,28 +96,31 @@ public:
                 return;
             }
             cookies_.append(cookie);
+#endif
         }
     }
 
     ~RestrictedSearch() {
-        for (HANDLE cookie : cookies_) RemoveDllDirectory(cookie);
+#ifdef _WIN32
+        for (void* cookie : cookies_) RemoveDllDirectory(static_cast<DLL_DIRECTORY_COOKIE>(cookie));
+#endif
     }
 
     RestrictedSearch(const RestrictedSearch&) = delete;
     RestrictedSearch& operator=(const RestrictedSearch&) = delete;
 
 private:
-    QList<HANDLE> cookies_;
+    QList<void*> cookies_;
 };
 
-/// The module's own directory, the bundle's dependency directories and System32
-/// - the one legitimate dependency outside the root. Nothing else, so a bundle
-/// that needs an ambient Conda, torch or Python directory cannot pass here.
+#ifdef _WIN32
 constexpr DWORD kRestrictedSearch = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                                     LOAD_LIBRARY_SEARCH_SYSTEM32 |
                                     LOAD_LIBRARY_SEARCH_USER_DIRS;
+#endif
 
 HMODULE loadRestricted(const QString& absolutePath, QString* reason) {
+#ifdef _WIN32
     const HMODULE module =
         LoadLibraryExW(reinterpret_cast<LPCWSTR>(absolutePath.utf16()), nullptr, kRestrictedSearch);
     if (module == nullptr) {
@@ -122,6 +139,27 @@ HMODULE loadRestricted(const QString& absolutePath, QString* reason) {
         return nullptr;
     }
     return module;
+#else
+    const QByteArray utf8Path = absolutePath.toUtf8();
+    HMODULE module = ::dlopen(utf8Path.constData(), RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE);
+    if (module == nullptr) {
+        const char* dlErr = ::dlerror();
+        if (reason != nullptr)
+            *reason = QStringLiteral("%1 does not load under the restricted search: %2")
+                          .arg(QFileInfo(absolutePath).fileName(),
+                               dlErr ? QString::fromUtf8(dlErr) : QStringLiteral("unknown dlopen error"));
+        return nullptr;
+    }
+    return module;
+#endif
+}
+
+inline void* lookupModuleSymbol(HMODULE module, const char* name) {
+#ifdef _WIN32
+    return reinterpret_cast<void*>(lookupModuleSymbol(module, name));
+#else
+    return ::dlsym(module, name);
+#endif
 }
 
 QStringList declaredDlls(const native::Bundle& bundle) {
@@ -256,7 +294,7 @@ bool bindModule(HMODULE module, ModuleProbe* probe, QString* reason) {
     const auto bind = [&](const char* name, auto& slot) {
         using Fn = std::remove_reference_t<decltype(slot)>;
         static_assert(std::is_pointer_v<Fn>);
-        slot = reinterpret_cast<Fn>(::GetProcAddress(module, name));
+        slot = reinterpret_cast<Fn>(lookupModuleSymbol(module, name));
     };
     bind("mpv_create", probe->create);
     bind("mpv_set_option_string", probe->setOptionString);
@@ -306,7 +344,7 @@ bool checkPreparationAbi(const native::Bundle& bundle, QString* reason) {
         return false;
     }
     const auto getSnapshot = reinterpret_cast<decltype(&::aji_native_get_snapshot)>(
-        ::GetProcAddress(module, "aji_native_get_snapshot"));
+        lookupModuleSymbol(module, "aji_native_get_snapshot"));
     if (getSnapshot == nullptr) {
         if (reason != nullptr)
             *reason = QStringLiteral("the declared native producer '%1' does not export "

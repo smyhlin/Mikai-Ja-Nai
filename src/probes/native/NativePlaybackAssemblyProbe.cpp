@@ -140,15 +140,21 @@ void settle(Runner& runner) {
 void invokeRequest(mplayer::shell::PlayerDialog& dialog, const SelectionState& selection,
                    const NativePreparationContext& context) {
     const bool invoked = QMetaObject::invokeMethod(
-        &dialog, "nativeAdmissionRequested", Qt::DirectConnection,
-        Q_ARG(mplayer::native::SelectionState, selection),
-        Q_ARG(mplayer::native::NativePreparationContext, context));
+        &dialog,
+        [&dialog, selection, context]() {
+            Q_EMIT dialog.nativeAdmissionRequested(selection, context);
+        },
+        Qt::DirectConnection);
     check(invoked, QStringLiteral("the dialog's request signal is invocable"));
 }
 
 void invokeCancelled(mplayer::shell::PlayerDialog& dialog) {
-    const bool invoked = QMetaObject::invokeMethod(&dialog, "nativeAdmissionCancelled",
-                                                   Qt::DirectConnection);
+    const bool invoked = QMetaObject::invokeMethod(
+        &dialog,
+        [&dialog]() {
+            Q_EMIT dialog.nativeAdmissionCancelled();
+        },
+        Qt::DirectConnection);
     check(invoked, QStringLiteral("the dialog's cancellation signal is invocable"));
 }
 

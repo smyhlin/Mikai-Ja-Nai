@@ -788,6 +788,8 @@ void NativeAssetsPanel::buildUi() {
     modelTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     modelTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     modelTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    modelTable_->setAlternatingRowColors(true);
+    modelTable_->setShowGrid(false);
     modelTable_->verticalHeader()->setVisible(false);
     modelTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     modelTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
@@ -942,6 +944,8 @@ void NativeAssetsPanel::buildUi() {
     cacheTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     cacheTable_->setSelectionMode(QAbstractItemView::SingleSelection);
     cacheTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    cacheTable_->setAlternatingRowColors(true);
+    cacheTable_->setShowGrid(false);
     cacheTable_->verticalHeader()->setVisible(false);
     cacheTable_->horizontalHeader()->setStretchLastSection(true);
     cacheTable_->horizontalHeader()->setMinimumSectionSize(0);
@@ -956,6 +960,7 @@ void NativeAssetsPanel::buildUi() {
     deleteCacheButton_->setEnabled(false);
     cacheRow->addWidget(deleteCacheButton_);
     cacheDeleteHint_ = new QLabel(tr("Remove the selected cache artifact."), cacheDetails_);
+    cacheDeleteHint_->setObjectName(QStringLiteral("muted"));
     cacheDeleteHint_->setWordWrap(true);
     cacheDeleteHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     // Bound to the delete action it explains, like the scratch legend below.
@@ -987,6 +992,7 @@ void NativeAssetsPanel::buildUi() {
     discardStagingButton_->setEnabled(false);
     stagingRow->addWidget(discardStagingButton_);
     stagingDiscardHint_ = new QLabel(tr("Remove the selected incomplete scratch directory."), this);
+    stagingDiscardHint_->setObjectName(QStringLiteral("muted"));
     stagingDiscardHint_->setWordWrap(true);
     stagingDiscardHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     // Bound to the discard action it explains, like the other row legends.
@@ -1999,7 +2005,7 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
 
     runner_->run(
         [recipeId, modelRoot, runtime, store, ctx, tools, frames, cancellation, result, post,
-         panelAlive, alive, generation]() -> QVariant {
+         alive, generation]() -> QVariant {
             if (cancellation->isCancelled()) {
                 result->cancelled = true;
                 result->reasonKey = QStringLiteral("native.prepare.cancelled");
@@ -2124,12 +2130,12 @@ void NativeAssetsPanel::submitPreparationJob(const QVector<mplayer::native::Fram
             // The binder is the worker's only route back: it posts, so nothing
             // here touches a widget and nothing reads this panel off-thread.
             const BuilderProgressCallback progress =
-                [post, panelAlive, generation, stageCount](const BuilderProgress& event) {
+                [post, alive, generation, stageCount](const BuilderProgress& event) {
                     const int stageIndex = event.stageIndex;
                     const QString phase = event.phase;
                     const QString detail = event.detail;
-                    post([panelAlive, generation, stageIndex, stageCount, phase, detail] {
-                        if (!panelAlive->load(std::memory_order_relaxed)) return;
+                    post([alive, generation, stageIndex, stageCount, phase, detail] {
+                        if (!alive->load(std::memory_order_relaxed)) return;
                         NativeAssetsPanel* target = livePanel();
                         if (target == nullptr || target->prepareGeneration_ != generation) return;
                         target->applyPrepareProgress(stageIndex, stageCount, phase, detail);

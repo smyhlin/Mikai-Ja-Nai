@@ -445,15 +445,23 @@ int main(int argc, char** argv) {
         invalid = true;
     }
     const QJsonObject patchSeries = sources.value(QStringLiteral("patchSeries")).toObject();
-    const QString patchBase = patchSeries.value(QStringLiteral("baseCommit")).toString();
+    const QJsonObject mpvForkSeries =
+        patchSeries.value(QStringLiteral("mpvForkPatchSeries")).toObject();
+    const QString patchBase = !mpvForkSeries.isEmpty()
+                                  ? mpvForkSeries.value(QStringLiteral("baseCommit")).toString()
+                                  : patchSeries.value(QStringLiteral("baseCommit")).toString();
     QString forkCommit;
     for (auto it = sourcePinKinds.cbegin(); it != sourcePinKinds.cend(); ++it) {
         if (it.key() != QLatin1String("mpv-fork")) continue;
         forkCommit = sourceCommits.value(it.key());
     }
+    if (!mpvForkSeries.isEmpty() && !patchSeries.value(QStringLiteral("baseCommit")).isNull()) {
+        errors << "sources.json: patchSeries.baseCommit must be null when mpvForkPatchSeries carries the fork commit pin\n";
+        invalid = true;
+    }
     if (patchBase.isEmpty() || !isGitSha(patchBase)
         || (!forkCommit.isEmpty() && patchBase != forkCommit)) {
-        errors << "sources.json: patchSeries.baseCommit does not match the mpv-fork commit pin\n";
+        errors << "sources.json: mpvForkPatchSeries.baseCommit does not match the mpv-fork commit pin\n";
         invalid = true;
     }
 

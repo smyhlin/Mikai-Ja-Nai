@@ -33,6 +33,15 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 
+#include "dialogs/NativeAssetsPanel.hpp"
+#include "native/bundle/NativeCapabilities.hpp"
+#include "native/models/NativeModelInventory.hpp"
+#include "native/bundle/NativePaths.hpp"
+#include "native/models/NativeSpatialAssets.hpp"
+#include "ProbeIsolation.hpp"
+#include "ProbeUi.hpp"
+#include "workers/Runner.hpp"
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 using namespace mplayer;

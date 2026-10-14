@@ -39,11 +39,11 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QTextStream>
 
-#include "native/NativeFrameReference.hpp"
-#include "native/NativeInspectedPlan.hpp"
-#include "native/NativeModelInspect.hpp"
-#include "native/NativeModelInventory.hpp"
-#include "native/NativePreparationPlan.hpp"
+#include "native/prepare/NativeFrameReference.hpp"
+#include "native/models/NativeInspectedPlan.hpp"
+#include "native/models/NativeModelInspect.hpp"
+#include "native/models/NativeModelInventory.hpp"
+#include "native/prepare/NativePreparationPlan.hpp"
 
 using namespace mplayer::native;
 

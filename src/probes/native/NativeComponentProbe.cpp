@@ -213,9 +213,15 @@ int runFromSdk(const QString& sdkDir, const QString& packName, const QString& he
 
     QProcess process;
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+#ifdef Q_OS_WIN
     const QString systemRoot = environment.value(QStringLiteral("SystemRoot"));
     environment.insert(QStringLiteral("PATH"),
                        QStringLiteral("%1;%2/System32;%2").arg(binDir.path(), systemRoot));
+#else
+    environment.insert(QStringLiteral("LD_LIBRARY_PATH"), binDir.path());
+    environment.insert(QStringLiteral("PATH"),
+                       QStringLiteral("%1:/usr/local/bin:/usr/bin:/bin").arg(binDir.path()));
+#endif
     process.setProcessEnvironment(environment);
     process.setProgram(helper);
     // The builder refuses without the device it is building for; an empty uuid
