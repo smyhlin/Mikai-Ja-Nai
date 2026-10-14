@@ -5,15 +5,14 @@
 //
 //  * **The wheel zooms about the cursor.** Fit never upscales past 1:1: a 480p
 //    frame blown up to a large window shows interpolation, not detail.
-//  * **The selectors are a row under the picture.** The row is as wide as the
-//    picture and flush with its left and right edges. Each name fills the
-//    width of the side it belongs to.
+//  * **The selectors are a full-width 50/50 row under the picture.** Dragging
+//    the split line never squishes or shifts the model selector buttons.
 #pragma once
 
 #include <QGraphicsView>
+#include <QRgb>
 #include <QImage>
 #include <QPoint>
-#include <QRgb>
 #include <QString>
 #include <QStringList>
 
@@ -21,10 +20,12 @@
 #include "PlayerPopups.hpp"
 
 class QAction;
+class QEvent;
 class QGraphicsLineItem;
 class QGraphicsSimpleTextItem;
 class QLabel;
 class QMenu;
+class QPainter;
 class QToolButton;
 class QWidget;
 
@@ -118,8 +119,9 @@ private:
     QString nameA_;
     QString nameB_;
     QVector<ChoiceEntry> choices_;
-    /// What the badge menus were built from and the actions they hold, tracked
-    /// per side so updating A never skips rebuilding B.
+    /// What the badge menus were built from and the actions they hold, so a
+    /// refill that changes nothing only moves the check marks: the refill runs
+    /// from a menu action's own handler, and rebuilding would destroy it.
     QVector<ChoiceEntry> builtChoicesA_;
     QVector<ChoiceEntry> builtChoicesB_;
     QVector<QAction*> leavesA_;

@@ -45,18 +45,28 @@ bool modeFromKey(const char* key, CompareMode& out) {
 }
 
 const char* modeLabel(CompareMode mode) {
-    static const std::array<QByteArray, 5> kLabels = {
-        QCoreApplication::translate("CompareLayout", "Split H").toUtf8(),
-        QCoreApplication::translate("CompareLayout", "Split V").toUtf8(),
-        QCoreApplication::translate("CompareLayout", "Side-by-side").toUtf8(),
-        QCoreApplication::translate("CompareLayout", "Flicker").toUtf8(),
-        QCoreApplication::translate("CompareLayout", "Difference").toUtf8(),
-    };
-    const std::size_t index = static_cast<std::size_t>(mode);
-    if (index >= kLabels.size()) {
-        return kLabels[static_cast<std::size_t>(CompareMode::SideBySide)].constData();
+    thread_local QByteArray buffer;
+    switch (mode) {
+        case CompareMode::SplitH:
+            buffer = QCoreApplication::translate("CompareLayout", "Split H").toUtf8();
+            break;
+        case CompareMode::SplitV:
+            buffer = QCoreApplication::translate("CompareLayout", "Split V").toUtf8();
+            break;
+        case CompareMode::SideBySide:
+            buffer = QCoreApplication::translate("CompareLayout", "Side-by-side").toUtf8();
+            break;
+        case CompareMode::Flicker:
+            buffer = QCoreApplication::translate("CompareLayout", "Flicker").toUtf8();
+            break;
+        case CompareMode::Difference:
+            buffer = QCoreApplication::translate("CompareLayout", "Difference").toUtf8();
+            break;
+        default:
+            buffer = QCoreApplication::translate("CompareLayout", "Side-by-side").toUtf8();
+            break;
     }
-    return kLabels[index].constData();
+    return buffer.constData();
 }
 
 CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, bool flickerShowA,
@@ -66,6 +76,10 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, boo
 
     const double s = std::clamp(split, 0.0, 1.0);
 
+    // Space hides the other side everywhere alike: the held side takes the whole
+    // frame and the divider and the other name go with it. Geometry and the
+    // stored mode are untouched, so releasing restores everything, zoom and pan
+    // included.
     if (heldSide >= 0) {
         out.b.visible = heldSide == 1;
         out.b.hasClip = false;
@@ -130,9 +144,10 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, boo
             out.b.clipFull(size);
             out.b.x = size.width() + kSideBySideGap;
             out.scene = QSize(size.width() * 2 + kSideBySideGap, size.height());
-            return out;
+            return out;  // the scene is wider; do not overwrite it below
 
         case CompareMode::Flicker:
+            // One side at full strength; the timer decides which.
             if (flickerShowA) {
                 out.a.visible = true;
                 out.a.clipFull(size);
@@ -161,23 +176,34 @@ void jetColor(double value, uchar rgb[3]) {
     rgb[2] = static_cast<uchar>(std::lround(b * 255.0));
 }
 
+namespace {
+
+inline int peakRgbDiff(const uchar* pa, const uchar* pb) {
+    return std::max({std::abs(static_cast<int>(pa[0]) - static_cast<int>(pb[0])),
+                     std::abs(static_cast<int>(pa[1]) - static_cast<int>(pb[1])),
+                     std::abs(static_cast<int>(pa[2]) - static_cast<int>(pb[2]))});
+}
+
+}  // namespace
+
 QImage differenceJet(const QImage& a, const QImage& b) {
     if (a.isNull() || b.isNull() || a.size() != b.size()) return QImage();
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     QImage out(left.size(), QImage::Format_RGB888);
-    const int w = out.width();
-    const int h = out.height();
-    for (int y = 0; y < h; ++y) {
-        const uchar* la = left.constScanLine(y);
-        const uchar* rb = right.constScanLine(y);
+    const int width = out.width();
+    const int height = out.height();
+    for (int y = 0; y < height; ++y) {
+        const uchar* sa = left.constScanLine(y);
+        const uchar* sb = right.constScanLine(y);
         uchar* dst = out.scanLine(y);
-        for (int x = 0; x < w; ++x) {
-            const int idx = x * 3;
-            const int peak = std::max({std::abs(int(la[idx]) - int(rb[idx])),
-                                       std::abs(int(la[idx + 1]) - int(rb[idx + 1])),
-                                       std::abs(int(la[idx + 2]) - int(rb[idx + 2]))});
-            jetColor(peak / 255.0, dst + idx);
+        for (int x = 0; x < width; ++x) {
+            const int offset = x * 3;
+            uchar rgb[3];
+            jetColor(peakRgbDiff(sa + offset, sb + offset) / 255.0, rgb);
+            dst[offset + 0] = rgb[0];
+            dst[offset + 1] = rgb[1];
+            dst[offset + 2] = rgb[2];
         }
     }
     return out;
@@ -189,21 +215,18 @@ QImage differenceGrayscale(const QImage& a, const QImage& b, int gain) {
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     const int g = std::max(1, gain);
     QImage out(left.size(), QImage::Format_RGB888);
-    const int w = out.width();
-    const int h = out.height();
-    for (int y = 0; y < h; ++y) {
-        const uchar* la = left.constScanLine(y);
-        const uchar* rb = right.constScanLine(y);
+    const int width = out.width();
+    const int height = out.height();
+    for (int y = 0; y < height; ++y) {
+        const uchar* sa = left.constScanLine(y);
+        const uchar* sb = right.constScanLine(y);
         uchar* dst = out.scanLine(y);
-        for (int x = 0; x < w; ++x) {
-            const int idx = x * 3;
-            const int peak = std::max({std::abs(int(la[idx]) - int(rb[idx])),
-                                       std::abs(int(la[idx + 1]) - int(rb[idx + 1])),
-                                       std::abs(int(la[idx + 2]) - int(rb[idx + 2]))});
-            const uchar v = static_cast<uchar>(std::min(255, peak * g));
-            dst[idx] = v;
-            dst[idx + 1] = v;
-            dst[idx + 2] = v;
+        for (int x = 0; x < width; ++x) {
+            const int offset = x * 3;
+            const uchar v = static_cast<uchar>(std::min(255, peakRgbDiff(sa + offset, sb + offset) * g));
+            dst[offset + 0] = v;
+            dst[offset + 1] = v;
+            dst[offset + 2] = v;
         }
     }
     return out;
@@ -214,14 +237,18 @@ double meanAbsoluteDifference(const QImage& a, const QImage& b) {
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     double sum = 0.0;
-    const int w = left.width();
-    const int h = left.height();
-    const qint64 counted = static_cast<qint64>(w) * static_cast<qint64>(h) * 3;
-    for (int y = 0; y < h; ++y) {
-        const uchar* la = left.constScanLine(y);
-        const uchar* rb = right.constScanLine(y);
-        for (int x = 0; x < w * 3; ++x) {
-            sum += std::abs(int(la[x]) - int(rb[x]));
+    qint64 counted = 0;
+    const int width = left.width();
+    const int height = left.height();
+    for (int y = 0; y < height; ++y) {
+        const uchar* sa = left.constScanLine(y);
+        const uchar* sb = right.constScanLine(y);
+        for (int x = 0; x < width; ++x) {
+            const int offset = x * 3;
+            sum += std::abs(static_cast<int>(sa[offset + 0]) - static_cast<int>(sb[offset + 0]));
+            sum += std::abs(static_cast<int>(sa[offset + 1]) - static_cast<int>(sb[offset + 1]));
+            sum += std::abs(static_cast<int>(sa[offset + 2]) - static_cast<int>(sb[offset + 2]));
+            counted += 3;
         }
     }
     return counted > 0 ? sum / static_cast<double>(counted) : 0.0;
@@ -246,6 +273,10 @@ void Camera::zoomTo(double target, double anchorSceneX, double anchorSceneY, dou
     const double after = std::clamp(target > 0.0 ? target : 1.0, kCompareZoomMin, kCompareZoomMax);
     zoom = after;
     if (viewportWidth <= 0.0 || viewportHeight <= 0.0) return;
+    // The anchor is a scene coordinate and stays under the viewport centre
+    // across the zoom, so the pan is *derived from* the anchor:
+    //   (vw/2 - panX)/zoom == anchorSceneX, which is the invariant the caller
+    // depends on.
     panX = viewportWidth / 2.0 - anchorSceneX * after;
     panY = viewportHeight / 2.0 - anchorSceneY * after;
 }
@@ -262,6 +293,8 @@ void Camera::fit(const QSize& content, double viewportWidth, double viewportHeig
         reset();
         return;
     }
+    // Never upscale past 1:1: a small frame blown up to fill a large window
+    // shows interpolation artefacts, not detail.
     const double scale =
         std::min(1.0, std::min(viewportWidth / content.width(), viewportHeight / content.height()));
     zoom = scale;

@@ -5,9 +5,9 @@
 // normalized centre, so a 480p pane and a 1080p pane agree on which region of
 // the frame is centred.
 //
-// The model selector is a row under the picture, in the view's bottom margin.
-// Zoom never lays it over the image. The menu offers every candidate the grid
-// feeds it, with the shown one checked.
+// The model selector is a full-width row under the picture, in the view's
+// bottom margin. Zoom never lays it over the image. The menu offers every
+// candidate the grid feeds it, with the shown one checked.
 #pragma once
 
 #include <QGraphicsView>
@@ -27,6 +27,8 @@ class QAction;
 class QGraphicsPixmapItem;
 class QGraphicsScene;
 class QMenu;
+class QMouseEvent;
+class QPainter;
 class QToolButton;
 class QWidget;
 
@@ -39,13 +41,11 @@ public:
     explicit ComparePane(QWidget* parent = nullptr);
 
     QString key() const { return key_; }
-
     void setSideIndex(int sideIndex);
     int sideIndex() const { return sideIndex_; }
 
     void setContent(const QString& key, const QImage& image, const QString& name);
     void setChoices(const QVector<ChoiceEntry>& choices, const QString& current);
-    void setStatusText(const QString& status);
 
     /// Adopt a shared view: `zoom` is a multiple of this pane's own fit and the
     /// centre is normalized (fractions of its own picture).
@@ -61,11 +61,11 @@ public:
     QSize sizeHint() const override { return {480, 320}; }
 
 signals:
-    /// The user panned or zoomed here; the grid reconciles the shared centre.
+    /// The user panned here; the grid reconciles the shared centre.
     void viewChanged();
     /// The selector asked for another candidate in this pane.
     void choiceChosen(const QString& id);
-    /// Live pixel readout under the cursor inside this pane.
+    /// Cursor pixel readout inside this pane.
     void hoverPixel(int x, int y, bool valid, QRgb rgb);
 
 protected:
@@ -95,9 +95,8 @@ private:
     QToolButton* badge_ = nullptr;
     QMenu* menu_ = nullptr;
     QString label_;
-    QString statusText_;
-    int sideIndex_ = -1;
 
+    int sideIndex_ = 0;
     QString key_;
     QImage image_;
     QString name_;
@@ -112,7 +111,7 @@ private:
     /// True while this pane is writing its own view, so the scroll it causes is
     /// not reported back to the group as if the user had dragged it.
     bool syncing_ = false;
-    bool altPanning_ = false;
+    bool panning_ = false;
     QPoint lastPanPoint_;
     QPointF lastNormalizedCenter_{0.5, 0.5};
 

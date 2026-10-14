@@ -11,11 +11,9 @@
 #include <QGraphicsSimpleTextItem>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLinearGradient>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QStyle>
@@ -32,58 +30,58 @@ namespace {
 
 QString selectorRowStyle() {
     return QStringLiteral(
-        "QWidget#compareSelectorRow {"
-        "  background-color: #16181d;"
-        "  border: none;"
-        "  border-top: 1px solid #282c34;"
-        "}"
-        "QToolButton {"
-        "  background: transparent;"
-        "  color: #e8eaed;"
-        "  border: none;"
-        "  border-radius: 0px;"
-        "  padding: 0px %1px;"
-        "  font-weight: 600;"
-        "  text-align: left;"
-        "}"
-        "QToolButton#compareBadgeA {"
-        "  border-left: 3px solid #3b82f6;"
-        "  border-right: 1px solid #282c34;"
-        "}"
-        "QToolButton#compareBadgeB {"
-        "  border-left: 3px solid #f59e0b;"
-        "}"
-        "QToolButton:hover {"
-        "  background-color: #22262e;"
-        "  color: #ffffff;"
-        "}"
-        "QToolButton:pressed {"
-        "  background-color: #2a2f3a;"
-        "}"
-        "QToolButton[prominent=\"false\"] {"
-        "  color: #7d8594;"
-        "  background-color: rgba(0, 0, 0, 0.22);"
-        "}"
-        "QToolButton::menu-indicator {"
-        "  image: none;"
-        "  width: 0px;"
-        "}")
+               "QWidget#compareSelectorRow {"
+               "  background-color: #16181d;"
+               "  border: none;"
+               "  border-top: 1px solid #282c34;"
+               "}"
+               "QToolButton#compareBadgeA {"
+               "  background: #16181d;"
+               "  color: #e5e7eb;"
+               "  border: none;"
+               "  border-left: 3px solid #3b82f6;"
+               "  border-right: 1px solid #282c34;"
+               "  border-radius: 0px;"
+               "  padding: 0px %1px;"
+               "  font-weight: 600;"
+               "  text-align: left;"
+               "}"
+               "QToolButton#compareBadgeB {"
+               "  background: #16181d;"
+               "  color: #e5e7eb;"
+               "  border: none;"
+               "  border-left: 3px solid #f59e0b;"
+               "  border-radius: 0px;"
+               "  padding: 0px %1px;"
+               "  font-weight: 600;"
+               "  text-align: left;"
+               "}"
+               "QToolButton:hover {"
+               "  background-color: #1e2128;"
+               "  color: #ffffff;"
+               "}"
+               "QToolButton[prominent=\"false\"] {"
+               "  color: #9ca3af;"
+               "}"
+               "QToolButton::menu-indicator {"
+               "  image: none;"
+               "  width: 0px;"
+               "}")
         .arg(QString::number(kCompareSelectorInset));
 }
 
 void fitSelectorLabel(QToolButton* button, const QString& full) {
-    if (button == nullptr) {
-        return;
-    }
+    if (button == nullptr) return;
     const QString suffix = QStringLiteral("  ▾");
-    const QFontMetrics fm(button->font());
-    const int pad = kCompareSelectorInset * 2 + fm.horizontalAdvance(suffix) + 8;
+    const int pad = kCompareSelectorInset * 2 + 24;
     const int avail = button->width() - pad;
-    if (avail <= 32) {
+    if (avail <= 24) {
         button->setText(full + suffix);
         return;
     }
-    button->setText(fm.elidedText(full, Qt::ElideRight, avail) + suffix);
+    const QFontMetrics fm(button->font());
+    const QString elided = fm.elidedText(full, Qt::ElideRight, avail);
+    button->setText((elided.isEmpty() ? full : elided) + suffix);
 }
 
 }  // namespace
@@ -94,11 +92,10 @@ class CompareImageItem final : public QGraphicsItem {
 public:
     CompareImageItem() { setAcceptedMouseButtons(Qt::NoButton); }
 
-    void setImage(const QImage& image, const QSize& targetSize = QSize()) {
+    void setImage(const QImage& image) {
         prepareGeometryChange();
         image_ = image;
-        targetSize_ = targetSize.isEmpty() ? image.size() : targetSize;
-        clip_ = QRectF(QPointF(0, 0), targetSize_);
+        clip_ = QRectF(image.rect());
         update();
     }
     void setClipRect(const QRectF& clip) {
@@ -111,19 +108,11 @@ public:
     void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override {
         if (image_.isNull() || clip_.isEmpty()) return;
         painter->setRenderHint(QPainter::SmoothPixmapTransform, smooth_);
-        if (targetSize_.isEmpty() || targetSize_ == image_.size()) {
-            painter->drawImage(clip_, image_, clip_);
-        } else {
-            const double sx = static_cast<double>(image_.width()) / std::max(1, targetSize_.width());
-            const double sy = static_cast<double>(image_.height()) / std::max(1, targetSize_.height());
-            const QRectF src(clip_.x() * sx, clip_.y() * sy, clip_.width() * sx, clip_.height() * sy);
-            painter->drawImage(clip_, image_, src);
-        }
+        painter->drawImage(clip_, image_, clip_);
     }
 
 private:
     QImage image_;
-    QSize targetSize_;
     QRectF clip_;
     bool smooth_ = true;
 };
@@ -136,7 +125,7 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
     setTransformationAnchor(QGraphicsView::NoAnchor);
     setResizeAnchor(QGraphicsView::NoAnchor);
     setFrameShape(QFrame::NoFrame);
-    setBackgroundBrush(QColor(17, 19, 23));
+    setBackgroundBrush(QColor(11, 12, 14));
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setMouseTracking(true);
@@ -150,7 +139,9 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
     scene()->addItem(itemA_);
     scene()->addItem(itemB_);
     scene()->addItem(itemDifference_);
-    divider_ = scene()->addLine(QLineF(), QPen(QColor(255, 255, 255, 230), 1.5));
+    QPen dividerPen(QColor(255, 255, 255, 220), 2.0);
+    dividerPen.setCosmetic(true);
+    divider_ = scene()->addLine(QLineF(), dividerPen);
     message_ = scene()->addSimpleText(QString());
     message_->hide();
     itemDifference_->setZValue(2);
@@ -172,28 +163,25 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
     menuA_ = new QMenu(badgeA_);
     menuB_ = new QMenu(badgeB_);
     for (QToolButton* badge : {badgeA_, badgeB_}) {
-        const int side = badge == badgeA_ ? 0 : 1;
-        QMenu* menu = side == 0 ? menuA_ : menuB_;
         badge->setCursor(Qt::PointingHandCursor);
-        badge->setFont(uiFont(10));
+        badge->setFont(uiFont(9, true));
         badge->setToolButtonStyle(Qt::ToolButtonTextOnly);
         badge->setPopupMode(QToolButton::InstantPopup);
         badge->setMinimumWidth(0);
-        badge->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        badge->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         badge->installEventFilter(this);
-        badge->setMenu(menu);
+        badge->setMenu(badge == badgeA_ ? menuA_ : menuB_);
         badge->hide();
         chips->addWidget(badge, 1);
-        connect(menu, &QMenu::triggered, this, [this, badge, side](QAction* action) {
-            if (action == nullptr ||
-                (action->property("_mplayer_forwarded_leaf").toBool() &&
-                 !action->property("_mplayer_leaf_emitting").toBool())) {
+        connect(badge->menu(), &QMenu::triggered, this, [this, badge](QAction* action) {
+            if (action == nullptr) {
                 return;
             }
             const QString id = action->data().toString();
-            if (id.isEmpty()) {
-                return;
-            }
+            if (id.isEmpty()) return;
+            const int side = badge == badgeA_ ? 0 : 1;
+            const QString current = side == 0 ? selectedA_ : selectedB_;
+            if (id == current) return;
             if (side == 0) {
                 selectedA_ = id;
             } else {
@@ -209,10 +197,7 @@ CompareCanvas::CompareCanvas(QWidget* parent) : QGraphicsView(parent) {
     status_->setAlignment(Qt::AlignCenter);
     status_->setWordWrap(true);
     status_->setFont(uiFont(11));
-    status_->setStyleSheet(
-        QStringLiteral("color: #e8eaed; background: rgba(22, 24, 29, 0.88);"
-                       " border: 1px solid #2e333d;"
-                       " border-radius: 6px; padding: 14px 22px;"));
+    status_->setStyleSheet(QStringLiteral("color: #e5e7eb; background: transparent;"));
     status_->hide();
     setChoices({}, QString(), QString());
 }
@@ -223,37 +208,26 @@ void CompareCanvas::setMode(CompareMode mode) {
     }
     mode_ = mode;
     applyLayout();
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
 }
 
 void CompareCanvas::setSideImages(const QImage& a, const QImage& b, const QImage& difference) {
     imageA_ = a;
     imageB_ = b;
     imageDifference_ = difference;
-
-    QSize effectiveSize;
+    itemA_->setImage(a);
+    itemB_->setImage(b);
+    itemDifference_->setImage(difference);
     if (!a.isNull()) {
-        effectiveSize = a.size();
+        imageSize_ = a.size();
+    } else if (!b.isNull()) {
+        imageSize_ = b.size();
+    } else if (!difference.isNull()) {
+        imageSize_ = difference.size();
+    } else {
+        imageSize_ = QSize();
     }
-    if (!b.isNull()) {
-        effectiveSize = effectiveSize.expandedTo(b.size());
-    }
-    if (!difference.isNull()) {
-        effectiveSize = effectiveSize.expandedTo(difference.size());
-    }
-    if (!effectiveSize.isEmpty()) {
-        imageSize_ = effectiveSize;
-    }
-
-    itemA_->setImage(a, imageSize_);
-    itemB_->setImage(b, imageSize_);
-    itemDifference_->setImage(difference, imageSize_);
     applyLayout();
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
+    if (viewport() != nullptr) viewport()->update();
 }
 
 void CompareCanvas::setSideNames(const QString& a, const QString& b) {
@@ -281,9 +255,7 @@ void CompareCanvas::setFlickerShowA(bool showA) {
     flickerShowA_ = showA;
     if (mode_ == CompareMode::Flicker) {
         applyLayout();
-        if (viewport() != nullptr) {
-            viewport()->update();
-        }
+        if (viewport() != nullptr) viewport()->update();
     }
 }
 
@@ -293,34 +265,27 @@ void CompareCanvas::setHeldSide(int side) {
     }
     heldSide_ = side;
     applyLayout();
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
+    if (viewport() != nullptr) viewport()->update();
 }
 
 void CompareCanvas::setSplit(double fraction) {
     camera_.split = std::clamp(fraction, 0.0, 1.0);
     applyLayout();
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
+    if (viewport() != nullptr) viewport()->update();
 }
 
 void CompareCanvas::setFlickerRate(double hz) { camera_.flickerHz = std::clamp(hz, 1.0, 30.0); }
 
 void CompareCanvas::setDiffGain(int gain) {
     camera_.diffGain = std::clamp(gain, kDiffGainMin, kDiffGainMax);
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
 }
 
 void CompareCanvas::applyLayout() {
-    if (imageSize_.width() <= 0 || imageSize_.height() <= 0) {
+    if (imageSize_.width() <= 0) {
         placeBadges();
         return;
     }
-    if (status_ != nullptr && (!imageA_.isNull() || !imageB_.isNull() || !imageDifference_.isNull())) {
+    if (status_ != nullptr) {
         status_->hide();
     }
     const CompareLayout layout =
@@ -360,9 +325,6 @@ void CompareCanvas::applyLayout() {
 }
 
 void CompareCanvas::updateBadge(QToolButton* badge, int side) {
-    if (badge == nullptr) {
-        return;
-    }
     const QString& selected = side == 0 ? selectedA_ : selectedB_;
     QString name = side == 0 ? nameA_ : nameB_;
     for (const ChoiceEntry& entry : choices_) {
@@ -371,18 +333,17 @@ void CompareCanvas::updateBadge(QToolButton* badge, int side) {
             break;
         }
     }
-    if (name.isEmpty()) {
-        name = selected;
-    }
     const QString sideName = side == 0 ? QStringLiteral("A") : QStringLiteral("B");
     QString& label = side == 0 ? labelA_ : labelB_;
     label = tr("%1 · %2").arg(sideName, name);
-    badge->setText(label);
+    fitSelectorLabel(badge, label);
     badge->setAccessibleName(tr("Select %1").arg(name));
-    badge->setToolTip(tr("Select what side %1 shows (%2)").arg(sideName, name));
+    badge->setToolTip(tr("Select what side %1 shows").arg(sideName));
     QMenu* menu = side == 0 ? menuA_ : menuB_;
-    QVector<ChoiceEntry>& builtChoices = side == 0 ? builtChoicesA_ : builtChoicesB_;
     QVector<QAction*>& leaves = side == 0 ? leavesA_ : leavesB_;
+    QVector<ChoiceEntry>& builtChoices = side == 0 ? builtChoicesA_ : builtChoicesB_;
+    // One result on screen leaves no choice to offer, so the badge stays the
+    // plain label it always was.
     if (choices_.size() < 2) {
         clearChoiceMenu(menu);
         builtChoices.clear();
@@ -400,13 +361,11 @@ void CompareCanvas::updateBadge(QToolButton* badge, int side) {
 }
 
 QRect CompareCanvas::imageBarRect() const {
-    if (imageSize_.isEmpty() || viewport() == nullptr) {
+    if (width() <= 0 || height() <= 0) {
         return {};
     }
-    const int barY = std::max(0, height() - kCompareSelectorBarHeight);
-    const int vpLeft = viewport()->pos().x();
-    const int vpWidth = std::max(1, viewport()->width());
-    return QRect(vpLeft, barY, vpWidth, kCompareSelectorBarHeight);
+    return QRect(0, std::max(0, height() - kCompareSelectorBarHeight), width(),
+                 kCompareSelectorBarHeight);
 }
 
 void CompareCanvas::showStatus(const QString& text) {
@@ -414,10 +373,7 @@ void CompareCanvas::showStatus(const QString& text) {
         return;
     }
     status_->setText(text);
-    const QRect vp = viewport()->rect();
-    const int boxW = std::min(std::max(280, vp.width() - 64), 520);
-    const int boxH = std::min(std::max(64, status_->sizeHint().height() + 24), std::max(64, vp.height() - 48));
-    status_->setGeometry((vp.width() - boxW) / 2, (vp.height() - boxH) / 2, boxW, boxH);
+    status_->setGeometry(viewport()->rect().adjusted(24, 24, -24, -24));
     status_->setVisible(!text.isEmpty());
     status_->raise();
 }
@@ -448,7 +404,7 @@ bool CompareCanvas::nearDivider(const QPoint& viewportPos) const {
         const double py = a.y() + t * dy;
         distance = std::hypot(viewportPos.x() - px, viewportPos.y() - py);
     }
-    return distance <= std::max(kCompareDividerHit, 10);
+    return distance <= std::max(kCompareDividerHit, 12);
 }
 
 void CompareCanvas::layoutSelectorRow() {
@@ -502,6 +458,8 @@ void CompareCanvas::placeBadges() {
     const bool flicker = mode_ == CompareMode::Flicker && heldSide_ < 0;
     placeBadge(badgeA_, labelA_, !flicker || flickerShowA_);
     placeBadge(badgeB_, labelB_, !flicker || !flickerShowA_);
+    // Lock Side A and Side B selectors to a stable 50/50 split across the bottom
+    // bar so dragging the split line never squishes or shifts the buttons.
     if (auto* row = qobject_cast<QHBoxLayout*>(selectorRow_->layout())) {
         row->setStretch(0, 1);
         row->setStretch(1, 1);
@@ -522,9 +480,7 @@ void CompareCanvas::clear(const QString& message) {
     layoutSelectorRow();
     message_->hide();
     showStatus(message);
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
+    if (viewport() != nullptr) viewport()->update();
 }
 
 int CompareCanvas::imageWidth() const { return imageSize_.width(); }
@@ -534,9 +490,7 @@ void CompareCanvas::applyView() {
                             camera_.panX, camera_.panY));
     placeBadges();
     emit zoomChanged(static_cast<int>(std::lround(camera_.relativeZoom() * 100.0)));
-    if (viewport() != nullptr) {
-        viewport()->update();
-    }
+    if (viewport() != nullptr) viewport()->update();
 }
 
 void CompareCanvas::setSmoothScaling(bool smooth) {
@@ -563,40 +517,30 @@ QPointF CompareCanvas::scenePointAt(const QPoint& widgetPoint) const {
 bool CompareCanvas::pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b, uchar& g,
                             uchar& r, QRgb* argb) const {
     const QPointF sp = scenePointAt(widgetPoint);
-    if (imageSize_.isEmpty()) {
+    // The readout must sample what is actually shown: Difference shows the
+    // difference map, Flicker alternates, and the split modes clip each half.
+    const QImage* img = nullptr;
+    if (itemDifference_ != nullptr && itemDifference_->isVisible() &&
+        !imageDifference_.isNull() && itemDifference_->boundingRect().contains(sp)) {
+        img = &imageDifference_;
+    } else if (!imageA_.isNull() && itemA_ != nullptr && itemA_->isVisible() &&
+               itemA_->boundingRect().contains(sp)) {
+        img = &imageA_;
+    } else if (!imageB_.isNull() && itemB_ != nullptr && itemB_->isVisible() &&
+               itemB_->boundingRect().contains(sp)) {
+        img = &imageB_;
+    }
+    if (img == nullptr) {
         return false;
     }
+    // A fractional scene coordinate must not truncate toward zero: -0.4 would
+    // read pixel 0 as valid. Flooring keeps a point left of the image out.
     x = static_cast<int>(std::floor(sp.x()));
     y = static_cast<int>(std::floor(sp.y()));
-    if (x < 0 || y < 0 || x >= imageSize_.width() || y >= imageSize_.height()) {
+    if (x < 0 || y < 0 || x >= img->width() || y >= img->height()) {
         return false;
     }
-
-    const QImage* img = nullptr;
-    if (heldSide_ == 0 && !imageA_.isNull()) {
-        img = &imageA_;
-    } else if (heldSide_ == 1 && !imageB_.isNull()) {
-        img = &imageB_;
-    } else if (mode_ == CompareMode::Difference && !imageDifference_.isNull() &&
-               itemDifference_ != nullptr && itemDifference_->isVisible()) {
-        img = &imageDifference_;
-    } else if (mode_ == CompareMode::SplitV) {
-        const int cut = static_cast<int>(imageSize_.width() * camera_.clampedSplit());
-        img = (x < cut) ? &imageA_ : &imageB_;
-    } else if (mode_ == CompareMode::SplitH) {
-        const int cut = static_cast<int>(imageSize_.height() * camera_.clampedSplit());
-        img = (y < cut) ? &imageA_ : &imageB_;
-    } else if (!imageA_.isNull() && itemA_ != nullptr && itemA_->isVisible()) {
-        img = &imageA_;
-    } else if (!imageB_.isNull() && itemB_ != nullptr && itemB_->isVisible()) {
-        img = &imageB_;
-    }
-    if (img == nullptr || img->isNull()) {
-        return false;
-    }
-    const int ix = std::clamp(x * img->width() / std::max(1, imageSize_.width()), 0, img->width() - 1);
-    const int iy = std::clamp(y * img->height() / std::max(1, imageSize_.height()), 0, img->height() - 1);
-    const QRgb px = img->pixel(ix, iy);
+    const QRgb px = img->pixel(x, y);
     if (argb != nullptr) *argb = px;
     r = static_cast<uchar>(qRed(px));
     g = static_cast<uchar>(qGreen(px));
@@ -605,16 +549,16 @@ bool CompareCanvas::pixelAt(const QPoint& widgetPoint, int& x, int& y, uchar& b,
 }
 
 void CompareCanvas::mousePressEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton && nearDivider(event->position().toPoint())) {
+    const QPoint pt = event->position().toPoint();
+    if (event->button() == Qt::LeftButton && nearDivider(pt)) {
         dragging_ = true;
         setCursor(mode_ == CompareMode::SplitV ? Qt::SplitHCursor : Qt::SplitVCursor);
         event->accept();
         return;
     }
-    if ((event->button() == Qt::LeftButton && !imageSize_.isEmpty()) ||
-        event->button() == Qt::MiddleButton) {
+    if (event->button() == Qt::LeftButton && !imageSize_.isEmpty()) {
         panning_ = true;
-        lastPanPoint_ = event->position().toPoint();
+        lastPanPoint_ = pt;
         setCursor(Qt::ClosedHandCursor);
         event->accept();
         return;
@@ -623,17 +567,17 @@ void CompareCanvas::mousePressEvent(QMouseEvent* event) {
 }
 
 void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
+    const QPoint at = event->position().toPoint();
     if (panning_) {
-        const QPoint point = event->position().toPoint();
-        const QPoint delta = point - lastPanPoint_;
-        lastPanPoint_ = point;
+        const QPoint delta = at - lastPanPoint_;
+        lastPanPoint_ = at;
         camera_.panX += delta.x();
         camera_.panY += delta.y();
         viewTouched_ = true;
         applyView();
         event->accept();
     } else if (dragging_ && !imageSize_.isEmpty()) {
-        const QPointF sp = mapToScene(event->position().toPoint());
+        const QPointF sp = mapToScene(at);
         if (mode_ == CompareMode::SplitV && imageSize_.width() > 0) {
             camera_.split = std::clamp(sp.x() / imageSize_.width(), 0.0, 1.0);
         } else if (mode_ == CompareMode::SplitH && imageSize_.height() > 0) {
@@ -641,14 +585,7 @@ void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
         }
         applyLayout();
         emit splitDragged(camera_.clampedSplit());
-        event->accept();
     }
-    int x = 0;
-    int y = 0;
-    uchar b = 0;
-    uchar g = 0;
-    uchar r = 0;
-    const QPoint at = event->position().toPoint();
     if (!panning_) {
         if (nearDivider(at) || dragging_) {
             setCursor(mode_ == CompareMode::SplitV ? Qt::SplitHCursor : Qt::SplitVCursor);
@@ -658,6 +595,11 @@ void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
             unsetCursor();
         }
     }
+    int x = 0;
+    int y = 0;
+    uchar b = 0;
+    uchar g = 0;
+    uchar r = 0;
     QRgb px = 0;
     if (pixelAt(at, x, y, b, g, r, &px)) {
         emit hoverPixel(x, y, true, px);
@@ -670,7 +612,7 @@ void CompareCanvas::mouseMoveEvent(QMouseEvent* event) {
 void CompareCanvas::mouseReleaseEvent(QMouseEvent* event) {
     const bool wasDragging = dragging_;
     dragging_ = false;
-    if (panning_ && (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton)) {
+    if (panning_ && event->button() == Qt::LeftButton) {
         panning_ = false;
         if (!imageSize_.isEmpty()) {
             setCursor(Qt::OpenHandCursor);
@@ -681,7 +623,9 @@ void CompareCanvas::mouseReleaseEvent(QMouseEvent* event) {
         return;
     }
     if (wasDragging) {
-        if (!imageSize_.isEmpty()) {
+        if (nearDivider(event->position().toPoint())) {
+            setCursor(mode_ == CompareMode::SplitV ? Qt::SplitHCursor : Qt::SplitVCursor);
+        } else if (!imageSize_.isEmpty()) {
             setCursor(Qt::OpenHandCursor);
         } else {
             unsetCursor();
@@ -709,6 +653,76 @@ void CompareCanvas::leaveEvent(QEvent* event) {
     QGraphicsView::leaveEvent(event);
 }
 
+void CompareCanvas::drawForeground(QPainter* painter, const QRectF&) {
+    if (imageSize_.isEmpty() || viewport() == nullptr) {
+        return;
+    }
+    painter->save();
+    painter->resetTransform();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+
+    // Draw interactive split handle at the midpoint of the visible divider line
+    if (heldSide_ < 0 && (mode_ == CompareMode::SplitV || mode_ == CompareMode::SplitH) &&
+        divider_ != nullptr && divider_->isVisible()) {
+        const QLineF sceneLine = divider_->line();
+        const QPointF p0 = mapFromScene(sceneLine.p1());
+        const QPointF p1 = mapFromScene(sceneLine.p2());
+        const QPointF mid((p0.x() + p1.x()) * 0.5,
+                          std::clamp((p0.y() + p1.y()) * 0.5, 28.0,
+                                     std::max(28.0, viewport()->height() - 28.0)));
+        const QRectF handleRect(mid.x() - 15.0, mid.y() - 15.0, 30.0, 30.0);
+        painter->setPen(QPen(QColor(255, 255, 255, 220), 1.5));
+        painter->setBrush(QColor(22, 24, 29, 235));
+        painter->drawEllipse(handleRect);
+        painter->setFont(uiFont(8, true));
+        painter->setPen(QColor(243, 244, 246));
+        painter->drawText(handleRect, Qt::AlignCenter,
+                          mode_ == CompareMode::SplitV ? QStringLiteral("‹ ›")
+                                                       : QStringLiteral("▲▼"));
+    }
+
+    // Top-left status pill
+    QString pillText;
+    QColor pillAccent(59, 130, 246);
+    if (heldSide_ == 0) {
+        pillText = tr("PEEK · SIDE A (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
+        pillAccent = QColor(59, 130, 246);
+    } else if (heldSide_ == 1) {
+        pillText = tr("PEEK · SIDE B (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
+        pillAccent = QColor(245, 158, 11);
+    } else if (mode_ == CompareMode::Flicker) {
+        pillText = flickerShowA_
+                       ? tr("FLICKER · SIDE A (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height())
+                       : tr("FLICKER · SIDE B (%1×%2)").arg(imageSize_.width()).arg(imageSize_.height());
+        pillAccent = flickerShowA_ ? QColor(59, 130, 246) : QColor(245, 158, 11);
+    } else if (mode_ == CompareMode::Difference) {
+        pillText = tr("DIFFERENCE · %1×%2").arg(imageSize_.width()).arg(imageSize_.height());
+        pillAccent = QColor(16, 185, 129);
+    } else if (mode_ == CompareMode::SplitV || mode_ == CompareMode::SplitH) {
+        pillText = tr("A / B · %1×%2").arg(imageSize_.width()).arg(imageSize_.height());
+        pillAccent = QColor(59, 130, 246);
+    }
+
+    if (!pillText.isEmpty()) {
+        const QFont font = uiFont(8, true);
+        painter->setFont(font);
+        const QFontMetrics fm(font);
+        const int textW = fm.horizontalAdvance(pillText);
+        const QRectF pillRect(10.0, 10.0, textW + 24.0, 22.0);
+        painter->setPen(QPen(QColor(40, 44, 52, 220), 1.0));
+        painter->setBrush(QColor(13, 14, 17, 210));
+        painter->drawRoundedRect(pillRect, 4.0, 4.0);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(pillAccent);
+        painter->drawEllipse(QPointF(pillRect.left() + 9.0, pillRect.center().y()), 3.5, 3.5);
+        painter->setPen(QColor(229, 231, 235));
+        painter->drawText(pillRect.adjusted(17.0, 0.0, -6.0, 0.0),
+                          Qt::AlignVCenter | Qt::AlignLeft, pillText);
+    }
+
+    painter->restore();
+}
+
 void CompareCanvas::wheelEvent(QWheelEvent* event) {
     const int steps = event->angleDelta().y() / 120;
     if (steps == 0) {
@@ -734,107 +748,6 @@ void CompareCanvas::resizeEvent(QResizeEvent* event) {
     }
 }
 
-void CompareCanvas::drawForeground(QPainter* painter, const QRectF&) {
-    if (painter == nullptr || viewport() == nullptr || imageSize_.isEmpty()) {
-        return;
-    }
-    painter->save();
-    painter->resetTransform();
-    painter->setRenderHint(QPainter::Antialiasing, true);
-
-    // Draw interactive split grab handle in SplitH / SplitV modes.
-    if (heldSide_ < 0 && (mode_ == CompareMode::SplitV || mode_ == CompareMode::SplitH)) {
-        const CompareLayout layout =
-            buildLayout(mode_, imageSize_, camera_.clampedSplit(), flickerShowA_, heldSide_);
-        if (layout.divider.visible) {
-            const QPointF p0 = mapFromScene(QPointF(layout.divider.x0, layout.divider.y0));
-            const QPointF p1 = mapFromScene(QPointF(layout.divider.x1, layout.divider.y1));
-
-            painter->setPen(QPen(QColor(0, 0, 0, 155), 3.5));
-            painter->drawLine(p0, p1);
-            painter->setPen(QPen(QColor(235, 238, 244, 230), 1.5));
-            painter->drawLine(p0, p1);
-
-            const QPointF mid((p0.x() + p1.x()) * 0.5, (p0.y() + p1.y()) * 0.5);
-            const QRectF knobRect(mid.x() - 13.0, mid.y() - 13.0, 26.0, 26.0);
-            painter->setPen(QPen(QColor(220, 224, 232, 210), 1.2));
-            painter->setBrush(QColor(20, 22, 27, 235));
-            painter->drawEllipse(knobRect);
-
-            QFont arrowFont = uiFont(8);
-            arrowFont.setWeight(QFont::Bold);
-            painter->setFont(arrowFont);
-            painter->setPen(QColor(240, 242, 246));
-            const QString glyph = mode_ == CompareMode::SplitV ? QStringLiteral("‹ ›")
-                                                               : QStringLiteral("▲▼");
-            painter->drawText(knobRect, Qt::AlignCenter, glyph);
-        }
-    }
-
-    // Status message if one or both sides are currently rendering/unavailable.
-    if (imageA_.isNull() || imageB_.isNull()) {
-        const QString missingLabel =
-            (imageA_.isNull() && imageB_.isNull())
-                ? tr("Rendering comparison…")
-                : (imageA_.isNull() ? tr("Side A (%1)").arg(nameA_)
-                                    : tr("Side B (%1)").arg(nameB_));
-        QFont f = uiFont(9);
-        f.setWeight(QFont::DemiBold);
-        painter->setFont(f);
-        const QFontMetrics fm(f);
-        const int tw = fm.horizontalAdvance(missingLabel) + 24;
-        const QRect vp = viewport()->rect();
-        const QRectF box((vp.width() - tw) * 0.5, vp.height() - 40.0, tw, 26.0);
-        painter->setPen(QPen(QColor(46, 51, 61, 220), 1.0));
-        painter->setBrush(QColor(18, 20, 25, 220));
-        painter->drawRoundedRect(box, 4.0, 4.0);
-        painter->setPen(QColor(210, 214, 222));
-        painter->drawText(box, Qt::AlignCenter, missingLabel);
-    }
-
-    // Top-left mode/side status pill.
-    QString badgeText;
-    QColor accentColor(59, 130, 246);
-    if (heldSide_ == 0 || heldSide_ == 1) {
-        badgeText = heldSide_ == 0 ? tr("PEEK · A (%1)").arg(nameA_)
-                                   : tr("PEEK · B (%1)").arg(nameB_);
-        accentColor = heldSide_ == 0 ? QColor(59, 130, 246) : QColor(245, 158, 11);
-    } else if (mode_ == CompareMode::Flicker) {
-        badgeText = flickerShowA_ ? tr("FLICKER · A (%1)").arg(nameA_)
-                                  : tr("FLICKER · B (%1)").arg(nameB_);
-        accentColor = flickerShowA_ ? QColor(59, 130, 246) : QColor(245, 158, 11);
-    } else if (mode_ == CompareMode::Difference) {
-        badgeText = camera_.diffGain > 1
-                        ? tr("DIFF · %1× Grayscale").arg(camera_.diffGain)
-                        : tr("DIFF · 1× JET Heatmap");
-        accentColor = QColor(16, 185, 129);
-    }
-
-    if (!badgeText.isEmpty()) {
-        QFont pillFont = uiFont(8);
-        pillFont.setWeight(QFont::Bold);
-        painter->setFont(pillFont);
-        const QFontMetrics fm(pillFont);
-        const int textW = fm.horizontalAdvance(badgeText);
-        const QRectF pillRect(10.0, 10.0, textW + 22.0, 20.0);
-
-        painter->setPen(QPen(QColor(46, 51, 61, 220), 1.0));
-        painter->setBrush(QColor(18, 20, 25, 215));
-        painter->drawRoundedRect(pillRect, 4.0, 4.0);
-
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(accentColor);
-        painter->drawEllipse(QPointF(pillRect.left() + 9.0, pillRect.center().y()), 3.0, 3.0);
-
-        painter->setPen(QColor(232, 234, 237));
-        painter->drawText(QRectF(pillRect.left() + 16.0, pillRect.top(),
-                                 pillRect.width() - 20.0, pillRect.height()),
-                          Qt::AlignLeft | Qt::AlignVCenter, badgeText);
-    }
-
-    painter->restore();
-}
-
 bool CompareCanvas::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::Wheel &&
         (watched == selectorRow_ || watched == badgeA_ || watched == badgeB_)) {
@@ -845,11 +758,6 @@ bool CompareCanvas::eventFilter(QObject* watched, QEvent* event) {
                            wheel->source());
         wheelEvent(&mapped);
         return true;
-    }
-    if ((event->type() == QEvent::Resize || event->type() == QEvent::Show) &&
-        (watched == selectorRow_ || watched == badgeA_ || watched == badgeB_)) {
-        fitSelectorLabel(badgeA_, labelA_);
-        fitSelectorLabel(badgeB_, labelB_);
     }
     return QGraphicsView::eventFilter(watched, event);
 }

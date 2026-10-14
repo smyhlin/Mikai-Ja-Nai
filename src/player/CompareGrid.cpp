@@ -13,10 +13,10 @@ namespace mplayer::shell {
 CompareGrid::CompareGrid(QWidget* parent) : QWidget(parent) {
     grid_ = new QGridLayout(this);
     grid_->setContentsMargins(0, 0, 0, 0);
-    grid_->setSpacing(4);
+    grid_->setSpacing(2);
     setAutoFillBackground(true);
     QPalette surface = palette();
-    surface.setColor(QPalette::Window, QColor(13, 14, 17));
+    surface.setColor(QPalette::Window, QColor(40, 44, 52));
     setPalette(surface);
 }
 
@@ -37,16 +37,15 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
             pane = new ComparePane(this);
             pane->setSideIndex(i);
             connect(pane, &ComparePane::viewChanged, this, &CompareGrid::reconcile);
+            connect(pane, &ComparePane::hoverPixel, this, &CompareGrid::hoverPixel);
             connect(pane, &ComparePane::choiceChosen, this, [this, i](const QString& id) {
                 if (i >= 0 && i < ids_.size()) {
                     ids_[i] = id;
                 }
                 emit choiceChosen(i, id);
             });
-            connect(pane, &ComparePane::hoverPixel, this, &CompareGrid::hoverPixel);
             // One row, two columns: the reference's own side_h shape.
             grid_->addWidget(pane, 0, i);
-            grid_->setColumnStretch(i, 1);
             panes_.push_back(pane);
         }
         pane->setSideIndex(i);
@@ -54,7 +53,6 @@ void CompareGrid::setItems(const QStringList& ids, const std::vector<QImage>& im
         pane->setContent(ids.at(i), images.at(i), names.value(i));
         pane->setLocalView(zoom_, center_);
         pane->setSmoothScaling(smoothScaling_);
-        pane->show();
     }
     emit zoomChanged(static_cast<int>(std::lround(zoom_ * 100.0)));
 }
@@ -66,8 +64,12 @@ void CompareGrid::setSmoothScaling(bool smooth) {
     }
 }
 
-void CompareGrid::setChoices(const QVector<ChoiceEntry>& choices) {
+void CompareGrid::setChoices(const QVector<ChoiceEntry>& choices,
+                             const QStringList& selectedIds) {
     choices_ = choices;
+    if (!selectedIds.isEmpty()) {
+        ids_ = selectedIds;
+    }
     for (int i = 0; i < static_cast<int>(panes_.size()); ++i) {
         panes_.at(i)->setChoices(choices, ids_.value(i));
     }
@@ -84,6 +86,9 @@ void CompareGrid::fitToContent() {
 }
 
 void CompareGrid::reconcile() {
+    // One pane moved; every other pane follows the same region. The centre is
+    // normalized and the zoom is fit-relative, so the same numbers mean the
+    // same region in every pane whatever their resolutions.
     auto* sender = qobject_cast<ComparePane*>(QObject::sender());
     if (sender == nullptr) {
         return;

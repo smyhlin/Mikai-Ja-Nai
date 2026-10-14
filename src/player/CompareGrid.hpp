@@ -37,7 +37,8 @@ public:
                   const QStringList& names);
     /// What every badge's menu offers, ahead of (or refreshed between)
     /// setItems calls.
-    void setChoices(const QVector<ChoiceEntry>& choices);
+    void setChoices(const QVector<ChoiceEntry>& choices,
+                    const QStringList& selectedIds = {});
     void fitToContent();
     /// Bilinear when true, nearest neighbor when false. New panes inherit it.
     void setSmoothScaling(bool smooth);
@@ -47,7 +48,7 @@ signals:
     void choiceChosen(int index, const QString& id);
     /// Fit-relative zoom, 100 at the last fit.
     void zoomChanged(int percent);
-    /// Pixel readout from whichever pane the cursor is over.
+    /// Cursor pixel readout from whichever pane is hovered.
     void hoverPixel(int x, int y, bool valid, QRgb rgb);
 
 private slots:
@@ -58,7 +59,7 @@ private:
     std::vector<ComparePane*> panes_;
     QStringList ids_;
     QVector<ChoiceEntry> choices_;
-    std::optional<QPointF> center_{QPointF(0.5, 0.5)};
+    std::optional<QPointF> center_;
     double zoom_ = 1.0;
     bool smoothScaling_ = true;
 };
