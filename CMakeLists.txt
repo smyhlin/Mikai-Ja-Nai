@@ -194,57 +194,76 @@ set(MIKAI_MPV_ARCHIVE_URL
 set(MIKAI_MPV_ARCHIVE_SHA256
   "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c")
 file(MAKE_DIRECTORY "${MIKAI_DIST_MPV_CACHE_DIR}")
-if(MIKAI_DIST_MPV_ARCHIVE)
-  set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_ARCHIVE}")
-  if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
-    message(FATAL_ERROR "The local mpv archive override was not found: ${MIKAI_PINNED_MPV_ARCHIVE}")
-  endif()
-else()
-  set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_CACHE_DIR}/${MIKAI_MPV_ARCHIVE_NAME}")
-  if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
-    message(STATUS "Downloading pinned mpv developer archive for matching headers")
-    file(DOWNLOAD "${MIKAI_MPV_ARCHIVE_URL}" "${MIKAI_PINNED_MPV_ARCHIVE}"
-      EXPECTED_HASH "SHA256=${MIKAI_MPV_ARCHIVE_SHA256}"
-      STATUS mpv_download_status
-      SHOW_PROGRESS)
-    list(GET mpv_download_status 0 mpv_download_code)
-    list(GET mpv_download_status 1 mpv_download_message)
-    if(NOT mpv_download_code EQUAL 0)
-      file(REMOVE "${MIKAI_PINNED_MPV_ARCHIVE}")
-      message(FATAL_ERROR "mpv archive download failed: ${mpv_download_message}")
+set(MIKAI_USE_SYSTEM_MPV FALSE)
+if(NOT WIN32 AND NOT MIKAI_DIST_MPV_ARCHIVE
+   AND NOT EXISTS "${MIKAI_DIST_MPV_CACHE_DIR}/${MIKAI_MPV_ARCHIVE_NAME}")
+  find_path(MIKAI_SYSTEM_MPV_HEADERS NAMES mpv/client.h)
+  find_library(MIKAI_SYSTEM_MPV_LIB NAMES mpv libmpv.so.2 libmpv.so)
+  if(MIKAI_SYSTEM_MPV_HEADERS AND EXISTS "${MIKAI_SYSTEM_MPV_HEADERS}/mpv/render_gl.h")
+    set(MIKAI_USE_SYSTEM_MPV TRUE)
+    set(MIKAI_MPV_HEADERS "${MIKAI_SYSTEM_MPV_HEADERS}")
+    if(MIKAI_SYSTEM_MPV_LIB)
+      set(MIKAI_MPV_DLL "${MIKAI_SYSTEM_MPV_LIB}")
+    else()
+      set(MIKAI_MPV_DLL "")
     endif()
+    message(STATUS "Using system libmpv headers at ${MIKAI_MPV_HEADERS}")
   endif()
-endif()
-file(SHA256 "${MIKAI_PINNED_MPV_ARCHIVE}" actual_mpv_archive_sha256)
-if(NOT actual_mpv_archive_sha256 STREQUAL MIKAI_MPV_ARCHIVE_SHA256)
-  message(FATAL_ERROR
-    "The mpv archive SHA-256 does not match the pinned release: "
-    "expected ${MIKAI_MPV_ARCHIVE_SHA256}, got ${actual_mpv_archive_sha256}")
 endif()
 
-set(MIKAI_MPV_HEADERS_DIR "${MIKAI_DIST_MPV_CACHE_DIR}/headers")
-if(NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/client.h"
-    OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/render_gl.h"
-    OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
-  file(REMOVE_RECURSE "${MIKAI_MPV_HEADERS_DIR}")
-  file(MAKE_DIRECTORY "${MIKAI_MPV_HEADERS_DIR}")
-  file(ARCHIVE_EXTRACT INPUT "${MIKAI_PINNED_MPV_ARCHIVE}"
-    DESTINATION "${MIKAI_MPV_HEADERS_DIR}")
+if(NOT MIKAI_USE_SYSTEM_MPV)
+  if(MIKAI_DIST_MPV_ARCHIVE)
+    set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_ARCHIVE}")
+    if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
+      message(FATAL_ERROR "The local mpv archive override was not found: ${MIKAI_PINNED_MPV_ARCHIVE}")
+    endif()
+  else()
+    set(MIKAI_PINNED_MPV_ARCHIVE "${MIKAI_DIST_MPV_CACHE_DIR}/${MIKAI_MPV_ARCHIVE_NAME}")
+    if(NOT EXISTS "${MIKAI_PINNED_MPV_ARCHIVE}")
+      message(STATUS "Downloading pinned mpv developer archive for matching headers")
+      file(DOWNLOAD "${MIKAI_MPV_ARCHIVE_URL}" "${MIKAI_PINNED_MPV_ARCHIVE}"
+        EXPECTED_HASH "SHA256=${MIKAI_MPV_ARCHIVE_SHA256}"
+        STATUS mpv_download_status
+        SHOW_PROGRESS)
+      list(GET mpv_download_status 0 mpv_download_code)
+      list(GET mpv_download_status 1 mpv_download_message)
+      if(NOT mpv_download_code EQUAL 0)
+        file(REMOVE "${MIKAI_PINNED_MPV_ARCHIVE}")
+        message(FATAL_ERROR "mpv archive download failed: ${mpv_download_message}")
+      endif()
+    endif()
+  endif()
+  file(SHA256 "${MIKAI_PINNED_MPV_ARCHIVE}" actual_mpv_archive_sha256)
+  if(NOT actual_mpv_archive_sha256 STREQUAL MIKAI_MPV_ARCHIVE_SHA256)
+    message(FATAL_ERROR
+      "The mpv archive SHA-256 does not match the pinned release: "
+      "expected ${MIKAI_MPV_ARCHIVE_SHA256}, got ${actual_mpv_archive_sha256}")
+  endif()
+
+  set(MIKAI_MPV_HEADERS_DIR "${MIKAI_DIST_MPV_CACHE_DIR}/headers")
+  if(NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/client.h"
+      OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/include/mpv/render_gl.h"
+      OR NOT EXISTS "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
+    file(REMOVE_RECURSE "${MIKAI_MPV_HEADERS_DIR}")
+    file(MAKE_DIRECTORY "${MIKAI_MPV_HEADERS_DIR}")
+    file(ARCHIVE_EXTRACT INPUT "${MIKAI_PINNED_MPV_ARCHIVE}"
+      DESTINATION "${MIKAI_MPV_HEADERS_DIR}")
+  endif()
+  set(MIKAI_MPV_HEADERS "${MIKAI_MPV_HEADERS_DIR}/include")
+  if(NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/client.h"
+      OR NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/render_gl.h")
+    message(FATAL_ERROR
+      "The verified mpv archive does not contain include/mpv/client.h and include/mpv/render_gl.h")
+  endif()
+  file(GLOB_RECURSE MIKAI_MPV_DLL_CANDIDATES LIST_DIRECTORIES FALSE
+    "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
+  list(LENGTH MIKAI_MPV_DLL_CANDIDATES MIKAI_MPV_DLL_COUNT)
+  if(NOT MIKAI_MPV_DLL_COUNT EQUAL 1)
+    message(FATAL_ERROR
+      "The verified mpv archive must contain exactly one libmpv-2.dll; found ${MIKAI_MPV_DLL_COUNT}")
+  endif()
+  list(GET MIKAI_MPV_DLL_CANDIDATES 0 MIKAI_MPV_DLL)
 endif()
-set(MIKAI_MPV_HEADERS "${MIKAI_MPV_HEADERS_DIR}/include")
-if(NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/client.h"
-    OR NOT EXISTS "${MIKAI_MPV_HEADERS}/mpv/render_gl.h")
-  message(FATAL_ERROR
-    "The verified mpv archive does not contain include/mpv/client.h and include/mpv/render_gl.h")
-endif()
-file(GLOB_RECURSE MIKAI_MPV_DLL_CANDIDATES LIST_DIRECTORIES FALSE
-  "${MIKAI_MPV_HEADERS_DIR}/libmpv-2.dll")
-list(LENGTH MIKAI_MPV_DLL_CANDIDATES MIKAI_MPV_DLL_COUNT)
-if(NOT MIKAI_MPV_DLL_COUNT EQUAL 1)
-  message(FATAL_ERROR
-    "The verified mpv archive must contain exactly one libmpv-2.dll; found ${MIKAI_MPV_DLL_COUNT}")
-endif()
-list(GET MIKAI_MPV_DLL_CANDIDATES 0 MIKAI_MPV_DLL)
 
 # The launcher's deadline/kill/scratch contract, verified by running the real
 # launcher binary against a disposable child. Unconditional on purpose: the
@@ -407,7 +426,7 @@ target_include_directories(mikai_native_support PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/player
   ${MIKAI_MPV_HEADERS}
 )
-target_link_libraries(mikai_native_support PUBLIC Qt6::Core mikai_backend)
+target_link_libraries(mikai_native_support PUBLIC Qt6::Core mikai_backend ${CMAKE_DL_LIBS})
 set_target_properties(mikai_native_support PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_executable(mikai_bundle EXCLUDE_FROM_ALL native/tools/bundle_tool.cpp)
@@ -513,14 +532,20 @@ target_include_directories(mikai_player PUBLIC
   ${MIKAI_MPV_HEADERS}
 )
 
+if(WIN32)
+  set(MIKAI_PLATFORM_GL_LIBS opengl32 gdi32)
+else()
+  find_package(OpenGL REQUIRED)
+  set(MIKAI_PLATFORM_GL_LIBS OpenGL::GL ${CMAKE_DL_LIBS})
+endif()
+
 target_link_libraries(mikai_player PUBLIC
   Qt6::Core
   Qt6::Gui
   Qt6::Widgets
   Qt6::OpenGL
   Qt6::OpenGLWidgets
-  opengl32
-  gdi32
+  ${MIKAI_PLATFORM_GL_LIBS}
 )
 
 target_link_libraries(mikai_player PUBLIC mikai_backend mikai_native_support)
@@ -830,6 +855,7 @@ if(TARGET mikai_backend)
     src/app/state/NativePlaybackAssembly.hpp
     src/app/state/QualityCache.hpp
     src/app/workers/Runner.hpp
+    src/app/widgets/FailureView.hpp
     src/app/widgets/RangePager.hpp
     src/app/widgets/TitleCard.hpp
     src/app/widgets/RateLimitLabel.hpp
@@ -838,6 +864,7 @@ if(TARGET mikai_backend)
     src/app/dialogs/NativeAssetsPanel.hpp
     src/app/dialogs/NativeRifeControls.hpp
     src/app/dialogs/CoverViewer.hpp
+    src/app/pages/EpisodeGrid.hpp
     src/app/pages/SearchPage.hpp
     src/app/pages/TitlePage.hpp
     src/app/pages/MainWindow.hpp
@@ -986,14 +1013,19 @@ if(TARGET mikai_backend)
     endif()
   endif()
 
-  # Copy the verified libmpv API DLL beside the app; no process or IPC runtime is used.
-  add_custom_command(TARGET mikai POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/mpv"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/libmpv-2.dll"
-    COMMENT "Deploying the pinned libmpv API DLL"
-    VERBATIM
-  )
+  if(MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
+    get_filename_component(MIKAI_MPV_DEPLOY_NAME "${MIKAI_MPV_DLL}" NAME)
+    if(WIN32)
+      set(MIKAI_MPV_DEPLOY_NAME "libmpv-2.dll")
+    endif()
+    add_custom_command(TARGET mikai POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/mpv"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/${MIKAI_MPV_DEPLOY_NAME}"
+      COMMENT "Deploying the libmpv runtime library"
+      VERBATIM
+    )
+  endif()
 
   # Copy Anime4K shaders next to the executable so libmpv can find them at runtime.
   add_custom_command(TARGET mikai POST_BUILD

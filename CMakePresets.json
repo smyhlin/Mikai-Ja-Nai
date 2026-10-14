@@ -16,14 +16,14 @@
     },
     {
       "name": "release",
-      "displayName": "Release (default)",
+      "displayName": "Release (Windows MinGW64 default)",
       "description": "What build-cmake was: Release, inspection OFF",
       "inherits": "base",
       "cacheVariables": { "MIKAI_WITH_MODEL_INSPECTION": "OFF" }
     },
     {
       "name": "debug",
-      "displayName": "Debug",
+      "displayName": "Debug (Windows MinGW64)",
       "description": "What build-dbg was",
       "inherits": "base",
       "cacheVariables": {
@@ -33,12 +33,41 @@
     },
     {
       "name": "native",
-      "displayName": "Release + model inspection",
+      "displayName": "Release + model inspection (Windows MinGW64)",
       "description": "What build-native-baseline was. Requires -DORT_INCLUDE_DIR=<onnxruntime>/include on first configure",
       "inherits": "base",
       "cacheVariables": {
         "MIKAI_WITH_MODEL_INSPECTION": "ON",
         "MIKAI_WITH_NATIVE": "OFF"
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MIKAI_BUILD_PROBES": "ON"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Release (Linux)",
+      "description": "Linux Release build",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Debug (Linux)",
+      "description": "Linux Debug build",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MIKAI_WITH_MODEL_INSPECTION": "OFF"
       }
     }
   ],
@@ -46,6 +75,8 @@
     { "name": "app", "configurePreset": "release", "targets": ["mikai"] },
     { "name": "tests", "configurePreset": "release", "targets": ["mikai_tests"] },
     { "name": "app-native", "configurePreset": "native", "targets": ["mikai"] },
-    { "name": "tests-native", "configurePreset": "native", "targets": ["mikai_tests"] }
+    { "name": "tests-native", "configurePreset": "native", "targets": ["mikai_tests"] },
+    { "name": "app-linux", "configurePreset": "linux-release", "targets": ["mikai"] },
+    { "name": "tests-linux", "configurePreset": "linux-release", "targets": ["mikai_tests"] }
   ]
 }
