@@ -35,7 +35,9 @@ NativeComponentProvisioner* NativeComponentProvisioner::currentRun_ = nullptr;
 
 NativeComponentProvisioner::NativeComponentProvisioner(Runner& runner, QObject* parent)
     : QObject(parent), runner_(runner) {
-    currentRun_ = this;
+    if (currentRun_ == nullptr) {
+        currentRun_ = this;
+    }
 }
 
 NativeComponentProvisioner* NativeComponentProvisioner::currentRun() {

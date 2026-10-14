@@ -1,3 +1,4 @@
+#include <utility>
 #include "pages/TitlePage.hpp"
 
 #include "pages/EpisodeGrid.hpp"
@@ -12,6 +13,7 @@
 #include "theme/Metrics.hpp"
 #include "widgets/FailureView.hpp"
 #include "widgets/RangePager.hpp"
+#include "widgets/TitleCard.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "workers/Runner.hpp"
 
@@ -27,6 +29,7 @@
 #include <QtCore/QDebug>
 #include <QDesktopServices>
 #include <QEvent>
+#include <QKeyEvent>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -626,6 +629,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
+        delete item;
     }
 
     const backend::EpisodeStats& episodes = detail.episodes;
@@ -648,7 +652,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     if (!episodesLabel.isEmpty()) facts << tr("%1 episodes").arg(episodesLabel);
     facts_->setText(facts.join(QStringLiteral(" · ")));
 
-    QVector<QPair<QString, QString>> rows;
+    QVector<std::pair<QString, QString>> rows;
     if (!episodesLabel.isEmpty()) rows.append({tr("Episodes"), episodesLabel});
     if (!formatText.isEmpty()) rows.append({tr("Type"), formatText});
     if (episodes.duration_min.value_or(0) > 0) {
@@ -693,7 +697,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
         ++row;
     }
 
-    QVector<QPair<QString, QString>> links = backend::externalLinks(detail);
+    QVector<std::pair<QString, QString>> links = backend::externalLinks(detail);
     // The site serves the title at /anime/<id>-<slug> and 404s on either half
     // alone, so the link is built from both rather than preferring the slug.
     const QString page =
@@ -703,10 +707,10 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     }
     QStringList anchors;
     for (const auto& link : links) {
-        anchors << QStringLiteral("<a style=\"text-decoration: none;\" href=\"%1\">%2</a>")
+        anchors << QStringLiteral("<a style=\"color: #bdacff; text-decoration: none; font-weight: 600;\" href=\"%1\">%2</a>")
                        .arg(link.second.toHtmlEscaped(), link.first.toHtmlEscaped());
     }
-    links_->setText(anchors.join(QStringLiteral(" · ")));
+    links_->setText(anchors.join(QStringLiteral("<span style=\"color: #7b7b8b;\"> &nbsp;·&nbsp; </span>")));
 }
 
 void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
@@ -715,15 +719,16 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
+        delete item;
     }
-    QVector<QPair<QString, backend::AnimeSummary>> relations;
+    QVector<std::pair<QString, backend::AnimeSummary>> relations;
     for (int index = 0;
          index < detail.relations.size() && index < theme::kRelatedCarouselMax; ++index) {
         if (!detail.relations.at(index).anime.ref.isEmpty()) {
             relations.append({detail.relations.at(index).kind, detail.relations.at(index).anime});
         }
     }
-    QVector<QPair<QString, backend::AnimeSummary>> similar;
+    QVector<std::pair<QString, backend::AnimeSummary>> similar;
     for (int index = 0; index < detail.similar.size() && index < theme::kRelatedCarouselMax;
          ++index) {
         if (!detail.similar.at(index).ref.isEmpty()) {
@@ -763,7 +768,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             for (const backend::AnimeSummary& anime : detail.similar) {
                 excluded.insert(anime.ref);
             }
-            QVector<QPair<QString, backend::AnimeSummary>> entries;
+            QVector<std::pair<QString, backend::AnimeSummary>> entries;
             const backend::SearchResult popular = result.value<backend::SearchResult>();
             for (const backend::AnimeSummary& anime : popular.items) {
                 if (anime.ref.isEmpty() || excluded.contains(anime.ref)) {
@@ -790,7 +795,7 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
 }
 
 QWidget* TitlePage::buildRelatedCarousel(
-    const QString& heading, const QVector<QPair<QString, backend::AnimeSummary>>& entries) {
+    const QString& heading, const QVector<std::pair<QString, backend::AnimeSummary>>& entries) {
     auto* section = new QWidget(relatedHost_);
     auto* layout = new QVBoxLayout(section);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -802,12 +807,18 @@ QWidget* TitlePage::buildRelatedCarousel(
     title->setObjectName(QStringLiteral("titleSectionHeading"));
     header->addWidget(title);
     header->addStretch();
-    auto* previous = new QPushButton(QStringLiteral("←"), section);
-    auto* next = new QPushButton(QStringLiteral("→"), section);
-    previous->setObjectName(QStringLiteral("carouselControl"));
-    next->setObjectName(QStringLiteral("carouselControl"));
-    header->addWidget(previous);
-    header->addWidget(next);
+    auto* previous = new QPushButton(section);
+    previous->setIcon(theme::chevronLeftIcon(16));
+    previous->setToolTip(tr("Previous page"));
+    auto* next = new QPushButton(section);
+    next->setIcon(theme::chevronRightIcon(16));
+    next->setToolTip(tr("Next page"));
+    for (QPushButton* button : {previous, next}) {
+        button->setObjectName(QStringLiteral("carouselControl"));
+        button->setIconSize(QSize(16, 16));
+        button->setCursor(Qt::PointingHandCursor);
+        header->addWidget(button);
+    }
     layout->addLayout(header);
 
     auto* scroll = new QScrollArea(section);
@@ -852,12 +863,17 @@ QWidget* TitlePage::buildRelatedCarousel(
         kind->setAttribute(Qt::WA_TransparentForMouseEvents);
         cardLayout->addWidget(kind);
 
-        auto* titleLabel = new QLabel(name, card);
+        auto* titleLabel = new QLabel(card);
         titleLabel->setObjectName(QStringLiteral("carouselTitle"));
-        titleLabel->setAlignment(Qt::AlignCenter);
-        titleLabel->setWordWrap(true);
+        titleLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+        titleLabel->setWordWrap(false);
         titleLabel->setFixedHeight(theme::kCarouselTitleHeight);
         titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        QFont titleFont = titleLabel->font();
+        titleFont.setPixelSize(13);
+        titleFont.setWeight(QFont::DemiBold);
+        const int maxLineWidth = theme::kCarouselCardWidth - 2 * theme::kSpacingSmall - 6;
+        titleLabel->setText(TitleCard::elideTwoLines(name, titleFont, maxLineWidth));
         cardLayout->addWidget(titleLabel);
         cards->addWidget(card);
 
@@ -877,9 +893,7 @@ QWidget* TitlePage::buildRelatedCarousel(
                     QPixmap pixmap;
                     if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
                         poster->setText(QString());
-                        poster->setPixmap(pixmap.scaled(
-                            poster->size(), Qt::KeepAspectRatioByExpanding,
-                            Qt::SmoothTransformation));
+                        poster->setPixmap(TitleCard::rounded(pixmap, poster->size()));
                     }
                 },
                 [](const backend::Failure&) {});
@@ -1112,6 +1126,7 @@ void TitlePage::fillEpisodes(int index) {
             }
             auto* entry = new EpisodeEntry;
             entry->number = number;
+            entry->label = tr("Episode %1").arg(number);
             entry->embedUrl = source.embed_url;
             ownedEntries_.append(entry);
             grouped[providerFor(source)].append(entry);
@@ -1304,6 +1319,20 @@ bool TitlePage::eventFilter(QObject* watched, QEvent* event) {
     return QWidget::eventFilter(watched, event);
 }
 
+void TitlePage::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Escape) {
+        if (coverViewer_ != nullptr && coverViewer_->isVisible()) {
+            coverViewer_->close();
+            event->accept();
+            return;
+        }
+        Q_EMIT backRequested();
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
 void TitlePage::fitEpisodeSection() {
     if (tabs_ == nullptr) {
         return;
@@ -1381,10 +1410,6 @@ void TitlePage::ensureQualities(
         return;
     }
     QVector<EpisodeEntry*>& waiters = fetchWaiters_[embed];
-    // A double click asks for the same thing twice; one flight is enough.
-    if (std::find(waiters.cbegin(), waiters.cend(), entry) != waiters.cend()) {
-        return;
-    }
     if (waiters.isEmpty()) {
         flashStatus(tr("Loading quality options…"));
         // The stream pool, not the bulk one: this probe's result is what the
@@ -1404,8 +1429,10 @@ void TitlePage::ensureQualities(
                 }
             });
     }
-    waiters.append(entry);
-    entryCallbacks_.insert(entry, callback);
+    if (std::find(waiters.cbegin(), waiters.cend(), entry) == waiters.cend()) {
+        waiters.append(entry);
+    }
+    entryCallbacks_[entry].append(callback);
 }
 
 void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qualities,
@@ -1415,6 +1442,9 @@ void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qual
         return;
     }
     if (!message.isEmpty()) {
+        for (EpisodeEntry* entry : waiters) {
+            entryCallbacks_.remove(entry);
+        }
         if (message.contains(QStringLiteral("no_source"), Qt::CaseInsensitive)) {
             qualityCache_.markNoSource(embed);
             // Disable every pill for that embed, on whichever tab it lives: the
@@ -1433,14 +1463,19 @@ void TitlePage::finishFetch(const QString& embed, const QMap<int, QString>& qual
         return;
     }
     if (qualities.isEmpty()) {
+        for (EpisodeEntry* entry : waiters) {
+            entryCallbacks_.remove(entry);
+        }
         flashStatus(tr("Could not find a stream for this episode"), true);
         return;
     }
     qualityCache_.remember(embed, qualities);
     for (EpisodeEntry* entry : waiters) {
-        const auto callback = entryCallbacks_.take(entry);
-        if (callback) {
-            callback(entry, qualities);
+        const auto callbacks = entryCallbacks_.take(entry);
+        for (const auto& callback : callbacks) {
+            if (callback) {
+                callback(entry, qualities);
+            }
         }
     }
 }
@@ -1459,14 +1494,14 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     // extraction fires here, on the press, and the rows fill in as it lands -
     // one flight per embed, the same one an episode open uses, so opening a
     // menu never costs a second extraction of a stream already resolved.
-    QMenu* copyMenu = menu.addMenu(tr("Copy to clipboard"));
+    QPointer<QMenu> copyMenu = menu.addMenu(tr("Copy to clipboard"));
     QAction* copyUrl = copyMenu->addAction(tr("Page URL"));
     copyUrl->setToolTip(tr("Copy the episode page URL"));
     connect(copyUrl, &QAction::triggered, this, [this, entry] { copyEpisode(entry); });
     copyMenu->addSeparator();
     const bool noSource = qualityCache_.isNoSource(entry->embedUrl);
-    QAction* loading = copyMenu->addAction(noSource ? tr("No video available")
-                                                   : tr("Loading quality options…"));
+    QPointer<QAction> loading = copyMenu->addAction(noSource ? tr("No video available")
+                                                             : tr("Loading quality options…"));
     loading->setEnabled(false);
     loading->setToolTip(noSource ? tr("This player has no video for this episode")
                                  : tr("Fetching direct video links"));
@@ -1475,7 +1510,7 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
     // while the menu is still open, and a menu rebuilt under the pointer
     // would close it. Rows are appended to this one instead.
     const auto fillRows = [this, copyMenu, loading](const QMap<int, QString>& qualities) {
-        if (qualities.isEmpty()) {
+        if (copyMenu.isNull() || qualities.isEmpty()) {
             return;
         }
         // QMap iterates ascending, so the rows are collected and reversed: the
@@ -1488,10 +1523,11 @@ void TitlePage::episodeContextMenu(EpisodeEntry* entry, const QPoint& globalPos)
             row->setToolTip(url);
             connect(row, &QAction::triggered, this, [this, url, height] { copyStreamUrl(url, height); });
         }
-        // Owned by the submenu, which dies with the page: detaching would leak
-        // it, and deleteLater on an action whose parent is being destroyed in
-        // the same turn is a double free waiting to happen.
-        loading->setVisible(false);
+        // Owned by the submenu, which dies with the menu: guard with QPointer
+        // in case the user dismissed the menu before the extraction finished.
+        if (!loading.isNull()) {
+            loading->setVisible(false);
+        }
     };
 
     ensureQualities(entry, [fillRows](EpisodeEntry*, const QMap<int, QString>& qualities) {
@@ -1681,7 +1717,11 @@ QVector<QVariantMap> TitlePage::tabPlaylist(int stateIndex, const QString& numbe
     const QVector<EpisodeEntry*>& entries = tabStates_.at(stateIndex).entries;
     for (int position = 0; position < entries.size(); ++position) {
         QVariantMap item;
-        item.insert(QStringLiteral("label"), entries.at(position)->label);
+        item.insert(QStringLiteral("label"),
+                    entries.at(position)->label.isEmpty()
+                        ? tr("Episode %1").arg(entries.at(position)->number)
+                        : entries.at(position)->label);
+        item.insert(QStringLiteral("number"), entries.at(position)->number);
         item.insert(QStringLiteral("embed"), entries.at(position)->embedUrl);
         playlist.append(item);
         if (entries.at(position)->number == number) {
@@ -2014,9 +2054,14 @@ void TitlePage::switchPlayerVariant(PlayerSession* session, const QString& embed
         return;
     }
     auto* entry = new EpisodeEntry;
-    entry->number = label;
+    entry->stateIndex = session->entry != nullptr ? session->entry->stateIndex : -1;
+    entry->number = session->entry != nullptr && !session->entry->number.isEmpty()
+                        ? session->entry->number
+                        : label;
     entry->embedUrl = embed;
-    entry->label = label;
+    entry->label = session->entry != nullptr && !session->entry->label.isEmpty()
+                       ? session->entry->label
+                       : label;
     ownedEntries_.append(entry);
     const QPointer<TitlePage> self(this);
     const QPointer<mplayer::shell::PlayerDialog> target(session->dialog);
@@ -2093,8 +2138,16 @@ void TitlePage::playEpisodeFrom(PlayerSession* session, const QVariantMap& item,
         return;
     }
     const QString label = item.value(QStringLiteral("label")).toString();
-    static const QString prefix = QStringLiteral("Episode ");
-    const QString number = label.startsWith(prefix) ? label.mid(prefix.size()) : label;
+    QString number = item.value(QStringLiteral("number")).toString().trimmed();
+    if (number.isEmpty()) {
+        static const QString prefix = QStringLiteral("Episode ");
+        const QString localizedPrefix = tr("Episode %1").arg(QString());
+        if (!localizedPrefix.isEmpty() && label.startsWith(localizedPrefix)) {
+            number = label.mid(localizedPrefix.size()).trimmed();
+        } else {
+            number = label.startsWith(prefix) ? label.mid(prefix.size()) : label;
+        }
+    }
     auto* entry = new EpisodeEntry;
     entry->number = number;
     entry->embedUrl = item.value(QStringLiteral("embed")).toString();
@@ -2138,8 +2191,7 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
                 self->cover_->setToolTip(
                     QCoreApplication::translate("TitlePage", "Click to open the cover"));
                 self->cover_->setText(QString());
-                self->cover_->setPixmap(pixmap.scaled(self->cover_->size(), Qt::KeepAspectRatio,
-                                                      Qt::SmoothTransformation));
+                self->cover_->setPixmap(TitleCard::rounded(pixmap, self->cover_->size()));
             }
         },
         [self, url, allowHint](const backend::Failure&) {

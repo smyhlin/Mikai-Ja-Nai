@@ -247,14 +247,14 @@ QString season(const QString& startDate) {
 QString compactNumber(qint64 value) {
     if (value >= 1000000) {
         QString text = QString::number(static_cast<double>(value) / 1000000.0, 'f', 1);
-        if (text.endsWith(QLatin1String(".0M"))) {
+        if (text.endsWith(QLatin1String(".0"))) {
             text.chop(2);
         }
         return text + QStringLiteral("M");
     }
     if (value >= 1000) {
         QString text = QString::number(static_cast<double>(value) / 1000.0, 'f', 1);
-        if (text.endsWith(QLatin1String(".0K"))) {
+        if (text.endsWith(QLatin1String(".0"))) {
             text.chop(2);
         }
         return text + QStringLiteral("K");

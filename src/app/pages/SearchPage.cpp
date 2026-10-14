@@ -1,3 +1,4 @@
+#include <utility>
 #include "pages/SearchPage.hpp"
 
 #include "gui/Clipboard.hpp"
@@ -183,6 +184,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     query_->setClearButtonEnabled(true);
     auto* searchButton = new QPushButton(tr("Search"), this);
     searchButton->setObjectName(QStringLiteral("primary"));
+    query_->installEventFilter(this);
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton, &QPushButton::clicked, this, &SearchPage::search);
     connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -249,6 +251,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     results_->setTextElideMode(Qt::ElideRight);
     results_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     results_->setContextMenuPolicy(Qt::CustomContextMenu);
+    results_->installEventFilter(this);
     connect(results_, &QListWidget::itemClicked, this, &SearchPage::openItem);
     connect(results_, &QListWidget::itemActivated, this, &SearchPage::openItem);
     connect(results_, &QListWidget::customContextMenuRequested, this,
@@ -279,10 +282,32 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     }
 }
 
-SearchPage::~SearchPage() = default;
+SearchPage::~SearchPage() {
+    qDeleteAll(carousels_);
+    qDeleteAll(feeds_);
+}
 
 void SearchPage::closeTransientOverlays() {
     if (keyHints_ != nullptr) keyHints_->close();
+}
+
+bool SearchPage::escapeSearch() {
+    if (keyHints_ != nullptr && keyHints_->isVisible()) {
+        keyHints_->close();
+        return true;
+    }
+    if (!browseMode_ || (query_ != nullptr && !query_->text().isEmpty())) {
+        loadOngoing();
+        if (query_ != nullptr) {
+            query_->clearFocus();
+        }
+        return true;
+    }
+    if (query_ != nullptr && query_->hasFocus()) {
+        query_->clearFocus();
+        return true;
+    }
+    return false;
 }
 
 SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
@@ -298,10 +323,14 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     title->setObjectName(QStringLiteral("sectionHeading"));
     header->addWidget(title);
     header->addStretch();
-    section->previous = new QPushButton(QStringLiteral("←"), section->section);
-    section->next = new QPushButton(QStringLiteral("→"), section->section);
+    section->previous = new QPushButton(section->section);
+    section->previous->setIcon(theme::chevronLeftIcon(16));
+    section->next = new QPushButton(section->section);
+    section->next->setIcon(theme::chevronRightIcon(16));
     for (QPushButton* button : {section->previous, section->next}) {
         button->setObjectName(QStringLiteral("carouselControl"));
+        button->setIconSize(QSize(16, 16));
+        button->setCursor(Qt::PointingHandCursor);
         header->addWidget(button);
     }
     layout->addLayout(header);
@@ -385,6 +414,13 @@ void SearchPage::smoothScrollCarousel(QScrollBar* bar, int delta) {
 }
 
 bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::KeyPress) {
+        auto* ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Escape && escapeSearch()) {
+            ke->accept();
+            return true;
+        }
+    }
     if (event->type() == QEvent::Wheel) {
         for (const auto* section : carousels_) {
             if (section != nullptr && section->scroll != nullptr &&
@@ -418,6 +454,14 @@ bool SearchPage::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void SearchPage::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Escape && escapeSearch()) {
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
@@ -577,6 +621,7 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
+        delete item;
     }
     QList<TitleCard*> cards;
     for (const backend::AnimeSummary& anime : shown) {
@@ -840,7 +885,7 @@ void SearchPage::loadUpdates() {
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
-            QList<QPair<backend::AnimeSummary, QString>> rows;
+            QList<std::pair<backend::AnimeSummary, QString>> rows;
             const backend::UpdatesResult updates = result.value<backend::UpdatesResult>();
             for (int index = 0; index < updates.items.size() && index < theme::kHomeFeedMaxRows;
                  ++index) {
@@ -927,7 +972,7 @@ void SearchPage::loadSchedule() {
                                              tr("Fri"), tr("Sat"), tr("Sun")};
             const int today = QDate::currentDate().dayOfWeek() - 1;
             const backend::ScheduleResult schedule = result.value<backend::ScheduleResult>();
-            QList<QPair<backend::AnimeSummary, QString>> rows;
+            QList<std::pair<backend::AnimeSummary, QString>> rows;
             for (int offset = 0; offset < 7 && rows.size() < theme::kHomeFeedMaxRows; ++offset) {
                 const int day = (today + offset) % 7;
                 QVector<backend::AiringEntry> airing = schedule.days.value(QLatin1String(kDayKeys[day]));
@@ -975,7 +1020,7 @@ void SearchPage::loadSchedule() {
 }
 
 void SearchPage::showFeedRows(
-    const QString& key, const QList<QPair<backend::AnimeSummary, QString>>& entries,
+    const QString& key, const QList<std::pair<backend::AnimeSummary, QString>>& entries,
     const QString& emptyText) {
     FeedSection* section = feedSection(key);
     while (section->rows->count() > 0) {
@@ -983,6 +1028,7 @@ void SearchPage::showFeedRows(
         if (item->widget() != nullptr) {
             item->widget()->deleteLater();
         }
+        delete item;
     }
     feedPosterLabels_.insert(key, {});
     section->failure->clear();

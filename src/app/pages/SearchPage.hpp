@@ -1,3 +1,4 @@
+#include <utility>
 #pragma once
 
 #include <backend/Errors.hpp>
@@ -76,6 +77,9 @@ public:
     /// overlay left open under modal Settings keeps keyboard focus while the
     /// dialog owns the window.
     void closeTransientOverlays();
+    /// Handles Escape on the search page: closes transient hints, exits search
+    /// results back to home discovery, or clears focus from the search input.
+    bool escapeSearch();
 
 Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
@@ -85,6 +89,7 @@ Q_SIGNALS:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     /// One carousel block: heading, status line, retry button and the track.
@@ -137,7 +142,7 @@ private:
     void loadUpdates();
     void loadSchedule();
     void showFeedRows(const QString& key,
-                      const QList<QPair<backend::AnimeSummary, QString>>& entries,
+                      const QList<std::pair<backend::AnimeSummary, QString>>& entries,
                       const QString& emptyText);
 
     void fetchPage(int page);

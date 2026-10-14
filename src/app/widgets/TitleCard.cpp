@@ -4,8 +4,12 @@
 #include "theme/Metrics.hpp"
 
 #include <QCoreApplication>
+#include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QTextLayout>
+#include <QTextOption>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -71,9 +75,18 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     text->setContentsMargins(0, 0, 0, 0);
     text->setSpacing(theme::kSpacingXs);
 
-    title_ = makeLabel(QStringLiteral("carouselTitle"), backend::displayName(summary.titles));
-    title_->setWordWrap(true);
-    title_->setFixedHeight(title_->fontMetrics().height() * 2);
+    const QString fullTitle = backend::displayName(summary.titles);
+    title_ = makeLabel(QStringLiteral("carouselTitle"), QString());
+    title_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    title_->setWordWrap(false);
+    QFont titleFont = title_->font();
+    titleFont.setPixelSize(13);
+    titleFont.setWeight(QFont::DemiBold);
+    const int titleMaxWidth = theme::kHomeCardWidth - theme::kSpacingMedium -
+                              theme::kHomePosterWidth - theme::kSpacingMedium -
+                              theme::kSpacingLarge - 8;
+    title_->setText(elideTwoLines(fullTitle, titleFont, titleMaxWidth));
+    title_->setFixedHeight(theme::kCarouselTitleHeight);
     // Expanding, not Preferred. A word-wrapped label keeps its sizeHint width,
     // so the column beside an 80px poster left the title wrapping inside a
     // 57px sliver while the rest of the card sat empty.
@@ -110,6 +123,41 @@ QLabel* TitleCard::makeLabel(const QString& objectName, const QString& text) {
     // The card is the button; the labels are decoration and must not eat clicks.
     label->setAttribute(Qt::WA_TransparentForMouseEvents);
     return label;
+}
+
+QString TitleCard::elideTwoLines(const QString& text, const QFont& font, int maxWidth) {
+    const QString clean = text.simplified();
+    if (clean.isEmpty() || maxWidth <= 0) {
+        return clean;
+    }
+    const QFontMetrics metrics(font);
+    if (metrics.horizontalAdvance(clean) <= maxWidth) {
+        return clean;
+    }
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    QTextLayout layout(clean, font);
+    layout.setTextOption(option);
+    layout.beginLayout();
+    QTextLine firstLine = layout.createLine();
+    if (!firstLine.isValid()) {
+        layout.endLayout();
+        return metrics.elidedText(clean, Qt::ElideRight, maxWidth);
+    }
+    firstLine.setLineWidth(maxWidth);
+    layout.endLayout();
+
+    const int split = firstLine.textStart() + firstLine.textLength();
+    if (split >= clean.size()) {
+        return clean;
+    }
+    const QString line1 = clean.left(split).trimmed();
+    const QString remainder = clean.mid(split).trimmed();
+    if (remainder.isEmpty()) {
+        return line1;
+    }
+    const QString line2 = metrics.elidedText(remainder, Qt::ElideRight, maxWidth);
+    return line1 + QLatin1Char('\n') + line2;
 }
 
 QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& target) {

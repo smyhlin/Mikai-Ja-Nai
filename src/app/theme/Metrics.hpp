@@ -55,16 +55,16 @@ inline constexpr int kPagerChipWindow = 7;
 inline constexpr int kEpisodesPerPage = 140;
 inline constexpr int kEpisodeButtonWidth = 64;
 inline constexpr int kEpisodeButtonHeight = 32;
-inline constexpr int kEpisodeSectionMaxHeight = 420;
+inline constexpr int kEpisodeSectionMaxHeight = 340;
 
 inline constexpr int kTitleCoverWidth = 188;
 inline constexpr int kTitleCoverHeight = 268;
-inline constexpr int kTitleDescriptionPreviewChars = 210;
+inline constexpr int kTitleDescriptionPreviewChars = 240;
 
 // Title-page-only compact rhythm: the cover/text column gap, the text-column
 // stack gap, selector row height, quality-chip geometry and episode-pill shape.
-inline constexpr int kTitleColumnSpacing = 16;
-inline constexpr int kTitleStackSpacing = 4;
+inline constexpr int kTitleColumnSpacing = 18;
+inline constexpr int kTitleStackSpacing = 6;
 inline constexpr int kTitleReleaseChipHeight = 32;
 inline constexpr int kTitleBadgeHeight = 20;
 inline constexpr int kTitleBadgeHPadding = 8;
@@ -72,17 +72,17 @@ inline constexpr int kTitleBadgeHPadding = 8;
 // in: the panel keeps the app radius, the pill steps one token down.
 inline constexpr int kTitlePillRadius = 6;
 
-inline constexpr int kCoverBackdropDownscale = 26;
+inline constexpr int kCoverBackdropDownscale = 8;
 inline constexpr double kCoverZoomMin = 0.1;
 inline constexpr double kCoverZoomMax = 8.0;
 inline constexpr double kCoverZoomStep = 1.25;
 
-inline constexpr int kCarouselCardWidth = 156;
-inline constexpr int kCarouselCardHeight = 248;
-inline constexpr int kCarouselPosterWidth = 132;
-inline constexpr int kCarouselPosterHeight = 174;
-inline constexpr int kCarouselScrollStep = 468;
-inline constexpr int kCarouselTitleHeight = 38;
+inline constexpr int kCarouselCardWidth = 164;
+inline constexpr int kCarouselCardHeight = 276;
+inline constexpr int kCarouselPosterWidth = 144;
+inline constexpr int kCarouselPosterHeight = 190;
+inline constexpr int kCarouselScrollStep = 492;
+inline constexpr int kCarouselTitleHeight = 40;
 
 inline constexpr int kHomeCardWidth = 360;
 inline constexpr int kHomeCardHeight = 140;

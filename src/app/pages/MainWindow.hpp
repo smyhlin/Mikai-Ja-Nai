@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QList>
-#include <QPair>
+#include <utility>
 #include <QPointer>
 #include <QString>
 #include <QWidget>
@@ -58,6 +58,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     void openSettings();
@@ -183,7 +184,7 @@ private:
     bool componentAskReleaseAnimeJanai_ = false;
     QString titleRef_;
     QString titlePoster_;
-    QList<QPair<QString, QString>> titleHistory_;
+    QList<std::pair<QString, QString>> titleHistory_;
 };
 
 }  // namespace mikai::app

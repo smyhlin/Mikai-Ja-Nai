@@ -31,6 +31,7 @@ public:
     /// through rounded() and hands the same one to every card sharing it.
     void applyPixmap(const QPixmap& pixmap);
     static QPixmap rounded(const QPixmap& pixmap, const QSize& target);
+    static QString elideTwoLines(const QString& text, const QFont& font, int maxWidth);
     void applyStatus(const QString& status);
     void applyEpisodes(int aired, int planned);
     void applyDetail(const backend::AnimeDetail& detail);

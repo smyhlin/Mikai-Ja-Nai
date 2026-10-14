@@ -32,6 +32,7 @@
 #include <QUrl>
 #include <QVariant>
 #include <QCloseEvent>
+#include <QKeyEvent>
 #include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -215,6 +216,22 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // interval cannot swallow the last write.
     qualityCache_->flushNow();
     QWidget::closeEvent(event);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Escape) {
+        if (title_ != nullptr && stack_ != nullptr && stack_->currentWidget() == title_) {
+            goSearch();
+            event->accept();
+            return;
+        }
+        if (search_ != nullptr && stack_ != nullptr && stack_->currentWidget() == search_ &&
+            search_->escapeSearch()) {
+            event->accept();
+            return;
+        }
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void MainWindow::chooseMediaFile() {

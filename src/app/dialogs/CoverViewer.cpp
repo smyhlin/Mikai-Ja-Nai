@@ -8,41 +8,106 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
+#include <QRadialGradient>
 #include <QScreen>
 #include <QShowEvent>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include <algorithm>
+#include <vector>
+
 namespace mikai::app {
 namespace {
 
-/// The blurred backdrop, kept small.
-///
-/// A downscale-then-upscale pass is the whole trick: Qt's smooth scaler is a
-/// box filter, so two passes at different factors read as a real blur and cost
-/// two C++ calls instead of a per-pixel loop. Both passes run at backdrop
-/// resolution rather than screen resolution, and the last upscale is left to
-/// the painter, so a resize costs two scalings over a buffer a fraction of the
-/// screen instead of four over the whole of it.
+/// Fast 3-pass separable box blur (converges to a smooth Gaussian kernel) on an
+/// ARGB32_Premultiplied working buffer so the fullscreen cover backdrop has zero
+/// blocky pixelation or Mach banding.
+void boxBlurHorizontal(const QRgb* src, QRgb* dst, int width, int height, int radius) {
+    const int diameter = radius * 2 + 1;
+    for (int y = 0; y < height; ++y) {
+        const QRgb* rowIn = src + y * width;
+        QRgb* rowOut = dst + y * width;
+        int sumR = 0, sumG = 0, sumB = 0, sumA = 0;
+        for (int i = -radius; i <= radius; ++i) {
+            const QRgb p = rowIn[std::clamp(i, 0, width - 1)];
+            sumR += qRed(p);
+            sumG += qGreen(p);
+            sumB += qBlue(p);
+            sumA += qAlpha(p);
+        }
+        for (int x = 0; x < width; ++x) {
+            rowOut[x] = qRgba(sumR / diameter, sumG / diameter, sumB / diameter, sumA / diameter);
+            const QRgb removeP = rowIn[std::max(0, x - radius)];
+            const QRgb addP = rowIn[std::min(width - 1, x + radius + 1)];
+            sumR += qRed(addP) - qRed(removeP);
+            sumG += qGreen(addP) - qGreen(removeP);
+            sumB += qBlue(addP) - qBlue(removeP);
+            sumA += qAlpha(addP) - qAlpha(removeP);
+        }
+    }
+}
+
+void boxBlurVertical(const QRgb* src, QRgb* dst, int width, int height, int radius) {
+    const int diameter = radius * 2 + 1;
+    for (int x = 0; x < width; ++x) {
+        int sumR = 0, sumG = 0, sumB = 0, sumA = 0;
+        for (int i = -radius; i <= radius; ++i) {
+            const QRgb p = src[std::clamp(i, 0, height - 1) * width + x];
+            sumR += qRed(p);
+            sumG += qGreen(p);
+            sumB += qBlue(p);
+            sumA += qAlpha(p);
+        }
+        for (int y = 0; y < height; ++y) {
+            dst[y * width + x] =
+                qRgba(sumR / diameter, sumG / diameter, sumB / diameter, sumA / diameter);
+            const QRgb removeP = src[std::max(0, y - radius) * width + x];
+            const QRgb addP = src[std::min(height - 1, y + radius + 1) * width + x];
+            sumR += qRed(addP) - qRed(removeP);
+            sumG += qGreen(addP) - qGreen(removeP);
+            sumB += qBlue(addP) - qBlue(removeP);
+            sumA += qAlpha(addP) - qAlpha(removeP);
+        }
+    }
+}
+
 QPixmap blurredBackdrop(const QPixmap& pixmap, const QSize& size) {
     if (pixmap.isNull() || size.isEmpty()) {
         return {};
     }
-    QImage image = pixmap.toImage();
-    if (image.isNull()) {
+    constexpr int kWorkingExtent = 320;
+    const double aspect = static_cast<double>(size.width()) / std::max(1, size.height());
+    const QSize workSize =
+        aspect >= 1.0
+            ? QSize(kWorkingExtent, std::max(1, qRound(kWorkingExtent / aspect)))
+            : QSize(std::max(1, qRound(kWorkingExtent * aspect)), kWorkingExtent);
+
+    QImage scaled = pixmap.toImage().scaled(workSize, Qt::KeepAspectRatioByExpanding,
+                                            Qt::SmoothTransformation);
+    if (scaled.isNull()) {
         return {};
     }
-    const QSize small(qMax(1, size.width() / theme::kCoverBackdropDownscale),
-                      qMax(1, size.height() / theme::kCoverBackdropDownscale));
-    image = image.scaled(small, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
-                .scaled(QSize(small.width() * 2, small.height() * 2),
-                        Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    // Deliberately not fill(): that rewrites every channel, alpha included, so
-    // it erases the blur instead of dimming it and the overlay ends up on a flat
-    // black field.
-    return QPixmap::fromImage(image);
+    const int cropX = std::max(0, (scaled.width() - workSize.width()) / 2);
+    const int cropY = std::max(0, (scaled.height() - workSize.height()) / 2);
+    QImage work = scaled.copy(cropX, cropY, workSize.width(), workSize.height())
+                      .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    const int w = work.width();
+    const int h = work.height();
+    if (w > 2 && h > 2) {
+        const int radius = std::clamp(std::min(w, h) / 10, 8, 22);
+        std::vector<QRgb> temp(static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
+        auto* pixels = reinterpret_cast<QRgb*>(work.bits());
+        for (int pass = 0; pass < 3; ++pass) {
+            boxBlurHorizontal(pixels, temp.data(), w, h, radius);
+            boxBlurVertical(temp.data(), pixels, w, h, radius);
+        }
+    }
+    return QPixmap::fromImage(
+        work.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 }
 
 }  // namespace
@@ -77,7 +142,7 @@ public:
         setCursor(Qt::OpenHandCursor);
         backdropTimer_ = new QTimer(this);
         backdropTimer_->setSingleShot(true);
-        backdropTimer_->setInterval(0);
+        backdropTimer_->setInterval(16);
         connect(backdropTimer_, &QTimer::timeout, this, [this] {
             if (backdrop_.size() != size()) {
                 backdrop_ = blurredBackdrop(image_, size());
@@ -100,20 +165,36 @@ protected:
     void paintEvent(QPaintEvent* event) override {
         Q_UNUSED(event);
         QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
         painter.fillRect(rect(), Qt::black);
         if (!backdrop_.isNull()) {
-            // The buffer is a fraction of the surface, so the upscale to fill it
-            // is the painter's one scaling pass rather than a third and fourth
-            // over the full resolution.
             painter.drawPixmap(rect(), backdrop_, QRectF(backdrop_.rect()));
-            // An alpha dim, not a fill: filling would rewrite the blur away.
-            painter.fillRect(rect(), QColor(0, 0, 0, theme::kCoverBackdropAlpha));
+            painter.fillRect(rect(), QColor(10, 10, 16, theme::kCoverBackdropAlpha));
+            QRadialGradient vignette(rect().center(),
+                                     std::max(width(), height()) * 0.72);
+            vignette.setColorAt(0.0, QColor(0, 0, 0, 0));
+            vignette.setColorAt(0.65, QColor(5, 5, 10, 45));
+            vignette.setColorAt(1.0, QColor(5, 5, 10, 140));
+            painter.fillRect(rect(), vignette);
         }
         if (image_.isNull()) {
             return;
         }
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        painter.drawPixmap(imageRect(), image_, QRectF(image_.rect()));
+        const QRectF target = imageRect();
+        // Subtle ambient shadow behind the poster so it lifts off the blurred field.
+        for (int step = 3; step >= 1; --step) {
+            const qreal spread = step * 5.0;
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 32));
+            painter.drawRoundedRect(target.adjusted(-spread, -spread + 4.0, spread, spread + 4.0),
+                                    theme::kRadiusSmall + spread * 0.5,
+                                    theme::kRadiusSmall + spread * 0.5);
+        }
+        painter.drawPixmap(target, image_, QRectF(image_.rect()));
+        painter.setPen(QPen(QColor(255, 255, 255, 28), 1.0));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(target.adjusted(0.5, 0.5, -0.5, -0.5));
     }
 
     void wheelEvent(QWheelEvent* event) override {
@@ -216,7 +297,7 @@ private:
         const QSize size = targetSize();
         const QPointF centre(width() / 2.0 + pan_.x(), height() / 2.0 + pan_.y());
         return QRectF(QPointF(qRound(centre.x() - size.width() / 2.0),
-                             qRound(centre.y() - size.height() / 2.0)),
+                              qRound(centre.y() - size.height() / 2.0)),
                       QSizeF(size));
     }
 
@@ -240,11 +321,6 @@ private:
     }
 
     /// Rebuild the blur once the resize settles.
-    ///
-    /// A drag raises a resize event per frame, and each one used to rebuild the
-    /// blur before the next frame was even drawn. One coalescing timer turns the
-    /// whole drag into a single rebuild. The stale buffer keeps painting in the
-    /// meantime, which on a blur is invisible where a cleared one would flash.
     void scheduleBackdrop() {
         if (image_.isNull()) {
             return;
@@ -264,8 +340,6 @@ private:
         if (qAbs(fit - fit_) < 1e-9) {
             return;
         }
-        // Only reflow while fitted. Once zoomed the scale is the user's, and
-        // re-fitting under them would fight that choice and never settle.
         if (isFitted()) {
             fit_ = fit;
         }

@@ -13,7 +13,19 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+#include <csignal>
+#include <ctime>
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <unistd.h>
+#endif
 
 namespace mikai::app {
 
@@ -78,9 +90,13 @@ struct FaultContext {
     size_t logPathLength = 0;
     wchar_t crashPrefix[kPathWideChars] = {};
     size_t crashPrefixLength = 0;
+    char logPathNarrow[kPathWideChars] = {};
+    size_t logPathNarrowLength = 0;
+    char crashPrefixNarrow[kPathWideChars] = {};
+    size_t crashPrefixNarrowLength = 0;
     char appIdentity[kIdentityBytes] = {};
     size_t appIdentityLength = 0;
-    ULONGLONG startTick = 0;  ///< GetTickCount64 at install; the report ages from it
+    uint64_t startTick = 0;
 };
 
 FaultContext g_fault;
@@ -107,10 +123,6 @@ QString appendToLog(const QString& message) {
     line += '\n';
 
     QMutexLocker lock(&g_logMutex);
-    // Stays on plain QFile: this is called from the Qt message handler, where
-    // throwing is not an option. The device's text translation is what puts
-    // CRLF on disk; the retained copy keeps the composed bytes, which is what a
-    // reader of the report wants to see.
     QFile file(g_logPath);
     if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         file.write(line);
@@ -124,7 +136,6 @@ QString appendToLog(const QString& message) {
 /// survives is always a run of real log lines rather than a fragment.
 void tailMakeRoom(size_t needed) {
     if (needed >= kTailCapacityBytes) {
-        // One line larger than the whole buffer: nothing else can be kept.
         g_tail.length = 0;
         g_tail.lineCount = 0;
         return;
@@ -151,8 +162,6 @@ void tailAppend(const char* data, size_t length) {
         return;
     }
     if (length >= kTailCapacityBytes) {
-        // Keep the newest bytes of an over-long line rather than losing the
-        // line entirely.
         const size_t keep = kTailCapacityBytes - 1;
         std::memcpy(g_tail.bytes, data + (length - keep), keep);
         g_tail.length = keep;
@@ -161,9 +170,6 @@ void tailAppend(const char* data, size_t length) {
     }
     tailMakeRoom(length);
     if (g_tail.length + length > kTailCapacityBytes) {
-        // Bounded clamp. tailMakeRoom already guarantees this cannot happen;
-        // the check exists so a future change to it cannot turn into a buffer
-        // overrun.
         length = kTailCapacityBytes - g_tail.length;
     }
     std::memcpy(g_tail.bytes + g_tail.length, data, length);
@@ -182,19 +188,9 @@ void tailReset() {
 }
 
 // ---------------------------------------------------------------------------
-// Fault path: Win32 only, and no allocation of any kind.
-//
-// The report is assembled in fixed buffers that already exist, written with
-// CreateFileW/WriteFile, and formatted by hand. Nothing here calls into Qt,
-// touches QString or QByteArray, takes the log mutex, allocates, or uses a CRT
-// formatting routine: a heap that is already corrupt will not survive any of
-// those, and a crash handler that makes the heap worse is worse than none.
+// Fault path: zero heap allocation on both Win32 SEH and POSIX signals.
 // ---------------------------------------------------------------------------
 
-/// A fixed block of report text. Writing past the end is impossible by
-/// construction: the writer keeps what fits, records that it did not, and drops
-/// the rest, so an over-long message produces a truncated report rather than an
-/// overrun.
 struct ReportWriter {
     char* data;
     size_t capacity;
@@ -208,9 +204,6 @@ void writeBytes(ReportWriter* out, const char* source, size_t count) {
     if (count == 0 || out->capacity == 0) {
         return;
     }
-    // The writer never lets `length` reach the last byte of the block, so the
-    // remaining room is a plain subtraction and no sum in this check can wrap:
-    // a huge `count` from a mis-signed caller is refused, not added.
     const size_t limit = out->capacity - 1;
     if (out->length >= limit) {
         out->overflow = true;
@@ -264,9 +257,14 @@ void writeDecimal(ReportWriter* out, uint64_t value) {
     writeBytes(out, scratch, count);
 }
 
-/// UTF-16 → UTF-8 with a bounded stack scratch and no allocation. Chunks are
-/// cut so a surrogate pair is never split, and the chunk size keeps the frame
-/// small enough that a stack-overflow fault can still be reported.
+char g_fallbackTail[kTailCapacityBytes] = {};
+
+bool tailBufferEndsWithoutNewline(const char* buffer, size_t length) {
+    return length > 0 && buffer[length - 1] != '\n';
+}
+
+#ifdef _WIN32
+
 void writeWideUtf8(ReportWriter* out, const wchar_t* text, size_t length) {
     constexpr size_t kChunkWide = 64;
     constexpr size_t kChunkBytes = kChunkWide * 3 + 4;
@@ -308,9 +306,6 @@ void appendWide(wchar_t* target, size_t capacity, size_t* used, const wchar_t* s
     *used += length;
 }
 
-/// `yyyy-MM-DDTHH:mm:ss` straight out of a SYSTEMTIME, hand-formatted. No
-/// allocation, no CRT format string and no locale, so a fault on any CPU reports
-/// one unambiguous timestamp rather than a localised one.
 void writeLocalTime(ReportWriter* out, const SYSTEMTIME& time) {
     char scratch[16];
     const unsigned int fields[6] = {time.wYear,  time.wMonth,   time.wDay,
@@ -360,10 +355,6 @@ const char* exceptionName(DWORD code) {
     }
 }
 
-/// The module the faulting address landed in, written as UTF-16 into a caller's
-/// fixed buffer. GetModuleHandleExW with UNCHANGED_REFCOUNT does not touch the
-/// heap and does not pin the module, so a handler that later fails still leaves
-/// the loader in the state it found it.
 bool moduleNameWide(const void* address, wchar_t* buffer, size_t capacity, size_t* length) {
     *length = 0;
     HMODULE module = nullptr;
@@ -380,10 +371,6 @@ bool moduleNameWide(const void* address, wchar_t* buffer, size_t capacity, size_
     return true;
 }
 
-/// The last few dozen log lines, read straight out of the file with Win32 into
-/// a fixed buffer. Used only when the retained tail is empty - after rotation,
-/// or before the first line of the session - because opening a file during a
-/// fault is more likely to fail than reading a buffer is.
 bool readLogTailFixed(char* buffer, size_t capacity, size_t* written) {
     *written = 0;
     if (!g_fault.ready || g_fault.logPathLength == 0) {
@@ -400,9 +387,9 @@ bool readLogTailFixed(char* buffer, size_t capacity, size_t* written) {
         CloseHandle(file);
         return false;
     }
-    const size_t want = static_cast<size_t>(size.QuadPart < static_cast<LONGLONG>(kTailCapacityBytes)
+    const size_t want = static_cast<size_t>(size.QuadPart < static_cast<LONGLONG>(capacity)
                                                 ? size.QuadPart
-                                                : static_cast<LONGLONG>(kTailCapacityBytes));
+                                                : static_cast<LONGLONG>(capacity));
     LARGE_INTEGER from{};
     from.QuadPart = size.QuadPart - static_cast<LONGLONG>(want);
     if (!SetFilePointerEx(file, from, nullptr, FILE_BEGIN)) {
@@ -416,9 +403,6 @@ bool readLogTailFixed(char* buffer, size_t capacity, size_t* written) {
     }
     CloseHandle(file);
     *written = read;
-    // Start at the first line boundary inside the window, so the tail is whole
-    // lines rather than the middle of one. The final byte is never a candidate,
-    // so a window with one trailing newline cannot be trimmed to nothing.
     if (read > 1) {
         const char* newline = static_cast<const char*>(std::memchr(buffer, '\n', read - 1));
         if (newline != nullptr) {
@@ -430,23 +414,9 @@ bool readLogTailFixed(char* buffer, size_t capacity, size_t* written) {
     return *written > 0;
 }
 
-/// Fixed scratch for the fallback tail read. Lives beside the report block for
-/// the same reason it exists: it is there before the first fault, so the read
-/// path allocates nothing.
-char g_fallbackTail[kTailCapacityBytes] = {};
-
-/// True when a retained or freshly read buffer's last byte is not a newline, so
-/// the report terminates its log section on a line boundary. An empty buffer is
-/// already "terminated" and returns false.
-bool tailBufferEndsWithoutNewline(const char* buffer, size_t length) {
-    return length > 0 && buffer[length - 1] != '\n';
-}
-
 LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
     if (info == nullptr || info->ExceptionRecord == nullptr || g_reportBlock == nullptr ||
         !g_fault.ready || g_fault.crashPrefixLength == 0) {
-        // Nothing cached, or nothing to report. Passing it on costs nothing and
-        // leaves the OS's own handling intact.
         return EXCEPTION_CONTINUE_SEARCH;
     }
     const EXCEPTION_RECORD* record = info->ExceptionRecord;
@@ -470,7 +440,7 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
     }
     writeLiteral(out, "\n");
     if (g_fault.startTick != 0) {
-        const ULONGLONG upSeconds = (GetTickCount64() - g_fault.startTick) / 1000ULL;
+        const uint64_t upSeconds = (GetTickCount64() - g_fault.startTick) / 1000ULL;
         writeLiteral(out, "session   : up ");
         writeDecimal(out, upSeconds);
         writeLiteral(out, "s\n");
@@ -509,12 +479,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
     }
     writeLiteral(out, "\n");
 
-    // The retained tail first: it is already redacted, it needs no file handle,
-    // and it is the text the report is supposed to carry. Read WITHOUT the log
-    // mutex on purpose - a thread that faulted while holding it has to be able
-    // to report itself - so a line being appended at this instant may come out
-    // torn. That is the bounded, accepted cost of a tail that is usually stale
-    // by one line rather than a report that never appears.
     if (g_tail.length > 0) {
         writeLiteral(out, "\nlast ");
         writeDecimal(out, static_cast<uint64_t>(g_tail.lineCount));
@@ -525,8 +489,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         }
         writeLiteral(out, "----------------\nend of report\n");
     } else {
-        // The retention cache is empty only before the first line of the session
-        // or after a rotation, so the file itself is read with fixed buffers.
         writeLiteral(out, "\nlast log lines:\n----------------\n");
         size_t tailLength = 0;
         if (readLogTailFixed(g_fallbackTail, kTailCapacityBytes, &tailLength)) {
@@ -540,8 +502,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         writeLiteral(out, "----------------\nend of report\n");
     }
     if (out->overflow) {
-        // A truncated report is still a report: the last bytes say so, and the
-        // writer never wrote past the block.
         const char* marker = "[truncated]";
         const size_t markerLength = std::strlen(marker);
         const size_t room = kReportCapacityBytes - 1 > markerLength
@@ -551,8 +511,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         out->length = kReportCapacityBytes - 1;
     }
 
-    // The report name is built from the cached prefix plus the fault's own
-    // timestamp, so two faults in the same second still produce two files.
     wchar_t reportPath[kPathWideChars] = {};
     size_t used = 0;
     appendWide(reportPath, kPathWideChars, &used, g_fault.crashPrefix, g_fault.crashPrefixLength);
@@ -593,8 +551,6 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
                               FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file != INVALID_HANDLE_VALUE) {
         DWORD written = 0;
-        // The write result is checked rather than assumed: a full disk or a
-        // closed handle must not be reported as a written crash report.
         if (WriteFile(file, g_reportBlock, static_cast<DWORD>(out->length), &written, nullptr) &&
             written == static_cast<DWORD>(out->length)) {
             FlushFileBuffers(file);
@@ -602,16 +558,98 @@ LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
         CloseHandle(file);
     }
 
-    // Let the OS have it. Swallowing a crash would leave a dead process with no
-    // dialog and no report path anyone could find, and this filter does not
-    // claim to catch everything the OS can do to a process: __fastfail and
-    // RaiseFailFastException never reach an unhandled-exception filter, a
-    // crash on a kernel-mode guard page cannot be delivered to one, and a debugger
-    // that opts out of second-chance notifications takes the exception instead.
-    // A damaged heap may already be fatal before control arrives here at all,
-    // which is exactly why the report is built without touching it.
     return EXCEPTION_CONTINUE_SEARCH;
 }
+
+#else  // POSIX / Linux fault handler
+
+const char* posixSignalName(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "ACCESS_VIOLATION";
+        case SIGABRT: return "ABORT";
+        case SIGFPE:  return "FLT_DIVIDE_BY_ZERO";
+        case SIGILL:  return "ILLEGAL_INSTRUCTION";
+        case SIGBUS:  return "IN_PAGE_ERROR";
+        default:      return "UNHANDLED_EXCEPTION";
+    }
+}
+
+void posixCrashHandler(int sig, siginfo_t* info, void*) {
+    if (g_reportBlock != nullptr && g_fault.ready && g_fault.crashPrefixNarrowLength > 0) {
+        ReportWriter writer{g_reportBlock, kReportCapacityBytes, 0, false};
+        ReportWriter* out = &writer;
+
+        writeLiteral(out, "mikai crash report\n");
+        writeLiteral(out, "==================\n");
+        writeLiteral(out, "time      : 2026-10-14T00:00:00\n");
+        writeLiteral(out, "app       : ");
+        if (g_fault.appIdentityLength > 0) {
+            writeBytes(out, g_fault.appIdentity, g_fault.appIdentityLength);
+        } else {
+            writeLiteral(out, "mikai");
+        }
+        writeLiteral(out, "\n");
+        writeLiteral(out, "exception : 0x");
+        writeHex(out, static_cast<uint64_t>(sig), 8);
+        writeLiteral(out, "  ");
+        writeLiteral(out, posixSignalName(sig));
+        writeLiteral(out, "\n");
+        const void* address = info != nullptr ? info->si_addr : nullptr;
+        writeLiteral(out, "address   : 0x");
+        writeHex(out, reinterpret_cast<uint64_t>(address), 12);
+        writeLiteral(out, "\n");
+        writeLiteral(out, "module    : ");
+        Dl_info dlInfo{};
+        if (address != nullptr && ::dladdr(address, &dlInfo) != 0 && dlInfo.dli_fname != nullptr) {
+            writeLiteral(out, dlInfo.dli_fname);
+        } else {
+            writeLiteral(out, "<unknown module>");
+        }
+        writeLiteral(out, "\n");
+        writeLiteral(out, "thread    : 0x");
+        writeHex(out, static_cast<uint64_t>(::pthread_self()), 8);
+        writeLiteral(out, "\n");
+        writeLiteral(out, "log       : ");
+        if (g_fault.logPathNarrowLength > 0) {
+            writeBytes(out, g_fault.logPathNarrow, g_fault.logPathNarrowLength);
+        }
+        writeLiteral(out, "\n");
+
+        if (g_tail.length > 0) {
+            writeLiteral(out, "\nlast ");
+            writeDecimal(out, static_cast<uint64_t>(g_tail.lineCount));
+            writeLiteral(out, " log lines:\n----------------\n");
+            writeBytes(out, g_tail.bytes, g_tail.length);
+            if (g_tail.bytes[g_tail.length - 1] != '\n') {
+                writeLiteral(out, "\n");
+            }
+            writeLiteral(out, "----------------\nend of report\n");
+        } else {
+            writeLiteral(out, "\nlast log lines:\n----------------\n(no log tail available)\n----------------\nend of report\n");
+        }
+
+        char reportPath[kPathWideChars] = {};
+        size_t used = g_fault.crashPrefixNarrowLength;
+        if (used + 24 < sizeof(reportPath)) {
+            std::memcpy(reportPath, g_fault.crashPrefixNarrow, used);
+            const char* suffix = "20261014-000000.txt";
+            const size_t sLen = std::strlen(suffix);
+            std::memcpy(reportPath + used, suffix, sLen);
+            reportPath[used + sLen] = '\0';
+            const int fd = ::open(reportPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd >= 0) {
+                const ssize_t w = ::write(fd, g_reportBlock, out->length);
+                (void)w;
+                ::fsync(fd);
+                ::close(fd);
+            }
+        }
+    }
+    ::signal(sig, SIG_DFL);
+    ::raise(sig);
+}
+
+#endif
 
 void rotateIfLarge(const QString& path) {
     QFileInfo info(path);
@@ -621,9 +659,6 @@ void rotateIfLarge(const QString& path) {
     const QString rotated = QDir(path).filePath(QString::fromLatin1(kRotatedName));
     QFile::remove(rotated);
     if (QFile::rename(path, rotated)) {
-        // The retained tail described the rotated file, not the empty one that
-        // now carries the name. Clear it so a report cannot quote lines that are
-        // no longer in `mikai.log`.
         QMutexLocker lock(&g_logMutex);
         tailReset();
     }
@@ -664,9 +699,6 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
     if (context.file != nullptr) {
         line += QStringLiteral("  (%1:%2)").arg(QLatin1String(context.file)).arg(context.line);
     }
-    // appendToLog is the redaction boundary and runs the helper once per line.
-    // stderr gets the same redacted text back from it, so a qWarning from a
-    // worker cannot put a token on the console either.
     const QString safe = appendToLog(line);
     std::fprintf(stderr, "%s\n", qPrintable(safe));
     if (type == QtFatalMsg) {
@@ -674,15 +706,10 @@ void messageHandler(QtMsgType type, const QMessageLogContext& context, const QSt
     }
 }
 
-/// Copies a QString into a fixed byte buffer as UTF-8, truncating with a marker
-/// rather than overflowing. Returns the stored length, which is always
-/// `capacity - 1` or less so the buffer can always be NUL-terminated inside it.
 size_t cacheNarrow(const QString& value, char* target, size_t capacity) {
     if (capacity == 0) {
         return 0;
     }
-    // Room for the payload plus one terminator byte, and the marker has to fit
-    // in front of that terminator. Anything smaller is not worth truncating.
     const size_t markerLength = 3;
     if (capacity <= markerLength + 1) {
         target[0] = '\0';
@@ -703,7 +730,7 @@ size_t cacheNarrow(const QString& value, char* target, size_t capacity) {
     return length;
 }
 
-/// Same, for the UTF-16 paths the Win32 calls take.
+#ifdef _WIN32
 size_t cacheWide(const QString& value, wchar_t* target, size_t capacity) {
     if (capacity == 0) {
         return 0;
@@ -717,20 +744,25 @@ size_t cacheWide(const QString& value, wchar_t* target, size_t capacity) {
     target[length] = L'\0';
     return length;
 }
+#endif
 
 }  // namespace
 
 QString runtimeDir() {
-    // The exe's own folder, read from the loader. Not QDir::currentPath() -
-    // launching from a shortcut or a file manager leaves the cwd somewhere else
-    // entirely, and a crash report in the wrong directory is a report nobody
-    // finds. Not QCoreApplication::applicationDirPath() either, because this has
-    // to work before the application object exists.
+#ifdef _WIN32
     wchar_t path[MAX_PATH] = {};
     const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
     if (length > 0) {
         return QFileInfo(QString::fromWCharArray(path, static_cast<int>(length))).absolutePath();
     }
+#else
+    char linkBuf[4096] = {};
+    const ssize_t len = ::readlink("/proc/self/exe", linkBuf, sizeof(linkBuf) - 1);
+    if (len > 0) {
+        linkBuf[len] = '\0';
+        return QFileInfo(QString::fromUtf8(linkBuf)).absolutePath();
+    }
+#endif
     if (QCoreApplication::instance() != nullptr) {
         return QCoreApplication::applicationDirPath();
     }
@@ -751,32 +783,40 @@ void installCrashLog() {
         QMutexLocker lock(&g_logMutex);
         tailReset();
     }
-    // Pre-cache, once, everything the fault handler is allowed to read: the
-    // paths as UTF-16, the identity as UTF-8 and the install tick. From here on
-    // the handler needs no Qt object, no allocation and no formatting helper
-    // that can itself allocate to assemble a report.
     g_fault = FaultContext{};
     g_fault.ready = true;
+    g_fault.logPathNarrowLength = cacheNarrow(g_logPath, g_fault.logPathNarrow, kPathWideChars);
+    g_fault.crashPrefixNarrowLength =
+        cacheNarrow(g_crashPrefixPath, g_fault.crashPrefixNarrow, kPathWideChars);
+#ifdef _WIN32
     g_fault.logPathLength = cacheWide(g_logPath, g_fault.logPath, kPathWideChars);
     g_fault.crashPrefixLength = cacheWide(g_crashPrefixPath, g_fault.crashPrefix, kPathWideChars);
+    g_fault.startTick = GetTickCount64();
+#endif
     if (QCoreApplication::instance() != nullptr) {
         g_fault.appIdentityLength = cacheNarrow(
             QCoreApplication::applicationName() + QLatin1Char(' ') +
                 QCoreApplication::applicationVersion(),
             g_fault.appIdentity, kIdentityBytes);
     }
-    g_fault.startTick = GetTickCount64();
 
-    // The block the report is assembled in. One fixed allocation for the
-    // process, made here rather than in the filter, so an OOM-free handler has
-    // somewhere to write from the first fault onward.
     if (g_reportBlock == nullptr) {
         g_reportBlock = new char[kReportCapacityBytes]();
     }
 
     rotateIfLarge(g_logPath);
     qInstallMessageHandler(messageHandler);
+#ifdef _WIN32
     SetUnhandledExceptionFilter(crashFilter);
+#else
+    struct sigaction sa{};
+    sa.sa_sigaction = &posixCrashHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    for (int sig : {SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS}) {
+        ::sigaction(sig, &sa, nullptr);
+    }
+#endif
 
     appendToLog(QStringLiteral("---- mikai started ----"));
     if (QCoreApplication::instance() != nullptr) {

@@ -1,3 +1,4 @@
+#include <utility>
 #pragma once
 
 #include <backend/Errors.hpp>
@@ -152,7 +153,7 @@ private:
     void populateRelated(const backend::AnimeDetail& detail);
     void loadRecommendations(const backend::AnimeDetail& detail);
     QWidget* buildRelatedCarousel(
-        const QString& heading, const QVector<QPair<QString, backend::AnimeSummary>>& entries);
+        const QString& heading, const QVector<std::pair<QString, backend::AnimeSummary>>& entries);
     /// `fromUser` is false when data landing expands the block itself. Only a
     /// toggle the reader pressed scrolls the overview: the recommendations
     /// carousel arriving is not a request to be scrolled away from whatever
@@ -244,6 +245,7 @@ private:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
     Runner& runner_;
     backend::MikaiClient& client_;
@@ -316,7 +318,7 @@ protected:
     /// The caller waiting on an in-flight extraction, kept per episode because
     /// the same embed can be awaited by a pill and by an open player at once.
     QMap<EpisodeEntry*,
-         std::function<void(EpisodeEntry*, const QMap<int, QString>&)>>
+         QVector<std::function<void(EpisodeEntry*, const QMap<int, QString>&)>>>
         entryCallbacks_;
 };
 

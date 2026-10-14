@@ -1,7 +1,6 @@
 #include "WindowRaisePolicy.hpp"
 
 #include <QApplication>
-#include <QDateTime>
 #include <QDebug>
 #include <QEvent>
 #include <QPointer>
@@ -45,11 +44,14 @@ bool forceForeground(QWidget* window) {
         qDebug() << "mikai: raise: input attach refused for" << window->objectName();
         return false;
     }
-    if (AttachThreadInput(currentThread, targetThread, TRUE)) {
-        window->raise();
-        window->activateWindow();
-        SetForegroundWindow(target);
-        SetActiveWindow(target);
+    const bool attachedTarget =
+        (targetThread != thisThread) &&
+        (AttachThreadInput(currentThread, targetThread, TRUE) != FALSE);
+    window->raise();
+    window->activateWindow();
+    SetForegroundWindow(target);
+    SetActiveWindow(target);
+    if (attachedTarget) {
         AttachThreadInput(currentThread, targetThread, FALSE);
     }
     AttachThreadInput(currentThread, thisThread, FALSE);
@@ -84,6 +86,18 @@ void requestForeground(QPointer<QWidget> window, int attempt) {
     const bool live = window->isWindow() && window->isVisible() &&
                       !QCoreApplication::closingDown() && attempt < kRaiseAttempts;
     if (!live) return;
+    if (attempt > 0) {
+        if (QWidget* active = QApplication::activeWindow();
+            active != nullptr && active->window() != window) {
+            return;
+        }
+    }
+    if (attempt > 0) {
+        if (QWidget* active = QApplication::activeWindow();
+            active != nullptr && active->window() != window) {
+            return;
+        }
+    }
 
     window->raise();
     window->activateWindow();
@@ -143,6 +157,7 @@ void WindowRaisePolicy::install() {
 
 bool WindowRaisePolicy::isExempt(const QWidget* window) {
     if (window == nullptr) return true;
+    if (window->windowType() == Qt::Popup || window->windowType() == Qt::ToolTip) return true;
     // The engine build overlay and any window that carries the attribute are
     // asking not to be activated; the attribute is honoured verbatim, so a
     // later WA_ShowWithoutActivating anywhere in the app keeps behaving.
