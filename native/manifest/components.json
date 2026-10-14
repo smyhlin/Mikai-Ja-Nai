@@ -10,12 +10,12 @@
     "whatItIsNot": "This is a statement of intent, not a licence. It changes nothing about what a licence permits, and it cannot substitute for a grant that does not exist. The project's own integration code is separately covered by the owner's 2026-10-04 grant (see projectIntegrationGrant); that grant is not an upstream licence and does not relicense any third-party component.",
     "effect": [
       "CC BY-NC-SA 4.0 components (models.animejanai-onnx): local non-commercial USE is within the located grant - section 2(a)(1) licenses reproduction and sharing 'for NonCommercial purposes only', and section 1(k) defines NonCommercial - and it engages no ShareAlike condition because nothing is shared. REDISTRIBUTION IS NOT CLEARED: placing the graphs in a shipped bundle is a Share, which triggers the section 3(a) attribution, section 3(b) share-alike and section 2(b)(3) royalty conditions, and no recorded rights-owner decision establishes that the product remains NonCommercial at the moment of distribution. See ESC-2.",
-      "Components with no located grant (engine.aji-dispatcher, engine.aji-trt, engine.aji-dml): their upstream terms are 'upstream terms not verified'. The use scope changes nothing: there is no located licence text and no upstream grant, so redistribution is not cleared and none is claimed. The draft permission request at native/permission-request.md remains unsent. See ESC-1.",
+      "Components with no located grant (engine.aji-dispatcher, engine.aji-trt, engine.aji-dml): their upstream terms are 'upstream terms not verified'. The use scope changes nothing: there is no located licence text and no upstream grant, so redistribution is not cleared and none is claimed. The draft permission request at native/README.md remains unsent. See ESC-1.",
       "The project's own integration code and its recorded decisions are covered by the owner's 2026-10-04 unrestricted grant, recorded at ../../LICENSE (The Unlicense) and summarised in projectIntegrationGrant. That grant does not relicense any third-party component above, and any component whose licence imposes conditions is governed by those conditions regardless of this scope."
     ]
   },
   "blockerTaskBindings": {
-    "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in tasks.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
+    "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in native/README.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
     "currentState": "ESC-1 (upstream inference source terms unverified), ESC-2 (CC BY-NC-SA spatial graph redistribution not cleared), ESC-3 (RIFE whole-graph redistribution unresolved), and ESC-5 (trtexec developer-tool redistribution on the official upstream-config path) are open. They leave public Native bundle redistribution blocked. ESC-4 is resolved and ESC-6 tracks GPL-family obligations. The owner's 2026-10-04 grant covers this project's own integration code only (see projectIntegrationGrant) and clears no third-party component.",
     "taskBindings": {
       "ESC-1": {
@@ -118,7 +118,7 @@
       "component": "animejanai-inference",
       "finding": "The inference shim source - aji.dll, aji_trt.dll, aji_dml.dll - has NO LICENCE of any kind. No LICENSE file, no SPDX identifier, no per-file licence headers, and the GitHub API reports license=null.",
       "consequence": "Absent a grant, copyright defaults to all-rights-reserved. There is currently NO legal basis to vendor, redistribute or ship these binaries, and equally no basis to rely on them as a runtime dependency of a shipped application. The reference package redistributes them; that is the upstream author's act, not a precedent or a permission for this project.",
-      "missingEvidence": "a written licence or a per-file licence header from the copyright holder (the-database), or an explicit grant covering adoption, modification, build, linked use and redistribution of the built DLLs. A draft request is prepared at native/permission-request.md; it has NOT been sent, and nothing here should be read as if it were.",
+      "missingEvidence": "a written licence or a per-file licence header from the copyright holder (the-database), or an explicit grant covering adoption, modification, build, linked use and redistribution of the built DLLs. A draft request is prepared at native/README.md; it has NOT been sent, and nothing here should be read as if it were.",
       "resolutionPaths": [
         "obtain an explicit licence from the copyright holder - the only path that yields a cleared component",
         "ship with no native inference backend at all - the application remains fully functional on the Standard core, and every native capability surface reports Unavailable with a named reason"
@@ -129,7 +129,7 @@
         "reason": "This project is built around this specific inference implementation. Substituting a different implementation changes the product, not just its provenance, and would silently alter the behaviour every downstream task is specified against. It is recorded here only so that it is visibly closed off rather than quietly available as a workaround."
       },
       "scopeNote": "The owner's 2026-10-04 grant covers this project's own integration code and its recorded decisions (see projectIntegrationGrant); it cannot supply the missing upstream grant and must not be represented as one. The upstream component itself remains redistribution 'blocked' and its terms remain 'upstream terms not verified'.",
-      "note": "The locatable upstream licence facts are unchanged and are recorded exactly as found: the repository declares no LICENSE, no SPDX identifier and no per-file headers, and the GitHub API reports license=null. The draft permission request at native/permission-request.md remains unsent, and nothing here should be read as if a grant had been obtained.",
+      "note": "The locatable upstream licence facts are unchanged and are recorded exactly as found: the repository declares no LICENSE, no SPDX identifier and no per-file headers, and the GitHub API reports license=null. The draft permission request at native/README.md remains unsent, and nothing here should be read as if a grant had been obtained.",
       "boundary": "Project-owned integration code is separately covered by the owner's unrestricted grant (projectIntegrationGrant). That grant is not an upstream licence; third-party components keep their own terms, and no upstream reuse is authorized by it."
     },
     {
@@ -151,7 +151,7 @@
       "consequence": "This is no longer an asset-availability item. The four graphs exist, their weight data traces to the MIT author, and their structure was verified; the residual is whole-graph provenance and a rights-owner decision on redistribution. No Ready capability, runtime bundle or native processing is claimed. The capability surface can still be built and unit-tested against fixture inputs.",
       "missingEvidence": "an upstream statement naming the exporter of these specific files (or route B, which makes the graph construction this project's own act), plus a recorded rights-owner decision on redistributing the graph files. Routes B/C also need a locally computed digest per produced ONNX file. See sources.json#sources[id=rife-v4.14-assets].provenanceLinkage.",
       "perVariantPosition": {
-        "rife_v4.14": "hzwer/Practical-RIFE's README at pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 states the content of its linked model files is under the same MIT licence as the project - an affirmative grant by the copyright holder, accepted as licence evidence for the weights. The acquired graph's stored tensors match that checkpoint (native/rife-acquisition.md §5.1); the file carries no per-file notice, so whole-artefact redistribution is not established.",
+        "rife_v4.14": "hzwer/Practical-RIFE's README at pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 states the content of its linked model files is under the same MIT licence as the project - an affirmative grant by the copyright holder, accepted as licence evidence for the weights. The acquired graph's stored tensors match that checkpoint (native/README.md §5.1); the file carries no per-file notice, so whole-artefact redistribution is not established.",
         "rife_v4.14_lite": "same position as rife_v4.14; the lite checkpoint is a separately published MIT link, and the acquired graph's stored tensors match it.",
         "rife_v4.14_ensemble": "no ensemble weight artefact is published in Practical-RIFE's links. The acquired ensemble graph's initializer set is byte-identical to its base graph's and matches the same base MIT checkpoint; this does not settle the graph-operator derivation or whole-artefact redistribution.",
         "rife_v4.14_lite_ensemble": "the independent-axis combination of the lite checkpoint under the ensemble merge ops; its initializer set matches the lite MIT checkpoint. Same residual as the other ensemble graph."
@@ -336,9 +336,9 @@
       "inBundle": false,
       "blockerRef": "ESC-1",
       "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
-      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/README.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/README.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
       "presentInInstalledBundle": true,
       "presenceNote": "Present in the installed private bundle (96768 bytes) and byte-identical to this repository's own build under _compile-smoke/aji-m04. Marked inBundle false because redistribution is blocked, not because it is absent."
     },
@@ -378,9 +378,9 @@
       "inBundle": false,
       "blockerRef": "ESC-1",
       "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
-      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/README.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/README.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
       "presentInInstalledBundle": true,
       "presenceNote": "Present in the installed private bundle (1210880 bytes) and byte-identical to this repository's own build under _compile-smoke/aji-m04. Marked inBundle false because redistribution is blocked, not because it is absent."
     },
@@ -419,9 +419,9 @@
       "inBundle": false,
       "blockerRef": "ESC-1",
       "blockScope": "third-party redistribution; the upstream source's own terms are not verified",
-      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/permission-request.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
+      "blockReason": "Third-party upstream terms are unverified: no LICENSE, no SPDX identifier and no per-file headers, the GitHub licence field is null, no upstream grant has been obtained, and the draft permission request at native/README.md is unsent. That unverified upstream status is what prevents a redistributable bundle carrying these DLLs. It is not a restriction on this project's own Unlicense-covered integration code, and it does not ban private local source experimentation.",
       "usePermitted": false,
-      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/permission-request.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
+      "useScopeNote": "The recorded private, local, non-commercial scope does not supply the missing upstream grant, and the draft permission request at native/README.md remains unsent. The project's own integration code is covered separately by the owner's grant (projectIntegrationGrant) and is not what this component's blocker concerns.",
       "note": "Whether aji_dml is offered at all is a separate product decision. The plan's DirectML interop proof is itself outstanding, so this component may never be shipped.",
       "presentInInstalledBundle": false,
       "absenceReason": "No aji_dml.dll in the installed bundle. The DirectML path was refused at run time: the required SHARED_NTHANDLE WGL registration was refused with 0xC007006E, so the capability is recorded as honestly disabled rather than shipped unproven."
@@ -660,7 +660,7 @@
         "pinKind": "referencePin",
         "requiredNamesVerified": true,
         "nameDerivation": "rife_model_name() maps code 414 -> rife_v4.14, a four-digit code ending in 1 -> _lite, and ensemble -> _ensemble on an independent boolean; the consumer appends .onnx, so the full {Full, Lite} x {ensemble off, on} space is four names",
-        "localPresence": "all four names present under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and every tracked tree. native/rife-acquisition.md records the archive pin, extraction, structural check and weight comparison; native/videojanai-acquisition.md records the byte-identical comparison against component-rife.7z.",
+        "localPresence": "all four names present under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and every tracked tree. native/README.md records the archive pin, extraction, structural check and weight comparison; native/README.md records the byte-identical comparison against component-rife.7z.",
         "acquiredArchivePin": {
           "asset": "rife-fp16-1.7z",
           "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9",
@@ -674,7 +674,7 @@
         "spdx": "MIT",
         "status": "WEIGHT DATA ESTABLISHED - whole-graph redistribution unresolved; see ESC-3",
         "grant": "hzwer/Practical-RIFE states in its README at pinned commit de9a989bb7b8a71d94f058297e603633aaa43ad6 that the content of its linked trained model files is under the same MIT licence as the project - an affirmative grant by the copyright holder covering the v4.14 and v4.14.lite weights.",
-        "residual": "Every stored weight tensor in all four acquired graphs matches those MIT checkpoints after fp16 rounding (native/rife-acquisition.md §5.1), so the weight bytes trace to the author. Still open: exporter identity, the non-weight graph material, and the rights basis for redistributing the files as artefacts, which carry no per-file notice. Not asserted either way here."
+        "residual": "Every stored weight tensor in all four acquired graphs matches those MIT checkpoints after fp16 rounding (native/README.md §5.1), so the weight bytes trace to the author. Still open: exporter identity, the non-weight graph material, and the rights basis for redistributing the files as artefacts, which carry no per-file notice. Not asserted either way here."
       },
       "redistribution": "blocked",
       "inBundle": false,
@@ -3080,7 +3080,7 @@
     "grant": "The project owner granted unrestricted use of this project's own native integration, with no restrictions (in-session).",
     "recordedAt": "../../LICENSE (The Unlicense)",
     "scope": "This project's own native integration code, its patch series and its recorded decisions only.",
-    "doesNotCover": "Any third-party component. The upstream AnimeJaNai inference sources and models, Qt, mpv, FFmpeg, NVIDIA CUDA/TensorRT/cuDART, ONNX Runtime and DirectML each keep their own upstream terms; this grant neither relicenses nor verifies them, and no upstream reuse is authorized by it. The draft permission request at native/permission-request.md remains unsent."
+    "doesNotCover": "Any third-party component. The upstream AnimeJaNai inference sources and models, Qt, mpv, FFmpeg, NVIDIA CUDA/TensorRT/cuDART, ONNX Runtime and DirectML each keep their own upstream terms; this grant neither relicenses nor verifies them, and no upstream reuse is authorized by it. The draft permission request at native/README.md remains unsent."
   },
   "inBundleSemantics": {
     "meaning": "inBundle answers 'may this component go into a DISTRIBUTABLE bundle?', not 'is this file present in the locally installed private bundle?'. The two differ for the blocked components and confusing them would either hide ESC-1 or pretend it away.",

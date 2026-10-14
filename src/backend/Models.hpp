@@ -2,7 +2,7 @@
 
 #include <QJsonObject>
 #include <QMap>
-#include <QPair>
+#include <utility>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -173,7 +173,7 @@ QString animePageUrl(const QString& ref, const QString& slug);
 QString thumbUrl(const AnimeSummary& anime);
 QString posterUrl(const AnimeSummary& anime);
 QString coverUrl(const AnimeDetail& detail);
-QVector<QPair<QString, QString>> externalLinks(const AnimeDetail& detail);
+QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail);
 
 // JSON parsers mirroring the Python _parse_* functions.
 Titles parseTitles(const QJsonObject& data);

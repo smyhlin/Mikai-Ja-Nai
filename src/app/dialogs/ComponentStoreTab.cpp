@@ -26,8 +26,11 @@
 #include <QtCore/QStringList>
 #include <QtCore/QVariantMap>
 #include <QtGui/QFont>
+#include <QtGui/QMouseEvent>
 #include <QtGui/QPalette>
 #include <QtGui/QResizeEvent>
+#include <QtWidgets/QFrame>
+#include <QtWidgets/QStyle>
 #include <QtCore/QVariant>
 #include <QtCore/QVariantMap>
 #include <utility>
@@ -286,10 +289,12 @@ QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
                 tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
             if (kernel != nullptr) append(kernel->name, kernel->assetBytes);
         }
+#ifdef Q_OS_WIN
     } else if (directMlClosureBytes_ > 0) {
         append(translate(QT_TRANSLATE_NOOP(
                    "mikai::app::ComponentStoreTab", "AnimeJaNai DirectML closure")),
                directMlClosureBytes_);
+#endif
     }
 
     if (!rifeInstalled_)
@@ -330,71 +335,97 @@ void ComponentStoreTab::buildUi() {
                               theme::kSpacingNone, theme::kSpacingNone);
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* content = new QWidget(scroll);
     auto* root = new QVBoxLayout(content);
-    root->setContentsMargins(theme::kSpacingLarge, theme::kSpacingLarge,
-                             theme::kSpacingLarge, theme::kSpacingLarge);
+    root->setContentsMargins(theme::kSpacingSmall, theme::kSpacingMedium,
+                             theme::kSpacingSmall, theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    heading_ = new QLabel(this);
-    heading_->setObjectName(QStringLiteral("sectionHeading"));
-    root->addWidget(heading_);
+    auto* headerCard = new QFrame(content);
+    headerCard->setObjectName(QStringLiteral("settingsCard"));
+    auto* headerLayout = new QVBoxLayout(headerCard);
+    headerLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
+                                     theme::kSpacingMedium, theme::kSpacingMedium);
+    headerLayout->setSpacing(theme::kSpacingSmall);
 
-    hint_ = new QLabel(this);
+    heading_ = new QLabel(headerCard);
+    heading_->setObjectName(QStringLiteral("heading"));
+    heading_->setWordWrap(true);
+    heading_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    headerLayout->addWidget(heading_);
+
+    hint_ = new QLabel(headerCard);
     hint_->setObjectName(QStringLiteral("muted"));
     hint_->setWordWrap(true);
-    root->addWidget(hint_);
+    headerLayout->addWidget(hint_);
 
-    gpuLabel_ = new QLabel(this);
+    gpuLabel_ = new QLabel(headerCard);
     gpuLabel_->setObjectName(QStringLiteral("descriptionPanel"));
     gpuLabel_->setWordWrap(true);
     QFont gpuFont = gpuLabel_->font();
     gpuFont.setBold(true);
     gpuLabel_->setFont(gpuFont);
-    root->addWidget(gpuLabel_);
+    headerLayout->addWidget(gpuLabel_);
 
     auto* backendRow = new QHBoxLayout();
     backendRow->setSpacing(theme::kSpacingSmall);
-    animeJanaiBackendLabel_ = new QLabel(this);
+    animeJanaiBackendLabel_ = new QLabel(headerCard);
     animeJanaiBackendLabel_->setObjectName(QStringLiteral("muted"));
-    backendRow->addWidget(animeJanaiBackendLabel_);
-    animeJanaiBackendCombo_ = new QComboBox(this);
+    backendRow->addWidget(animeJanaiBackendLabel_, 0, Qt::AlignVCenter);
+    animeJanaiBackendCombo_ = new QComboBox(headerCard);
     animeJanaiBackendCombo_->setObjectName(QStringLiteral("animeJanaiRuntimeBackend"));
+    animeJanaiBackendCombo_->setMinimumHeight(theme::kSettingsControlSize);
     animeJanaiBackendCombo_->setAccessibleName(tr("AnimeJaNai backend used by Apply changes and Verify"));
     animeJanaiBackendCombo_->addItem(tr("TensorRT (CUDA / NVDEC)"),
                                      static_cast<int>(Backend::TensorRT));
     animeJanaiBackendCombo_->addItem(tr("DirectML (D3D11VA)"),
                                      static_cast<int>(Backend::DirectML));
-    backendRow->addWidget(animeJanaiBackendCombo_);
-    backendRow->addStretch();
-    root->addLayout(backendRow);
+    animeJanaiBackendLabel_->setBuddy(animeJanaiBackendCombo_);
+    backendRow->addWidget(animeJanaiBackendCombo_, 1, Qt::AlignVCenter);
+    headerLayout->addLayout(backendRow);
 
-    recommendationBanner_ = new QLabel(this);
-    recommendationBanner_->setObjectName(QStringLiteral("muted"));
+    root->addWidget(headerCard);
+
+    recommendationBanner_ = new QLabel(content);
+    recommendationBanner_->setObjectName(QStringLiteral("componentRecommendationBanner"));
     recommendationBanner_->setWordWrap(true);
     root->addWidget(recommendationBanner_);
-    auto makeCard = [this, root](const QString& objectName, QCheckBox** checkBox,
-                                  QLabel** stateLabel) {
-        auto* card = new QGroupBox(this);
+
+    auto syncCardSelectionStyle = [](QGroupBox* card, bool selected) {
+        if (card == nullptr) return;
+        card->setProperty("selected", selected);
+        card->style()->unpolish(card);
+        card->style()->polish(card);
+    };
+
+    auto makeCard = [this, root, content](const QString& objectName, QCheckBox** checkBox,
+                                          QLabel** stateLabel) {
+        auto* card = new QGroupBox(content);
         card->setObjectName(QStringLiteral("nativeComponentPackCard"));
         card->setProperty("componentCardId", objectName);
+        card->setCursor(Qt::PointingHandCursor);
+        card->installEventFilter(this);
         auto* cardLayout = new QHBoxLayout(card);
         cardLayout->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                        theme::kSpacingMedium, theme::kSpacingMedium);
         cardLayout->setSpacing(theme::kSpacingMedium);
         *checkBox = new QCheckBox(card);
         (*checkBox)->setObjectName(objectName + QStringLiteral("Check"));
+        (*checkBox)->setMinimumSize(theme::kSettingsControlSize, theme::kSettingsControlSize);
         cardLayout->addWidget(*checkBox, 0, Qt::AlignVCenter);
         auto* details = new QWidget(card);
+        details->installEventFilter(this);
         auto* detailsLayout = new QVBoxLayout(details);
         detailsLayout->setContentsMargins(0, 0, 0, 0);
-        detailsLayout->setSpacing(theme::kSpacingSmall);
+        detailsLayout->setSpacing(theme::kSpacingXs);
         auto* titleRow = new QHBoxLayout();
         titleRow->setSpacing(theme::kSpacingSmall);
         auto* title = new QLabel(details);
         title->setObjectName(objectName + QStringLiteral("Title"));
         title->setWordWrap(true);
+        title->installEventFilter(this);
         QFont titleFont = title->font();
         titleFont.setBold(true);
         title->setFont(titleFont);
@@ -402,6 +433,7 @@ void ComponentStoreTab::buildUi() {
         *stateLabel = new QLabel(details);
         (*stateLabel)->setObjectName(objectName + QStringLiteral("State"));
         (*stateLabel)->setWordWrap(true);
+        (*stateLabel)->installEventFilter(this);
         titleRow->addWidget(*stateLabel);
         titleRow->addStretch();
         detailsLayout->addLayout(titleRow);
@@ -409,11 +441,17 @@ void ComponentStoreTab::buildUi() {
         description->setObjectName(objectName + QStringLiteral("Description"));
         description->setProperty("textRole", QStringLiteral("muted"));
         description->setWordWrap(true);
+        description->installEventFilter(this);
         detailsLayout->addWidget(description);
         cardLayout->addWidget(details, 1);
         auto* size = new QLabel(card);
         size->setObjectName(objectName + QStringLiteral("Size"));
+        size->setProperty("textRole", QStringLiteral("muted"));
         size->setWordWrap(true);
+        size->installEventFilter(this);
+        QFont sizeFont = size->font();
+        sizeFont.setBold(true);
+        size->setFont(sizeFont);
         cardLayout->addWidget(size, 0, Qt::AlignVCenter);
         root->addWidget(card);
         return card;
@@ -447,66 +485,84 @@ void ComponentStoreTab::buildUi() {
         if (checked) selectedPacks_.insert(QStringLiteral("component:runtime"));
         else selectedPacks_.remove(QStringLiteral("component:runtime"));
     };
-    connect(runtimeCheck_, &QCheckBox::toggled, this, [this, updateRuntimeSelection](bool checked) {
-        updateRuntimeSelection(checked);
-        updateControls();
-    });
-    connect(rifeCheck_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (checked) selectedPacks_.insert(QStringLiteral("rife:archive"));
-        else selectedPacks_.remove(QStringLiteral("rife:archive"));
-        updateControls();
-    });
-    connect(spatialCheck_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (checked) selectedPacks_.insert(QStringLiteral("component:spatial"));
-        else selectedPacks_.remove(QStringLiteral("component:spatial"));
-        updateControls();
-    });
-    connect(kernelsCheck_, &QCheckBox::toggled, this, [this](bool checked) {
-        if (checked) selectedPacks_.insert(QStringLiteral("component:kernels"));
-        else selectedPacks_.remove(QStringLiteral("component:kernels"));
-        updateControls();
-    });
+    connect(runtimeCheck_, &QCheckBox::toggled, this,
+            [this, runtimeCard, updateRuntimeSelection, syncCardSelectionStyle](bool checked) {
+                updateRuntimeSelection(checked);
+                syncCardSelectionStyle(runtimeCard, checked);
+                updateControls();
+            });
+    connect(rifeCheck_, &QCheckBox::toggled, this,
+            [this, rifeCard, syncCardSelectionStyle](bool checked) {
+                if (checked) selectedPacks_.insert(QStringLiteral("rife:archive"));
+                else selectedPacks_.remove(QStringLiteral("rife:archive"));
+                syncCardSelectionStyle(rifeCard, checked);
+                updateControls();
+            });
+    connect(spatialCheck_, &QCheckBox::toggled, this,
+            [this, spatialCard, syncCardSelectionStyle](bool checked) {
+                if (checked) selectedPacks_.insert(QStringLiteral("component:spatial"));
+                else selectedPacks_.remove(QStringLiteral("component:spatial"));
+                syncCardSelectionStyle(spatialCard, checked);
+                updateControls();
+            });
+    connect(kernelsCheck_, &QCheckBox::toggled, this,
+            [this, kernelsCard, syncCardSelectionStyle](bool checked) {
+                if (checked) selectedPacks_.insert(QStringLiteral("component:kernels"));
+                else selectedPacks_.remove(QStringLiteral("component:kernels"));
+                syncCardSelectionStyle(kernelsCard, checked);
+                updateControls();
+            });
 
-    auto* actions = new QVBoxLayout();
+    auto* actionsCard = new QFrame(content);
+    actionsCard->setObjectName(QStringLiteral("settingsCard"));
+    auto* actions = new QVBoxLayout(actionsCard);
+    actions->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
+                                theme::kSpacingMedium, theme::kSpacingMedium);
     actions->setSpacing(theme::kSpacingSmall);
     auto* primaryActions = new QHBoxLayout();
     primaryActions->setSpacing(theme::kSpacingSmall);
-    downloadButton_ = new QPushButton(this);
+    downloadButton_ = new QPushButton(actionsCard);
     downloadButton_->setObjectName(QStringLiteral("primary"));
+    downloadButton_->setMinimumHeight(theme::kSettingsControlSize);
     primaryActions->addWidget(downloadButton_);
-    auto* refreshButton = new QPushButton(this);
+    auto* refreshButton = new QPushButton(actionsCard);
     refreshButton->setObjectName(QStringLiteral("refreshComponentsButton"));
+    refreshButton->setMinimumHeight(theme::kSettingsControlSize);
     primaryActions->addWidget(refreshButton);
     primaryActions->addStretch();
     actions->addLayout(primaryActions);
     auto* utilityActions = new QHBoxLayout();
     utilityActions->setSpacing(theme::kSpacingSmall);
-    verifyButton_ = new QPushButton(this);
+    verifyButton_ = new QPushButton(actionsCard);
     verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
+    verifyButton_->setMinimumHeight(theme::kSettingsControlSize);
     utilityActions->addWidget(verifyButton_);
-    importAnimeJanaiButton_ = new QPushButton(this);
+    importAnimeJanaiButton_ = new QPushButton(actionsCard);
     importAnimeJanaiButton_->setObjectName(QStringLiteral("nativeComponentImportAnimeJanaiButton"));
+    importAnimeJanaiButton_->setMinimumHeight(theme::kSettingsControlSize);
     utilityActions->addWidget(importAnimeJanaiButton_);
-    cancelButton_ = new QPushButton(this);
+    cancelButton_ = new QPushButton(actionsCard);
     cancelButton_->setObjectName(QStringLiteral("nativeComponentTabCancelButton"));
+    cancelButton_->setMinimumHeight(theme::kSettingsControlSize);
     cancelButton_->setEnabled(false);
     utilityActions->addWidget(cancelButton_);
     utilityActions->addStretch();
     actions->addLayout(utilityActions);
-    root->addLayout(actions);
 
-    progress_ = new QProgressBar(this);
+    progress_ = new QProgressBar(actionsCard);
     progress_->setObjectName(QStringLiteral("nativeComponentTabProgress"));
     progress_->setRange(0, 100);
     progress_->setTextVisible(false);
     progress_->hide();
-    root->addWidget(progress_);
+    actions->addWidget(progress_);
 
-    status_ = new QLabel(this);
+    status_ = new QLabel(actionsCard);
     status_->setObjectName(QStringLiteral("nativeComponentStatus"));
     status_->setAccessibleName(tr("Components status"));
     status_->setWordWrap(true);
-    root->addWidget(status_);
+    actions->addWidget(status_);
+    root->addWidget(actionsCard);
+
     root->addStretch();
     scroll->setWidget(content);
     outer->addWidget(scroll);
@@ -575,7 +631,10 @@ void ComponentStoreTab::retranslateUi() {
     verifyButton_->setAccessibleName(tr("Re-check every installed element against its digest"));
     downloadButton_->setText(tr("Apply changes"));
     downloadButton_->setAccessibleName(tr("Apply selected component changes"));
-    findChild<QPushButton*>(QStringLiteral("refreshComponentsButton"))->setText(tr("Refresh"));
+    if (auto* refreshBtn = findChild<QPushButton*>(QStringLiteral("refreshComponentsButton"))) {
+        refreshBtn->setText(tr("Refresh"));
+        refreshBtn->setAccessibleName(tr("Refresh"));
+    }
     importAnimeJanaiButton_->setText(tr("Install local runtime..."));
     importAnimeJanaiButton_->setAccessibleName(
         tr("Choose a local AnimeJaNai runtime directory and install its selected backend closure"));
@@ -592,6 +651,29 @@ void ComponentStoreTab::retranslateUi() {
     recommendationBanner_->setText(
         QStringLiteral("!  ") +
         tr("Components recommended for this PC are not installed. Check the highlighted items below, then click Apply changes to install them."));
+}
+
+bool ComponentStoreTab::eventFilter(QObject* watched, QEvent* event) {
+    if (event->type() == QEvent::MouseButtonRelease) {
+        const auto* mouseEvent = static_cast<const QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton) {
+            QWidget* widget = qobject_cast<QWidget*>(watched);
+            while (widget != nullptr && widget != this) {
+                if (auto* card = qobject_cast<QGroupBox*>(widget);
+                    card != nullptr && card->objectName() == QStringLiteral("nativeComponentPackCard")) {
+                    const QString cardId = card->property("componentCardId").toString();
+                    if (auto* check = card->findChild<QCheckBox*>(cardId + QStringLiteral("Check"));
+                        check != nullptr && check->isEnabled() && check->isVisibleTo(card)) {
+                        check->toggle();
+                        return true;
+                    }
+                    break;
+                }
+                widget = widget->parentWidget();
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ComponentStoreTab::changeEvent(QEvent* event) {
@@ -839,18 +921,23 @@ void ComponentStoreTab::updateCardStates() {
     setState(kernelsState_,
              kernelsRecommended ? tr("recommended for this PC")
                                 : (kernelsInstalled ? tr("installed") : tr("optional")));
-    auto setBadgeRole = [](QLabel* badge, bool recommended) {
+    auto setBadgeRole = [](QLabel* badge, bool recommended, bool installed) {
         badge->setAutoFillBackground(false);
         badge->setStyleSheet(QString());
         badge->setProperty("textRole", recommended ? QStringLiteral("recommendation")
-                                                   : QStringLiteral("muted"));
+                                                   : (installed ? QString()
+                                                                : QStringLiteral("muted")));
+        badge->setProperty("badgeRole", recommended ? QString()
+                                                    : (installed ? QStringLiteral("installed")
+                                                                 : QStringLiteral("optional")));
         badge->style()->unpolish(badge);
         badge->style()->polish(badge);
     };
-    setBadgeRole(runtimeState_, runtimeRecommended);
-    setBadgeRole(rifeState_, false);
-    setBadgeRole(spatialState_, spatialRecommended);
-    setBadgeRole(kernelsState_, kernelsRecommended);
+    setBadgeRole(runtimeState_, runtimeRecommended, runtimeInstalled);
+    setBadgeRole(rifeState_, false, rifeInstalled);
+    setBadgeRole(spatialState_, spatialRecommended,
+                 !spatialCatalog.isEmpty() && verifiedSpatial == spatialCatalog.size());
+    setBadgeRole(kernelsState_, kernelsRecommended, kernelsInstalled);
 
     runtimeCheck_->setAccessibleName(tr("TensorRT runtime"));
     rifeCheck_->setAccessibleName(tr("RIFE interpolation models"));
@@ -867,9 +954,13 @@ void ComponentStoreTab::updateCardStates() {
         if (spatialRecommended) selectedPacks_.insert(QStringLiteral("component:spatial"));
     }
     auto showSelection = [this](QCheckBox* box, const QString& pack) {
+        const bool checked = selectedPacks_.contains(pack);
         box->blockSignals(true);
-        box->setChecked(selectedPacks_.contains(pack));
+        box->setChecked(checked);
         box->blockSignals(false);
+        if (QWidget* card = box->parentWidget()) {
+            card->setProperty("selected", checked && box->isVisibleTo(card));
+        }
     };
     showSelection(runtimeCheck_, QStringLiteral("component:runtime"));
     showSelection(rifeCheck_, QStringLiteral("rife:archive"));
@@ -877,9 +968,17 @@ void ComponentStoreTab::updateCardStates() {
     showSelection(kernelsCheck_, QStringLiteral("component:kernels"));
     const bool showBanner = runtimeRecommended || kernelsRecommended || spatialRecommended;
     recommendationBanner_->setVisible(showBanner);
-    runtimeCheck_->parentWidget()->setProperty("recommended", runtimeRecommended);
-    spatialCheck_->parentWidget()->setProperty("recommended", spatialRecommended);
-    kernelsCheck_->parentWidget()->setProperty("recommended", kernelsRecommended);
+    auto restyleCard = [](QCheckBox* box, bool recommended) {
+        if (QWidget* card = box != nullptr ? box->parentWidget() : nullptr) {
+            card->setProperty("recommended", recommended);
+            card->style()->unpolish(card);
+            card->style()->polish(card);
+        }
+    };
+    restyleCard(runtimeCheck_, runtimeRecommended);
+    restyleCard(rifeCheck_, false);
+    restyleCard(spatialCheck_, spatialRecommended);
+    restyleCard(kernelsCheck_, kernelsRecommended);
 }
 
 /// The immutable input the off-GUI verification needs, copied here on the GUI
@@ -1129,8 +1228,14 @@ void ComponentStoreTab::installRecommended() {
     if (acquisitionChecking_ || downloadActive() || verifying_) return;
     recommendedInstallPending_ = true;
     const GpuComputeCapability& gpu = observeComputeCapability();
+#ifdef Q_OS_WIN
+    const Backend preferredBackend = gpu.nvidia ? Backend::TensorRT : Backend::DirectML;
+#else
+    Q_UNUSED(gpu);
+    const Backend preferredBackend = Backend::TensorRT;
+#endif
     const int backendIndex = animeJanaiBackendCombo_->findData(
-        static_cast<int>(gpu.nvidia ? Backend::TensorRT : Backend::DirectML));
+        static_cast<int>(preferredBackend));
     if (backendIndex >= 0) animeJanaiBackendCombo_->setCurrentIndex(backendIndex);
     if (inventoryReady_) finishRecommendedInstall();
     else scheduleInventoryRefresh();
@@ -1972,6 +2077,8 @@ void ComponentStoreTab::applyStatus(const QString& key, const QString& reason) {
                                  : QStringLiteral("failure"));
         status_->setProperty("statusSeverity", severity);
         status_->setAccessibleDescription(severity);
+        status_->style()->unpolish(status_);
+        status_->style()->polish(status_);
     }
     if (!key.isEmpty()) {
         qWarning().noquote() << "native components:" << key << reason;

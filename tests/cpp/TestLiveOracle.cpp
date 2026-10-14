@@ -1,3 +1,4 @@
+#include <utility>
 #include "TestLiveOracle.hpp"
 
 #include "TestSupport.hpp"
@@ -161,8 +162,8 @@ namespace {
 /// The providers are derived from the embed URL through the same detectSite the
 /// player uses, not from the API's own "provider" string, so a URL the extractor
 /// would reject shows up here instead of passing silently.
-QVector<QPair<QString, QString>> providerEmbeds(const Release& release) {
-  QVector<QPair<QString, QString>> pairs;
+QVector<std::pair<QString, QString>> providerEmbeds(const Release& release) {
+  QVector<std::pair<QString, QString>> pairs;
   for (const auto& episode : release.episodes) {
     for (const auto& source : episode.sources) {
       const QString embed = asText(source.embed_url);

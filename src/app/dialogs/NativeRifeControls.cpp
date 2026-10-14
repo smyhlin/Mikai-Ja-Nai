@@ -47,6 +47,7 @@ constexpr int kMaxFactorSide = 100000;
 /// closed caption elides; the tooltip and the popup still show every choice in
 /// full.
 void boundCaptionWidth(QComboBox* combo) {
+    combo->setMinimumHeight(theme::kSettingsControlSize);
     combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     combo->setMinimumContentsLength(theme::kSettingsChoiceLengthChars);
     QSizePolicy policy = combo->sizePolicy();
@@ -143,11 +144,13 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     factorNum_ = new QSpinBox(this);
     factorNum_->setObjectName(QStringLiteral("nativeRifeFactorNumSpin"));
     factorNum_->setAccessibleName(tr("Frame factor numerator"));
+    factorNum_->setMinimumHeight(theme::kSettingsControlSize);
     factorNum_->setRange(1, kMaxFactorSide);
     factorNum_->setValue(2);
     factorDen_ = new QSpinBox(this);
     factorDen_->setObjectName(QStringLiteral("nativeRifeFactorDenSpin"));
     factorDen_->setAccessibleName(tr("Frame factor denominator"));
+    factorDen_->setMinimumHeight(theme::kSettingsControlSize);
     factorDen_->setRange(1, kMaxFactorSide);
     factorDen_->setValue(1);
     auto* slash = new QLabel(QStringLiteral("/"), this);
@@ -160,6 +163,7 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     threshold_ = new QLineEdit(this);
     threshold_->setObjectName(QStringLiteral("nativeRifeSceneThresholdEdit"));
     threshold_->setAccessibleName(tr("Scene detection threshold"));
+    threshold_->setMinimumHeight(theme::kSettingsControlSize);
     // The validator only guides typing. The value is parsed again with the same
     // locale and validated explicitly, so nothing is rounded to a fixed number
     // of decimals and nothing is silently replaced with 0.

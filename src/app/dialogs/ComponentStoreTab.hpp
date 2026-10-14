@@ -116,6 +116,7 @@ public:
     quint64 runGeneration() const { return runGeneration_; }
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 

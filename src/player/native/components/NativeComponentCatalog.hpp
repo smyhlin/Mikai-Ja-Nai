@@ -18,10 +18,10 @@
 //    rather than silently approximated. The same selection must be reproducible
 //    in both directions, so it is computed from the numbers, never from an index.
 //
-//  * `trtexec.exe` is deliberately absent from the runtime pack's file list.
-//    Nothing in this build ever invokes it, and `native/manifest/components.json`
-//    resolves ESC-5 by architecture over the bundle inventory - installing it
-//    would put an executable on disk that the inventory cannot describe.
+//  * `trtexec.exe` / `trtexec` is deliberately absent from the runtime pack's
+//    store file list: the private prepared-helper path builds plans in process
+//    and never invokes it, while the official v0.9.0 config/first-build path
+//    extracts it directly into its runtime closure.
 //
 // The runtime and the builder resource are separate packs because the release
 // publishes them separately, but they are always selected and installed as one
@@ -49,6 +49,7 @@ struct ComponentPack {
     QString assetSha256;
     QStringList files;
     QString resourceFile;
+    bool exactAssetBytes = true;
 };
 
 /// The pinned release tag, "3.7.0".
@@ -57,20 +58,30 @@ QString componentReleaseTag();
 /// The release page the assets above come from.
 QString componentReleaseUrl();
 
-/// Every pinned pack, runtime first, then the resource packs in generation order
-/// and the PTX pack last.
+/// Every pinned pack for the active host platform, runtime first, then the
+/// resource packs in generation order and the PTX pack last.
 const QVector<ComponentPack>& tensorRtComponentCatalog();
-/// The independently downloadable Windows RIFE 3.7.0 archive. Its graph inventory
-/// comes from rifeModelPins(); this pack describes only the archive transport.
+
+/// Explicit platform-specific catalogues for Windows x64 and Linux x64.
+const QVector<ComponentPack>& tensorRtWindowsComponentCatalog();
+const QVector<ComponentPack>& tensorRtLinuxComponentCatalog();
+
+/// The independently downloadable RIFE 3.7.0 archive for the active host
+/// platform (`component-rife.7z` on Windows, `component-rife-linux-x64.7z` on
+/// Linux). Its graph inventory comes from rifeModelPins(); this pack describes
+/// only the archive transport.
 struct RifeArchivePack {
     QString name;
     QString asset;
     QString url;
     qint64 assetBytes = 0;
     QString assetSha256;
+    bool exactAssetBytes = true;
 };
 
 const RifeArchivePack& rifeArchivePack();
+const RifeArchivePack& rifeWindowsArchivePack();
+const RifeArchivePack& rifeLinuxArchivePack();
 
 /// The pack named "trt-runtime"; never null while the table is compiled in.
 const ComponentPack* tensorRtRuntimePack();

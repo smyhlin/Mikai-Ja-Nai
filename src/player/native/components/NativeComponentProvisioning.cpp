@@ -195,7 +195,7 @@ ComponentProvisionResult provisionTensorRtComponents(
         } else {
             QString downloadReason;
             const bool downloaded = mikai::backend::downloadToFile(
-                QUrl(pack.url), archive, pack.assetBytes, pack.assetSha256,
+                QUrl(pack.url), archive, pack.exactAssetBytes ? pack.assetBytes : 0, pack.assetSha256,
                 [&](qint64 received, qint64 total) {
                     if (progress) progress({pack.name, received, total});
                 },
@@ -281,7 +281,7 @@ ComponentProvisionResult provisionRifeArchive(
     const QString archive = scratch.filePath(pack.asset);
     QString downloadReason;
     const bool downloaded = mikai::backend::downloadToFile(
-        QUrl(pack.url), archive, pack.assetBytes, pack.assetSha256,
+        QUrl(pack.url), archive, pack.exactAssetBytes ? pack.assetBytes : 0, pack.assetSha256,
         [&](qint64 received, qint64 total) {
             if (progress) progress({pack.name, received, total});
         },

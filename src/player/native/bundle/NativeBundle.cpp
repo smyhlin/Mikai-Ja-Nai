@@ -765,7 +765,12 @@ bool verifyInventory(const QString& root, const QVector<BundleFile>& files, cons
             return (setReason(reason, QStringLiteral("'%1' hashes to %2, the manifest records %3")
                                        .arg(file.path, digest, file.sha256)),
                     false);
-        if (file.path.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive))
+        if (file.path.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive)
+#ifndef Q_OS_WIN
+            || file.path.endsWith(QLatin1String(".so"))
+            || file.path.contains(QLatin1String(".so."))
+#endif
+        )
             basenames.insert(QFileInfo(file.path).fileName().toLower());
     }
 
@@ -1002,29 +1007,35 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
         return refuse(QStringLiteral("%1 has no parent directory").arg(canonicalModule));
     if (!pathHasNoReparsePoints(root, canonicalModule))
         return refuse(QStringLiteral("%1 is reached through a reparse point").arg(canonicalModule));
-    if (!moduleInfo.fileName().endsWith(QLatin1String(".dll"), Qt::CaseInsensitive))
+    const bool isDll = moduleInfo.fileName().endsWith(QLatin1String(".dll"), Qt::CaseInsensitive);
+#ifdef Q_OS_WIN
+    const bool isLinuxSo = false;
+#else
+    const bool isLinuxSo =
+        moduleInfo.fileName().endsWith(QLatin1String(".so")) ||
+        moduleInfo.fileName().contains(QLatin1String(".so."));
+#endif
+    if (!isDll && !isLinuxSo)
         return refuse(QStringLiteral("%1 is not a DLL").arg(canonicalModule));
-    // A root holding bundle.json is a published bundle, not a stock runtime
-    // installed where it is. The stock search walks the application directory
-    // recursively, so a published bundle beside the executable is reachable
-    // through it; describing that as Standard would report the wrong kind for a
-    // core whose own manifest says otherwise.
     if (QFileInfo::exists(QDir(root).filePath(QLatin1String(kManifestFileName))))
         return refuse(QStringLiteral("%1 holds a bundle.json; it is a published bundle, not a "
                                      "stock runtime")
                           .arg(root));
 
-    // The module is the thing being described, so it is refused by name before
-    // the inventory beside it is measured: a stock runtime that is not a real
-    // x64 PE is a useless descriptor with a long error message.
     {
         QFile image(canonicalModule);
         if (!image.open(QIODevice::ReadOnly))
             return refuse(QStringLiteral("%1 cannot be read").arg(canonicalModule));
-        const PeImageInfo info = inspectPeImage(image.readAll());
-        if (!info.ok)
-            return refuse(QStringLiteral("%1 is not a usable x64 PE image: %2")
-                              .arg(canonicalModule, info.reason));
+        const QByteArray bytes = image.readAll();
+        if (isDll) {
+            const PeImageInfo info = inspectPeImage(bytes);
+            if (!info.ok)
+                return refuse(QStringLiteral("%1 is not a usable x64 PE image: %2")
+                                  .arg(canonicalModule, info.reason));
+        } else if (bytes.size() < 20 || !bytes.startsWith(QByteArrayLiteral("\x7f""ELF\x02"))) {
+            return refuse(QStringLiteral("%1 is not a usable 64-bit ELF shared object")
+                              .arg(canonicalModule));
+        }
     }
 
     Bundle bundle;

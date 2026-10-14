@@ -485,7 +485,6 @@ int runTestDownloads(int argc, char** argv) {
       std::fprintf(stderr, "[mikai_tests] cannot read report for TestDownloads\n");
     }
   }
-  std::fprintf(stderr, "[mikai_tests] TestDownloads: %s (rc=%d)\n", rc != 0 ? "FAIL" : "PASS", rc);
   std::fflush(stderr);
   return rc;
 }

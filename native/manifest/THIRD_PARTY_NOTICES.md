@@ -138,7 +138,7 @@ equally without basis. This is the one component where the scope in §0 changes
 nothing, and that asymmetry is the reason the scope is worth recording.
 
 The only route to a cleared component is a grant from the copyright holder. A
-draft request is prepared at [`../permission-request.md`](../permission-request.md).
+draft request is prepared at [`../README.md`](../README.md).
 **It has not been sent, and no reply has been received.** The alternative
 "reimplement the ABI-8 shim from its published header" is deliberately *not*
 adopted: this project is built around this specific implementation, and
@@ -423,7 +423,7 @@ asset.
 | Original weights | [`hzwer/Practical-RIFE`](https://github.com/hzwer/Practical-RIFE) @ pinned commit `de9a989bb7b8a71d94f058297e603633aaa43ad6` | **MIT** — author states the linked model files share the project's MIT licence |
 | Research origin | [`hzwer/ECCV2022-RIFE`](https://github.com/hzwer/ECCV2022-RIFE) | MIT, © Megvii Inc. — [LICENSE][rife-license] |
 | ONNX export used as conversion input | [`AmusementClub/vs-mlrt`](https://github.com/AmusementClub/vs-mlrt) | GPL-3.0-only — [LICENSE][vsmlrt-license] (covers its *code*) |
-| The exact fp16 graphs the shim consumes | [`the-database/animejanai-inference`](https://github.com/the-database/animejanai-inference) @ tag `models-rife-fp16-1`, asset `rife-fp16-1.7z` | see lineage note below; archive pin and per-graph digests in [`../rife-acquisition.md`](../rife-acquisition.md) |
+| The exact fp16 graphs the shim consumes | [`the-database/animejanai-inference`](https://github.com/the-database/animejanai-inference) @ tag `models-rife-fp16-1`, asset `rife-fp16-1.7z` | see lineage note below; archive pin and per-graph digests in [`../README.md`](../README.md) |
 
 [rife-license]: https://raw.githubusercontent.com/hzwer/ECCV2022-RIFE/main/LICENSE
 [vsmlrt-license]: https://raw.githubusercontent.com/AmusementClub/vs-mlrt/master/LICENSE
@@ -467,7 +467,7 @@ graph-operator derivation or whole-artefact redistribution.
 `rife-fp16-1.7z` release (its published SHA-256 reproduced exactly) into
 `F:\ZKS\mikai-native-assets\rife\onnx\`, outside the repository and every
 tracked tree. Archive pin, extraction, structural check, the comparison report
-and the rights position: **`../rife-acquisition.md`**.
+and the rights position: **`../README.md`**.
 Model graphs remain separate from the app distribution and are staged only in
 per-machine user-owned graph stores after user action; this does not resolve
 ESC-2 or ESC-3 and does not grant public redistribution.

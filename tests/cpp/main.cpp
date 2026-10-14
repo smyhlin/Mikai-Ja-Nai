@@ -260,17 +260,21 @@ int main(int argc, char** argv) {
   qtestArgs.reserve(arguments.size());
   qtestArgs << arguments.first();
   {
-    bool firstIsSuite = false;
-    if (arguments.size() > 1) {
+    int suiteArgIndex = -1;
+    for (int i = 1; i < arguments.size(); ++i) {
+      const QString& candidate = arguments.at(i);
       for (const char* suite : kSuites) {
-        if (arguments.at(1) == QString::fromLatin1(suite)) {
-          firstIsSuite = true;
+        if (candidate == QString::fromLatin1(suite)) {
+          suiteArgIndex = i;
           break;
         }
       }
+      if (suiteArgIndex >= 0) {
+        break;
+      }
     }
     for (int i = 1; i < arguments.size(); ++i) {
-      if (i == 1 && firstIsSuite) {
+      if (i == suiteArgIndex) {
         continue;
       }
       qtestArgs << arguments.at(i);

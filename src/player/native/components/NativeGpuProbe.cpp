@@ -4,7 +4,14 @@
 #include <QDebug>
 #include <QDir>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 namespace mplayer::native {
 namespace {
@@ -16,6 +23,7 @@ QString translated(const char* message) {
 GpuComputeCapability probe() {
     GpuComputeCapability cap;
 
+#ifdef _WIN32
     HMODULE nvml = LoadLibraryExW(L"nvml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (nvml == nullptr) {
         const QString system32 =
@@ -28,8 +36,27 @@ GpuComputeCapability probe() {
         cap.reason = translated("NVIDIA GPU driver (nvml.dll) not found");
         return cap;
     }
-
-    auto get = [&](const char* name) { return GetProcAddress(nvml, name); };
+    auto get = [&](const char* name) { return reinterpret_cast<void*>(GetProcAddress(nvml, name)); };
+    auto closeLib = [&]() { FreeLibrary(nvml); };
+#else
+    void* nvml = nullptr;
+    for (const char* candidate : {
+             "libnvidia-ml.so.1",
+             "libnvidia-ml.so",
+             "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
+             "/usr/lib64/libnvidia-ml.so.1",
+             "/usr/lib/wsl/lib/libnvidia-ml.so.1"}) {
+        nvml = ::dlopen(candidate, RTLD_LAZY | RTLD_LOCAL);
+        if (nvml != nullptr) break;
+    }
+    if (nvml == nullptr) {
+        cap.reasonKey = QStringLiteral("native.gpu.nvmlMissing");
+        cap.reason = translated("NVIDIA GPU driver (nvml.dll) not found");
+        return cap;
+    }
+    auto get = [&](const char* name) { return ::dlsym(nvml, name); };
+    auto closeLib = [&]() { ::dlclose(nvml); };
+#endif
 
     // The index comes first and the out-parameter second; passing them the other
     // way round is accepted by the compiler and refused by NVML, which is how
@@ -51,14 +78,14 @@ GpuComputeCapability probe() {
     auto shutdown = reinterpret_cast<ShutdownFn>(get("nvmlShutdown"));
 
     if (init == nullptr || getHandle == nullptr || getCap == nullptr) {
-        FreeLibrary(nvml);
+        closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.nvmlMissing");
         cap.reason = translated("nvml.dll is missing required entry points");
         return cap;
     }
 
     if (init() != 0) {
-        FreeLibrary(nvml);
+        closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.deviceMissing");
         cap.reason = translated("nvmlInit failed");
         return cap;
@@ -67,7 +94,7 @@ GpuComputeCapability probe() {
     void* device = nullptr;
     if (getHandle(0, &device) != 0 || device == nullptr) {
         if (shutdown) shutdown();
-        FreeLibrary(nvml);
+        closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.deviceMissing");
         cap.reason = translated("no NVIDIA device found");
         return cap;
@@ -76,7 +103,7 @@ GpuComputeCapability probe() {
     int major = 0, minor = 0;
     if (getCap(device, &major, &minor) != 0) {
         if (shutdown) shutdown();
-        FreeLibrary(nvml);
+        closeLib();
         cap.reasonKey = QStringLiteral("native.gpu.capabilityUnreported");
         cap.reason = translated("could not read compute capability");
         return cap;
@@ -89,7 +116,7 @@ GpuComputeCapability probe() {
     if (getName) {
         char buffer[256] = {};
         if (getName(device, buffer, sizeof(buffer)) == 0) {
-            cap.name = QString::fromUtf8(buffer);
+            cap.name = QString::fromUtf8(buffer).trimmed();
         }
     }
     if (getDriver) {
@@ -100,20 +127,13 @@ GpuComputeCapability probe() {
     }
 
     if (shutdown) shutdown();
-    FreeLibrary(nvml);
+    closeLib();
     return cap;
 }
 
 }  // namespace
 
 const GpuComputeCapability& observeComputeCapability() {
-    // Logged from inside the initializer, exactly once per process, at the moment
-    // the verdict is formed: which device was seen and which refusal stopped the
-    // probe is the first thing anyone diagnosing a "no GPU" report needs, and it
-    // is not recoverable afterwards. It is done here rather than in a second
-    // static because a lambda that captured this function's own static and then
-    // called back into the function would re-enter the initialisation it is
-    // running inside.
     static const GpuComputeCapability cap = [] {
         const GpuComputeCapability value = probe();
         qInfo().noquote() << "native gpu:" << computeCapabilityText(value);

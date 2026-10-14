@@ -535,7 +535,6 @@ int runTestApiClient(int argc, char** argv) {
       std::fprintf(stderr, "[mikai_tests] cannot read report for TestApiClient\n");
     }
   }
-  std::fprintf(stderr, "[mikai_tests] TestApiClient: %s (rc=%d)\n", rc != 0 ? "FAIL" : "PASS", rc);
   std::fflush(stderr);
   return rc;
 }

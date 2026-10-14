@@ -470,16 +470,23 @@ void TestNativeComponents::selectionUsesTheExactPack() {
     };
     const Generation generations[] = {{12, 0, "trt-sm120"}, {7, 5, "trt-sm75"}, {8, 6, "trt-sm86"},
                                      {9, 0, "trt-sm90"},  {10, 0, "trt-sm100"}};
+#ifdef Q_OS_WIN
+    const QString pattern = QStringLiteral("nvinfer_builder_resource_sm%1%2_11.dll");
+#else
+    const QString pattern = QStringLiteral("libnvinfer_builder_resource_sm%1%2_11.so");
+#endif
     for (const Generation& generation : generations) {
         const ComponentPack* selected =
             tensorRtResourcePackFor(generation.smMajor, generation.smMinor);
         QVERIFY2(selected != nullptr, generation.pack);
         QCOMPARE(selected->name, QString::fromLatin1(generation.pack));
         QCOMPARE(resourceNameOf(selected),
-                 QStringLiteral("nvinfer_builder_resource_sm%1%2_11.dll")
-                     .arg(generation.smMajor)
-                     .arg(generation.smMinor));
+                 pattern.arg(generation.smMajor).arg(generation.smMinor));
     }
+    QCOMPARE(tensorRtWindowsComponentCatalog().size(), 9);
+    QCOMPARE(tensorRtLinuxComponentCatalog().size(), 9);
+    QCOMPARE(rifeWindowsArchivePack().asset, QStringLiteral("component-rife.7z"));
+    QCOMPARE(rifeLinuxArchivePack().asset, QStringLiteral("component-rife-linux-x64.7z"));
 }
 
 void TestNativeComponents::selectionFallsBackToPtxWhenTheReleasePublishesNoPack() {
@@ -488,11 +495,16 @@ void TestNativeComponents::selectionFallsBackToPtxWhenTheReleasePublishesNoPack(
         int smMinor;
     };
     const Shape shapes[] = {{6, 1}, {10, 1}};
+#ifdef Q_OS_WIN
+    const QString expectedPtx = QStringLiteral("nvinfer_builder_resource_ptx_11.dll");
+#else
+    const QString expectedPtx = QStringLiteral("libnvinfer_builder_resource_ptx_11.so");
+#endif
     for (const Shape& shape : shapes) {
         const ComponentPack* selected = tensorRtResourcePackFor(shape.smMajor, shape.smMinor);
         QVERIFY(selected != nullptr);
         QCOMPARE(selected->name, QStringLiteral("trt-ptx"));
-        QCOMPARE(selected->resourceFile, QStringLiteral("nvinfer_builder_resource_ptx_11.dll"));
+        QCOMPARE(selected->resourceFile, expectedPtx);
     }
 }
 
@@ -608,9 +620,11 @@ void TestNativeComponents::toolchainPrefersTheBundleResource() {
     gpu.smMajor = 12;
     gpu.smMinor = 0;
     const QString trtDir = QStringLiteral("trt");
+    const ComponentPack* sm120 = packNamed(QStringLiteral("trt-sm120"));
+    QVERIFY(sm120 != nullptr);
     const ComponentBinDirs dirs =
         componentBinDirs(bundle.path(), trtDir, QStringLiteral("cuda"),
-                         {trtDir + QLatin1Char('/') + QStringLiteral("nvinfer_builder_resource_sm120_11.dll")},
+                         {trtDir + QLatin1Char('/') + sm120->resourceFile},
                          gpu, ComponentStore{store.path()});
     QCOMPARE(dirs.trtBinDir, QDir(bundle.path()).filePath(trtDir));
     QVERIFY(!dirs.fromStore);
@@ -718,6 +732,14 @@ void TestNativeComponents::installedPackNamesFollowTheRecord() {
     QVERIFY(populateStore(store, {*runtime, *resource}));
     QCOMPARE(installedPackNames(store),
              QStringList({runtime->name, resource->name}));
+
+    QString removeKey;
+    QString removeReason;
+    QVERIFY2(removePack(store, *resource, &removeKey, &removeReason),
+             qPrintable(removeKey + QLatin1String(": ") + removeReason));
+    QCOMPARE(installedPackNames(store), QStringList({runtime->name}));
+    QVERIFY(!storedPack(store, *resource).installed);
+    QVERIFY(storedPack(store, *runtime).installed);
 }
 
 void TestNativeComponents::rifeGraphWithoutInstallRecordIsMissing() {

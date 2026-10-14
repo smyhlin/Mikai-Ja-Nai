@@ -124,6 +124,26 @@ QByteArray modelLine(int chain, const QString& name) {
     return QByteArrayLiteral("chain_") + QByteArray::number(chain) + QByteArrayLiteral("_model_1_name=") + name.toUtf8() + '\n';
 }
 
+// Retired SD opset-23 model cleanup (adopted from AnimeJaNaiUpdater MigrateAnimeJaNaiConf).
+// Gated on the opset-21 SD model being staged so the last copy is never removed.
+void pruneLegacySdModelOrphans(const QString& modelDir) {
+    const QString op21Hash = QStringLiteral("ef6be5b2535da762dc7e9e4c5cbdb57780f18ab21417d63ab575f05004538411");
+    const QString op21Name = QStringLiteral("2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo");
+    const QString op23Name = QStringLiteral("2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op23_dynamo");
+    const QDir dir(modelDir);
+    if (!dir.exists()) return;
+    if (!QFileInfo::exists(dir.filePath(op21Hash + QStringLiteral(".onnx"))) &&
+        !QFileInfo::exists(dir.filePath(op21Name + QStringLiteral(".onnx")))) {
+        return;
+    }
+    for (const QFileInfo& entry : dir.entryInfoList(QDir::Files | QDir::NoSymLinks)) {
+        const QString fileName = entry.fileName();
+        if (fileName.startsWith(op23Name + QLatin1Char('.'))) {
+            QFile::remove(entry.absoluteFilePath());
+        }
+    }
+}
+
 QByteArray builtinIni() {
     const QByteArray hdBalanced = QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16");
     const QByteArray hdPerformance = QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16");
@@ -245,7 +265,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     }
 
     const QString ownedRoot = configRoot();
-    plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("aji.dll"));
+    const QString linuxLibPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
+    plan.libraryPath = regularFile(linuxLibPath)
+                           ? linuxLibPath
+                           : QDir(installation.root).filePath(QStringLiteral("aji.dll"));
     plan.configPath = QDir(ownedRoot).filePath(QStringLiteral("config/") + safeConfigName(presetId) + QStringLiteral(".ini"));
     plan.modelDir = QDir(ownedRoot).filePath(QStringLiteral("models/spatial"));
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
@@ -253,7 +276,9 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     plan.slot = preset->slot;
     plan.trtexecLibDir = installation.root;
     if (backend == Backend::TensorRT) {
-        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
+        const QString winTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
+        const QString linuxTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec"));
+        plan.trtexecPath = regularFile(winTrtexec) ? winTrtexec : linuxTrtexec;
         if (!regularFile(plan.trtexecPath)) {
             fail(plan, QStringLiteral("animejanai.runtime.trtexecMissing"),
                  translated("The installed TensorRT closure does not include its verified upstream trtexec executable."));
@@ -284,6 +309,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
                 fail(plan, QStringLiteral("animejanai.model.stage"), copyError); return plan;
             }
         }
+        pruneLegacySdModelOrphans(plan.modelDir);
         ini = QString::fromLatin1(builtinIni());
         for (const SpatialAsset& asset : assets)
             ini.replace(asset.name.chopped(5), asset.sha256);

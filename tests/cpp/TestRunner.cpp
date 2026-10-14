@@ -842,5 +842,29 @@ void TestRunner::workCancelledBeforeShutdownNeverDelivers() {
 
 int runTestRunner(int argc, char** argv) {
   TestRunner suite;
-  return QTest::qExec(&suite, argc, argv);
+  QStringList arguments;
+  arguments << (argc > 0 ? QString::fromLocal8Bit(argv[0]) : QStringLiteral("mikai_tests"));
+  for (int i = 1; i < argc; ++i) arguments << QString::fromLocal8Bit(argv[i]);
+  QTemporaryFile report;
+  const bool captureReport = !arguments.contains(QStringLiteral("-o"));
+  if (captureReport) {
+    if (!report.open()) {
+      std::fprintf(stderr, "[mikai_tests] cannot create report for TestRunner\n");
+      return 2;
+    }
+    report.close();
+    arguments << QStringLiteral("-o") << report.fileName() + QStringLiteral(",txt");
+  }
+  const int rc = QTest::qExec(&suite, arguments);
+  if (captureReport && rc != 0) {
+    QFile output(report.fileName());
+    if (output.open(QIODevice::ReadOnly)) {
+      const QByteArray text = output.readAll();
+      std::fwrite(text.constData(), 1, static_cast<size_t>(text.size()), stderr);
+    } else {
+      std::fprintf(stderr, "[mikai_tests] cannot read report for TestRunner\n");
+    }
+  }
+  std::fflush(stderr);
+  return rc;
 }

@@ -1,3 +1,4 @@
+#include <utility>
 #include "Models.hpp"
 
 #include <QJsonArray>
@@ -130,8 +131,8 @@ QString coverUrl(const AnimeDetail& detail) {
     return {};
 }
 
-QVector<QPair<QString, QString>> externalLinks(const AnimeDetail& detail) {
-    QVector<QPair<QString, QString>> links;
+QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail) {
+    QVector<std::pair<QString, QString>> links;
     const auto id = [&detail](const QString& key) { return detail.ids.value(key).toString(); };
 
     const QString mal = id(QStringLiteral("mal"));

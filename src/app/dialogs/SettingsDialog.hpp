@@ -19,6 +19,7 @@ class QCheckBox;
 class QComboBox;
 class QDialogButtonBox;
 class QEvent;
+class QFrame;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
@@ -163,8 +164,10 @@ private:
         /// preset name is translated catalogue text, so keeping the copy the row
         /// was built with would leave the page in the language it opened in.
         QString label;
+        QString category;
         QKeySequenceEdit* edit = nullptr;
         QLabel* name = nullptr;
+        QWidget* container = nullptr;
         /// The catalogue entry behind the row. The label and the hint are read
         /// back from it rather than stored, so one catalogue lookup serves both
         /// and neither can go stale.
@@ -180,6 +183,7 @@ private:
     QWidget* buildPresetsTab();
     QWidget* buildProcessingTab();
     QWidget* buildComponentsTab();
+    void filterPresetRows(const QString& query);
     /// Detaches an adopted Components tab before this dialog deletes its children.
     void releaseAdoptedComponentsTab();
     void testToken();
@@ -260,6 +264,8 @@ private:
     QMap<QString, QCheckBox*> feedBoxes_;
     QTimer* quotaTimer_ = nullptr;
     QTabWidget* tabs_ = nullptr;
+    QLineEdit* presetFilterEdit_ = nullptr;
+    QPushButton* clearAllPresetsButton_ = nullptr;
     QLabel* presetError_ = nullptr;
     QVector<PresetRow> presetRows_;
     QVector<PresetGroupHeading> presetGroupHeadings_;
@@ -295,6 +301,9 @@ private:
     QLabel* recipeRowLabel_ = nullptr;
     QLabel* runtimeModuleRowLabel_ = nullptr;
     QLabel* rifeHeading_ = nullptr;
+    QFrame* nativeConfigCard_ = nullptr;
+    QFrame* nativeAssetsCard_ = nullptr;
+    QFrame* nativeRifeCard_ = nullptr;
     /// The stable id the recipe combo was given for the synthetic
     /// "not available" entry, so a retranslation can restate that one entry's
     /// caption without rebuilding the list and losing the user's selection.

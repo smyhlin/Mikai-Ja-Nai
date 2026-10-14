@@ -29,7 +29,14 @@
 
 #include <onnxruntime_c_api.h>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #include "native/bundle/NativePaths.hpp"
 
@@ -48,6 +55,7 @@ constexpr qint64 kMaxReferenceInputBytes = 512ll * 1024 * 1024;
 // arithmetic below from overflowing before it can be compared with the bound.
 constexpr qint64 kMaxReferenceSide = 32768;
 
+#ifdef _WIN32
 QString win32Text(DWORD code) {
   wchar_t* buffer = nullptr;
   const DWORD length = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
@@ -62,6 +70,7 @@ QString win32Text(DWORD code) {
   if (text.isEmpty()) text = QStringLiteral("unknown Windows error");
   return QStringLiteral("%1 (Win32 %2)").arg(text).arg(code);
 }
+#endif
 
 /// Releases an ORT status and returns its message. Every ORT call whose result
 /// this file does not otherwise consume goes through here, so no status leaks.
@@ -215,6 +224,7 @@ RuntimeHandle acquireRuntime(const InspectionRuntime& runtime) {
                       .arg(inspectionRuntimeModuleName(), canonicalDirectory));
   }
 
+#ifdef _WIN32
   // The module's own imports resolve through its directory and System32 (for the
   // MSVC runtime). The process PATH and the current directory are never searched.
   const HANDLE cookie =
@@ -233,6 +243,21 @@ RuntimeHandle acquireRuntime(const InspectionRuntime& runtime) {
   using OrtGetApiBaseFn = const OrtApiBase*(ORT_API_CALL*)(void);
   const auto getApiBase =
       reinterpret_cast<OrtGetApiBaseFn>(GetProcAddress(module, "OrtGetApiBase"));
+#else
+  const QByteArray utf8Module = canonicalModule.toUtf8();
+  void* const module = ::dlopen(utf8Module.constData(), RTLD_NOW | RTLD_LOCAL);
+  if (module == nullptr) {
+    const char* dlErr = ::dlerror();
+    return refuse(QStringLiteral("inspect.runtime.load"),
+                  QStringLiteral("%1 could not be loaded: %2")
+                      .arg(canonicalModule,
+                           dlErr ? QString::fromUtf8(dlErr) : QStringLiteral("unknown dlopen error")));
+  }
+
+  using OrtGetApiBaseFn = const OrtApiBase*(ORT_API_CALL*)(void);
+  const auto getApiBase =
+      reinterpret_cast<OrtGetApiBaseFn>(::dlsym(module, "OrtGetApiBase"));
+#endif
   if (getApiBase == nullptr) {
     return refuse(QStringLiteral("inspect.runtime.abi"),
                   QStringLiteral("%1 does not export OrtGetApiBase").arg(canonicalModule));

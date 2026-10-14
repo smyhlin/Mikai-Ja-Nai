@@ -309,7 +309,6 @@ int runTestDiagnostics(int argc, char** argv) {
       std::fprintf(stderr, "[mikai_tests] cannot read report for TestDiagnostics\n");
     }
   }
-  std::fprintf(stderr, "[mikai_tests] TestDiagnostics: %s (rc=%d)\n", rc != 0 ? "FAIL" : "PASS", rc);
   std::fflush(stderr);
   return rc;
 }

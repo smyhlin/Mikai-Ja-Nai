@@ -52,7 +52,7 @@ unaffected: there `--config Release` selects the configuration, as above.
 - Optionally the DirectML ONNX Runtime and DirectML packages.
 
 On this machine the SDK trees are acquired under `F:\ZKS\mikai-native-sdks\` and
-are described in [`sdk-acquisition.md`](./sdk-acquisition.md).
+are described in [`README.md`](./README.md).
 `F:\ZKS\mikai-native-sdks\sdk-env.cmd` sets `INCLUDE`, `LIB`, `LIBPATH` and
 `PATH` for one shell session only — no `setx`, no registry, no admin, no driver
 change. Either source it or pass the roots on the command line as below; the two

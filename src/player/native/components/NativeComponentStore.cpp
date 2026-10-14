@@ -1,3 +1,4 @@
+#include <utility>
 #include "native/components/NativeComponentStore.hpp"
 
 #include "native/bundle/NativePaths.hpp"
@@ -190,7 +191,7 @@ bool writeRecord(const QString& directory, const Record& record, QString* error)
     return true;
 }
 
-std::optional<QPair<qint64, QString>> measureFile(const QString& path) {
+std::optional<std::pair<qint64, QString>> measureFile(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return std::nullopt;
     QCryptographicHash hash(QCryptographicHash::Sha256);
@@ -205,10 +206,10 @@ std::optional<QPair<qint64, QString>> measureFile(const QString& path) {
         hashed += chunk.size();
     }
     if (hashed != file.size()) return std::nullopt;
-    return qMakePair(hashed, QString::fromLatin1(hash.result().toHex()));
+    return std::make_pair(hashed, QString::fromLatin1(hash.result().toHex()));
 }
 
-std::optional<QPair<qint64, QString>> copyHashed(const QString& source, const QString& target,
+std::optional<std::pair<qint64, QString>> copyHashed(const QString& source, const QString& target,
                                                  QString* error) {
     const qint64 expected = QFileInfo(source).size();
     const QString partial = target + QStringLiteral(".partial");
@@ -266,7 +267,19 @@ std::optional<QPair<qint64, QString>> copyHashed(const QString& source, const QS
             lastError = QStringLiteral("the existing file is in use");
             continue;
         }
-        const std::optional<QPair<qint64, QString>> landed = measureFile(target);
+#ifndef Q_OS_WIN
+        const QString fileName = QFileInfo(target).fileName();
+        if (fileName == QLatin1String("trtexec") ||
+            fileName.endsWith(QLatin1String(".so"), Qt::CaseInsensitive) ||
+            fileName.contains(QLatin1String(".so."), Qt::CaseInsensitive) ||
+            fileName.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive)) {
+            QFile::setPermissions(target,
+                                  QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                                  QFileDevice::ReadGroup | QFileDevice::ExeGroup |
+                                  QFileDevice::ReadOther | QFileDevice::ExeOther);
+        }
+#endif
+        const std::optional<std::pair<qint64, QString>> landed = measureFile(target);
         if (!landed.has_value() || landed->first != expected ||
             landed->second.compare(digest, Qt::CaseInsensitive) != 0) {
             QFile::remove(target);
@@ -560,7 +573,7 @@ StoredRifeGraph storedRifeGraph(const RifeArchiveStore& store, const RifeModelPi
 StoredRifeGraph verifyRifeGraph(const RifeArchiveStore& store, const RifeModelPin& pin) {
     StoredRifeGraph result = storedRifeGraph(store, pin);
     if (!result.installed) return result;
-    const std::optional<QPair<qint64, QString>> measured = measureFile(result.path);
+    const std::optional<std::pair<qint64, QString>> measured = measureFile(result.path);
     if (!measured.has_value() || measured->first != pin.bytes ||
         measured->second.compare(pin.graphSha256, Qt::CaseInsensitive) != 0) {
         result.installed = false;
@@ -766,7 +779,7 @@ StoredPack verifyPack(const ComponentStore& store, const ComponentPack& pack) {
             result.reason = QStringLiteral("%1 does not record %2").arg(pack.name, fileName);
             return result;
         }
-        const std::optional<QPair<qint64, QString>> measured =
+        const std::optional<std::pair<qint64, QString>> measured =
             measureFile(QDir(result.directory).filePath(fileName));
         if (!measured.has_value()) {
             result.installed = false;
@@ -818,21 +831,59 @@ bool installPack(const ComponentStore& store, const ComponentPack& pack,
     const QString sourceDir =
         QDir(extractionRoot).filePath(QString::fromLatin1(kExtractionSubdir));
 
+    auto findInExtraction = [&](const QString& fileName) -> QString {
+        for (const QString& candidate : {
+                 QDir(sourceDir).filePath(fileName),
+                 QDir(extractionRoot).filePath(QStringLiteral("inference/") + fileName),
+                 QDir(extractionRoot).filePath(fileName)}) {
+            const QFileInfo info(candidate);
+            if (!info.exists()) continue;
+            if (info.isSymLink()) {
+                const QString resolved = info.canonicalFilePath();
+                if (!resolved.isEmpty() && pathWithinRoot(extractionRoot, resolved)) {
+                    return resolved;
+                }
+                return {};
+            }
+            return candidate;
+        }
+        return {};
+    };
+
     QVector<FileRecord> newFiles;
     for (const QString& fileName : pack.files) {
-        const QString source = QDir(sourceDir).filePath(fileName);
-        if (!QFileInfo::exists(source)) {
+        const QString source = findInExtraction(fileName);
+        if (source.isEmpty()) {
             return fail(QStringLiteral("native.components.extract"),
                         QStringLiteral("%1 is not in the archive").arg(fileName));
         }
         const QString target = QDir(directory).filePath(fileName);
         QString copyError;
-        const std::optional<QPair<qint64, QString>> copied = copyHashed(source, target, &copyError);
+        const std::optional<std::pair<qint64, QString>> copied = copyHashed(source, target, &copyError);
         if (!copied.has_value()) {
             return fail(QStringLiteral("native.components.install"),
                         QStringLiteral("%1 did not copy correctly: %2").arg(fileName, copyError));
         }
         newFiles.append({fileName, copied->first, copied->second});
+    }
+
+    // When installing trt-runtime, also stage trtexec(.exe) and optional notices
+    // in the release directory if present in the archive, so official-download
+    // runtime provisioning can reuse them without re-extracting the archive.
+    if (pack.name == QLatin1String("trt-runtime")) {
+        const QStringList extras{QStringLiteral("trtexec.exe"),
+                                 QStringLiteral("trtexec"),
+                                 QStringLiteral("CUDA_LICENSE.txt"),
+                                 QStringLiteral("DirectML_LICENSE.txt"),
+                                 QStringLiteral("THIRD_PARTY_NOTICES.txt"),
+                                 QStringLiteral("TensorRT_Acknowledgements.txt")};
+        for (const QString& extra : extras) {
+            if (pack.files.contains(extra)) continue;
+            const QString extraSource = findInExtraction(extra);
+            if (extraSource.isEmpty()) continue;
+            QString extraError;
+            copyHashed(extraSource, QDir(directory).filePath(extra), &extraError);
+        }
     }
 
     bool packRecorded = false;
@@ -858,6 +909,67 @@ bool installPack(const ComponentStore& store, const ComponentPack& pack,
     }
 
     if (!writeRecord(directory, record, &error)) {
+        return fail(QStringLiteral("native.components.record"), error);
+    }
+    if (reasonKey) reasonKey->clear();
+    if (reason) reason->clear();
+    return true;
+}
+
+bool removePack(const ComponentStore& store, const ComponentPack& pack,
+                QString* reasonKey, QString* reason) {
+    auto fail = [&](const QString& key, const QString& text) {
+        if (reasonKey) *reasonKey = key;
+        if (reason) *reason = text;
+        return false;
+    };
+    if (store.root.isEmpty()) {
+        return fail(QStringLiteral("native.components.remove"),
+                    QStringLiteral("the component store root is not available"));
+    }
+    const QString directory = componentReleaseDirectory(store);
+    const QString recordPath = QDir(directory).filePath(QString::fromLatin1(kRecordFile));
+    if (!QFileInfo::exists(recordPath)) {
+        if (reasonKey) reasonKey->clear();
+        if (reason) reason->clear();
+        return true;
+    }
+    QString error;
+    std::optional<Record> existing = readRecord(directory, &error);
+    if (!existing.has_value()) {
+        return fail(QStringLiteral("native.components.record"), error);
+    }
+
+    Record updated = *existing;
+    updated.packs.erase(
+        std::remove_if(updated.packs.begin(), updated.packs.end(),
+                       [&](const ComponentPack& item) { return item.name == pack.name; }),
+        updated.packs.end());
+
+    QSet<QString> retainedFiles;
+    for (const ComponentPack& remaining : updated.packs) {
+        const ComponentPack* catalogEntry = nullptr;
+        for (const ComponentPack& candidate : tensorRtComponentCatalog()) {
+            if (candidate.name == remaining.name) {
+                catalogEntry = &candidate;
+                break;
+            }
+        }
+        if (catalogEntry != nullptr) {
+            for (const QString& f : catalogEntry->files) retainedFiles.insert(f);
+        }
+    }
+
+    for (const QString& fileName : pack.files) {
+        if (retainedFiles.contains(fileName)) continue;
+        QFile::remove(QDir(directory).filePath(fileName));
+        updated.files.erase(
+            std::remove_if(updated.files.begin(), updated.files.end(),
+                           [&](const FileRecord& item) { return item.path == fileName; }),
+            updated.files.end());
+    }
+
+    if (!writeRecord(directory, updated, &error)) {
         return fail(QStringLiteral("native.components.record"), error);
     }
     if (reasonKey) reasonKey->clear();

@@ -10,7 +10,7 @@
       "referencePin": "Identity fixed to a documented upstream reference (a URL, a version string, a commit) where the artefact itself is not present here and no digest has been computed.",
       "observation": "A hash or state measured on this machine from a file that was NOT produced by this repository's build. Descriptive research evidence only. Never a release pin, never a substitute for a reproduction."
     },
-    "observationRule": "Any entry with pinKind=observation lives under an `observations` key and MUST NOT be referenced as a pin by a build, a bundle manifest or a download. observations.observedBinaries is the canonical four-entry record (stock core, fork core, aji.dll, aji_trt.dll) and is transcribed from plan.md section 3.2; the per-directory detail elsewhere in the same block is supporting context, not a second set of pins.",
+    "observationRule": "Any entry with pinKind=observation lives under an `observations` key and MUST NOT be referenced as a pin by a build, a bundle manifest or a download. observations.observedBinaries is the canonical four-entry record (stock core, fork core, aji.dll, aji_trt.dll) and is transcribed from native/README.md section 3.2; the per-directory detail elsewhere in the same block is supporting context, not a second set of pins.",
     "fileIntegrity": {
       "digestInventory": "The source carries a per-file SHA-256 inventory on this record ('sourceDigestsMeasuredLocally', 'models', 'files' or 'releaseAssets'). mikai_manifest_check recomputes every listed digest against the matching --source-root and fails on any mismatch. This is the only mode that makes a source's bytes checkable today.",
       "commitIdentity": "The source is pinned by revision, not by per-file digest: its artefact is either not present locally or is a whole archive too large to inventory file by file. Identity is the commit SHA, the git tree SHA and, where available, an archive digest. mikai_manifest_check requires the revision fields to be present and well-formed; it does not claim byte-level integrity it cannot compute.",
@@ -382,7 +382,7 @@
         "contentLength": 1985279435,
         "authentication": "none required - the redirect chain is anonymous, consistent with the '-external' suffix marking the publicly redistributable build",
         "conclusion": "Development SDK acquired and configured without installers, administrator rights, driver replacement or modification of existing runtimes. No inference implementation was built or executed.",
-        "record": "native/sdk-acquisition.md",
+        "record": "native/README.md",
         "ownedRoot": "F:/ZKS/mikai-native-sdks/tensorrt-11.3.0.99/TensorRT-11.3.0.99",
         "archiveSha256": "8ffd112d7bab97bc81eed818358b85df8c317bcdfc3cd3c731c220df7ca737eb",
         "digestEvidence": "Self-measured acquisition baseline, not a separately published NVIDIA digest"
@@ -396,7 +396,7 @@
         "primary": {
           "url": "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.3.0/zip/TensorRT-Enterprise-11.3.0.99-Windows-amd64-cuda-13.4-Release-external.zip",
           "suffixMeaning": "'-external' marks the publicly redistributable build; no account required",
-          "note": "The fully qualified asset was downloaded into the independently owned SDK tree; see acquisitionVerified and native/sdk-acquisition.md. The URL directory index is not an acquisition endpoint."
+          "note": "The fully qualified asset was downloaded into the independently owned SDK tree; see acquisitionVerified and native/README.md. The URL directory index is not an acquisition endpoint."
         },
         "fallbacks": [
           "pypi.nvidia.com/tensorrt-cu13-libs/ - every version with sha256 in the index, but no trtexec",
@@ -465,7 +465,7 @@
       "package": "Microsoft.ML.OnnxRuntime.DirectML",
       "version": "1.24.4",
       "fileIntegrity": "commitIdentity",
-      "fileIntegrityReason": "NuGet publishes a SHA-512 content hash for every package version, and the nuspec records the source commit. Identity is fixed at version 1.24.4 and upstream commit 2d924974ef147392ced8409d36bd6d2e7fcc8a74; no per-file digest is recorded because the package was consumed as an extracted tree, not archived. sdk-acquisition.md records the acquisition and the fact that both packages ship .lib rather than the .dll.lib the requiredLayout field names.",
+      "fileIntegrityReason": "NuGet publishes a SHA-512 content hash for every package version, and the nuspec records the source commit. Identity is fixed at version 1.24.4 and upstream commit 2d924974ef147392ced8409d36bd6d2e7fcc8a74; no per-file digest is recorded because the package was consumed as an extracted tree, not archived. native/README.md records the acquisition and the fact that both packages ship .lib rather than the .dll.lib the requiredLayout field names.",
       "url": "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4",
       "flatContainer": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.nuspec",
       "upstreamCommit": {
@@ -550,7 +550,7 @@
       "role": "the five spatial upscaler ONNX graphs the reference package ships",
       "pinKind": "releasePin",
       "fileIntegrity": "digestInventory",
-      "fileIntegrityReason": "All five graphs are individually digest-pinned below and mikai_manifest_check recomputes each one against --source-root animejanai-onnx-models=<dir>. The digests are measured on the read-only reference package and were independently reproduced from a fresh upstream download (spatial-acquisition.md §2), so this is a cross-checked pin rather than a single local measurement.",
+      "fileIntegrityReason": "All five graphs are individually digest-pinned below and mikai_manifest_check recomputes each one against --source-root animejanai-onnx-models=<dir>. The digests are measured on the read-only reference package and were independently reproduced from a fresh upstream download (native/README.md §2), so this is a cross-checked pin rather than a single local measurement.",
       "verifiedRootExample": "F:/ZKS/janai/mpv-upscale-2x_animejanai-v3.6.3/animejanai/onnx - all five digests and byte counts reproduced here on 2026-10-03.",
       "rootPathCaveat": "The upstream.onNxPathInRepo path is the location INSIDE the repository; the extracted reference package places these at <packageRoot>/animejanai/onnx, without the BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai prefix. Point --source-root at the directory that directly contains the five files; mikai_manifest_check resolves each entry relative to the supplied root and will report a missing file rather than searching.",
       "inventoryCoverage": "5 of 5. These are the complete set the bundle's spatial chain needs; the upstream repository ships further variants that this project does not use.",
@@ -612,7 +612,7 @@
       "role": "RIFE interpolation weights for M12: v4.14 full/lite, each with and without ensemble",
       "pinKind": "referencePin",
       "fileIntegrity": "commitIdentity",
-      "fileIntegrityReason": "The four graphs are pinned by their acquired archive SHA-256 (3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9), which was published in the GitHub release note and reproduced exactly on extraction. Individual per-graph digests are not recorded here; they are computed and compared at acquisition time and recorded in native/rife-acquisition.md.",
+      "fileIntegrityReason": "The four graphs are pinned by their acquired archive SHA-256 (3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9), which was published in the GitHub release note and reproduced exactly on extraction. Individual per-graph digests are not recorded here; they are computed and compared at acquisition time and recorded in native/README.md.",
       "archivePin": {
         "asset": "rife-fp16-1.7z",
         "sha256": "3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9",
@@ -650,7 +650,7 @@
               "https://raw.githubusercontent.com/hzwer/Practical-RIFE/de9a989bb7b8a71d94f058297e603633aaa43ad6/LICENSE",
               "https://raw.githubusercontent.com/hzwer/Practical-RIFE/de9a989bb7b8a71d94f058297e603633aaa43ad6/README.md"
             ],
-            "scopeLimit": "The MIT text grants rights in \"this software and associated documentation files\". The author's README sentence - \"The content of these links is under the same MIT license as this project\" - is an affirmative, specific grant by the copyright holder that the linked model weights are MIT, and is accepted here as licence evidence for the weights themselves. No per-file licence text accompanies the weights, so the grant is a project-level statement rather than an embedded notice. Both v4.14 and v4.14.lite checkpoints were acquired into original-checkpoints/ and compared tensor-by-tensor against the four graphs; every stored weight matched (native/rife-acquisition.md §5.1). No ensemble weight artefact is published in Practical-RIFE's links: each ensemble graph's initializer set is byte-identical to its base graph's."
+            "scopeLimit": "The MIT text grants rights in \"this software and associated documentation files\". The author's README sentence - \"The content of these links is under the same MIT license as this project\" - is an affirmative, specific grant by the copyright holder that the linked model weights are MIT, and is accepted here as licence evidence for the weights themselves. No per-file licence text accompanies the weights, so the grant is a project-level statement rather than an embedded notice. Both v4.14 and v4.14.lite checkpoints were acquired into original-checkpoints/ and compared tensor-by-tensor against the four graphs; every stored weight matched (native/README.md §5.1). No ensemble weight artefact is published in Practical-RIFE's links: each ensemble graph's initializer set is byte-identical to its base graph's."
           }
         },
         {
@@ -712,7 +712,7 @@
             "declared": "The release note states the conversion input was the vsmlrt v1 (video_player) RIFE models, and the shim's own conversion tool states it converts exactly those. That is a documented chain naming vsmlrt as the immediate input.",
             "weightDataClosed": "CLOSED by direct comparison, with no execution. The author's own v4.14 / v4.14.lite checkpoints were acquired into original-checkpoints/ and compared tensor-by-tensor against ModelProto.graph.initializer of all four graphs: 128/128 names and shapes matched with FP32->FP16 round-to-nearest-even bytes identical across four comparisons (base->rife_v4.14 and base->rife_v4.14_ensemble, lite->rife_v4.14_lite and lite->rife_v4.14_lite_ensemble; base and ensemble initializer sets identical). The stored weight bytes are therefore the author's MIT v4.14 / v4.14.lite weights.",
             "stillOpen": "Exporter identity and the non-weight graph material. The comparison reads initializers only, so it proves nothing about which exporter produced the graph structure - the fp16 GridSample fp32 island, the Transpose-built grids, the cast placement, the ensemble merge math or the fp16 conversion path. No upstream statement names the exporter of these specific files, the publishing repository declares no licence of its own, and the release assets carry no per-file notice. This is a provenance/rights gap for the file as an artefact, not a weight-data gap.",
-            "evidenceDoc": "native/rife-acquisition.md §5.1-§5.2",
+            "evidenceDoc": "native/README.md §5.1-§5.2",
             "machineReadable": "original-checkpoints/weight-comparison.json (schemaVersion 1), produced by original-checkpoints/compare-weights.mjs (exit 0; it records licenseReady: false by design, because it compares stored weight bytes only)"
           },
           "licence": {
@@ -723,14 +723,14 @@
         }
       ],
       "localAvailability": {
-        "ownedAcquisition": "All four graphs are present and digest-verified under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and outside every tracked source tree, so nothing can be committed or accidentally vendored. native/rife-acquisition.md records the archive pin, extraction, structural check and the tensor-by-tensor weight comparison; native/videojanai-acquisition.md records the byte-identical comparison against component-rife.7z. No other local copy is referenced.",
+        "ownedAcquisition": "All four graphs are present and digest-verified under F:/ZKS/mikai-native-assets/rife/onnx/ - the owned acquisition, outside the repository and outside every tracked source tree, so nothing can be committed or accidentally vendored. native/README.md records the archive pin, extraction, structural check and the tensor-by-tensor weight comparison; native/README.md records the byte-identical comparison against component-rife.7z. No other local copy is referenced.",
         "namesPresent": [
           "rife_v4.14.onnx",
           "rife_v4.14_lite.onnx",
           "rife_v4.14_ensemble.onnx",
           "rife_v4.14_lite_ensemble.onnx"
         ],
-        "evidenceDoc": "native/rife-acquisition.md",
+        "evidenceDoc": "native/README.md",
         "notClaimed": "Acquisition and weight-data provenance are not a readiness claim: nothing was executed, built into an engine, bundled or exposed as Ready."
       },
       "acquisitionRoutes": [
@@ -758,7 +758,7 @@
       "role": "MSVC host compiler for the optional native build (M04)",
       "pinKind": "referencePin",
       "fileIntegrity": "documentationOnly",
-      "fileIntegrityReason": "A non-redistributable, build-time-only toolchain. It never enters the bundle and nothing about the shipped artefact's identity depends on it, so it is pinned by toolset version rather than by digest. native/sdk-acquisition.md records the exact environment acquired: VS 2022 BuildTools toolset 14.44.35207, Windows SDK 10.0.26100.8249 obtained installer-free.",
+      "fileIntegrityReason": "A non-redistributable, build-time-only toolchain. It never enters the bundle and nothing about the shipped artefact's identity depends on it, so it is pinned by toolset version rather than by digest. native/README.md records the exact environment acquired: VS 2022 BuildTools toolset 14.44.35207, Windows SDK 10.0.26100.8249 obtained installer-free.",
       "required": "the toolset the project builds against, with a Windows SDK able to supply kernel32.lib and friends",
       "licence": "Microsoft Visual Studio licence; not redistributable, build-time only",
       "mustNotShip": "No MSVC runtime, CRT redistributable or Windows SDK component may enter a shipped bundle through this source. If a build turns out to need a CRT redistributable, that is a new component needing its own licence row, not an extension of this one."
@@ -1148,7 +1148,7 @@
       "value": "-DCMAKE_CUDA_FLAGS=-allow-unsupported-compiler",
       "reason": "CUDA 13.x nvcc does not recognise recent MSVC toolsets as a supported host compiler",
       "scope": "affects aji_trt.dll's device compilation only; the flag is not linked into aji.dll or aji_dml.dll",
-      "statusNote": "native/sdk-acquisition.md records that on this machine the flag was carried into the generated build rules without being needed. It stays pinned here until the parent re-evaluates it: carrying an unnecessary flag is harmless, dropping a necessary one is not.",
+      "statusNote": "native/README.md records that on this machine the flag was carried into the generated build rules without being needed. It stays pinned here until the parent re-evaluates it: carrying an unnecessary flag is harmless, dropping a necessary one is not.",
       "openItem": "M04 must record whether the flag is required for the pinned toolchain (MSVC 14.44.35207) and update this field. The upstream record was written on a different machine (VS 18 / 14.51.36231), so it is not evidence about this environment."
     },
     "standard": {
@@ -1162,7 +1162,7 @@
       "AJI_TRT_ROOT": "directory holding include/ and the nvinfer_11.lib family",
       "AJI_ORT_ROOT": "extracted Microsoft.ML.OnnxRuntime.DirectML 1.24.4 package root",
       "AJI_DML_ROOT": "extracted Microsoft.AI.DirectML 1.15.4 package root",
-      "layoutCorrection": "sdk-acquisition.md measured that both NuGet packages ship .lib, not the .dll.lib that sources.json#onnxruntime-directml.requiredLayout and #directml.requiredLayout name. Pointing CMake at the recorded filenames will not find them; use the .lib names."
+      "layoutCorrection": "native/README.md measured that both NuGet packages ship .lib, not the .dll.lib that sources.json#onnxruntime-directml.requiredLayout and #directml.requiredLayout name. Pointing CMake at the recorded filenames will not find them; use the .lib names."
     },
     "engineBuild": {
       "builderResources": "nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll, resolved by the TensorRT builder next to aji_trt.dll",
@@ -1620,8 +1620,8 @@
       "verificationBoundary": "Artifact 361 passed the described settings/GUI and DirectML install flow. RIFE artifact 366 and spatial artifact 367 passed their described fresh-build/render/control playback runs for the selected models; RIFE's relative output-count threshold passed. Engine-to-active-model identity remains inferred; numerical fidelity, all-47 inference, private Ready/Active, and FPS improvement are not established. This does not resolve ESC-1/2/3."
     },
     "observedBinaries": {
-      "what": "The four package binaries whose SHA-256 this project measured on this machine, transcribed from plan.md section 3.2. These are the descriptive research observations the plan records. They are NOT release pins: none of the four was produced by this repository's build, and no source-to-binary reproduction has been proved. They may never be referenced by a build, a bundle manifest or a download.",
-      "recordedFrom": "plan.md section 3.2, 'Binary hashes (descriptive - not release pins)'",
+      "what": "The four package binaries whose SHA-256 this project measured on this machine, transcribed from native/README.md section 3.2. These are the descriptive research observations the plan records. They are NOT release pins: none of the four was produced by this repository's build, and no source-to-binary reproduction has been proved. They may never be referenced by a build, a bundle manifest or a download.",
+      "recordedFrom": "native/README.md section 3.2, 'Binary hashes (descriptive - not release pins)'",
       "pinKind": "observation",
       "verifiedBy": "sha256sum on the files in place on 2026-10-01; the sizes are the byte counts reported alongside each digest in the same table",
       "entries": [

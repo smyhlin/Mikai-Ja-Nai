@@ -61,4 +61,9 @@ QStringList installedPackNames(const ComponentStore& store);
 bool installPack(const ComponentStore& store, const ComponentPack& pack,
                  const QString& extractionRoot, QString* reasonKey, QString* reason);
 
+/// Removes `pack` from the store record and deletes any of its files that are
+/// not shared by another still-installed pack (matching AnimeJaNaiUpdater --remove).
+bool removePack(const ComponentStore& store, const ComponentPack& pack,
+                QString* reasonKey, QString* reason);
+
 }  // namespace mplayer::native

@@ -1,3 +1,4 @@
+#include <utility>
 #include "TestAnime4K.hpp"
 
 #include "Anime4K.hpp"
@@ -37,7 +38,7 @@ QStringList shaderFiles(std::initializer_list<const char*> stems) {
   return files;
 }
 
-QVector<QPair<QString, QStringList>> originalChains() {
+QVector<std::pair<QString, QStringList>> originalChains() {
   return {
       {QStringLiteral("off"), {}},
       {QStringLiteral("fast_a"), shaderFiles({"Clamp_Highlights", "Restore_CNN_M",
@@ -72,7 +73,7 @@ QVector<QPair<QString, QStringList>> originalChains() {
   };
 }
 
-QVector<QPair<QString, QStringList>> experimentalChains() {
+QVector<std::pair<QString, QStringList>> experimentalChains() {
   return {
       {QStringLiteral("exp_3d_graphics"),
        shaderFiles({"Clamp_Highlights", "3DGraphics_AA_Upscale_x2_US"})},
@@ -94,7 +95,7 @@ QVector<QPair<QString, QStringList>> experimentalChains() {
   };
 }
 
-void verifyChains(const QVector<QPair<QString, QStringList>>& expected) {
+void verifyChains(const QVector<std::pair<QString, QStringList>>& expected) {
   const QString shadersDir = findShadersDir();
   QVERIFY2(!shadersDir.isEmpty(), "the Anime4K shader directory must be available");
   for (const auto& [id, expectedFiles] : expected) {
@@ -122,7 +123,7 @@ void TestAnime4K::originalPresetChainsPreserveHistoricalOrder() {
   const auto expected = originalChains();
   verifyChains(expected);
 
-  const QVector<QPair<Mode, QString>> enumIds = {
+  const QVector<std::pair<Mode, QString>> enumIds = {
       {Mode::Off, QStringLiteral("off")},
       {Mode::FastA, QStringLiteral("fast_a")},
       {Mode::FastB, QStringLiteral("fast_b")},
@@ -190,7 +191,7 @@ void TestAnime4K::presetIdsRemainUniqueAndRestorableAfterMenuReordering() {
 }
 
 void TestAnime4K::menuCategoriesExposeTheirPresetMembership() {
-  const QVector<QPair<QString, QStringList>> memberships = {
+  const QVector<std::pair<QString, QStringList>> memberships = {
       {QStringLiteral("anime4k/speed"), {QStringLiteral("fast_a"), QStringLiteral("fast_b"),
                                          QStringLiteral("fast_c")}},
       {QStringLiteral("anime4k/quality"), {QStringLiteral("hq_a"), QStringLiteral("hq_b"),
