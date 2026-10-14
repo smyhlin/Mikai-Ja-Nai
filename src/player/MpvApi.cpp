@@ -9,12 +9,17 @@
 #include <QObject>
 #include <QStringList>
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
 #include <algorithm>
 #include <type_traits>
 
 namespace mplayer {
 namespace {
 
+#ifdef _WIN32
 QString win32Error(DWORD code) {
     wchar_t* buffer = nullptr;
     const DWORD length =
@@ -30,6 +35,7 @@ QString win32Error(DWORD code) {
     if (text.isEmpty()) text = QObject::tr("unknown Windows error");
     return QStringLiteral("%1 (Win32 %2)").arg(text).arg(code);
 }
+#endif
 
 // A retry after a transient provisioning hiccup re-presents the same module,
 // so the resolved path decides identity as much as the descriptor id does. When
@@ -42,7 +48,7 @@ bool sameSelection(const MpvBundle& a, const MpvBundle& b) {
         return false;
     }
     if (QDir::cleanPath(a.modulePath).compare(QDir::cleanPath(b.modulePath),
-                                              Qt::CaseInsensitive) != 0) {
+                                              native::pathCaseSensitivity()) != 0) {
         return false;
     }
     const auto canonicalDeps = [](const MpvBundle& bundle) {
@@ -97,11 +103,6 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                                 "root or no module path"));
     }
 
-    // This is the one boundary where a module actually becomes code in the
-    // process, so the descriptor's own spelling is proved representable before
-    // the loader is asked anything: a truncation, a device namespace or a
-    // redirector share is refused here by name rather than becoming a load.
-    // The wide `LoadLibraryExW` below is only safe because this ran first.
     const native::NativePathTrust rootTrust = native::nativePathTrust(bundle.root, true);
     if (!rootTrust.trusted) {
         return fail(QObject::tr("mpv runtime unavailable: the selected root is not a usable "
@@ -123,8 +124,6 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                         .arg(bundle.root, bundle.modulePath));
     }
 
-    // Canonicalising first resolves junctions and 8.3 names, so containment is
-    // checked against the file the loader will actually open.
     const QString canonicalRoot = rootInfo.canonicalFilePath();
     const QString canonicalModule = moduleInfo.canonicalFilePath();
     if (canonicalRoot.isEmpty() || canonicalModule.isEmpty()) {
@@ -132,8 +131,6 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                         .arg(canonicalRoot.isEmpty() ? bundle.root : bundle.modulePath));
     }
 
-    // The canonical spellings are what reach the loader and the search, so they
-    // carry the same obligation as the ones the caller supplied.
     const native::NativePathTrust canonicalRootTrust = native::nativePathTrust(canonicalRoot, true);
     if (!canonicalRootTrust.trusted) {
         return fail(QObject::tr("mpv runtime unavailable: the root does not resolve to a usable "
@@ -150,25 +147,21 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     const QString rootPrefix = canonicalRoot.endsWith(QLatin1Char('/'))
                                    ? canonicalRoot
                                    : canonicalRoot + QLatin1Char('/');
-    if (!canonicalModule.startsWith(rootPrefix, Qt::CaseInsensitive)) {
+    if (!canonicalModule.startsWith(rootPrefix, native::pathCaseSensitivity())) {
         return fail(QObject::tr("mpv runtime unavailable: the module %1 is outside the owned "
                                 "runtime root %2")
                         .arg(canonicalModule, canonicalRoot));
     }
 
-    QList<HANDLE> cookies;
-    // What was actually registered, canonicalised: the descriptor the loader
-    // records has to be the one the search resolves through, not the spelling
-    // the caller handed over.
+    QList<void*> cookies;
     QStringList registeredDeps;
     const auto unregisterAll = [&cookies] {
-        for (HANDLE cookie : cookies) RemoveDllDirectory(cookie);
+#ifdef _WIN32
+        for (void* cookie : cookies) RemoveDllDirectory(static_cast<DLL_DIRECTORY_COOKIE>(cookie));
+#endif
         cookies.clear();
     };
     for (const QString& dep : bundle.deps) {
-        // A dependency directory is registered with the loader for the life of
-        // the process, so it is checked by the same rule as the module: what the
-        // descriptor spells has to be a local path the platform can carry.
         const native::NativePathTrust depTrust = native::nativePathTrust(dep, true);
         if (!depTrust.trusted) {
             unregisterAll();
@@ -184,7 +177,7 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                             .arg(dep));
         }
         const QString canonicalDep = depInfo.canonicalFilePath();
-        if (!canonicalDep.startsWith(rootPrefix, Qt::CaseInsensitive)) {
+        if (!canonicalDep.startsWith(rootPrefix, native::pathCaseSensitivity())) {
             unregisterAll();
             return fail(QObject::tr("mpv runtime unavailable: dependency directory %1 is outside "
                                     "the owned runtime root %2")
@@ -197,18 +190,12 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                                     "resolve to a usable local path: %2")
                             .arg(canonicalDep, canonicalDepTrust.reason));
         }
-        if (registeredDeps.contains(canonicalDep, Qt::CaseInsensitive)) continue;
-        // The module's own imports resolve through these. The process PATH is
-        // never read and never written.
+        if (registeredDeps.contains(canonicalDep, native::pathCaseSensitivity())) continue;
+#ifdef _WIN32
         const QString nativeDep = QDir::toNativeSeparators(canonicalDep);
         const HANDLE cookie =
             AddDllDirectory(reinterpret_cast<LPCWSTR>(nativeDep.utf16()));
         if (cookie == nullptr) {
-            // Silently dropping it would leave the restricted search answering
-            // for this module's dependencies from somewhere else, or fail later
-            // with an error that names the module instead of the directory. A
-            // fork bundle carries the deepest closure this app has, so a
-            // dependency it declares has to be honoured or refused by name.
             const DWORD code = GetLastError();
             unregisterAll();
             return fail(QObject::tr("mpv runtime unavailable: dependency directory %1 cannot be "
@@ -216,16 +203,10 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
                             .arg(canonicalDep, win32Error(code)));
         }
         cookies.append(cookie);
+#endif
         registeredDeps.append(canonicalDep);
     }
 
-    // The module's own PE import table is read before the loader is asked. This
-    // is the deployment caveat the audit recorded: the packaged core statically
-    // imports vulkan-1.dll even though the player renders through OpenGL, so a
-    // target machine without the Vulkan loader refuses the module. It is named
-    // here rather than discovered as an anonymous Win32 error, and the answer
-    // is the driver's own loader: nothing is copied into the bundle, no
-    // dependency is added, and there is no fallback module.
     {
         const QString dependencyRefusal =
             native::runtimeLoaderDependencyRefusal(canonicalModule);
@@ -235,9 +216,7 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
         }
     }
 
-    // Own directory, the registered dependency dirs and System32 - the one
-    // legitimate dependency outside the root. No PATH, no current directory,
-    // no default Windows folders.
+#ifdef _WIN32
     constexpr DWORD kSearch = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32 |
                               LOAD_LIBRARY_SEARCH_USER_DIRS;
     const QString nativeModule = QDir::toNativeSeparators(canonicalModule);
@@ -249,6 +228,17 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
         return fail(QObject::tr("mpv runtime unavailable: cannot load %1: %2")
                         .arg(canonicalModule, win32Error(code)));
     }
+#else
+    const QByteArray utf8Module = canonicalModule.toUtf8();
+    const HMODULE module = ::dlopen(utf8Module.constData(), RTLD_NOW | RTLD_LOCAL);
+    if (module == nullptr) {
+        const char* dlErr = ::dlerror();
+        unregisterAll();
+        return fail(QObject::tr("mpv runtime unavailable: cannot load %1: %2")
+                        .arg(canonicalModule,
+                             dlErr ? QString::fromUtf8(dlErr) : QObject::tr("unknown dlopen error")));
+    }
+#endif
 
     // Every entry point the player uses has to resolve now: a table with a hole
     // in it becomes a null call on whichever code path happens to be first.
@@ -257,7 +247,11 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     const auto bind = [&](const char* name, auto& slot) {
         using Fn = std::remove_reference_t<decltype(slot)>;
         static_assert(std::is_pointer_v<Fn>);
+#ifdef _WIN32
         const FARPROC address = ::GetProcAddress(module, name);
+#else
+        void* const address = ::dlsym(module, name);
+#endif
         if (address == nullptr) {
             if (missing == nullptr) missing = name;
             return;
@@ -292,7 +286,11 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     bind("mpv_render_context_free", table.renderContextFree);
     if (missing != nullptr) {
         unregisterAll();
+#ifdef _WIN32
         FreeLibrary(module);
+#else
+        ::dlclose(module);
+#endif
         return fail(QObject::tr("mpv runtime unavailable: %1 does not export %2")
                         .arg(canonicalModule, QString::fromLatin1(missing)));
     }
@@ -303,7 +301,11 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     const quint64 headerVersion = headerApiVersion();
     if ((runtimeVersion >> 16) != (headerVersion >> 16)) {
         unregisterAll();
+#ifdef _WIN32
         FreeLibrary(module);
+#else
+        ::dlclose(module);
+#endif
         return fail(QObject::tr("mpv runtime unavailable: %1 reports client API %2, which is "
                                 "incompatible with the %3 it was selected against")
                         .arg(canonicalModule)
@@ -316,15 +318,10 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     state_.bundle = bundle;
     state_.bundle.root = canonicalRoot;
     state_.bundle.modulePath = canonicalModule;
-    // The recorded closure is the one that is registered, so a later caller that
-    // compares the loader's descriptor against the selection that produced it is
-    // comparing the directories the search actually uses.
     state_.bundle.deps = registeredDeps;
     state_.apiVersion = runtimeVersion;
     state_.loaded = true;
-    // Held for the life of the process, never removed: the module stays mapped
-    // past every core handle, so its imports must keep resolving the same way.
-    for (HANDLE cookie : cookies) state_.userDirs.append(cookie);
+    for (void* cookie : cookies) state_.userDirs.append(cookie);
     return done();
 }
 

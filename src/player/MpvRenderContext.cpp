@@ -1,6 +1,14 @@
 #include "MpvRenderContext.hpp"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+#include <QOpenGLContext>
+#include <dlfcn.h>
+#endif
 
 #include <stdexcept>
 #include <string>
@@ -10,10 +18,8 @@
 namespace mplayer {
 namespace {
 
-// wglGetProcAddress returns NULL for anything inside opengl32.dll, which is
-// most of the 1.x entry points, so those need GetProcAddress. A miss only
-// crashes once a frame needs it, so every load is checked.
 void* resolve(const char* name) {
+#ifdef _WIN32
     // System32 only: the OpenGL driver stack is a Windows dependency, and a
     // bare name would let whatever sits in the current directory answer for it.
     static HMODULE opengl = LoadLibraryExW(L"opengl32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -29,6 +35,21 @@ void* resolve(const char* name) {
         if (void* p = reinterpret_cast<void*>(GetProcAddress(opengl, name))) return p;
     }
     return nullptr;
+#else
+    if (QOpenGLContext* ctx = QOpenGLContext::currentContext()) {
+        if (QFunctionPointer fn = ctx->getProcAddress(name)) {
+            return reinterpret_cast<void*>(fn);
+        }
+    }
+    static void* libgl = ::dlopen("libGL.so.1", RTLD_LAZY | RTLD_LOCAL);
+    if (libgl == nullptr) {
+        libgl = ::dlopen("libOpenGL.so.0", RTLD_LAZY | RTLD_LOCAL);
+    }
+    if (libgl != nullptr) {
+        if (void* p = ::dlsym(libgl, name)) return p;
+    }
+    return nullptr;
+#endif
 }
 
 // The macro sidesteps both the parenthesisation a function type needs and the
@@ -39,15 +60,12 @@ void* resolve(const char* name) {
 
 GlApi loadGlApi() {
     GlApi api;
-    // The context must be current before these resolve, which is why loading
-    // is a separate step the Qt surface performs from initializeGL/paintGL.
+#ifdef _WIN32
     using GetProcFn = void* (*)(const char*);
     LOAD_GL(api.GetProcAddress, GetProcFn, "wglGetProcAddress");
     if (api.GetProcAddress == nullptr)
         throw MpvError("OpenGL: wglGetProcAddress unavailable - no current GL context");
-    // Hand mpv the FULL resolver, not the raw wgl entry point: wglGetProcAddress
-    // returns NULL for core GL 1.1 symbols inside opengl32.dll, and mpv then
-    // fails the whole context as "not supported" instead of naming the symbol.
+#endif
     api.GetProcAddress = &resolve;
 
     LOAD_GL(api.genTextures, void (*)(GLsizei, GLuint*), "glGenTextures");
@@ -164,9 +182,11 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat)
 
     // The requested value, not get_info(): reading it back returns whatever mpv
     // currently holds and discards what the caller asked for.
+    int blockForTargetTime = 0;
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &target},
         {MPV_RENDER_PARAM_FLIP_Y, &flipY_},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
     return api_->renderContextRender(ctx_, params);

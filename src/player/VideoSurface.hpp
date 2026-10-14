@@ -731,6 +731,8 @@ private:
     /// set when Qt hands the widget a new framebuffer (resize, re-show) and
     /// the previous picture is no longer there to composite.
     bool forceRender_ = true;
+    bool hasRenderedFrame_ = false;
+    QSize lastRenderedFboSize_;
     bool playing_ = false;
     double position_ = 0.0;
     bool hasVideo_ = false;

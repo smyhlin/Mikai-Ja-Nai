@@ -8,7 +8,14 @@
 #include <QString>
 #include <QStringList>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#else
+using HMODULE = void*;
+#endif
 
 #include <mpv/client.h>
 #include <mpv/render_gl.h>

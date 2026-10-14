@@ -6,9 +6,12 @@
 
 #pragma once
 
-// gl.h must come first: GlApi is spelled in plain GL scalar types, and glext.h
-// is not shipped by the Windows SDK so it is not included.
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#endif
 
 #include <GL/gl.h>
 
@@ -24,8 +27,9 @@ class MpvHandle;
 // mpv calls back through get_proc_address, so it needs more than the surface.
 struct GlApi {
     // Must be the full resolver (wglGetProcAddress plus GetProcAddress on
-    // opengl32.dll): raw wglGetProcAddress returns NULL for core GL 1.1 entry
-    // points, and mpv then rejects the context as "not supported".
+    // opengl32.dll on Windows, or QOpenGLContext/glX/egl on Linux): raw
+    // wglGetProcAddress returns NULL for core GL 1.1 entry points, and mpv then
+    // rejects the context as "not supported".
     void* (*GetProcAddress)(const char* name) = nullptr;
     void (*genTextures)(GLsizei n, GLuint* t) = nullptr;
     void (*deleteTextures)(GLsizei n, const GLuint* t) = nullptr;
@@ -51,7 +55,7 @@ struct GlApi {
                        void* pixels) = nullptr;
 };
 
-// wglGetProcAddress with a GetProcAddress fallback, as core-profile drivers need.
+// Platform GL proc resolver with core-profile fallback.
 GlApi loadGlApi();
 
 class MpvRenderContext {

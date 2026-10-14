@@ -11,6 +11,7 @@
 #include <QMetaObject>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
+#include <QRegularExpression>
 #include <QThread>
 #include <QTimer>
 
@@ -674,15 +675,76 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         setAnimeJanaiStatus(tr("Building TensorRT engine…"));
         emit animeJanaiEngineBuildChanged(true, false, detail);
     }
+    const QString backendShort =
+        animeJanaiPlan_.backend == native::Backend::TensorRT
+            ? QStringLiteral("TRT")
+            : QStringLiteral("DML");
+    QString presetLabel = animeJanaiPlan_.presetId;
+    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+        if (preset.id.compare(animeJanaiPlan_.presetId, Qt::CaseInsensitive) == 0) {
+            presetLabel = preset.label;
+            break;
+        }
+    }
     QString observed;
     if (animeJanaiPlan_.presetId.startsWith(QStringLiteral("rife:"), Qt::CaseInsensitive) &&
         lower.contains(QStringLiteral("rife active:")) &&
         lower.contains(QStringLiteral("interpolation"))) {
-        observed = tr("Backend reports RIFE interpolation processing");
+        double factor = 2.0;
+        static const QRegularExpression kRifeFactorRe(
+            QStringLiteral("rife\\s+active:\\s*(\\d+)\\s*/\\s*(\\d+)"),
+            QRegularExpression::CaseInsensitiveOption);
+        if (const QRegularExpressionMatch m = kRifeFactorRe.match(line); m.hasMatch()) {
+            const double num = m.captured(1).toDouble();
+            const double den = m.captured(2).toDouble();
+            if (num > 0.0 && den > 0.0) factor = num / den;
+        }
+        const double baseFps =
+            observedContainerFps_ > 0.0
+                ? observedContainerFps_
+                : (streamFramesPerSecond_ > 0.0 ? streamFramesPerSecond_ / factor : 23.98);
+        const double targetFps = baseFps * factor;
+        const int srcH = videoHeight_ > 0
+                             ? videoHeight_
+                             : static_cast<int>(std::lround(observedVideoHeight_));
+        if (srcH > 0) {
+            observed = QStringLiteral("%1 · %2 · %3p · %4 → %5 FPS")
+                           .arg(backendShort, presetLabel)
+                           .arg(srcH)
+                           .arg(baseFps, 0, 'f', 2)
+                           .arg(targetFps, 0, 'f', 2);
+        } else {
+            observed = QStringLiteral("%1 · %2 · %3 → %4 FPS")
+                           .arg(backendShort, presetLabel)
+                           .arg(baseFps, 0, 'f', 2)
+                           .arg(targetFps, 0, 'f', 2);
+        }
     } else {
         const QString marker = QStringLiteral("configured slot %1:").arg(animeJanaiPlan_.slot);
         if (lower.contains(marker) && lower.contains(QStringLiteral(" -> "))) {
-            observed = tr("Backend reports spatial upscale processing");
+            int inW = videoWidth_ > 0 ? videoWidth_ : static_cast<int>(std::lround(observedVideoWidth_));
+            int inH = videoHeight_ > 0 ? videoHeight_ : static_cast<int>(std::lround(observedVideoHeight_));
+            int outW = inW * 2;
+            int outH = inH * 2;
+            static const QRegularExpression kSlotDimRe(
+                QStringLiteral("(\\d+)x(\\d+)\\s*->\\s*(\\d+)x(\\d+)"),
+                QRegularExpression::CaseInsensitiveOption);
+            if (const QRegularExpressionMatch m = kSlotDimRe.match(line); m.hasMatch()) {
+                inW = m.captured(1).toInt();
+                inH = m.captured(2).toInt();
+                outW = m.captured(3).toInt();
+                outH = m.captured(4).toInt();
+            }
+            if (inH > 0 && outH > 0) {
+                observed = QStringLiteral("%1 · %2 · %3p → %4p (%5×%6)")
+                               .arg(backendShort, presetLabel)
+                               .arg(inH)
+                               .arg(outH)
+                               .arg(outW)
+                               .arg(outH);
+            } else {
+                observed = QStringLiteral("%1 · %2").arg(backendShort, presetLabel);
+            }
         }
     }
     if (observed.isEmpty()) return;
@@ -1029,7 +1091,7 @@ bool VideoSurface::waitForContext(int timeoutMs) {
 
 VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     setMinimumSize(160, 90);
-    setFocusPolicy(Qt::StrongFocus);
+    setFocusPolicy(Qt::NoFocus);
     setAttribute(Qt::WA_OpaquePaintEvent);
     // Without this the widget is composited as a separate texture and mpv's
     // frame would be blended against a stale backing store.
@@ -1315,6 +1377,7 @@ void VideoSurface::setPaused(bool paused) {
     if (!mpv_) return;
     try {
         mpv_->setPaused(held || paused);
+        observedPaused_ = held || paused;
         setPlaying(!held && !paused);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
@@ -1325,6 +1388,8 @@ void VideoSurface::reassertPaused() {
     if (!mpv_) return;
     try {
         mpv_->setPaused(true);
+        observedPaused_ = true;
+        setPlaying(false);
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
     }
@@ -1543,6 +1608,8 @@ void VideoSurface::paintGL() {
     gl->glClear(GL_COLOR_BUFFER_BIT);
     const int renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
     render_->reportSwap();
+    hasRenderedFrame_ = (renderResult == 0);
+    lastRenderedFboSize_ = QSize(targetWidth, targetHeight);
     if (newOutputFrame && renderResult == 0) ++diagnostics_.renderedOutputFrames;
     if (renderResult < 0 && mpv_ != nullptr) {
         // A refused render leaves only the defined black above behind, so it is
@@ -1590,8 +1657,16 @@ void VideoSurface::observePlaybackState() {
           [this](const Property& p) { observedDuration_ = p.isNumber() ? p.number : 0.0; });
     watch("time-pos", MPV_FORMAT_DOUBLE,
           [this](const Property& p) { observedPosition_ = p.isNumber() ? p.number : 0.0; });
-    watch("pause", MPV_FORMAT_FLAG,
-          [this](const Property& p) { observedPaused_ = p.isFlag() && p.flag; });
+    watch("pause", MPV_FORMAT_FLAG, [this](const Property& p) {
+        bool paused = p.isFlag() && p.flag;
+        if (!paused && mpv_) {
+            try {
+                paused = mpv_->getFlag("pause");
+            } catch (const MpvError&) {
+            }
+        }
+        observedPaused_ = paused;
+    });
     watch("video-params/w", MPV_FORMAT_DOUBLE,
           [this](const Property& p) { observedVideoWidth_ = p.isNumber() ? p.number : 0.0; });
     watch("video-params/h", MPV_FORMAT_DOUBLE,
