@@ -566,9 +566,13 @@ bool chainIsComplete(const Candidate& candidate, const QString& shadersDir) {
 QString findShadersDir() {
     QStringList candidates;
     if (QCoreApplication::instance()) {
-        candidates << QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("shaders"));
+        const QDir appDir(QCoreApplication::applicationDirPath());
+        candidates << appDir.filePath(QStringLiteral("shaders"));
+        candidates << appDir.filePath(QStringLiteral("../shaders"));
+        candidates << appDir.filePath(QStringLiteral("../../shaders"));
     }
     candidates << QDir::current().filePath(QStringLiteral("shaders"));
+    candidates << QDir::current().filePath(QStringLiteral("build/release/shaders"));
     candidates << QDir::current().filePath(QStringLiteral("build-cmake/shaders"));
 
     for (const QString& path : candidates) {

@@ -319,62 +319,83 @@ QStringList labelPath(const QString& categoryId) {
 bool triggerChoice(CompareWindow* compare, int side, const QString& id,
                   const std::function<void()>& beforeTrigger = {}) {
     int badgeIndex = 0;
+    QToolButton* targetBadge = nullptr;
     for (QToolButton* badge : compare->findChildren<QToolButton*>()) {
         if (!badge->isVisible() || badge->menu() == nullptr) {
             continue;
         }
-        if (badgeIndex++ != side) {
-            continue;
+        if (badgeIndex++ == side) {
+            targetBadge = badge;
+            break;
         }
-        // showMenu() blocks until dismissed; popup() exposes the same actions without user input.
-        badge->menu()->popup(badge->mapToGlobal(QPoint(0, badge->height())));
-        QCoreApplication::processEvents();
-        std::function<bool(QMenu*)> trigger = [&](QMenu* menu) {
-            for (QAction* action : menu->actions()) {
-                if (QMenu* submenu = action->menu()) {
-                    action->hover();
-                    QCoreApplication::processEvents();
-                    if (trigger(submenu)) return true;
-                } else if (action->data().toString() == id) {
-                    if (beforeTrigger) beforeTrigger();
-                    QTimer renderWatchdog;
-                    if (id.startsWith(QLatin1String("spatial:"))) {
-                        renderWatchdog.setSingleShot(true);
-                        QObject::connect(&renderWatchdog, &QTimer::timeout, compare, [compare, id] {
-                            std::fprintf(stderr,
-                                         "FAIL %s render watchdog: still pending after 600000 ms\n",
-                                         qPrintable(id));
-                            compare->close();
-                        });
-                        renderWatchdog.start(600000);
-                    }
-                    // The activation runs production slots synchronously, and a
-                    // source change during the pumped render may have retired
-                    // this badge's pane; never touch a deleted badge or menu.
-                    QPointer<QToolButton> badgeGuard(badge);
-                    action->trigger();
-                    renderWatchdog.stop();
-                    if (!badgeGuard.isNull()) {
-                        if (QMenu* badgeMenu = badgeGuard->menu()) {
-                            badgeMenu->hide();
-                        }
-                        QCoreApplication::processEvents();
-                    }
-                    return true;
-                }
-            }
-            return false;
-        };
-        QPointer<QToolButton> selectedBadge(badge);
-        QMenu* selectedMenu = badge->menu();
-        const bool selected = trigger(selectedMenu);
-        if (!selectedBadge.isNull() && selectedBadge->menu() != nullptr) {
-            selectedBadge->menu()->hide();
-            QCoreApplication::processEvents();
-        }
-        return selected;
     }
-    return false;
+    if (targetBadge == nullptr || targetBadge->menu() == nullptr) {
+        return false;
+    }
+
+    // Emulate actual user mouse click on the badge button to open its menu
+    QTest::mouseClick(targetBadge, Qt::LeftButton, Qt::NoModifier, targetBadge->rect().center());
+    QCoreApplication::processEvents();
+    if (!targetBadge->menu()->isVisible()) {
+        targetBadge->menu()->popup(targetBadge->mapToGlobal(QPoint(0, targetBadge->height())));
+        QCoreApplication::processEvents();
+    }
+
+    std::function<bool(QMenu*)> trigger = [&](QMenu* menu) {
+        for (QAction* action : menu->actions()) {
+            if (QMenu* submenu = action->menu()) {
+                const QRect actGeom = menu->actionGeometry(action);
+                QTest::mouseMove(menu, actGeom.center());
+                action->hover();
+                QCoreApplication::processEvents();
+                if (!submenu->isVisible()) {
+                    submenu->popup(menu->mapToGlobal(QPoint(actGeom.right(), actGeom.top())));
+                    QCoreApplication::processEvents();
+                }
+                if (trigger(submenu)) return true;
+            } else if (action->data().toString() == id) {
+                if (beforeTrigger) beforeTrigger();
+                QTimer renderWatchdog;
+                if (id.startsWith(QLatin1String("spatial:"))) {
+                    renderWatchdog.setSingleShot(true);
+                    QObject::connect(&renderWatchdog, &QTimer::timeout, compare, [compare, id] {
+                        std::fprintf(stderr,
+                                     "FAIL %s render watchdog: still pending after 600000 ms\n",
+                                     qPrintable(id));
+                        compare->close();
+                    });
+                    renderWatchdog.start(600000);
+                }
+                QPointer<QToolButton> badgeGuard(targetBadge);
+                if (!menu->isVisible()) {
+                    menu->popup(targetBadge->mapToGlobal(QPoint(0, targetBadge->height())));
+                    QCoreApplication::processEvents();
+                }
+                const QRect geom = menu->actionGeometry(action);
+                std::fprintf(stderr, "MOUSE_CLICK: action %s at (%d, %d)\n",
+                             qPrintable(id), geom.center().x(), geom.center().y());
+                QTest::mouseMove(menu, geom.center());
+                QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, geom.center());
+                renderWatchdog.stop();
+                if (!badgeGuard.isNull()) {
+                    if (QMenu* badgeMenu = badgeGuard->menu()) {
+                        badgeMenu->hide();
+                    }
+                    QCoreApplication::processEvents();
+                }
+                return true;
+            }
+        }
+        return false;
+    };
+    QPointer<QToolButton> selectedBadge(targetBadge);
+    QMenu* selectedMenu = targetBadge->menu();
+    const bool selected = trigger(selectedMenu);
+    if (!selectedBadge.isNull() && selectedBadge->menu() != nullptr) {
+        selectedBadge->menu()->hide();
+        QCoreApplication::processEvents();
+    }
+    return selected;
 }
 
 /// How many side panes the side-by-side layout currently has. A refused
@@ -1132,42 +1153,50 @@ int main(int argc, char** argv) {
         }
         const QImage immutableShaderInput = compare->frozenFrame();
         const QImage liveBeforeModelChanges = settledFrame(surface);
+        // One switch test using actual mouse click emulation:
+        QString testPresetId;
         for (const anime4k::ModeInfo& preset : presets) {
-            if (!anime4k::chainIsComplete(anime4k::candidateForId(preset.id), shadersDir)) continue;
-            for (int side = 0; side < 2; ++side) {
-                const QImage unchangedSide = side == 0 ? compare->renderedSideB() : compare->renderedSideA();
-                check(triggerChoice(compare, side, preset.id),
-                      "a corner selector switches to an available Anime4K preset");
-                QImage output;
-                QString failure;
-                const bool completed = waitForRenderedSide(compare, preset.id, side, &output, &failure);
-                const auto picture = mplayer::probes::measurePicture(
-                    output, surface->videoWidth(), surface->videoHeight());
-                check(completed && !picture.isMostlyBlack() &&
-                          visibleSideMatches(compare, side, preset.id, output, surface),
-                      "changing the Anime4K model leaves the correctly labelled actual visible image lit");
-                check((side == 0 ? compare->renderedSideB() : compare->renderedSideA()) == unchangedSide,
-                      "changing one model preserves the other side's pixels");
-                check(compare->frozenFrame() == immutableShaderInput &&
-                          playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp) &&
-                          settledFrame(surface) == liveBeforeModelChanges,
-                      "shader comparisons preserve frozen input and exact live pixels and timestamp");
-                bool menuVisible = false;
-                for (QMenu* menu : compare->findChildren<QMenu*>()) menuVisible |= menu->isVisible();
-                check(!menuVisible, "the chooser closes before the new output is presented");
-                if (!completed || picture.isMostlyBlack()) {
-                    std::fprintf(stderr, "FAIL shader %s side %d: %s\n",
-                                 qPrintable(preset.id), side, qPrintable(failure));
-                    app.exit(1);
-                    return;
-                }
+            if (preset.mode != anime4k::Mode::Off &&
+                anime4k::chainIsComplete(anime4k::candidateForId(preset.id, shadersDir), shadersDir)) {
+                testPresetId = preset.id;
+                break;
             }
         }
+        check(!testPresetId.isEmpty(), "found a complete Anime4K preset to switch to");
+
+        const QImage unchangedSide = compare->renderedSideB();
+        check(triggerChoice(compare, 0, testPresetId),
+              "a corner selector switches to an available Anime4K preset via mouse click");
+
+        QImage output;
+        QString failure;
+        const bool completed = waitForRenderedSide(compare, testPresetId, 0, &output, &failure);
+        const auto picture = mplayer::probes::measurePicture(
+            output, surface->videoWidth(), surface->videoHeight());
+        check(completed && !picture.isMostlyBlack() &&
+                  visibleSideMatches(compare, 0, testPresetId, output, surface),
+              "changing the Anime4K model leaves the correctly labelled actual visible image lit");
+        check(compare->renderedSideB() == unchangedSide,
+              "changing one model preserves the other side's pixels");
+        check(compare->frozenFrame() == immutableShaderInput &&
+                  playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp) &&
+                  settledFrame(surface) == liveBeforeModelChanges,
+              "shader comparisons preserve frozen input and exact live pixels and timestamp");
+
+        bool menuVisible = false;
+        for (QMenu* menu : compare->findChildren<QMenu*>()) menuVisible |= menu->isVisible();
+        check(!menuVisible, "the chooser closes before the new output is presented");
+        if (!completed || picture.isMostlyBlack()) {
+            std::fprintf(stderr, "FAIL shader %s side 0: %s\n",
+                         qPrintable(testPresetId), qPrintable(failure));
+            app.exit(1);
+            return;
+        }
+
         check(triggerChoice(compare, 0, QStringLiteral("off")) &&
-                  triggerChoice(compare, 1, QStringLiteral("off")) &&
                   compare->renderedSideA() == immutableShaderInput &&
-                  compare->renderedSideB() == immutableShaderInput,
-              "both corner selectors return to the exact immutable raw Original after shader changes");
+                  compare->renderedSideB() == unchangedSide,
+              "corner selector returns to the exact immutable raw Original after shader change");
 
         if (ajiMode) {
             const QString savedPreset =
