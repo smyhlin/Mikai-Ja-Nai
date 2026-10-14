@@ -10,7 +10,8 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
   - Detailed Title page with studio/genre/rating metadata, related series navigation, per-release dub/sub tabs sorted by playable episode count, and asynchronous HLS stream extraction (`ASHDI`, `MoonAnime`, `Tortuga`).
 - **Integrated `libmpv` OpenGL Player (`PlayerDialog`, `VideoSurface`, `PlayerShell`):**
   - Single-process OpenGL render surface (`QOpenGLWidget` + `mpv_render_context`) with dynamic `libmpv` symbol loading (`LoadLibraryExW` on Windows, `dlopen` on Linux).
-  - Auto-hiding HUD controls, timeline thumbnail/chapter scrubbing, audio & subtitle track popups with live probed quality badges (`1080p`, `720p`, etc.), episode drawer (`S`), and Picture-in-Picture mode.
+  - Flicker-free continuous compositor pipeline (`QOpenGLWidget::NoPartialUpdate`) unconditionally blitting into the backing FBO on every `paintGL()` pass.
+  - Auto-hiding HUD controls on both playback and idle paused state, timeline thumbnail/chapter scrubbing, audio & subtitle track popups with live probed quality badges (`1080p`, `720p`, etc.), episode drawer (`S`), Picture-in-Picture mode, and multi-level `Esc` navigation.
 - **Real-Time Video Enhancement Pipelines:**
   - **Anime4K GLSL Shaders:** 6 composite modes (`A`, `B`, `C`, `A+A`, `B+B`, `C+A` in Fast and High Quality variants) plus individual Restore, Upscale, Denoise, Deblur, Darken, and Thin shaders.
   - **AnimeJaNai (`3.7.0` / Aji `v0.9.0` ABI-8):** Built-in adaptive profiles (`Quality`, `Balanced`, `Performance`), 5 pinned HD/SD spatial ONNX models, and 47 pinned RIFE frame-interpolation models (`v4.7`–`v4.26`).
@@ -106,9 +107,10 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 | `S` | Swap Side A and Side B candidate selections |
 | `R` | Recapture the current video frame from the player |
 | `F` | Reset zoom and pan to Fit-to-Window |
-| `P` | Toggle Always-on-Top window pin |
+| `P` | Toggle Always-on-Top window pin (`Qt::WindowStaysOnTopHint` + Win32 `HWND_TOPMOST`) |
+| `Space` | Hold to peek Side A (original or reference) across all modes |
 | `+` / `-` / `0` | Zoom in, zoom out, or reset zoom to Fit |
-| Mouse Wheel / Drag | Synchronized cursor-anchored zoom (up to `32x`) and pan across all panes |
+| Mouse Wheel / Drag | Synchronized cursor-anchored zoom (up to `32x`) and direct left-drag pan across all panes |
 | `Esc` | Close the Compare Window and release the player pause hold |
 
 ---

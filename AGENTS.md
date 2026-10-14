@@ -49,7 +49,9 @@ All application, player, native-support, and test targets must compile cleanly o
 - **Never block the GUI thread** with network I/O, archive extraction, SHA-256 hashing, or model preparation.
 - **Never touch `QWidget` or construct/copy `QPointer<QWidget>` on a worker thread.** Capture `Runner::GuiDispatch post = runner_->post();` and an `std::shared_ptr<std::atomic<bool>> alive_` flag on the GUI thread before submitting work, and resolve widget pointers only inside the `post(...)` callback on the GUI thread.
 - **Honor `WorkCancellationScope`:** Blocking network helpers (`MikaiClient`, `Streams::runBlocking`, `Downloads::fetchUrlBytes`, `Downloads::downloadToFile`) poll `WorkCancellationScope::cancellationRequested()` every 200 ms so `Runner::cancel()` and `Runner::shutdownAll()` unwind immediately.
-- **Submenu Action Forwarding (`PlayerPopups.cpp`):** `forwardChoiceLeaf` guards nested `QMenu` leaf actions against duplicate `QMenuPrivate::activateCausedStack` emissions using `_mplayer_forwarded_leaf`, `_mplayer_leaf_emitting`, and `_mplayer_skip_caused_trigger`.
+- **Video Surface Painting (`VideoSurface.cpp`):** Must use `setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);`. `paintGL()` unconditionally invokes `render_->render(...)` to populate the backing FBO on every pass, eliminating black-frame strobing during UI repaints or focus changes. The auto-hide timer is armed on pause as well as playback.
+- **Window Raise Policy & Menu Tracking (`WindowRaisePolicy.cpp`):** `WindowRaisePolicy::isExempt()` must exempt `Qt::Popup` and `Qt::ToolTip`. Win32 foreground activation must never be requested on popup menus, which would drop Windows mouse capture (`ReleaseCapture()`) and freeze menu interaction.
+- **Submenu Action Forwarding & Dismissal (`PlayerPopups.cpp`, `CompareWindow.cpp`):** `forwardChoiceLeaf` forwards nested `QAction::triggered` directly to the root menu, while receivers guard re-entrancy with `if (id.isEmpty() || id == current_) return;`. `dismissCandidateMenus()` closes all `QMenu` instances across the window tree and active popups.
 
 ---
 
@@ -63,6 +65,8 @@ cmake --build --preset app --parallel
 cmake --build --preset tests --parallel
 ctest --test-dir build/release --output-on-failure
 ```
+
+*Note on test runtime:* Ensure `Qt6Test.dll` is present in `build/release/` or accessible via `PATH` when running standalone probe executables.
 
 ### Linux (GCC / Clang)
 
