@@ -1,10 +1,10 @@
 #pragma once
 
 #include <QDialog>
+#include <QRgb>
 #include <QHash>
 #include <QImage>
 #include <QPointer>
-#include <QRgb>
 #include <QString>
 #include <QStringList>
 
@@ -17,10 +17,10 @@
 
 class QComboBox;
 class QDoubleSpinBox;
+class QFrame;
 class QKeyEvent;
 class QLabel;
 class QPushButton;
-class QResizeEvent;
 class QSlider;
 class QSpinBox;
 class QStackedWidget;
@@ -61,6 +61,7 @@ public:
     /// frame. A capture can succeed and still lose the hold, which is a
     /// different fault from a refusal and must be named separately.
     bool playbackHeld() const { return playbackHoldActive_; }
+    bool isPinned() const { return pinned_; }
     QString candidateError(const QString& id) const { return ajiErrors_.value(id); }
     QString captureError() const { return captureError_; }
     QString lockError() const { return lockError_; }
@@ -69,8 +70,7 @@ public:
     }
     void captureNow();
     void setAjiBackend(native::Backend backend);
-    void setPinned(bool pinned);
-    bool isPinned() const { return pinned_; }
+    void setCurrentCandidateId(const QString& candidateId);
 
 private slots:
     void onModeChanged(int index);
@@ -80,12 +80,10 @@ private slots:
     void onFlickerTimeout();
     void onCandidateChosen(int side, const QString& id);
     void onHoverPixel(int x, int y, bool valid, QRgb rgb);
-    void onSwapSides();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void hideEvent(QHideEvent* event) override;
@@ -93,6 +91,8 @@ protected:
 private:
     void buildUi();
     void populateCandidates();
+    void togglePin(bool pinned);
+    void swapSides();
     void acquirePlaybackHold();
     bool playbackHoldOwned() const;
     void requestPlaybackHoldRelease();
@@ -131,15 +131,16 @@ private:
     QPushButton* swapButton_ = nullptr;
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
+    QFrame* modeDivider_ = nullptr;
     QLabel* splitLabel_ = nullptr;
     QLabel* flickerLabel_ = nullptr;
     QLabel* gainLabel_ = nullptr;
-    QDoubleSpinBox* split_ = nullptr;
     QSlider* splitSlider_ = nullptr;
-    QSpinBox* flicker_ = nullptr;
     QSlider* flickerSlider_ = nullptr;
-    QSpinBox* gain_ = nullptr;
     QSlider* gainSlider_ = nullptr;
+    QDoubleSpinBox* split_ = nullptr;
+    QSpinBox* flicker_ = nullptr;
+    QSpinBox* gain_ = nullptr;
     QWidget* modeControls_ = nullptr;
     QLabel* info_ = nullptr;
     QLabel* hover_ = nullptr;
@@ -181,7 +182,7 @@ private:
     bool rendering_ = false;
     bool renderQueued_ = false;
     bool playbackHoldActive_ = false;
-    mutable bool playbackHoldOriginalPlaying_ = false;
+    bool playbackHoldOriginalPlaying_ = false;
     bool playbackHoldMutation_ = false;
     bool playbackReleasePending_ = false;
     bool deferredPlanLockRelease_ = false;
@@ -191,7 +192,7 @@ private:
     bool playbackHoldRetryScheduled_ = false;
     int playbackHoldRetryCount_ = 0;
     uint64_t playbackHoldSourceEpoch_ = 0;
-    mutable quint64 playbackHoldGeneration_ = 0;
+    quint64 playbackHoldGeneration_ = 0;
     quint64 selectionGeneration_ = 0;
     quint64 activeRenderGeneration_ = 0;
     QString pendingAjiId_;
