@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <clocale>
 #include <cmath>
 
 namespace mplayer::shell {
@@ -22,6 +23,10 @@ namespace {
 constexpr int kPollMs = 40;
 constexpr int kSourceTimeoutMs = 20000;
 constexpr int kBuildTimeoutMs = 20 * 60 * 1000;
+
+std::string formatTimestampInvariant(double timestamp) {
+    return QString::number(timestamp, 'f', 6).toStdString();
+}
 
 struct CommandResult {
     bool finished = false;
@@ -53,13 +58,11 @@ public:
 
 private:
     QOpenGLContext& context_;
-    // The surface is captured before the bind: surface() answers for a context
-    // that is current, and ours displaces it.
     QOpenGLContext* previous_;
     QSurface* previousSurface_;
     bool bound_;
 };
-}
+}  // namespace
 
 struct CompareRenderer::State {
     QOpenGLContext context;
@@ -77,8 +80,6 @@ struct CompareRenderer::State {
     int requestedSlot = 0;
 
     ~State() {
-        // State dies on CompareWindow's GUI thread, so the guard makes the
-        // context current for the GL releases and drops it immediately after.
         const ScopedCurrent current(context, &target);
         rendering.reset();
         framebuffer.reset();
@@ -90,6 +91,7 @@ struct CompareRenderer::State {
             error = QCoreApplication::translate("CompareRenderer", "The comparison frame storage or geometry is unavailable.");
             return false;
         }
+        std::setlocale(LC_NUMERIC, "C");
         if (!context.isValid()) {
             context.setFormat(QSurfaceFormat::defaultFormat());
             if (!context.create()) {
@@ -118,7 +120,7 @@ struct CompareRenderer::State {
                     {"audio", "no"}, {"sub", "no"}, {"keep-open", "yes"},
                     {"image-display-duration", "inf"}, {"screenshot-sw", "yes"},
                     {"screenshot-format", "png"}, {"input-default-bindings", "no"},
-                    {"start", std::to_string(timestamp)},
+                    {"start", formatTimestampInvariant(timestamp)},
                     {"http-header-fields", "Accept-Language: uk-UA"},
                     {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/142.0.0.0 Safari/537.36"}});
             core->setBackendLogObservationEnabled(true);
@@ -134,8 +136,6 @@ struct CompareRenderer::State {
                 const auto* message = static_cast<mpv_event_log_message*>(event->data);
                 const QString text = QString::fromUtf8(message->text).trimmed();
                 const QString prefix = QString::fromUtf8(message->prefix);
-                if (message->log_level <= MPV_LOG_LEVEL_ERROR)
-                    error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1").arg(text);
                 if (!prefix.contains(QLatin1String("animejanai"))) return;
                 if (text.contains(QStringLiteral("Configured slot %1:").arg(requestedSlot)) &&
                     text.contains(QLatin1String(" -> "))) processingObserved = true;
@@ -169,8 +169,6 @@ struct CompareRenderer::State {
         core->drainEvents();
         QImage image;
         {
-            // Scoped so the nested event loop below runs with no comparison
-            // context current: whatever it reaches has to bind its own surface.
             const ScopedCurrent current(context, &target);
             if (!current) {
                 error = QCoreApplication::translate("CompareRenderer", "The comparison OpenGL context was lost.");
@@ -178,11 +176,6 @@ struct CompareRenderer::State {
             }
             rendering->update();
             framebuffer->bind();
-            // The same defined black the live surface paints before mpv draws
-            // into it, and the same viewport: an FBO that was never cleared
-            // keeps the previous frame's pixels around whatever the new picture
-            // covers, which reads as a stale or half-lit frame after a model
-            // switch whose output size did not change with the filter.
             if (QOpenGLFunctions* gl = context.functions()) {
                 gl->glViewport(0, 0, framebuffer->width(), framebuffer->height());
                 gl->glDisable(GL_SCISSOR_TEST);
@@ -273,7 +266,7 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         if (!state.initialize(outputSize, timestamp) || cancelled()) return false;
         if (!state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", ""}), cancelled) ||
-            !state.waitForCommand(state.command({"set", "start", std::to_string(timestamp)}), cancelled)) return false;
+            !state.waitForCommand(state.command({"set", "start", formatTimestampInvariant(timestamp)}), cancelled)) return false;
         state.restarted = false;
         state.core->loadFile(source.toStdString());
         if (state.settle(true, false, cancelled, progress).isNull()) return false;
@@ -303,16 +296,8 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
     try {
         if (!state.core && !state.initialize(state.framebuffer->size(), 0.0)) return {};
         const QString filter = plan.enabled ? QString::fromUtf8(plan.filterSpec) : QString();
-        const QString chain = plan.enabled ? QString() : anime4k::shaderStringForCandidate(shaderId);
-        // Re-decode the immutable PNG under the new pipeline, never accept the
-        // old paused frame or an empty reconfiguration framebuffer.
-        //
-        // The whole vf chain is cleared before the new one goes in: `set vf ""`
-        // drops the filter the previous candidate left in the core, so a switch
-        // between two AnimeJaNai models cannot leave the first one running and
-        // answering for the second. The attach is then `vf add`, exactly as the
-        // live surface submits its own plan - whose spec carries the @mikai_aji
-        // label and therefore replaces by label.
+        const QString chain = plan.enabled ? QString()
+                                           : anime4k::shaderStringForCandidate(shaderId, anime4k::findShadersDir());
         if (!state.waitForCommand(state.command({"stop"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
@@ -330,23 +315,14 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
 }
 
 void CompareRenderer::stop() {
-    // Called only after render/capture has unwound, while its owner still keeps
-    // the renderer alive. The filter is detached first: its destruction
-    // terminates and joins a builder thread, and an anakin/TRT engine is torn
-    // down while its own core still answers. The scoped context keeps that call
-    // off the driver's deallocation path.
     State& state = *state_;
     if (!state.core) return;
     const ScopedCurrent current(state.context, &state.target);
     const std::string label = "@" + std::string(native::kAnimeJanaiFilterLabel);
     try {
         state.core->commandAsync({"vf", "remove", label}, [](const AsyncReply&) {});
-        // One drain so the request reaches the core before it is destroyed: the
-        // reply itself is discarded, because a detached filter has nothing left
-        // to say that this caller needs.
         state.core->drainEvents();
     } catch (const MpvError&) {
-        // A core that can no longer answer a removal has nothing to remove from.
     }
     state.rendering.reset();
     state.core.reset();
@@ -354,4 +330,4 @@ void CompareRenderer::stop() {
 
 QString CompareRenderer::error() const { return state_->error; }
 
-}
+}  // namespace mplayer::shell

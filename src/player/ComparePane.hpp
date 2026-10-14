@@ -3,20 +3,18 @@
 // Adapted from AnimeInterp's ComparePane. The pane owns its picture and its
 // own fit (which may upscale: the pane fills its cell); the shared view is a
 // normalized centre, so a 480p pane and a 1080p pane agree on which region of
-// the frame is centred. The scale is that fit and nothing else: the wheel only
-// scrolls the pane and the drag only pans it, so neither can rescale a
-// comparison out from under the eye.
+// the frame is centred.
 //
 // The model selector is a row under the picture, in the view's bottom margin.
-// It is exactly as wide as the picture and flush with its left and right
-// edges, and the name fills that row. Zoom never lays it over the image. The
-// menu offers every candidate the grid feeds it, with the shown one checked.
+// Zoom never lays it over the image. The menu offers every candidate the grid
+// feeds it, with the shown one checked.
 #pragma once
 
 #include <QGraphicsView>
 #include <QImage>
 #include <QPoint>
 #include <QPointF>
+#include <QRgb>
 #include <QString>
 #include <QStringList>
 
@@ -42,8 +40,12 @@ public:
 
     QString key() const { return key_; }
 
+    void setSideIndex(int sideIndex);
+    int sideIndex() const { return sideIndex_; }
+
     void setContent(const QString& key, const QImage& image, const QString& name);
     void setChoices(const QVector<ChoiceEntry>& choices, const QString& current);
+    void setStatusText(const QString& status);
 
     /// Adopt a shared view: `zoom` is a multiple of this pane's own fit and the
     /// centre is normalized (fractions of its own picture).
@@ -59,18 +61,23 @@ public:
     QSize sizeHint() const override { return {480, 320}; }
 
 signals:
-    /// The user panned here; the grid reconciles the shared centre.
+    /// The user panned or zoomed here; the grid reconciles the shared centre.
     void viewChanged();
     /// The selector asked for another candidate in this pane.
     void choiceChosen(const QString& id);
+    /// Live pixel readout under the cursor inside this pane.
+    void hoverPixel(int x, int y, bool valid, QRgb rgb);
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void scrollContentsBy(int dx, int dy) override;
+    void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
@@ -88,6 +95,8 @@ private:
     QToolButton* badge_ = nullptr;
     QMenu* menu_ = nullptr;
     QString label_;
+    QString statusText_;
+    int sideIndex_ = -1;
 
     QString key_;
     QImage image_;
@@ -105,6 +114,7 @@ private:
     bool syncing_ = false;
     bool altPanning_ = false;
     QPoint lastPanPoint_;
+    QPointF lastNormalizedCenter_{0.5, 0.5};
 
     /// The fit scale of the picture, recorded by fit().
     double base_ = 1.0;

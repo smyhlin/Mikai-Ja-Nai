@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPainter>
+#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
@@ -30,24 +31,66 @@ constexpr int kRowHeight = 28;
 // geometry a previous popupNear left behind.
 constexpr int kUnlimited = 16777215;
 
-const char* const kText = "#f0f0f5";
-const char* const kMuted = "#9a9aa6";
+const char* const kText = "#e8eaed";
+const char* const kMuted = "#8b929e";
 
 constexpr auto kPanelQss =
     "QFrame[chromePanel=\"true\"] {"
     "  background-color: transparent;"
     "  border: none; }";
 
+QString choiceMenuQss() {
+    return QStringLiteral(
+        "QMenu {"
+        "  background-color: #16181d;"
+        "  color: #e8eaed;"
+        "  border: 1px solid #2e333d;"
+        "  border-radius: 6px;"
+        "  padding: 4px;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QMenu::item {"
+        "  padding: 5px 28px 5px 24px;"
+        "  border-radius: 4px;"
+        "  margin: 1px 2px;"
+        "  background: transparent;"
+        "  color: #dcdfe4;"
+        "}"
+        "QMenu::item:selected {"
+        "  background-color: #2563eb;"
+        "  color: #ffffff;"
+        "}"
+        "QMenu::item:checked {"
+        "  background-color: rgba(59, 130, 246, 0.18);"
+        "  color: #ffffff;"
+        "  font-weight: 600;"
+        "}"
+        "QMenu::item:checked:selected {"
+        "  background-color: #2563eb;"
+        "  color: #ffffff;"
+        "}"
+        "QMenu::item:disabled {"
+        "  color: #5a606d;"
+        "  background: transparent;"
+        "}"
+        "QMenu::separator {"
+        "  height: 1px;"
+        "  background: #282c34;"
+        "  margin: 4px 6px;"
+        "}");
+}
+
 QString rowQss(const char* foreground, const char* fill) {
     return QStringLiteral(
                "QPushButton {"
                "  color: %1;"
                "  background: %2;"
-               "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
+               "  border: 1px solid transparent; border-radius: 5px; text-align: left;"
                "  padding: 0 %3px; min-height: 28px; font-size: 13px; font-weight: 500; }"
                "QPushButton:hover {"
-               "  background: rgba(255, 255, 255, 0.12); color: #ffffff;"
-               "  border-color: rgba(255, 255, 255, 0.20); }")
+               "  background: #262a33; color: #ffffff;"
+               "  border-color: #383e4c; }")
         .arg(QLatin1String(foreground), QLatin1String(fill))
         .arg(kSpacingSmall);
 }
@@ -58,15 +101,15 @@ QString disabledRowQss() {
     return QStringLiteral(
                "QPushButton {"
                "  color: %1;"
-               "  background: rgba(255, 255, 255, 0.03);"
-               "  border: 1px solid transparent; border-radius: 6px; text-align: left;"
+               "  background: rgba(255, 255, 255, 0.02);"
+               "  border: 1px solid transparent; border-radius: 5px; text-align: left;"
                "  padding: 0 %3px; min-height: 28px; font-size: 13px; font-weight: 500; }")
         .arg(QLatin1String(kMuted))
         .arg(kSpacingSmall);
 }
 
 QString captionQss(int size) {
-    return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.5px;")
+    return QStringLiteral("color: %1; font-size: %2px; font-weight: 700; background: transparent; letter-spacing: 0.4px;")
         .arg(QLatin1String(kMuted))
         .arg(size);
 }
@@ -78,6 +121,9 @@ QString captionQss(int size) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void clearChoiceMenu(QMenu* menu) {
+    if (menu == nullptr) {
+        return;
+    }
     // The submenus are widgets owned by this menu: clear() drops the actions,
     // so they are deleted explicitly or a rebuild/shrink would leak a tree.
     QVector<QMenu*> stale;
@@ -94,6 +140,9 @@ void clearChoiceMenu(QMenu* menu) {
 
 void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
                     QVector<QAction*>* leaves) {
+    if (menu == nullptr) {
+        return;
+    }
     // Rebuilding destroys actions, so the caller keeps what this returns and
     // moves the checks with markChoice() while its list is unchanged.
     if (leaves != nullptr) {
@@ -101,6 +150,8 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
         leaves->reserve(entries.size());
     }
     clearChoiceMenu(menu);
+    menu->setToolTipsVisible(true);
+    menu->setStyleSheet(choiceMenuQss());
 
     // One submenu per distinct path, not one per entry: addMenu() always
     // creates a new menu, so walking the path per entry would put a second
@@ -120,6 +171,8 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
                 continue;
             }
             QMenu* created = level->addMenu(name);
+            created->setToolTipsVisible(true);
+            created->setStyleSheet(choiceMenuQss());
             levels.insert(key, created);
             level = created;
         }
@@ -127,14 +180,45 @@ void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QStr
     };
 
     for (const ChoiceEntry& entry : entries) {
-        QAction* action = levelFor(entry.path)->addAction(entry.label);
+        QMenu* level = levelFor(entry.path);
+        QAction* action = level->addAction(entry.label);
         action->setData(entry.id);
-        action->setCheckable(true);
-        action->setChecked(entry.id == selected);
+        action->setEnabled(!entry.disabled);
+        action->setCheckable(!entry.disabled);
+        action->setChecked(!entry.disabled && entry.id == selected);
+        if (!entry.tooltip.isEmpty()) {
+            action->setToolTip(entry.tooltip);
+        }
+        forwardChoiceLeaf(menu, level, action);
         if (leaves != nullptr) {
             leaves->append(action);
         }
     }
+}
+
+void forwardChoiceLeaf(QMenu* root, QMenu* level, QAction* action) {
+    // A leaf triggered programmatically (or when Qt's causedPopup chain is not
+    // populated) fires `triggered` only on the submenu that owns it, whereas a
+    // mouse click in an open submenu fires `QAction::triggered` first and then
+    // walks `activateCausedStack` to emit `root->triggered(action)`. We mark
+    // forwarded leaves and tag the active emission on the action itself so
+    // callers connected to `root->triggered` hear every pick (including nested
+    // or back-to-back picks) exactly once.
+    if (root == nullptr || level == root || action == nullptr) return;
+    action->setProperty("_mplayer_forwarded_leaf", true);
+    QObject::connect(action, &QAction::triggered, root, [root, action] {
+        if (action->property("_mplayer_leaf_emitting").toBool()) {
+            return;
+        }
+        QPointer<QMenu> rootGuard(root);
+        QPointer<QAction> actionGuard(action);
+        action->setProperty("_mplayer_leaf_emitting", true);
+        Q_EMIT root->triggered(action);
+        if (actionGuard != nullptr) {
+            actionGuard->setProperty("_mplayer_leaf_emitting", false);
+        }
+        Q_UNUSED(rootGuard);
+    });
 }
 
 void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries,
@@ -143,7 +227,9 @@ void markChoice(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& ent
         return;
     }
     for (qsizetype i = 0; i < entries.size(); ++i) {
-        leaves.at(i)->setChecked(entries.at(i).id == selected);
+        if (leaves.at(i) != nullptr) {
+            leaves.at(i)->setChecked(!entries.at(i).disabled && entries.at(i).id == selected);
+        }
     }
 }
 
@@ -310,9 +396,9 @@ void MenuPopup::popupBeside(const QRect& anchor, bool preferLeft, int gap) {
 void MenuPopup::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
-    p.setBrush(QColor(20, 21, 27));
-    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+    p.setPen(QPen(QColor(46, 51, 61), 1));
+    p.setBrush(QColor(22, 24, 29));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 8.0, 8.0);
 }
 
 void MenuPopup::keyPressEvent(QKeyEvent* event) {
@@ -352,10 +438,6 @@ void MenuPopup::fitToHint() {
     ensurePolished();
     layout()->invalidate();
     layout()->activate();
-    // A hidden widget has no geometry yet, so its layout can report a hint
-    // smaller than the content it will hold once shown - and setFixedSize
-    // would make that the popup's permanent size, stacking every row into it.
-    // The visible path re-fits after show(), so there is nothing to cache here.
     if (isVisible()) {
         setFixedSize(layout()->sizeHint());
         layout()->activate();
@@ -365,8 +447,6 @@ void MenuPopup::fitToHint() {
 void MenuPopup::moveHighlight(int delta) {
     if (rows_.isEmpty())
         return;
-    // Disabled rows are stepped over: a highlight on a row that cannot be
-    // activated reads as a broken keyboard.
     const int step = delta >= 0 ? 1 : -1;
     int spot = highlight_ < 0 ? (step > 0 ? -1 : rows_.size()) : highlight_;
     for (int guard = 0; guard < rows_.size(); ++guard) {
@@ -389,12 +469,8 @@ void MenuPopup::activate(int spot) {
     if (spot < 0 || spot >= rowEntries_.size())
         return;
     const MenuEntry& entry = rowEntries_.at(spot);
-    // A disabled row is informational: it neither closes the popover nor emits,
-    // so it cannot change what is selected.
     if (entry.disabled)
         return;
-    // A submenu row stays open: the caller places the next level's panel beside
-    // this one, which is what makes the tree navigable without a Back row.
     if (!entry.submenu)
         close();
     emit picked(entry.payload);
@@ -405,15 +481,13 @@ void MenuPopup::paintRows() {
         if (index < rowEntries_.size() && rowEntries_.at(index).disabled)
             rows_.at(index)->setStyleSheet(disabledRowQss());
         else if (index < rowEntries_.size() && rowEntries_.at(index).current)
-            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(88, 101, 242, 0.40)"));
+            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(37, 99, 235, 0.38)"));
         else if (index == highlight_)
-            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "rgba(255, 255, 255, 0.12)"));
+            rows_.at(index)->setStyleSheet(rowQss("#ffffff", "#262a33"));
         else
-            rows_.at(index)->setStyleSheet(rowQss("#e0e0e6", "rgba(255, 255, 255, 0.05)"));
+            rows_.at(index)->setStyleSheet(rowQss("#dcdfe4", "rgba(255, 255, 255, 0.04)"));
     }
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SERIES DRAWER
@@ -422,9 +496,9 @@ void MenuPopup::paintRows() {
 void SeriesDrawer::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(QColor(255, 255, 255, 45), 1));
-    p.setBrush(QColor(20, 21, 27));
-    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
+    p.setPen(QPen(QColor(46, 51, 61), 1));
+    p.setBrush(QColor(22, 24, 29));
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 8.0, 8.0);
 }
 
 SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
@@ -473,13 +547,12 @@ void SeriesDrawer::setEntries(const QStringList& labels, int current) {
         button->setCursor(Qt::PointingHandCursor);
         button->setToolTip(label);
         button->setAccessibleName(label);
-        // A focused button would swallow Space, and Space is play/pause.
         button->setFocusPolicy(Qt::NoFocus);
         button->setFixedHeight(kRowHeight);
         connect(button, &QPushButton::clicked, this, [this, spot] { emit picked(spot); });
         rowsLayout_->addWidget(button);
         rows_.append(button);
-        button->setStyleSheet(spot == current ? rowQss(kText, "rgba(189, 172, 255, 0.20)")
+        button->setStyleSheet(spot == current ? rowQss(kText, "rgba(59, 130, 246, 0.24)")
                                               : rowQss(kMuted, "transparent"));
     }
     rowsLayout_->addStretch(1);
@@ -494,19 +567,22 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     setAttribute(Qt::WA_ShowWithoutActivating);
     setObjectName(QStringLiteral("processingOverlay"));
     setStyleSheet(QStringLiteral("QFrame#processingOverlay {"
-                                 "  background-color: #14141a;"
-                                 "  border: 1px solid rgba(189, 172, 255, 0.35);"
-                                 "  border-radius: 10px; }"));
-    setFixedWidth(360);
+                                 "  background-color: #16181d;"
+                                 "  border: 1px solid #3b82f6;"
+                                 "  border-radius: 8px; }"));
+    setFixedWidth(380);
 
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 14, 16, 14);
+    layout->setSpacing(8);
+
     title_ = new QLabel(this);
-    title_->setStyleSheet(QStringLiteral("color: %1; font-weight: 600;").arg(kText));
+    title_->setStyleSheet(QStringLiteral("color: %1; font-size: 13px; font-weight: 700;").arg(kText));
     title_->setWordWrap(true);
     layout->addWidget(title_);
 
     detail_ = new QLabel(this);
-    detail_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    detail_->setStyleSheet(QStringLiteral("color: %1; font-size: 12px;").arg(kMuted));
     detail_->setWordWrap(true);
     layout->addWidget(detail_);
 
@@ -514,19 +590,18 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     progress_->setTextVisible(false);
     progress_->setFixedHeight(6);
     progress_->setRange(0, 0);
-    // The bar paints no text, so its accessible name is the only place the
-    // indeterminate-versus-staged fact can be read: a silent bar reads as
-    // nothing happening at all.
     progress_->setAccessibleName(tr("Preparation progress"));
     progress_->setStyleSheet(QStringLiteral("QProgressBar {"
-                                            "  background-color: rgba(255, 255, 255, 0.10);"
+                                            "  background-color: #242830;"
                                             "  border: none; border-radius: 3px; }"
                                             "QProgressBar::chunk {"
-                                            "  background-color: #bdacff; border-radius: 3px; }"));
+                                            "  background-color: #3b82f6; border-radius: 3px; }"));
     layout->addWidget(progress_);
 
     elapsedLabel_ = new QLabel(this);
-    elapsedLabel_->setStyleSheet(QStringLiteral("color: %1;").arg(kMuted));
+    elapsedLabel_->setStyleSheet(
+        QStringLiteral("color: %1; font-size: 11px; font-family: 'Consolas', 'JetBrains Mono', monospace;")
+            .arg(kMuted));
     layout->addWidget(elapsedLabel_);
     elapsedTimer_ = new QTimer(this);
     elapsedTimer_->setInterval(1000);
@@ -543,11 +618,9 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
 
     cancel_ = new QPushButton(this);
     cancel_->setObjectName(QStringLiteral("processingOverlayCancel"));
-    cancel_->setStyleSheet(rowQss(kText, "rgba(255, 255, 255, 0.08)"));
+    cancel_->setCursor(Qt::PointingHandCursor);
+    cancel_->setStyleSheet(rowQss(kText, "#22262e"));
     cancel_->setAccessibleName(tr("Cancel preparation"));
-    // One connection for the window's whole life, dispatched on what the window
-    // is showing: rewiring it per run is how a second build inherited the
-    // previous failure's Dismiss handler and could no longer be cancelled.
     connect(cancel_, &QPushButton::clicked, this, [this] {
         if (settled_) {
             hide();
@@ -606,9 +679,6 @@ void ProcessingOverlay::finish(bool ok, const QString& summary) {
     progress_->setValue(ok ? 1 : 0);
     detail_->setText(summary);
     title_->setText(ok ? tr("Engine ready") : tr("Engine build stopped"));
-    // A success has nothing left to read, so it leaves on its own; a failure
-    // stays until the viewer dismisses it, because a refusal that disappears is
-    // a refusal nobody saw.
     if (ok) {
         finishTimer_->start(1500);
     } else {

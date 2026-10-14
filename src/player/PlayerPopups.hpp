@@ -52,9 +52,12 @@ struct ChoiceEntry {
     QString id;
     QString label;
     QStringList path;
+    QString tooltip = {};
+    bool disabled = false;
 
     bool operator==(const ChoiceEntry& other) const {
-        return id == other.id && label == other.label && path == other.path;
+        return id == other.id && label == other.label && path == other.path &&
+               tooltip == other.tooltip && disabled == other.disabled;
     }
     bool operator!=(const ChoiceEntry& other) const { return !(*this == other); }
 };
@@ -63,6 +66,12 @@ struct ChoiceEntry {
 /// level, and hands back the leaf actions in entry order. Building destroys the
 /// previous tree, so callers keep those leaves and use `markChoice` while the
 /// list is unchanged.
+///
+/// Every leaf forwards its own activation to the root `menu`: the entries sit
+/// in submenus, and a root-only `QMenu::triggered` connection never fires for
+/// those when triggered directly, while mouse picks across nested submenus are
+/// deduplicated so the root hears every selection exactly once.
+void forwardChoiceLeaf(QMenu* root, QMenu* level, QAction* action);
 void fillChoiceMenu(QMenu* menu, const QVector<ChoiceEntry>& entries, const QString& selected,
                     QVector<QAction*>* leaves = nullptr);
 
@@ -161,17 +170,6 @@ private:
 
 /// The engine-preparation window: what the player shows while a TensorRT engine
 /// is being built.
-///
-/// It is a native tool window rather than an in-window child, unlike every other
-/// popover here, because a build is started from the settings dialog and that
-/// dialog is modal: a child of the player would sit behind it and the work would
-/// be invisible for the whole build. Staying on top of the player is what makes
-/// a long compile visible while the viewer keeps watching. The window manager
-/// must not activate it: viewers can continue using PiP while the build runs.
-///
-/// No percentage is invented. The bar steps over the plan's own stage count -
-/// `BuilderProgress::stageIndex` against `PreparationPlan::stages` - and a stage
-/// count of zero leaves it indeterminate rather than guessing.
 class ProcessingOverlay : public QFrame {
     Q_OBJECT
 public:

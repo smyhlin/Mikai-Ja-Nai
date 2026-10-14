@@ -45,11 +45,6 @@ bool modeFromKey(const char* key, CompareMode& out) {
 }
 
 const char* modeLabel(CompareMode mode) {
-    // The declared return is a C string, so the translated text is held in a
-    // per-mode byte array that lives as long as the process and never moves.
-    // The first call builds them, which is after the startup catalogue is
-    // installed, so callers read the label in the language that was selected.
-    // They decode it with QString::fromUtf8.
     static const std::array<QByteArray, 5> kLabels = {
         QCoreApplication::translate("CompareLayout", "Split H").toUtf8(),
         QCoreApplication::translate("CompareLayout", "Split V").toUtf8(),
@@ -71,10 +66,6 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, boo
 
     const double s = std::clamp(split, 0.0, 1.0);
 
-    // Space hides the other side everywhere alike: the held side takes the whole
-    // frame and the divider and the other name go with it. Geometry and the
-    // stored mode are untouched, so releasing restores everything, zoom and pan
-    // included.
     if (heldSide >= 0) {
         out.b.visible = heldSide == 1;
         out.b.hasClip = false;
@@ -139,10 +130,9 @@ CompareLayout buildLayout(CompareMode mode, const QSize& size, double split, boo
             out.b.clipFull(size);
             out.b.x = size.width() + kSideBySideGap;
             out.scene = QSize(size.width() * 2 + kSideBySideGap, size.height());
-            return out;  // the scene is wider; do not overwrite it below
+            return out;
 
         case CompareMode::Flicker:
-            // One side at full strength; the timer decides which.
             if (flickerShowA) {
                 out.a.visible = true;
                 out.a.clipFull(size);
@@ -171,29 +161,23 @@ void jetColor(double value, uchar rgb[3]) {
     rgb[2] = static_cast<uchar>(std::lround(b * 255.0));
 }
 
-namespace {
-
-/// The peak per-channel absolute difference at one pixel; the reference takes
-/// the same peak, which is why a gain of 1 is the honest picture.
-inline int peakDifference(const QImage& a, const QImage& b, int x, int y) {
-    const QColor ca = a.pixelColor(x, y);
-    const QColor cb = b.pixelColor(x, y);
-    return std::max({std::abs(ca.red() - cb.red()), std::abs(ca.green() - cb.green()),
-                     std::abs(ca.blue() - cb.blue())});
-}
-
-}  // namespace
-
 QImage differenceJet(const QImage& a, const QImage& b) {
     if (a.isNull() || b.isNull() || a.size() != b.size()) return QImage();
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
-    QImage out = left;
-    for (int y = 0; y < out.height(); ++y) {
-        for (int x = 0; x < out.width(); ++x) {
-            uchar rgb[3];
-            jetColor(peakDifference(left, right, x, y) / 255.0, rgb);
-            out.setPixel(x, y, qRgb(rgb[0], rgb[1], rgb[2]));
+    QImage out(left.size(), QImage::Format_RGB888);
+    const int w = out.width();
+    const int h = out.height();
+    for (int y = 0; y < h; ++y) {
+        const uchar* la = left.constScanLine(y);
+        const uchar* rb = right.constScanLine(y);
+        uchar* dst = out.scanLine(y);
+        for (int x = 0; x < w; ++x) {
+            const int idx = x * 3;
+            const int peak = std::max({std::abs(int(la[idx]) - int(rb[idx])),
+                                       std::abs(int(la[idx + 1]) - int(rb[idx + 1])),
+                                       std::abs(int(la[idx + 2]) - int(rb[idx + 2]))});
+            jetColor(peak / 255.0, dst + idx);
         }
     }
     return out;
@@ -204,11 +188,22 @@ QImage differenceGrayscale(const QImage& a, const QImage& b, int gain) {
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     const int g = std::max(1, gain);
-    QImage out = left;
-    for (int y = 0; y < out.height(); ++y) {
-        for (int x = 0; x < out.width(); ++x) {
-            const uchar v = static_cast<uchar>(std::min(255, peakDifference(left, right, x, y) * g));
-            out.setPixel(x, y, qRgb(v, v, v));
+    QImage out(left.size(), QImage::Format_RGB888);
+    const int w = out.width();
+    const int h = out.height();
+    for (int y = 0; y < h; ++y) {
+        const uchar* la = left.constScanLine(y);
+        const uchar* rb = right.constScanLine(y);
+        uchar* dst = out.scanLine(y);
+        for (int x = 0; x < w; ++x) {
+            const int idx = x * 3;
+            const int peak = std::max({std::abs(int(la[idx]) - int(rb[idx])),
+                                       std::abs(int(la[idx + 1]) - int(rb[idx + 1])),
+                                       std::abs(int(la[idx + 2]) - int(rb[idx + 2]))});
+            const uchar v = static_cast<uchar>(std::min(255, peak * g));
+            dst[idx] = v;
+            dst[idx + 1] = v;
+            dst[idx + 2] = v;
         }
     }
     return out;
@@ -219,15 +214,14 @@ double meanAbsoluteDifference(const QImage& a, const QImage& b) {
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     double sum = 0.0;
-    qint64 counted = 0;
-    for (int y = 0; y < left.height(); ++y) {
-        for (int x = 0; x < left.width(); ++x) {
-            const QColor ca = left.pixelColor(x, y);
-            const QColor cb = right.pixelColor(x, y);
-            sum += std::abs(ca.red() - cb.red());
-            sum += std::abs(ca.green() - cb.green());
-            sum += std::abs(ca.blue() - cb.blue());
-            counted += 3;
+    const int w = left.width();
+    const int h = left.height();
+    const qint64 counted = static_cast<qint64>(w) * static_cast<qint64>(h) * 3;
+    for (int y = 0; y < h; ++y) {
+        const uchar* la = left.constScanLine(y);
+        const uchar* rb = right.constScanLine(y);
+        for (int x = 0; x < w * 3; ++x) {
+            sum += std::abs(int(la[x]) - int(rb[x]));
         }
     }
     return counted > 0 ? sum / static_cast<double>(counted) : 0.0;
@@ -252,10 +246,6 @@ void Camera::zoomTo(double target, double anchorSceneX, double anchorSceneY, dou
     const double after = std::clamp(target > 0.0 ? target : 1.0, kCompareZoomMin, kCompareZoomMax);
     zoom = after;
     if (viewportWidth <= 0.0 || viewportHeight <= 0.0) return;
-    // The anchor is a scene coordinate and stays under the viewport centre
-    // across the zoom, so the pan is *derived from* the anchor:
-    //   (vw/2 - panX)/zoom == anchorSceneX, which is the invariant the caller
-    // depends on.
     panX = viewportWidth / 2.0 - anchorSceneX * after;
     panY = viewportHeight / 2.0 - anchorSceneY * after;
 }
@@ -272,8 +262,6 @@ void Camera::fit(const QSize& content, double viewportWidth, double viewportHeig
         reset();
         return;
     }
-    // Never upscale past 1:1: a small frame blown up to fill a large window
-    // shows interpolation artefacts, not detail.
     const double scale =
         std::min(1.0, std::min(viewportWidth / content.width(), viewportHeight / content.height()));
     zoom = scale;

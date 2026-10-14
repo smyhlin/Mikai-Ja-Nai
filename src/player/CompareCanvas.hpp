@@ -11,9 +11,9 @@
 #pragma once
 
 #include <QGraphicsView>
-#include <QRgb>
 #include <QImage>
 #include <QPoint>
+#include <QRgb>
 #include <QString>
 #include <QStringList>
 
@@ -50,6 +50,7 @@ public:
     void setFlickerShowA(bool showA);
     /// -1 for neither, 0 for A, 1 for B: the hold-to-peek override.
     void setHeldSide(int side);
+    int heldSide() const { return heldSide_; }
 
     Camera& camera() { return camera_; }
     const Camera& camera() const { return camera_; }
@@ -80,7 +81,10 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
@@ -114,10 +118,10 @@ private:
     QString nameA_;
     QString nameB_;
     QVector<ChoiceEntry> choices_;
-    /// What the badge menus were built from and the actions they hold, so a
-    /// refill that changes nothing only moves the check marks: the refill runs
-    /// from a menu action's own handler, and rebuilding would destroy it.
-    QVector<ChoiceEntry> builtChoices_;
+    /// What the badge menus were built from and the actions they hold, tracked
+    /// per side so updating A never skips rebuilding B.
+    QVector<ChoiceEntry> builtChoicesA_;
+    QVector<ChoiceEntry> builtChoicesB_;
     QVector<QAction*> leavesA_;
     QVector<QAction*> leavesB_;
     QString selectedA_;

@@ -9,6 +9,7 @@
 
 #include <QImage>
 #include <QPointF>
+#include <QRgb>
 #include <QString>
 #include <QStringList>
 #include <QWidget>
@@ -46,6 +47,8 @@ signals:
     void choiceChosen(int index, const QString& id);
     /// Fit-relative zoom, 100 at the last fit.
     void zoomChanged(int percent);
+    /// Pixel readout from whichever pane the cursor is over.
+    void hoverPixel(int x, int y, bool valid, QRgb rgb);
 
 private slots:
     void reconcile();
@@ -55,7 +58,7 @@ private:
     std::vector<ComparePane*> panes_;
     QStringList ids_;
     QVector<ChoiceEntry> choices_;
-    std::optional<QPointF> center_;
+    std::optional<QPointF> center_{QPointF(0.5, 0.5)};
     double zoom_ = 1.0;
     bool smoothScaling_ = true;
 };

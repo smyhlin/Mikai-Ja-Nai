@@ -10,20 +10,25 @@
 #include "native/status/NativePlaybackController.hpp"
 
 #include <QCloseEvent>
-#include <QKeyEvent>
 #include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDir>
 #include <QDoubleSpinBox>
+#include <QFileInfo>
 #include <QFontMetrics>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QRunnable>
-#include <QSignalBlocker>
 #include <QShowEvent>
+#include <QSignalBlocker>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QThread>
@@ -32,10 +37,18 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <optional>
+#include <utility>
 
 namespace mplayer {
 namespace shell {
@@ -44,8 +57,8 @@ using mplayer::VideoSurface;
 
 namespace {
 
-constexpr int kGap = 12;
-constexpr int kGapSmall = 8;
+constexpr int kGap = 10;
+constexpr int kGapSmall = 6;
 constexpr int kWindowWidth = 1280;
 constexpr int kWindowHeight = 800;
 constexpr double kSettleQuietSeconds = 0.08;
@@ -72,6 +85,121 @@ QStringList categoryPath(const QString& categoryId) {
     return path;
 }
 
+QFrame* makeToolbarDivider(QWidget* parent) {
+    auto* line = new QFrame(parent);
+    line->setObjectName(QStringLiteral("compareToolbarSep"));
+    line->setFixedSize(1, 18);
+    return line;
+}
+
+QString compareWindowStyleSheet() {
+    return QStringLiteral(
+        "QDialog {"
+        "  background-color: #0d0e11;"
+        "  color: #e8eaed;"
+        "}"
+        "QFrame#compareHeaderBar {"
+        "  background-color: #16181d;"
+        "  border: 1px solid #282c34;"
+        "  border-radius: 6px;"
+        "}"
+        "QFrame#compareToolbarSep {"
+        "  background-color: #282c34;"
+        "  border: none;"
+        "}"
+        "QLabel#compareFieldLabel {"
+        "  color: #8b929e;"
+        "  font-size: 11px;"
+        "  font-weight: 600;"
+        "  background: transparent;"
+        "}"
+        "QComboBox {"
+        "  background-color: #1e2128;"
+        "  color: #e8eaed;"
+        "  border: 1px solid #2e333d;"
+        "  border-radius: 4px;"
+        "  padding: 3px 22px 3px 8px;"
+        "  min-height: 22px;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QComboBox:hover {"
+        "  background-color: #252932;"
+        "  border-color: #3e4552;"
+        "}"
+        "QComboBox::drop-down {"
+        "  border: none;"
+        "  width: 18px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  background-color: #16181d;"
+        "  color: #e8eaed;"
+        "  border: 1px solid #2e333d;"
+        "  border-radius: 4px;"
+        "  selection-background-color: #2563eb;"
+        "  selection-color: #ffffff;"
+        "  padding: 2px;"
+        "}"
+        "QDoubleSpinBox, QSpinBox {"
+        "  background-color: #1e2128;"
+        "  color: #e8eaed;"
+        "  border: 1px solid #2e333d;"
+        "  border-radius: 4px;"
+        "  padding: 2px 6px;"
+        "  min-height: 22px;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QDoubleSpinBox:hover, QSpinBox:hover {"
+        "  border-color: #3e4552;"
+        "}"
+        "QToolButton#compareFit, QPushButton#compareActionBtn, QPushButton#comparePinBtn {"
+        "  background-color: #1e2128;"
+        "  color: #e8eaed;"
+        "  border: 1px solid #2e333d;"
+        "  border-radius: 4px;"
+        "  padding: 3px 10px;"
+        "  min-height: 22px;"
+        "  font-size: 12px;"
+        "  font-weight: 500;"
+        "}"
+        "QToolButton#compareFit:hover, QPushButton#compareActionBtn:hover, QPushButton#comparePinBtn:hover {"
+        "  background-color: #262a34;"
+        "  border-color: #3e4552;"
+        "  color: #ffffff;"
+        "}"
+        "QToolButton#compareFit:pressed, QPushButton#compareActionBtn:pressed {"
+        "  background-color: #2f3440;"
+        "}"
+        "QPushButton#comparePinBtn:checked {"
+        "  background-color: rgba(37, 99, 235, 0.26);"
+        "  border-color: #3b82f6;"
+        "  color: #ffffff;"
+        "  font-weight: 600;"
+        "}"
+        "QSlider::groove:horizontal {"
+        "  height: 4px;"
+        "  background: #282c34;"
+        "  border-radius: 2px;"
+        "}"
+        "QSlider::sub-page:horizontal {"
+        "  background: #3b82f6;"
+        "  border-radius: 2px;"
+        "}"
+        "QSlider::handle:horizontal {"
+        "  width: 12px;"
+        "  height: 12px;"
+        "  margin: -4px 0;"
+        "  background: #e8eaed;"
+        "  border: 1px solid #16181d;"
+        "  border-radius: 6px;"
+        "}"
+        "QSlider::handle:horizontal:hover {"
+        "  background: #ffffff;"
+        "  border-color: #3b82f6;"
+        "}");
+}
+
 }  // namespace
 
 struct AjiPreparationTask {
@@ -93,6 +221,7 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     setWindowTitle(tr("Quality Comparison"));
     setModal(false);
     resize(kWindowWidth, kWindowHeight);
+    setStyleSheet(compareWindowStyleSheet());
     if (surface_ != nullptr) {
         const native::AnimeJanaiPlan activePlan = surface_->animeJanaiPlan();
         if (activePlan.enabled && !activePlan.presetId.isEmpty()) {
@@ -109,7 +238,6 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     }
     buildUi();
     populateCandidates();
-    // Capture after mapping; position updates prevent accepting a late seek's old frame.
     if (surface_ != nullptr) {
         connect(surface_, &VideoSurface::playingChanged, this,
                 &CompareWindow::onPlaybackStateChanged);
@@ -127,8 +255,6 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
         });
         connect(surface_, &VideoSurface::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
-        // Carries the queue depth and the end of a settling transition, so the
-        // armed retry never freezes a stale epoch.
         connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
                 &CompareWindow::onNativeStatusSettled);
         connect(surface_, &QObject::destroyed, this, [this] {
@@ -154,24 +280,107 @@ CompareWindow::~CompareWindow() {
     releasePlanLock();
 }
 
+void CompareWindow::setPinned(bool pinned) {
+    if (pinned_ == pinned) {
+        if (pinButton_ != nullptr && pinButton_->isChecked() != pinned) {
+            const QSignalBlocker blocker(pinButton_);
+            pinButton_->setChecked(pinned);
+        }
+        return;
+    }
+    pinned_ = pinned;
+    if (pinButton_ != nullptr) {
+        const QSignalBlocker blocker(pinButton_);
+        pinButton_->setChecked(pinned);
+        pinButton_->setText(pinned ? tr("Pinned") : tr("Pin"));
+    }
+    const bool wasVisible = isVisible();
+    togglingPin_ = true;
+    setWindowFlag(Qt::WindowStaysOnTopHint, pinned);
+    if (wasVisible) {
+        show();
+        raise();
+        activateWindow();
+    }
+#ifdef Q_OS_WIN
+    if (wasVisible && winId() != 0) {
+        const HWND hwnd = reinterpret_cast<HWND>(winId());
+        if (hwnd != nullptr && IsWindow(hwnd)) {
+            SetWindowPos(hwnd, pinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+#endif
+    togglingPin_ = false;
+}
+
+void CompareWindow::resizeEvent(QResizeEvent* event) {
+    QDialog::resizeEvent(event);
+    if (stack_ != nullptr && canvas_ != nullptr && !stack_->rect().isEmpty() &&
+        canvas_->size() != stack_->size()) {
+        canvas_->resize(stack_->size());
+    }
+}
+
 void CompareWindow::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
-    // Reusing the window always captures the current position again.
+    if (togglingPin_) {
+        return;
+    }
+    if (stack_ != nullptr && canvas_ != nullptr && !stack_->rect().isEmpty() &&
+        canvas_->size() != stack_->size()) {
+        canvas_->resize(stack_->size());
+    }
     if (surface_ != nullptr && surface_->hasVideo()) {
         captureNow();
     }
 }
 
 void CompareWindow::keyPressEvent(QKeyEvent* event) {
-    // Both the title bar's own close and the keyboard go through the same
-    // release path: closing is all either does, so nothing here answers with a
-    // dialog result or acts on any other key.
     if (event->key() == Qt::Key_Escape) {
         close();
         event->accept();
         return;
     }
+    if (!event->isAutoRepeat() && event->modifiers() == Qt::NoModifier) {
+        if (event->key() == Qt::Key_Space && mode_ != CompareMode::SideBySide && canvas_ != nullptr) {
+            canvas_->setHeldSide(0);
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_S) {
+            onSwapSides();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_F) {
+            if (mode_ == CompareMode::SideBySide) grid_->fitToContent();
+            else canvas_->fitToContent();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_R) {
+            captureNow();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_P) {
+            setPinned(!pinned_);
+            event->accept();
+            return;
+        }
+    }
     QDialog::keyPressEvent(event);
+}
+
+void CompareWindow::keyReleaseEvent(QKeyEvent* event) {
+    if (!event->isAutoRepeat() && event->key() == Qt::Key_Space && canvas_ != nullptr &&
+        canvas_->heldSide() >= 0) {
+        canvas_->setHeldSide(-1);
+        event->accept();
+        return;
+    }
+    QDialog::keyReleaseEvent(event);
 }
 
 void CompareWindow::closeEvent(QCloseEvent* event) {
@@ -180,6 +389,10 @@ void CompareWindow::closeEvent(QCloseEvent* event) {
 }
 
 void CompareWindow::hideEvent(QHideEvent* event) {
+    if (togglingPin_) {
+        QDialog::hideEvent(event);
+        return;
+    }
     dismissCandidateMenus();
     ++selectionGeneration_;
     if (preparationTask_) {
@@ -197,11 +410,13 @@ void CompareWindow::captureNow() {
     deferredPlanLockRelease_ = false;
     acquirePlaybackHold();
     maintainPlaybackHold();
-    // Every capture path holds the plan lock, so no freeze is ever taken outside it.
     if (surface_ != nullptr && !ensurePlanLock()) {
         frame_ = QImage();
         captureError_.clear();
         render();
+        if (!self.isNull() && (!isVisible() || !lockRetryArmed_)) {
+            requestPlaybackHoldRelease();
+        }
         return;
     }
     captureFrame();
@@ -212,9 +427,7 @@ void CompareWindow::captureNow() {
     if (self.isNull()) {
         return;
     }
-    // The lock's lifetime is the visible window: a programmatic capture on a
-    // hidden window must not leave the plan held.
-    if (!isVisible()) {
+    if (!isVisible() || (frame_.isNull() && !playbackNeedsRecapture_ && !lockRetryArmed_)) {
         requestPlaybackHoldRelease();
     }
 }
@@ -237,22 +450,17 @@ bool CompareWindow::ensurePlanLock() {
         return true;
     }
     if (reasonKey == QLatin1String("native.playback.noSource")) {
-        // No source epoch exists, so no native plan can move: there is nothing to
-        // freeze, and the capture itself will say there is no video.
         lockError_.clear();
         return true;
     }
     lockError_ = reason.isEmpty()
                      ? tr("The native plan cannot be frozen right now.")
                      : reason;
-    // One retry on the surface's settled signal: an epoch already mid-swap must
-    // not be frozen stale, and the refusal is named meanwhile.
     lockRetryArmed_ = reasonKey == QLatin1String("native.playback.lockBusy");
     return false;
 }
 
 void CompareWindow::releasePlanLock() {
-    // Reset runs the scoped token's destructor, submitting any queued transition.
     nativeLock_.reset();
     lockRetryArmed_ = false;
 }
@@ -273,8 +481,6 @@ void CompareWindow::onNativeStatusSettled() {
     if (!settled) {
         return;
     }
-    // Exactly one retry. Deferred, because capture pumps the event loop and this
-    // runs from the surface's own status publication.
     lockRetryArmed_ = false;
     QTimer::singleShot(0, this, [this] {
         if (ensurePlanLock()) {
@@ -290,17 +496,23 @@ void CompareWindow::buildUi() {
     root->setContentsMargins(kGap, kGap, kGap, kGap);
     root->setSpacing(kGapSmall);
 
-    // No candidate sidebar: both sides are picked from the row under the
-    // picture, so the catalogue is not listed twice.
     auto* right = new QVBoxLayout();
     right->setSpacing(kGapSmall);
 
-    // --- header: the mode picker -----------------------------------------
-    auto* header = new QHBoxLayout();
+    // --- Single Integrated Top Toolbar ------------------------------------
+    auto* headerFrame = new QFrame(this);
+    headerFrame->setObjectName(QStringLiteral("compareHeaderBar"));
+    auto* header = new QHBoxLayout(headerFrame);
+    header->setContentsMargins(10, 6, 10, 6);
     header->setSpacing(kGapSmall);
-    header->addWidget(new QLabel(tr("Mode:"), this));
-    modeBox_ = new QComboBox(this);
+
+    auto* modeTitle = new QLabel(tr("Mode"), headerFrame);
+    modeTitle->setObjectName(QStringLiteral("compareFieldLabel"));
+    header->addWidget(modeTitle);
+
+    modeBox_ = new QComboBox(headerFrame);
     modeBox_->setObjectName(QStringLiteral("compareMode"));
+    modeBox_->setCursor(Qt::PointingHandCursor);
     for (const CompareMode mode : {CompareMode::SplitH, CompareMode::SplitV,
                                    CompareMode::SideBySide, CompareMode::Flicker,
                                    CompareMode::Difference}) {
@@ -315,20 +527,99 @@ void CompareWindow::buildUi() {
             &CompareWindow::onModeChanged);
     header->addWidget(modeBox_);
 
-    header->addWidget(new QLabel(tr("Filter:"), this));
-    filterBox_ = new QComboBox(this);
+    // Inline contextual mode controls (Split / Flicker / Gain) so the viewport
+    // never shifts vertically when switching modes.
+    modeControls_ = new QWidget(headerFrame);
+    modeControls_->setObjectName(QStringLiteral("compareModeBar"));
+    auto* view = new QHBoxLayout(modeControls_);
+    view->setContentsMargins(4, 0, 4, 0);
+    view->setSpacing(kGapSmall);
+
+    splitLabel_ = new QLabel(tr("Split"), modeControls_);
+    splitLabel_->setObjectName(QStringLiteral("compareFieldLabel"));
+    view->addWidget(splitLabel_);
+    split_ = new QDoubleSpinBox(modeControls_);
+    split_->setObjectName(QStringLiteral("compareSplit"));
+    split_->setRange(0.0, 1.0);
+    split_->setSingleStep(0.01);
+    split_->setValue(0.5);
+    split_->setToolTip(tr("Divider position (double-click divider to center)"));
+    connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
+    view->addWidget(split_);
+
+    splitSlider_ = new QSlider(Qt::Horizontal, modeControls_);
+    splitSlider_->setRange(0, 1000);
+    splitSlider_->setValue(500);
+    splitSlider_->setFixedWidth(110);
+    splitSlider_->setCursor(Qt::PointingHandCursor);
+    splitSlider_->setToolTip(tr("Drag to move split divider"));
+    connect(splitSlider_, &QSlider::valueChanged, this, [this](int sliderVal) {
+        split_->setValue(sliderVal / 1000.0);
+    });
+    view->addWidget(splitSlider_);
+
+    flickerLabel_ = new QLabel(tr("Hz"), modeControls_);
+    flickerLabel_->setObjectName(QStringLiteral("compareFieldLabel"));
+    view->addWidget(flickerLabel_);
+    flicker_ = new QSpinBox(modeControls_);
+    flicker_->setObjectName(QStringLiteral("compareFlicker"));
+    flicker_->setRange(1, 30);
+    flicker_->setValue(1);
+    flicker_->setToolTip(tr("Alternation frequency (Hz)"));
+    connect(flicker_, &QSpinBox::valueChanged, this, &CompareWindow::onFlickerChanged);
+    view->addWidget(flicker_);
+
+    flickerSlider_ = new QSlider(Qt::Horizontal, modeControls_);
+    flickerSlider_->setRange(1, 30);
+    flickerSlider_->setValue(1);
+    flickerSlider_->setFixedWidth(100);
+    flickerSlider_->setCursor(Qt::PointingHandCursor);
+    connect(flickerSlider_, &QSlider::valueChanged, flicker_, &QSpinBox::setValue);
+    view->addWidget(flickerSlider_);
+
+    gainLabel_ = new QLabel(tr("Gain"), modeControls_);
+    gainLabel_->setObjectName(QStringLiteral("compareFieldLabel"));
+    view->addWidget(gainLabel_);
+    gain_ = new QSpinBox(modeControls_);
+    gain_->setObjectName(QStringLiteral("compareGain"));
+    gain_->setRange(kDiffGainMin, kDiffGainMax);
+    gain_->setValue(kDiffGainMin);
+    gain_->setToolTip(tr("Amplify pixel difference"));
+    connect(gain_, &QSpinBox::valueChanged, this, &CompareWindow::onGainChanged);
+    view->addWidget(gain_);
+
+    gainSlider_ = new QSlider(Qt::Horizontal, modeControls_);
+    gainSlider_->setRange(kDiffGainMin, kDiffGainMax);
+    gainSlider_->setValue(kDiffGainMin);
+    gainSlider_->setFixedWidth(100);
+    gainSlider_->setCursor(Qt::PointingHandCursor);
+    connect(gainSlider_, &QSlider::valueChanged, gain_, &QSpinBox::setValue);
+    view->addWidget(gainSlider_);
+
+    modeControls_->hide();
+    header->addWidget(modeControls_);
+
+    header->addWidget(makeToolbarDivider(headerFrame));
+
+    auto* filterTitle = new QLabel(tr("Scaling"), headerFrame);
+    filterTitle->setObjectName(QStringLiteral("compareFieldLabel"));
+    header->addWidget(filterTitle);
+
+    filterBox_ = new QComboBox(headerFrame);
     filterBox_->setObjectName(QStringLiteral("compareFilter"));
+    filterBox_->setCursor(Qt::PointingHandCursor);
     filterBox_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     filterBox_->addItem(tr("Bilinear"), true);
     filterBox_->addItem(tr("Nearest Neighbor"), false);
-    filterBox_->setToolTip(tr("How the picture is scaled"));
+    filterBox_->setToolTip(tr("Texture scaling filter"));
     filterBox_->setAccessibleName(tr("Filter"));
     header->addWidget(filterBox_);
 
-    auto* fit = new QToolButton(this);
+    auto* fit = new QToolButton(headerFrame);
     fit->setObjectName(QStringLiteral("compareFit"));
+    fit->setCursor(Qt::PointingHandCursor);
     fit->setText(tr("Fit"));
-    fit->setToolTip(tr("Fit the picture"));
+    fit->setToolTip(tr("Reset zoom and fit to window (F)"));
     fit->setAccessibleName(tr("Fit the picture"));
     connect(fit, &QToolButton::clicked, this, [this] {
         if (mode_ == CompareMode::SideBySide) grid_->fitToContent();
@@ -336,77 +627,78 @@ void CompareWindow::buildUi() {
     });
     header->addWidget(fit);
 
-    zoom_ = new QLabel(tr("%1%").arg(100), this);
+    zoom_ = new QLabel(tr("%1%").arg(100), headerFrame);
     zoom_->setObjectName(QStringLiteral("compareZoom"));
     zoom_->setFont(uiFont(10));
-    zoom_->setToolTip(tr("View scale"));
+    zoom_->setAlignment(Qt::AlignCenter);
+    zoom_->setToolTip(tr("Current zoom level"));
     zoom_->setAccessibleName(tr("View scale"));
-    zoom_->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(w90().name()));
-    zoom_->setMinimumWidth(QFontMetrics(zoom_->font()).horizontalAdvance(QStringLiteral("999%")));
+    zoom_->setStyleSheet(
+        QStringLiteral("color: #dcdfe4; background: #121419;"
+                       " border: 1px solid #282c34;"
+                       " border-radius: 4px; padding: 2px 7px;"
+                       " font-family: 'Consolas', 'JetBrains Mono', monospace; font-weight: 600;"));
+    zoom_->setMinimumWidth(QFontMetrics(zoom_->font()).horizontalAdvance(QStringLiteral("9999%")) + 14);
     header->addWidget(zoom_);
 
+    header->addWidget(makeToolbarDivider(headerFrame));
+
+    swapButton_ = new QPushButton(tr("Swap A ⇄ B"), headerFrame);
+    swapButton_->setObjectName(QStringLiteral("compareActionBtn"));
+    swapButton_->setCursor(Qt::PointingHandCursor);
+    swapButton_->setFocusPolicy(Qt::NoFocus);
+    swapButton_->setToolTip(tr("Swap Side A and Side B models (S)"));
+    connect(swapButton_, &QPushButton::clicked, this, &CompareWindow::onSwapSides);
+    header->addWidget(swapButton_);
+
+    recaptureButton_ = new QPushButton(tr("Recapture"), headerFrame);
+    recaptureButton_->setObjectName(QStringLiteral("compareActionBtn"));
+    recaptureButton_->setCursor(Qt::PointingHandCursor);
+    recaptureButton_->setFocusPolicy(Qt::NoFocus);
+    recaptureButton_->setToolTip(tr("Capture the current playback frame again (R)"));
+    connect(recaptureButton_, &QPushButton::clicked, this, &CompareWindow::captureNow);
+    header->addWidget(recaptureButton_);
+
+    pinButton_ = new QPushButton(tr("Pin"), headerFrame);
+    pinButton_->setObjectName(QStringLiteral("comparePinBtn"));
+    pinButton_->setCheckable(true);
+    pinButton_->setCursor(Qt::PointingHandCursor);
+    pinButton_->setFocusPolicy(Qt::NoFocus);
+    pinButton_->setToolTip(tr("Keep Compare window always on top of other windows (P)"));
+    pinButton_->setAccessibleName(tr("Always on top"));
+    connect(pinButton_, &QPushButton::toggled, this, &CompareWindow::setPinned);
+    header->addWidget(pinButton_);
+
     header->addStretch(1);
-    hoverSwatch_ = new QLabel(this);
+
+    hoverSwatch_ = new QLabel(headerFrame);
     hoverSwatch_->setObjectName(QStringLiteral("compareHoverSwatch"));
     hoverSwatch_->setFixedSize(14, 14);
     hoverSwatch_->hide();
     header->addWidget(hoverSwatch_);
-    hover_ = new QLabel(this);
+
+    hover_ = new QLabel(headerFrame);
     hover_->setObjectName(QStringLiteral("compareHover"));
     hover_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    hover_->setFont(uiFont(10));
+    hover_->setFont(uiFont(9));
+    hover_->setStyleSheet(
+        QStringLiteral("color: #c9cdd4; background: transparent;"
+                       " font-family: 'Consolas', 'JetBrains Mono', monospace;"));
     header->addWidget(hover_);
 
-    right->addLayout(header);
+    right->addWidget(headerFrame);
 
-    // Mode knobs live on their own row so side-by-side, which uses none of
-    // them, does not leave an empty strip under the header.
-    modeControls_ = new QWidget(this);
-    auto* view = new QHBoxLayout(modeControls_);
-    view->setContentsMargins(0, 0, 0, 0);
-    view->setSpacing(kGapSmall);
-
-    splitLabel_ = new QLabel(tr("Split:"), modeControls_);
-    view->addWidget(splitLabel_);
-    split_ = new QDoubleSpinBox(modeControls_);
-    split_->setObjectName(QStringLiteral("compareSplit"));
-    split_->setRange(0.0, 1.0);
-    split_->setSingleStep(0.01);
-    split_->setValue(0.5);
-    split_->setToolTip(tr("Divider position"));
-    connect(split_, &QDoubleSpinBox::valueChanged, this, &CompareWindow::onSplitChanged);
-    view->addWidget(split_);
-
-    flickerLabel_ = new QLabel(tr("Flicker, Hz:"), modeControls_);
-    view->addWidget(flickerLabel_);
-    flicker_ = new QSpinBox(modeControls_);
-    flicker_->setObjectName(QStringLiteral("compareFlicker"));
-    flicker_->setRange(1, 30);
-    flicker_->setValue(1);
-    flicker_->setToolTip(tr("How fast the two pictures alternate"));
-    connect(flicker_, &QSpinBox::valueChanged, this, &CompareWindow::onFlickerChanged);
-    view->addWidget(flicker_);
-
-    gainLabel_ = new QLabel(tr("Gain:"), modeControls_);
-    view->addWidget(gainLabel_);
-    gain_ = new QSpinBox(modeControls_);
-    gain_->setObjectName(QStringLiteral("compareGain"));
-    gain_->setRange(kDiffGainMin, kDiffGainMax);
-    gain_->setValue(kDiffGainMin);
-    gain_->setToolTip(tr("Amplify the difference"));
-    connect(gain_, &QSpinBox::valueChanged, this, &CompareWindow::onGainChanged);
-    view->addWidget(gain_);
-    view->addStretch(1);
-    modeControls_->hide();
-
-    right->addWidget(modeControls_);
-
+    // --- Main Viewport Stack ----------------------------------------------
     canvas_ = new CompareCanvas(this);
     canvas_->setObjectName(QStringLiteral("compareCanvas"));
     canvas_->setMinimumSize(640, 400);
     connect(canvas_, &CompareCanvas::splitDragged, this, [this](double fraction) {
         const QSignalBlocker blocker(split_);
         split_->setValue(fraction);
+        if (splitSlider_ != nullptr) {
+            const QSignalBlocker sliderBlocker(splitSlider_);
+            splitSlider_->setValue(static_cast<int>(std::lround(fraction * 1000.0)));
+        }
     });
     connect(canvas_, &CompareCanvas::candidateChosen, this, &CompareWindow::onCandidateChosen);
     connect(canvas_, &CompareCanvas::hoverPixel, this, &CompareWindow::onHoverPixel);
@@ -416,19 +708,15 @@ void CompareWindow::buildUi() {
         }
     });
     canvas_->setStyleSheet(
-        QStringLiteral("QGraphicsView#compareCanvas { background: %1; border: 1px solid %2;"
-                       " border-radius: %3px; }")
-            .arg(bg0().name())
-            .arg(white(20).name())
-            .arg(kGap));
+        QStringLiteral("QGraphicsView#compareCanvas { background: #111317; border: 1px solid #282c34;"
+                       " border-radius: 6px; }"));
     stack_ = new QStackedWidget(this);
     stack_->addWidget(canvas_);
-    // Side-by-side is the multi-pane surface: one pane per side, each with the
-    // selector row under its picture. The other modes share one row under the
-    // single canvas.
+
     grid_ = new CompareGrid(this);
     stack_->addWidget(grid_);
     connect(grid_, &CompareGrid::choiceChosen, this, &CompareWindow::onCandidateChosen);
+    connect(grid_, &CompareGrid::hoverPixel, this, &CompareWindow::onHoverPixel);
     connect(grid_, &CompareGrid::zoomChanged, this, [this](int percent) {
         if (mode_ == CompareMode::SideBySide && zoom_ != nullptr) {
             zoom_->setText(tr("%1%").arg(percent));
@@ -446,7 +734,8 @@ void CompareWindow::buildUi() {
     info_->setWordWrap(true);
     info_->setFixedHeight(kCompareInfoHeight);
     info_->setFont(uiFont(9));
-    info_->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(w55().name()));
+    info_->setStyleSheet(
+        QStringLiteral("color: #8b929e; background: transparent; padding: 0 4px;"));
     right->addWidget(info_);
 
     root->addLayout(right, 1);
@@ -468,6 +757,7 @@ void CompareWindow::buildUi() {
 void CompareWindow::populateCandidates() {
     const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
     const QVector<native::AnimeJanaiPreset> ajiPresets = native::animeJanaiPresets();
+    const QString shadersDir = anime4k::findShadersDir();
     const native::Backend ajiBackend = ajiBackend_;
     candidates_.clear();
     candidates_.reserve(presets.size() + ajiPresets.size());
@@ -476,11 +766,27 @@ void CompareWindow::populateCandidates() {
     ajiBackends_.clear();
     ajiErrors_.clear();
     for (const anime4k::ModeInfo& preset : presets) {
-        candidates_.append(preset.id);
+        const anime4k::Candidate candidate = anime4k::candidateForId(preset.id, shadersDir);
+        const bool complete = shadersDir.isEmpty() || anime4k::chainIsComplete(candidate, shadersDir);
         ChoiceEntry entry;
         entry.id = preset.id;
         entry.label = preset.label;
         entry.path = categoryPath(preset.category);
+        if (complete) {
+            candidates_.append(preset.id);
+        } else {
+            entry.disabled = true;
+            QStringList missingFiles;
+            for (const QString& file : candidate.files) {
+                if (!QFileInfo(QDir(shadersDir).filePath(file)).exists()) {
+                    missingFiles.append(QFileInfo(file).fileName());
+                }
+            }
+            entry.tooltip = missingFiles.isEmpty()
+                                ? tr("Missing shader file")
+                                : tr("Missing shader file(s): %1")
+                                      .arg(missingFiles.join(QStringLiteral(", ")));
+        }
         choices_.append(entry);
     }
     for (const native::AnimeJanaiPreset& preset : ajiPresets) {
@@ -495,15 +801,19 @@ void CompareWindow::populateCandidates() {
     if (candidates_.isEmpty()) {
         return;
     }
-    // Two sides, always: the chain the player is running opens as A and another
-    // candidate as B, so the window opens on a comparison rather than on an
-    // empty pane. A catalogue of one compares a chain with itself.
     const qsizetype current =
         std::max<qsizetype>(0, candidates_.indexOf(currentCandidateId_));
     selection_.append(candidates_.value(current));
     const qsizetype other = current == 0 ? std::min<qsizetype>(1, candidates_.size() - 1) : 0;
     if (other != current) {
         selection_.append(candidates_.at(other));
+    }
+    if (canvas_ != nullptr) {
+        canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
+        canvas_->setChoices(choices_, sideA(), sideB());
+    }
+    if (grid_ != nullptr) {
+        grid_->setChoices(choices_);
     }
 }
 
@@ -529,8 +839,7 @@ void CompareWindow::acquirePlaybackHold() {
         playbackHoldGeneration_ != generationBeforePause + 1) {
         playbackHoldOriginalPlaying_ = false;
     }
-    playbackHoldActive_ = surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
-                          !surface_->isPlaying();
+    playbackHoldActive_ = surface_->sourceEpoch() == playbackHoldSourceEpoch_;
     playbackReleasePending_ = false;
     playbackHoldFailed_ = false;
     playbackNeedsRecapture_ = false;
@@ -539,9 +848,17 @@ void CompareWindow::acquirePlaybackHold() {
 }
 
 bool CompareWindow::playbackHoldOwned() const {
-    return playbackHoldActive_ && surface_ != nullptr &&
-           surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
-           surface_->pauseRequestGeneration() == playbackHoldGeneration_ &&
+    if (!playbackHoldActive_ || surface_ == nullptr ||
+        surface_->sourceEpoch() != playbackHoldSourceEpoch_) {
+        return false;
+    }
+    const quint64 requestGeneration = surface_->pauseRequestGeneration();
+    if (requestGeneration != playbackHoldGeneration_ &&
+        !surface_->isPlaying() && surface_->pauseObserved()) {
+        playbackHoldOriginalPlaying_ = false;
+        playbackHoldGeneration_ = requestGeneration;
+    }
+    return surface_->pauseRequestGeneration() == playbackHoldGeneration_ &&
            !surface_->isPlaying() && surface_->pauseObserved();
 }
 
@@ -564,7 +881,12 @@ void CompareWindow::finishDeferredPlaybackHoldRelease() {
         deferredPlanLockRelease_ = true;
         return;
     }
-    if (playbackReleasePending_ && playbackHoldOwned() &&
+    const bool canRestorePlaying =
+        playbackHoldOwned() ||
+        (playbackHoldActive_ && surface_ != nullptr &&
+         surface_->sourceEpoch() == playbackHoldSourceEpoch_ &&
+         surface_->pauseRequestGeneration() == playbackHoldGeneration_);
+    if (playbackReleasePending_ && canRestorePlaying &&
         playbackHoldOriginalPlaying_ && !playbackHoldFailed_) {
         playbackHoldMutation_ = true;
         surface_->setPaused(false);
@@ -612,6 +934,10 @@ void CompareWindow::onPlaybackStateChanged(bool playing) {
     }
     if (surface_->pauseRequestGeneration() != playbackHoldGeneration_) {
         invalidateFrozenPlayback(tr("Playback resumed during comparison."));
+        return;
+    }
+    if (captureFrameActive_) {
+        surface_->reassertPaused();
         return;
     }
     const bool hadFrozenPair = !frame_.isNull() && frozenPlaybackTimestamp_.has_value();
@@ -738,6 +1064,7 @@ void CompareWindow::setAjiBackend(native::Backend backend) {
     }
     ajiErrors_.clear();
 }
+
 QString CompareWindow::sideA() const { return selection_.value(0); }
 
 QString CompareWindow::sideB() const { return selection_.value(1); }
@@ -747,7 +1074,6 @@ QImage CompareWindow::grabSettledFrame() {
     if (surface_ == nullptr) {
         return QImage();
     }
-    // Require both a quiet position pump and identical pixels after any seek.
     QImage previous;
     double previousPosition = 0.0;
     int stableRounds = 0;
@@ -759,9 +1085,6 @@ QImage CompareWindow::grabSettledFrame() {
             return QImage();
         }
         QThread::msleep(kPollIntervalMs);
-        // The event loop above can deliver a close that destroys the borrowed
-        // surface; the QPointer turns that into a refusal here instead of a
-        // read of freed memory.
         if (surface_ == nullptr) {
             return QImage();
         }
@@ -775,8 +1098,6 @@ QImage CompareWindow::grabSettledFrame() {
             ++quietEpochRounds;
         }
         if (probe.isNull()) {
-            // No framebuffer to read at all: nothing to wait for, and nothing
-            // to fall back on either.
             previous = QImage();
             stableRounds = 0;
             continue;
@@ -843,7 +1164,6 @@ void CompareWindow::captureFrame() {
     captureFrameActive_ = true;
     ActiveGuard activeGuard{captureFrameActive_};
     QPointer<CompareWindow> self(this);
-    // Capture the current settled frame without seeking; failure is visible.
     frame_ = QImage();
     isolatedOriginal_ = QImage();
     renderedAId_.clear();
@@ -887,7 +1207,7 @@ void CompareWindow::captureFrame() {
         }
         return;
     }
-    const std::optional<double> timestampBefore = readPlaybackTimestamp();
+    std::optional<double> timestampBefore = readPlaybackTimestamp();
     if (self.isNull()) {
         return;
     }
@@ -895,7 +1215,7 @@ void CompareWindow::captureFrame() {
         captureError_ = tr("Could not capture the playback timestamp");
         return;
     }
-    const QImage grabbed = grabSettledFrame();
+    QImage grabbed = grabSettledFrame();
     if (self.isNull()) {
         return;
     }
@@ -906,9 +1226,28 @@ void CompareWindow::captureFrame() {
                             : tr("Could not capture a new frame");
         return;
     }
-    const std::optional<double> playbackTimestamp = readPlaybackTimestamp();
+    std::optional<double> playbackTimestamp = readPlaybackTimestamp();
     if (self.isNull()) {
         return;
+    }
+    // When pausing active playback, the final in-flight decoder frame may finish
+    // presenting at the start of grabSettledFrame(). If the timestamp moved once
+    // while settling, re-verify on the now-settled frame.
+    if (playbackTimestamp.has_value() && playbackHoldOwned() &&
+        std::abs(*playbackTimestamp - *timestampBefore) > 1e-6 &&
+        surface_ != nullptr && surface_->sourceEpoch() == sourceEpoch) {
+        timestampBefore = playbackTimestamp;
+        grabbed = grabSettledFrame();
+        if (self.isNull()) {
+            return;
+        }
+        if (!grabbed.isNull() && surface_ != nullptr &&
+            surface_->sourceEpoch() == sourceEpoch) {
+            playbackTimestamp = readPlaybackTimestamp();
+            if (self.isNull()) {
+                return;
+            }
+        }
     }
     if (!playbackTimestamp.has_value() || !playbackHoldOwned() ||
         std::abs(*playbackTimestamp - *timestampBefore) > 1e-6 || surface_ == nullptr ||
@@ -929,9 +1268,14 @@ void CompareWindow::captureFrame() {
 
 QImage CompareWindow::renderIsolated(const QString& id) {
     QPointer<CompareWindow> self(this);
+    if (id == QLatin1String("off") && !isolatedOriginal_.isNull()) {
+        pendingAjiId_.clear();
+        return isolatedOriginal_;
+    }
     const quint64 generation = activeRenderGeneration_;
-    const auto cancelled = [self, generation] {
-        return self == nullptr || !self->isVisible() ||
+    const bool startedVisible = isVisible();
+    const auto cancelled = [self, generation, startedVisible] {
+        return self == nullptr || (startedVisible && !self->isVisible()) ||
                generation != self->selectionGeneration_ ||
                !self->playbackHoldOwned() || self->surface_ == nullptr ||
                self->surface_->sourceEpoch() != self->frozenSourceEpoch_;
@@ -957,17 +1301,20 @@ QImage CompareWindow::renderIsolated(const QString& id) {
             abandonIsolatedRenderer();
             return {};
         }
-        isolatedOriginal_ = renderer->render(QStringLiteral("off"), {}, cancelled, progress);
+        const QImage rawOff = renderer->render(QStringLiteral("off"), {}, cancelled, progress);
         if (self == nullptr) return {};
         if (cancelled()) {
             finishIsolatedRetry();
             return {};
         }
-        if (isolatedOriginal_.isNull()) {
+        if (rawOff.isNull()) {
             pendingAjiId_.clear();
             ajiErrors_.insert(id, renderer->error());
             abandonIsolatedRenderer();
             return {};
+        }
+        if (isolatedOriginal_.isNull()) {
+            isolatedOriginal_ = rawOff;
         }
     }
     native::AnimeJanaiPlan plan;
@@ -1028,8 +1375,6 @@ QImage CompareWindow::renderIsolated(const QString& id) {
 
 void CompareWindow::abandonIsolatedRenderer() {
     if (const auto renderer = isolatedRenderer_) {
-        // Keeping the shared copy alive across stop() leaves the GL release on
-        // this call's stack, so the context is still current for it.
         renderer->stop();
         isolatedRenderer_.reset();
     }
@@ -1078,6 +1423,8 @@ void CompareWindow::render() {
 
 void CompareWindow::renderOnce() {
     QPointer<CompareWindow> self(this);
+    canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
+    canvas_->setChoices(choices_, sideA(), sideB());
     if (!frame_.isNull() && surface_ == nullptr) {
         frame_ = QImage();
         captureError_ = tr("The playback surface was destroyed");
@@ -1086,10 +1433,9 @@ void CompareWindow::renderOnce() {
         captureError_ = tr("The source changed after the frame was captured");
     }
     if (frame_.isNull()) {
-        // A failed capture, an unfrozen plan and a window with no frame are
-        // different faults; the named one is shown and no stale picture remains.
         renderedA_ = QImage();
         renderedB_ = QImage();
+        stack_->setCurrentIndex(0);
         canvas_->clear(!lockError_.isEmpty()
                            ? lockError_
                            : (captureError_.isEmpty() ? tr("No frame to compare")
@@ -1124,6 +1470,7 @@ void CompareWindow::renderOnce() {
         renderedB_ = QImage();
         captureError_ = surface_ == nullptr ? tr("The playback surface was destroyed")
                                             : tr("The source changed during comparison rendering");
+        stack_->setCurrentIndex(0);
         canvas_->clear(captureError_);
         canvas_->setSideImages(QImage(), QImage(), QImage());
         clearGridPanes();
@@ -1142,6 +1489,7 @@ void CompareWindow::renderOnce() {
         renderedA_ = QImage();
         renderedB_ = QImage();
         clearGridPanes();
+        stack_->setCurrentIndex(0);
         canvas_->clear(captureError_.isEmpty()
                            ? tr("Playback changed during comparison.")
                            : captureError_);
@@ -1157,19 +1505,18 @@ void CompareWindow::renderOnce() {
     renderedBackend_ = ajiBackend_;
     QImage difference;
     if (!a.isNull() && !b.isNull() && a.size() == b.size()) {
-        // Gain 1 is the honest picture, so it is the colour-mapped one;
-        // anything above it is an explicitly amplified grey.
         difference = gain_->value() > 1 ? differenceGrayscale(a, b, gain_->value())
                                         : differenceJet(a, b);
+    }
+    stack_->setCurrentIndex(mode_ == CompareMode::SideBySide ? 1 : 0);
+    if (stack_ != nullptr && !stack_->rect().isEmpty() && canvas_->size() != stack_->size()) {
+        canvas_->resize(stack_->size());
     }
     canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
     canvas_->setChoices(choices_, sideA(), sideB());
     canvas_->setMode(mode_);
     canvas_->setSideImages(a, b, difference);
-    stack_->setCurrentIndex(mode_ == CompareMode::SideBySide ? 1 : 0);
     if (mode_ == CompareMode::SideBySide) {
-        // A deferred teardown never outlives a fresh pair: the panes it would
-        // delete are still alive, so republishing them cancels the deletion.
         gridTeardownDeferred_ = false;
         grid_->setChoices(choices_);
         grid_->setItems({sideA(), sideB()}, {a, b},
@@ -1202,18 +1549,18 @@ void CompareWindow::onModeChanged(int index) {
         return;
     }
     mode_ = mode;
-    // A control is only present, not merely disabled, for the modes that read
-    // it: a disabled knob is a knob that invites a click before admitting it
-    // does nothing, and a hidden one cannot be asked.
     const bool isSplit = mode == CompareMode::SplitH || mode == CompareMode::SplitV;
     const bool isFlicker = mode == CompareMode::Flicker;
     const bool isDifference = mode == CompareMode::Difference;
     splitLabel_->setVisible(isSplit);
     split_->setVisible(isSplit);
+    if (splitSlider_ != nullptr) splitSlider_->setVisible(isSplit);
     flickerLabel_->setVisible(isFlicker);
     flicker_->setVisible(isFlicker);
+    if (flickerSlider_ != nullptr) flickerSlider_->setVisible(isFlicker);
     gainLabel_->setVisible(isDifference);
     gain_->setVisible(isDifference);
+    if (gainSlider_ != nullptr) gainSlider_->setVisible(isDifference);
     modeControls_->setVisible(isSplit || isFlicker || isDifference);
     canvas_->setSplit(split_->value());
     canvas_->setFlickerRate(flicker_->value());
@@ -1226,24 +1573,44 @@ void CompareWindow::onModeChanged(int index) {
 }
 
 void CompareWindow::onSplitChanged(double value) {
+    if (splitSlider_ != nullptr) {
+        const QSignalBlocker blocker(splitSlider_);
+        splitSlider_->setValue(static_cast<int>(std::lround(value * 1000.0)));
+    }
     canvas_->setSplit(value);
 }
 
 void CompareWindow::onFlickerChanged(int value) {
+    if (flickerSlider_ != nullptr) {
+        const QSignalBlocker blocker(flickerSlider_);
+        flickerSlider_->setValue(value);
+    }
     canvas_->setFlickerRate(value);
     updateFlickerTimer();
 }
 
 void CompareWindow::onGainChanged(int value) {
+    if (gainSlider_ != nullptr) {
+        const QSignalBlocker blocker(gainSlider_);
+        gainSlider_->setValue(value);
+    }
     canvas_->setDiffGain(value);
     render();
 }
 
+void CompareWindow::onSwapSides() {
+    if (selection_.size() < 2) {
+        return;
+    }
+    dismissCandidateMenus();
+    ++selectionGeneration_;
+    std::swap(selection_[0], selection_[1]);
+    std::swap(renderedA_, renderedB_);
+    std::swap(renderedAId_, renderedBId_);
+    render();
+}
+
 void CompareWindow::onCandidateChosen(int side, const QString& id) {
-    // Menu activation guard: this slot runs inside QAction::activate, and the
-    // render below pumps the event loop, so a source change can invalidate and
-    // clear the grid while the activation is still on the stack. Pane deletion
-    // is deferred until the activation unwinds (see clearGridPanes).
     struct ActivationGuard {
         CompareWindow* owner;
         explicit ActivationGuard(CompareWindow* window) : owner(window) {
@@ -1256,10 +1623,8 @@ void CompareWindow::onCandidateChosen(int side, const QString& id) {
     if (!candidates_.contains(id) || side < 0 || side > 1) {
         return;
     }
+
     ajiErrors_.remove(id);
-    // The badge menus are the only chooser, so this is the whole selection: A
-    // first, B second. Picking the same chain on both sides is allowed - two
-    // frames of one chain is a legitimate way to look at it.
     ++selectionGeneration_;
     if (side == 0) {
         if (selection_.isEmpty()) {
@@ -1276,26 +1641,31 @@ void CompareWindow::onCandidateChosen(int side, const QString& id) {
     } else {
         return;
     }
-    if (side == 0 && renderedAId_ != id) {
+    if (side == 0 && (renderedAId_ != id ||
+                      (ajiBackends_.contains(id) && renderedBackend_ != ajiBackend_))) {
         renderedA_ = {};
         renderedAId_.clear();
     }
-    if (side == 1 && renderedBId_ != id) {
+    if (side == 1 && (renderedBId_ != id ||
+                      (ajiBackends_.contains(id) && renderedBackend_ != ajiBackend_))) {
         renderedB_ = {};
         renderedBId_.clear();
     }
     canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
     canvas_->setChoices(choices_, sideA(), sideB());
     canvas_->setSideImages(renderedA_, renderedB_, {});
-    if (mode_ == CompareMode::SideBySide)
+    if (mode_ == CompareMode::SideBySide) {
+        grid_->setChoices(choices_);
         grid_->setItems({sideA(), sideB()}, {renderedA_, renderedB_},
                         {labelFor(sideA()), labelFor(sideB())});
+    }
     render();
 }
 
 void CompareWindow::dismissCandidateMenus() {
-    for (QToolButton* badge : findChildren<QToolButton*>()) {
-        if (badge->menu() != nullptr) badge->menu()->close();
+    for (QMenu* menu : findChildren<QMenu*>()) {
+        menu->hide();
+        menu->close();
     }
 }
 
@@ -1330,10 +1700,16 @@ void CompareWindow::onHoverPixel(int x, int y, bool valid, QRgb rgb) {
         return;
     }
     const QColor color(rgb);
-    hover_->setText(tr("%1, %2 · %3").arg(x).arg(y).arg(color.name()));
+    hover_->setText(tr("%1, %2  %3 (%4,%5,%6)")
+                        .arg(x)
+                        .arg(y)
+                        .arg(color.name().toUpper())
+                        .arg(color.red())
+                        .arg(color.green())
+                        .arg(color.blue()));
     hoverSwatch_->setStyleSheet(
-        QStringLiteral("background: %1; border: 1px solid %2; border-radius: 2px;")
-            .arg(color.name(), white(40).name()));
+        QStringLiteral("background: %1; border: 1px solid #484f5e; border-radius: 3px;")
+            .arg(color.name()));
     hoverSwatch_->show();
 }
 
@@ -1343,7 +1719,7 @@ void CompareWindow::updateInfo() {
     if (!captureError_.isEmpty()) parts.append(tr("Capture error: %1").arg(captureError_));
     if (!pendingAjiId_.isEmpty()) {
         parts.append(pendingAjiPreparation_ ? tr("Preparing AnimeJaNai %1…").arg(labelFor(pendingAjiId_))
-                                           : tr("Rendering %1…").arg(labelFor(pendingAjiId_)));
+                                            : tr("Rendering %1…").arg(labelFor(pendingAjiId_)));
     }
     for (const QString& id : {sideA(), sideB()}) {
         if (ajiErrors_.contains(id))
