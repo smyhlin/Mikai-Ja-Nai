@@ -1012,6 +1012,10 @@ if(TARGET mikai_backend)
     target_link_libraries(native_geometry_probe PRIVATE mikai_app Qt6::Test mikai_probe_shared)
     set_target_properties(native_geometry_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 
+    add_executable(benchmark_probe EXCLUDE_FROM_ALL src/probes/player/BenchmarkProbe.cpp)
+    target_link_libraries(benchmark_probe PRIVATE mikai_app Qt6::Test mikai_probe_shared)
+    set_target_properties(benchmark_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+
     if(MIKAI_WITH_MODEL_INSPECTION)
       add_executable(native_preparation_references_probe EXCLUDE_FROM_ALL src/probes/native/NativePreparationReferencesProbe.cpp)
       target_link_libraries(native_preparation_references_probe PRIVATE mikai_model_inspection mikai_probe_shared)
@@ -1129,7 +1133,8 @@ add_subdirectory(tests/fixtures)
 if(MIKAI_BUILD_PROBES)
   foreach(target IN ITEMS mikai_tests mpv_surface_smoke animejanai_probe headless_pixel_probe
       widget_pixel_probe shell_probe dialog_probe interaction_probe compare_probe
-      compare_shot_probe anime4k_menu_probe resolver_probe title_page_probe external_media_probe)
+      compare_shot_probe anime4k_menu_probe resolver_probe title_page_probe external_media_probe
+      benchmark_probe)
     add_custom_command(TARGET ${target} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders"

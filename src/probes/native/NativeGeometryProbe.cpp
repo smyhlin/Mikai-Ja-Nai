@@ -522,22 +522,28 @@ int main(int argc, char** argv) {
               QStringLiteral("the “%1” tab screenshot is written to %2").arg(tabs->tabText(i), file));
     }
 
-    const int benchmark = tabs->indexOf(
-        dialog.findChild<QScrollArea*>(QStringLiteral("benchmarkScroll")));
-    check(benchmark >= 0, QStringLiteral("the Benchmark tab exposes its results section"));
-    if (benchmark >= 0) {
-        tabs->setCurrentIndex(benchmark);
-        auto* benchmarkScroll = qobject_cast<QScrollArea*>(tabs->widget(benchmark));
-        if (benchmarkScroll != nullptr) {
-            benchmarkScroll->verticalScrollBar()->setValue(
-                benchmarkScroll->verticalScrollBar()->maximum());
-            QApplication::processEvents();
-            const QString file =
-                QStringLiteral("native-geometry-%1-benchmark-results.png").arg(language);
-            check(dialog.grab().save(file),
-                  QStringLiteral("the Benchmark results section screenshot is written to %1")
-                      .arg(file));
+    auto* benchmarkScroll = dialog.findChild<QScrollArea*>(QStringLiteral("benchmarkScroll"));
+    int benchmark = -1;
+    if (benchmarkScroll != nullptr) {
+        for (int index = 0; index < tabs->count(); ++index) {
+            if (tabs->widget(index)->isAncestorOf(benchmarkScroll)) {
+                benchmark = index;
+                break;
+            }
         }
+    }
+    check(benchmark >= 0, QStringLiteral("the Benchmark tab exposes its scroll via descendant benchmarkScroll"));
+    if (benchmark >= 0 && benchmarkScroll != nullptr) {
+        tabs->setCurrentIndex(benchmark);
+        benchmarkScroll->verticalScrollBar()->setValue(benchmarkScroll->verticalScrollBar()->minimum());
+        QApplication::processEvents();
+        QString file = QStringLiteral("native-geometry-%1-benchmark-top.png").arg(language);
+        check(dialog.grab().save(file), QStringLiteral("the Benchmark top screenshot is written to %1").arg(file));
+
+        benchmarkScroll->verticalScrollBar()->setValue(benchmarkScroll->verticalScrollBar()->maximum());
+        QApplication::processEvents();
+        file = QStringLiteral("native-geometry-%1-benchmark-bottom.png").arg(language);
+        check(dialog.grab().save(file), QStringLiteral("the Benchmark bottom screenshot is written to %1").arg(file));
     }
 
     // The bindings are audited on their own, in the same four combinations as
