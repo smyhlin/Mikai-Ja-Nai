@@ -536,7 +536,7 @@ int main(int argc, char** argv) {
             continue;
         }
         if (decision != QLatin1String("cleared") && decision != QLatin1String("external")
-            && decision != QLatin1String("blocked")) {
+            && decision != QLatin1String("blocked") && decision != QLatin1String("privateLocal")) {
             errors << "Invalid bundle shippingDecision: " << bundleId << '\n';
             invalid = true;
         }
