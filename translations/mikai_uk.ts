@@ -3533,6 +3533,10 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     <context>
         <name>mikai::app::SettingsDialog</name>
         <message>
+            <source>Benchmark</source>
+            <translation>Бенчмарк</translation>
+        </message>
+        <message>
             <source>Test API token</source>
             <translation>Перевірити токен API</translation>
         </message>
@@ -3853,6 +3857,78 @@ Active: %1 · queued: %2</source>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1542" />
             <source>the key file could not be written</source>
             <translation>не вдалося записати файл ключа</translation>
+        </message>
+        <message>
+            <source>Playback Benchmark</source>
+            <translation>Бенчмарк відтворення</translation>
+        </message>
+        <message>
+            <source>Adopts the AnimeJaNai benchmark clips (480p–1080p) and measurement approach (off-screen decode + filter throughput). Uses our in-process libmpv core and MpvHandle with vo=null for comparable numbers. Select specific video and enhancement (model) for fast targeted checks. Run measures frame progress over short active windows (engine build excluded from fps sample).</source>
+            <translation>Використовує тестові кліпи AnimeJaNai (480p–1080p) і той самий підхід до вимірювання (позаекранне декодування + пропускна здатність фільтра). Задіює наше ядро libmpv у процесі та MpvHandle з vo=null для зіставних чисел. Виберіть конкретне відео та покращення (модель) для швидких точкових перевірок. Запуск вимірює просування кадрів на коротких активних вікнах (збірка рушія не входить у вибірку fps).</translation>
+        </message>
+        <message>
+            <source>Video:</source>
+            <translation>Відео:</translation>
+        </message>
+        <message>
+            <source>All clips (full suite)</source>
+            <translation>Усі кліпи (повний набір)</translation>
+        </message>
+        <message>
+            <source>Enhancement / Model:</source>
+            <translation>Покращення / Модель:</translation>
+        </message>
+        <message>
+            <source>None (raw throughput)</source>
+            <translation>Немає (чиста пропускна здатність)</translation>
+        </message>
+        <message>
+            <source>Anime4K example (glsl)</source>
+            <translation>Приклад Anime4K (glsl)</translation>
+        </message>
+        <message>
+            <source>Run Benchmark</source>
+            <translation>Запустити бенчмарк</translation>
+        </message>
+        <message>
+            <source>Results will appear here in upstream-style table format (clip → fps).</source>
+            <translation>Результати з’являться тут у форматі таблиці, як в оригіналі (кліп → fps).</translation>
+        </message>
+        <message>
+            <source>Clips adopted from mpv-AnimeJaNai 3.7.0 benchmarks package. Place them under tests/fixtures/media/benchmarks/ (already done in tree) or next to the exe. Aji results require the selected preset&apos;s engines/models to be ready. Select single video + enhancement for quick case checks.</source>
+            <translation>Кліпи взято з пакета бенчмарків mpv-AnimeJaNai 3.7.0. Покладіть їх у tests/fixtures/media/benchmarks/ (у дереві вже зроблено) або поряд з exe. Результати Aji потребують готових рушіїв/моделей вибраного пресета. Виберіть одне відео + покращення для швидкої перевірки окремого випадку.</translation>
+        </message>
+        <message>
+            <source>Starting benchmark...</source>
+            <translation>Запуск бенчмарку...</translation>
+        </message>
+        <message>
+            <source>AnimeJaNai-style benchmark (Mikai in-process, vo=null) - mode: %1</source>
+            <translation>Бенчмарк у стилі AnimeJaNai (Mikai у процесі, vo=null) - режим: %1</translation>
+        </message>
+        <message>
+            <source>Warning: could not locate any Anime4K shader for enhancement example.</source>
+            <translation>Попередження: не вдалося знайти жодного шейдера Anime4K для прикладу покращення.</translation>
+        </message>
+        <message>
+            <source>: clip not found</source>
+            <translation>: кліп не знайдено</translation>
+        </message>
+        <message>
+            <source>: no frames (timeout or error)</source>
+            <translation>: немає кадрів (тайм-аут або помилка)</translation>
+        </message>
+        <message>
+            <source>: - (too slow or stalled)</source>
+            <translation>: - (надто повільно або зупинилося)</translation>
+        </message>
+        <message>
+            <source>: mpv error </source>
+            <translation>: помилка mpv </translation>
+        </message>
+        <message>
+            <source>: error %1</source>
+            <translation>: помилка %1</translation>
         </message>
     </context>
     <context>

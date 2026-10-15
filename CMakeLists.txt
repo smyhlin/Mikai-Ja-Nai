@@ -831,6 +831,12 @@ if(TARGET mikai_backend)
     src/app/widgets/FailureView.cpp
     src/app/widgets/RateLimitLabel.cpp
     src/app/dialogs/SettingsDialog.cpp
+    src/app/dialogs/settings/SettingsHelpers.cpp
+    src/app/dialogs/settings/SettingsGeneralTab.cpp
+    src/app/dialogs/settings/SettingsPresetsTab.cpp
+    src/app/dialogs/settings/SettingsProcessingTab.cpp
+    src/app/dialogs/settings/SettingsComponentsTab.cpp
+    src/app/dialogs/settings/SettingsBenchmarkTab.cpp
     src/app/dialogs/ComponentStoreTab.cpp
     src/app/dialogs/NativeAssetsPanel.cpp
     src/app/dialogs/NativeRifeControls.cpp
@@ -860,6 +866,8 @@ if(TARGET mikai_backend)
     src/app/widgets/TitleCard.hpp
     src/app/widgets/RateLimitLabel.hpp
     src/app/dialogs/SettingsDialog.hpp
+    src/app/dialogs/settings/SettingsUi.hpp
+    src/app/dialogs/settings/SettingsHelpers.hpp
     src/app/dialogs/ComponentStoreTab.hpp
     src/app/dialogs/NativeAssetsPanel.hpp
     src/app/dialogs/NativeRifeControls.hpp
@@ -1149,3 +1157,4 @@ if(TARGET mikai)
     $<$<AND:$<CONFIG:Release>,$<LINK_LANG_AND_ID:CXX,GNU,Clang>>:-Wl,--gc-sections>
   )
 endif()
+

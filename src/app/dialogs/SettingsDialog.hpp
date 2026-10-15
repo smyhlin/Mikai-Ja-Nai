@@ -23,6 +23,9 @@ class QFrame;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
+class QListWidget;
+class QListWidgetItem;
+class QPlainTextEdit;
 class QPushButton;
 class QScrollArea;
 class QTabWidget;
@@ -183,7 +186,23 @@ private:
     QWidget* buildPresetsTab();
     QWidget* buildProcessingTab();
     QWidget* buildComponentsTab();
+    QWidget* buildBenchmarkTab();
+    void runBenchmark();
     void filterPresetRows(const QString& query);
+    /// Resolves one benchmark clip name against the dist layout, the source tree
+    /// beside the build directory, and the current working directory. Empty when
+    /// the clip is nowhere to be found.
+    QString locateBenchmarkClip(const QString& name) const;
+    /// Repopulates the benchmark lists from the live catalogues: the Anime4K
+    /// presets, the official AnimeJaNai presets, and the private spatial/RIFE
+    /// models. Called when the tab is built and whenever it is re-shown, so a
+    /// newly acquired model appears without reopening Settings.
+    void refreshBenchmarkCatalogue();
+    /// The catalogue id behind one row of the model list, empty for the none row.
+    QString benchmarkModelId(const class QListWidgetItem* item) const;
+    /// The clip file name behind one row of the video list.
+    QString benchmarkClipName(const class QListWidgetItem* item) const;
+
     /// Detaches an adopted Components tab before this dialog deletes its children.
     void releaseAdoptedComponentsTab();
     void testToken();
@@ -202,6 +221,7 @@ private:
     void retranslateGeneralTab();
     void retranslatePresetsTab();
     void retranslateProcessingTab();
+    void retranslateBenchmarkTab();
 
     /// The bindings every current row holds, minus the field named by `exclude`.
     QMap<QString, mplayer::shell::ShortcutClaim> shortcutClaims(
@@ -281,6 +301,18 @@ private:
     QWidget* presetsTab_ = nullptr;
     QWidget* processingTab_ = nullptr;
     QWidget* componentsTab_ = nullptr;
+    QWidget* benchmarkTab_ = nullptr;
+    QScrollArea* benchmarkScroll_ = nullptr;
+    QListWidget* benchmarkVideoList_ = nullptr;
+    QListWidget* benchmarkModelList_ = nullptr;
+    QCheckBox* benchmarkRawBox_ = nullptr;
+    QPushButton* benchmarkRunButton_ = nullptr;
+    QPushButton* benchmarkSelectAllModels_ = nullptr;
+    QPlainTextEdit* benchmarkResults_ = nullptr;
+    QLabel* benchmarkNote_ = nullptr;
+    QLabel* benchmarkHeading_ = nullptr;
+    QLabel* benchmarkVideoTitle_ = nullptr;
+    QLabel* benchmarkModelTitle_ = nullptr;
     QScrollArea* generalScroll_ = nullptr;
     QScrollArea* presetsScroll_ = nullptr;
     QScrollArea* processingScroll_ = nullptr;
