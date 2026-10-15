@@ -36,26 +36,39 @@ QWidget* SettingsDialog::buildGeneralTab() {
     scroll->setObjectName(QStringLiteral("nativeGeneralScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    applySettingsTheme(scroll);
 
     auto* page = new QWidget(scroll);
+    page->setObjectName(QStringLiteral("generalPage"));
     auto* root = new QVBoxLayout(page);
     root->setContentsMargins(theme::kSpacingSmall, theme::kSpacingMedium, theme::kSpacingSmall,
                              theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    // ── Card 1: Mikai API Access Token & Live Rate-Limit Readout ──────────────
+    // ── Card 1: Mikai API Access Token & Live Rate-Limit Telemetry ───────────
     QVBoxLayout* apiLayout = nullptr;
     QFrame* apiCard = makeSettingsCard(page, &apiLayout);
+    apiLayout->setSpacing(theme::kSpacingSmall);
 
     auto* headerRow = new QHBoxLayout();
+    headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(theme::kSpacingSmall);
-    auto* iconLabel = new QLabel(apiCard);
+
+    auto* iconBadge = new QFrame(apiCard);
+    iconBadge->setObjectName(QStringLiteral("settingsSubCard"));
+    iconBadge->setFixedSize(32, 32);
+    auto* iconBadgeLayout = new QHBoxLayout(iconBadge);
+    iconBadgeLayout->setContentsMargins(0, 0, 0, 0);
+    auto* iconLabel = new QLabel(iconBadge);
     iconLabel->setObjectName(QStringLiteral("muted"));
-    iconLabel->setPixmap(theme::gearIcon(20, QLatin1String(theme::kAccent)).pixmap(20, 20));
+    iconLabel->setAlignment(Qt::AlignCenter);
+    iconLabel->setPixmap(theme::gearIcon(18, QLatin1String(theme::kAccent)).pixmap(18, 18));
+    iconBadgeLayout->addWidget(iconLabel);
+
     tokenHeading_ = new QLabel(tr("Mikai API access token"), apiCard);
-    tokenHeading_->setObjectName(QStringLiteral("heading"));
-    yieldCaptionWidth(tokenHeading_);
-    headerRow->addWidget(iconLabel, 0, Qt::AlignVCenter);
+    stylePageHeading(tokenHeading_);
+    headerRow->addWidget(iconBadge, 0, Qt::AlignVCenter);
     headerRow->addWidget(tokenHeading_, 1, Qt::AlignVCenter);
     apiLayout->addLayout(headerRow);
 
@@ -63,28 +76,32 @@ QWidget* SettingsDialog::buildGeneralTab() {
         tr("An API key raises the limit from 60 to 300 requests per minute and is stored "
            "locally in the .env file."),
         apiCard);
-    tokenDescription_->setObjectName(QStringLiteral("muted"));
-    tokenDescription_->setWordWrap(true);
+    styleMutedCaption(tokenDescription_);
     apiLayout->addWidget(tokenDescription_);
 
     tokenLink_ = new QLabel(apiCard);
     tokenLink_->setObjectName(QStringLiteral("muted"));
     tokenLink_->setTextFormat(Qt::RichText);
-    tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none;\" "
+    tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
                            "href=\"https://mikai.me/user/developers\">"
                            "Get a key from the developer dashboard on mikai.me ↗</a>")
-                             .arg(QLatin1String(theme::kAccent)));
+                            .arg(QLatin1String(theme::kAccent)));
     tokenLink_->setOpenExternalLinks(true);
     tokenLink_->setWordWrap(true);
+    tokenLink_->setCursor(Qt::PointingHandCursor);
     apiLayout->addWidget(tokenLink_);
 
     auto* tokenInputRow = new QHBoxLayout();
+    tokenInputRow->setContentsMargins(0, theme::kSpacingXs, 0, 0);
     tokenInputRow->setSpacing(theme::kSpacingSmall);
+
     token_ = new QLineEdit(apiCard);
+    token_->setObjectName(QStringLiteral("apiTokenEdit"));
     token_->setPlaceholderText(tr("mk_... (leave blank for anonymous access)"));
     token_->setAccessibleName(tr("Mikai API access token"));
     token_->setClearButtonEnabled(true);
     token_->setMinimumHeight(theme::kSettingsControlSize);
+    applyTabularNumerals(token_);
     const QString current = client_.apiKey();
     if (!current.isEmpty()) {
         token_->setText(current);
@@ -92,8 +109,9 @@ QWidget* SettingsDialog::buildGeneralTab() {
     tokenInputRow->addWidget(token_, 1);
 
     testButton_ = new QPushButton(tr("Test"), apiCard);
+    testButton_->setObjectName(QStringLiteral("testTokenButton"));
     testButton_->setAccessibleName(tr("Test API token"));
-    testButton_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(testButton_, theme::kSettingsControlSize);
     connect(testButton_, &QPushButton::clicked, this, &SettingsDialog::testToken);
     tokenInputRow->addWidget(testButton_, 0);
     apiLayout->addLayout(tokenInputRow);
@@ -101,47 +119,61 @@ QWidget* SettingsDialog::buildGeneralTab() {
     status_ = new QLabel(apiCard);
     status_->setObjectName(QStringLiteral("status"));
     status_->setWordWrap(true);
+    yieldCaptionWidth(status_);
+    styleStatusBanner(status_, QStringLiteral("info"));
     apiLayout->addWidget(status_);
 
-    quotaTitle_ = new QLabel(tr("API usage"), apiCard);
-    quotaTitle_->setObjectName(QStringLiteral("sectionHeading"));
-    yieldCaptionWidth(quotaTitle_);
-    apiLayout->addWidget(quotaTitle_);
-    quota_ = new QLabel(apiCard);
+    apiLayout->addWidget(makeSettingsDivider(apiCard));
+
+    QVBoxLayout* quotaSubLayout = nullptr;
+    QFrame* quotaSubCard = makeSettingsSubCard(apiCard, &quotaSubLayout);
+
+    quotaTitle_ = new QLabel(tr("API usage"), quotaSubCard);
+    styleSectionHeading(quotaTitle_);
+    quotaSubLayout->addWidget(quotaTitle_);
+
+    quota_ = new QLabel(quotaSubCard);
     quota_->setObjectName(QStringLiteral("descriptionPanel"));
     quota_->setWordWrap(true);
-    apiLayout->addWidget(quota_);
+    yieldCaptionWidth(quota_);
+    applyTabularNumerals(quota_);
+    quotaSubLayout->addWidget(quota_);
 
+    apiLayout->addWidget(quotaSubCard);
     root->addWidget(apiCard);
 
-    // ── Card 2: Home Page Feed Sections (2-Column Grid) ───────────────────────
+    // ── Card 2: Home Page Feed Sections (2-Column Selectable Tile Grid) ──────
     QVBoxLayout* feedsLayout = nullptr;
     QFrame* feedsCard = makeSettingsCard(page, &feedsLayout);
+    feedsLayout->setSpacing(theme::kSpacingSmall);
 
     feedsTitle_ = new QLabel(tr("Home page sections"), feedsCard);
-    feedsTitle_->setObjectName(QStringLiteral("sectionHeading"));
-    yieldCaptionWidth(feedsTitle_);
+    styleSectionHeading(feedsTitle_);
     feedsLayout->addWidget(feedsTitle_);
+
     feedsHint_ = new QLabel(
         tr("Disabled sections are not loaded and do not use API requests. Search and title "
            "pages are always available."),
         feedsCard);
-    feedsHint_->setObjectName(QStringLiteral("muted"));
-    feedsHint_->setWordWrap(true);
+    styleMutedCaption(feedsHint_);
     feedsLayout->addWidget(feedsHint_);
+
+    feedsLayout->addWidget(makeSettingsDivider(feedsCard));
 
     QSettings settings;
     const QSet<QString> enabled = feeds::enabled(settings.value(feeds::settingsKey()).toString());
     initialFeeds_ = enabled;
     auto* feedsGrid = new QGridLayout();
-    feedsGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    feedsGrid->setVerticalSpacing(theme::kSpacingXs);
+    feedsGrid->setContentsMargins(0, theme::kSpacingXs, 0, 0);
+    feedsGrid->setHorizontalSpacing(theme::kSpacingSmall);
+    feedsGrid->setVerticalSpacing(theme::kSpacingSmall);
     const QStringList allFeeds = feeds::all();
     for (int i = 0; i < allFeeds.size(); ++i) {
         const QString& key = allFeeds.at(i);
         auto* box = new QCheckBox(feeds::label(key), feedsCard);
+        box->setProperty("tileCheck", true);
         box->setAccessibleName(feeds::label(key));
-        box->setMinimumHeight(theme::kSettingsControlSize);
+        polishInteractiveControl(box, theme::kSettingsControlSize);
         box->setChecked(enabled.contains(key));
         feedsGrid->addWidget(box, i / 2, i % 2);
         feedBoxes_.insert(key, box);
@@ -152,18 +184,24 @@ QWidget* SettingsDialog::buildGeneralTab() {
 
     root->addWidget(feedsCard);
 
-    // ── Card 3: Interface Language ────────────────────────────────────────────
+    // ── Card 3: Interface Language ───────────────────────────────────────────
     QVBoxLayout* languageLayout = nullptr;
     QFrame* languageCard = makeSettingsCard(page, &languageLayout);
+    languageLayout->setSpacing(theme::kSpacingSmall);
 
     languageTitle_ = new QLabel(tr("Interface language"), languageCard);
-    languageTitle_->setObjectName(QStringLiteral("sectionHeading"));
-    yieldCaptionWidth(languageTitle_);
+    styleSectionHeading(languageTitle_);
     languageLayout->addWidget(languageTitle_);
+
+    languageHint_ = new QLabel(
+        tr("Applied immediately to the running windows, including the open player."),
+        languageCard);
+    styleMutedCaption(languageHint_);
+    languageLayout->addWidget(languageHint_);
 
     language_ = new QComboBox(languageCard);
     language_->setObjectName(QStringLiteral("uiLanguageCombo"));
-    language_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(language_, theme::kSettingsControlSize);
     language_->addItem(tr("Use system language"), QStringLiteral("system"));
     language_->addItem(tr("English"), QStringLiteral("en"));
     language_->addItem(tr("Ukrainian"), QStringLiteral("uk"));
@@ -173,13 +211,6 @@ QWidget* SettingsDialog::buildGeneralTab() {
         language_->setCurrentIndex(languageIndex);
     }
     languageLayout->addWidget(language_);
-
-    languageHint_ = new QLabel(
-        tr("Applied immediately to the running windows, including the open player."),
-        languageCard);
-    languageHint_->setObjectName(QStringLiteral("muted"));
-    languageHint_->setWordWrap(true);
-    languageLayout->addWidget(languageHint_);
 
     root->addWidget(languageCard);
 
@@ -201,6 +232,7 @@ bool SettingsDialog::feedsChanged() const {
 
 void SettingsDialog::testToken() {
     const QString candidate = token_->text().trimmed();
+    styleStatusBanner(status_, QStringLiteral("info"));
     status_->setText(tr("Checking token…"));
     testButton_->setEnabled(false);
     QPointer<SettingsDialog> self(this);
@@ -215,6 +247,7 @@ void SettingsDialog::testToken() {
             self->testButton_->setEnabled(true);
             const QMap<QString, QVariant> result = raw.toMap();
             if (result.value(QStringLiteral("valid")).toBool()) {
+                styleStatusBanner(self->status_, QStringLiteral("success"));
                 const bool authenticated = result.value(QStringLiteral("authenticated")).toBool();
                 const int limit = result.value(QStringLiteral("rate_limit"), 60).toInt();
                 const QString name = result.value(QStringLiteral("name")).toString();
@@ -228,6 +261,7 @@ void SettingsDialog::testToken() {
                         tr("Anonymous access (limit: %1/min)").arg(limit));
                 }
             } else {
+                styleStatusBanner(self->status_, QStringLiteral("danger"));
                 const QString code = result.value(QStringLiteral("error_code")).toString();
                 const QString error = result.value(QStringLiteral("error")).toString();
                 const QString translatedError = localizedApiError(code);
@@ -241,6 +275,7 @@ void SettingsDialog::testToken() {
         [self](const backend::Failure& failure) {
             if (!self) return;
             self->testButton_->setEnabled(true);
+            styleStatusBanner(self->status_, QStringLiteral("danger"));
             self->status_->setText(tr("Connection error: %1").arg(backend::failureLine(failure)));
         });
 }
@@ -273,7 +308,7 @@ void SettingsDialog::retranslateGeneralTab() {
     tokenDescription_->setText(
         tr("An API key raises the limit from 60 to 300 requests per minute and is stored "
            "locally in the .env file."));
-    tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none;\" "
+    tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
                            "href=\"https://mikai.me/user/developers\">"
                            "Get a key from the developer dashboard on mikai.me ↗</a>")
                             .arg(QLatin1String(theme::kAccent)));
@@ -293,7 +328,8 @@ void SettingsDialog::retranslateGeneralTab() {
     }
 
     languageTitle_->setText(tr("Interface language"));
-    languageHint_->setText(tr("Applied immediately to the running windows, including the open player."));
+    languageHint_->setText(
+        tr("Applied immediately to the running windows, including the open player."));
     const auto restateLanguage = [this](const QString& data, const QString& caption) {
         const int index = language_->findData(data);
         if (index >= 0) language_->setItemText(index, caption);
@@ -305,6 +341,5 @@ void SettingsDialog::retranslateGeneralTab() {
 
     refreshQuota();
 }
-
 
 }  // namespace mikai::app

@@ -29,30 +29,28 @@ QWidget* SettingsDialog::buildProcessingTab() {
     scroll->setObjectName(QStringLiteral("nativeProcessingScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    applySettingsTheme(scroll);
 
     auto* page = new QWidget(scroll);
+    page->setObjectName(QStringLiteral("processingPage"));
     auto* root = new QVBoxLayout(page);
     root->setContentsMargins(theme::kSpacingSmall, theme::kSpacingMedium, theme::kSpacingSmall,
                              theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    nativeHeading_ = new QLabel(tr("Processing runtime"), page);
-    nativeHeading_->setObjectName(QStringLiteral("heading"));
-    yieldCaptionWidth(nativeHeading_);
-    root->addWidget(nativeHeading_);
-
-    nativeDescription_ = new QLabel(
+    // ── Editorial Page Header Card ───────────────────────────────────────────
+    QFrame* pageHeader = makeSettingsPageHeader(
+        page, &nativeHeading_, &nativeDescription_, tr("Processing runtime"),
         tr("Standard uses official AnimeJaNai choices from the player menu and Components. "
-           "Select Native to configure the separate private Native workflow."),
-        page);
-    nativeDescription_->setObjectName(QStringLiteral("muted"));
-    nativeDescription_->setWordWrap(true);
-    nativeDescription_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    root->addWidget(nativeDescription_);
+           "Select Native to configure the separate private Native workflow."));
+    root->addWidget(pageHeader);
 
     nativeError_ = new QLabel(page);
     nativeError_->setObjectName(QStringLiteral("status"));
     nativeError_->setWordWrap(true);
+    yieldCaptionWidth(nativeError_);
+    styleStatusBanner(nativeError_, QStringLiteral("danger"));
     nativeError_->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(theme::kDanger)));
     nativeError_->hide();
     root->addWidget(nativeError_);
@@ -62,23 +60,27 @@ QWidget* SettingsDialog::buildProcessingTab() {
     auto addRowTo = [](QVBoxLayout* targetLayout, QWidget* parentWidget,
                        const QString& label, QWidget* field) {
         auto* row = new QHBoxLayout();
+        row->setContentsMargins(0, 0, 0, 0);
         row->setSpacing(theme::kSpacingMedium);
         auto* name = new QLabel(label, parentWidget);
+        name->setObjectName(QStringLiteral("SettingsFormLabel"));
+        name->setMinimumWidth(theme::kSettingsFormLabelMinWidth);
         name->setBuddy(field);
-        row->addWidget(name, 0);
+        row->addWidget(name, 0, Qt::AlignVCenter);
         row->addWidget(field, 1, Qt::AlignVCenter);
         targetLayout->addLayout(row);
         return name;
     };
 
-    // ── Card 1: Runtime Module Selection (Always Visible) ─────────────────────
+    // ── Card 1: Runtime Module Selection (Always Visible) ────────────────────
     QVBoxLayout* runtimeLayout = nullptr;
     QFrame* runtimeCard = makeSettingsCard(page, &runtimeLayout);
+    runtimeLayout->setSpacing(theme::kSpacingSmall);
 
     runtimeChoice_ = new QComboBox(runtimeCard);
     runtimeChoice_->setObjectName(QStringLiteral("runtimeChoiceCombo"));
     runtimeChoice_->setAccessibleName(tr("mpv runtime"));
-    runtimeChoice_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(runtimeChoice_, theme::kSettingsControlSize);
     runtimeChoice_->addItem(tr("Standard"),
                             static_cast<int>(mplayer::native::RuntimeChoice::Standard));
     runtimeChoice_->addItem(tr("Native"),
@@ -88,24 +90,24 @@ QWidget* SettingsDialog::buildProcessingTab() {
     if (runtimeIndex >= 0) {
         runtimeChoice_->setCurrentIndex(runtimeIndex);
     }
-    runtimeModuleRowLabel_ = addRowTo(runtimeLayout, runtimeCard, tr("Runtime module"), runtimeChoice_);
+    runtimeModuleRowLabel_ =
+        addRowTo(runtimeLayout, runtimeCard, tr("Runtime module"), runtimeChoice_);
 
     runtimeHint_ = new QLabel(runtimeCard);
-    runtimeHint_->setObjectName(QStringLiteral("muted"));
-    runtimeHint_->setWordWrap(true);
-    runtimeHint_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    styleMutedCaption(runtimeHint_);
     runtimeLayout->addWidget(runtimeHint_);
 
     root->addWidget(runtimeCard);
 
-    // ── Card 2: Private Native Backend & Recipe Selection ─────────────────────
+    // ── Card 2: Private Native Backend & Recipe Selection ────────────────────
     QVBoxLayout* nativeConfigLayout = nullptr;
     nativeConfigCard_ = makeSettingsCard(page, &nativeConfigLayout);
+    nativeConfigLayout->setSpacing(theme::kSpacingSmall);
 
     nativeBackend_ = new QComboBox(nativeConfigCard_);
     nativeBackend_->setObjectName(QStringLiteral("nativeBackendCombo"));
     nativeBackend_->setAccessibleName(tr("Native backend"));
-    nativeBackend_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(nativeBackend_, theme::kSettingsControlSize);
     for (const mplayer::native::Backend backend : nativeAvailability_.backends) {
         nativeBackend_->addItem(backendLabel(backend), static_cast<int>(backend));
     }
@@ -116,17 +118,19 @@ QWidget* SettingsDialog::buildProcessingTab() {
     nativeBackend_->setCurrentIndex(
         nativeBackend_->findData(static_cast<int>(nativePreferences_.backend)));
     nativeBackend_->setEnabled(editable);
-    backendRowLabel_ = addRowTo(nativeConfigLayout, nativeConfigCard_, tr("Backend"), nativeBackend_);
+    backendRowLabel_ =
+        addRowTo(nativeConfigLayout, nativeConfigCard_, tr("Backend"), nativeBackend_);
 
     nativeRecipe_ = new QComboBox(nativeConfigCard_);
     nativeRecipe_->setObjectName(QStringLiteral("nativeRecipeCombo"));
     nativeRecipe_->setAccessibleName(tr("Native recipe"));
-    nativeRecipe_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(nativeRecipe_, theme::kSettingsControlSize);
     nativeRecipe_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     nativeRecipe_->setMinimumContentsLength(theme::kSettingsChoiceLengthChars);
     nativeRecipe_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     populateRecipeChoices(nativePreferences_.recipeId);
-    recipeRowLabel_ = addRowTo(nativeConfigLayout, nativeConfigCard_, tr("Recipe"), nativeRecipe_);
+    recipeRowLabel_ =
+        addRowTo(nativeConfigLayout, nativeConfigCard_, tr("Recipe"), nativeRecipe_);
 
     QString nativeLoadError;
     if (!nativePreferences_.schemaRecognised) {
@@ -146,6 +150,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
     nativeStatus_->setObjectName(QStringLiteral("descriptionPanel"));
     nativeStatus_->setAccessibleName(tr("Native processing status"));
     nativeStatus_->setWordWrap(true);
+    yieldCaptionWidth(nativeStatus_);
     nativeConfigLayout->addWidget(nativeStatus_);
 
     root->addWidget(nativeConfigCard_);
@@ -161,9 +166,10 @@ QWidget* SettingsDialog::buildProcessingTab() {
         nativeError_->show();
     }
 
-    // ── Card 3: Native Model Assets & Engine Preparation ──────────────────────
+    // ── Card 3: Native Model Assets & Engine Preparation ─────────────────────
     QVBoxLayout* assetsCardLayout = nullptr;
     nativeAssetsCard_ = makeSettingsCard(page, &assetsCardLayout);
+    assetsCardLayout->setSpacing(theme::kSpacingSmall);
 
     auto* assetsPanel = new mikai::app::NativeAssetsPanel(nativeAssetsCard_);
     assetsPanel->setObjectName(QStringLiteral("nativeAssetsPanel"));
@@ -217,13 +223,13 @@ QWidget* SettingsDialog::buildProcessingTab() {
     assetsCardLayout->addWidget(assetsPanel);
     root->addWidget(nativeAssetsCard_);
 
-    // ── Card 4: RIFE Temporal Interpolation ───────────────────────────────────
+    // ── Card 4: RIFE Temporal Interpolation ──────────────────────────────────
     QVBoxLayout* rifeCardLayout = nullptr;
     nativeRifeCard_ = makeSettingsCard(page, &rifeCardLayout);
+    rifeCardLayout->setSpacing(theme::kSpacingSmall);
 
     rifeHeading_ = new QLabel(tr("RIFE interpolation"), nativeRifeCard_);
-    rifeHeading_->setObjectName(QStringLiteral("sectionHeading"));
-    yieldCaptionWidth(rifeHeading_);
+    styleSectionHeading(rifeHeading_);
     rifeCardLayout->addWidget(rifeHeading_);
 
     nativeRife_ = new mikai::app::NativeRifeControls(nativeRifeCard_);

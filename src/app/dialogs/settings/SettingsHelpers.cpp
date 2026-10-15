@@ -5,6 +5,7 @@
 #include <player/Anime4K.hpp>
 
 #include <QCoreApplication>
+#include <QFont>
 #include <QFontMetrics>
 #include <QKeySequenceEdit>
 #include <QLineEdit>
@@ -28,6 +29,9 @@ QString shortcutGroupHeading(const QString& categoryId) {
 }
 
 int shortcutFieldWidth(const QKeySequenceEdit* edit) {
+    if (edit == nullptr) {
+        return 160;
+    }
     auto* field = edit->findChild<QLineEdit*>();
     if (field == nullptr) {
         return edit->sizeHint().width();
@@ -36,6 +40,10 @@ int shortcutFieldWidth(const QKeySequenceEdit* edit) {
     // subtree, so the advance is the one the field paints with.
     const_cast<QKeySequenceEdit*>(edit)->ensurePolished();
     field->ensurePolished();
+
+    QFont font = field->font();
+    font.setFeature(QFont::Tag("tnum"), 1);
+    field->setFont(font);
 
     const QStyle* style = field->style();
     int width =

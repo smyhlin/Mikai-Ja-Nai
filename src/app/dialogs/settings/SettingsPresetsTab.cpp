@@ -24,29 +24,39 @@ namespace mikai::app {
 
 QWidget* SettingsDialog::buildPresetsTab() {
     auto* page = new QWidget(this);
+    page->setObjectName(QStringLiteral("presetsPage"));
+    applySettingsTheme(page);
+
     auto* root = new QVBoxLayout(page);
     root->setContentsMargins(theme::kSpacingSmall, theme::kSpacingMedium, theme::kSpacingSmall,
                              theme::kSpacingMedium);
-    root->setSpacing(theme::kSpacingSmall);
+    root->setSpacing(theme::kSpacingMedium);
 
-    presetsHeading_ = new QLabel(tr("Anime4K preset shortcuts"), page);
-    presetsHeading_->setObjectName(QStringLiteral("heading"));
-    yieldCaptionWidth(presetsHeading_);
-    root->addWidget(presetsHeading_);
+    // ── Header & Search Toolbar Card ─────────────────────────────────────────
+    QVBoxLayout* headerCardLayout = nullptr;
+    QFrame* headerCard = makeSettingsCard(page, &headerCardLayout);
+    headerCardLayout->setSpacing(theme::kSpacingSmall);
+
+    presetsHeading_ = new QLabel(tr("Anime4K preset shortcuts"), headerCard);
+    stylePageHeading(presetsHeading_);
+    headerCardLayout->addWidget(presetsHeading_);
 
     presetsDescription_ = new QLabel(
         tr("Focus a field and press a key or combination with Ctrl, Alt, or Shift. "
            "The × button clears a binding. A combination can be assigned to only one "
            "preset; built-in player shortcuts are reserved."),
-        page);
-    presetsDescription_->setObjectName(QStringLiteral("muted"));
-    presetsDescription_->setWordWrap(true);
-    root->addWidget(presetsDescription_);
+        headerCard);
+    styleMutedCaption(presetsDescription_);
+    headerCardLayout->addWidget(presetsDescription_);
+
+    headerCardLayout->addWidget(makeSettingsDivider(headerCard));
 
     // Toolbar row: quick filter input + Clear all shortcuts action.
     auto* filterRow = new QHBoxLayout();
+    filterRow->setContentsMargins(0, theme::kSpacingXs, 0, 0);
     filterRow->setSpacing(theme::kSpacingSmall);
-    presetFilterEdit_ = new QLineEdit(page);
+
+    presetFilterEdit_ = new QLineEdit(headerCard);
     presetFilterEdit_->setObjectName(QStringLiteral("presetFilterEdit"));
     presetFilterEdit_->setPlaceholderText(tr("Filter presets…"));
     presetFilterEdit_->setAccessibleName(tr("Filter presets"));
@@ -54,28 +64,36 @@ QWidget* SettingsDialog::buildPresetsTab() {
     presetFilterEdit_->setMinimumHeight(theme::kSettingsControlSize);
     filterRow->addWidget(presetFilterEdit_, 1);
 
-    clearAllPresetsButton_ = new QPushButton(tr("Clear all"), page);
+    clearAllPresetsButton_ = new QPushButton(tr("Clear all"), headerCard);
     clearAllPresetsButton_->setObjectName(QStringLiteral("clearAllPresetsButton"));
     clearAllPresetsButton_->setAccessibleName(tr("Clear all preset shortcuts"));
-    clearAllPresetsButton_->setMinimumHeight(theme::kSettingsControlSize);
+    polishInteractiveControl(clearAllPresetsButton_, theme::kSettingsControlSize);
     filterRow->addWidget(clearAllPresetsButton_, 0);
-    root->addLayout(filterRow);
+    headerCardLayout->addLayout(filterRow);
 
-    presetError_ = new QLabel(page);
+    presetError_ = new QLabel(headerCard);
     presetError_->setObjectName(QStringLiteral("status"));
     presetError_->setWordWrap(true);
+    yieldCaptionWidth(presetError_);
+    styleStatusBanner(presetError_, QStringLiteral("danger"));
     presetError_->setStyleSheet(QStringLiteral("color: %1;").arg(QLatin1String(theme::kDanger)));
     presetError_->hide();
-    root->addWidget(presetError_);
+    headerCardLayout->addWidget(presetError_);
 
+    root->addWidget(headerCard);
+
+    // ── Scrollable Preset Category & Shortcut Bindings List ──────────────────
     auto* scroll = new QScrollArea(page);
+    scroll->setObjectName(QStringLiteral("presetsScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
     auto* content = new QWidget(scroll);
+    content->setObjectName(QStringLiteral("presetsPage"));
     auto* list = new QVBoxLayout(content);
-    list->setContentsMargins(0, 0, theme::kSpacingSmall, 0);
-    list->setSpacing(theme::kSpacingXs);
+    list->setContentsMargins(0, 0, theme::kSpacingXs, 0);
+    list->setSpacing(theme::kSpacingSmall);
 
     QSettings settings;
     settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
@@ -86,33 +104,39 @@ QWidget* SettingsDialog::buildPresetsTab() {
         const QString label = mplayer::anime4k::displayLabel(mode.mode);
         const QString headingText = shortcutGroupHeading(mode.category);
         if (!headingText.isEmpty() && headingText != headingForCategory) {
+            if (!headingForCategory.isEmpty()) {
+                list->addSpacing(theme::kSpacingXs);
+            }
             headingForCategory = headingText;
             auto* groupHeading = new QLabel(headingText, content);
-            groupHeading->setObjectName(QStringLiteral("sectionHeading"));
+            styleSectionHeading(groupHeading);
             list->addWidget(groupHeading);
             presetGroupHeadings_.append({mode.category, groupHeading});
         }
 
-        auto* rowWidget = new QWidget(content);
+        auto* rowWidget = new QFrame(content);
         rowWidget->setObjectName(QStringLiteral("presetShortcutRow"));
         auto* row = new QHBoxLayout(rowWidget);
-        row->setContentsMargins(theme::kSpacingMedium, theme::kSpacingXs,
-                                theme::kSpacingMedium, theme::kSpacingXs);
+        row->setContentsMargins(theme::kSpacingMedium, theme::kSpacingSmall,
+                                theme::kSpacingMedium, theme::kSpacingSmall);
         row->setSpacing(theme::kSpacingMedium);
 
         auto* name = new QLabel(label, rowWidget);
+        name->setObjectName(QStringLiteral("SettingsFormLabel"));
         name->setToolTip(mode.hint);
         name->setWordWrap(true);
         name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        row->addWidget(name, 1);
+        row->addWidget(name, 1, Qt::AlignVCenter);
 
         auto* edit = new QKeySequenceEdit(rowWidget);
         edit->setMaximumSequenceLength(1);
         edit->setClearButtonEnabled(true);
-        edit->setMinimumHeight(theme::kSettingsControlSize);
+        polishInteractiveControl(edit, theme::kSettingsControlSize);
+        applyTabularNumerals(edit);
         edit->setFixedWidth(shortcutFieldWidth(edit));
         if (auto* input = edit->findChild<QLineEdit*>()) {
             input->setPlaceholderText(tr("Press a key"));
+            input->setAlignment(Qt::AlignCenter);
         }
         const QString stored = settings.value(mode.id).toString();
         if (!stored.isEmpty()) {
@@ -132,6 +156,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
                 }
             }
         }
+        rowWidget->setProperty("hasBinding", !edit->keySequence().isEmpty());
         edit->setAccessibleName(tr("Shortcut for %1").arg(label));
         edit->setToolTip(mode.hint);
         name->setBuddy(edit);
@@ -140,19 +165,24 @@ QWidget* SettingsDialog::buildPresetsTab() {
         list->addWidget(rowWidget);
         presetRows_.append({mode.id, label, mode.category, edit, name, rowWidget, mode.mode});
         connect(edit, &QKeySequenceEdit::keySequenceChanged, this,
-                [this, edit, label, previous = edit->keySequence()](const QKeySequence& sequence) mutable {
+                [this, edit, rowWidget, label,
+                 previous = edit->keySequence()](const QKeySequence& sequence) mutable {
                     if (!sequence.isEmpty()) {
                         const mplayer::shell::ShortcutConflict conflict =
                             mplayer::shell::findShortcutConflict(sequence, shortcutClaims(edit));
                         if (conflict.blocked) {
                             QSignalBlocker blocker(edit);
                             edit->setKeySequence(previous);
+                            rowWidget->setProperty("hasBinding", !previous.isEmpty());
+                            repolishWidget(rowWidget);
                             showPresetError(presetConflictMessage(
                                 conflict, mplayer::shell::shortcutClaimKey(sequence), label));
                             return;
                         }
                     }
                     previous = sequence;
+                    rowWidget->setProperty("hasBinding", !sequence.isEmpty());
+                    repolishWidget(rowWidget);
                     presetError_->clear();
                     presetError_->hide();
                 });
@@ -168,6 +198,10 @@ QWidget* SettingsDialog::buildPresetsTab() {
         for (const PresetRow& row : presetRows_) {
             if (row.edit != nullptr) {
                 row.edit->clear();
+            }
+            if (row.container != nullptr) {
+                row.container->setProperty("hasBinding", false);
+                repolishWidget(row.container);
             }
         }
         presetError_->clear();
@@ -283,6 +317,5 @@ void SettingsDialog::retranslatePresetsTab() {
         filterPresetRows(presetFilterEdit_->text());
     }
 }
-
 
 }  // namespace mikai::app

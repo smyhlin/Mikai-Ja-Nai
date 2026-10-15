@@ -207,8 +207,9 @@ BenchmarkSampleResult runBenchmarkSample(
                 const int renderError = renderer.render(static_cast<int>(framebuffer.handle()),
                                                         targetSize.width(), targetSize.height(), 0);
                 if (renderError < 0) {
-                    result.error = withDetail(PlaybackText::tr("Rendering failed: %1")
-                                                 .arg(QString::fromStdString(handle.describeError(renderError))));
+                    result.error = withDetail(
+                        PlaybackText::tr("Rendering failed: %1")
+                            .arg(QString::fromStdString(handle.describeError(renderError))));
                     break;
                 }
                 gl->glFinish();
@@ -232,7 +233,8 @@ BenchmarkSampleResult runBenchmarkSample(
                 result.measuredFrames = sample.frames;
                 result.sampleSeconds = sample.seconds(clock.nsecsElapsed());
                 if (sample.frames == 0) {
-                    result.error = PlaybackText::tr("No new video frames were rendered during measurement.");
+                    result.error =
+                        PlaybackText::tr("No new video frames were rendered during measurement.");
                 } else {
                     result.fps = sample.frames / result.sampleSeconds;
                 }
@@ -248,7 +250,8 @@ BenchmarkSampleResult runBenchmarkSample(
     } catch (const mplayer::MpvError& error) {
         result.error = withDetail(PlaybackText::tr("mpv: %1").arg(QString::fromUtf8(error.what())));
     } catch (const std::exception& error) {
-        result.error = withDetail(PlaybackText::tr("Benchmark failed: %1").arg(QString::fromUtf8(error.what())));
+        result.error = withDetail(
+            PlaybackText::tr("Benchmark failed: %1").arg(QString::fromUtf8(error.what())));
     }
     return result;
 }

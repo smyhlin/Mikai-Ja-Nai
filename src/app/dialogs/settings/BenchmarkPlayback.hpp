@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <native/status/NativeTypes.hpp>
@@ -36,12 +37,12 @@ struct BenchmarkFrameSample {
     qint64 startedAtNs = -1;
     int frames = 0;
 
-    void reset() {
+    constexpr void reset() noexcept {
         startedAtNs = -1;
         frames = 0;
     }
 
-    void recordFrame(qint64 nowNs) {
+    constexpr void recordFrame(qint64 nowNs) noexcept {
         if (startedAtNs < 0) {
             startedAtNs = nowNs;
             return;
@@ -49,8 +50,8 @@ struct BenchmarkFrameSample {
         ++frames;
     }
 
-    bool started() const { return startedAtNs >= 0; }
-    double seconds(qint64 nowNs) const {
+    constexpr bool started() const noexcept { return startedAtNs >= 0; }
+    constexpr double seconds(qint64 nowNs) const noexcept {
         return started() ? static_cast<double>(nowNs - startedAtNs) / 1e9 : 0.0;
     }
 };

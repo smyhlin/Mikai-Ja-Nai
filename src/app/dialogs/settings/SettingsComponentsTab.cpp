@@ -1,5 +1,7 @@
 #include "dialogs/SettingsDialog.hpp"
 
+#include "dialogs/settings/SettingsUi.hpp"
+
 #include <dialogs/ComponentStoreTab.hpp>
 
 #include <QScrollArea>
@@ -9,10 +11,14 @@ namespace mikai::app {
 
 QWidget* SettingsDialog::buildComponentsTab() {
     auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("componentsScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    applySettingsTheme(scroll);
 
     auto* page = new QWidget(scroll);
+    page->setObjectName(QStringLiteral("componentsPage"));
     auto* root = new QVBoxLayout(page);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -37,6 +43,5 @@ QWidget* SettingsDialog::buildComponentsTab() {
     componentsScroll_ = scroll;
     return scroll;
 }
-
 
 }  // namespace mikai::app
