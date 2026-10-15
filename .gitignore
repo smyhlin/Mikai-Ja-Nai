@@ -9,6 +9,7 @@ dist/
 
 # Local scratch / UI review screenshots
 *.png
+*.zip
 
 # Throwaway measurement and verification artifacts
 _scratch_*.py
