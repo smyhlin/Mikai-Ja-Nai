@@ -14,7 +14,7 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
   - Auto-hiding HUD controls on both playback and idle paused state, timeline thumbnail/chapter scrubbing, audio & subtitle track popups with live probed quality badges (`1080p`, `720p`, etc.), episode drawer (`S`), Picture-in-Picture mode, and multi-level `Esc` navigation.
 - **Real-Time Video Enhancement Pipelines:**
   - **Anime4K GLSL Shaders:** 6 composite modes (`A`, `B`, `C`, `A+A`, `B+B`, `C+A` in Fast and High Quality variants) plus individual Restore, Upscale, Denoise, Deblur, Darken, and Thin shaders.
-  - **AnimeJaNai (`3.7.0` / Aji `v0.9.0` ABI-8):** Built-in adaptive profiles (`Quality`, `Balanced`, `Performance`), 5 pinned HD/SD spatial ONNX models, and 47 pinned RIFE frame-interpolation models (`v4.7`–`v4.26`).
+  - **AnimeJaNai (`3.7.0` / Aji `v0.9.0` ABI-8):** Powered by the [mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai) project and the [animejanai-inference (AJI)](https://github.com/the-database/animejanai-inference) stack. Built-in adaptive profiles (`Quality`, `Balanced`, `Performance`), 5 pinned HD/SD spatial ONNX models, and 47 pinned RIFE frame-interpolation models (`v4.7`–`v4.26`).
   - **Prepared Native Bundle Track:** Out-of-process model inspection (`native_inspect`), TensorRT engine preparation (`mikai_native_prep`), numerical verification (`mikai_native_verify`), and bundle verification (`mikai_bundle`).
 - **Workstation Compare Window (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `CompareRenderer`):**
   - Side-by-side and split-screen visual inspection of **Original** vs **Anime4K** vs **AnimeJaNai** vs **Native** models on the exact paused video frame.
@@ -135,3 +135,14 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 - `tests/` — 35 hermetic Qt Test suites (`tests/cpp/`) and CMake contract tests (`tests/cmake/`, `tests/fixtures/`).
 - `translations/` — Ukrainian translation catalog (`translations/mikai_uk.ts`).
 - `docs.md` — Reference documentation for the Mikai Public API v1.
+
+---
+
+## Acknowledgements & Credits
+
+Special thanks to:
+- **[mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai)** by the-database for the neural anime upscaling and frame interpolation architecture, component catalog, and profiles.
+- **[animejanai-inference (AJI)](https://github.com/the-database/animejanai-inference)** for the high-performance ABI-8 TensorRT and DirectML video filter inference stack.
+- **[Anime4K](https://github.com/bloc97/Anime4K)** by bloc97 for the open-source real-time anime upscaling and restoration GLSL shaders.
+- **[mpv](https://mpv.io)** and **[libmpv](https://github.com/mpv-player/mpv)** for the core video playback engine and OpenGL render context.
+- **[Mikai.me](https://mikai.me)** for the public Ukrainian anime streaming catalog API.
