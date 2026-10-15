@@ -3897,6 +3897,170 @@ Active: %1 · queued: %2</source>
             <source>plan is not available</source>
             <translation>план недоступний</translation>
         </message>
+        <message>
+            <source>Off-screen · real pipeline</source>
+            <translation>Позаекранний режим · реальний конвеєр</translation>
+        </message>
+        <message>
+            <source>Choose clips and models to compare. Each selected clip/model pair is one run.</source>
+            <translation>Виберіть кліпи й моделі для порівняння. Кожна вибрана пара «кліп/модель» — окремий запуск.</translation>
+        </message>
+        <message>
+            <source>Test matrix</source>
+            <translation>Матриця тестів</translation>
+        </message>
+        <message>
+            <source>Video clips</source>
+            <translation>Відеокліпи</translation>
+        </message>
+        <message>
+            <source>Clear selection</source>
+            <translation>Очистити вибір</translation>
+        </message>
+        <message>
+            <source>Enhancement models</source>
+            <translation>Моделі покращення</translation>
+        </message>
+        <message>
+            <source>Select all</source>
+            <translation>Вибрати все</translation>
+        </message>
+        <message>
+            <source>Filter by model or group</source>
+            <translation>Фільтр за моделлю або групою</translation>
+        </message>
+        <message>
+            <source>Filter benchmark models</source>
+            <translation>Фільтр моделей бенчмарку</translation>
+        </message>
+        <message>
+            <source>Available benchmark models</source>
+            <translation>Доступні моделі бенчмарку</translation>
+        </message>
+        <message>
+            <source>Include the unfiltered baseline</source>
+            <translation>Додати базовий конвеєр без обробки</translation>
+        </message>
+        <message>
+            <source>Run benchmark</source>
+            <translation>Запустити бенчмарк</translation>
+        </message>
+        <message>
+            <source>Results</source>
+            <translation>Результати</translation>
+        </message>
+        <message>
+            <source>Ready</source>
+            <translation>Готово</translation>
+        </message>
+        <message>
+            <source>Benchmark run progress</source>
+            <translation>Прогрес бенчмарку</translation>
+        </message>
+        <message>
+            <source>Ready when you are.</source>
+            <translation>Готово до запуску.</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build progress; indeterminate</source>
+            <translation>Прогрес збирання рушія TensorRT; відсоток не визначено</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build elapsed · %1</source>
+            <translation>Час збирання рушія TensorRT · %1</translation>
+        </message>
+        <message>
+            <source>For TensorRT, FPS measurement waits for the backend to report the selected slot configured. Engine-build time is shown separately and excluded.</source>
+            <translation>Для TensorRT вимірювання FPS чекає, доки backend повідомить про налаштування вибраного слота. Час збирання рушія показано окремо й не враховано.</translation>
+        </message>
+        <message>
+            <source>Run a benchmark to see throughput for each selected clip and model.</source>
+            <translation>Запустіть бенчмарк, щоб побачити швидкість для кожного вибраного кліпу й моделі.</translation>
+        </message>
+        <message>
+            <source>Model</source>
+            <translation>Модель</translation>
+        </message>
+        <message>
+            <source>Clip</source>
+            <translation>Кліп</translation>
+        </message>
+        <message>
+            <source>Throughput</source>
+            <translation>Кадрів за секунду</translation>
+        </message>
+        <message>
+            <source>%1 / %2 selected</source>
+            <translation>Вибрано %1 з %2</translation>
+        </message>
+        <message>
+            <source>%1 clips · %2 models · %3 runs</source>
+            <translation>Кліпів: %1 · моделей: %2 · запусків: %3</translation>
+        </message>
+        <message>
+            <source>Benchmark running · %1 / %2</source>
+            <translation>Бенчмарк виконується · %1 / %2</translation>
+        </message>
+        <message>
+            <source>Starting benchmark…</source>
+            <translation>Запуск бенчмарку…</translation>
+        </message>
+        <message>
+            <source>Building TensorRT engine · %1</source>
+            <translation>Збирання рушія TensorRT · %1</translation>
+        </message>
+        <message>
+            <source>TensorRT engine ready after %1</source>
+            <translation>Рушій TensorRT готовий за %1</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build failed after %1</source>
+            <translation>Збірка рушія TensorRT не вдалася; минуло %1</translation>
+        </message>
+        <message>
+            <source>Engine ready; measuring throughput · %1</source>
+            <translation>Рушій готовий; вимірювання швидкості · %1</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build failed · %1</source>
+            <translation>Збірка рушія TensorRT не вдалася · %1</translation>
+        </message>
+        <message>
+            <source>Complete · %1 results</source>
+            <translation>Завершено · результатів: %1</translation>
+        </message>
+        <message>
+            <source>Complete · %1 results · %2 failed</source>
+            <translation>Завершено · результатів: %1 · невдалих: %2</translation>
+        </message>
+        <message>
+            <source>Benchmark finished.</source>
+            <translation>Бенчмарк завершено.</translation>
+        </message>
+        <message>
+            <source>Benchmark finished with %1 failed runs.</source>
+            <translation>Бенчмарк завершено, невдалих запусків: %1.</translation>
+        </message>
+        <message>
+            <source>Loading clip · %1</source>
+            <translation>Завантаження кліпу · %1</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build failed</source>
+            <translation>Не вдалося зібрати рушій TensorRT</translation>
+        </message>
+        <message>
+            <source>TensorRT engine build timed out</source>
+            <translation>Перевищено час очікування збірки рушія TensorRT</translation>
+        </message>
+        <message>
+            <source>TensorRT configuration was not reported</source>
+            <translation>Конфігурацію TensorRT не підтверджено</translation>
+        </message>
+        <message>
+            <source>Measuring throughput · %1</source>
+            <translation>Вимірювання швидкості · %1</translation>
+        </message>
     </context>
     <context>
         <name>mikai::app::TitleCard</name>
