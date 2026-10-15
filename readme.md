@@ -115,6 +115,18 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 ---
 
+## Playback Benchmark
+
+Settings → Benchmark compares selected clips and models, with an optional unfiltered baseline. Search and group selection keep their choices while filtering; the run action stays visible while the page scrolls.
+
+Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
+
+TensorRT measurement waits for the selected slot's configured report and real video output. Engine compilation has separate indeterminate progress and elapsed time; compilation time is excluded, and compilation during a sample discards and restarts that sample. Select a failed result to read its full error.
+
+The opt-in `benchmark_probe` drives the real Settings tab with a baseline and Anime4K model. Run its executable from the deployed directory so the mpv runtime, models, shaders, and clips resolve. `--model <catalogue-id>` selects a native model, `--size WIDTHxHEIGHT` exercises another window size, and `--expect-failure` verifies an explicitly unsupported model's visible error.
+
+---
+
 ## Configuration & Data Locations
 
 - **API Key (`.env` or Settings):** Optional `API_KEY=<token>` in `.env` (or configured in **Settings → General**) raises rate limits against `https://api.mikai.me/public/v1`.
@@ -127,7 +139,7 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 - `src/backend/` — Domain models (`Models.hpp`), API client (`MikaiClient`), HLS stream extractors (`Streams`), verified downloader (`Downloads`), runtime discovery (`Runtime`), and diagnostic scrubbing (`Diagnostics`).
 - `src/gui/` — Shared GUI utilities (`Clipboard`).
-- `src/app/` — Main window (`MainWindow`), pages (`SearchPage`, `TitlePage`, `EpisodeGrid`), dialogs (`SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`); Settings includes a searchable, grouped Benchmark matrix for local clips and models. Runs use off-screen mpv, show actual TensorRT engine builds with indeterminate progress and elapsed time, wait for the backend's configured-slot report before measuring, and keep build time out of FPS results. Also contains custom widgets, dark QSS theme (`Theme`, `Metrics`), and worker pool (`Runner`).
+- `src/app/` — Main window (`MainWindow`), pages (`SearchPage`, `TitlePage`, `EpisodeGrid`), dialogs (`SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`), and the searchable, grouped Benchmark workspace (`SettingsBenchmarkTab`, `BenchmarkPlayback`). Also contains custom widgets, dark QSS theme (`Theme`, `Metrics`), and worker pool (`Runner`).
 - `src/player/` — `libmpv` wrapper (`MpvApi`, `MpvRenderContext`, `VideoSurface`), player chrome (`PlayerShell`, `PlayerDialog`, `PlayerPopups`, `ShellWidgets`), `Anime4K` shader resolver, and `CompareWindow` (`CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`).
 - `src/player/native/` — Native bundle, component catalog/store/provisioning, GPU NVML probe, ONNX model inventory, preparation pipeline, and runtime status controller.
 - `src/probes/` — Standalone GUI and headless verification probes (`compare_probe`, `shell_probe`, `dialog_probe`, `native_component_probe`, etc.).
