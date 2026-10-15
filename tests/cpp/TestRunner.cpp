@@ -7,6 +7,8 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDeadlineTimer>
+#include <QtCore/QFile>
+#include <QtCore/QTemporaryFile>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QEventLoop>
 #include <QtCore/QMutex>
