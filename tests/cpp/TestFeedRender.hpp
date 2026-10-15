@@ -24,6 +24,12 @@ class TestFeedRender : public QObject {
   // The feed's blocks are driven by /anime. When it answers, the page must hold
   // real cards, not a retry affordance.
   void theHomeFeedRendersItsCards();
+  void benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent();
+  // The benchmark's model search filters by model and by group, case
+  // insensitively, and clearing it restores every row and every selection.
+  void benchmarkModelSearchFiltersRowsAndRestoresSelections();
+  void benchmarkEngineBuildIndicatorsStartHiddenAndAreIndeterminate();
+  void theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigured();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();
 
   // A title page's episode pills come from the release payload. When it answers,

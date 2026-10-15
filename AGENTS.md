@@ -24,7 +24,7 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/TestLaye
      - `status/` (`NativeFilterCommand`, `NativeMenu`, `NativePlaybackController`, `NativeStatus`, `NativeTypes`)
 4. **`src/app/` (`mikai::app`) — Application Pages, Settings & Worker Dispatch:**
    - `MainWindow`, `SearchPage`, `TitlePage`, `EpisodeGrid`.
-   - `SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`.
+   - `SettingsDialog` (General, Presets, Processing, Components and the grouped, multi-select Benchmark tab), `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`.
    - `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `stream`, `transfer`, `cover`, `probe`) and `Runner::GuiDispatch` (`runner.post()`).
 
 ---

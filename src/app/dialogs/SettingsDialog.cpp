@@ -107,7 +107,9 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
         tabs_->setCurrentWidget(presetsTab_);
     }
     connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
-        if (tabs_->widget(index) == componentsTab_) emit componentsTabOpened(this);
+        QWidget* current = tabs_->widget(index);
+        if (current == componentsTab_) emit componentsTabOpened(this);
+        if (current == benchmarkTab_) refreshBenchmarkCatalogue();
     });
     root->addWidget(tabs_, 1);
 

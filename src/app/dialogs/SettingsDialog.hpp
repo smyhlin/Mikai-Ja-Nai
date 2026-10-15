@@ -8,6 +8,7 @@
 #include <player/ProcessingSettingsIntent.hpp>
 
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <functional>
 #include <QMap>
@@ -23,13 +24,15 @@ class QFrame;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
-class QListWidget;
-class QListWidgetItem;
-class QPlainTextEdit;
+class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QStackedWidget;
 class QTabWidget;
+class QTableWidget;
 class QTimer;
+class QTreeWidget;
+class QTreeWidgetItem;
 
 namespace mikai::backend {
 class MikaiClient;
@@ -192,16 +195,17 @@ private:
     /// Resolves one benchmark clip name against the dist layout, the source tree
     /// beside the build directory, and the current working directory. Empty when
     /// the clip is nowhere to be found.
-    QString locateBenchmarkClip(const QString& name) const;
-    /// Repopulates the benchmark lists from the live catalogues: the Anime4K
-    /// presets, the official AnimeJaNai presets, and the private spatial/RIFE
-    /// models. Called when the tab is built and whenever it is re-shown, so a
-    /// newly acquired model appears without reopening Settings.
+    static QString locateBenchmarkClip(const QString& name);
+    /// Repopulates the grouped benchmark model tree from the live Anime4K,
+    /// AnimeJaNai, spatial and RIFE catalogues. Called when the tab is built and
+    /// whenever it is re-shown, so a newly acquired model appears immediately.
     void refreshBenchmarkCatalogue();
-    /// The catalogue id behind one row of the model list, empty for the none row.
-    QString benchmarkModelId(const class QListWidgetItem* item) const;
-    /// The clip file name behind one row of the video list.
-    QString benchmarkClipName(const class QListWidgetItem* item) const;
+    /// The catalogue id carried by a checkable benchmark model row.
+    QString benchmarkModelId(const QTreeWidgetItem* item) const;
+    /// The clip file name behind one clip checkbox.
+    QString benchmarkClipName(const QCheckBox* checkbox) const;
+    void updateBenchmarkSelectionSummary();
+    void filterBenchmarkModels(const QString& query);
 
     /// Detaches an adopted Components tab before this dialog deletes its children.
     void releaseAdoptedComponentsTab();
@@ -303,16 +307,36 @@ private:
     QWidget* componentsTab_ = nullptr;
     QWidget* benchmarkTab_ = nullptr;
     QScrollArea* benchmarkScroll_ = nullptr;
-    QListWidget* benchmarkVideoList_ = nullptr;
-    QListWidget* benchmarkModelList_ = nullptr;
+    QVector<QCheckBox*> benchmarkClipChecks_;
+    QLineEdit* benchmarkModelSearch_ = nullptr;
+    QTreeWidget* benchmarkModelTree_ = nullptr;
     QCheckBox* benchmarkRawBox_ = nullptr;
     QPushButton* benchmarkRunButton_ = nullptr;
+    QPushButton* benchmarkSelectAllClips_ = nullptr;
     QPushButton* benchmarkSelectAllModels_ = nullptr;
-    QPlainTextEdit* benchmarkResults_ = nullptr;
+    QProgressBar* benchmarkProgress_ = nullptr;
+    QProgressBar* benchmarkEngineProgress_ = nullptr;
+    QTimer* benchmarkEngineTimer_ = nullptr;
+    QElapsedTimer benchmarkEngineBuildElapsed_;
+    QStackedWidget* benchmarkResultStack_ = nullptr;
+    QTableWidget* benchmarkResults_ = nullptr;
+    QLabel* benchmarkEmptyState_ = nullptr;
+    QLabel* benchmarkActivity_ = nullptr;
+    QLabel* benchmarkEngineElapsedLabel_ = nullptr;
     QLabel* benchmarkNote_ = nullptr;
+    QLabel* benchmarkMatrixTitle_ = nullptr;
     QLabel* benchmarkHeading_ = nullptr;
+    QLabel* benchmarkDescription_ = nullptr;
+    QLabel* benchmarkMode_ = nullptr;
     QLabel* benchmarkVideoTitle_ = nullptr;
     QLabel* benchmarkModelTitle_ = nullptr;
+    QLabel* benchmarkClipCount_ = nullptr;
+    QLabel* benchmarkModelCount_ = nullptr;
+    QLabel* benchmarkRunSummary_ = nullptr;
+    QLabel* benchmarkRunStatus_ = nullptr;
+    QLabel* benchmarkResultsTitle_ = nullptr;
+    bool benchmarkSelectionUpdating_ = false;
+    bool benchmarkRunning_ = false;
     QScrollArea* generalScroll_ = nullptr;
     QScrollArea* presetsScroll_ = nullptr;
     QScrollArea* processingScroll_ = nullptr;

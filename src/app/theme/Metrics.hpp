@@ -27,6 +27,10 @@ inline constexpr int kSettingsPresetListMaxHeight = 440;
 // identifier cannot widen the page; the popup still shows the entry in full.
 inline constexpr int kSettingsChoiceLengthChars = 30;
 inline constexpr int kNativeAssetsTableMaxHeight = 160;
+inline constexpr int kBenchmarkSelectorHeight = 256;
+inline constexpr int kBenchmarkResultsHeight = 208;
+inline constexpr int kBenchmarkClipRowHeight = 36;
+inline constexpr int kBenchmarkTreeIndentation = 16;
 inline constexpr int kComponentTableKindColumnWidth = 116;
 inline constexpr int kComponentTableSizeColumnWidth = 76;
 inline constexpr int kComponentTableStatusColumnWidth = 116;
