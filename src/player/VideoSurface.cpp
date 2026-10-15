@@ -23,6 +23,7 @@
 #include "MpvRenderContext.hpp"
 #include "backend/Diagnostics.hpp"
 #include "native/bundle/NativeBundle.hpp"
+#include "native/components/AnimeJanaiBuildLog.hpp"
 #include "native/status/NativeFilterCommand.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 
@@ -661,10 +662,10 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         animeJanaiEpoch_ != mpv_->sourceEpoch()) return;
 
     const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
-    if (animeJanaiPlan_.backend == native::Backend::TensorRT &&
-        (lower.contains(QStringLiteral("building tensorrt engine for ")) ||
-         lower.contains(QStringLiteral("building engine:")) ||
-         lower.contains(QStringLiteral("background engine build:")))) {
+    const native::AnimeJanaiBuildLogEvent buildLogEvent =
+        native::classifyAnimeJanaiBuildLog(prefix, line, animeJanaiPlan_.backend,
+                                           animeJanaiPlan_.slot);
+    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtBuildStarted) {
         if (!animeJanaiEngineBuildActive_) {
             animeJanaiBuildPollingRefused_ = false;
             animeJanaiBuildNextPollMs_ = 0;
@@ -720,8 +721,7 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
                            .arg(targetFps, 0, 'f', 2);
         }
     } else {
-        const QString marker = QStringLiteral("configured slot %1:").arg(animeJanaiPlan_.slot);
-        if (lower.contains(marker) && lower.contains(QStringLiteral(" -> "))) {
+        if (buildLogEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
             int inW = videoWidth_ > 0 ? videoWidth_ : static_cast<int>(std::lround(observedVideoWidth_));
             int inH = videoHeight_ > 0 ? videoHeight_ : static_cast<int>(std::lround(observedVideoHeight_));
             int outW = inW * 2;
