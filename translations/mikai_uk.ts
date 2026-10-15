@@ -1851,37 +1851,37 @@
 <context>
     <name>SettingsDialog</name>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="88"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="96"/>
         <source>%1 (not available)</source>
         <translation>%1 (недоступно)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="103"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="111"/>
         <source>Combination %1 is already assigned to %2.</source>
         <translation>Комбінація %1 вже призначена для %2.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="98"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="106"/>
         <source>Key %1 is reserved by the player and cannot be assigned to preset “%2”.</source>
         <translation>Клавіша %1 зарезервована плеєром і не може бути призначена пресету «%2».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="116"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="124"/>
         <source>Saved combination %1 is already assigned to %2; it was kept there and cleared for “%3”.</source>
         <translation>Збережена комбінація %1 вже призначена для %2; її збережено там і очищено для «%3».</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="111"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="119"/>
         <source>Saved key %1 is reserved by the player; the binding for “%2” was cleared.</source>
         <translation>Збережена клавіша %1 зарезервована плеєром; прив’язку для «%2» було очищено.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="79"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="87"/>
         <source>preset “%1”</source>
         <translation>пресет «%1»</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="84"/>
+        <location filename="../src/app/dialogs/settings/SettingsHelpers.cpp" line="92"/>
         <source>the player</source>
         <translation>плеєр</translation>
     </message>
@@ -1998,32 +1998,32 @@
         <translation>Не вдалося прочитати відомості про відтворений кадр.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="210"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="211"/>
         <source>Rendering failed: %1</source>
         <translation>Помилка рендерингу: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="218"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="219"/>
         <source>OpenGL rendering failed (0x%1).</source>
         <translation>Помилка рендерингу OpenGL (0x%1).</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="227"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="228"/>
         <source>Measuring throughput</source>
         <translation>Вимірювання швидкості</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="235"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="237"/>
         <source>No new video frames were rendered during measurement.</source>
         <translation>Під час вимірювання не відтворено жодного нового відеокадру.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="249"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="251"/>
         <source>mpv: %1</source>
         <translation>mpv: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="251"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="254"/>
         <source>Benchmark failed: %1</source>
         <translation>Помилка бенчмарку: %1</translation>
     </message>
@@ -3824,96 +3824,90 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="100"/>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="289"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="90"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="560"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="107"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="630"/>
         <source>Benchmark</source>
         <translation>Бенчмарк</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="95"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="283"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="113"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="318"/>
         <source>Test API token</source>
         <translation>Перевірити токен API</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="51"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="254"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="61"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="288"/>
         <source>Filter presets…</source>
         <translation>Фільтр пресетів…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="52"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="255"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="62"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="289"/>
         <source>Filter presets</source>
         <translation>Фільтр пресетів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="57"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="258"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="67"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="292"/>
         <source>Clear all</source>
         <translation>Очистити все</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="59"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="259"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="69"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="293"/>
         <source>Clear all preset shortcuts</source>
         <translation>Очистити всі комбінації клавіш пресетів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="264"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="299"/>
         <source>
 Active: %1 · queued: %2</source>
         <translation>
 Активні: %1 · у черзі: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="266"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="301"/>
         <source> · requests will continue automatically when the limit resets</source>
         <translation> · запити продовжаться автоматично після скидання ліміту</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="261"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="296"/>
         <source> · resets in %1 s</source>
         <translation> · скидання через %1 с</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="73"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="276"/>
-        <source>&lt;a style=&quot;color: %1; text-decoration: none;&quot; href=&quot;https://mikai.me/user/developers&quot;&gt;Get a key from the developer dashboard on mikai.me ↗&lt;/a&gt;</source>
-        <translation>&lt;a style=&quot;color: %1; text-decoration: none;&quot; href=&quot;https://mikai.me/user/developers&quot;&gt;Отримати ключ у кабінеті розробника на mikai.me ↗&lt;/a&gt;</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="106"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="285"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="131"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="320"/>
         <source>API usage</source>
         <translation>Використання API</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="63"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="274"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="76"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="309"/>
         <source>An API key raises the limit from 60 to 300 requests per minute and is stored locally in the .env file.</source>
         <translation>Ключ API підвищує ліміт із 60 до 300 запитів на хвилину та зберігається локально у файлі .env.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="32"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="248"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="40"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="282"/>
         <source>Anime4K preset shortcuts</source>
         <translation>Гарячі клавіші пресетів Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="228"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="261"/>
         <source>Anonymous access (limit: %1/min)</source>
         <translation>Анонімний доступ (ліміт: %1/хв)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="178"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="296"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="197"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="332"/>
         <source>Applied immediately to the running windows, including the open player.</source>
         <translation>Застосовується миттєво до відкритих вікон, включно з активним плеєром.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="119"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="422"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="122"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="428"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
@@ -3924,7 +3918,7 @@ Active: %1 · queued: %2</source>
         <translation>Скасувати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="204"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="236"/>
         <source>Checking token…</source>
         <translation>Перевірка токена…</translation>
     </message>
@@ -3935,30 +3929,36 @@ Active: %1 · queued: %2</source>
         <translation>Компоненти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="244"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="279"/>
         <source>Connection error: %1</source>
         <translation>Помилка з’єднання: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="126"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="288"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="155"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="323"/>
         <source>Disabled sections are not loaded and do not use API requests. Search and title pages are always available.</source>
         <translation>Вимкнені розділи не завантажуються й не витрачають запити API. Пошук і сторінки тайтлів доступні завжди.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="168"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="302"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="85"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="311"/>
+        <source>&lt;a style=&quot;color: %1; text-decoration: none; font-weight: 500;&quot; href=&quot;https://mikai.me/user/developers&quot;&gt;Get a key from the developer dashboard on mikai.me ↗&lt;/a&gt;</source>
+        <translation>&lt;a style=&quot;color: %1; text-decoration: none; font-weight: 500;&quot; href=&quot;https://mikai.me/user/developers&quot;&gt;Отримати ключ у кабінеті розробника на mikai.me ↗&lt;/a&gt;</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="206"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="338"/>
         <source>English</source>
         <translation>Англійська (English)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="238"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="272"/>
         <source>Error: %1</source>
         <translation>Помилка: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="38"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="250"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="45"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="284"/>
         <source>Focus a field and press a key or combination with Ctrl, Alt, or Shift. The × button clears a binding. A combination can be assigned to only one preset; built-in player shortcuts are reserved.</source>
         <translation>Виберіть поле та натисніть клавішу або комбінацію з Ctrl, Alt чи Shift. Кнопка × очищає прив’язку. Комбінацію можна призначити лише одному пресету; вбудовані клавіші плеєра зарезервовані.</translation>
     </message>
@@ -3969,96 +3969,96 @@ Active: %1 · queued: %2</source>
         <translation>Загальні</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="121"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="286"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="150"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="321"/>
         <source>Home page sections</source>
         <translation>Розділи головної сторінки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="159"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="170"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="295"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="304"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="192"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="208"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="330"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="340"/>
         <source>Interface language</source>
         <translation>Мова інтерфейсу</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="236"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="270"/>
         <source>Invalid token</source>
         <translation>Недійсний токен</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="225"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="258"/>
         <source>Key is valid (limit: %1/min)</source>
         <translation>Ключ дійсний (ліміт: %1/хв)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="223"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="256"/>
         <source>Key is valid (user: %1, limit: %2/min)</source>
         <translation>Ключ дійсний (користувач: %1, ліміт: %2/хв)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="253"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="288"/>
         <source>Limit: %1 requests/min · waiting for the next API response to update the counter</source>
         <translation>Ліміт: %1 запитів/хв · очікування наступної відповіді API для оновлення лічильника</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="55"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="85"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="272"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="281"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="69"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="101"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="307"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="316"/>
         <source>Mikai API access token</source>
         <translation>Токен доступу Mikai API</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="84"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="447"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="86"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="453"/>
         <source>Native</source>
         <translation>Нативний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="107"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="426"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="109"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="432"/>
         <source>Native backend</source>
         <translation>Нативний бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="170"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="452"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="176"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="458"/>
         <source>Native model assets</source>
         <translation>Нативні моделі та артефакти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="441"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="447"/>
         <source>Native processing availability</source>
         <translation>Доступність нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="147"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="151"/>
         <source>Native processing status</source>
         <translation>Стан нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="123"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="427"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="126"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="433"/>
         <source>Native recipe</source>
         <translation>Нативний рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="397"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="439"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="403"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="445"/>
         <source>No native recipe is available in this build.</source>
         <translation>У цій збірці немає доступних нативних рецептів.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="208"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="183"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="189"/>
         <source>No source-presence path is wired, so there is no live video to prepare for.</source>
         <translation>Джерело відтворення не підключено, тому немає активного відео для підготовки.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="380"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="436"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="386"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="442"/>
         <source>None (original pipeline)</source>
         <translation>Немає (оригінальний конвеєр)</translation>
     </message>
@@ -4069,8 +4069,8 @@ Active: %1 · queued: %2</source>
         <translation>Пресети</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="115"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="279"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="138"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="313"/>
         <source>Press a key</source>
         <translation>Натисніть клавішу</translation>
     </message>
@@ -4081,33 +4081,33 @@ Active: %1 · queued: %2</source>
         <translation>Обробка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="39"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="418"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="44"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="424"/>
         <source>Processing runtime</source>
         <translation>Середовище обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="224"/>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="231"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="450"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="455"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="237"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="456"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="461"/>
         <source>RIFE interpolation</source>
         <translation>Інтерполяція RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="129"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="423"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="133"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="429"/>
         <source>Recipe</source>
         <translation>Рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="91"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="424"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="94"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="430"/>
         <source>Runtime module</source>
         <translation>Модуль середовища</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="367"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="373"/>
         <source>Runtime will change to %1 after restarting Mikai.</source>
         <translation>Модуль середовища зміниться на %1 після перезапуску Mikai.</translation>
     </message>
@@ -4124,26 +4124,26 @@ Active: %1 · queued: %2</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="135"/>
-        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="277"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="160"/>
+        <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="311"/>
         <source>Shortcut for %1</source>
         <translation>Комбінація клавіш для %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="82"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="446"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="84"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="452"/>
         <source>Standard</source>
         <translation>Стандартний</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="45"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="420"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="426"/>
         <source>Standard uses official AnimeJaNai choices from the player menu and Components. Select Native to configure the separate private Native workflow.</source>
         <translation>Стандартний режим використовує офіційні профілі AnimeJaNai з меню плеєра та вкладки «Компоненти». Виберіть «Нативний», щоб налаштувати окремий конвеєр.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="94"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="282"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="111"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="317"/>
         <source>Test</source>
         <translation>Перевірити</translation>
     </message>
@@ -4168,36 +4168,36 @@ Active: %1 · queued: %2</source>
         <translation>Не вдалося зберегти вибір середовища виконання.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="169"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="303"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="207"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="339"/>
         <source>Ukrainian</source>
         <translation>Українська</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="307"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="313"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="167"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="301"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="205"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="337"/>
         <source>Use system language</source>
         <translation>Системна мова</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="256"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="291"/>
         <source>Window: %1 used, %2 of %3 requests available</source>
         <translation>Вікно: використано %1, доступно %2 із %3 запитів</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="84"/>
-        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="280"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="100"/>
+        <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="315"/>
         <source>mk_... (leave blank for anonymous access)</source>
         <translation>mk_... (залиште порожнім для анонімного доступу)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="80"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="448"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="82"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="454"/>
         <source>mpv runtime</source>
         <translation>Середовище mpv</translation>
     </message>
@@ -4207,274 +4207,274 @@ Active: %1 · queued: %2</source>
         <translation>не вдалося записати файл ключа</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="190"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="574"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="231"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="645"/>
         <source>Available benchmark models</source>
         <translation>Доступні моделі бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="431"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="501"/>
         <source>Anime4K</source>
         <translation>Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="415"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="440"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="485"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="510"/>
         <source>AnimeJaNai</source>
         <translation>AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="445"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="465"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="515"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="526"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="535"/>
         <source>slot %1 · %2</source>
         <translation>слот %1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="447"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="517"/>
         <source>built-in chain</source>
         <translation>вбудований ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="452"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="522"/>
         <source>Spatial</source>
         <translation>Просторові</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="461"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="531"/>
         <source>RIFE</source>
         <translation>RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="250"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="568"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="304"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="638"/>
         <source>Results</source>
         <translation>Результати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="113"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="562"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="126"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="632"/>
         <source>Video clips</source>
         <translation>Відеокліпи</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="541"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="546"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="611"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="616"/>
         <source>Clear selection</source>
         <translation>Очистити вибір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="159"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="563"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="196"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="633"/>
         <source>Enhancement models</source>
         <translation>Моделі покращення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="118"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="164"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="542"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="547"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="133"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="203"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="612"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="617"/>
         <source>Select all</source>
         <translation>Вибрати все</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="175"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="564"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="215"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="634"/>
         <source>Filter by model or group</source>
         <translation>Фільтр за моделлю або групою</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="177"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="565"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="218"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="635"/>
         <source>Filter benchmark models</source>
         <translation>Фільтр моделей бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="243"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="566"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="179"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="636"/>
         <source>Include the unfiltered baseline</source>
         <translation>Додати базовий конвеєр без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="374"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="567"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="897"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="442"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="637"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="978"/>
         <source>Run benchmark</source>
         <translation>Запустити бенчмарк</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="254"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="576"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="307"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="647"/>
         <source>Ready</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="262"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="572"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="323"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="643"/>
         <source>Benchmark run progress</source>
         <translation>Прогрес бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="710"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="784"/>
         <source>TensorRT engine build elapsed · %1</source>
         <translation>Час збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="312"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="570"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="372"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="641"/>
         <source>Run a benchmark to see throughput for each selected clip and model.</source>
         <translation>Запустіть бенчмарк, щоб побачити швидкість для кожного вибраного кліпу й моделі.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="94"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="561"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="112"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="631"/>
         <source>Compare rendering speed at 2× input resolution.</source>
         <translation>Порівняйте швидкість рендерингу з подвоєною роздільністю виходу.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="278"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="573"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="341"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="644"/>
         <source>Engine build progress; indeterminate</source>
         <translation>Прогрес збирання рушія; відсоток не визначено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="293"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="357"/>
         <source>Engine build elapsed · %1</source>
         <translation>Час збирання рушія · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="297"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="569"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="316"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="639"/>
         <source>Preparation excluded from FPS.</source>
         <translation>Час підготовки не враховується у FPS.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="382"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="642"/>
         <source>Model</source>
         <translation>Модель</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="382"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="642"/>
         <source>Clip</source>
         <translation>Кліп</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="382"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="642"/>
         <source>Throughput</source>
         <translation>Кадрів за секунду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="540"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="544"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="610"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="614"/>
         <source>%1 / %2 selected</source>
         <translation>Вибрано %1 з %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="550"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="620"/>
         <source>Clips: %1</source>
         <translation>Кліпи: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="551"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="621"/>
         <source>Models: %1</source>
         <translation>Моделі: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="552"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="622"/>
         <source>Runs: %1</source>
         <translation>Запуски: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="635"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="707"/>
         <source>Could not create the offscreen OpenGL surface.</source>
         <translation>Не вдалося створити позаекранну поверхню OpenGL.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="648"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="787"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="721"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="868"/>
         <source>Benchmark running · %1 / %2</source>
         <translation>Бенчмарк виконується · %1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="652"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="725"/>
         <source>Starting benchmark…</source>
         <translation>Запуск бенчмарку…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="654"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="727"/>
         <source>Running…</source>
         <translation>Виконується…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="715"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="789"/>
         <source>Building TensorRT engine · %1</source>
         <translation>Збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="726"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="800"/>
         <source>TensorRT engine ready after %1</source>
         <translation>Рушій TensorRT готовий за %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="728"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="802"/>
         <source>TensorRT engine build failed after %1</source>
         <translation>Збірка рушія TensorRT не вдалася; минуло %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="733"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="807"/>
         <source>Engine ready; measuring throughput · %1</source>
         <translation>Рушій готовий; вимірювання швидкості · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="735"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="809"/>
         <source>TensorRT engine build failed · %1</source>
         <translation>Збірка рушія TensorRT не вдалася · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="769"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="844"/>
         <source>Failed</source>
         <translation>Помилка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="802"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="884"/>
         <source>clip not found</source>
         <translation>кліп не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="812"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="894"/>
         <source>Loading clip · %1</source>
         <translation>Завантаження кліпу · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="838"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="920"/>
         <source>Baseline</source>
         <translation>Без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="831"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="913"/>
         <source>%1 fps</source>
         <translation>%1 fps</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="849"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="931"/>
         <source>shader chain is not available</source>
         <translation>ланцюжок шейдерів недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="863"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="945"/>
         <source>plan is not available</source>
         <translation>план недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="900"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="984"/>
         <source>Complete · %1 results</source>
         <translation>Завершено · результатів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="901"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="985"/>
         <source>Complete · %1 results · %2 failed</source>
         <translation>Завершено · результатів: %1 · невдалих: %2</translation>
     </message>
