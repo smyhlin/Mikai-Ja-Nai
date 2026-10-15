@@ -12,6 +12,7 @@ class TestI18n : public QObject {
 
   void realCatalogSwitchesLanguageRepeatedly();
   void liveStringsFollowTheSwitchedLanguageAndRestore();
+  void nativePlanErrorsFollowTheActiveLanguage();
   void failedReplacementPreservesWorkingLanguage();
   void appliedLanguageDrivesDefaultLocaleNumbers();
 

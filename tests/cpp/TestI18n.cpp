@@ -7,6 +7,7 @@
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativePrefs.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
+#include <native/components/AnimeJanaiRuntime.hpp>
 #include <player/PlayerShell.hpp>
 
 #include <QtCore/QCoreApplication>
@@ -125,6 +126,22 @@ void TestI18n::liveStringsFollowTheSwitchedLanguageAndRestore() {
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCOMPARE(readAll(), ukrainian);
+}
+
+void TestI18n::nativePlanErrorsFollowTheActiveLanguage() {
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto english = mplayer::native::prepareAnimeJanaiPlan(
+      QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
+  QVERIFY(!english.available);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), builtCatalogPath()));
+  const auto ukrainian = mplayer::native::prepareAnimeJanaiPlan(
+      QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
+  QCOMPARE(ukrainian.reasonKey, english.reasonKey);
+  QVERIFY(ukrainian.reason != english.reason);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  const auto restored = mplayer::native::prepareAnimeJanaiPlan(
+      QStringLiteral("unrecognized-preset"), mplayer::native::Backend::TensorRT);
+  QCOMPARE(restored.reason, english.reason);
 }
 
 void TestI18n::failedReplacementPreservesWorkingLanguage() {
