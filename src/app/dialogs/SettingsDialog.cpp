@@ -93,16 +93,11 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     processingTab_ = buildProcessingTab();
     componentsTab_ = buildComponentsTab();
     benchmarkTab_ = buildBenchmarkTab();
-    tabs_->addTab(generalTab_, theme::gearIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("General"));
-    tabs_->addTab(presetsTab_, theme::keyboardIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Presets"));
-    tabs_->addTab(processingTab_, theme::slidersIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Processing"));
-    tabs_->addTab(componentsTab_, theme::packageIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Components"));
-    tabs_->addTab(benchmarkTab_, theme::slidersIcon(theme::kIconSize, QLatin1String(theme::kAccent)),
-                  tr("Benchmark"));
+    tabs_->addTab(generalTab_, tr("General"));
+    tabs_->addTab(presetsTab_, tr("Presets"));
+    tabs_->addTab(processingTab_, tr("Processing"));
+    tabs_->addTab(componentsTab_, tr("Components"));
+    tabs_->addTab(benchmarkTab_, tr("Benchmark"));
     if (!presetError_->isHidden()) {
         tabs_->setCurrentWidget(presetsTab_);
     }
