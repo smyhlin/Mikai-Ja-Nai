@@ -522,6 +522,24 @@ int main(int argc, char** argv) {
               QStringLiteral("the “%1” tab screenshot is written to %2").arg(tabs->tabText(i), file));
     }
 
+    const int benchmark = tabs->indexOf(
+        dialog.findChild<QScrollArea*>(QStringLiteral("benchmarkScroll")));
+    check(benchmark >= 0, QStringLiteral("the Benchmark tab exposes its results section"));
+    if (benchmark >= 0) {
+        tabs->setCurrentIndex(benchmark);
+        auto* benchmarkScroll = qobject_cast<QScrollArea*>(tabs->widget(benchmark));
+        if (benchmarkScroll != nullptr) {
+            benchmarkScroll->verticalScrollBar()->setValue(
+                benchmarkScroll->verticalScrollBar()->maximum());
+            QApplication::processEvents();
+            const QString file =
+                QStringLiteral("native-geometry-%1-benchmark-results.png").arg(language);
+            check(dialog.grab().save(file),
+                  QStringLiteral("the Benchmark results section screenshot is written to %1")
+                      .arg(file));
+        }
+    }
+
     // The bindings are audited on their own, in the same four combinations as
     // the walk, because a binding that is present but clipped, unnamed, under a
     // hit target or unbound from its label still reads as a finished settings
@@ -587,7 +605,18 @@ int main(int argc, char** argv) {
     // The Processing tab carries the native controls this task owns. Its
     // accessibility and target contract is checked there and only there: the
     // borrowed assets panel is another surface with its own contract.
-    const int processing = tabs->count() - 1;
+    int processing = -1;
+    const QString processingLabel = SettingsDialog::tr("Processing");
+    for (int index = 0; index < tabs->count(); ++index) {
+        if (tabs->tabText(index) == processingLabel) {
+            processing = index;
+            break;
+        }
+    }
+    check(processing >= 0, QStringLiteral("the Processing settings tab exists"));
+    if (processing < 0) {
+        return 1;
+    }
     tabs->setCurrentIndex(processing);
     QApplication::processEvents();
     QWidget* processingPage = scrollPage(tabs->widget(processing));
