@@ -83,15 +83,6 @@ QWidget#presetShortcutRow:hover {
     background: %8;
     border-color: rgba(189, 172, 255, 0.35);
 }
-QFrame#benchmarkClipRow {
-    background: %5;
-    border: 1px solid %10;
-    border-radius: %6px;
-}
-QFrame#benchmarkClipRow:hover {
-    background: %8;
-    border-color: %11;
-}
 QWidget#presetShortcutRow QLabel { background: transparent; }
 QWidget#settingsFooter {
     background: %1;
@@ -325,12 +316,22 @@ QTreeWidget#benchmarkModelTree {
     outline: none;
 }
 QTreeWidget#benchmarkModelTree::item {
-    min-height: %23px;
+    min-height: 24px;
     padding: %3px %7px;
     border-radius: %6px;
 }
 QTreeWidget#benchmarkModelTree::item:hover { background: %8; }
 QTreeWidget#benchmarkModelTree::item:selected { background: %9; color: %2; }
+QTreeWidget#benchmarkModelTree::indicator {
+    width: 14px; height: 14px;
+    border: 1px solid %10;
+    background: %1;
+    border-radius: 3px;
+}
+QTreeWidget#benchmarkModelTree::indicator:unchecked { background: %1; }
+QTreeWidget#benchmarkModelTree::indicator:checked { background: %4; border-color: %2; }
+QTreeWidget#benchmarkModelTree::indicator:indeterminate { background: %8; border-color: %10; }
+QFrame#benchmarkHeader { border: none; border-bottom: 1px solid %10; }
 QTableWidget#benchmarkResults {
     background: %1;
     alternate-background-color: %5;
@@ -355,34 +356,37 @@ QTableWidget#benchmarkResults QHeaderView::section {
     font-size: 12px;
     font-weight: 600;
 }
-QLabel#benchmarkMetric, QLabel#benchmarkRunSummary, QLabel#benchmarkRunStatus {
-    background: %8;
-    color: %2;
-    border: 1px solid %10;
-    border-radius: %6px;
-    padding: %3px %7px;
+QLabel#benchmarkRunSummary, QLabel#benchmarkRunStatus {
+    background: transparent;
+    color: %4;
+    border: none;
+    padding: 0;
     font-size: 12px;
     font-weight: 600;
 }
-QLabel#benchmarkMode {
-    background: rgba(189, 172, 255, 0.10);
-    color: %11;
-    border: 1px solid rgba(189, 172, 255, 0.28);
-    border-radius: %6px;
-    padding: %3px %7px;
-    font-size: 12px;
+QPushButton#benchmarkRunButton {
+    background: %2;
+    color: %1;
+    border: 1px solid %2;
     font-weight: 600;
 }
-QProgressBar#benchmarkProgress {
+QPushButton#benchmarkRunButton:hover { background: %4; color: %1; border-color: %4; }
+QPushButton#benchmarkRunButton:disabled { background: %9; color: %4; border-color: %10; }
+QProgressBar#benchmarkProgress, QProgressBar#benchmarkEngineProgress {
     background: %1;
     border: 1px solid %10;
     border-radius: %6px;
-    min-height: %24px;
-    max-height: %24px;
+    min-height: 4px;
+    max-height: 4px;
     text-align: center;
 }
-QProgressBar#benchmarkProgress::chunk { background: %11; border-radius: %6px; }
+QProgressBar#benchmarkProgress[runState="failure"], QProgressBar#benchmarkEngineProgress[runState="failure"] { border-color: %22; }
+QProgressBar#benchmarkProgress::chunk, QProgressBar#benchmarkEngineProgress::chunk {
+    background: %4; border-radius: %6px;
+}
+QProgressBar#benchmarkProgress[runState="failure"]::chunk { background: %22; }
 QLabel#benchmarkEmptyState { color: %4; background: transparent; padding: %18px; }
+QLabel#benchmarkResultDetail { color: %4; background: transparent; }
 QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: %1; width: 10px; margin: 0; }
 QScrollBar::handle:vertical { background: %10; border-radius: 5px; min-height: 30px; }
@@ -425,9 +429,7 @@ QString buildStylesheet() {
         .arg(kSearchRowMinHeight, 19)
         .arg(QLatin1String(kVideoBackground), 20)
         .arg(kTitlePillRadius, 21)
-        .arg(QLatin1String(kDanger), 22)
-        .arg(kBenchmarkClipRowHeight, 23)
-        .arg(kSpacingSmall, 24);
+        .arg(QLatin1String(kDanger), 22);
 }
 
 }  // namespace mikai::app::theme

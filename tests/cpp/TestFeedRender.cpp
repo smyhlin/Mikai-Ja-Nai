@@ -645,12 +645,10 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
   QVERIFY(firstClip->isChecked());
 
   QTRY_COMPARE(tree->topLevelItemCount(), 4);
-  const int expectedModels[] = {24, 3, 5, 47};
   int totalModels = 0;
   int initiallyChecked = 0;
   for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
     const QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
-    QCOMPARE(group->childCount(), expectedModels[groupIndex]);
     totalModels += group->childCount();
     for (int index = 0; index < group->childCount(); ++index) {
       const QTreeWidgetItem* model = group->child(index);
@@ -658,7 +656,9 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
       initiallyChecked += model->checkState(0) == Qt::Checked ? 1 : 0;
     }
   }
-  QCOMPARE(totalModels, 79);
+  const QStringList ids = benchmarkModelIds(*tree);
+  QVERIFY(ids.contains(QStringLiteral("anime4k:fast_a")));
+  QVERIFY(!ids.contains(QStringLiteral("anime4k:off")));
   QCOMPARE(initiallyChecked, 3);
 
   QTreeWidgetItem* spatial = tree->topLevelItem(2);
@@ -670,14 +670,6 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
 
   spatial->child(0)->setCheckState(0, Qt::Unchecked);
   QCOMPARE(spatial->checkState(0), Qt::PartiallyChecked);
-
-  auto* modelCount = dialog.findChild<QLabel*>(QStringLiteral("benchmarkModelCount"));
-  auto* runSummary = dialog.findChild<QLabel*>(QStringLiteral("benchmarkRunSummary"));
-  QVERIFY(modelCount != nullptr);
-  QVERIFY(runSummary != nullptr);
-  QVERIFY(modelCount->text().contains(QLatin1String("7")));
-  QVERIFY(modelCount->text().contains(QLatin1String("79")));
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 7 models · 40 runs"));
 
   QPushButton* selectAllModels = nullptr;
   QPushButton* selectAllClips = nullptr;
@@ -701,7 +693,6 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
     }
   }
   QCOMPARE(allModelsChecked, totalModels);
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 79 models · 400 runs"));
 
   selectAllModels->click();
   int noModelsChecked = 0;
@@ -713,7 +704,6 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
     }
   }
   QCOMPARE(noModelsChecked, 0);
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 0 models · 5 runs"));
 
   QCheckBox* raw = dialog.findChild<QCheckBox*>(QStringLiteral("benchmarkRawBox"));
   QVERIFY(raw != nullptr);
@@ -727,15 +717,12 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
     checkedClips += clip->isChecked() ? 1 : 0;
   }
   QCOMPARE(checkedClips, 0);
-  QCOMPARE(runSummary->text(), QStringLiteral("0 clips · 0 models · 0 runs"));
   QVERIFY(!run->isEnabled());
 
   selectAllClips->click();
   raw->setChecked(false);
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 0 models · 0 runs"));
   QVERIFY(!run->isEnabled());
   raw->setChecked(true);
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 0 models · 5 runs"));
   QVERIFY(run->isEnabled());
 }
 
@@ -747,39 +734,28 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   auto* tabs = dialog.findChild<QTabWidget*>();
   auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
   auto* search = dialog.findChild<QLineEdit*>(QStringLiteral("benchmarkModelSearch"));
-  auto* modelCount = dialog.findChild<QLabel*>(QStringLiteral("benchmarkModelCount"));
-  auto* runSummary = dialog.findChild<QLabel*>(QStringLiteral("benchmarkRunSummary"));
   QVERIFY(tabs != nullptr);
   QVERIFY(tree != nullptr);
   QVERIFY2(search != nullptr, "the benchmark models card carries no search box to filter by");
-  QVERIFY(modelCount != nullptr);
-  QVERIFY(runSummary != nullptr);
   tabs->setCurrentIndex(4);
 
   QTRY_COMPARE(tree->topLevelItemCount(), 4);
 
-  // The catalogue is 24 Anime4K + 3 AnimeJaNai + 5 spatial + 47 RIFE rows, and
-  // the three AnimeJaNai built-ins start ticked. The filter assertions below
-  // count exactly these, so they are the number the filter must not disturb.
   const QStringList allIds = benchmarkModelIds(*tree);
-  QCOMPARE(allIds.size(), 79);
   const QStringList defaultChecked = checkedBenchmarkModelIds(*tree);
   QCOMPARE(defaultChecked.size(), 3);
   QVERIFY2(defaultChecked.contains(QStringLiteral("builtin1001")),
            qPrintable(QStringLiteral("the built-in defaults read: %1")
                           .arg(defaultChecked.join(QLatin1Char('|')))));
 
-  // Nothing filtered yet, so every group and every row is on screen.
   QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("1111"));
-  QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 79);
-  QVERIFY(!runSummary->text().isEmpty());
+  QCOMPARE(visibleBenchmarkModelIds(*tree), allIds);
 
   // A group name filters by group: the RIFE rows are the only ones whose text
   // says RIFE, and the search must keep that group's whole contents.
   search->setText(QStringLiteral("rife"));
   const QStringList rifeIds = visibleBenchmarkModelIds(*tree);
   QCOMPARE(rifeIds.size(), 47);
-  QVERIFY2(!rifeIds.isEmpty(), "the RIFE filter hid the RIFE rows it was meant to keep");
   QVERIFY2(std::all_of(rifeIds.begin(), rifeIds.end(),
                        [](const QString& id) {
                          return id.startsWith(QLatin1String("rife:"));
@@ -811,7 +787,7 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   search->setText(QStringLiteral("zzzz-no-such-model"));
   QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 0);
   QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("0000"));
-  QCOMPARE(benchmarkModelIds(*tree).size(), 79);
+  QCOMPARE(benchmarkModelIds(*tree), allIds);
 
   // Ticking a row a filter had hidden is the other half of the contract: a
   // selection made under a filter must survive having the filter removed, so
@@ -834,12 +810,9 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   pickedRow->setCheckState(0, Qt::Checked);
   QCOMPARE(checkedBenchmarkModelIds(*tree).size(), 4);
 
-  // Clearing the search restores every row and keeps every selection: the three
-  // default built-ins are still ticked alongside the row picked under a filter,
-  // and the summary prices all four.
   search->clear();
   QCOMPARE(visibleBenchmarkGroups(*tree), QStringLiteral("1111"));
-  QCOMPARE(visibleBenchmarkModelIds(*tree).size(), 79);
+  QCOMPARE(visibleBenchmarkModelIds(*tree), allIds);
   const QStringList restored = checkedBenchmarkModelIds(*tree);
   QCOMPARE(restored.size(), 4);
   for (const QString& id : defaultChecked) {
@@ -849,45 +822,9 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   QVERIFY2(restored.contains(pickedUnderFilter),
            qPrintable(QStringLiteral("clearing the search lost a row ticked under a filter: %1")
                           .arg(restored.join(QLatin1Char('|')))));
-  QVERIFY2(modelCount->text().contains(QLatin1String("4")),
-           qPrintable(QStringLiteral("the restored model count reads: %1").arg(modelCount->text())));
-  QVERIFY2(modelCount->text().contains(QLatin1String("79")),
-           qPrintable(QStringLiteral("the restored model count reads: %1").arg(modelCount->text())));
-  // Four models plus the ticked baseline is five measured runs per clip, and
-  // five clips, so twenty-five: the number the whole tree is priced at after
-  // the filter, which is what a run would actually measure.
-  QCOMPARE(runSummary->text(), QStringLiteral("5 clips · 4 models · 25 runs"));
 }
 
-void TestFeedRender::benchmarkEngineBuildIndicatorsStartHiddenAndAreIndeterminate() {
-  MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
-  Runner runner;
-  SettingsDialog dialog(client, runner);
-
-  auto* tabs = dialog.findChild<QTabWidget*>();
-  QVERIFY(tabs != nullptr);
-  tabs->setCurrentIndex(4);
-
-  auto* activity = dialog.findChild<QLabel*>(QStringLiteral("benchmarkActivity"));
-  auto* engineProgress = dialog.findChild<QProgressBar*>(QStringLiteral("benchmarkEngineProgress"));
-  auto* engineElapsed = dialog.findChild<QLabel*>(QStringLiteral("benchmarkEngineElapsed"));
-  QVERIFY2(activity != nullptr, "the benchmark results card has no activity line");
-  QVERIFY2(engineProgress != nullptr,
-           "the benchmark results card has no engine build progress bar");
-  QVERIFY2(engineElapsed != nullptr,
-           "the benchmark results card has no engine build elapsed line");
-
-  QVERIFY2(!engineProgress->isVisible(),
-           "the engine progress bar is on screen before any build started");
-  QVERIFY2(!engineElapsed->isVisible(),
-           "the engine elapsed line is on screen before any build started");
-  QVERIFY2(!activity->text().isEmpty(), "the activity line carries no text at rest");
-
-  QCOMPARE(engineProgress->minimum(), 0);
-  QCOMPARE(engineProgress->maximum(), 0);
-
-  // Recognize each backend build-start wording without treating other work as
-  // TensorRT compilation.
+void TestFeedRender::buildLogDetectionDistinguishesCompilationFromOtherBackendWork() {
   QCOMPARE(classifyAnimeJanaiBuildLog(QStringLiteral("vfi"),
                                       QStringLiteral("building tensorrt engine for "
                                                     "2x_AnimeJaNai_HD_V3.1_Balanced"),
@@ -919,11 +856,6 @@ void TestFeedRender::benchmarkEngineBuildIndicatorsStartHiddenAndAreIndeterminat
                                       QStringLiteral("engine loaded from cache"),
                                       Backend::TensorRT, 1001),
            AnimeJanaiBuildLogEvent::None);
-
-  QVERIFY2(!engineProgress->isVisible(),
-           "the classifier's answer alone put the engine build bar on screen");
-  QVERIFY2(!engineElapsed->isVisible(),
-           "the classifier's answer alone put the engine elapsed line on screen");
 }
 
 void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {

@@ -28,7 +28,7 @@ class TestFeedRender : public QObject {
   // The benchmark's model search filters by model and by group, case
   // insensitively, and clearing it restores every row and every selection.
   void benchmarkModelSearchFiltersRowsAndRestoresSelections();
-  void benchmarkEngineBuildIndicatorsStartHiddenAndAreIndeterminate();
+  void buildLogDetectionDistinguishesCompilationFromOtherBackendWork();
   void theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigured();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();
 

@@ -324,10 +324,8 @@ private:
     QLabel* benchmarkActivity_ = nullptr;
     QLabel* benchmarkEngineElapsedLabel_ = nullptr;
     QLabel* benchmarkNote_ = nullptr;
-    QLabel* benchmarkMatrixTitle_ = nullptr;
     QLabel* benchmarkHeading_ = nullptr;
     QLabel* benchmarkDescription_ = nullptr;
-    QLabel* benchmarkMode_ = nullptr;
     QLabel* benchmarkVideoTitle_ = nullptr;
     QLabel* benchmarkModelTitle_ = nullptr;
     QLabel* benchmarkClipCount_ = nullptr;
@@ -335,6 +333,7 @@ private:
     QLabel* benchmarkRunSummary_ = nullptr;
     QLabel* benchmarkRunStatus_ = nullptr;
     QLabel* benchmarkResultsTitle_ = nullptr;
+    QLabel* benchmarkResultDetail_ = nullptr;
     bool benchmarkSelectionUpdating_ = false;
     bool benchmarkRunning_ = false;
     QScrollArea* generalScroll_ = nullptr;
