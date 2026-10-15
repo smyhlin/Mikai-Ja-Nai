@@ -177,13 +177,36 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
     const QVector<mplayer::native::AnimeJanaiPreset> presets =
         mplayer::native::animeJanaiPresets();
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
-        const bool builtin = preset.id.startsWith(QLatin1String("builtin"));
-        addModel(preset.id, preset.label,
-                 preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile.isEmpty()
-                                                                               ? tr("built-in chain")
-                                                                               : preset.modelFile)
-                                  : preset.reason,
-                 builtin);
+        if (preset.id.startsWith(QLatin1String("builtin"))) {
+            addModel(preset.id, preset.label,
+                     preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile.isEmpty()
+                                                                                   ? tr("built-in chain")
+                                                                                   : preset.modelFile)
+                                      : preset.reason,
+                     true);
+        }
+    }
+    addGroup(tr("Spatial"));
+    for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
+        if (preset.id.startsWith(QLatin1String("spatial:"))) {
+            addModel(preset.id, preset.label,
+                     preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile.isEmpty()
+                                                                                   ? tr("model")
+                                                                                   : preset.modelFile)
+                                      : preset.reason,
+                     false);
+        }
+    }
+    addGroup(tr("RIFE"));
+    for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
+        if (preset.id.startsWith(QLatin1String("rife:"))) {
+            addModel(preset.id, preset.label,
+                     preset.supported ? tr("slot %1 · %2").arg(preset.slot).arg(preset.modelFile.isEmpty()
+                                                                                   ? tr("model")
+                                                                                   : preset.modelFile)
+                                      : preset.reason,
+                     false);
+        }
     }
 }
 

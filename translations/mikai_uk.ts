@@ -3535,400 +3535,367 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
         <message>
             <source>Benchmark</source>
             <translation>Бенчмарк</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Test API token</source>
             <translation>Перевірити токен API</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Filter presets…</source>
             <translation>Фільтр пресетів…</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Filter presets</source>
             <translation>Фільтр пресетів</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Clear all</source>
             <translation>Очистити все</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Clear all preset shortcuts</source>
             <translation>Очистити всі комбінації клавіш пресетів</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1244" />
             <source>
 Active: %1 · queued: %2</source>
             <translation>
 Активні: %1 · у черзі: %2</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1246" />
             <source> · requests will continue automatically when the limit resets</source>
             <translation> · запити продовжаться автоматично після скидання ліміту</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1241" />
             <source> · resets in %1 s</source>
             <translation> · скидання через %1 с</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="461" />
             <source>&lt;a style="color: %1; text-decoration: none;" href="https://mikai.me/user/developers"&gt;Get a key from the developer dashboard on mikai.me ↗&lt;/a&gt;</source>
             <translation>&lt;a style="color: %1; text-decoration: none;" href="https://mikai.me/user/developers"&gt;Отримати ключ у кабінеті розробника на mikai.me ↗&lt;/a&gt;</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="488" />
             <source>API usage</source>
             <translation>Використання API</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="452" />
             <source>An API key raises the limit from 60 to 300 requests per minute and is stored locally in the .env file.</source>
             <translation>Ключ API підвищує ліміт із 60 до 300 запитів на хвилину та зберігається локально у файлі .env.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="563" />
             <source>Anime4K preset shortcuts</source>
             <translation>Гарячі клавіші пресетів Anime4K</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1208" />
             <source>Anonymous access (limit: %1/min)</source>
             <translation>Анонімний доступ (ліміт: %1/хв)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="539" />
             <source>Applied immediately to the running windows, including the open player.</source>
             <translation>Застосовується миттєво до відкритих вікон, включно з активним плеєром.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="774" />
             <source>Backend</source>
             <translation>Бекенд</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="267" />
             <source>Cancel</source>
             <translation>Скасувати</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1184" />
             <source>Checking token…</source>
             <translation>Перевірка токена…</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="257" />
             <source>Components</source>
             <translation>Компоненти</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1224" />
             <source>Connection error: %1</source>
             <translation>Помилка з’єднання: %1</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="502" />
             <source>Disabled sections are not loaded and do not use API requests. Search and title pages are always available.</source>
             <translation>Вимкнені розділи не завантажуються й не витрачають запити API. Пошук і сторінки тайтлів доступні завжди.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="529" />
             <source>English</source>
             <translation>Англійська (English)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1218" />
             <source>Error: %1</source>
             <translation>Помилка: %1</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="568" />
             <source>Focus a field and press a key or combination with Ctrl, Alt, or Shift. The × button clears a binding. A combination can be assigned to only one preset; built-in player shortcuts are reserved.</source>
             <translation>Виберіть поле та натисніть клавішу або комбінацію з Ctrl, Alt чи Shift. Кнопка × очищає прив’язку. Комбінацію можна призначити лише одному пресету; вбудовані клавіші плеєра зарезервовані.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="248" />
             <source>General</source>
             <translation>Загальні</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="497" />
             <source>Home page sections</source>
             <translation>Розділи головної сторінки</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="521" />
             <source>Interface language</source>
             <translation>Мова інтерфейсу</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1216" />
             <source>Invalid token</source>
             <translation>Недійсний токен</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1205" />
             <source>Key is valid (limit: %1/min)</source>
             <translation>Ключ дійсний (ліміт: %1/хв)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1203" />
             <source>Key is valid (user: %1, limit: %2/min)</source>
             <translation>Ключ дійсний (користувач: %1, ліміт: %2/хв)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1233" />
             <source>Limit: %1 requests/min · waiting for the next API response to update the counter</source>
             <translation>Ліміт: %1 запитів/хв · очікування наступної відповіді API для оновлення лічильника</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="438" />
             <source>Mikai API access token</source>
             <translation>Токен доступу Mikai API</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="819" />
             <source>Native</source>
             <translation>Нативний</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="763" />
             <source>Native backend</source>
             <translation>Нативний бекенд</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="857" />
             <source>Native model assets</source>
             <translation>Нативні моделі та артефакти</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1414" />
             <source>Native processing availability</source>
             <translation>Доступність нативної обробки</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="810" />
             <source>Native processing status</source>
             <translation>Стан нативної обробки</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="778" />
             <source>Native recipe</source>
             <translation>Нативний рецепт</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1141" />
             <source>No native recipe is available in this build.</source>
             <translation>У цій збірці немає доступних нативних рецептів.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="355" />
             <source>No source-presence path is wired, so there is no live video to prepare for.</source>
             <translation>Джерело відтворення не підключено, тому немає активного відео для підготовки.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1119" />
             <source>None (original pipeline)</source>
             <translation>Немає (оригінальний конвеєр)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="250" />
             <source>Presets</source>
             <translation>Пресети</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="628" />
             <source>Press a key</source>
             <translation>Натисніть клавішу</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="255" />
             <source>Processing</source>
             <translation>Обробка</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="726" />
             <source>Processing runtime</source>
             <translation>Середовище обробки</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="918" />
             <source>RIFE interpolation</source>
             <translation>Інтерполяція RIFE</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="792" />
             <source>Recipe</source>
             <translation>Рецепт</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="826" />
             <source>Runtime module</source>
             <translation>Модуль середовища</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1104" />
             <source>Runtime will change to %1 after restarting Mikai.</source>
             <translation>Модуль середовища зміниться на %1 після перезапуску Mikai.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="268" />
             <source>Save</source>
             <translation>Зберегти</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="196" />
             <source>Settings</source>
             <translation>Налаштування</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="648" />
             <source>Shortcut for %1</source>
             <translation>Комбінація клавіш для %1</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="817" />
             <source>Standard</source>
             <translation>Стандартний</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="731" />
             <source>Standard uses official AnimeJaNai choices from the player menu and Components. Select Native to configure the separate private Native workflow.</source>
             <translation>Стандартний режим використовує офіційні профілі AnimeJaNai з меню плеєра та вкладки «Компоненти». Виберіть «Нативний», щоб налаштувати окремий конвеєр.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="483" />
             <source>Test</source>
             <translation>Перевірити</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1634" />
             <source>The %1 interface could not be applied, so the language was left unchanged.</source>
             <translation>Не вдалося застосувати інтерфейс (%1), тому мову залишено без змін.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1540" />
             <source>The API key could not be saved, so it was left unchanged: %1</source>
             <translation>Не вдалося зберегти ключ API, тому його залишено без змін: %1</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1589" />
             <source>The native preferences could not be saved.</source>
             <translation>Не вдалося зберегти нативні налаштування.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1605" />
             <source>The runtime choice could not be saved.</source>
             <translation>Не вдалося зберегти вибір середовища виконання.</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="530" />
             <source>Ukrainian</source>
             <translation>Українська</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1032" />
             <source>Unavailable: %1</source>
             <translation>Недоступно: %1</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="528" />
             <source>Use system language</source>
             <translation>Системна мова</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1236" />
             <source>Window: %1 used, %2 of %3 requests available</source>
             <translation>Вікно: використано %1, доступно %2 із %3 запитів</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="470" />
             <source>mk_... (leave blank for anonymous access)</source>
             <translation>mk_... (залиште порожнім для анонімного доступу)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="816" />
             <source>mpv runtime</source>
             <translation>Середовище mpv</translation>
-        </message>
-        <message>
+        </message>        <message>
             <location filename="../src/app/dialogs/SettingsDialog.cpp" line="1542" />
             <source>the key file could not be written</source>
             <translation>не вдалося записати файл ключа</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Playback Benchmark</source>
             <translation>Бенчмарк відтворення</translation>
-        </message>
-        <message>
-            <source>Adopts the AnimeJaNai benchmark clips (480p–1080p) and measurement approach (off-screen decode + filter throughput). Uses our in-process libmpv core and MpvHandle with vo=null for comparable numbers. Select specific video and enhancement (model) for fast targeted checks. Run measures frame progress over short active windows (engine build excluded from fps sample).</source>
-            <translation>Використовує тестові кліпи AnimeJaNai (480p–1080p) і той самий підхід до вимірювання (позаекранне декодування + пропускна здатність фільтра). Задіює наше ядро libmpv у процесі та MpvHandle з vo=null для зіставних чисел. Виберіть конкретне відео та покращення (модель) для швидких точкових перевірок. Запуск вимірює просування кадрів на коротких активних вікнах (збірка рушія не входить у вибірку fps).</translation>
-        </message>
-        <message>
-            <source>Video:</source>
-            <translation>Відео:</translation>
-        </message>
-        <message>
-            <source>All clips (full suite)</source>
-            <translation>Усі кліпи (повний набір)</translation>
-        </message>
-        <message>
-            <source>Enhancement / Model:</source>
-            <translation>Покращення / Модель:</translation>
-        </message>
-        <message>
-            <source>None (raw throughput)</source>
-            <translation>Немає (чиста пропускна здатність)</translation>
-        </message>
-        <message>
-            <source>Anime4K example (glsl)</source>
-            <translation>Приклад Anime4K (glsl)</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Run Benchmark</source>
             <translation>Запустити бенчмарк</translation>
-        </message>
-        <message>
-            <source>Results will appear here in upstream-style table format (clip → fps).</source>
-            <translation>Результати з’являться тут у форматі таблиці, як в оригіналі (кліп → fps).</translation>
-        </message>
-        <message>
+        </message>        <message>
             <source>Clips adopted from mpv-AnimeJaNai 3.7.0 benchmarks package. Place them under tests/fixtures/media/benchmarks/ (already done in tree) or next to the exe. Aji results require the selected preset&apos;s engines/models to be ready. Select single video + enhancement for quick case checks.</source>
             <translation>Кліпи взято з пакета бенчмарків mpv-AnimeJaNai 3.7.0. Покладіть їх у tests/fixtures/media/benchmarks/ (у дереві вже зроблено) або поряд з exe. Результати Aji потребують готових рушіїв/моделей вибраного пресета. Виберіть одне відео + покращення для швидкої перевірки окремого випадку.</translation>
+        </message>        <message>
+            <source>Runs the real mpv pipeline offscreen (vo=null) over the bundled clips and reports decode + enhancement throughput in frames per second. Tick any number of clips and models; every selected clip is measured with every selected model. A model that cannot be resolved is reported by name rather than silently skipped.</source>
+            <translation>Запускає реальний конвеєр mpv позаекранно (vo=null) на вбудованих кліпах і показує пропускну здатність декодування + покращення в кадрах за секунду. Позначте будь-яку кількість кліпів і моделей; кожен вибраний кліп вимірюється з кожною вибраною моделлю. Модель, яку не вдалося задіяти, називається, а не тихо пропускається.</translation>
         </message>
         <message>
-            <source>Starting benchmark...</source>
-            <translation>Запуск бенчмарку...</translation>
+            <source>Clips</source>
+            <translation>Кліпи</translation>
         </message>
         <message>
-            <source>AnimeJaNai-style benchmark (Mikai in-process, vo=null) - mode: %1</source>
-            <translation>Бенчмарк у стилі AnimeJaNai (Mikai у процесі, vo=null) - режим: %1</translation>
+            <source>Models</source>
+            <translation>Моделі</translation>
         </message>
         <message>
-            <source>Warning: could not locate any Anime4K shader for enhancement example.</source>
-            <translation>Попередження: не вдалося знайти жодного шейдера Anime4K для прикладу покращення.</translation>
+            <source>Select all / none</source>
+            <translation>Вибрати всі / жодного</translation>
         </message>
         <message>
-            <source>: clip not found</source>
-            <translation>: кліп не знайдено</translation>
+            <source>Also measure the raw pipeline (no enhancement)</source>
+            <translation>Також виміряти сирий конвеєр (без покращення)</translation>
         </message>
         <message>
-            <source>: no frames (timeout or error)</source>
-            <translation>: немає кадрів (тайм-аут або помилка)</translation>
+            <source>Results appear here as model × clip fps lines.</source>
+            <translation>Результати з’являться тут як рядки модель × кліп fps.</translation>
         </message>
         <message>
-            <source>: - (too slow or stalled)</source>
-            <translation>: - (надто повільно або зупинилося)</translation>
+            <source>Clips are the AnimeJaNai benchmark patterns, resolved beside the executable, in the source tree, or under the current directory. TensorRT builds one engine per model and resolution on first use; that build is excluded from the measured window.</source>
+            <translation>Кліпи — це тестові візерунки AnimeJaNai, які знаходяться поряд з виконуваним файлом, у вихідному дереві або в поточному каталозі. TensorRT збирає один рушій на модель і роздільність при першому використанні; ця збірка не входить у вимірюване вікно.</translation>
         </message>
         <message>
-            <source>: mpv error </source>
-            <translation>: помилка mpv </translation>
+            <source>Anime4K</source>
+            <translation>Anime4K</translation>
         </message>
         <message>
-            <source>: error %1</source>
-            <translation>: помилка %1</translation>
+            <source>AnimeJaNai</source>
+            <translation>AnimeJaNai</translation>
+        </message>
+        <message>
+            <source>slot %1 · %2</source>
+            <translation>слот %1 · %2</translation>
+        </message>
+        <message>
+            <source>built-in chain</source>
+            <translation>вбудований ланцюжок</translation>
+        </message>
+        <message>
+            <source>Spatial</source>
+            <translation>Просторові</translation>
+        </message>
+        <message>
+            <source>model</source>
+            <translation>модель</translation>
+        </message>
+        <message>
+            <source>RIFE</source>
+            <translation>RIFE</translation>
+        </message>
+        <message>
+            <source>Select at least one clip and either one model or the raw pipeline.</source>
+            <translation>Виберіть хоча б один кліп і або одну модель, або сирий конвеєр.</translation>
+        </message>
+        <message>
+            <source>Running %1 clip(s) × %2 model(s)%3…</source>
+            <translation>Запуск %1 кліп(ів) × %2 модел(ей)%3…</translation>
+        </message>
+        <message>
+            <source> + raw</source>
+            <translation> + сирий</translation>
+        </message>
+        <message>
+            <source>clip not found</source>
+            <translation>кліп не знайдено</translation>
+        </message>
+        <message>
+            <source>no frames</source>
+            <translation>немає кадрів</translation>
+        </message>
+        <message>
+            <source>%1 fps</source>
+            <translation>%1 fps</translation>
+        </message>
+        <message>
+            <source>- (too slow or stalled)</source>
+            <translation>- (надто повільно або зупинилося)</translation>
+        </message>
+        <message>
+            <source>Raw</source>
+            <translation>Сирий</translation>
+        </message>
+        <message>
+            <source>shader chain is not available</source>
+            <translation>ланцюжок шейдерів недоступний</translation>
+        </message>
+        <message>
+            <source>plan is not available</source>
+            <translation>план недоступний</translation>
         </message>
     </context>
     <context>
