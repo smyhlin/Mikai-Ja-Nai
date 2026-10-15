@@ -80,6 +80,8 @@ public:
     // Returns mpv's MPV_RENDER_UPDATE_* flags describing new render output.
     uint64_t update();
 
+    bool nextFrameInfo(mpv_render_frame_info& info) const;
+
     // Fires (on an mpv thread) when a new frame may be available.
     void setUpdateCallback(std::function<void()> fn);
 
@@ -101,5 +103,7 @@ private:
     const MpvApiInstance* api_ = nullptr;
     std::function<void()> onUpdate_;
 };
+
+bool isRealNewFrame(const mpv_render_frame_info& info);
 
 }  // namespace mplayer

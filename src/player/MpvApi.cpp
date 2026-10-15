@@ -284,7 +284,8 @@ bool MpvApi::load(const MpvBundle& bundle, QString* reason) {
     bind("mpv_render_context_report_swap", table.renderContextReportSwap);
     bind("mpv_render_context_render", table.renderContextRender);
     bind("mpv_render_context_free", table.renderContextFree);
-    if (missing != nullptr) {
+    bind("mpv_render_context_get_info", table.renderContextGetInfo);
+    if (missing != nullptr) { 
         unregisterAll();
 #ifdef _WIN32
         FreeLibrary(module);

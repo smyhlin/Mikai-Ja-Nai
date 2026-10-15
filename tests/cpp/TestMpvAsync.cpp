@@ -16,7 +16,9 @@
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
+#include "MpvRenderContext.hpp"
 #include "VideoSurface.hpp"
+#include "dialogs/settings/BenchmarkPlayback.hpp"
 
 using mplayer::AsyncReply;
 using mplayer::AsyncRequestId;
@@ -26,6 +28,9 @@ using mplayer::MpvError;
 using mplayer::MpvHandle;
 using mplayer::NodeValue;
 using mplayer::Property;
+
+using mikai::app::BenchmarkFrameSample;
+using mplayer::isRealNewFrame;
 
 namespace {
 
@@ -631,6 +636,50 @@ void TestMpvAsync::aRequestOnAReplacedCoreIsNeverDelivered() {
     QVERIFY(pumpUntil(handle, [&replies] { return !replies.empty(); }));
     QCOMPARE(replies.size(), size_t{1});
     QCOMPARE(replies.front().error, 0);
+}
+
+void TestMpvAsync::onlyNewVideoFramesContributeToThroughput_data() {
+    QTest::addColumn<qulonglong>("flags");
+    QTest::addColumn<bool>("counted");
+    QTest::newRow("no-frame") << qulonglong{0} << false;
+    QTest::newRow("new-frame") << qulonglong{MPV_RENDER_FRAME_INFO_PRESENT} << true;
+    QTest::newRow("redraw")
+        << qulonglong{MPV_RENDER_FRAME_INFO_PRESENT | MPV_RENDER_FRAME_INFO_REDRAW} << false;
+    QTest::newRow("repeat")
+        << qulonglong{MPV_RENDER_FRAME_INFO_PRESENT | MPV_RENDER_FRAME_INFO_REPEAT} << false;
+    QTest::newRow("vsync-without-frame")
+        << qulonglong{MPV_RENDER_FRAME_INFO_BLOCK_VSYNC} << false;
+    QTest::newRow("new-vsynced-frame")
+        << qulonglong{MPV_RENDER_FRAME_INFO_PRESENT | MPV_RENDER_FRAME_INFO_BLOCK_VSYNC} << true;
+}
+
+void TestMpvAsync::onlyNewVideoFramesContributeToThroughput() {
+    QFETCH(qulonglong, flags);
+    QFETCH(bool, counted);
+    mpv_render_frame_info frame{};
+    frame.flags = flags;
+    QCOMPARE(isRealNewFrame(frame), counted);
+}
+
+void TestMpvAsync::preparationAndWarmupAreExcludedWhenMeasurementRestarts() {
+    BenchmarkFrameSample sample;
+    sample.recordFrame(21'000'000'000);
+    QCOMPARE(sample.frames, 0);
+    QCOMPARE(sample.seconds(21'000'000'000), 0.0);
+    sample.recordFrame(21'250'000'000);
+    sample.recordFrame(21'500'000'000);
+    QCOMPARE(sample.frames, 2);
+    QCOMPARE(sample.seconds(21'500'000'000), 0.5);
+
+    sample.reset();
+    QVERIFY(!sample.started());
+    QCOMPARE(sample.frames, 0);
+    QCOMPARE(sample.seconds(80'000'000'000), 0.0);
+    sample.recordFrame(81'000'000'000);
+    QCOMPARE(sample.frames, 0);
+    sample.recordFrame(81'500'000'000);
+    QCOMPARE(sample.frames, 1);
+    QCOMPARE(sample.seconds(82'000'000'000), 1.0);
 }
 
 // ── runtime selection for the transport tests ──────────────────────────────

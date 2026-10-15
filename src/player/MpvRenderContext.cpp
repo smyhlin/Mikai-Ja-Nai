@@ -167,6 +167,19 @@ uint64_t MpvRenderContext::update() {
     return api_->renderContextUpdate(ctx_);
 }
 
+bool MpvRenderContext::nextFrameInfo(mpv_render_frame_info& info) const {
+    if (ctx_ == nullptr || api_ == nullptr || api_->renderContextGetInfo == nullptr)
+        return false;
+    mpv_render_param p{MPV_RENDER_PARAM_NEXT_FRAME_INFO, &info};
+    return api_->renderContextGetInfo(ctx_, p) == 0;
+}
+
+bool isRealNewFrame(const mpv_render_frame_info& info) {
+    const uint64_t f = info.flags;
+    return (f & MPV_RENDER_FRAME_INFO_PRESENT) != 0 &&
+           (f & (MPV_RENDER_FRAME_INFO_REDRAW | MPV_RENDER_FRAME_INFO_REPEAT)) == 0;
+}
+
 void MpvRenderContext::reportSwap() {
     if (ctx_ != nullptr && api_ != nullptr) api_->renderContextReportSwap(ctx_);
 }

@@ -69,6 +69,7 @@ struct MpvApiInstance {
     decltype(&::mpv_render_context_report_swap) renderContextReportSwap = nullptr;
     decltype(&::mpv_render_context_render) renderContextRender = nullptr;
     decltype(&::mpv_render_context_free) renderContextFree = nullptr;
+    decltype(&::mpv_render_context_get_info) renderContextGetInfo = nullptr;
 };
 
 // Process-wide selected core module: one module, many mpv_handle objects.

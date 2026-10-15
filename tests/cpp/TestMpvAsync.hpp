@@ -66,6 +66,10 @@ private slots:
     void twoCoresKeepTheirRepliesApart();
     void aRequestOnAReplacedCoreIsNeverDelivered();
 
+    void onlyNewVideoFramesContributeToThroughput_data();
+    void onlyNewVideoFramesContributeToThroughput();
+    void preparationAndWarmupAreExcludedWhenMeasurementRestarts();
+
 private:
     // True when a runtime is selected, so the calling test should continue.
     // Without a module to select it skips, and a selection that failed in
