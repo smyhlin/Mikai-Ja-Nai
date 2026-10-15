@@ -355,6 +355,112 @@
     </message>
 </context>
 <context>
+    <name>AnimeJanaiRuntime</name>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="70"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="97"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="251"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="364"/>
+        <source>AnimeJaNai preparation was cancelled.</source>
+        <translation>Підготовку AnimeJaNai було скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="72"/>
+        <source>The selected model graph is missing or does not match its compiled content pin.</source>
+        <translation>Вибраний граф моделі відсутній або не збігається із закріпленою контрольною сумою.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="77"/>
+        <source>The app-owned AnimeJaNai model directory is unavailable or redirected.</source>
+        <translation>Папка моделей AnimeJaNai недоступна або перенаправлена.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="82"/>
+        <source>An existing staged AnimeJaNai graph is corrupt and will not be replaced.</source>
+        <translation>Наявний підготовлений граф AnimeJaNai пошкоджено і не може бути замінено.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="109"/>
+        <source>Staged AnimeJaNai graph verification or atomic publication failed.</source>
+        <translation>Помилка перевірки або атомарної публікації підготовленого графа AnimeJaNai.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="170"/>
+        <source>The app-owned AnimeJaNai configuration directory is unavailable or redirected.</source>
+        <translation>Папка конфігурації AnimeJaNai недоступна або перенаправлена.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="203"/>
+        <source>An AnimeJaNai filter option cannot be represented safely.</source>
+        <translation>Параметр фільтра AnimeJaNai не може бути безпечно представлений.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="227"/>
+        <source>Quality</source>
+        <translation>Якість</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="228"/>
+        <source>Balanced</source>
+        <translation>Збалансований</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="229"/>
+        <source>Performance</source>
+        <translation>Продуктивність</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="254"/>
+        <source>The selected AnimeJaNai preset is not recognised.</source>
+        <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="260"/>
+        <source>The selected RIFE graph has no compiled content pin.</source>
+        <translation>Вибраний граф RIFE не має закріпленої контрольної суми.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="265"/>
+        <source>This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model.</source>
+        <translation>Це встановлене середовище AnimeJaNai не підтримує вибрану важку (Heavy) модель RIFE.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="286"/>
+        <source>The installed TensorRT closure does not include its verified upstream trtexec executable.</source>
+        <translation>Встановлене середовище TensorRT не містить перевіреного виконуваного файлу trtexec.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="300"/>
+        <source>A required built-in model is absent from the pinned catalogue.</source>
+        <translation>Необхідна вбудована модель відсутня в закріпленому каталозі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="304"/>
+        <source>A model required by the built-in AnimeJaNai profiles is not installed.</source>
+        <translation>Модель, потрібна для вбудованих профілів AnimeJaNai, не встановлена.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="322"/>
+        <source>The selected pinned RIFE graph is missing or corrupt.</source>
+        <translation>Вибраний закріплений граф RIFE відсутній або пошкоджений.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="347"/>
+        <source>The selected spatial model is not in the pinned catalogue.</source>
+        <translation>Вибрана просторова модель відсутня в закріпленому каталозі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="351"/>
+        <source>The selected spatial model is not installed.</source>
+        <translation>Вибрану просторову модель не встановлено.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="373"/>
+        <source>The app-owned AnimeJaNai stats directory is unavailable or redirected.</source>
+        <translation>Папка статистики AnimeJaNai недоступна або перенаправлена.</translation>
+    </message>
+</context>
+<context>
     <name>ApiErrors</name>
     <message>
         <location filename="../src/app/I18n.cpp" line="239"/>
@@ -1559,12 +1665,12 @@
         <translation>невідома помилка dlopen</translation>
     </message>
     <message>
-        <location filename="../src/player/MpvApi.cpp" line="294"/>
+        <location filename="../src/player/MpvApi.cpp" line="295"/>
         <source>mpv runtime unavailable: %1 does not export %2</source>
         <translation>Середовище mpv недоступне: %1 не експортує %2</translation>
     </message>
     <message>
-        <location filename="../src/player/MpvApi.cpp" line="309"/>
+        <location filename="../src/player/MpvApi.cpp" line="310"/>
         <source>mpv runtime unavailable: %1 reports client API %2, which is incompatible with the %3 it was selected against</source>
         <translation>Середовище mpv недоступне: %1 повідомляє клієнтський API %2, несумісний з очікуваним %3</translation>
     </message>
@@ -1832,6 +1938,94 @@
         <location filename="../src/app/pages/TitlePage.cpp" line="2040"/>
         <source>This player has no video any more.</source>
         <translation>У цьому плеєрі більше немає відео.</translation>
+    </message>
+</context>
+<context>
+    <name>mikai::app::BenchmarkPlayback</name>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="50"/>
+        <source>Invalid benchmark clip or output size.</source>
+        <translation>Некоректний кліп або розмір виходу бенчмарку.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="54"/>
+        <source>The offscreen OpenGL surface is unavailable.</source>
+        <translation>Позаекранна поверхня OpenGL недоступна.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="61"/>
+        <source>Could not initialize the benchmark OpenGL context.</source>
+        <translation>Не вдалося ініціалізувати контекст OpenGL для бенчмарку.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="68"/>
+        <source>Could not allocate the benchmark framebuffer.</source>
+        <translation>Не вдалося виділити буфер кадрів для бенчмарку.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="123"/>
+        <source>Playback failed: %1</source>
+        <translation>Помилка відтворення: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="169"/>
+        <source>Waiting for video output</source>
+        <translation>Очікування виведення відео</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="180"/>
+        <source>TensorRT engine build failed.</source>
+        <translation>Не вдалося зібрати рушій TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="187"/>
+        <source>TensorRT engine build timed out.</source>
+        <translation>Перевищено час очікування збірки рушія TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="193"/>
+        <source>TensorRT did not confirm the selected slot is ready.</source>
+        <translation>TensorRT не підтвердив готовність вибраного слота.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="194"/>
+        <source>Timed out waiting for rendered video frames.</source>
+        <translation>Перевищено час очікування відтворених відеокадрів.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="203"/>
+        <source>Could not read rendered-frame information.</source>
+        <translation>Не вдалося прочитати відомості про відтворений кадр.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="210"/>
+        <source>Rendering failed: %1</source>
+        <translation>Помилка рендерингу: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="218"/>
+        <source>OpenGL rendering failed (0x%1).</source>
+        <translation>Помилка рендерингу OpenGL (0x%1).</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="227"/>
+        <source>Measuring throughput</source>
+        <translation>Вимірювання швидкості</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="235"/>
+        <source>No new video frames were rendered during measurement.</source>
+        <translation>Під час вимірювання не відтворено жодного нового відеокадру.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="249"/>
+        <source>mpv: %1</source>
+        <translation>mpv: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="251"/>
+        <source>Benchmark failed: %1</source>
+        <translation>Помилка бенчмарку: %1</translation>
     </message>
 </context>
 <context>
@@ -3630,6 +3824,8 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="100"/>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="289"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="90"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="560"/>
         <source>Benchmark</source>
         <translation>Бенчмарк</translation>
     </message>
@@ -4011,315 +4207,276 @@ Active: %1 · queued: %2</source>
         <translation>не вдалося записати файл ключа</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="92"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="554"/>
-        <source>Playback Benchmark</source>
-        <translation>Бенчмарк відтворення</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="95"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="555"/>
-        <source>Off-screen · real pipeline</source>
-        <translation>Позаекранний режим · реальний конвеєр</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="205"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="575"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="190"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="574"/>
         <source>Available benchmark models</source>
         <translation>Доступні моделі бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="429"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="431"/>
         <source>Anime4K</source>
         <translation>Anime4K</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="413"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="437"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="415"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="440"/>
         <source>AnimeJaNai</source>
         <translation>AnimeJaNai</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="341"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="567"/>
-        <source>For TensorRT, FPS measurement waits for the backend to report the selected slot configured. Engine-build time is shown separately and excluded.</source>
-        <translation>Для TensorRT вимірювання FPS чекає, доки backend повідомить про налаштування вибраного слота. Час збирання рушія показано окремо й не враховано.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="442"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="453"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="462"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="445"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="456"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="465"/>
         <source>slot %1 · %2</source>
         <translation>слот %1 · %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="444"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="447"/>
         <source>built-in chain</source>
         <translation>вбудований ланцюжок</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="449"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="452"/>
         <source>Spatial</source>
         <translation>Просторові</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="458"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="461"/>
         <source>RIFE</source>
         <translation>RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="293"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="565"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="250"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="568"/>
         <source>Results</source>
         <translation>Результати</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="102"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="557"/>
-        <source>Choose clips and models to compare. Each selected clip/model pair is one run.</source>
-        <translation>Виберіть кліпи й моделі для порівняння. Кожна вибрана пара «кліп/модель» — окремий запуск.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="111"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="558"/>
-        <source>Test matrix</source>
-        <translation>Матриця тестів</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="116"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="559"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="113"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="562"/>
         <source>Video clips</source>
         <translation>Відеокліпи</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="121"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="538"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="543"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="541"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="546"/>
         <source>Clear selection</source>
         <translation>Очистити вибір</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="173"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="560"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="159"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="563"/>
         <source>Enhancement models</source>
         <translation>Моделі покращення</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="178"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="539"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="544"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="118"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="164"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="542"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="547"/>
         <source>Select all</source>
         <translation>Вибрати все</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="189"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="561"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="175"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="564"/>
         <source>Filter by model or group</source>
         <translation>Фільтр за моделлю або групою</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="191"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="562"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="177"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="565"/>
         <source>Filter benchmark models</source>
         <translation>Фільтр моделей бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="268"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="563"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="243"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="566"/>
         <source>Include the unfiltered baseline</source>
         <translation>Додати базовий конвеєр без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="281"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="564"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="374"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="567"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="897"/>
         <source>Run benchmark</source>
         <translation>Запустити бенчмарк</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="295"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="577"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="254"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="576"/>
         <source>Ready</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="304"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="262"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="572"/>
         <source>Benchmark run progress</source>
         <translation>Прогрес бенчмарку</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="308"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="578"/>
-        <source>Ready when you are.</source>
-        <translation>Готово до запуску.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="317"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="574"/>
-        <source>TensorRT engine build progress; indeterminate</source>
-        <translation>Прогрес збирання рушія TensorRT; відсоток не визначено</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="333"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="689"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="710"/>
         <source>TensorRT engine build elapsed · %1</source>
         <translation>Час збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="350"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="312"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="570"/>
         <source>Run a benchmark to see throughput for each selected clip and model.</source>
         <translation>Запустіть бенчмарк, щоб побачити швидкість для кожного вибраного кліпу й моделі.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="360"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="94"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="561"/>
+        <source>Compare rendering speed at 2× input resolution.</source>
+        <translation>Порівняйте швидкість рендерингу з подвоєною роздільністю виходу.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="278"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="573"/>
+        <source>Engine build progress; indeterminate</source>
+        <translation>Прогрес збирання рушія; відсоток не визначено</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="293"/>
+        <source>Engine build elapsed · %1</source>
+        <translation>Час збирання рушія · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="297"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="569"/>
+        <source>Preparation excluded from FPS.</source>
+        <translation>Час підготовки не враховується у FPS.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
         <source>Model</source>
         <translation>Модель</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="360"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
         <source>Clip</source>
         <translation>Кліп</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="360"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="321"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="571"/>
         <source>Throughput</source>
         <translation>Кадрів за секунду</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="537"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="541"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="540"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="544"/>
         <source>%1 / %2 selected</source>
         <translation>Вибрано %1 з %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="547"/>
-        <source>%1 clips · %2 models · %3 runs</source>
-        <translation>Кліпів: %1 · моделей: %2 · запусків: %3</translation>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="550"/>
+        <source>Clips: %1</source>
+        <translation>Кліпи: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="632"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="756"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="551"/>
+        <source>Models: %1</source>
+        <translation>Моделі: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="552"/>
+        <source>Runs: %1</source>
+        <translation>Запуски: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="635"/>
+        <source>Could not create the offscreen OpenGL surface.</source>
+        <translation>Не вдалося створити позаекранну поверхню OpenGL.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="648"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="787"/>
         <source>Benchmark running · %1 / %2</source>
         <translation>Бенчмарк виконується · %1 / %2</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="636"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="652"/>
         <source>Starting benchmark…</source>
         <translation>Запуск бенчмарку…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="694"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="654"/>
+        <source>Running…</source>
+        <translation>Виконується…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="715"/>
         <source>Building TensorRT engine · %1</source>
         <translation>Збирання рушія TensorRT · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="705"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="726"/>
         <source>TensorRT engine ready after %1</source>
         <translation>Рушій TensorRT готовий за %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="707"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="728"/>
         <source>TensorRT engine build failed after %1</source>
         <translation>Збірка рушія TensorRT не вдалася; минуло %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="712"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="733"/>
         <source>Engine ready; measuring throughput · %1</source>
         <translation>Рушій готовий; вимірювання швидкості · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="714"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="735"/>
         <source>TensorRT engine build failed · %1</source>
         <translation>Збірка рушія TensorRT не вдалася · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="771"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="769"/>
+        <source>Failed</source>
+        <translation>Помилка</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="802"/>
         <source>clip not found</source>
         <translation>кліп не знайдено</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="778"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="812"/>
         <source>Loading clip · %1</source>
         <translation>Завантаження кліпу · %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="867"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="896"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="909"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="930"/>
-        <source>TensorRT engine build failed</source>
-        <translation>Не вдалося зібрати рушій TensorRT</translation>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="838"/>
+        <source>Baseline</source>
+        <translation>Без обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="874"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="916"/>
-        <source>TensorRT engine build timed out</source>
-        <translation>Перевищено час очікування збірки рушія TensorRT</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="880"/>
-        <source>TensorRT configuration was not reported</source>
-        <translation>Конфігурацію TensorRT не підтверджено</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="884"/>
-        <source>no frames</source>
-        <translation>немає кадрів</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="891"/>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="922"/>
-        <source>Measuring throughput · %1</source>
-        <translation>Вимірювання швидкості · %1</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="941"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="831"/>
         <source>%1 fps</source>
         <translation>%1 fps</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="942"/>
-        <source>- (too slow or stalled)</source>
-        <translation>- (надто повільно або зупинилося)</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="957"/>
-        <source>Raw</source>
-        <translation>Сирий</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="968"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="849"/>
         <source>shader chain is not available</source>
         <translation>ланцюжок шейдерів недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="982"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="863"/>
         <source>plan is not available</source>
         <translation>план недоступний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1010"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="900"/>
         <source>Complete · %1 results</source>
         <translation>Завершено · результатів: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1011"/>
+        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="901"/>
         <source>Complete · %1 results · %2 failed</source>
         <translation>Завершено · результатів: %1 · невдалих: %2</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1016"/>
-        <source>Benchmark finished.</source>
-        <translation>Бенчмарк завершено.</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="1017"/>
-        <source>Benchmark finished with %1 failed runs.</source>
-        <translation>Бенчмарк завершено, невдалих запусків: %1.</translation>
     </message>
 </context>
 <context>
