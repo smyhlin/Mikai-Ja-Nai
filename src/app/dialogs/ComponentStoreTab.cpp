@@ -44,6 +44,7 @@
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
+#include "widgets/FlowLayout.hpp"
 #include <QtWidgets/QVBoxLayout>
 
 #include <stdexcept>
@@ -519,8 +520,7 @@ void ComponentStoreTab::buildUi() {
     actions->setContentsMargins(theme::kSpacingMedium, theme::kSpacingMedium,
                                 theme::kSpacingMedium, theme::kSpacingMedium);
     actions->setSpacing(theme::kSpacingSmall);
-    auto* primaryActions = new QHBoxLayout();
-    primaryActions->setSpacing(theme::kSpacingSmall);
+    auto* primaryActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     downloadButton_ = new QPushButton(actionsCard);
     downloadButton_->setObjectName(QStringLiteral("primary"));
     downloadButton_->setMinimumHeight(theme::kSettingsControlSize);
@@ -529,10 +529,8 @@ void ComponentStoreTab::buildUi() {
     refreshButton->setObjectName(QStringLiteral("refreshComponentsButton"));
     refreshButton->setMinimumHeight(theme::kSettingsControlSize);
     primaryActions->addWidget(refreshButton);
-    primaryActions->addStretch();
     actions->addLayout(primaryActions);
-    auto* utilityActions = new QHBoxLayout();
-    utilityActions->setSpacing(theme::kSpacingSmall);
+    auto* utilityActions = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     verifyButton_ = new QPushButton(actionsCard);
     verifyButton_->setObjectName(QStringLiteral("nativeComponentVerifyButton"));
     verifyButton_->setMinimumHeight(theme::kSettingsControlSize);
@@ -546,7 +544,6 @@ void ComponentStoreTab::buildUi() {
     cancelButton_->setMinimumHeight(theme::kSettingsControlSize);
     cancelButton_->setEnabled(false);
     utilityActions->addWidget(cancelButton_);
-    utilityActions->addStretch();
     actions->addLayout(utilityActions);
 
     progress_ = new QProgressBar(actionsCard);

@@ -863,6 +863,7 @@ if(TARGET mikai_backend)
     src/app/state/QualityCache.hpp
     src/app/workers/Runner.hpp
     src/app/widgets/FailureView.hpp
+    src/app/widgets/FlowLayout.hpp
     src/app/widgets/RangePager.hpp
     src/app/widgets/TitleCard.hpp
     src/app/widgets/RateLimitLabel.hpp
