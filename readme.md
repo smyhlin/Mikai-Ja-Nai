@@ -117,13 +117,15 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 ## Playback Benchmark
 
+See [benchmark results by machine](bench_results.md) for measured per-model throughput, test conditions, and interpretation limits. Compare matching input resolutions and settings; a failed runtime check is not a GPU performance measurement.
+
 Settings → Benchmark compares selected clips and models, with an optional unfiltered baseline. Search and group selection keep their choices while filtering; the run action stays visible while the page scrolls.
 
 Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
 
 TensorRT measurement waits for the selected slot's configured report and real video output. Engine compilation has separate indeterminate progress and elapsed time; compilation time is excluded, and compilation during a sample discards and restarts that sample. Select a failed result to read its full error.
 
-The opt-in `benchmark_probe` drives the real Settings tab with a baseline and Anime4K model. Run its executable from the deployed directory so the mpv runtime, models, shaders, and clips resolve. `--model <catalogue-id>` selects a native model, `--size WIDTHxHEIGHT` exercises another window size, and `--expect-failure` verifies an explicitly unsupported model's visible error.
+The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the baseline and Anime4K models. Run its executable from the deployed directory so the mpv runtime, models, shaders, and clips resolve. `--list-models` prints catalogue IDs; `--model <id,id,...>` and `--clip <filename>` select a subset. `--all-models --all-clips --output results.json` captures the complete matrix with stable model IDs, input clips, numeric fps or full failure reasons. A model failure does not prevent export; check `complete` before publishing the data. `--all-models` includes RIFE; the [published non-RIFE comparison](bench_results.md#reproducing-and-submitting-another-machine) includes a filtered invocation that excludes it. `--size WIDTHxHEIGHT` exercises another window size, and `--expect-failure` verifies an explicitly unsupported model's visible error.
 
 ---
 
