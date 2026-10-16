@@ -5,10 +5,15 @@
 #include <QCoreApplication>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
+#include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
@@ -18,9 +23,12 @@
 #include <QTreeWidgetItem>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QVector>
+
 #include <QTimer>
 #include <QDir>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -40,12 +48,29 @@ namespace {
 
 int failures = 0;
 
+struct ModelEntry {
+    QString id;
+    QString label;
+    QString group;
+};
+
+struct ClipEntry {
+    QString file;
+    QString label;
+};
+
+// Use sampler budgets so first-use engine builds are not truncated.
+constexpr qint64 kEngineBuildBudgetMs = 600000;
+constexpr qint64 kStartupBudgetMs = 20000;
+constexpr qint64 kSampleBudgetMs = 3000;
+constexpr qint64 kPairBudgetMs = kEngineBuildBudgetMs + kStartupBudgetMs + kSampleBudgetMs;
+
 void check(bool ok, const char* what) {
     std::fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) ++failures;
 }
 
-bool waitForUi(const std::function<bool()>& predicate, int timeoutMs) {
+bool waitForUi(const std::function<bool()>& predicate, qint64 timeoutMs) {
     QElapsedTimer clock;
     clock.start();
     while (clock.elapsed() < timeoutMs) {
@@ -55,6 +80,101 @@ bool waitForUi(const std::function<bool()>& predicate, int timeoutMs) {
     }
     QApplication::processEvents();
     return predicate();
+}
+
+double parseFps(const QString& text);
+
+// Table labels must map unambiguously to the selected stable model IDs.
+bool writeEvidence(const QString& path, bool complete, const QVector<ModelEntry>& models,
+                   const QVector<ClipEntry>& clips, const QHash<QString, ModelEntry>& modelByLabel,
+                   const QTableWidget* results) {
+    const QString baselineLabel = SettingsDialog::tr("Baseline");
+    QHash<QString, QString> clipFileByLabel;
+    for (const ClipEntry& clip : clips) {
+        if (clipFileByLabel.contains(clip.label)) {
+            std::fprintf(stderr, "FAIL ambiguous clip label \"%s\"\n", qPrintable(clip.label));
+            return false;
+        }
+        clipFileByLabel.insert(clip.label, clip.file);
+    }
+
+    QJsonArray modelArray;
+    for (const ModelEntry& model : models) {
+        modelArray.append(QJsonObject{{QStringLiteral("id"), model.id},
+                                      {QStringLiteral("label"), model.label},
+                                      {QStringLiteral("group"), model.group}});
+    }
+    QJsonArray clipArray;
+    for (const ClipEntry& clip : clips) {
+        clipArray.append(QJsonObject{{QStringLiteral("file"), clip.file},
+                                     {QStringLiteral("label"), clip.label}});
+    }
+
+    const int rowCount = results != nullptr ? results->rowCount() : 0;
+    QJsonArray resultArray;
+    for (int row = 0; row < rowCount; ++row) {
+        const QTableWidgetItem* modelItem = results->item(row, 0);
+        const QTableWidgetItem* clipItem = results->item(row, 1);
+        const QTableWidgetItem* resultItem = results->item(row, 2);
+        const QString modelLabel = modelItem != nullptr ? modelItem->text() : QString();
+        const QString clipLabel = clipItem != nullptr ? clipItem->text() : QString();
+        ModelEntry model;
+        if (modelLabel == baselineLabel) {
+            model = ModelEntry{QStringLiteral("baseline"), modelLabel, QStringLiteral("Baseline")};
+        } else if (modelByLabel.contains(modelLabel)) {
+            model = modelByLabel.value(modelLabel);
+        } else {
+            std::fprintf(stderr,
+                         "FAIL result row %d names model \"%s\", which no selected tree entry maps\n",
+                         row, qPrintable(modelLabel));
+            return false;
+        }
+        if (!clipFileByLabel.contains(clipLabel)) {
+            std::fprintf(stderr,
+                         "FAIL result row %d names clip \"%s\", which no selected clip maps\n", row,
+                         qPrintable(clipLabel));
+            return false;
+        }
+        const QString reason =
+            resultItem != nullptr ? resultItem->data(Qt::UserRole).toString() : QString();
+        const double fps = resultItem != nullptr ? parseFps(resultItem->text()) : -1.0;
+        const bool measured = reason.isEmpty() && std::isfinite(fps) && fps > 0.0;
+        resultArray.append(
+            QJsonObject{{QStringLiteral("modelId"), model.id},
+                        {QStringLiteral("model"), model.label},
+                        {QStringLiteral("group"), model.group},
+                        {QStringLiteral("clip"), clipLabel},
+                        {QStringLiteral("clipFile"), clipFileByLabel.value(clipLabel)},
+                        {QStringLiteral("fps"), measured ? QJsonValue(fps) : QJsonValue()},
+                        {QStringLiteral("reason"), reason}});
+    }
+
+    QJsonObject root{{QStringLiteral("complete"), complete},
+                     {QStringLiteral("models"), modelArray},
+                     {QStringLiteral("clips"), clipArray},
+                     {QStringLiteral("results"), resultArray}};
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        std::fprintf(stderr, "FAIL --output %s cannot be opened: %s\n", qPrintable(path),
+                     qPrintable(file.errorString()));
+        return false;
+    }
+    const QByteArray payload = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (file.write(payload) != payload.size()) {
+        file.cancelWriting();
+        std::fprintf(stderr, "FAIL --output %s could not be written in full: %s\n",
+                     qPrintable(path), qPrintable(file.errorString()));
+        return false;
+    }
+    if (!file.commit()) {
+        std::fprintf(stderr, "FAIL --output %s could not be committed: %s\n", qPrintable(path),
+                     qPrintable(file.errorString()));
+        return false;
+    }
+    std::printf("benchmark evidence written to %s\n", qPrintable(path));
+    std::fflush(stdout);
+    return true;
 }
 
 double parseFps(const QString& text) {
@@ -95,6 +215,20 @@ int main(int argc, char** argv) {
     parser.addOption(clipOpt);
     QCommandLineOption expectFailOpt(QStringLiteral("expect-failure"), QStringLiteral("expect explicit unacquired model row to show Failed with UserRole reason (baseline still positive)"));
     parser.addOption(expectFailOpt);
+    QCommandLineOption listOpt(QStringLiteral("list-models"),
+                               QStringLiteral("print every catalogue model as group<TAB>id<TAB>label and exit"));
+    parser.addOption(listOpt);
+    QCommandLineOption allModelsOpt(
+        QStringLiteral("all-models"),
+        QStringLiteral("check every catalogue model, baseline included in the run"));
+    parser.addOption(allModelsOpt);
+    QCommandLineOption allClipsOpt(QStringLiteral("all-clips"),
+                                   QStringLiteral("check every bundled clip"));
+    parser.addOption(allClipsOpt);
+    QCommandLineOption outputOpt(QStringLiteral("output"),
+                                 QStringLiteral("write the measured matrix to this path as UTF-8 JSON"),
+                                 QStringLiteral("file"));
+    parser.addOption(outputOpt);
     parser.process(app);
 
     QStringList requestedModels;
@@ -102,6 +236,28 @@ int main(int argc, char** argv) {
         requestedModels = parser.value(modelOpt).split(QLatin1Char(','), Qt::SkipEmptyParts);
     }
     const bool expectFailure = parser.isSet(expectFailOpt);
+    const bool allModels = parser.isSet(allModelsOpt);
+    const bool allClips = parser.isSet(allClipsOpt);
+    if (allModels && parser.isSet(modelOpt)) {
+        std::fprintf(stderr, "FAIL --all-models cannot be combined with --model\n");
+        return 2;
+    }
+    if (allClips && parser.isSet(clipOpt)) {
+        std::fprintf(stderr, "FAIL --all-clips cannot be combined with --clip\n");
+        return 2;
+    }
+    QString outputPath;
+    if (parser.isSet(outputOpt)) {
+        outputPath = parser.value(outputOpt);
+        // Fail before a long matrix if its evidence cannot be saved.
+        QSaveFile destination(outputPath);
+        if (!destination.open(QIODevice::WriteOnly)) {
+            std::fprintf(stderr, "FAIL --output %s cannot be opened: %s\n", qPrintable(outputPath),
+                         qPrintable(destination.errorString()));
+            return 2;
+        }
+        destination.cancelWriting();
+    }
 
     QSize requestedSize;
     if (parser.isSet(sizeOpt)) {
@@ -192,6 +348,20 @@ int main(int argc, char** argv) {
     auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
     check(tree != nullptr, "benchmarkModelTree present");
 
+    if (tree != nullptr && parser.isSet(listOpt)) {
+        for (int g = 0; g < tree->topLevelItemCount(); ++g) {
+            auto* group = tree->topLevelItem(g);
+            for (int c = 0; c < group->childCount(); ++c) {
+                auto* leaf = group->child(c);
+                std::printf("%s\t%s\t%s\n", qPrintable(group->text(0)),
+                            qPrintable(leaf->data(0, Qt::UserRole + 1).toString()),
+                            qPrintable(leaf->text(0)));
+            }
+        }
+        std::fflush(stdout);
+        return 0;
+    }
+
     if (tree) {
         for (int g = 0; g < tree->topLevelItemCount(); ++g) {
             auto* group = tree->topLevelItem(g);
@@ -202,18 +372,20 @@ int main(int argc, char** argv) {
         }
     }
 
-    QStringList chosenModels;
+    QVector<ModelEntry> chosenModels;
     if (tree) {
         for (int g = 0; g < tree->topLevelItemCount(); ++g) {
             auto* group = tree->topLevelItem(g);
             for (int c = 0; c < group->childCount(); ++c) {
                 auto* leaf = group->child(c);
                 const QString id = leaf->data(0, Qt::UserRole + 1).toString();
-                const bool wanted = requestedModels.isEmpty() ? id.startsWith(QLatin1String("anime4k:"))
-                                                             : requestedModels.contains(id);
+                const bool wanted =
+                    allModels || (requestedModels.isEmpty()
+                                      ? id.startsWith(QLatin1String("anime4k:"))
+                                      : requestedModels.contains(id));
                 if (wanted) {
                     leaf->setCheckState(0, Qt::Checked);
-                    chosenModels.append(id);
+                    chosenModels.append(ModelEntry{id, leaf->text(0), group->text(0)});
                 }
             }
         }
@@ -233,27 +405,40 @@ int main(int argc, char** argv) {
     }
     check(hasCheckedLeaf, "model leaf checkState set as user would");
     for (const QString& requested : requestedModels) {
-        if (!chosenModels.contains(requested)) {
+        if (std::none_of(chosenModels.cbegin(), chosenModels.cend(),
+                         [&requested](const ModelEntry& entry) { return entry.id == requested; })) {
             std::fprintf(stderr, "FAIL --model %s not found\n", qPrintable(requested));
             return 2;
         }
     }
-
-    bool clipFound = false;
-    for (auto* cb : dialog.findChildren<QCheckBox*>()) {
-        if (cb->objectName() == QStringLiteral("benchmarkClipCheck")) {
-            QString name = cb->property("benchmarkClipName").toString();
-            if (name == targetClip) {
-                cb->setChecked(true);
-                clipFound = true;
-            } else {
-                cb->setChecked(false);
-            }
+    // The result table has labels, not stable IDs.
+    QHash<QString, ModelEntry> modelByLabel;
+    for (const ModelEntry& entry : chosenModels) {
+        if (modelByLabel.contains(entry.label)) {
+            std::fprintf(stderr, "FAIL ambiguous model label \"%s\" for ids %s and %s\n",
+                         qPrintable(entry.label), qPrintable(modelByLabel.value(entry.label).id),
+                         qPrintable(entry.id));
+            return 2;
         }
+        modelByLabel.insert(entry.label, entry);
     }
-    check(clipFound, "target clip checkbox present");
+
+    QVector<ClipEntry> chosenClips;
+    for (auto* cb : dialog.findChildren<QCheckBox*>()) {
+        if (cb->objectName() != QStringLiteral("benchmarkClipCheck")) continue;
+        const QString name = cb->property("benchmarkClipName").toString();
+        const bool wanted = allClips || name == targetClip;
+        cb->setChecked(wanted);
+        if (wanted) chosenClips.append(ClipEntry{name, cb->text()});
+    }
+    const bool clipFound = !chosenClips.isEmpty();
+    check(clipFound, allClips ? "every bundled clip is selected" : "target clip checkbox present");
     if (!clipFound) {
-        std::fprintf(stderr, "FAIL --clip checkbox absent\n");
+        if (allClips) {
+            std::fprintf(stderr, "FAIL no bundled clip checkbox found\n");
+        } else {
+            std::fprintf(stderr, "FAIL --clip checkbox absent\n");
+        }
         return 2;
     }
 
@@ -288,10 +473,14 @@ int main(int argc, char** argv) {
     if (runButton) runButton->click();
     QApplication::processEvents();
 
-    const int expectedRows = static_cast<int>(chosenModels.size()) + 1;
-    const int deadlineMs = 120000 + static_cast<int>(chosenModels.size()) * 120000;
+    const qint64 expectedRows =
+        (static_cast<qint64>(chosenModels.size()) + 1) * static_cast<qint64>(chosenClips.size());
+    const qint64 deadlineMs = kPairBudgetMs * expectedRows;
+    std::fprintf(stderr, "[benchmark_probe] expected rows=%lld deadline=%lld ms\n",
+                 static_cast<long long>(expectedRows), static_cast<long long>(deadlineMs));
     bool completed = waitForUi([&] {
-        return runButton && runButton->isEnabled() && results && results->rowCount() >= expectedRows;
+        return runButton && runButton->isEnabled() && results &&
+               static_cast<qint64>(results->rowCount()) >= expectedRows;
     }, deadlineMs);
     check(completed, "run completed within the deadline, button reenabled, rows present");
 
@@ -371,6 +560,11 @@ int main(int argc, char** argv) {
     if (benchmarkScroll) {
         QScrollBar* hbar = benchmarkScroll->horizontalScrollBar();
         check(hbar->minimum() == hbar->maximum(), "still no horizontal scrolling after run");
+    }
+
+    if (!outputPath.isEmpty() && !writeEvidence(outputPath, completed, chosenModels, chosenClips,
+                                                modelByLabel, results)) {
+        return 2;
     }
 
     std::fprintf(stderr, "[benchmark_probe] %s (%d failures)\n", failures == 0 ? "PASS" : "FAIL", failures);
