@@ -30,6 +30,8 @@ class TestFeedRender : public QObject {
   void benchmarkModelSearchFiltersRowsAndRestoresSelections();
   void buildLogDetectionDistinguishesCompilationFromOtherBackendWork();
   void theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigured();
+  void interpolationOnlyRunsWaitForTheirSelectedSlot_data();
+  void interpolationOnlyRunsWaitForTheirSelectedSlot();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();
 
   // A title page's episode pills come from the release payload. When it answers,

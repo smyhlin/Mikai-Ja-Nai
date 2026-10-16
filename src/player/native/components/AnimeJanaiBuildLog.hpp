@@ -43,9 +43,32 @@ public:
             classifyAnimeJanaiBuildLog(prefix, line, backend, slot);
         if (event == AnimeJanaiBuildLogEvent::TensorRtBuildStarted) {
             state_ = AnimeJanaiBuildGateState::Building;
+            rifeActive_ = false;
+            backgroundBuildFinished_ = false;
         } else if (event == AnimeJanaiBuildLogEvent::SlotConfigured) {
             if (backend != Backend::TensorRT) return AnimeJanaiBuildLogEvent::None;
             state_ = AnimeJanaiBuildGateState::Ready;
+            rifeActive_ = false;
+        } else if (backend == Backend::TensorRT) {
+            const QStringView text = line.trimmed();
+            if (text.compare(QLatin1String("background engine build finished; reconfiguring"),
+                             Qt::CaseInsensitive) == 0) {
+                backgroundBuildFinished_ = buildActive();
+                rifeActive_ = false;
+            } else if (text.startsWith(QLatin1String("RIFE active: "), Qt::CaseInsensitive) &&
+                       text.endsWith(QLatin1String(" interpolation"), Qt::CaseInsensitive)) {
+                // Async builds can configure passthrough before their model is ready.
+                rifeActive_ = !buildActive() || backgroundBuildFinished_;
+            } else if (rifeActive_ &&
+                       text.startsWith(QLatin1String("No chain active for "),
+                                       Qt::CaseInsensitive) &&
+                       text.endsWith(QStringLiteral(" slot %1 (passthrough)").arg(slot),
+                                     Qt::CaseInsensitive)) {
+                // Interpolation-only slots omit the spatial "Configured slot" log.
+                state_ = AnimeJanaiBuildGateState::Ready;
+                rifeActive_ = false;
+                return AnimeJanaiBuildLogEvent::SlotConfigured;
+            }
         }
         return event;
     }
@@ -58,6 +81,8 @@ public:
 
 private:
     AnimeJanaiBuildGateState state_ = AnimeJanaiBuildGateState::WaitingForConfiguredSlot;
+    bool rifeActive_ = false;
+    bool backgroundBuildFinished_ = false;
 };
 
 }  // namespace mplayer::native

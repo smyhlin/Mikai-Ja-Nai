@@ -621,6 +621,65 @@ void TestFeedRender::theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigu
   QVERIFY(!gate.readyToMeasure());
 }
 
+void TestFeedRender::interpolationOnlyRunsWaitForTheirSelectedSlot_data() {
+  QTest::addColumn<bool>("coldBuild");
+  QTest::newRow("cached-engine") << false;
+  QTest::newRow("background-build") << true;
+}
+
+void TestFeedRender::interpolationOnlyRunsWaitForTheirSelectedSlot() {
+  QFETCH(bool, coldBuild);
+  constexpr int slot = 2101;
+  AnimeJanaiBuildGate gate;
+  const auto observe = [&gate](const QString& line, Backend backend = Backend::TensorRT) {
+    return gate.observeLog(QStringLiteral("aji"), line, backend, slot);
+  };
+  const QString building = QStringLiteral("background engine build: rife_v4.7.onnx");
+  const QString active = QStringLiteral("RIFE active: 2/1 interpolation");
+  const QString selected =
+      QStringLiteral("No chain active for 1280x720@23.976 slot 2101 (passthrough)");
+
+  if (coldBuild) {
+    observe(building);
+    observe(active);
+    observe(selected);
+    QVERIFY(!gate.readyToMeasure());
+  }
+  observe(selected);
+  observe(QStringLiteral("background engine build finished; reconfiguring"));
+  QVERIFY(!gate.readyToMeasure());
+  QCOMPARE(gate.buildActive(), coldBuild);
+
+  observe(active, Backend::DirectML);
+  observe(selected);
+  QVERIFY(!gate.readyToMeasure());
+
+  observe(active);
+  observe(QStringLiteral("No chain active for 1280x720@23.976 slot 2102 (passthrough)"));
+  QVERIFY(!gate.readyToMeasure());
+  QCOMPARE(observe(selected), AnimeJanaiBuildLogEvent::SlotConfigured);
+  QVERIFY(gate.readyToMeasure());
+  QVERIFY(!gate.buildActive());
+
+  observe(building);
+  observe(active);
+  observe(selected);
+  QVERIFY(gate.buildActive());
+  QVERIFY(!gate.readyToMeasure());
+  observe(QStringLiteral("background engine build finished; reconfiguring"));
+  observe(selected);
+  QVERIFY(!gate.readyToMeasure());
+  observe(active);
+  observe(selected);
+  QVERIFY(gate.readyToMeasure());
+
+  gate.fail();
+  observe(active);
+  observe(selected);
+  QVERIFY(gate.failed());
+  QVERIFY(!gate.readyToMeasure());
+}
+
 void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() {
   MikaiClient client(QString(), QStringLiteral("http://127.0.0.1:1"));
   Runner runner;
