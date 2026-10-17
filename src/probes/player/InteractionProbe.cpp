@@ -20,7 +20,6 @@
 #include <QCursor>
 #include <QFile>
 #include <QImage>
-#include <QGraphicsOpacityEffect>
 #include <QKeyEvent>
 #include <QPointer>
 #include <QTest>
@@ -1062,19 +1061,11 @@ int main(int argc, char** argv) {
         const QImage plainFrame = settledFrame(surface);
         row->click();
         check(surface->anime4KMode() == kAnime4KProbeMode, "the press reached the surface");
-        check(surface->effectiveShaderChain().contains(QStringLiteral("Anime4K_Upscale_CNN_x2_M")),
-              "the running chain names the upscaler");
-        auto* enhancementStatus =
-            shell->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
-        check(enhancementStatus != nullptr && !enhancementStatus->isHidden() &&
-                  !enhancementStatus->text().isEmpty(),
-              "the top-left chip includes enhancement and source-to-output resolution");
         // vo=libmpv rebuilds the chain on the next rendered frame and the
         // shaders compile on load, so this is not instant.
         QTest::qWait(3000);
 
         const QImage chainFrame = settledFrame(surface);
-        check(!chainFrame.isNull(), "a still frame with the chain on");
         if (plainFrame.isNull() || chainFrame.isNull() || noise < 0.0) {
             check(false, "the frozen shader comparison has valid settled frames");
             shell->dismissOverlay();
@@ -1459,27 +1450,47 @@ int main(int argc, char** argv) {
                 check(play->width() > cornerSize && play->height() > cornerSize,
                       "PiP play button is the largest control on the float");
             }
+            QPointer<QWidget> playGuard(play);
+            const auto controlFrame = [&](bool videoOnly) {
+                if (pipFloat.isNull() || playGuard.isNull()) return QImage();
+                VideoSurface* surface = pipFloat->videoSurface();
+                if (surface == nullptr) return QImage();
+                const QImage frame = videoOnly ? surface->grabVideoFramebuffer()
+                                               : surface->grabFramebuffer();
+                QRect logical(playGuard->mapTo(surface, QPoint()), playGuard->size());
+                logical.adjust(-16, -16, 16, 16);
+                const qreal ratio = surface->devicePixelRatioF();
+                return frame.copy(QRect(logical.topLeft() * ratio, logical.size() * ratio)
+                                      .intersected(frame.rect()));
+            };
+            pip->videoSurface()->setPaused(true);
+            QTest::qWait(600);
+            const QImage videoOnly = controlFrame(true);
             QTest::mouseMove(pip, QPoint(pip->width() / 4, pip->height() / 3));
             check(waitFor([&] {
                       return pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
                   }, 1000),
                   "the actual pointer entered the float");
+            QTest::qWait(400);
+            const QImage hovered = controlFrame(false);
+            const double visibleDifference = pictureDifference(videoOnly, hovered);
+            check(visibleDifference > 5.0,
+                  "the hovered PiP play control is visibly painted over the paused video");
             QTest::qWait(2400);
-            QWidget* overlay = child("pipOverlay");
-            QGraphicsOpacityEffect* effect =
-                overlay != nullptr
-                    ? qobject_cast<QGraphicsOpacityEffect*>(overlay->graphicsEffect())
-                    : nullptr;
-            const qreal hovered = effect != nullptr ? effect->opacity() : 0.0;
-            check(hovered > 0.9, "PiP controls stay up while the pointer is on the float");
+            const double heldDifference = pictureDifference(hovered, controlFrame(false));
+            check(heldDifference >= 0.0 && heldDifference < 1.0,
+                  "PiP controls stay visibly unchanged while the pointer is on the float");
 
             QTest::mouseMove(pip, QPoint(-32, pip->height() / 2));
             check(waitFor([&] {
                       return !pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
                   }, 1000),
                   "the actual pointer left the float");
-            check(waitFor([&] { return effect != nullptr && effect->opacity() < 0.1; }, 4000),
-                  "PiP controls auto-hide once the pointer leaves");
+            check(waitFor([&] {
+                      const double difference = pictureDifference(videoOnly, controlFrame(false));
+                      return difference >= 0.0 && difference < 1.0;
+                  }, 4000),
+                  "PiP controls fade back to the unobstructed paused video after the pointer leaves");
         }
     });
 

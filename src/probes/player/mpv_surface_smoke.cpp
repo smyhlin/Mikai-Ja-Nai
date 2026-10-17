@@ -52,8 +52,8 @@ void usage() {
                  "[--out <prefix>]\n"
                  "  --render-lifecycle runs the presentation/lifecycle contract instead of the "
                  "single-clip proof.\n"
-                 "  --dpr applies QT_SCALE_FACTOR before QApplication, so the run really is at "
-                 "that ratio.\n"
+                 "  --dpr sets QT_SCALE_FACTOR before QApplication; Qt multiplies the monitor's "
+                 "native ratio by this factor.\n"
                  "  default media for the lifecycle contract: "
                  "av://lavfi:testsrc2=size=640x360:rate=25\n"
                  "  --out prefixes the screenshot artifacts (default mpv_surface_lifecycle).\n");
@@ -351,7 +351,8 @@ int runRenderLifecycle(const Options& options) {
 
     const qreal dpr = surface->devicePixelRatioF();
     verdict.metric(QStringLiteral("device pixel ratio %1").arg(dpr, 0, 'f', 2));
-    verdict.instrumentation(dpr > 1.0, QStringLiteral("fractional device pixel ratio in effect"));
+    verdict.instrumentation(std::abs(dpr - std::round(dpr)) > 0.001,
+                            QStringLiteral("fractional device pixel ratio in effect"));
 
     // ── a live, moving, colourful picture ─────────────────────────────────
     const bool live = waitUntil(
@@ -415,20 +416,27 @@ int runRenderLifecycle(const Options& options) {
     verdict.require(saveArtifact(options.outPrefix + QStringLiteral("_playing.png"), playingLater),
                     QStringLiteral("artifact %1_playing.png written").arg(options.outPrefix));
 
-    // A stalled or mis-offset clock is what the media clock against the wall
-    // clock catches.
+    // PNG writes above can leave the published HUD clock stale.
+    const auto positionAt = surface->probeMpvProperty(
+        QStringLiteral("time-pos"), mplayer::ProbePropertyKind::Number);
     QElapsedTimer wall;
     wall.start();
-    const double positionAt = surface->position();
     pumpEvents(1200);
-    const double advanced = surface->position() - positionAt;
+    const auto positionAfter = surface->probeMpvProperty(
+        QStringLiteral("time-pos"), mplayer::ProbePropertyKind::Number);
     const double elapsed = wall.elapsed() / 1000.0;
-    verdict.metric(QStringLiteral("media clock +%1 s over %2 s of wall clock")
-                       .arg(advanced, 0, 'f', 3)
-                       .arg(elapsed, 0, 'f', 3));
-    verdict.require(std::abs(advanced - elapsed) <= 0.25,
-                    QStringLiteral("the media clock tracks the wall clock (drift %1 s)")
-                        .arg(advanced - elapsed, 0, 'f', 3));
+    const bool clockReadable = positionAt && positionAt->isNumeric() &&
+                               positionAfter && positionAfter->isNumeric();
+    verdict.require(clockReadable, QStringLiteral("both media-clock endpoints came from the core"));
+    if (clockReadable) {
+        const double advanced = positionAfter->asNumber() - positionAt->asNumber();
+        verdict.metric(QStringLiteral("media clock +%1 s over %2 s of wall clock")
+                           .arg(advanced, 0, 'f', 3)
+                           .arg(elapsed, 0, 'f', 3));
+        verdict.require(std::abs(advanced - elapsed) <= 0.25,
+                        QStringLiteral("the media clock tracks the wall clock (drift %1 s)")
+                            .arg(advanced - elapsed, 0, 'f', 3));
+    }
 
     // ── paused repaints with the HUD on screen ────────────────────────────
     surface->setPaused(true);
@@ -705,11 +713,18 @@ int runRenderLifecycle(const Options& options) {
     const QImage beforeMinimize = surface->grabFramebuffer();
     const double minimizedPositionAt = surface->position();
     host.showMinimized();
+    pumpEvents(200);
+    const quint64 minimizedPaints = surface->paints;
+    const quint64 minimizedFrames = renderedFrames();
     pumpEvents(700);
     const double minimizedAdvance = surface->position() - minimizedPositionAt;
+    verdict.require(host.isMinimized(),
+                    QStringLiteral("the platform placed the host in the minimized state"));
+    verdict.require(surface->paints == minimizedPaints && renderedFrames() == minimizedFrames,
+                    QStringLiteral("the settled minimized surface performs no video paints"));
     verdict.metric(QStringLiteral("while minimized: clock +%1 s, paints +%2")
                        .arg(minimizedAdvance, 0, 'f', 3)
-                       .arg(surface->paints));
+                       .arg(surface->paints - minimizedPaints));
     host.showNormal();
     const bool minimizedRestored =
         waitUntil([&] { return renderedFrames() >= framesBeforeMinimize + 3; }, 6000);

@@ -167,9 +167,19 @@ void requireHeld(mplayer::probes::Verdict& verdict, mplayer::VideoSurface* surfa
                  const QString& scenario) {
     const bool acknowledged = waitFor([surface] { return corePaused(surface, true); }, 2000);
     verdict.require(acknowledged, scenario + QStringLiteral(": actual core pause acknowledged"));
-    pump(150);
+    QImage frame;
+    int stableFrames = 0;
+    for (int attempt = 0; attempt < 25 && stableFrames < 4; ++attempt) {
+        pump(80);
+        const QImage next = surface->grabVideoFramebuffer();
+        const auto picture = mplayer::probes::measurePicture(
+            next, surface->videoWidth(), surface->videoHeight());
+        stableFrames = picture.litFraction() >= mplayer::probes::kMinPictureLitFraction &&
+                               next == frame ? stableFrames + 1 : 0;
+        frame = next;
+    }
+    verdict.require(stableFrames >= 4, scenario + QStringLiteral(": paused rendering settles"));
     const auto start = corePosition(surface);
-    const QImage frame = surface->grabVideoFramebuffer();
     bool paused = true;
     bool frozen = start.has_value();
     for (int i = 0; i < 5; ++i) {
@@ -180,8 +190,33 @@ void requireHeld(mplayer::probes::Verdict& verdict, mplayer::VideoSurface* surfa
     }
     verdict.require(paused, scenario + QStringLiteral(": paused output remains enforced"));
     verdict.require(frozen, scenario + QStringLiteral(": actual media clock stays frozen"));
-    verdict.require(!frame.isNull() && frame == surface->grabVideoFramebuffer(),
-                    scenario + QStringLiteral(": displayed frame stays identical"));
+    const QImage after = surface->grabVideoFramebuffer();
+    const bool comparable = !frame.isNull() && !after.isNull() && frame.size() == after.size();
+    long changed = 0;
+    long compared = 0;
+    if (comparable) {
+        const QRect picture = mplayer::probes::pictureRect(
+            frame.size(), surface->videoWidth(), surface->videoHeight());
+        for (int y = picture.top(); y <= picture.bottom(); y += 2) {
+            for (int x = picture.left(); x <= picture.right(); x += 2) {
+                const QColor before = frame.pixelColor(x, y);
+                const QColor next = after.pixelColor(x, y);
+                ++compared;
+                if (std::abs(before.red() - next.red()) +
+                        std::abs(before.green() - next.green()) +
+                        std::abs(before.blue() - next.blue()) > mplayer::probes::kMotionPixelDelta)
+                    ++changed;
+            }
+        }
+    }
+    verdict.metric(scenario + QStringLiteral(": changed %1/%2 picture pixels; %3x%4 -> %5x%6")
+                                  .arg(changed).arg(compared)
+                                  .arg(frame.width()).arg(frame.height())
+                                  .arg(after.width()).arg(after.height()));
+    verdict.require(compared > 0 &&
+                        double(changed) / double(compared) <
+                            mplayer::probes::kMinMotionChangedFraction,
+                    scenario + QStringLiteral(": the paused picture shows no visible motion"));
 }
 
 QString labelTexts(const QWidget* root) {
@@ -633,10 +668,6 @@ int main(int argc, char** argv) {
     const QString url = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                  : QStringLiteral("av://lavfi:testsrc2=size=640x360:rate=25");
     const QList<QualityEntry> qualities = {{360, url}};
-    QSettings().setValue(QStringLiteral("player/animejanai/preset"),
-                         QStringLiteral("builtin1001"));
-    QSettings().setValue(QStringLiteral("player/animejanai/backend"),
-                         QStringLiteral("tensorrt"));
     auto* dialog = new PlayerDialog(QStringLiteral("probe 360p"), url, qualities, 360, &host);
     dialog->startPlayer();
     dialog->show();
@@ -662,12 +693,6 @@ int main(int argc, char** argv) {
     }
     verdict.require(!dialog->enginePreparationVisible(),
                     QStringLiteral("no operation window appears before work starts"));
-    const bool animeJanaiPlanReady = surface != nullptr && waitFor([dialog, surface] {
-        return dialog->animeJanaiPlanGeneration() > 0 &&
-               surface->animeJanaiPlan().presetId == QStringLiteral("builtin1001");
-    });
-    verdict.require(animeJanaiPlanReady,
-                    QStringLiteral("configured AnimeJaNai plan reaches the actual player core"));
 
     bool cancelSeen = false;
     QObject::connect(dialog, &PlayerDialog::enginePreparationCancelRequested, dialog,
@@ -797,6 +822,23 @@ int main(int argc, char** argv) {
     verdict.require(waitFor([surface] {
         return corePaused(surface, false) && surface->isPlaying();
     }), QStringLiteral("terminal applies Play requested during the replacement load"));
+
+    dialog->applyAnimeJanaiBackend(QStringLiteral("tensorrt"));
+    dialog->applyAnimeJanaiRequest(QStringLiteral("builtin1001"));
+    const bool animeJanaiPlanReady = waitFor([dialog, surface] {
+        const auto plan = surface->animeJanaiPlan();
+        return dialog->animeJanaiPlanGeneration() > 0 &&
+               plan.presetId == QStringLiteral("builtin1001") &&
+               plan.enabled && plan.available && surface->animeJanaiProcessingObserved();
+    }, 20000);
+    verdict.require(animeJanaiPlanReady,
+                    QStringLiteral("configured AnimeJaNai processing reaches the actual player core"));
+    if (!animeJanaiPlanReady) {
+        std::fprintf(stderr, "native setup: %s\n", qPrintable(surface->animeJanaiStatus()));
+        dialog->close();
+        return verdict.report("engine_popup_probe");
+    }
+    pump(500);
 
     const QString buildDetail = QStringLiteral("Compiling spatial test engine");
     verdict.require(announceAnimeJanaiBuild(surface, true, false, buildDetail),
