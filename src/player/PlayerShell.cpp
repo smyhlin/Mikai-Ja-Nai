@@ -14,6 +14,7 @@
 #include <QMap>
 #include <QWindow>
 #include <QPainterPath>
+#include <QRegion>
 #include <QShowEvent>
 #include <QStyle>
 #include <QUrl>
@@ -261,15 +262,6 @@ QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& cur
     return entries;
 }
 
-QString cursorName(PlayerShell::State state) {
-    switch (state) {
-        case PlayerShell::State::FullscreenAutoHidden: return QStringLiteral("none");
-        case PlayerShell::State::DefaultFit:
-        case PlayerShell::State::FullscreenActive: return QStringLiteral("default");
-    }
-    return QStringLiteral("default");
-}
-
 }  // namespace
 
 PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
@@ -331,22 +323,19 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     buildFooter();
     buildOverlays();
     buildPictureMenu();
-    // The chrome has to sit above the surface, and it already does: the surface
-    // is the first child built, and Qt stacks later siblings above earlier
-    // ones. That is stated once, here, rather than re-asserted on every layout
-    // pass - layoutChrome runs from applyState, which runs on every input
-    // event, and each raise() is an explicit z-order mutation that invalidates
-    // the covered region even when the order is already correct.
-    //
-    // Nothing lowers the surface and no chrome widget is created after this
-    // point, so the order established here is the order that holds.
+    // Not z-order over the picture any more, but the child order ChromeList
+    // walks - stated once, because a raise() per layout pass is a child-order
+    // mutation that invalidates the region it covers.
     for (QWidget* widget : {static_cast<QWidget*>(windowControls_), static_cast<QWidget*>(titleBar_),
                             static_cast<QWidget*>(btnPrev_), static_cast<QWidget*>(btnNext_),
                             static_cast<QWidget*>(dock_), static_cast<QWidget*>(footerLeft_),
-                            static_cast<QWidget*>(hud_),
                             static_cast<QWidget*>(center_)}) {
         widget->raise();
     }
+
+    // Adopts the whole subtree - the popovers skip themselves - and records it
+    // in paint order, so a frame walks that list.
+    chrome_.adopt(this, this);
 
     applyState();
     layoutChrome();
@@ -368,6 +357,11 @@ void PlayerShell::buildSurface() {
     // _ReposedEvent shim for this because the surface was a foreign native
     // window; here it is an ordinary child, so an event filter is enough.
     surface_->installEventFilter(this);
+    // Every paint, not just the ones carrying a new frame: the chrome survives
+    // a resize, a re-show and a paused repaint. Direct - the painter is only
+    // valid for the length of the call.
+    connect(surface_, &VideoSurface::paintOverlay, this, &PlayerShell::paintSurfaceOverlay,
+            Qt::DirectConnection);
 }
 
 void PlayerShell::buildWindowControls() {
@@ -407,9 +401,8 @@ void PlayerShell::buildTitleBar() {
     lay->setContentsMargins(12, 0, 6, 0);
     lay->setSpacing(8);
 
-    auto* caption = new QLabel(QStringLiteral("MIKAI"), titleBar_);
+    auto* caption = new ChromeLabel(QStringLiteral("MIKAI"), QFont(), w70(), titleBar_);
     caption->setObjectName(QStringLiteral("playerTitleCaption"));
-    caption->setStyleSheet(QStringLiteral("background: transparent; color: %1;").arg(w70().name()));
     lay->addWidget(caption);
     lay->addStretch(1);
 
@@ -450,10 +443,12 @@ void PlayerShell::buildDock() {
     topRow->setContentsMargins(0, 0, 0, 0);
     topRow->setSpacing(4);
 
+    // A layout host, not a surface: nothing of it is painted, so the dock's own
+    // fill is what shows through over the picture.
     auto* volumeHost = new QWidget(dock_);
     volumeHost->setFixedWidth(kDockSideWidth);
     volumeHost->setAttribute(Qt::WA_StyledBackground, false);
-    volumeHost->setStyleSheet(QStringLiteral("background: transparent;"));
+    volumeHost->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* volumeLayout = new QHBoxLayout(volumeHost);
     volumeLayout->setContentsMargins(0, 0, 0, 0);
     vol_ = new VolumeGroup(volumeHost);
@@ -481,7 +476,7 @@ void PlayerShell::buildDock() {
     auto* actionHost = new QWidget(dock_);
     actionHost->setFixedWidth(kDockSideWidth);
     actionHost->setAttribute(Qt::WA_StyledBackground, false);
-    actionHost->setStyleSheet(QStringLiteral("background: transparent;"));
+    actionHost->setAttribute(Qt::WA_TranslucentBackground, true);
     auto* actions = new QHBoxLayout(actionHost);
     actions->setContentsMargins(0, 0, 0, 0);
     actions->setSpacing(4);
@@ -527,10 +522,7 @@ void PlayerShell::buildDock() {
     auto* timeline = new QHBoxLayout();
     timeline->setContentsMargins(0, 0, 0, 0);
     timeline->setSpacing(8);
-    lblElapsed_ = new QLabel(QStringLiteral("00:00"), dock_);
-    lblElapsed_->setFont(monoFont(9));
-    lblElapsed_->setStyleSheet(
-        QStringLiteral("background: transparent; color: rgba(255,255,255,230);"));
+    lblElapsed_ = new ChromeLabel(QStringLiteral("00:00"), monoFont(9), white(230), dock_);
     lblElapsed_->setFixedWidth(38);
     timeline->addWidget(lblElapsed_);
 
@@ -541,10 +533,7 @@ void PlayerShell::buildDock() {
     connect(scrub_, &RangeSlider::valueChanged, this, &PlayerShell::onScrub);
     timeline->addWidget(scrub_, 1);
 
-    lblRemaining_ = new QLabel(QStringLiteral("-00:00"), dock_);
-    lblRemaining_->setFont(monoFont(9));
-    lblRemaining_->setStyleSheet(
-        QStringLiteral("background: transparent; color: rgba(255,255,255,140);"));
+    lblRemaining_ = new ChromeLabel(QStringLiteral("-00:00"), monoFont(9), white(140), dock_);
     lblRemaining_->setFixedWidth(42);
     timeline->addWidget(lblRemaining_);
     dockLayout->addLayout(timeline);
@@ -596,33 +585,25 @@ void PlayerShell::buildFooter() {
     info->setContentsMargins(12, 5, 12, 5);
     info->setSpacing(8);
 
-    lblEpisode_ = new QLabel(episodeLabel_.isEmpty() ? QStringLiteral("MIKAI") : episodeLabel_, footerLeft_);
+    lblEpisode_ = new ChromeLabel(
+        episodeLabel_.isEmpty() ? QStringLiteral("MIKAI") : episodeLabel_, monoFont(9, true),
+        white(255), footerLeft_);
     lblEpisode_->setObjectName(QStringLiteral("playerEpisodeLabel"));
-    QFont appFont = monoFont(9);
-    appFont.setBold(true);
-    lblEpisode_->setFont(appFont);
-    lblEpisode_->setStyleSheet(QStringLiteral("background: transparent; color: #ffffff;"));
     info->addWidget(lblEpisode_);
 
-    auto* divider = new QLabel(QStringLiteral("│"), footerLeft_);
-    divider->setStyleSheet(
-        QStringLiteral("background: transparent; color: rgba(255,255,255,70);"));
+    auto* divider = new ChromeLabel(QStringLiteral("│"), QFont(), white(70), footerLeft_);
     info->addWidget(divider);
 
-    lblNetworkStats_ = new QLabel(QStringLiteral("0.00 Mbps × — FPS"), footerLeft_);
+    lblNetworkStats_ = new ChromeLabel(QStringLiteral("0.00 Mbps × — FPS"), monoFont(8),
+                                       white(185), footerLeft_);
     lblNetworkStats_->setObjectName(QStringLiteral("playerNetworkStats"));
-    lblNetworkStats_->setFont(monoFont(8));
     lblNetworkStats_->setToolTip(tr("FPS unknown"));
     lblNetworkStats_->setAccessibleDescription(tr("FPS unknown"));
-    lblNetworkStats_->setStyleSheet(
-        QStringLiteral("background: transparent; color: rgba(255,255,255,185);"));
     info->addWidget(lblNetworkStats_);
 
-    lblEnhancement_ = new QLabel(footerLeft_);
+    lblEnhancement_ = new ChromeLabel(QString(), monoFont(8), QColor(QStringLiteral("#79dcf2")),
+                                      footerLeft_);
     lblEnhancement_->setObjectName(QStringLiteral("playerEnhancementStatus"));
-    lblEnhancement_->setFont(monoFont(8));
-    lblEnhancement_->setStyleSheet(
-        QStringLiteral("background: transparent; color: #79dcf2;"));
     lblEnhancement_->hide();
     info->addWidget(lblEnhancement_);
 
@@ -630,17 +611,14 @@ void PlayerShell::buildFooter() {
     // replacement: the shader chain and the native pipeline are separate, and
     // one must never be read as the other. It is shown only for the loaded
     // Native runtime, when processing is requested or the filter reports state.
-    lblNative_ = new QLabel(footerLeft_);
+    lblNative_ = new ChromeLabel(QString(), monoFont(8), QColor(QStringLiteral("#ffcf7a")),
+                                 footerLeft_);
     lblNative_->setObjectName(QStringLiteral("playerNativeStatus"));
-    lblNative_->setFont(monoFont(8));
-    lblNative_->setStyleSheet(
-        QStringLiteral("background: transparent; color: #ffcf7a;"));
     lblNative_->hide();
     info->addWidget(lblNative_);
-    lblAnimeJanai_ = new QLabel(footerLeft_);
+    lblAnimeJanai_ = new ChromeLabel(QString(), monoFont(8), QColor(QStringLiteral("#79dcf2")),
+                                     footerLeft_);
     lblAnimeJanai_->setObjectName(QStringLiteral("playerAnimeJanaiStatus"));
-    lblAnimeJanai_->setFont(monoFont(8));
-    lblAnimeJanai_->setStyleSheet(QStringLiteral("background: transparent; color: #79dcf2;"));
     lblAnimeJanai_->hide();
     info->addWidget(lblAnimeJanai_);
     footerLeft_->setFixedHeight(kInfoChipHeight);
@@ -731,9 +709,6 @@ void PlayerShell::openPictureMenu(const QPoint& position) {
     pictureMenu_->popupNear(mapToGlobal(position));
 }
 void PlayerShell::buildOverlays() {
-    hud_ = new StateHUD(this);
-    // the manifest readout duplicates the dock's numbers and is never shown
-    hud_->hide();
     toast_ = new Toast(this);
     center_ = new CenterGlyph(this);
     center_->setKind(CenterGlyph::Kind::None);
@@ -808,7 +783,19 @@ void PlayerShell::applyState() {
         emit stateChanged(name);
     }
     layoutChrome();
+    updateEmptyState();
     update();
+}
+
+void PlayerShell::updateEmptyState() {
+    const bool shown = !hasMedia_ && !hudHidden_;
+    if (shown == emptyStateShown_) {
+        return;
+    }
+    emptyStateShown_ = shown;
+    // The hint is painted, not a widget - and with no core running there may be
+    // no other frame to carry the change.
+    chromeDirtyAll();
 }
 
 void PlayerShell::setStateCursor() {
@@ -973,24 +960,10 @@ void PlayerShell::layoutChrome() {
     footerLeft_->move(12, 8);
 
     // ── overlays ───────────────────────────────────────────────────
-    // The HUD is hidden by default and holds a 7-row label tree, so measuring
-    // it on every layout pass is ~17 widgets of work for a widget nobody can
-    // see. It is measured when it is shown instead, which is also the only
-    // time its size can differ from what is already cached.
-    if (!hud_->isHidden()) {
-        hud_->adjustSize();
-        hud_->move(w - hud_->width() - 14, static_cast<int>(h * 0.30));
-    }
     center_->move((w - center_->width()) / 2, (h - center_->height()) / 2);
     if (toast_->isVisible()) {
         toast_->move((w - toast_->width()) / 2, static_cast<int>(h * 0.80));
     }
-}
-
-void PlayerShell::toggleHud() {
-    showHud_ = !showHud_;
-    hud_->setVisible(showHud_ && !hudHidden_);
-    applyState();
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1013,6 +986,7 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
     // The folder row is only offered for a source that is a file on disk, so
     // the rows follow the media rather than being frozen at build time.
     updatePictureMenu();
+    updateEmptyState();
     layoutChrome();
 }
 
@@ -1138,20 +1112,6 @@ void PlayerShell::updateTimeLabels() {
         // 59 of every 60 emissions from repainting the whole timeline.
         const double pixels = std::max(1.0, static_cast<double>(scrub_->width()));
         scrub_->setValueSilent(std::round(position_ / duration_ * pixels) / pixels);
-    }
-    if (showHud_ && !hudHidden_) {
-        hud_->updateData(stateName(),
-                         {{QStringLiteral("cursor"), cursorName(state())},
-                          {QStringLiteral("t"),
-                           QStringLiteral("%1 / %2").arg(formatTime(position_),
-                                                        formatTime(duration_))},
-                          {QStringLiteral("rate"), QStringLiteral("%1x").arg(rate_)},
-                          {QStringLiteral("volume"), QStringLiteral("%1%2")
-                                                            .arg(static_cast<int>(volume_ * 100))
-                                                            .arg(muted_ ? tr("  muted")
-                                                                        : QString())}});
-        hud_->adjustSize();
-        layoutChrome();
     }
 }
 
@@ -1682,9 +1642,6 @@ void PlayerShell::keyPressEvent(QKeyEvent* event) {
             toast_->flash(tr("Volume %1%").arg(static_cast<int>(v * 100)));
             break;
         }
-        case Qt::Key_D:
-            toggleHud();
-            break;
         case Qt::Key_Question:
         case Qt::Key_Slash:
             openKeys();
@@ -1834,6 +1791,11 @@ void PlayerShell::releasePointer() {
 }
 
 bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
+    // First thing, and before the branches below: a chrome widget the surface
+    // adopted reports its own change here - a label that was retexted, a panel
+    // that was reshown - and an update() on a widget whose pixels come from the
+    // surface is only half a repaint. The event is never consumed.
+    chromeRepaintEvent(this, watched, event);
     // Resting on a row of the tree opens the level that hangs under it, which
     // is what makes the tree a tree: with a click per level, four levels would
     // be four choices and three Back rows. Only the rows are watched - a panel
@@ -1981,10 +1943,85 @@ void PlayerShell::retranslateUi() {
     updateInfoChip();
     updateTimeLabels();
     layoutChrome();
+    // A translated string is new chrome pixels even where a counter's text was
+    // unchanged - the empty-state hint is painted, not a label - so this is a
+    // picture repaint rather than a window repaint.
+    chromeDirtyAll();
+}
+
+void PlayerShell::chromeDirty(QWidget* widget, const QRect& rect) {
+    if (widget == nullptr || surface_ == nullptr) {
+        return;
+    }
+    const QRect local = rect.isNull() ? widget->rect() : rect;
+    const QRect dirty(widget->mapTo(this, local.topLeft()), local.size());
+    const QRect picture = surface_->geometry();
+    // The picture carries the chrome that stands over it; this window carries
+    // what falls beside it - and the dock straddles the two, which is why the
+    // rect is split rather than sent whole to either side.
+    const QRect over = dirty.intersected(picture);
+    if (!over.isEmpty()) {
+        surface_->update(over.translated(-surface_->pos()));
+    }
+    const QRegion beside = QRegion(dirty) - QRegion(picture);
+    if (!beside.isEmpty()) {
+        update(beside);
+    }
+}
+
+void PlayerShell::chromeDirtyAll() {
+    // A move or a resize leaves stale pixels where the widget was, and no
+    // widget-shaped rect describes those.
+    if (surface_ != nullptr) {
+        surface_->update();
+    }
     update();
 }
 
-void PlayerShell::paintEvent(QPaintEvent*) {
+void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
+    if (painter == nullptr || surface_ == nullptr) {
+        return;
+    }
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    // The painter is in the surface's coordinates and the chrome is laid out in
+    // the shell's, of which the surface is a child at a known offset. The clip
+    // is the whole shell: the picture is already the edge of this device.
+    painter->translate(-surface_->x(), -surface_->y());
+    paintChrome(*painter, QRect(QPoint(0, 0), size()));
+    painter->restore();
+}
+
+void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
+    // The discs are the shell's, not the buttons', so they are painted under
+    // every control.
+    for (IconButton* button : {btnPrev_, btnNext_}) {
+        if (button->isVisible() && QRect(button->pos(), button->size()).intersects(clip)) {
+            paintRounded(painter, QRectF(button->geometry()), 21, QColor(0, 0, 0, 110), w15());
+        }
+    }
+
+    chrome_.paint(painter, this, clip);
+
+    // Empty-state hint: over the whole window rather than in a widget.
+    if (!hasMedia_ && !hudHidden_) {
+        // The band the two hint lines are drawn into.
+        const QRectF band(0.0, height() / 2.0 - 30.0, width(), 44.0);
+        if (band.intersects(QRectF(clip))) {
+            const QFont f = uiFont(11);
+            const QStringList lines = {tr("no media loaded"),
+                                       tr("drop a video file here  ·  or pass one as argv[1]")};
+            painter.setFont(f);
+            for (int i = 0; i < lines.size(); ++i) {
+                painter.setPen(i == 0 ? w55() : w35());
+                painter.drawText(QRectF(0, height() / 2.0 - 30 + i * 22, width(), 22),
+                                 Qt::AlignHCenter, lines[i]);
+            }
+        }
+    }
+}
+
+void PlayerShell::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
@@ -1998,25 +2035,10 @@ void PlayerShell::paintEvent(QPaintEvent*) {
         p.fillRect(rect(), g);
     }
 
-    // Chevron discs sit under their buttons.
-    for (IconButton* button : {btnPrev_, btnNext_}) {
-        if (button->isVisible()) {
-            paintRounded(p, QRectF(button->geometry()), 21, QColor(0, 0, 0, 110), w15());
-        }
-    }
-
-    // Empty-state hint.
-    if (!hasMedia_ && !hudHidden_) {
-        const QFont f = uiFont(11);
-        const QStringList lines = {tr("no media loaded"),
-                                   tr("drop a video file here  ·  or pass one as argv[1]")};
-        p.setFont(f);
-        for (int i = 0; i < lines.size(); ++i) {
-            p.setPen(i == 0 ? w55() : w35());
-            p.drawText(QRectF(0, height() / 2.0 - 30 + i * 22, width(), 22), Qt::AlignHCenter,
-                       lines[i]);
-        }
-    }
+    // The half of the chrome the surface cannot carry: same routine, one clip
+    // per paint device, so nothing is painted twice and nothing is left out.
+    p.setClipRegion(event->region().intersected(QRegion(rect()) - QRegion(surface_->geometry())));
+    paintChrome(p, QRect(QPoint(0, 0), size()));
 }
 
 void PlayerShell::resizeEvent(QResizeEvent* event) {

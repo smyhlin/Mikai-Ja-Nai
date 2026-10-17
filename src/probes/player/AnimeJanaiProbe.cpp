@@ -1288,7 +1288,7 @@ struct ProcessedRawCapture {
                          gl->glIsEnabled(GL_DITHER), colorMask[0], colorMask[1],
                          colorMask[2], colorMask[3], unpackBuffer, unpackAlignment, unpackRows);
             owner->doneCurrent();
-            const QImage before = owner->grabFramebuffer();
+            const QImage before = owner->grabVideoFramebuffer();
             const bool beforeSaved = !before.isNull() && before.save(beforePath, "PNG");
             bool texturesSaved = true;
             if (captureGlTextures) {
@@ -1340,7 +1340,7 @@ struct ProcessedRawCapture {
                 waitUntil([&] { return answered || !owner; }, 10000);
             if (!owner) return false;
             // Software download can repair a race: keep both surrounding FBO observations.
-            const QImage after = owner->grabFramebuffer();
+            const QImage after = owner->grabVideoFramebuffer();
             const bool afterSaved = !after.isNull() && after.save(afterPath, "PNG");
             bool subtitleCaptured = !isolateSubtitles;
             if (isolateSubtitles) {
@@ -1364,12 +1364,12 @@ struct ProcessedRawCapture {
                 const QString disabledPath = folder.filePath(
                     QStringLiteral("animejanai-probe-processed-raw-subtitles-off.png"));
                 const bool disabledSaved = disabled && owner &&
-                    owner->grabFramebuffer().save(disabledPath, "PNG");
+                    owner->grabVideoFramebuffer().save(disabledPath, "PNG");
                 const bool restored = originalSid && cycleTo(*originalSid) && settlePaint();
                 const QString restoredPath = folder.filePath(
                     QStringLiteral("animejanai-probe-processed-raw-subtitles-restored.png"));
                 const bool restoredSaved = restored && owner &&
-                    owner->grabFramebuffer().save(restoredPath, "PNG");
+                    owner->grabVideoFramebuffer().save(restoredPath, "PNG");
                 subtitleCaptured = disabledSaved && restoredSaved;
                 std::fprintf(stderr,
                              "[processed-raw] subtitle-isolation original=%s off=%d restored=%d "
@@ -1476,7 +1476,7 @@ struct EngineBuildPlaybackEvidence {
             ++heldSamples;
             // Permit one queued presentation after pause acknowledgement.
             if (elapsed - acknowledgedAt >= 250) {
-                const QImage frame = surface->grabFramebuffer();
+                const QImage frame = surface->grabVideoFramebuffer();
                 if (framebufferAt < 0) {
                     framebufferAt = elapsed;
                     heldFramebuffer = frame;
@@ -1691,7 +1691,7 @@ int observedFrameChanges(VideoSurface* surface, int durationMs) {
     clock.start();
     while (clock.elapsed() < durationMs) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        const QImage current = surface->grabFramebuffer();
+        const QImage current = surface->grabVideoFramebuffer();
         if (!previous.isNull() && changed(previous, current)) ++changes;
         previous = current;
         QThread::msleep(16);
@@ -2341,10 +2341,10 @@ int main(int argc, char** argv) {
     if (!volumeObserved) ++failures;
     surface->setMuted(false);
     surface->setPaused(false);
-    const QImage frameA = surface->grabFramebuffer();
+    const QImage frameA = surface->grabVideoFramebuffer();
     QThread::msleep(300);
     QCoreApplication::processEvents();
-    const QImage frameB = surface->grabFramebuffer();
+    const QImage frameB = surface->grabVideoFramebuffer();
     const bool moving = changed(frameA, frameB);
     result(moving, "moving video frames reached the actual OpenGL framebuffer");
     if (!moving) ++failures;
@@ -2718,7 +2718,7 @@ int main(int argc, char** argv) {
                 const uint64_t processedRenderedOutputFrames =
                     observedRenderedOutputFrames(surface, 3000);
                 const PlaybackDiagnostics processedDiagnostics = surface->playbackDiagnostics();
-                const QImage processedFrame = surface->grabFramebuffer();
+                const QImage processedFrame = surface->grabVideoFramebuffer();
                 const QString imagePath = QDir(actualNativeRoot).filePath(
                     QStringLiteral("animejanai-probe-processed.png"));
                 const bool imageSaved = processedFrame.save(imagePath, "PNG");

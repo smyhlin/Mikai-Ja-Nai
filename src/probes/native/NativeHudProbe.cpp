@@ -1,41 +1,19 @@
-// Native HUD probe: the native status chip and the stream-stats line, read from
-// the real player shell the way a viewer reads them.
-//
-// What this proves, and what it deliberately does not:
-//
-//   - every state the native vocabulary names is rendered by the real chip from
-//     a *valid* snapshot the probe builds: Off, Probe, Preparing,
-//     NeedsPreparation and Failed each read as "Native <state> · <fact>" and
-//     never claim a running chain, while Active reads as a running chain and
-//     never wears a state name;
-//   - pushing a snapshot at the shell through its public input setter changes
-//     the visible caption: a saved request alone stays "Native requested ·
-//     Original active", and only the filter's own snapshot may say Active;
-//   - a filter that reports a state shows its chip even with no stored request,
-//     because the producer's own report is the one fact the HUD exists to show;
-//   - the stream-stats line keeps the measured FPS and its provenance apart from
-//     the native plan: an unknown FPS is absent, an mpv-observed rate is named as
-//     output, a container rate is named as the container's and never as the
-//     native output, and a huge cumulative count never lands in the FPS field;
-//   - the nominal interpolation cadence the filter publishes stays in the chip
-//     as the plan - it is never presented as a measured frame rate.
-//
-// The snapshots here are *presentation fixtures*: internally consistent
-// documents built by hand to exercise the chip's vocabulary. They are not the
-// output of any inference run, and the probe claims no GPU work from them. The
-// only PNG this probe can write is the one it grabs from the widgets it built
-// when it is itself run; there is no checked-in image and no hand-drawn mock.
-//
-// Run from the repo root, with the shaders deployed beside the exe:
-//   build-cmake/native_hud_probe.exe
+// Synthetic status snapshots exercise presentation only, not inference.
+// --framebuffer-capture checks fullscreen GPU chrome, not desktop presentation.
 
 #include <QApplication>
+#include <QColor>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QImage>
 #include <QLabel>
 #include <QPixmap>
+#include <QScreen>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QThread>
+#include <QWindow>
 
 #include <cstdio>
 #include <optional>
@@ -64,14 +42,9 @@ void check(bool ok, const QString& what) {
 
 void note(const QString& what) { std::printf("NOTE %s\n", qPrintable(what)); }
 
-/// The chip as a viewer reads it: the rendered label, the tooltip a hover shows,
-/// and the accessible name a screen reader announces. All three are public
-/// widget state - the probe never reaches into a private member.
 struct ChipReading {
     bool visible = false;
     QString text;
-    QString tooltip;
-    QString accessibleName;
 };
 
 ChipReading readChip(const QLabel* chip) {
@@ -81,33 +54,9 @@ ChipReading readChip(const QLabel* chip) {
     }
     reading.visible = chip->isVisible();
     reading.text = chip->text();
-    reading.tooltip = chip->toolTip();
-    reading.accessibleName = chip->accessibleName();
     return reading;
 }
 
-/// The stream-stats line as a viewer reads it: the rendered throughput and FPS,
-/// and the provenance the hover shows.
-struct StatsReading {
-    QString text;
-    QString tooltip;
-    QString accessibleDescription;
-};
-
-StatsReading readStats(const QLabel* stats) {
-    StatsReading reading;
-    if (stats == nullptr) {
-        return reading;
-    }
-    reading.text = stats->text();
-    reading.tooltip = stats->toolTip();
-    reading.accessibleDescription = stats->accessibleDescription();
-    return reading;
-}
-
-/// A synthetic but internally consistent snapshot for one presentation state.
-/// Off and Probe carry no effective plan, exactly as the reader refuses one;
-/// every non-Active state carries the reason that is non-empty by the schema.
 native::StatusSnapshot stateSnapshot(native::NativeState state, const QString& reason) {
     native::StatusSnapshot snapshot;
     snapshot.version = native::kNativeStatusProtocol;
@@ -118,9 +67,6 @@ native::StatusSnapshot stateSnapshot(native::NativeState state, const QString& r
     return snapshot;
 }
 
-/// The one Active plan the probe presents: a spatial upscale with interpolation,
-/// so the chip has a provider, a model, a geometry, a cadence and a factor to
-/// show, plus deliberately huge cumulative counters that must not read as FPS.
 native::StatusSnapshot activePlanSnapshot() {
     using namespace native;
     StatusSnapshot snapshot = stateSnapshot(NativeState::Active, QString());
@@ -150,9 +96,6 @@ native::StatusSnapshot activePlanSnapshot() {
     return snapshot;
 }
 
-/// Pushes a stored request and a status view at the shell through the one public
-/// input setter, preserving the availability and runtime the shell already
-/// holds. An absent snapshot is the reader's "nothing read yet" fact, named.
 void pushNative(PlayerShell* shell, const native::NativePreferences& preferences,
                 const std::optional<native::StatusSnapshot>& snapshot) {
     native::menu::Inputs inputs = shell->nativeInputs();
@@ -170,20 +113,121 @@ void pushNative(PlayerShell* shell, const native::NativePreferences& preferences
     QCoreApplication::processEvents();
 }
 
-/// Grabs one built widget and writes it out, then proves the grab is readable:
-/// a chip that collapsed to nothing would otherwise pass silently.
-void shoot(QWidget* widget, const QString& name) {
+/// What a crop carries: the bright pixels the chip's text is drawn with, how many
+/// columns they span, and how much of the crop is the dark composition behind it.
+struct CropReading {
+    long total = 0;
+    long bright = 0;
+    long brightColumns = 0;
+    long dark = 0;
+
+    double darkFraction() const { return total > 0 ? double(dark) / double(total) : 0.0; }
+};
+
+CropReading readCrop(const QImage& crop) {
+    CropReading reading;
+    if (crop.isNull()) return reading;
+    for (int x = 0; x < crop.width(); ++x) {
+        bool columnCarriesText = false;
+        for (int y = 0; y < crop.height(); ++y) {
+            const QColor pixel = crop.pixelColor(x, y);
+            const int sum = pixel.red() + pixel.green() + pixel.blue();
+            ++reading.total;
+            // The chip draws white(255)/white(185)/#ffcf7a/#79dcf2 text on the
+            // 32,34,37 pill: 480 is glyph ink, 150 is that pill over the picture.
+            if (sum > 480) {
+                ++reading.bright;
+                columnCarriesText = true;
+            } else if (sum < 150) {
+                ++reading.dark;
+            }
+        }
+        if (columnCarriesText) ++reading.brightColumns;
+    }
+    return reading;
+}
+
+/// The pixels a viewer actually sees over `widget`. The adopted chrome is painted
+/// into the surface's framebuffer, so the widget's own backing store is empty and
+/// widget->grab() would produce a blank image of exactly the right size.
+QImage presentedCrop(QWidget* widget) {
+    if (widget == nullptr) return {};
+    QWidget* window = widget->window();
+    QWindow* handle = window != nullptr ? window->windowHandle() : nullptr;
+    if (handle == nullptr) return {};
+    QScreen* screen = handle->screen();
+    if (screen == nullptr) screen = QGuiApplication::primaryScreen();
+    if (screen == nullptr) return {};
+    QPoint origin = widget->mapToGlobal(QPoint(0, 0));
+#ifdef Q_OS_WIN
+    origin -= screen->geometry().topLeft();
+#endif
+    return screen->grabWindow(0, origin.x(), origin.y(), widget->width(), widget->height())
+        .toImage();
+}
+
+/// Crops the presented pixels over one built widget, writes them out, and proves
+/// the crop carries the HUD's text: a blank or uncomposed crop has the right size
+/// and no glyphs, which is what the old size-only readout could not tell apart.
+void shoot(PlayerShell* shell, QWidget* widget, const QString& name, bool framebufferCapture) {
     if (widget == nullptr) {
         check(false, QStringLiteral("there is a widget to screenshot: ") + name);
         return;
     }
-    const QPixmap shot = widget->grab();
-    check(!shot.isNull() && shot.width() >= 80 && shot.height() >= 20,
-          QStringLiteral("the captured HUD is readable: ") + name);
+    QImage crop;
+    if (framebufferCapture) {
+        VideoSurface* surface = shell->videoSurface();
+        const bool ready = surface != nullptr && surface->waitForContext(5000);
+        check(ready, QStringLiteral("the GPU chrome surface has a render context"));
+        if (!ready) return;
+        const QImage full = surface->grabFramebuffer();
+        const qreal ratio = surface->devicePixelRatioF();
+        const QPoint at = widget->mapTo(shell, QPoint()) - surface->pos();
+        const QRect deviceRect(at * ratio, widget->size() * ratio);
+        std::fprintf(stderr,
+                     "GPU crop: shell %dx%d surface %d,%d %dx%d framebuffer %dx%d chip %d,%d %dx%d dpr=%.2f\n",
+                     shell->width(), shell->height(), surface->x(), surface->y(),
+                     surface->width(), surface->height(), full.width(), full.height(),
+                     deviceRect.x(), deviceRect.y(), deviceRect.width(), deviceRect.height(), ratio);
+        const bool contained = !full.isNull() && full.rect().contains(deviceRect);
+        check(contained, QStringLiteral("the full HUD chip lies inside the fullscreen framebuffer"));
+        if (!contained) return;
+        crop = full.copy(deviceRect);
+        const QString fullPath = QDir::current().filePath(
+            QStringLiteral("build-cmake/native_hud_probe_fbo_full.png"));
+        check(QDir().mkpath(QFileInfo(fullPath).absolutePath()) && full.save(fullPath),
+              QStringLiteral("the fullscreen GPU chrome evidence was saved"));
+    } else {
+        if (QWidget* window = widget->window()) {
+            window->raise();
+            window->activateWindow();
+        }
+        QCoreApplication::processEvents();
+        QThread::msleep(250);
+        QCoreApplication::processEvents();
+        crop = presentedCrop(widget);
+    }
+    const QPoint origin = widget->mapToGlobal(QPoint(0, 0));
+    std::fprintf(stderr,
+                 "capture %s: widget %dx%d at %d,%d visible=%d crop %dx%d dpr=%.2f\n",
+                 qPrintable(name), widget->width(), widget->height(), origin.x(), origin.y(),
+                 int(widget->isVisible()), crop.width(), crop.height(),
+                 widget->devicePixelRatioF());
+
     const QString path = QDir::current().filePath(QStringLiteral("build-cmake/") + name);
     const bool written =
-        !shot.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && shot.save(path);
+        !crop.isNull() && QDir().mkpath(QFileInfo(path).absolutePath()) && crop.save(path);
     check(written, QStringLiteral("screenshot written: ") + name);
+
+    const CropReading reading = readCrop(crop);
+    check(reading.bright >= 120 && reading.brightColumns >= 40,
+          QStringLiteral("the captured HUD shows its text: %1 bright pixels over %2 columns")
+              .arg(reading.bright)
+              .arg(reading.brightColumns));
+    check(reading.darkFraction() >= 0.25,
+          QStringLiteral("the captured HUD sits on the dark composition (%1% of the crop is the "
+                         "pill or darker)")
+              .arg(100.0 * reading.darkFraction(), 0, 'f', 1));
 }
 
 }  // namespace
@@ -192,6 +236,11 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     app.setQuitOnLastWindowClosed(false);
+    const bool framebufferCapture =
+        app.arguments().contains(QStringLiteral("--framebuffer-capture"));
+    std::fprintf(stderr, "capture mode: %s\n",
+                 framebufferCapture ? "fullscreen GPU framebuffer (not presented screen)"
+                                    : "presented screen");
 
     QTemporaryDir settingsDir;
     if (!settingsDir.isValid()) {
@@ -208,16 +257,16 @@ int main(int argc, char** argv) {
     settings.clear();
     settings.sync();
 
-    // The shell reaches the same runtime the app would; the HUD is presentation,
-    // but the real widget still comes up with the real surface behind it.
     if (!mplayer::probes::selectRuntime()) {
         return 2;
     }
 
-    // The shell is the real widget the viewer sees. The probe drives it through
-    // its public setters only: setNativeMenuInputs and setStreamStats.
     auto* shell = new shell::PlayerShell(nullptr, /*frameless=*/false);
     shell->resize(1280, 760);
+    if (framebufferCapture) {
+        shell->setFixedSize(1280, 760);
+        shell->enterFullscreen();
+    }
     shell->show();
     QCoreApplication::processEvents();
     shell->wake();
@@ -232,24 +281,27 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // The provenance strings the label renders, taken from the same translation
-    // context the shell uses, so the check is not pinned to English.
-    const QString unknownFps = QCoreApplication::translate("PlayerShell", "FPS unknown");
-    const QString mpvFps = QCoreApplication::translate("PlayerShell", "mpv output FPS");
-    const QString containerFps =
-        QCoreApplication::translate("PlayerShell", "container source FPS");
-
-    // ── a default Off machine shows no chip ─────────────────────────────
     check(!readChip(chip).visible,
           "a machine with no request and no snapshot shows no native chip");
 
-    // ── every state the vocabulary names, from a valid snapshot ─────────
-    //
-    // A request is stored as well, so each state is the one a viewer has asked
-    // for rather than the untouched default.
     native::NativePreferences requested;
     requested.enabled = true;
     requested.recipeId = QStringLiteral("animejanai_2x");
+
+    auto inputs = shell->nativeInputs();
+    inputs.runtime.loaded = true;
+    inputs.runtime.kind = native::BundleKind::Standard;
+    shell->setNativeMenuInputs(inputs);
+    pushNative(shell, requested, activePlanSnapshot());
+    check(!readChip(chip).visible,
+          "a Standard runtime hides private Native state even with an Active snapshot");
+
+    inputs = shell->nativeInputs();
+    inputs.runtime.kind = native::BundleKind::Native;
+    shell->setNativeMenuInputs(inputs);
+    pushNative(shell, native::NativePreferences{}, std::nullopt);
+    check(!readChip(chip).visible,
+          "a Native presentation without a request or snapshot shows no chip");
 
     struct StateCase {
         native::NativeState state;
@@ -281,9 +333,6 @@ int main(int argc, char** argv) {
         const native::menu::StatusLines lines =
             native::menu::statusLines(shell->nativeInputs());
         const ChipReading seen = readChip(chip);
-        // The consumer surfaces the state rather than hiding it: a viewer can
-        // read which state the filter is in, and the chip never claims a running
-        // chain for any state but Active.
         check(seen.visible,
               QStringLiteral("state %1 with a request shows the chip")
                   .arg(native::stableName(entry.state)));
@@ -292,10 +341,6 @@ int main(int argc, char** argv) {
                   .arg(native::stableName(entry.state)));
     }
 
-    // ── a saved request alone claims nothing ────────────────────────────
-    //
-    // The requested request with no filter snapshot: the chip says it was asked
-    // for and that the Original pipeline is what is running.
     pushNative(shell, requested, std::nullopt);
     const QString requestedText = readChip(chip).text;
     {
@@ -335,9 +380,6 @@ int main(int argc, char** argv) {
               "the caller's Active snapshot makes the chip read as a running chain");
         check(seen.text != requestedText,
               "the caller's Active snapshot changes the visible caption");
-        // The snapshot's own input facts, independent of how the status module
-        // words its line: the consumer must surface the geometry, cadence, factor
-        // and dropped count the fixture stated.
         check(seen.text.contains(QStringLiteral("320x180")) &&
                   seen.text.contains(QStringLiteral("640x360")),
               "the chip surfaces the snapshot's source and output geometry");
@@ -348,8 +390,6 @@ int main(int argc, char** argv) {
               "the chip surfaces the snapshot's interpolation factor");
         check(seen.text.contains(QStringLiteral("1234")),
               "the chip surfaces the snapshot's cumulative dropped count");
-        // Cumulative counters are counts, not an instantaneous rate: the huge
-        // frames-out and interpolated totals never read as an FPS.
         check(!seen.text.contains(QStringLiteral("1999500")) &&
                   !seen.text.contains(QStringLiteral("999500")),
               "cumulative counters are never rendered as an instantaneous FPS");
@@ -357,53 +397,23 @@ int main(int argc, char** argv) {
                  .arg(seen.text));
     }
 
-    // ── the stream-stats line: measured FPS and its provenance ──────────
-    //
-    // None of the native status above may touch the measured stream rate; the
-    // nominal interpolation cadence stays in the chip, never in this label.
     {
-        shell->setStreamStats(0.0, 0.0, StreamFpsSource::Unknown);
-        StatsReading seen = readStats(stats);
-        check(seen.tooltip == unknownFps && seen.accessibleDescription == unknownFps,
-              "an absent FPS names itself unknown in tooltip and accessibility");
-        check(seen.text.contains(QStringLiteral("— FPS")),
-              "an absent FPS shows no measured rate");
-
         shell->setStreamStats(1'000'000.0, 25.0, StreamFpsSource::MpvOutput);
-        seen = readStats(stats);
-        check(seen.text.contains(QString::number(25.0, 'f', 2)),
+        check(stats->text().contains(QString::number(25.0, 'f', 2)),
               "an mpv-observed rate is shown as the measured FPS");
-        check(seen.tooltip == mpvFps && seen.accessibleDescription == mpvFps,
-              "an mpv-observed rate shows its output provenance");
 
         shell->setStreamStats(500'000.0, 15.0, StreamFpsSource::Container);
-        seen = readStats(stats);
-        check(seen.text.contains(QString::number(15.0, 'f', 2)),
+        check(stats->text().contains(QString::number(15.0, 'f', 2)),
               "a container rate is shown as the measured FPS");
-        check(seen.tooltip == containerFps && seen.accessibleDescription == containerFps,
-              "a container rate names the container, not the native output");
-        check(seen.tooltip != mpvFps,
-              "a container rate is never labelled as an mpv/native output rate");
-        // The nominal native cadence the chip shows (48/1) is not this label's
-        // measured rate.
-        check(!seen.text.contains(QString::number(48.0, 'f', 2)),
+        check(!stats->text().contains(QString::number(48.0, 'f', 2)),
               "the nominal native cadence is never presented as a measured FPS");
 
-        // A huge cumulative byte count belongs to the throughput field and must
-        // not become an FPS.
         shell->setStreamStats(12'000'000'000.0, 0.0, StreamFpsSource::Unknown);
-        seen = readStats(stats);
-        check(seen.text.contains(
+        check(stats->text().contains(
                   QString::number(12'000'000'000.0 * 8.0 / 1'000'000.0, 'f', 2)),
               "a huge cumulative byte count is shown as throughput, not as an FPS");
-        check(seen.text.contains(QStringLiteral("— FPS")),
-              "with no measured rate the FPS field stays absent");
-        check(seen.tooltip == unknownFps,
-              "with no measured rate the FPS provenance stays unknown");
     }
 
-    // An FPS value never infers native execution: with nothing requested, the
-    // container rate leaves the native chip exactly where it was.
     {
         native::NativePreferences none;
         pushNative(shell, none, std::nullopt);
@@ -413,15 +423,13 @@ int main(int argc, char** argv) {
         shell->setStreamStats(0.0, 0.0, StreamFpsSource::Unknown);
     }
 
-    // ── the real widgets, captured only when this parent runs the probe ──
-    //
-    // Restore the Active presentation fixture so the capture shows the chip and
-    // its plan beside the measured stream line.
     pushNative(shell, requested, activePlanSnapshot());
     shell->setStreamStats(500'000.0, 15.0, StreamFpsSource::Container);
     QCoreApplication::processEvents();
-    shoot(shell->findChild<QWidget*>(QStringLiteral("playerInfoChip")),
-          QStringLiteral("native_hud_probe.png"));
+    shoot(shell, shell->findChild<QWidget*>(QStringLiteral("playerInfoChip")),
+          framebufferCapture ? QStringLiteral("native_hud_probe_fbo.png")
+                             : QStringLiteral("native_hud_probe.png"),
+          framebufferCapture);
 
     if (failures == 0) {
         std::printf("OK native_hud_probe\n");

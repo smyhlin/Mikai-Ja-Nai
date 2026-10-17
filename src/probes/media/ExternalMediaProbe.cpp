@@ -278,7 +278,7 @@ bool playback(PlayerDialog* player) {
     if (!surface || !until([surface] { return surface->hasVideo() && surface->duration() > 10.0; })) return false;
     surface->setPaused(true);
     QTest::qWait(300);
-    const QImage image = surface->grabFramebuffer();
+    const QImage image = surface->grabVideoFramebuffer();
     if (image.isNull() || surface->videoWidth() != 320 || surface->videoHeight() != 180) return false;
     int colorful = 0;
     for (int y = image.height() / 4; y < image.height() * 3 / 4; y += 8) {
@@ -696,7 +696,7 @@ int playerClipboardFailureProbe(const QString& clip) {
     if (decoded) surface->setPaused(true);
     const bool lit = decoded && until([&] {
         return surface && surface->pauseObserved() && !mplayer::probes::measurePicture(
-            surface->grabFramebuffer(), surface->videoWidth(),
+            surface->grabVideoFramebuffer(), surface->videoWidth(),
             surface->videoHeight()).isMostlyBlack();
     }, 5000);
     check(lit, "hostless player decodes a real lit frame before clipboard refusal");
@@ -772,7 +772,7 @@ int playerClipboardFailureProbe(const QString& clip) {
     check(before.unchanged(),
           "untouched original retains exact sequence, all native formats, MIME bytes and image pixels");
     check(player && surface && player->isVisible() && surface->hasVideo() &&
-          !mplayer::probes::measurePicture(surface->grabFramebuffer(),
+          !mplayer::probes::measurePicture(surface->grabVideoFramebuffer(),
               surface->videoWidth(), surface->videoHeight()).isMostlyBlack(),
           "player still renders the real frame after both refused actions");
     if (player) delete player;

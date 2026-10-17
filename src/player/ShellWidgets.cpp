@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QEnterEvent>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
@@ -47,8 +48,6 @@ const SpeedPreset kSpeedPresets[] = {
     {1.7, "Very fast"},     {2.0, "Double speed"},
 };
 
-inline constexpr int kHudRows = 7;
-
 /// Label for the preset at `index`. Rows are appended in `kSpeedPresets` order,
 /// so the index is the whole lookup — `refresh` runs on every slider-drag frame.
 QString presetLabel(int index) {
@@ -56,7 +55,178 @@ QString presetLabel(int index) {
                                        kSpeedPresets[index].label);
 }
 
+/// paintRounded() with a brush instead of a flat colour, so an IconButton's
+/// standing fill can be the gradient the float's play disc is drawn with.
+void paintRoundedBrush(QPainter& painter, const QRectF& rect, double radius, const QBrush& fill,
+                       const QColor& border, double borderWidth) {
+    painter.setPen(border.isValid() ? QPen(border, borderWidth) : QPen(Qt::NoPen));
+    painter.setBrush(fill);
+    painter.drawRoundedRect(rect, radius, radius);
+}
+
+/// True for a widget that paints itself and covers what is under it: the
+/// popovers. They are the chrome's opaque cards, so they are not adopted into
+/// the surface painter and neither is anything they own.
+bool selfPaintedChrome(const QWidget* widget) {
+    return widget->property("playerOverlay").toBool();
+}
+
 }  // namespace
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PAINTED CHROME
+// ═══════════════════════════════════════════════════════════════════════════
+
+void ChromePaint::paintOwnBackingStore(QWidget* widget) {
+    if (surfacePainted_) {
+        return;
+    }
+    QPainter painter(widget);
+    painter.setRenderHint(QPainter::Antialiasing);
+    paintChrome(painter);
+}
+
+ChromeHost* chromeHostOf(QWidget* widget) {
+    for (QWidget* parent = (widget != nullptr) ? widget->parentWidget() : nullptr;
+         parent != nullptr; parent = parent->parentWidget()) {
+        if (auto* host = dynamic_cast<ChromeHost*>(parent)) {
+            return host;
+        }
+    }
+    return nullptr;
+}
+
+void chromeUpdate(QWidget* widget, const QRect& rect) {
+    if (widget == nullptr) {
+        return;
+    }
+    if (rect.isNull()) {
+        widget->update();
+    } else {
+        widget->update(rect);
+    }
+    auto* painted = dynamic_cast<ChromePaint*>(widget);
+    if (painted == nullptr || !painted->surfacePainted()) {
+        return;
+    }
+    if (ChromeHost* host = chromeHostOf(widget)) {
+        host->chromeDirty(widget, rect);
+    }
+}
+
+void ChromeList::adopt(QWidget* root, QObject* watcher) {
+    entries_.clear();
+    addSubtree(root, watcher);
+}
+
+void ChromeList::addSubtree(QWidget* root, QObject* watcher) {
+    if (root == nullptr) {
+        return;
+    }
+    // The reference, not a copy: adopting never creates or destroys a widget,
+    // and this runs once per host rather than per frame.
+    const QObjectList& children = root->children();
+    for (QObject* object : children) {
+        auto* child = qobject_cast<QWidget*>(object);
+        if (child == nullptr || child->isWindow() || selfPaintedChrome(child)) {
+            continue;
+        }
+        if (auto* painted = dynamic_cast<ChromePaint*>(child)) {
+            // A widget already adopted keeps its attributes and its filter: a
+            // second pass only records it again.
+            if (!painted->surfacePainted()) {
+                painted->setSurfacePainted(true);
+                // Translucent, so the window still paints the part of this
+                // widget that falls outside the picture; the two background
+                // attributes go with it, or Qt fills a slab behind the chrome.
+                child->setAttribute(Qt::WA_TranslucentBackground, true);
+                child->setAttribute(Qt::WA_StyledBackground, false);
+                child->setAutoFillBackground(false);
+                if (watcher != nullptr) {
+                    child->installEventFilter(watcher);
+                }
+            }
+            entries_.append(Entry{child, painted});
+        }
+        addSubtree(child, watcher);
+    }
+}
+
+void chromeRepaintEvent(ChromeHost* host, QObject* watched, QEvent* event) {
+    if (host == nullptr || event == nullptr) {
+        return;
+    }
+    auto* widget = qobject_cast<QWidget*>(watched);
+    if (widget == nullptr) {
+        return;
+    }
+    // Only an adopted widget: a surface that asked for its own repaint is
+    // already painting (routing that back would be the repaint loop this
+    // mechanism exists to avoid), and a popover covers what is under it.
+    auto* adopted = dynamic_cast<ChromePaint*>(widget);
+    if (adopted == nullptr || !adopted->surfacePainted()) {
+        return;
+    }
+    // Deliberately not QEvent::UpdateRequest: a control over a QOpenGLWidget is
+    // repainted again whenever the picture under it is, and that arrives as a
+    // paint, not a request - routing requests too would hang a repaint of the
+    // picture off every extra invalidation, which is the paused-picture loop to
+    // avoid. Every state change the chrome has routes itself through
+    // chromeUpdate() instead.
+    switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::EnabledChange:
+        // A font, a palette or a stylesheet change redraws chrome pixels that
+        // no widget update would carry.
+        case QEvent::FontChange:
+        case QEvent::PaletteChange:
+        case QEvent::StyleChange:
+            host->chromeDirty(widget, QRect());
+            break;
+        // A move or a resize also leaves stale pixels where the widget was, and
+        // no rect in the widget's own coordinates describes those.
+        case QEvent::Move:
+        case QEvent::Resize:
+            host->chromeDirtyAll();
+            break;
+        default:
+            break;
+    }
+}
+
+void ChromeList::paint(QPainter& painter, QWidget* root, const QRect& clip) const {
+    if (root == nullptr) {
+        return;
+    }
+    for (const Entry& entry : entries_) {
+        QWidget* widget = entry.widget;
+        if (widget == nullptr || !widget->isVisible()) {
+            continue;
+        }
+        // Recomputed rather than cached: a control that moved keeps its slot in
+        // the list, and this is a walk up its own parent chain.
+        const QPoint at = widget->mapTo(root, QPoint(0, 0));
+        QRect box(at, widget->size());
+        // Qt clips a child to its parent's rect; nesting must behave the same
+        // here, or an oversized child would paint past its container.
+        for (QWidget* parent = widget->parentWidget(); parent != nullptr && parent != root;
+             parent = parent->parentWidget()) {
+            box = box.intersected(QRect(parent->mapTo(root, QPoint(0, 0)), parent->size()));
+            if (box.isEmpty()) {
+                break;
+            }
+        }
+        if (box.isEmpty() || !box.intersects(clip)) {
+            continue;
+        }
+        painter.save();
+        painter.translate(at);
+        painter.setClipRect(box.translated(-at), Qt::IntersectClip);
+        entry.painted->paintChrome(painter);
+        painter.restore();
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  PANEL
@@ -68,15 +238,18 @@ Panel::Panel(const QColor& fill, double radius, const QColor& border, QWidget* p
 }
 
 void Panel::setFill(const QColor& color) {
+    if (fill_ == color) {
+        return;
+    }
     fill_ = color;
-    update();
+    chromeUpdate(this);
 }
 
-void Panel::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
+void Panel::paintChrome(QPainter& painter) {
     paintRounded(painter, QRectF(0.5, 0.5, width() - 1, height() - 1), radius_, fill_, border_);
 }
+
+void Panel::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ICON BUTTON
@@ -84,10 +257,8 @@ void Panel::paintEvent(QPaintEvent*) {
 
 IconButton::IconButton(IconFn icon, const QString& tooltip, int size, int glyph, QWidget* parent,
                        const QColor& hoverFill)
-    : QPushButton(parent),
-      icon_(icon),
-      glyph_(glyph),
-      hoverFill_(hoverFill.isValid() ? hoverFill : white(28)) {
+    : QPushButton(parent), icon_(icon), glyph_(glyph) {
+    chrome_.hoverFill = hoverFill.isValid() ? QBrush(hoverFill) : QBrush(white(28));
     setFixedSize(size, size);
     setToolTip(tooltip);
     if (!tooltip.isEmpty()) {
@@ -99,33 +270,52 @@ IconButton::IconButton(IconFn icon, const QString& tooltip, int size, int glyph,
 }
 
 void IconButton::setTint(const QColor& color) {
+    const bool valid = color.isValid();
+    if (tint_ == color && hasTint_ == valid) {
+        return;
+    }
     tint_ = color;
-    hasTint_ = color.isValid();
-    update();
+    hasTint_ = valid;
+    chromeUpdate(this);
 }
 
 void IconButton::setIcon(IconFn icon) {
+    if (icon_ == icon) {
+        return;
+    }
     icon_ = icon;
-    update();
+    chromeUpdate(this);
+}
+
+void IconButton::setButtonChrome(const ButtonChrome& chrome) {
+    chrome_ = chrome;
+    chromeUpdate(this);
 }
 
 void IconButton::enterEvent(QEnterEvent* event) {
     hover_ = true;
-    update();
+    chromeUpdate(this);
     QPushButton::enterEvent(event);
 }
 
 void IconButton::leaveEvent(QEvent* event) {
     hover_ = false;
-    update();
+    chromeUpdate(this);
     QPushButton::leaveEvent(event);
 }
 
-void IconButton::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-    if (hover_ || isChecked()) {
-        paintRounded(painter, QRectF(1, 1, width() - 2, height() - 2), 10.0, hoverFill_, QColor());
+void IconButton::paintChrome(QPainter& painter) {
+    // Inset by the stroke width, so a bordered button's outline lands inside
+    // its own rect rather than being clipped by it.
+    const QRectF box(0.5, 0.5, width() - 1.0, height() - 1.0);
+    const bool lit = hover_ || isChecked();
+    if (chrome_.fill.style() != Qt::NoBrush) {
+        paintRoundedBrush(painter, box, chrome_.radius, chrome_.fill, chrome_.border,
+                          chrome_.borderWidth);
+    }
+    if (lit && chrome_.hoverFill.style() != Qt::NoBrush) {
+        paintRoundedBrush(painter, box, chrome_.radius, chrome_.hoverFill, chrome_.hoverBorder,
+                          chrome_.borderWidth);
     }
     const QColor color = hasTint_ ? tint_ : w90();
     const qreal off = (width() - glyph_) / 2.0;
@@ -133,6 +323,8 @@ void IconButton::paintEvent(QPaintEvent*) {
         icon_(painter, off, off, glyph_, color);
     }
 }
+
+void IconButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SETTINGS FLYOUT
@@ -397,109 +589,39 @@ void SettingsFlyout::refresh() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  STATE BADGE
+//  CHROME LABEL
 // ═══════════════════════════════════════════════════════════════════════════
 
-StateBadge::StateBadge(QWidget* parent)
-    : QWidget(parent),
-      state_(QStringLiteral("DEFAULT_FIT")),
-      font_(monoFont(8)) {
-    setMinimumHeight(22);
-    resizeToText();
+ChromeLabel::ChromeLabel(const QString& text, const QFont& font, const QColor& color,
+                         QWidget* parent)
+    : QLabel(text, parent), color_(color) {
+    setFont(font);
+    setAttribute(Qt::WA_StyledBackground, false);
 }
 
-void StateBadge::setState(const QString& state) {
-    state_ = state;
-    resizeToText();
-    update();
-}
-
-void StateBadge::resizeToText() {
-    setFixedSize(textWidth(font_, state_) + 34, 22);
-}
-
-void StateBadge::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-    const bool fullscreen = state_.startsWith(QStringLiteral("FULLSCREEN_ACTIVE"));
-    paintRounded(painter, QRectF(0.5, 0.5, width() - 1, height() - 1), 11.0,
-                 fullscreen ? accentSoft() : blackSoft(), w15());
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(green());
-    painter.drawEllipse(QPointF(11, height() / 2.0), 3, 3);
-    painter.setFont(font_);
-    painter.setPen(w70());
-    painter.drawText(QRectF(18, 0, width() - 18, height()), Qt::AlignVCenter, state_);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  STATE HUD
-// ═══════════════════════════════════════════════════════════════════════════
-
-StateHUD::StateHUD(QWidget* parent) : Panel(blackSoft(), 9.0, w15(), parent) {
-    setAttribute(Qt::WA_TransparentForMouseEvents);
-
-    auto* lay = new QVBoxLayout(this);
-    lay->setContentsMargins(11, 9, 11, 9);
-    lay->setSpacing(1);
-
-    auto* head = new QHBoxLayout();
-    auto* h1 = new QLabel(tr("State"));
-    h1->setFont(monoFont(8));
-    h1->setStyleSheet(QStringLiteral("color:#7289ff;"));
-    head->addWidget(h1);
-    head->addStretch();
-    auto* h2 = new QLabel(tr("Live"));
-    h2->setFont(monoFont(8));
-    h2->setStyleSheet(QStringLiteral("color:%1;").arg(green().name()));
-    head->addWidget(h2);
-    lay->addLayout(head);
-
-    title_ = new QLabel(QStringLiteral("DEFAULT_FIT"));
-    title_->setFont(monoFont(9));
-    title_->setStyleSheet(QStringLiteral("color:#7289ff;"));
-    lay->addWidget(title_);
-    lay->addSpacing(4);
-
-    for (int i = 0; i < kHudRows; ++i) {
-        auto* k = new QLabel(QString());
-        k->setFont(monoFont(8));
-        k->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(95))));
-        auto* v = new QLabel(QString());
-        v->setFont(monoFont(8));
-        v->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(220))));
-        auto* row = new QHBoxLayout();
-        row->setSpacing(6);
-        row->addWidget(k, 0);
-        row->addStretch();
-        row->addWidget(v, 0);
-        lay->addLayout(row);
-        rows_.append(std::make_pair(k, v));
+void ChromeLabel::setText(const QString& text) {
+    if (text == QLabel::text()) {
+        return;
     }
-
-    auto* foot = new QLabel(tr("D — hide · manifest v2.0.0"));
-    foot->setFont(monoFont(7));
-    foot->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(70))));
-    lay->addSpacing(3);
-    lay->addWidget(foot);
-
-    setFixedWidth(212);
-    adjustSize();
+    QLabel::setText(text);
+    chromeUpdate(this);
 }
 
-void StateHUD::updateData(const QString& state, const QVector<std::pair<QString, QString>>& data) {
-    title_->setText(state);
-    for (int i = 0; i < rows_.size(); ++i) {
-        if (i < data.size()) {
-            rows_[i].first->setText(data.at(i).first);
-            rows_[i].second->setText(data.at(i).second);
-        } else {
-            rows_[i].first->clear();
-            rows_[i].second->clear();
-        }
+void ChromeLabel::setChromeColor(const QColor& color) {
+    if (color_ == color) {
+        return;
     }
-    adjustSize();
+    color_ = color;
+    chromeUpdate(this);
 }
+
+void ChromeLabel::paintChrome(QPainter& painter) {
+    painter.setFont(font());
+    painter.setPen(color_);
+    painter.drawText(rect(), alignment(), text());
+}
+
+void ChromeLabel::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CENTER GLYPH
@@ -527,17 +649,15 @@ void CenterGlyph::setKind(Kind kind) {
         return;
     }
     show();
-    raise();
-    update();
+    chromeUpdate(this);
 }
 
-void CenterGlyph::paintEvent(QPaintEvent*) {
+void CenterGlyph::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
+
+void CenterGlyph::paintChrome(QPainter& painter) {
     if (kind_ == Kind::None) {
         return;
     }
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-
     const QRectF disc(kCenterHalo + 0.5, kCenterHalo + 0.5, kCenterDisc - 1.0, kCenterDisc - 1.0);
     // A soft outer halo, then the disc, then a hairline rim. One flat fill read
     // as a sticker pasted on the picture; the halo is what makes it sit above
@@ -584,13 +704,13 @@ PillButton::PillButton(QWidget* parent)
 
 void PillButton::enterEvent(QEnterEvent* event) {
     hover_ = true;
-    update();
+    chromeUpdate(this);
     QWidget::enterEvent(event);
 }
 
 void PillButton::leaveEvent(QEvent* event) {
     hover_ = false;
-    update();
+    chromeUpdate(this);
     QWidget::leaveEvent(event);
 }
 
@@ -600,15 +720,15 @@ void PillButton::mousePressEvent(QMouseEvent* event) {
     }
 }
 
-void PillButton::paintEvent(QPaintEvent*) {
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
+void PillButton::paintChrome(QPainter& painter) {
     const QColor color = hover_ ? w95() : w70();
     IconPainter::folder(painter, 1, 4, 14, color);
     painter.setFont(font_);
     painter.setPen(color);
     painter.drawText(QRectF(19, 0, width() - 19, height()), Qt::AlignVCenter, text_);
 }
+
+void PillButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TOAST
@@ -617,9 +737,7 @@ void PillButton::paintEvent(QPaintEvent*) {
 Toast::Toast(QWidget* parent) : Panel(QColor(0, 0, 0, 205), 8.0, w15(), parent) {
     setAttribute(Qt::WA_TransparentForMouseEvents);
 
-    label_ = new QLabel(this);
-    label_->setFont(uiFont(10));
-    label_->setStyleSheet(QStringLiteral("color: %1;").arg(rgba(white(235))));
+    label_ = new ChromeLabel(QString(), uiFont(10), white(235), this);
     label_->setAlignment(Qt::AlignCenter);
     auto* lay = new QVBoxLayout(this);
     lay->setContentsMargins(14, 8, 14, 8);
@@ -638,7 +756,6 @@ void Toast::flash(const QString& text, int ms) {
         move((parent->width() - width()) / 2, static_cast<int>(parent->height() * 0.80));
     }
     show();
-    raise();
     timer_->start(ms);
 }
 

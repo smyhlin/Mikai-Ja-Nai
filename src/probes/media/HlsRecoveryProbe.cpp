@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
         if (rendered) {
             surface->setPaused(true);
             QTest::qWait(300);
-            const QImage frame = surface->grabFramebuffer();
+            const QImage frame = surface->grabVideoFramebuffer();
             rendered = !frame.isNull() && surface->videoWidth() == 640 &&
                        surface->videoHeight() == 360 && colorful(frame);
             dialog->grab().save(QStringLiteral("hls-recovered-stream.png"));

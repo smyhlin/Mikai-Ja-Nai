@@ -15,11 +15,11 @@
 QT_BEGIN_NAMESPACE
 class QCloseEvent;
 class QFrame;
-class QGraphicsOpacityEffect;
 class QKeyEvent;
 class QLabel;
 class QMouseEvent;
 class QMoveEvent;
+class QPainter;
 class QPushButton;
 class QResizeEvent;
 class QShowEvent;
@@ -38,6 +38,7 @@ QT_END_NAMESPACE
 #include "Anime4K.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "ProcessingSettingsIntent.hpp"
+#include "ShellWidgets.hpp"
 #include "native/prepare/NativeFrameFixture.hpp"
 #include "native/status/NativeMenu.hpp"
 #include "native/status/NativePlaybackController.hpp"
@@ -90,9 +91,15 @@ public:
 /// must share pixels with a work area, or it cannot be clicked or dragged back.
 /// A pooled float re-enters at the exact position and size the viewer last left
 /// it; only an unreachable position (a monitor that went away) is corrected.
+///
+/// Its chrome is painted, not composited: the float is a ChromeHost, so every
+/// control it carries is adopted and drawn from the same paintGL pass that
+/// carried mpv's frame. A widget over a QOpenGLWidget that keeps its own
+/// backing store is a second raster pass over the picture and a stacking the
+/// float cannot control.
 class VolumeTrack;
 
-class PipFloat : public QWidget {
+class PipFloat : public QWidget, public ChromeHost {
     Q_OBJECT
 
 public:
@@ -135,11 +142,22 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+    /// An adopted control changed. The surface fills the whole float, so the
+    /// region that has to be redrawn is the whole picture.
+    void chromeDirty(QWidget* widget, const QRect& rect) override;
+    /// A move or a resize leaves stale pixels the new geometry does not
+    /// describe, so everything the surface carries is redrawn.
+    void chromeDirtyAll() override;
+
 private:
     void buildChrome();
-    QPushButton* buildButton(const QString& name, const QString& hint, qreal size,
-                                   QWidget* parent = nullptr);
     void updateVolumeChip();
+    /// Draws the float's own chrome - the timeline, which is not a widget -
+    /// into the picture's painter. Connected to VideoSurface::paintOverlay.
+    void paintSurfaceOverlay(QPainter* painter);
+    /// The groove, the played part and the handle, placed from the scrub
+    /// slider's value and width.
+    void paintTimeline(QPainter& painter);
     /// A press on the timeline seeks there and starts scrubbing. The
     /// overlay claims presses before the slider sees them, so this is the
     /// only path to click-to-seek.
@@ -169,18 +187,20 @@ private:
     void setOverlayOpacity(double value);
 
     VideoSurface* surface_ = nullptr;
+    /// The adopted chrome in paint order: filled once, in buildChrome's own
+    /// construction order, and only walked while painting.
+    ChromeList chrome_;
     QWidget* overlay_ = nullptr;
-    QPushButton* muteButton_ = nullptr;
-    QWidget* volumeChip_ = nullptr;
+    IconButton* muteButton_ = nullptr;
+    Panel* volumeChip_ = nullptr;
     VolumeTrack* volumeSlider_ = nullptr;
-    QPushButton* restoreButton_ = nullptr;
-    QPushButton* closeButton_ = nullptr;
-    QPushButton* playButton_ = nullptr;
+    IconButton* restoreButton_ = nullptr;
+    IconButton* closeButton_ = nullptr;
+    IconButton* playButton_ = nullptr;
     QSlider* scrub_ = nullptr;
-    QLabel* elapsed_ = nullptr;
-    QLabel* remaining_ = nullptr;
+    ChromeLabel* elapsed_ = nullptr;
+    ChromeLabel* remaining_ = nullptr;
 
-    QGraphicsOpacityEffect* overlayEffect_ = nullptr;
     QVariantAnimation* overlayFade_ = nullptr;
     QTimer* hideTimer_ = nullptr;
 

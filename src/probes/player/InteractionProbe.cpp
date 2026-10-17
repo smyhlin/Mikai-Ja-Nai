@@ -287,7 +287,7 @@ QImage settledFrame(VideoSurface* surface) {
     for (int i = 0; i < 80; ++i) {
         QCoreApplication::processEvents();
         QThread::msleep(40);
-        const QImage current = surface->grabFramebuffer();
+        const QImage current = surface->grabVideoFramebuffer();
         if (!current.isNull() && current == previous) {
             return current;
         }

@@ -169,7 +169,7 @@ void requireHeld(mplayer::probes::Verdict& verdict, mplayer::VideoSurface* surfa
     verdict.require(acknowledged, scenario + QStringLiteral(": actual core pause acknowledged"));
     pump(150);
     const auto start = corePosition(surface);
-    const QImage frame = surface->grabFramebuffer();
+    const QImage frame = surface->grabVideoFramebuffer();
     bool paused = true;
     bool frozen = start.has_value();
     for (int i = 0; i < 5; ++i) {
@@ -180,7 +180,7 @@ void requireHeld(mplayer::probes::Verdict& verdict, mplayer::VideoSurface* surfa
     }
     verdict.require(paused, scenario + QStringLiteral(": paused output remains enforced"));
     verdict.require(frozen, scenario + QStringLiteral(": actual media clock stays frozen"));
-    verdict.require(!frame.isNull() && frame == surface->grabFramebuffer(),
+    verdict.require(!frame.isNull() && frame == surface->grabVideoFramebuffer(),
                     scenario + QStringLiteral(": displayed frame stays identical"));
 }
 

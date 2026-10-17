@@ -81,7 +81,7 @@ struct PlaybackSample {
 
 inline PlaybackSample captureSample(VideoSurface& surface) {
     PlaybackSample sample;
-    sample.framebuffer = surface.grabFramebuffer();
+    sample.framebuffer = surface.grabVideoFramebuffer();
     sample.position = surface.position();
     sample.videoWidth = surface.videoWidth();
     sample.videoHeight = surface.videoHeight();

@@ -8,11 +8,20 @@
 // faithful in one respect. The Python shell promotes every chrome widget to a
 // native HWND and re-raises it in _promote_chrome / _raise_chrome /
 // _refresh_hud / _layout, because mpv used to take a native winId and a native
-// child window always composites above non-native siblings. VideoSurface is now
-// a QOpenGLWidget, so none of that is needed: the chrome is ordinary sibling
-// widgets and z-order is Qt's problem. All of it is deleted here rather than
-// translated, along with the cursor poll that existed only because mouse moves
-// over a foreign window never reached Qt.
+// child window always composites above non-native siblings. All of that is
+// deleted here rather than translated, along with the cursor poll that existed
+// only because mouse moves over a foreign window never reached Qt.
+//
+// The chrome that stands OVER the picture is not a sibling of the surface in
+// the visual sense either. The surface is a QOpenGLWidget, so a control that
+// painted its own backing store above it would be composited over the picture
+// by the window system - a second raster pass per frame, and a stacking the
+// shell cannot control. Those controls are drawn by the surface's own painter
+// instead, in the same paintGL that carries mpv's frame (ChromePaint /
+// ChromeHost in ShellWidgets.hpp): one raster path. What is left of them as
+// widgets is what a widget is for here - a hit target, a tooltip, an accessible
+// name, a slot in a layout. The popovers are the exception: they are opaque
+// cards, so compositing them is not a second pass and they paint themselves.
 //
 // The second deliberate difference, since the port: zoom is gone entirely,
 // where the Python kept a ZOOM_IN_PAN state whose _layout() moved a rectangle
@@ -39,6 +48,10 @@
 #include <QVector>
 #include <QWidget>
 
+QT_BEGIN_NAMESPACE
+class QPainter;
+QT_END_NAMESPACE
+
 #include "Anime4K.hpp"
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
@@ -58,13 +71,12 @@ class MenuPopup;
 class Panel;
 class PillButton;
 class SettingsFlyout;
-class StateHUD;
 class Toast;
 class VolumeGroup;
 class ScrubBar;
 class IconButton;
 
-class PlayerShell : public QWidget {
+class PlayerShell : public QWidget, public ChromeHost {
     Q_OBJECT
 
 public:
@@ -72,6 +84,14 @@ public:
 
     explicit PlayerShell(QWidget* parent = nullptr, bool frameless = true);
     ~PlayerShell() override;
+
+    // ── painted chrome host ─────────────────────────────────────────
+    // The shell owns the painter the chrome over the picture goes into, but it
+    // does not own that painter: the video surface's paintGL does. The two
+    // entry points below are what an adopted widget's update() and its own
+    // notifications are routed to (see ShellWidgets.hpp).
+    void chromeDirty(QWidget* widget, const QRect& rect) override;
+    void chromeDirtyAll() override;
 
     /// The widget mpv renders into. It is a plain QOpenGLWidget child: the host
     /// hands the URL to VideoSurface::open(), there is no winId() handshake.
@@ -130,8 +150,6 @@ public:
 
     State state() const;
     QString stateName() const;
-
-    void toggleHud();
 
     /// The dialog is the shell's host and drives both of these directly:
     /// fullscreen is a composition decision, and wake() is what re-arms the
@@ -227,6 +245,15 @@ private:
     void setStateCursor();
     void layoutChrome();
 
+    /// The surface's half of the chrome, connected to VideoSurface::paintOverlay
+    /// with a painter in shell coordinates clipped to the picture.
+    void paintSurfaceOverlay(QPainter* painter);
+    /// Chrome that is nobody's widget - the chevron discs and the empty-state
+    /// hint - plus the adopted controls. `clip` separates the two callers: the
+    /// surface's painter passes the whole shell, the shell's paintEvent passes
+    /// the window with the picture taken out.
+    void paintChrome(QPainter& painter, const QRect& clip);
+
     void enterAutoHidden();
     void onPlayClicked();
     void onScrub(double fraction);
@@ -263,6 +290,9 @@ private:
     QString localMediaFolder() const;
     void exitViewer();
     void updateTimeLabels();
+    /// Repaints the picture when the empty-state hint appears or goes away - it
+    /// is painted, not a widget, so no update carries it.
+    void updateEmptyState();
 
     QSize fitted() const;
     bool hitEdges(const QPointF& pos);
@@ -270,6 +300,8 @@ private:
     void releasePointer();
 
     VideoSurface* surface_ = nullptr;
+    /// Filled once, where the chrome is built; a frame only walks it.
+    ChromeList chrome_;
 
     MenuPopup* pictureMenu_ = nullptr;
     Panel* windowControls_ = nullptr;
@@ -287,9 +319,9 @@ private:
     Panel* dock_ = nullptr;
     VolumeGroup* vol_ = nullptr;
     IconButton* btnPlay_ = nullptr;
-    QLabel* lblElapsed_ = nullptr;
+    ChromeLabel* lblElapsed_ = nullptr;
     ScrubBar* scrub_ = nullptr;
-    QLabel* lblRemaining_ = nullptr;
+    ChromeLabel* lblRemaining_ = nullptr;
     IconButton* btnPip_ = nullptr;
     IconButton* btnWindowMode_ = nullptr;
     IconButton* btnAudio_ = nullptr;
@@ -315,21 +347,20 @@ private:
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     QString animeJanaiPresetId_;
     QString animeJanaiBackend_ = QStringLiteral("tensorrt");
-    QLabel* lblAnimeJanai_ = nullptr;
+    ChromeLabel* lblAnimeJanai_ = nullptr;
 
     Panel* footerLeft_ = nullptr;
-    QLabel* lblEpisode_ = nullptr;
-    QLabel* lblNetworkStats_ = nullptr;
-    QLabel* lblEnhancement_ = nullptr;
+    ChromeLabel* lblEpisode_ = nullptr;
+    ChromeLabel* lblNetworkStats_ = nullptr;
+    ChromeLabel* lblEnhancement_ = nullptr;
     /// The native status chip. Shown only for a loaded Native runtime, when
     /// processing is requested or the filter reports a state of its own.
-    QLabel* lblNative_ = nullptr;
+    ChromeLabel* lblNative_ = nullptr;
     /// The native branch's inputs. Default-constructed to the truth of this
     /// build: nothing requested, no engine available.
     native::menu::Inputs nativeInputs_;
     KeyHints* keys_ = nullptr;
 
-    StateHUD* hud_ = nullptr;
     Toast* toast_ = nullptr;
     CenterGlyph* center_ = nullptr;
 
@@ -360,9 +391,10 @@ private:
     /// bar is painted.
     int titleBarOffset_ = 0;
     bool hudHidden_ = false;
+    /// Tracked so only the hint's own transitions repaint the picture.
+    bool emptyStateShown_ = false;
     bool rounded_ = true;
     double aspect_ = kAspectFallback;
-    bool showHud_ = false;
     /// True only for a standalone frameless top-level shell, which must supply
     /// its own header. A hosted shell uses the OS frame.
     bool frameless_ = true;

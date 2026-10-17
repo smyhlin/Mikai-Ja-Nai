@@ -2,9 +2,14 @@
 // ScrubBar timeline built on it) and the VolumeGroup, a speaker glyph beside
 // an always-visible track.
 //
-// Painted from scratch in paintEvent, so there is no stylesheet: every pixel is
-// the palette in ShellTheme.hpp. The volume knob is inset by its own radius,
-// so a level of 0 or 1 still draws the whole disc.
+// Painted from scratch, so there is no stylesheet: every pixel is the palette
+// in ShellTheme.hpp. The volume knob is inset by its own radius, so a level of
+// 0 or 1 still draws the whole disc.
+//
+// These are ChromePaint widgets: the dock draws them into the video surface's
+// painter, and paintChrome() - not paintEvent - is where their pixels come
+// from. A host that never adopts them (the settings flyout's speed slider) gets
+// the same pixels through the default paintEvent.
 
 #pragma once
 
@@ -13,6 +18,7 @@
 #include <QWidget>
 
 #include "ShellTheme.hpp"
+#include "ShellWidgets.hpp"
 
 namespace mplayer {
 namespace shell {
@@ -21,7 +27,7 @@ namespace shell {
 ///
 /// `span()`/`at()` are the only geometry hooks; subclasses that map the fraction
 /// to a different quantity override those and inherit press/move behaviour.
-class RangeSlider : public QWidget {
+class RangeSlider : public QWidget, public ChromePaint {
     Q_OBJECT
     // Exposed so a probe manifest can drive the control by identity rather than
     // by coordinates; the write is the real setter, so it emits like a drag does.
@@ -38,6 +44,8 @@ public:
     void setValueSilent(double v) { setValue(v, false); }
 
     bool isDragging() const { return drag_; }
+
+    void paintChrome(QPainter& painter) override;
 
 signals:
     void valueChanged(double v);
@@ -82,8 +90,8 @@ public:
     /// Fraction of the timeline to seconds.
     double timeAt(double frac) const { return frac * duration_; }
 
-protected:
-    void paintEvent(QPaintEvent* event) override;
+    /// RangeSlider's bar, plus the hover timestamp above it.
+    void paintChrome(QPainter& painter) override;
 
 private:
     double duration_ = 0.0;
@@ -92,7 +100,7 @@ private:
 
 /// A horizontal level. The knob travels inside the widget, so at 0 and at full
 /// the whole disc is painted, not the half that used to fall past the edge.
-class VolumeTrack : public QWidget {
+class VolumeTrack : public QWidget, public ChromePaint {
     Q_OBJECT
     Q_PROPERTY(double volume READ value WRITE setValue)
 
@@ -103,6 +111,8 @@ public:
     void setValue(double v) { setValue(v, true); }
     void setValueSilent(double v) { setValue(v, false); }
     bool isDragging() const { return drag_; }
+
+    void paintChrome(QPainter& painter) override;
 
 signals:
     void valueChanged(double v);
@@ -126,7 +136,7 @@ private:
 };
 
 /// Speaker button plus an always-visible volume track.
-class VolumeGroup : public QWidget {
+class VolumeGroup : public QWidget, public ChromePaint {
     Q_OBJECT
     Q_PROPERTY(double volume READ effective WRITE setVolume)
     Q_PROPERTY(bool muted READ isMuted WRITE setMuted)
@@ -142,6 +152,8 @@ public:
     bool isMuted() const { return muted_; }
 
     bool isDragging() const;
+
+    void paintChrome(QPainter& painter) override;
 
 signals:
     void volumeChanged(double v);

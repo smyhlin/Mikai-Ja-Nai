@@ -28,6 +28,7 @@
 #include "gui/Clipboard.hpp"
 #include "ShellSliders.hpp"
 #include "ShellTheme.hpp"
+#include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 
@@ -38,13 +39,13 @@
 #include <QEasingCurve>
 #include <QFileInfo>
 #include <QFrame>
-#include <QGraphicsOpacityEffect>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -166,57 +167,6 @@ QString panelQss() {
 
 QString statusTextQss() { return QStringLiteral("color: %1; background: transparent;").arg(kText); }
 
-QString pipQss() {
-    return QStringLiteral(
-               "QWidget#pipOverlay { background: transparent; border: none; }"
-               "QLabel#pipElapsed, QLabel#pipRemaining {"
-               "  background: transparent; color: #ffffff; font-size: 11px; font-weight: 700;"
-               "  font-family: \"Segoe UI\", system-ui, sans-serif; }"
-               "QPushButton#pipPlay {"
-               "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-               "    stop:0 rgba(12, 13, 19, 0.56), stop:1 rgba(12, 13, 19, 0.74));"
-               "  border: 1.5px solid rgba(255, 255, 255, 0.30);"
-               "  border-radius: %1px; padding: 0px; margin: 0px; outline: none;"
-               "  min-width: %2px; max-width: %2px;"
-               "  min-height: %2px; max-height: %2px; }"
-               "QPushButton#pipPlay:hover {"
-               "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-               "    stop:0 rgba(20, 22, 32, 0.76), stop:1 rgba(20, 22, 32, 0.88));"
-               "  border-color: rgba(255, 255, 255, 0.55); }"
-               "QPushButton#pipPlay:pressed {"
-               "  background: rgba(10, 11, 16, 0.90); }"
-               "QWidget#pipVolumeChip {"
-               "  background: rgba(12, 13, 19, 0.64);"
-               "  border: 1px solid rgba(255, 255, 255, 0.18);"
-               "  border-radius: 10px; }"
-               "QPushButton#pipMute {"
-               "  background: transparent; border: none;"
-               "  border-radius: 7px; padding: 0px; margin: 0px; outline: none;"
-               "  min-width: 0px; min-height: 0px; }"
-               "QPushButton#pipMute:hover {"
-               "  background: rgba(255, 255, 255, 0.14); }"
-               "QPushButton#pipRestore, QPushButton#pipClose {"
-               "  background: rgba(12, 13, 19, 0.64);"
-               "  border: 1px solid rgba(255, 255, 255, 0.20);"
-               "  border-radius: 8px; padding: 0px; margin: 0px; outline: none;"
-               "  min-width: 0px; min-height: 0px; }"
-               "QPushButton#pipRestore:hover {"
-               "  background: rgba(24, 26, 36, 0.88);"
-               "  border-color: rgba(255, 255, 255, 0.42); }"
-               "QPushButton#pipClose:hover {"
-               "  background: rgba(220, 53, 69, 0.85);"
-               "  border-color: rgba(255, 255, 255, 0.45); }"
-               "QSlider#pipScrub { background: transparent; }"
-               "QSlider#pipScrub::groove:horizontal {"
-               "  height: 4px; background: rgba(255, 255, 255, 0.28); border-radius: 2px; }"
-               "QSlider#pipScrub::sub-page:horizontal { background: #7289ff; border-radius: 2px; }"
-               "QSlider#pipScrub::handle:horizontal {"
-               "  background: #ffffff; width: 12px; height: 12px;"
-               "  margin: -4px 0; border-radius: 6px; }")
-        .arg(kPipCenterButtonSize / 2)
-        .arg(kPipCenterButtonSize);
-}
-
 QPushButton* makeChip(QWidget* parent, const QString& name, const QString& text) {
     auto* button = new QPushButton(text, parent);
     button->setObjectName(name);
@@ -297,10 +247,16 @@ PipFloat::PipFloat(QWidget* parent)
 
     buildChrome();
 
-    overlayEffect_ = new QGraphicsOpacityEffect(overlay_);
-    overlayEffect_->setOpacity(1.0);
-    overlayEffect_->setEnabled(false);
-    overlay_->setGraphicsEffect(overlayEffect_);
+    // The chrome is drawn by the picture's own painter, in the same paintGL
+    // pass that carried mpv's frame. The controls are adopted here: they keep
+    // their hit target, tooltip, accessible name and layout slot, and give up
+    // only their pixels. The painter is connected once, directly - every paint
+    // of the surface, forced or not, carries them.
+    connect(surface_, &VideoSurface::paintOverlay, this, &PipFloat::paintSurfaceOverlay,
+            Qt::DirectConnection);
+    // Adopted once, here: every control below stops painting itself and is
+    // recorded in paint order, so a frame is a walk of that list.
+    chrome_.adopt(this, this);
 
     overlayFade_ = new QVariantAnimation(this);
     overlayFade_->setDuration(kPipBarFadeMs);
@@ -353,7 +309,6 @@ void PipFloat::buildChrome() {
     overlay_->setAttribute(Qt::WA_TranslucentBackground);
     overlay_->setFocusPolicy(Qt::StrongFocus);
     overlay_->setMouseTracking(true);
-    overlay_->setStyleSheet(pipQss());
     overlay_->installEventFilter(this);
     // The overlay is full-rect and forwards input to the float for drag/move
     // and click-to-pause.
@@ -363,7 +318,7 @@ void PipFloat::buildChrome() {
     // in one pill. It was built to grow on hover, and that read as lag: the
     // pill resized under the pointer every time it was entered and left, and
     // the whole strip jumped each time. A fixed pill is one shape, always.
-    volumeChip_ = new QWidget(overlay_);
+    volumeChip_ = new Panel(QColor(12, 13, 19, 164), 10.0, QColor(255, 255, 255, 45), overlay_);
     volumeChip_->setObjectName(QStringLiteral("pipVolumeChip"));
     volumeChip_->setFocusPolicy(Qt::NoFocus);
     volumeChip_->setMouseTracking(true);
@@ -371,10 +326,16 @@ void PipFloat::buildChrome() {
     chipLayout->setContentsMargins(4, 4, 4, 4);
     chipLayout->setSpacing(6);
 
-    muteButton_ = buildButton(QStringLiteral("pipMute"), tr("Mute audio"),
-                              kPipFieldHeight, volumeChip_);
-    muteButton_->setIconSize(QSize(18, 18));
-    muteButton_->setIcon(glyphIcon(&IconPainter::volume, 18));
+    // A bare glyph, hover highlight only, in the 7px radius the QSS used.
+    const QColor muteHoverFill(255, 255, 255, 36);
+    muteButton_ = new IconButton(&IconPainter::volume, tr("Mute audio"), kPipFieldHeight, 18,
+                                 volumeChip_, muteHoverFill);
+    muteButton_->setObjectName(QStringLiteral("pipMute"));
+    muteButton_->setMouseTracking(true);
+    ButtonChrome muteChrome;
+    muteChrome.hoverFill = muteHoverFill;
+    muteChrome.radius = 7.0;
+    muteButton_->setButtonChrome(muteChrome);
     connect(muteButton_, &QPushButton::clicked, this, [this] {
         setMuted(!muted_);
         revealControls();
@@ -412,36 +373,71 @@ void PipFloat::buildChrome() {
 
     volumeChip_->setFixedSize(kPipChipWidth, kPipFieldHeight + 8);
 
-    restoreButton_ =
-        buildButton(QStringLiteral("pipRestore"), tr("Return to the window"),
-                    kPipFieldHeight);
-    restoreButton_->setIconSize(QSize(17, 17));
-    restoreButton_->setIcon(glyphIcon(&IconPainter::expand, 17));
+    // The standing card the QSS drew, with a hover that says what the button
+    // does - the close one goes red.
+    ButtonChrome restoreChrome;
+    restoreChrome.fill = QColor(12, 13, 19, 164);
+    restoreChrome.border = QColor(255, 255, 255, 51);
+    restoreChrome.radius = 8.0;
+    restoreChrome.hoverFill = QColor(24, 26, 36, 224);
+    restoreChrome.hoverBorder = QColor(255, 255, 255, 107);
+
+    restoreButton_ = new IconButton(&IconPainter::expand, tr("Return to the window"),
+                                    kPipFieldHeight, 17, overlay_);
+    restoreButton_->setObjectName(QStringLiteral("pipRestore"));
+    restoreButton_->setMouseTracking(true);
+    restoreButton_->setButtonChrome(restoreChrome);
     connect(restoreButton_, &QPushButton::clicked, this, &PipFloat::restoreRequested);
 
-    closeButton_ = buildButton(QStringLiteral("pipClose"), tr("Close (Esc)"),
-                               kPipFieldHeight);
-    closeButton_->setIconSize(QSize(17, 17));
-    closeButton_->setIcon(glyphIcon(&IconPainter::close, 17));
+    ButtonChrome closeChrome;
+    closeChrome.fill = QColor(12, 13, 19, 164);
+    closeChrome.border = QColor(255, 255, 255, 51);
+    closeChrome.radius = 8.0;
+    closeChrome.hoverFill = QColor(220, 53, 69, 217);
+    closeChrome.hoverBorder = QColor(255, 255, 255, 115);
+
+    closeButton_ = new IconButton(&IconPainter::close, tr("Close (Esc)"), kPipFieldHeight, 17,
+                                  overlay_);
+    closeButton_->setObjectName(QStringLiteral("pipClose"));
+    closeButton_->setMouseTracking(true);
+    closeButton_->setButtonChrome(closeChrome);
     connect(closeButton_, &QPushButton::clicked, this, &PipFloat::closeRequested);
 
-    playButton_ = new QPushButton(overlay_);
+    playButton_ = new IconButton(&IconPainter::pause, tr("Pause (Space)"),
+                                 kPipCenterButtonSize, kPipCenterIconSize, overlay_);
     playButton_->setObjectName(QStringLiteral("pipPlay"));
-    playButton_->setFixedSize(kPipCenterButtonSize, kPipCenterButtonSize);
-    playButton_->setIconSize(QSize(kPipCenterIconSize, kPipCenterIconSize));
-    playButton_->setCursor(Qt::PointingHandCursor);
-    playButton_->setIcon(glyphIcon(&IconPainter::pause, kPipCenterIconSize));
-    playButton_->setToolTip(tr("Pause (Space)"));
-    playButton_->setAccessibleName(tr("Pause"));
-    playButton_->setFocusPolicy(Qt::NoFocus);
     playButton_->setMouseTracking(true);
+    // The tooltip stays the running hint; the accessible name is the short verb
+    // the button is announced by.
+    playButton_->setAccessibleName(tr("Pause"));
+    // The disc the QSS drew, gradient and all - built here because the gradient
+    // ends where the button does.
+    ButtonChrome playChrome;
+    QLinearGradient playFill(0, 0, 0, kPipCenterButtonSize);
+    playFill.setColorAt(0.0, QColor(12, 13, 19, 143));
+    playFill.setColorAt(1.0, QColor(12, 13, 19, 189));
+    playChrome.fill = QBrush(playFill);
+    playChrome.border = QColor(255, 255, 255, 77);
+    playChrome.borderWidth = 1.5;
+    playChrome.radius = kPipCenterButtonSize / 2.0;
+    QLinearGradient playHoverFill(0, 0, 0, kPipCenterButtonSize);
+    playHoverFill.setColorAt(0.0, QColor(20, 22, 32, 194));
+    playHoverFill.setColorAt(1.0, QColor(20, 22, 32, 224));
+    playChrome.hoverFill = QBrush(playHoverFill);
+    playChrome.hoverBorder = QColor(255, 255, 255, 140);
+    playButton_->setButtonChrome(playChrome);
     connect(playButton_, &QPushButton::clicked, surface_, &VideoSurface::togglePause);
 
-    elapsed_ = new QLabel(QStringLiteral("0:00"), overlay_);
+    // The QSS these replace measured the clocks in pixels, so this one is a
+    // pixel size too: 11 points is ~15px and would widen the row under them.
+    QFont clockFont = uiFont(11, true);
+    clockFont.setPixelSize(11);
+    elapsed_ = new ChromeLabel(QStringLiteral("0:00"), clockFont, QColor(255, 255, 255), overlay_);
     elapsed_->setObjectName(QStringLiteral("pipElapsed"));
     elapsed_->setMouseTracking(true);
 
-    remaining_ = new QLabel(QStringLiteral("--:--"), overlay_);
+    remaining_ = new ChromeLabel(QStringLiteral("--:--"), clockFont, QColor(255, 255, 255),
+                                 overlay_);
     remaining_->setObjectName(QStringLiteral("pipRemaining"));
     remaining_->setMouseTracking(true);
 
@@ -462,6 +458,15 @@ void PipFloat::buildChrome() {
         // appeared to do nothing at all.
         surface_->seek(scrub_->value() / 1000.0);
     });
+    // The timeline the picture draws is read off this value, so a value the
+    // slider takes on its own - a position tick, a drag, a seek - is a repaint
+    // of the picture. The widget itself paints nothing (the filter below
+    // swallows it), and it is hidden with the rest of the chrome.
+    connect(scrub_, &QSlider::valueChanged, this, [this](int) {
+        if (surface_ != nullptr && overlayOpacity_ > 0.01) {
+            surface_->update();
+        }
+    });
     // Click-to-seek. The overlay claims every press before the slider sees it,
     // so a click on the timeline fell through to the picture and only
     // toggled playback. An event filter is the only way in: QSlider handles
@@ -476,19 +481,89 @@ void PipFloat::buildChrome() {
     for (QWidget* widget : watched) {
         widget->installEventFilter(this);
     }
+    // The overlay is where the presses, the drags and the resize grips land,
+    // so it stays above the picture. Raised once here: the layout pass is not
+    // the place for it, because that runs on every step of a resize.
+    overlay_->raise();
 }
 
-QPushButton* PipFloat::buildButton(const QString& name, const QString& hint, qreal size,
-                                   QWidget* parent) {
-    auto* button = new QPushButton(parent != nullptr ? parent : overlay_);
-    button->setObjectName(name);
-    button->setFixedSize(QSize(static_cast<int>(size), static_cast<int>(size)));
-    button->setToolTip(hint);
-    button->setAccessibleName(hint);
-    button->setCursor(Qt::PointingHandCursor);
-    button->setFocusPolicy(Qt::NoFocus);
-    button->setMouseTracking(true);
-    return button;
+// ── the picture's own painter draws the chrome ──────────────────────────
+
+void PipFloat::chromeDirty(QWidget* widget, const QRect& rect) {
+    // The float's surface fills the float, so a control's pixels are the
+    // picture's pixels.
+    if (widget == nullptr || surface_ == nullptr) {
+        return;
+    }
+    const QRect box(rect.isNull() ? widget->rect() : rect);
+    const QRect region(QRect(widget->mapTo(this, box.topLeft()), box.size())
+                           .intersected(surface_->geometry()));
+    // A control off the picture has nothing to draw, and no rect of its own
+    // describes the pixels it left behind.
+    if (region.isEmpty()) {
+        surface_->update();
+        return;
+    }
+    surface_->update(region);
+}
+
+void PipFloat::chromeDirtyAll() {
+    if (surface_ == nullptr) {
+        return;
+    }
+    surface_->update();
+    update();
+}
+
+void PipFloat::paintSurfaceOverlay(QPainter* painter) {
+    if (painter == nullptr || overlayOpacity_ <= 0.01) {
+        return;
+    }
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    // The fade is the painter's: one alpha over the chrome, where an opacity
+    // effect re-composited an offscreen buffer of the overlay on every change.
+    painter->setOpacity(overlayOpacity_);
+    chrome_.paint(*painter, this, rect());
+    // The timeline is not a widget - the scrub slider under it is an input
+    // target with no pixels - so it is drawn in the same pass.
+    paintTimeline(*painter);
+    painter->restore();
+}
+
+void PipFloat::paintTimeline(QPainter& painter) {
+    if (scrub_ == nullptr || !scrub_->isVisible() || scrub_->width() <= 0) {
+        return;
+    }
+    // The slider's geometry is the timeline's: full-rect overlay child, so its
+    // rect is in the float's coordinates and its width is what the press maths
+    // divides by.
+    const QRect groove = scrub_->geometry();
+    const double trackY = groove.y() + (groove.height() - kPipTimelineHeight) / 2.0;
+    paintRounded(painter, QRectF(groove.x(), trackY, groove.width(), kPipTimelineHeight),
+                 kPipTimelineHeight / 2.0, w25());
+
+    // Inset by half a handle at each end - the expression timelineSeekTo() reads
+    // a pointer from - so the drawn handle and the seek agree.
+    const double span = std::max(1.0, static_cast<double>(groove.width()) - kPipTimelineHandle);
+    const double at = scrub_->maximum() > 0
+        ? std::clamp(static_cast<double>(scrub_->value()) / scrub_->maximum(), 0.0, 1.0)
+        : 0.0;
+    if (at > 0.0) {
+        // The played part, up to the handle: what the slider's sub-page was.
+        paintRounded(painter,
+                     QRectF(groove.x(), trackY, kPipTimelineHandle / 2.0 + at * span,
+                            kPipTimelineHeight),
+                     kPipTimelineHeight / 2.0, timelinePlayed());
+    }
+
+    const double centerX = groove.x() + kPipTimelineHandle / 2.0 + at * span;
+    const double centerY = groove.y() + groove.height() / 2.0;
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(white(255));
+    painter.drawEllipse(QRectF(centerX - kPipTimelineHandle / 2.0,
+                               centerY - kPipTimelineHandle / 2.0, kPipTimelineHandle,
+                               kPipTimelineHandle));
 }
 
 void PipFloat::openStream(const QString& url, double position, bool paused) {
@@ -510,8 +585,10 @@ void PipFloat::closeStream() {
 }
 
 void PipFloat::setPlaying(bool playing) {
-    playButton_->setIcon(
-        glyphIcon(playing ? &IconPainter::pause : &IconPainter::play, kPipCenterIconSize));
+    // The two transport triangles are painted by the button itself, so the
+    // glyph function is the only handle on which one is up - a pixmap could not
+    // tell them apart at dock scale, and there is none to ask.
+    playButton_->setIcon(playing ? &IconPainter::pause : &IconPainter::play);
     const QString hint = playing ? tr("Pause (Space)")
                                  : tr("Play (Space)");
     playButton_->setToolTip(hint);
@@ -560,7 +637,7 @@ void PipFloat::setMuted(bool muted) {
     surface_->setMuted(muted);
     surface_->setVolume(volume_ * 100.0);
     const QString hint = muted ? tr("Unmute audio") : tr("Mute audio");
-    muteButton_->setIcon(glyphIcon(muted ? &IconPainter::mute : &IconPainter::volume, 18));
+    muteButton_->setIcon(muted ? &IconPainter::mute : &IconPainter::volume);
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
     updateVolumeChip();
@@ -595,21 +672,20 @@ void PipFloat::updateVolumeChip() {
 
 void PipFloat::setOverlayOpacity(double value) {
     overlayOpacity_ = std::clamp(value, 0.0, 1.0);
-    overlayEffect_->setOpacity(overlayOpacity_);
-    const bool needEffect = overlayOpacity_ < 0.99;
-    if (overlayEffect_->isEnabled() != needEffect) {
-        overlayEffect_->setEnabled(needEffect);
-    }
+    // A tick of the fade is a repaint of the picture with a new alpha, not a
+    // re-composite of an offscreen buffer holding the overlay.
+    chromeDirtyAll();
+    // Faded out means hidden as widgets too, or the controls would still be
+    // there to swallow the press that was meant for the picture: the play
+    // button under the pointer is what toggles playback.
     overlay_->setVisible(overlayOpacity_ > 0.01);
 }
 
 void PipFloat::revealControls() {
     // Already fully revealed and nothing pending: every call below is a no-op,
-    // except that setOpacity() is not one. QGraphicsEffect::setOpacity
-    // invalidates the effect and forces the whole overlay - buttons, labels,
-    // slider and all, under QSS - through the offscreen opacity buffer again
-    // on the next paint. This runs on every mouse-move over the float, so
-    // without this the controls were re-composited continuously under a
+    // except that setOverlayOpacity() is not one - it redraws the picture to
+    // lay the chrome back over it. This runs on every mouse-move over the
+    // float, so without this the surface was repainted continuously under a
     // pointer that was not going anywhere.
     if (hovered_ && overlayOpacity_ >= 1.0 && overlayFade_->state() != QAbstractAnimation::Running
         && !hideTimer_->isActive()) {
@@ -641,6 +717,15 @@ void PipFloat::hideControls() {
 }
 
 bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
+    // The timeline is painted into the picture, so the slider under it must not
+    // paint its own groove and handle over the video. Nothing of its painting is
+    // load-bearing: the click-to-seek below claims every press.
+    if (watched == scrub_ && event->type() == QEvent::Paint) {
+        return true;
+    }
+    // A control that changed through Qt rather than chromeUpdate() still has to
+    // reach the picture. The event is never consumed here.
+    chromeRepaintEvent(this, watched, event);
     switch (event->type()) {
         case QEvent::MouseMove:
         case QEvent::MouseButtonPress:
@@ -898,7 +983,6 @@ void PipFloat::showEvent(QShowEvent* event) {
 void PipFloat::fitSurfaces() {
     surface_->setGeometry(rect());
     overlay_->setGeometry(rect());
-    overlay_->raise();
 
     const int w = width();
     const int h = height();
@@ -961,6 +1045,10 @@ void PipFloat::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     applyCornerMask();
     fitSurfaces();
+    // The chrome lives in the picture now, and a resize moves every control to
+    // a new place - and can land with no frame arriving. The surface draws
+    // itself rather than waiting for one of those.
+    surface_->update();
 }
 
 // ── keyboard ─────────────────────────────────────────────────────────────
@@ -2447,7 +2535,7 @@ void PlayerDialog::copyCurrentFrame() {
         flashStatus(tr("No frame to copy"), true);
         return;
     }
-    const QImage frame = surface_->grabFramebuffer();
+    const QImage frame = surface_->grabVideoFramebuffer();
     if (frame.isNull()) {
         flashStatus(tr("Could not read the current frame"), true);
         return;

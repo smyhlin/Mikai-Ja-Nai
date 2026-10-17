@@ -157,7 +157,7 @@ QImage settledFrame(VideoSurface* surface, int timeoutMs = 6000) {
     for (int waited = 0; waited < timeoutMs; waited += 40) {
         QCoreApplication::processEvents();
         QThread::msleep(40);
-        QImage current = surface->grabFramebuffer();
+        QImage current = surface->grabVideoFramebuffer();
         if (!current.isNull()) current = current.convertToFormat(QImage::Format_RGB32);
         if (!current.isNull() && current == previous) {
             if (++stable >= 3) return current;

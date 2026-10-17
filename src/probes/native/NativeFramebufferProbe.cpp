@@ -126,7 +126,7 @@ int readGlErrors(VideoSurface& surface) {
 
 Grab grab(VideoSurface& surface) {
     Grab grab;
-    grab.image = surface.grabFramebuffer();
+    grab.image = surface.grabVideoFramebuffer();
     grab.sourceWidth = surface.videoWidth();
     grab.sourceHeight = surface.videoHeight();
     grab.glErrors = readGlErrors(surface);

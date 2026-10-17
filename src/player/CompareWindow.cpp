@@ -787,7 +787,7 @@ void CompareWindow::populateCandidates() {
         }
         candidates_.append(preset.id);
         ajiBackends_.insert(preset.id, ajiBackend);
-        choices_.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")}});
+        choices_.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")}, false, {}});
     }
     selection_.clear();
     if (candidates_.isEmpty()) {
@@ -1114,7 +1114,7 @@ QImage CompareWindow::grabSettledFrame() {
         if (surface_ == nullptr) {
             return QImage();
         }
-        const QImage probe = surface_->grabFramebuffer();
+        const QImage probe = surface_->grabVideoFramebuffer();
         const double now = surface_->position();
         if (positionEpoch_ != epoch) {
             epoch = positionEpoch_;

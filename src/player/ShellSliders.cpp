@@ -29,7 +29,7 @@ void RangeSlider::setValue(double v, bool notify) {
         if (notify) {
             emit valueChanged(v_);
         }
-        update();
+        chromeUpdate(this);
     }
 }
 
@@ -54,7 +54,7 @@ void RangeSlider::mouseMoveEvent(QMouseEvent* event) {
     if (drag_) {
         setValue(hover_);
     }
-    update();
+    chromeUpdate(this);
 }
 
 void RangeSlider::mouseReleaseEvent(QMouseEvent* event) {
@@ -66,13 +66,12 @@ void RangeSlider::mouseReleaseEvent(QMouseEvent* event) {
 
 void RangeSlider::leaveEvent(QEvent* event) {
     hover_ = -1.0;
-    update();
+    chromeUpdate(this);
 }
 
-void RangeSlider::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+void RangeSlider::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
+void RangeSlider::paintChrome(QPainter& p) {
     const double m = margin_;
     const double w = span();
     const double y = height() / 2.0 - track_ / 2.0;
@@ -102,14 +101,12 @@ ScrubBar::ScrubBar(QWidget* parent) : RangeSlider(w95(), 4, parent), font_(monoF
 
 void ScrubBar::setDuration(double d) { duration_ = qMax(0.0, d); }
 
-void ScrubBar::paintEvent(QPaintEvent* event) {
-    RangeSlider::paintEvent(event);
+void ScrubBar::paintChrome(QPainter& p) {
+    RangeSlider::paintChrome(p);
     if (duration_ <= 0.0 || !underMouse() || hoverFraction() < 0.0 || hoverFraction() > 1.0) {
         return;
     }
 
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
     const QString label = formatTime(hoverFraction() * duration_);
     const double tw = textWidth(font_, label) + 12;
     const double th = 17;
@@ -152,7 +149,7 @@ void VolumeTrack::setValue(double v, bool notify) {
     if (notify) {
         emit valueChanged(v_);
     }
-    update();
+    chromeUpdate(this);
 }
 
 double VolumeTrack::span() const {
@@ -176,7 +173,7 @@ void VolumeTrack::mouseMoveEvent(QMouseEvent* event) {
     if (drag_ && (event->buttons() & Qt::LeftButton)) {
         setValue(at(event->position().x()), true);
     }
-    update();
+    chromeUpdate(this);
 }
 
 void VolumeTrack::mouseReleaseEvent(QMouseEvent* event) {
@@ -185,18 +182,17 @@ void VolumeTrack::mouseReleaseEvent(QMouseEvent* event) {
         setValue(at(event->position().x()), true);
         emit released();
     }
-    update();
+    chromeUpdate(this);
 }
 
 void VolumeTrack::leaveEvent(QEvent* event) {
     QWidget::leaveEvent(event);
-    update();
+    chromeUpdate(this);
 }
 
-void VolumeTrack::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+void VolumeTrack::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
+void VolumeTrack::paintChrome(QPainter& p) {
     const double travel = span();
     const double y = height() / 2.0 - kGroove / 2.0;
     const double cy = height() / 2.0;
@@ -232,7 +228,7 @@ VolumeGroup::VolumeGroup(QWidget* parent) : QWidget(parent) {
     connect(track_, &VolumeTrack::valueChanged, this, [this](double v) {
         vol_ = v;
         emit volumeChanged(vol_);
-        update();
+        chromeUpdate(this);
     });
 }
 
@@ -256,7 +252,7 @@ void VolumeGroup::setVolume(double v) {
     vol_ = next;
     showLevel();
     emit volumeChanged(vol_);
-    update();
+    chromeUpdate(this);
 }
 
 // Silent by design, unlike setVolume: muted_ travels shell -> widget only, and
@@ -264,9 +260,12 @@ void VolumeGroup::setVolume(double v) {
 // the shell answers by toggling. Emitting that here would ask for the opposite
 // of what was just set.
 void VolumeGroup::setMuted(bool m) {
+    if (muted_ == m) {
+        return;
+    }
     muted_ = m;
     showLevel();
-    update();
+    chromeUpdate(this);
 }
 
 bool VolumeGroup::isDragging() const {
@@ -279,9 +278,9 @@ void VolumeGroup::mousePressEvent(QMouseEvent* event) {
     }
 }
 
-void VolumeGroup::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+void VolumeGroup::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
+
+void VolumeGroup::paintChrome(QPainter& p) {
     const double eff = effective();
     const int iconY = (height() - 16) / 2;
     if (eff == 0.0) {
