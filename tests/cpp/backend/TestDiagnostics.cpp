@@ -1,7 +1,7 @@
 #include "TestDiagnostics.hpp"
 
 #include <backend/Diagnostics.hpp>
-#include <app/CrashLog.hpp>
+#include <app/support/CrashLog.hpp>
 
 #include <cstdio>
 

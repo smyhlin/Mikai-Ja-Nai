@@ -5,7 +5,7 @@
 #include "native/models/NativeProfiles.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 #include "native/status/NativeStatus.hpp"
-#include "player/PresetShortcuts.hpp"
+#include "player/shaders/PresetShortcuts.hpp"
 
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>

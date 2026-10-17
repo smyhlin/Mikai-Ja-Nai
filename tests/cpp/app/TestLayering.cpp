@@ -4,6 +4,7 @@
 #include <backend/Streams.hpp>
 
 #include <QtCore/QDir>
+#include <QtCore/QDirIterator>
 #include <QtCore/QFile>
 #include <QtCore/QMimeData>
 #include <QtCore/QRegularExpression>
@@ -41,6 +42,20 @@ bool readAll(const QString& path, QString* out) {
   }
   *out = QString::fromUtf8(file.readAll());
   return true;
+}
+
+
+QStringList collectSourcesRecursively(const QString& relativeSubdir) {
+  const QString rootPath = QDir(QStringLiteral(MIKAI_SOURCE_DIR)).filePath(relativeSubdir);
+  QStringList out;
+  QDirIterator it(rootPath,
+                  {QStringLiteral("*.hpp"), QStringLiteral("*.h"), QStringLiteral("*.cpp")},
+                  QDir::Files, QDirIterator::Subdirectories);
+  while (it.hasNext()) {
+    out << it.next();
+  }
+  out.sort();
+  return out;
 }
 
 }  // namespace
@@ -87,6 +102,45 @@ void TestLayering::theDomainLayerDoesNotNameRawNumbersWhereTokensBelong() {
     QVERIFY2(readAll(path, &body), qPrintable(path));
     QVERIFY2(!body.contains(QStringLiteral("#FF0000")) && !body.contains(QStringLiteral("#00FF00")),
              qPrintable(QFileInfo(path).fileName()));
+  }
+}
+
+void TestLayering::theNativeSupportLayerIncludesNoGuiOrAppHeaders() {
+  const QRegularExpression guiInclude(
+      QStringLiteral(R"((^|\n)\s*#\s*include\s*[<"](Qt(Widgets|Gui|Quick|Qml|QuickWidgets|DBus|PrintSupport|Test)/)"));
+  const QRegularExpression shortcutInclude(
+      QStringLiteral(R"((^|\n)\s*#\s*include\s*[<"](QApplication|QWidget|QDialog|QLabel|QPushButton|QIcon|QPixmap|QScreen|QOpenGLWidget))"));
+  QStringList files = collectSourcesRecursively(QStringLiteral("src/player/native"));
+  const QDir coreDir(QDir(QStringLiteral(MIKAI_SOURCE_DIR)).filePath(QStringLiteral("src/player/core")));
+  for (const QString& coreFile : {QStringLiteral("MpvApi.hpp"), QStringLiteral("MpvApi.cpp"),
+                                  QStringLiteral("MpvHandle.hpp"), QStringLiteral("MpvHandle.cpp"),
+                                  QStringLiteral("PlaybackDiagnostics.hpp"),
+                                  QStringLiteral("PlaybackDiagnostics.cpp")}) {
+    files << coreDir.filePath(coreFile);
+  }
+  QVERIFY2(!files.isEmpty(), "no native support sources found");
+  for (const QString& path : files) {
+    QString body;
+    QVERIFY2(readAll(path, &body), qPrintable(path));
+    const QString name = QFileInfo(path).fileName();
+    QVERIFY2(!guiInclude.match(body).hasMatch(), qPrintable(name));
+    QVERIFY2(!shortcutInclude.match(body).hasMatch(), qPrintable(name));
+    QVERIFY2(!body.contains(QStringLiteral("mikai/app/")) &&
+                 !body.contains(QStringLiteral("namespace mikai::app")),
+             qPrintable(name));
+  }
+}
+
+void TestLayering::thePlayerLayerDoesNotReachIntoTheAppLayer() {
+  const QStringList files = collectSourcesRecursively(QStringLiteral("src/player"));
+  QVERIFY2(!files.isEmpty(), "no player sources found");
+  for (const QString& path : files) {
+    QString body;
+    QVERIFY2(readAll(path, &body), qPrintable(path));
+    const QString name = QFileInfo(path).fileName();
+    QVERIFY2(!body.contains(QStringLiteral("mikai/app/")) &&
+                 !body.contains(QStringLiteral("namespace mikai::app")),
+             qPrintable(name));
   }
 }
 

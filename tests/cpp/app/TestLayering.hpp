@@ -1,28 +1,27 @@
-// Layer guards, plus the one shared-service behaviour the status line depends on.
-//
-// The guards are the C++ restatement of two Python tests that no longer have a
-// Python runtime to run in: the domain library must not include Qt GUI headers,
-// and it must not name the app layer. In C++ the same mistake shows up as a
-// link-time dependency on Qt6Widgets, so the checks are made on the sources.
-
 #pragma once
 
-#include <QtTest/QTest>
+#include <QtCore/QObject>
+#include <QtTest/QtTest>
 
+// Layering invariants for the C++ modules:
+// - src/backend/ must stay GUI-free and independent of src/player/ and src/app/
+// - src/player/native/ and core transport (MpvApi, MpvHandle, PlaybackDiagnostics)
+//   must stay GUI-free and independent of src/app/
+// - src/player/ must never depend upward on src/app/
 class TestLayering : public QObject {
   Q_OBJECT
-
  private slots:
   void theDomainLayerHasSourceFiles();
   void theDomainLayerIncludesNoGuiHeaders();
   void theDomainLayerDoesNotReachIntoTheAppLayer();
   void theDomainLayerDoesNotNameRawNumbersWhereTokensBelong();
+  void theNativeSupportLayerIncludesNoGuiOrAppHeaders();
+  void thePlayerLayerDoesNotReachIntoTheAppLayer();
   void theStreamErrorsShareOneHierarchy();
 };
 
 class TestClipboard : public QObject {
   Q_OBJECT
-
  private slots:
   void emptyImagesLeaveExistingClipboardContentUnchanged();
   void copiedImagesRetainTheirPixels();

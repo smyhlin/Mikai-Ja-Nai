@@ -2,13 +2,13 @@
 
 
 #include <app/dialogs/SettingsDialog.hpp>
-#include <app/I18n.hpp>
+#include <app/support/I18n.hpp>
 #include <app/workers/Runner.hpp>
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativePrefs.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
-#include <player/PlayerShell.hpp>
+#include <player/shell/PlayerShell.hpp>
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
