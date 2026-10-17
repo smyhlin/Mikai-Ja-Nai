@@ -21,7 +21,7 @@ Measured results from **Settings → Benchmark**, grouped by machine and model. 
 
 - Output throughput must exceed the source frame rate to sustain playback without interpolation. The fixtures are 23.976 fps. Allow additional headroom for real footage, display presentation, other GPU workloads, and thermal limits; these short synthetic runs do not establish a sustained real-world limit.
 - A failed row retains its reason rather than being converted into zero fps. Missing components, unsupported models, startup errors, and inference failures are different from a measured low frame rate.
-- No peak-VRAM or power measurements were collected. Installed VRAM is a machine specification, **not** a per-model minimum requirement.
+- For the original full matrix, no peak-VRAM or power measurements were collected. Installed VRAM is a machine specification, **not** a per-model minimum requirement. GPU telemetry was collected during the separate controlled follow-up, but it does not establish peak-VRAM requirements.
 - Each model is tested independently. Interpolation and combined upscaling/interpolation pipelines are outside this report.
 
 ## Measurement method
@@ -32,7 +32,7 @@ TensorRT engine preparation finishes before eligible measurement starts. A build
 
 The five bundled clips have 2,158 H.264 frames each, a frame rate of `2997/125`, and a duration of about 90 seconds. They loop if needed. Each published cell is one completed sample, not an average of repeated trials; small differences between cells or machines can be run-to-run noise.
 
-The RTX 5090 tables below come from one fresh, complete capture on 2026-10-17 after the rendering-lifecycle and diagnostic fixes. No cells were merged from older runs, remeasured selectively, estimated, or averaged. RIFE is excluded.
+The RTX 5090 full matrix below is one fresh, complete capture on 2026-10-17 after the rendering-lifecycle and diagnostic fixes. Its 160 cells are single measurements and remain unchanged; the separate controlled AnimeJaNai follow-up below reports repeated old/new medians and does not replace or merge into that matrix. No full-matrix cells were merged from older runs, remeasured selectively, estimated, or averaged. RIFE is excluded.
 
 This offscreen throughput run checks the decode/filter/render pipeline, not interactive HUD cost, display-vsync pacing, or a before/after speedup. Separate real-player probes verified moving non-black video, paused repaint stability, fractional-DPR resizing, hidden/minimized/covered recovery, context recreation, GPU-painted chrome, PiP transitions, and cached TensorRT playback.
 
@@ -105,6 +105,23 @@ The real-player preflight reported NVIDIA OpenGL 4.6 and `hwdec-current=nvdec`. 
 | Balanced | 713.6 | 470.0 | 345.6 | 383.9 | 152.7 |
 | Performance | 727.2 | 475.8 | 345.1 | 612.1 | 272.8 |
 
+### Controlled AnimeJaNai follow-up
+
+A separate RTX 5090 old/new comparison was run on 2026-10-17 for the three built-in AnimeJaNai profiles at 1280 × 720 and 1920 × 1080 input. The preserved executables were old `8a71e08` and new `cb73c9c`, tested in ABBA order (old/new/new/old) for each clip. Each profile/resolution cell has two valid samples per version; the six comparisons below report medians. Across the comparison, 24 valid native and 8 baseline measurements were collected. The engine cache was unchanged, and RIFE was excluded. The benchmark remained foreground in a connected Windows/RDP desktop session.
+
+| Profile | Input | Old median (fps) | New median (fps) | New vs old |
+| --- | --- | ---: | ---: | ---: |
+| Quality | 1280 × 720 | 383.75 | 383.55 | −0.05% |
+| Balanced | 1280 × 720 | 383.05 | 382.45 | −0.16% |
+| Performance | 1280 × 720 | 612.05 | 608.80 | −0.53% |
+| Quality | 1920 × 1080 | 153.40 | 153.15 | −0.16% |
+| Balanced | 1920 × 1080 | 153.25 | 153.20 | −0.03% |
+| Performance | 1920 × 1080 | 280.90 | 281.25 | +0.12% |
+
+The historical 6–7% Quality-profile loss was not reproduced as a version-dependent regression in this comparison. These results do not establish an all-GPU or all-resolution outcome. A separate native Quality 1080p foreground/background focus probe produced only one valid pair (152.8/150.7 fps); the failed repeat was excluded, so this effect was not replicated. Do not transfer the separate 26.6% Anime4K focus effect to AnimeJaNai. These measurements do not identify the historical cause or support a zero-effect claim.
+
+The original full-matrix cells above remain single measurements and unchanged; these follow-up medians are separate and must not be mixed into that matrix.
+
 ### Spatial
 
 | Model | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
@@ -121,6 +138,7 @@ The real-player preflight reported NVIDIA OpenGL 4.6 and `hwdec-current=nvdec`. 
 2. Run **Settings → Benchmark** with all clips, Anime4K, AnimeJaNai, Spatial, and baseline selected. Leave the **RIFE group unchecked**. Keep unrelated GPU workloads stopped. Record each failure's full detail as well as successful fps values.
 3. Include GPU name and VRAM, driver, CPU, RAM, OS, application revision, backend, and input/output dimensions. State any different clips, model revisions, or graphics settings. Do not merge unlike workloads into the same comparison table.
 4. Send the result export or screenshots with their model/clip labels. Add each machine as a separate section with the same columns; leave unmeasured cells explicitly unmeasured rather than extrapolating from another GPU.
+5. For controlled old/new comparisons, keep the benchmark application foreground on a connected, non-minimized desktop (including over RDP); repeat comparisons and interleave old/new runs rather than relying on one pass. Record the session and focus state, plus whether each model used a cached engine or first-use build. Keep these comparison medians separate from the original single-cell full matrix.
 
 The developer `benchmark_probe` exercises the same Settings surface and can save machine-readable evidence. On Windows it must run beside the deployed runtime, shaders, models, and `benchmarks/` directory; a bare executable from the build directory is not a self-contained benchmark.
 

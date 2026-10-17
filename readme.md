@@ -153,6 +153,8 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 See [benchmark results by machine](bench_results.md) for measured per-model throughput, test conditions, and interpretation limits. Compare matching input resolutions and settings; a failed runtime check is not a GPU performance measurement.
 
+The [controlled RTX 5090 AnimeJaNai follow-up](bench_results.md#controlled-animejanai-follow-up) documents a separate old/new comparison and its measurement controls. For repeat comparisons, keep the app foreground on a connected, non-minimized desktop, interleave old/new runs, and record session/focus and cached-engine versus first-use conditions. These controls do not imply stutter-free playback or zero GPU cost.
+
 Settings → Benchmark compares selected clips and models, with an optional unfiltered baseline. Search and group selection keep their choices while filtering; the run action stays visible while the page scrolls.
 
 Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
