@@ -181,12 +181,12 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 
 - `src/backend/` — Domain models (`Models.hpp`), API client (`MikaiClient`), HLS stream extractors (`Streams`), verified downloader (`Downloads`), runtime discovery (`Runtime`), and diagnostic scrubbing (`Diagnostics`).
 - `src/gui/` — Shared GUI utilities (`Clipboard`).
-- `src/app/` — Main window (`MainWindow`), pages (`SearchPage`, `TitlePage`, `EpisodeGrid`), dialogs (`SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`), and the searchable, grouped Benchmark workspace (`SettingsBenchmarkTab`, `BenchmarkPlayback`). Also contains custom widgets, dark QSS theme (`Theme`, `Metrics`), and worker pool (`Runner`).
-- `src/player/` — `libmpv` wrapper (`MpvApi`, `MpvRenderContext`, `VideoSurface`), player chrome (`PlayerShell`, `PlayerDialog`, `PlayerPopups`, `ShellWidgets`), `Anime4K` shader resolver, and `CompareWindow` (`CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`).
-- `src/player/native/` — Native bundle, component catalog/store/provisioning, GPU NVML probe, ONNX model inventory, preparation pipeline, and runtime status controller.
-- `src/probes/` — Standalone GUI and headless verification probes (`compare_probe`, `shell_probe`, `dialog_probe`, `native_component_probe`, etc.).
+- `src/app/` — Subdivided into `support/` (`CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`), `pages/` (`MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`), `dialogs/` (`SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`, and `settings/` tabs), `state/`, `widgets/`, `theme/`, and `workers/` (`Runner`).
+- `src/player/` — Subdivided into `core/` (`MpvApi`, `MpvHandle`, `MpvRenderContext`, `PlaybackDiagnostics`, `VideoSurface`), `shaders/` (`Anime4K`, `PresetShortcuts`), `shell/` (`PlayerDialog`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`), `compare/` (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`), and `native/` (`bundle/`, `components/`, `models/`, `prepare/`, `status/`).
+- `src/probes/` — Standalone GUI and headless verification probes (`compare_probe`, `shell_probe`, `dialog_probe`, `native_component_probe`, `probe_runner`, etc.).
+- `cmake/` — Modular CMake build helpers (`MinGWRuntime.cmake`, `FindOrFetchMpv.cmake`, `MikaiProbes.cmake`, `MikaiTests.cmake`, `dist.cmake`, `MikaiTestLauncher.cpp`).
 - `native/` — Standalone MSVC + CUDA + TensorRT inference shim build (`native/CMakeLists.txt`), CLI tools (`mikai_bundle`, `mikai_manifest_check`, `native_inspect`), patches, and provenance manifests (`native/manifest/`).
-- `tests/` — 35 hermetic Qt Test suites (`tests/cpp/`) and CMake contract tests (`tests/cmake/`, `tests/fixtures/`).
+- `tests/` — 35 hermetic Qt Test suites grouped into `tests/cpp/{backend,native,player,app}/` and CMake contract tests (`tests/cmake/`, `tests/fixtures/`).
 - `translations/` — Ukrainian translation catalog (`translations/mikai_uk.ts`).
 - `docs.md` — Reference documentation for the Mikai Public API v1.
 
