@@ -602,6 +602,8 @@ set_target_properties(native_hud_probe PROPERTIES WIN32_EXECUTABLE FALSE)
 add_executable(native_settings_probe EXCLUDE_FROM_ALL src/probes/native/NativeSettingsProbe.cpp)
 target_link_libraries(native_settings_probe PRIVATE mikai_app Qt6::Test mikai_probe_shared)
 set_target_properties(native_settings_probe PROPERTIES WIN32_EXECUTABLE FALSE)
+# --render-lifecycle needs its own process: --dpr is applied as QT_SCALE_FACTOR
+# before QApplication, which cannot be done from inside another run.
 add_executable(mpv_surface_smoke EXCLUDE_FROM_ALL src/probes/player/mpv_surface_smoke.cpp)
 target_link_libraries(mpv_surface_smoke PRIVATE mikai_player Qt6::Widgets mikai_probe_shared)
 add_executable(animejanai_probe EXCLUDE_FROM_ALL src/probes/player/AnimeJanaiProbe.cpp)

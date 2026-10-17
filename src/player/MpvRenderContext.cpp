@@ -104,7 +104,9 @@ GlApi loadGlApi() {
 
 // ── MpvRenderContext ──────────────────────────────────────────────────────
 
-MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(gl) {
+MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::function<void()> onUpdate,
+                                   bool advancedControl)
+    : gl_(gl), onUpdate_(std::move(onUpdate)) {
     MpvApi& api = MpvApi::instance();
     if (!api.loaded()) {
         throw MpvError("no mpv runtime is selected: a render context cannot be created before "
@@ -113,10 +115,13 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(gl) {
     api_ = &api.functions();
 
     mpv_opengl_init_params init{&MpvRenderContext::sGetProc, this};
+    // An int, and passed per creation: mpv reads it once, here.
+    int advanced = advancedControl ? 1 : 0;
 
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
         {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &init},
+        {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 
@@ -125,7 +130,9 @@ MpvRenderContext::MpvRenderContext(MpvHandle& mpv, const GlApi& gl) : gl_(gl) {
         ctx_ = nullptr;
         throw MpvError(std::string("mpv_render_context_create: ") + api_->errorString(rc));
     }
-    // A frame is always wanted first; after that the update callback drives us.
+    // Registered last, when the target is already in `onUpdate_`: mpv raises the
+    // callback from inside this call, and a target assigned afterwards would be
+    // reached - from another thread - while still empty.
     api_->renderContextSetUpdateCallback(ctx_, &MpvRenderContext::sUpdate, this);
 }
 
@@ -147,13 +154,6 @@ void* MpvRenderContext::sGetProc(void* ctx, const char* name) {
 void MpvRenderContext::sUpdate(void* ctx) {
     auto* self = static_cast<MpvRenderContext*>(ctx);
     if (self != nullptr && self->onUpdate_) self->onUpdate_();
-}
-
-void MpvRenderContext::setUpdateCallback(std::function<void()> fn) {
-    onUpdate_ = std::move(fn);
-    // Fire once now so a surface already showing a frame gets painted without
-    // waiting for the next one mpv decides to produce.
-    if (onUpdate_) onUpdate_();
 }
 
 void MpvRenderContext::setFlipY(bool flip) {
@@ -182,6 +182,20 @@ bool isRealNewFrame(const mpv_render_frame_info& info) {
 
 void MpvRenderContext::reportSwap() {
     if (ctx_ != nullptr && api_ != nullptr) api_->renderContextReportSwap(ctx_);
+}
+
+int MpvRenderContext::skipRendering() {
+    if (ctx_ == nullptr || api_ == nullptr) return 0;
+    int skip = 1;
+    // Never block the calling thread: mpv's own target-time wait belongs to the
+    // presentation path, and a skip is exactly the case where nothing is shown.
+    int blockForTargetTime = 0;
+    mpv_render_param params[] = {
+        {MPV_RENDER_PARAM_SKIP_RENDERING, &skip},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime},
+        {MPV_RENDER_PARAM_INVALID, nullptr},
+    };
+    return api_->renderContextRender(ctx_, params);
 }
 
 int MpvRenderContext::render(int fbo, int width, int height, int internalFormat) {

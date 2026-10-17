@@ -172,7 +172,10 @@ struct CompareRenderer::State {
                     text.contains(QLatin1String("build failed"), Qt::CaseInsensitive))
                     error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1").arg(text);
             });
-            rendering = std::make_unique<MpvRenderContext>(*core, loadGlApi());
+            // No update callback: this renderer is driven by its own paint path
+            // and never enables advanced control, so nothing waits for one.
+            rendering = std::make_unique<MpvRenderContext>(*core, loadGlApi(),
+                                                           std::function<void()>{});
             rendering->setFlipY(true);
         }
         return true;

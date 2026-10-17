@@ -1,21 +1,11 @@
-// The video surface: a QOpenGLWidget that mpv draws into directly.
-//
-// No winId(), no native child HWND. That is the entire point: the Python player
-// gave mpv a native window, and a native child window on Windows always paints
-// above non-native siblings no matter what raise() does, which is why the dock
-// kept vanishing behind the video. Here mpv renders into the framebuffer Qt is
-// already painting, so the chrome is ordinary sibling widgets and z-order is
-// Qt's problem again - where it belongs.
-//
-// The surface is also the single place that knows the OpenGL context exists:
-// loadGlApi() can only resolve entry points from inside a current context, so
-// the render context is created in initializeGL and destroyed in the
-// destructor before Qt tears the context down.
+// Rendering stays on the GUI thread with Qt's GL context current.
+// Core requests are asynchronous: advanced control can deadlock a core wait.
 
 #pragma once
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QImage>
 #include <QMetaType>
 #include <QOpenGLWidget>
 #include <QPointer>
@@ -23,11 +13,13 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "Anime4K.hpp"
@@ -40,6 +32,10 @@
 #include "native/prepare/NativePreparationContext.hpp"
 #include "native/status/NativeStatus.hpp"
 #include "native/prepare/NativeWorkLease.hpp"
+
+// Declared where the view is complete: paintOverlay() hands the overlay code a
+// painter, never an owned object.
+class QPainter;
 
 namespace mplayer {
 class MpvHandle;
@@ -161,10 +157,10 @@ public:
     QString anime4KChainId() const { return anime4kChainId_; }
     /// Changes on every public Anime4K mode/chain request, including same-value requests.
     quint64 anime4KRequestGeneration() const { return anime4KRequestGeneration_; }
-    /// What mpv reports for glsl-shaders right now. It only echoes back the
-    /// string it was given - mpv does not validate a path list, so this cannot
-    /// tell a working chain from a preset naming a deleted file. Useful for
-    /// Off vs On; the probe proves the rest with pixels.
+    /// What mpv reports for glsl-shaders right now: the observed value, never a
+    /// submission that has not landed. mpv does not validate a path list, so this
+    /// cannot tell a working chain from a preset naming a deleted file - useful
+    /// for Off vs On; the probe proves the rest with pixels.
     QString effectiveShaderChain() const;
 
     bool isContextReady() const { return contextReady_; }
@@ -172,6 +168,13 @@ public:
     /// been constructed but not yet shown never gets one, so a caller that
     /// needs a framebuffer has to be able to wait for it.
     bool waitForContext(int timeoutMs);
+
+    /// The video readback for consumers that must not capture chrome: the same
+    /// framebuffer Qt would hand grabFramebuffer(), rendered with this surface's
+    /// overlay suppressed. A normal overlay repaint is scheduled before returning,
+    /// but the widget is not composited again by this call. grabFramebuffer()
+    /// itself stays the "what the user sees" readback. GUI thread only.
+    QImage grabVideoFramebuffer();
 
     /// Probe-only: reads one mpv property so a manifest can assert on the core
     /// itself ("pause", "volume", "duration", "time-pos", "filename") rather
@@ -374,19 +377,26 @@ signals:
                                    double framePosition, int frameIndex,
                                    std::optional<native::Rational> frameFps);
     void nativeReferenceFrameFailed(const QString& reasonKey, const QString& reason, int frameIndex);
+    /// Emitted once per paintGL, after mpv's frame and Qt's GL state are
+    /// restored and before the painter is ended: the painter is active and in
+    /// logical widget coordinates. The receiver paints and does not keep it.
+    void paintOverlay(QPainter* painter);
 
 protected:
     void initializeGL() override;
     void paintGL() override;
     void resizeGL(int width, int height) override;
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
     /// Creates the engine with vo=libmpv. Both open() and initializeGL() need it
     /// and whichever runs first wins, so the options cannot be set in only one.
     void ensureEngine();
-    /// Issues the deferred load once the render context exists.
-    bool startPendingUrl();
+    /// Issues the deferred load once the render context exists. `resumeAt` is
+    /// the position the new file starts at, non-zero only when a recreated
+    /// render context has to give mpv its video back.
+    bool startPendingUrl(double resumeAt = 0.0);
     void pumpEvents();
     void handleState();
     void updateStreamStats();
@@ -405,9 +415,6 @@ private:
     /// so the 50 ms pump never takes the core lock to learn what it shows.
     void observePlaybackState();
     void publishObservedState();
-    /// Records the chain mpv was just handed, so a caller reading right after
-    /// the write sees it without waiting for the observer.
-    void applyShaderChain(const QString& shaders);
     /// One native-status pump step, driven from the 50 ms timer. The reader is
     /// ticked even while polling is off, so a timed-out request is still
     /// abandoned and the current source epoch keeps being observed.
@@ -451,6 +458,11 @@ private:
     qint64 nativePlaybackNowMs() const { return nativePlaybackClock_.elapsed(); }
     /// Ends a capture that can no longer be answered because the source moved.
     void abandonNativeReferenceFrame(const QString& reasonKey, const QString& reason);
+
+    /// Set for the whole of one probeMpvProperty() call: the events that read
+    /// drains are dispatched on this thread, and a probe that started inside one
+    /// of them would be answered from a queue its caller is already draining.
+    bool probeReadActive_ = false;
 
     // ── explicit probe alignment ───────────────────────────────────────────
     //
@@ -633,8 +645,80 @@ private:
     void applyDiagnosticReply(DiagnosticSlot slot, const AsyncReply& reply);
     void setDiagnosticUnknown(DiagnosticSlot slot);
 
+    /// Creates the render context for the context that is current now. Its mpv
+    /// callback only queues a generation-stamped hop to the GUI thread.
+    void createRenderContext();
+    /// Releases the render context with THIS widget's context current, which is
+    /// what mpv requires for the free. Wired to
+    /// QOpenGLContext::aboutToBeDestroyed and repeated from the destructor.
+    void releaseRenderContext();
+    /// The GUI-thread end of mpv's update callback: coalesced and generation
+    /// checked. One step of mpv's render state, then a repaint request.
+    void onRenderUpdate(quint64 generation);
+    /// Advances mpv's render state with the context current - update(), and
+    /// either a pending frame for the next paint or a skip that is acknowledged
+    /// when no paint can happen. The only place render state moves outside
+    /// paintGL, so every callback is answered exactly once.
+    void advanceRenderState();
+    /// Whether Qt will actually paint this widget now: an unexposed or minimized
+    /// window gets no paint event, so a frame kept for one would never be
+    /// presented - nor acknowledged.
+    bool paintCanHappen() const;
+    /// Consumes the swap report owed for the frame this paint rendered. Called
+    /// from frameSwapped, so the report names an actual presentation.
+    void onFrameSwapped();
+    /// Sends the report still owed for a frame this surface painted that the
+    /// widget will now never present, under this surface's context. mpv's VO
+    /// waits for that acknowledgement before it releases the next frame.
+    void acknowledgeDroppedFrame();
+    /// The pause value this surface has submitted and mpv has not yet been
+    /// observed to hold. Property events and command replies arrive in the order
+    /// the core processed them, so an observation that contradicts this one is
+    /// OLDER than the request and must not overwrite the viewer's intent.
+    struct PauseWrite {
+        quint64 generation = 0;
+        /// The source it was issued against: a write for a source that has since
+        /// been replaced can neither be confirmed nor block anything.
+        uint64_t epoch = 0;
+        bool target = false;
+    };
+    /// nullopt when nothing is in flight.
+    std::optional<PauseWrite> pendingPauseWrite_;
+    /// Advances for every pause write issued, including reassertions.
+    quint64 pauseWriteGeneration_ = 0;
+    /// Submits one pause value and tracks it until mpv's own property event, or
+    /// the command's reply, confirms or retires it.
+    void requestPausedWrite(bool paused);
+    /// The pause state the viewer has asked for: the write still in flight, else
+    /// mpv's observed value.
+    bool requestedPause() const {
+        return pendingPauseWrite_.has_value() ? pendingPauseWrite_->target : observedPaused_;
+    }
+    /// Set while a readback is suppressing this surface's overlay, so a paint made
+    /// for it stays out of the captured image.
+    bool overlaySuppressed_ = false;
+    /// Advances the render state on demand, for a caller that knows the core
+    /// changed something (a shader chain swap) and needs a repaint of it.
+    void refreshRenderState();
+    /// Brings this widget's context current for render work done outside
+    /// paintGL. False when there is none; on true, `previous` holds whatever was
+    /// current before, which releaseRenderContextCurrent() puts back.
+    bool makeRenderContextCurrent(QOpenGLContext** previous);
+    void releaseRenderContextCurrent(QOpenGLContext* previous);
+    /// Issues one core command without waiting for it: mpv's own commands block
+    /// until the core takes them, which this surface must never do while native
+    /// work can hold that core. `reportRefusal` names a refusal through
+    /// errorOccurred; false only where the caller documented it as normal.
+    void issueCoreCommand(std::vector<std::string> args, const char* what, bool reportRefusal);
+    /// Submits one path list to glsl-shaders asynchronously. What the surface
+    /// reports as the chain stays mpv's observed value, never the submission.
+    void applyShaderChainRequest(const QString& shaders);
+
     // Held so the render context can be freed with it current at teardown.
     QOpenGLContext* context_ = nullptr;
+    /// The context's own destruction signal, so it is not fired against a
+    /// widget that already let the renderer go.
+    QMetaObject::Connection contextDestroyedConnection_;
     std::unique_ptr<MpvHandle> mpv_;
     std::unique_ptr<MpvRenderContext> render_;
     QString url_;
@@ -727,6 +811,27 @@ private:
     bool contextReady_ = false;
     bool pendingOpen_ = false;
     bool framePending_ = false;   // set by mpv's update callback
+    /// Bumped whenever a render context is created or released, so a hop queued
+    /// by a released context's callback finds a different generation.
+    quint64 renderGeneration_ = 0;
+    /// The generation of the hop already queued: every callback mpv raises
+    /// before it runs collapses into one repaint. Written from mpv's threads.
+    std::atomic<quint64> queuedRenderCallback_{0};
+    /// A frame really rendered that Qt has not composed yet, so the one swap
+    /// report it is owed goes out once, from frameSwapped.
+    bool videoFramePainted_ = false;
+    /// Set while releasing the render context: mpv answers that by killing the old
+    /// video output and ending the playing file with MPV_ERROR_VO_INIT_FAILED, an
+    /// error that belongs to the renderer being replaced, not to the source. The
+    /// next START_FILE or the first successful render closes the window, so a
+    /// video output that really fails to initialize is still reported.
+    bool rendererTeardownErrorPending_ = false;
+    /// The playlist entry mpv is playing now, from the last START_FILE. An
+    /// END_FILE error naming any other entry describes a source that has already
+    /// been replaced - by a reload or a switch - and is not a failure of what is
+    /// playing. Unset until the first START_FILE, when nothing is known yet.
+    int64_t currentPlaylistEntryId_ = 0;
+    bool havePlaylistEntryId_ = false;
     /// Forces the next paint to render even with no freshly decoded frame:
     /// set when Qt hands the widget a new framebuffer (resize, re-show) and
     /// the previous picture is no longer there to composite.

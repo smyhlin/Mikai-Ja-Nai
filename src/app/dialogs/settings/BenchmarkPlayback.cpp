@@ -109,12 +109,14 @@ BenchmarkSampleResult runBenchmarkSample(
         options.emplace_back("pause", "no");
         mplayer::MpvHandle handle(options);
         const mplayer::GlApi glApi = mplayer::loadGlApi();
-        mplayer::MpvRenderContext renderer(handle, glApi);
-        renderer.setFlipY(false);
-        renderer.setUpdateCallback([&] {
+        // The update target is handed over at construction, where mpv raises it
+        // once itself: assigning it afterwards would leave a window in which a
+        // callback from another thread finds an empty target.
+        mplayer::MpvRenderContext renderer(handle, glApi, [&] {
             updatePending.store(true, std::memory_order_release);
             frameAvailable.notify_one();
         });
+        renderer.setFlipY(false);
         handle.setEventSink([&](mpv_event* event) {
             if (event == nullptr || event->data == nullptr) return;
             if (event->event_id == MPV_EVENT_END_FILE) {

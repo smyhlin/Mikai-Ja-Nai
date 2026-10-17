@@ -124,9 +124,10 @@ int main(int argc, char** argv) {
     QImage image;
     try {
         MpvHandle mpv({{"vo", "libmpv"}});
-        MpvRenderContext rc(mpv, *api);
+        // This probe drives rendering from its own loop and never enables
+        // advanced control, so it has no update work to hand over.
+        MpvRenderContext rc(mpv, *api, [] {});
         rc.setFlipY(false);
-        rc.setUpdateCallback([] {});
         const QString media = argc > 1 ? QString::fromLocal8Bit(argv[1])
                                        : QStringLiteral("av://lavfi:testsrc=size=320x180:rate=25");
         note(QStringLiteral("media: %1").arg(media));

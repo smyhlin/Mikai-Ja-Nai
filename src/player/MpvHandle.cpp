@@ -338,7 +338,9 @@ void MpvHandle::loadFile(const std::string& url) {
 }
 
 void MpvHandle::seek(double seconds) {
-    const std::string at = std::to_string(seconds);
+    // Locale-independent: mpv parses the argument itself, and "1,5" is a parse
+    // error rather than a time.
+    const std::string at = QString::number(seconds, 'f', 6).toStdString();
     // mpv_command takes a NULL-terminated array; without the terminator the
     // process dies on the first seek.
     const char* cmd[] = {"seek", at.c_str(), "absolute", nullptr};

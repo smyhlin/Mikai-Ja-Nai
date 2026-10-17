@@ -1,8 +1,5 @@
-// mpv render-API bridge: mpv renders into an FBO we blit inside a normal Qt
-// widget, so there is no second HWND and native z-order stops mattering.
-//
-// The update callback fires on an arbitrary mpv thread and is forwarded as a
-// plain std::function; the Qt layer marshals it onto the GUI thread.
+// Native calls need the creating GL context current; free precedes core destruction.
+// Update callbacks run on mpv threads and only hand work to the owner.
 
 #pragma once
 
@@ -61,7 +58,19 @@ GlApi loadGlApi();
 class MpvRenderContext {
 public:
     // Throws MpvError if the context cannot be created.
-    MpvRenderContext(MpvHandle& mpv, const GlApi& gl);
+    //
+    // `onUpdate` is held from construction on, so it is already in place when
+    // mpv's own callback is registered and a callback mpv raises immediately
+    // cannot find an empty target. It fires on an mpv thread: the target has to
+    // marshal onto its own thread and must touch no GL state.
+    //
+    // `advancedControl` makes mpv hand its render loop to the caller: every
+    // update callback then has to be answered with update(), every consumed
+    // frame with report_swap(), and all of update/render/report_swap/free need
+    // the context that created this one current in the calling thread. It is
+    // left off for the offscreen users, which do not drive that loop.
+    MpvRenderContext(MpvHandle& mpv, const GlApi& gl, std::function<void()> onUpdate,
+                     bool advancedControl = false);
     ~MpvRenderContext();
 
     MpvRenderContext(const MpvRenderContext&) = delete;
@@ -74,16 +83,21 @@ public:
     // swap. Returns mpv's render error code (0 on success).
     int render(int fbo, int width, int height, int internalFormat);
 
-    // Tells mpv a frame was presented, so it can schedule the next.
+    // Tells mpv a frame was presented, so it can schedule the next. Required for
+    // every frame mpv handed out under advanced control, including one that was
+    // consumed with skipRendering(): mpv waits for that acknowledgement before
+    // it releases the next frame.
     void reportSwap();
+
+    // Consumes the next frame without rendering it, so a surface that cannot
+    // paint still keeps mpv's timing and frame supply alive. Takes the same
+    // current GL context as render(), and returns mpv's render error code.
+    int skipRendering();
 
     // Returns mpv's MPV_RENDER_UPDATE_* flags describing new render output.
     uint64_t update();
 
     bool nextFrameInfo(mpv_render_frame_info& info) const;
-
-    // Fires (on an mpv thread) when a new frame may be available.
-    void setUpdateCallback(std::function<void()> fn);
 
     // Set once, right after construction, before the first render.
     void setFlipY(bool flip);
@@ -101,6 +115,8 @@ private:
     GlApi gl_;
     // Cached from the process-wide selection so render never looks the module up.
     const MpvApiInstance* api_ = nullptr;
+    // In place before mpv's callback is registered; never reassigned afterwards,
+    // so the callback mpv raises during registration always reaches a target.
     std::function<void()> onUpdate_;
 };
 
