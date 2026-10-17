@@ -6,7 +6,7 @@
 #include <QString>
 #include <QWidget>
 #include <optional>
-#include <player/ProcessingSettingsIntent.hpp>
+#include <player/shell/ProcessingSettingsIntent.hpp>
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
 

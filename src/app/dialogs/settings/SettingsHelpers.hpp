@@ -1,7 +1,7 @@
 #pragma once
 
 #include <native/bundle/NativePrefs.hpp>
-#include <player/PresetShortcuts.hpp>
+#include <player/shaders/PresetShortcuts.hpp>
 
 #include <QString>
 

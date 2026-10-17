@@ -14,7 +14,7 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QVector>
-#include <player/ProcessingSettingsIntent.hpp>
+#include <player/shell/ProcessingSettingsIntent.hpp>
 #include <QWidget>
 
 #include <functional>

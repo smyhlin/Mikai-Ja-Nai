@@ -549,8 +549,8 @@ int runProof(const Options& options) {
             return QVariant();
         },
         [](const QVariant&) {},
-        [job](const backend::Failure& failure) {
-            job->workerError = backend::failureLine(failure);
+        [job](const mikai::backend::Failure& failure) {
+            job->workerError = mikai::backend::failureLine(failure);
             job->workerFailed = true;
             job->done.store(true);
         });

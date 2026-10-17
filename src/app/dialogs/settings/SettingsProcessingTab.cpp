@@ -11,7 +11,7 @@
 #include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/status/NativeStatus.hpp>
-#include <player/ProcessingSettingsIntent.hpp>
+#include <player/shell/ProcessingSettingsIntent.hpp>
 
 #include <initializer_list>
 

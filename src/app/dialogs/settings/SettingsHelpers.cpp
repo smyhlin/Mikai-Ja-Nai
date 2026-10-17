@@ -2,7 +2,7 @@
 
 #include "theme/Metrics.hpp"
 
-#include <player/Anime4K.hpp>
+#include <player/shaders/Anime4K.hpp>
 
 #include <QCoreApplication>
 #include <QFont>

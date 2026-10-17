@@ -11,7 +11,7 @@
 
 #include <backend/MikaiClient.hpp>
 #include <dialogs/ComponentStoreTab.hpp>
-#include <player/Anime4K.hpp>
+#include <player/shaders/Anime4K.hpp>
 
 #include <QAccessible>
 #include <QCheckBox>

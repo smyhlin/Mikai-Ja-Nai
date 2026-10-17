@@ -5,8 +5,8 @@
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
-#include <player/Anime4K.hpp>
-#include <player/PresetShortcuts.hpp>
+#include <player/shaders/Anime4K.hpp>
+#include <player/shaders/PresetShortcuts.hpp>
 
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>

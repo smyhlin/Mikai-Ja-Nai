@@ -8,7 +8,7 @@
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/models/NativeRife.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
-#include <player/Anime4K.hpp>
+#include <player/shaders/Anime4K.hpp>
 
 #include <QAbstractItemView>
 #include <QCheckBox>

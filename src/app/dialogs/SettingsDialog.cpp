@@ -14,8 +14,8 @@
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/status/NativeStatus.hpp>
-#include <player/Anime4K.hpp>
-#include <player/PresetShortcuts.hpp>
+#include <player/shaders/Anime4K.hpp>
+#include <player/shaders/PresetShortcuts.hpp>
 
 #include <QAccessible>
 #include <QCheckBox>
