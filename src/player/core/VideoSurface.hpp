@@ -390,6 +390,8 @@ protected:
     void hideEvent(QHideEvent* event) override;
 
 private:
+    static const char* nativePlaybackStateName(native::NativePlaybackController::State state);
+
     /// Creates the engine with vo=libmpv. Both open() and initializeGL() need it
     /// and whichever runs first wins, so the options cannot be set in only one.
     void ensureEngine();
