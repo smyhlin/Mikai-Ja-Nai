@@ -81,6 +81,40 @@ ctest --test-dir build/linux-release --output-on-failure
 
 ---
 
+## Player Rendering Contract
+
+The player uses **Qt Widgets + desktop OpenGL**, not Qt Quick's RHI. Rendering stays on the GUI thread; no QML backend override or shared-context render thread is required.
+
+- `VideoSurface` enables libmpv advanced control. Native update callbacks queue a coalesced GUI-thread notification; render updates and skipped frames run with the surface's OpenGL context current.
+- Each `paintGL()` redraws the video into `defaultFramebufferObject()` at Qt-rounded physical-pixel dimensions, including paused HUD-only repaints. `NoPartialUpdate` makes rendering only on newly decoded frames incorrect.
+- Render calls pass an **`int` zero** for `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME`; the interactive core also uses `video-timing-offset=0`. libmpv never sleeps the GUI thread waiting for a target presentation time.
+- `frameSwapped()` reports a swap only when the surface rendered an unacknowledged frame. Hidden, minimized, and fully covered surfaces consume updates with `SKIP_RENDERING` outside `paintGL()` and acknowledge the discarded frame. Decoding and native inference can still consume GPU resources.
+- On-video controls paint through `QPainter(this)` in the surface's GL pass. Existing widgets retain input, focus, accessibility, and layout roles; popovers and off-video chrome remain normal widgets. The native block restores Qt's FBO, VAO, and pixel-unpack state before painter drawing resumes.
+- Renderer cleanup runs both on `aboutToBeDestroyed` and during destruction with the correct context current. A recreated context reloads the current source at its observed position and pause state. GUI playback commands are asynchronous.
+- Frame exports and compare inputs use `grabVideoFramebuffer()` to exclude chrome; ordinary `grabFramebuffer()` includes the HUD.
+
+`hwdec=auto-safe` remains enabled for interactive playback. It requests a safe hardware path; it is not a universal zero-copy guarantee. See the [Qt OpenGL widget contract](https://doc.qt.io/qt-6/qopenglwidget.html) and [libmpv render API](https://github.com/mpv-player/mpv/blob/master/include/mpv/render.h).
+
+### Rendering Regression Probes
+
+Build the opt-in `mpv_surface_smoke` and `native_hud_probe` targets, then place their executables beside the deployed application runtime. In PowerShell:
+
+```powershell
+$env:QT_QPA_PLATFORM = "windows"
+$env:QT_OPENGL = "desktop"
+.\mpv_surface_smoke.exe --render-lifecycle C:\media\moving-video.mp4 --dpr 1.0 --out lifecycle100
+.\mpv_surface_smoke.exe --render-lifecycle C:\media\moving-video.mp4 --dpr 1.5 --out lifecycle150
+.\native_hud_probe.exe --framebuffer-capture
+```
+
+Use a moving, non-black local clip. The lifecycle probe checks frame progression, pause/repaint stability, HUD-free exports, rapid pause toggles, hidden/covered recovery, DPR resizing, context recreation, teardown, and recovery after a real source error. It saves framebuffer evidence. A companion `.srt` exercises subtitle texture uploads.
+
+`--dpr` sets Qt's global scale multiplier, not an absolute monitor ratio. Check the reported device-pixel ratio; on a native 2× monitor, `--dpr 0.75` exercises a fractional 1.5× framebuffer.
+
+The HUD probe uses synthetic status snapshots to check **presentation, not inference**. Its explicit framebuffer mode verifies GPU-painted text without claiming desktop presentation. Run it without that flag on an active desktop to check the presented screen. Neither offscreen benchmark fps nor framebuffer captures establish display-vsync smoothness.
+
+---
+
 ## Runtime Component Store (`Settings -> Components`)
 
 Large GPU-specific runtimes and neural network graphs are never bundled into the repository or `dist-mikai/`. Instead, **Settings → Components** (`ComponentStoreTab`) inspects the local GPU via NVML (`nvml.dll` on Windows, `libnvidia-ml.so.1` on Linux) and downloads only the selected packs into `<applicationDir>/native/components/` with strict SHA-256 verification:
@@ -124,6 +158,10 @@ Settings → Benchmark compares selected clips and models, with an optional unfi
 Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
 
 TensorRT measurement waits for the selected slot's configured report and real video output. Engine compilation has separate indeterminate progress and elapsed time; compilation time is excluded, and compilation during a sample discards and restarts that sample. Select a failed result to read its full error.
+
+mpv error-level logs are diagnostic only, including while an engine is compiling. Failures require an actual end-file error, a failed build gate, a render error, or a startup/build timeout. Error details retain the last three distinct diagnostic lines; an authoritative playback failure during compilation is headed “TensorRT engine build failed.” rather than aborting on the first downstream stream-selection message.
+
+`benchmark_probe --diagnostic-log-smoke C:\media\moving-video.mp4` checks this policy with real libmpv playback and controlled Lua log messages, without compiling or claiming inference. It verifies that benign build-time chatter reaches a completed sample, while a genuine missing-source error aborts with its bounded, deduplicated cause tail.
 
 The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the baseline and Anime4K models. Run its executable from the deployed directory so the mpv runtime, models, shaders, and clips resolve. `--list-models` prints catalogue IDs; `--model <id,id,...>` and `--clip <filename>` select a subset. `--all-models --all-clips --output results.json` captures the complete matrix with stable model IDs, input clips, numeric fps or full failure reasons. A model failure does not prevent export; check `complete` before publishing the data. `--all-models` includes RIFE; the [published non-RIFE comparison](bench_results.md#reproducing-and-submitting-another-machine) includes a filtered invocation that excludes it. `--size WIDTHxHEIGHT` exercises another window size, and `--expect-failure` verifies an explicitly unsupported model's visible error.
 
