@@ -1963,7 +1963,7 @@
         <translation>Не вдалося виділити буфер кадрів для бенчмарку.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="125"/>
+        <location filename="../src/app/dialogs/settings/BenchmarkPlayback.cpp" line="129"/>
         <source>Playback failed: %1</source>
         <translation>Помилка відтворення: %1</translation>
     </message>

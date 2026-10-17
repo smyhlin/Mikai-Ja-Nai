@@ -23,7 +23,7 @@ namespace {
 constexpr int kStartupTimeoutMs = 20000;
 constexpr int kBuildTimeoutMs = 10 * 60 * 1000;
 constexpr double kSampleSeconds = 3.0;
-constexpr int kBackendLogTail = 4;
+constexpr int kBackendLogTail = 3;
 
 class PlaybackText {
     Q_DECLARE_TR_FUNCTIONS(mikai::app::BenchmarkPlayback)
@@ -122,25 +122,25 @@ BenchmarkSampleResult runBenchmarkSample(
             if (event->event_id == MPV_EVENT_END_FILE) {
                 const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
                 if (ended->reason == MPV_END_FILE_REASON_ERROR) {
-                    playbackError = withDetail(PlaybackText::tr("Playback failed: %1")
-                                                   .arg(QString::fromStdString(
-                                                       handle.describeError(ended->error))));
+                    if (watchBuild && buildGate.buildActive()) {
+                        buildGate.fail();
+                        publishEngine(BenchmarkEngineBuildUpdate::Failed);
+                    } else {
+                        playbackError = withDetail(PlaybackText::tr("Playback failed: %1")
+                                                       .arg(QString::fromStdString(
+                                                           handle.describeError(ended->error))));
+                    }
                 }
                 return;
             }
             if (event->event_id != MPV_EVENT_LOG_MESSAGE) return;
             const auto* message = static_cast<const mpv_event_log_message*>(event->data);
             const QString line = QString::fromUtf8(message->text ? message->text : "").trimmed();
+            if (line.isEmpty()) return;
             const QString prefix = QString::fromUtf8(message->prefix ? message->prefix : "");
             if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR) {
-                noteBackendLog(line);
-                if (buildGate.buildActive()) {
-                    buildGate.fail();
-                    publishEngine(BenchmarkEngineBuildUpdate::Failed);
-                }
-                return;
-            }
-            if (watchBuild && buildGate.buildActive()) {
+                noteBackendLog(prefix + QStringLiteral(": ") + line);
+            } else if (watchBuild && buildGate.buildActive()) {
                 const QString lowered = line.toLower();
                 if (lowered.contains(QLatin1String("error")) ||
                     lowered.contains(QLatin1String("failed")) ||

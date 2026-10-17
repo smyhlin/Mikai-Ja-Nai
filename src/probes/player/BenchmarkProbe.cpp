@@ -10,6 +10,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QOffscreenSurface>
+#include <QUrl>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -38,6 +40,7 @@
 
 #include "backend/MikaiClient.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "dialogs/settings/BenchmarkPlayback.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::Runner;
@@ -177,6 +180,84 @@ bool writeEvidence(const QString& path, bool complete, const QVector<ModelEntry>
     return true;
 }
 
+int verifyDiagnosticLogs(const QString& clip) {
+    QTemporaryDir fixtures;
+    check(fixtures.isValid(), "diagnostic fixtures have an isolated directory");
+    if (!fixtures.isValid()) return 2;
+    QOffscreenSurface surface;
+    surface.create();
+    check(surface.isValid(), "diagnostic sampler has an OpenGL surface");
+    if (!surface.isValid()) return 2;
+
+    for (const bool fatal : {false, true}) {
+        const QString scriptPath = fixtures.filePath(
+            fatal ? QStringLiteral("diagnostic_fatal.lua") : QStringLiteral("diagnostic_healthy.lua"));
+        const QString missing = fixtures.filePath(QStringLiteral("missing-diagnostic-source.mp4"));
+        const QByteArray action = fatal
+            ? QByteArray("mp.commandv('loadfile', '") +
+                  QUrl::fromLocalFile(missing).toEncoded() + "')"
+            : QByteArray("mp.msg.info('Configured slot 1003: 640x360 -> 1280x720 (depth 3)')");
+        // Script messages exercise the build-log policy without compiling an engine.
+        const QByteArray script = R"lua(
+local once = false
+mp.register_event('file-loaded', function()
+    if once then return end
+    once = true
+    mp.msg.info('building TensorRT engine for diagnostic-fixture')
+    mp.add_timeout(0.2, function()
+        mp.msg.error('diagnostic A')
+        mp.msg.error('diagnostic B')
+        mp.msg.error('diagnostic C')
+        mp.msg.error('diagnostic D')
+        mp.msg.error('diagnostic D')
+    end)
+    mp.add_timeout(0.4, function()
+)lua" + action + R"lua(
+    end)
+end)
+)lua";
+        QSaveFile file(scriptPath);
+        const bool saved = file.open(QIODevice::WriteOnly) &&
+                           file.write(script) == script.size() && file.commit();
+        check(saved, "diagnostic Lua fixture was written");
+        if (!saved) return 2;
+
+        bool building = false;
+        bool failed = false;
+        const auto result = mikai::app::runBenchmarkSample(
+            clip, QSize(640, 360),
+            {{"scripts", scriptPath.toStdString()}},
+            mplayer::native::Backend::TensorRT, 1003, surface, {},
+            [&](mikai::app::BenchmarkEngineBuildUpdate update, const QString&) {
+                if (update == mikai::app::BenchmarkEngineBuildUpdate::Started) building = true;
+                if (update == mikai::app::BenchmarkEngineBuildUpdate::Failed) failed = true;
+            });
+        check(building, "diagnostic fixture entered the build-wait state");
+        if (!fatal) {
+            check(!failed && result.error.isEmpty() && std::isfinite(result.fps) && result.fps > 0,
+                  "error-level chatter during a build still yields measured video throughput");
+            if (!result.error.isEmpty())
+                std::fprintf(stderr, "diagnostic healthy reason: %s\n", qPrintable(result.error));
+            continue;
+        }
+        std::fprintf(stderr, "diagnostic fatal reason: %s\n", qPrintable(result.error));
+        const QStringList lines = result.error.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        const QString buildFailure = QCoreApplication::translate(
+            "mikai::app::BenchmarkPlayback", "TensorRT engine build failed.");
+        check(failed && result.fps <= 0 &&
+                  result.error.contains(QStringLiteral("missing-diagnostic-source.mp4")),
+              "an actual source error aborts and retains its original cause");
+        check(!lines.isEmpty() && lines.front() == buildFailure,
+              "a fatal build-wait failure has one build-failure lead sentence");
+        check(lines.size() <= 4 && lines.count(buildFailure) == 1,
+              "the failure reason contains at most three diagnostic tail lines");
+        QStringList unique = lines;
+        unique.removeDuplicates();
+        check(unique.size() == lines.size(), "the failure reason has no duplicated tail lines");
+    }
+    return failures == 0 ? 0 : 1;
+}
+
 double parseFps(const QString& text) {
     static const QRegularExpression numRe(QStringLiteral("^[-+]?[0-9]*[.,]?[0-9]+"));
     auto m = numRe.match(text);
@@ -229,7 +310,16 @@ int main(int argc, char** argv) {
                                  QStringLiteral("write the measured matrix to this path as UTF-8 JSON"),
                                  QStringLiteral("file"));
     parser.addOption(outputOpt);
+    QCommandLineOption diagnosticsOpt(
+        QStringLiteral("diagnostic-log-smoke"),
+        QStringLiteral("exercise benign build chatter and a real source error, without inference"),
+        QStringLiteral("video"));
+    parser.addOption(diagnosticsOpt);
     parser.process(app);
+    if (parser.isSet(diagnosticsOpt)) {
+        if (!mplayer::probes::selectRuntime()) return 2;
+        return verifyDiagnosticLogs(parser.value(diagnosticsOpt));
+    }
 
     QStringList requestedModels;
     if (parser.isSet(modelOpt)) {
