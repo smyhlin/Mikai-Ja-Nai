@@ -1780,10 +1780,6 @@ void VideoSurface::paintGL() {
         if (!overlaySuppressed_) emit paintOverlay(&unrendered);
         return;
     }
-    // The state pump belongs on the 50 ms timer, not here: paintGL runs only
-    // when there is a frame, so a paused core - which produces none - would
-    // otherwise freeze the clock and every HUD value with the last picture.
-    //
     // MPV_RENDER_UPDATE_FRAME marks a new output frame, independent of UI paints.
     // The callback hop's update() may have consumed that flag already, so a frame
     // it carried counts the same as one this call reports.

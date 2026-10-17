@@ -157,8 +157,6 @@ void MpvRenderContext::sUpdate(void* ctx) {
 }
 
 void MpvRenderContext::setFlipY(bool flip) {
-    // MPV_RENDER_PARAM_FLIP_Y is an int, not the "yes"/"no" string it reads like;
-    // passing a char* made mpv read a pointer as a flag and the flip never applied.
     flipY_ = flip ? 1 : 0;
 }
 
@@ -207,8 +205,6 @@ int MpvRenderContext::render(int fbo, int width, int height, int internalFormat)
     target.h = height;
     target.internal_format = internalFormat;
 
-    // The requested value, not get_info(): reading it back returns whatever mpv
-    // currently holds and discards what the caller asked for.
     int blockForTargetTime = 0;
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &target},
