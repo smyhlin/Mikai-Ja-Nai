@@ -32,7 +32,9 @@ TensorRT engine preparation finishes before eligible measurement starts. A build
 
 The five bundled clips have 2,158 H.264 frames each, a frame rate of `2997/125`, and a duration of about 90 seconds. They loop if needed. Each published cell is one completed sample, not an average of repeated trials; small differences between cells or machines can be run-to-run noise.
 
-The RTX 5090 matrix combines the completed spatial/shader capture with five remeasured Spatial Performance cells that had been invalidated by an OpenGL surface failure. The dedicated rerun's baseline checks rendering but does not replace the original baseline or get averaged into it. No estimates or RIFE measurements are included.
+The RTX 5090 tables below come from one fresh, complete capture on 2026-10-17 after the rendering-lifecycle and diagnostic fixes. No cells were merged from older runs, remeasured selectively, estimated, or averaged. RIFE is excluded.
+
+This offscreen throughput run checks the decode/filter/render pipeline, not interactive HUD cost, display-vsync pacing, or a before/after speedup. Separate real-player probes verified moving non-black video, paused repaint stability, fractional-DPR resizing, hidden/minimized/covered recovery, context recreation, GPU-painted chrome, PiP transitions, and cached TensorRT playback.
 
 Native rows request NVDEC hardware decoding; baseline and Anime4K rows do not request hardware decoding. Cross-group fps therefore includes different decode paths. Built-in AnimeJaNai profiles choose resolution/FPS-dependent chains, while standalone Spatial rows request the named graph directly.
 
@@ -42,75 +44,76 @@ The probe isolates QSettings, selecting the default TensorRT backend. It still u
 
 | Setting | Observed value |
 | --- | --- |
-| Capture dates (UTC) | 2026-10-15; five replacement cells completed 2026-10-16 |
+| Capture date (UTC) | 2026-10-17 |
+| Complete capture elapsed time | 9 min 49 s |
 | GPU | NVIDIA GeForce RTX 5090 |
 | Driver | 616.92 |
 | GPU memory reported by NVIDIA | 32,607 MiB |
 | Compute capability | 12.0 |
 | CPU | AMD Ryzen 7 5800X3D, 8 cores / 16 threads |
 | System RAM | 47.9 GiB reported |
-| OS | Windows x64, build 10.0.26200.9457 |
-| Application source | `8a71e08`; non-RIFE sampling math unchanged from `3321b08` |
+| OS | Windows 11 Pro x64, version 10.0.26200 |
+| Application source | `cb73c9c` (rendering, GPU chrome, diagnostic fixes, and regression probes) |
 | Qt | 6.12.0 |
 | Native runtime | AJI v0.9.0, TensorRT 11.3 component closure |
 | Graphics | `QT_QPA_PLATFORM=windows`, `QT_OPENGL=desktop`; diagnostic renderer: `NVIDIA GeForce RTX 5090/PCIe/SSE2` |
-| Run environment | English labels, isolated probe settings, one benchmark workload at a time |
+| Run environment | Active Windows console, English labels, isolated probe settings; other verification probes finished before measurement |
 
-Qt's automatic graphics selection used Mesa software rendering in one diagnostic run. Those failed attempts are excluded from the GPU results. The hardware renderer was checked explicitly before the published run.
+The real-player preflight reported NVIDIA OpenGL 4.6 and `hwdec-current=nvdec`. Desktop OpenGL was explicitly selected for the matrix; no software-renderer results are mixed into these tables.
 
-**Coverage:** 160 unique model/clip pairs, including five baseline samples. All 160 final cells have positive measured fps. Five environmental failures were remeasured successfully rather than labeled GPU/model incompatibilities. Numbers below are fps.
+**Coverage:** 160 unique model/clip pairs: five baseline samples, 115 Anime4K samples, 15 AnimeJaNai samples, and 25 Spatial samples. The export reports `complete: true`; all 160 cells have positive finite fps and empty failure reasons. The probe exited successfully with zero failures. Numbers below are fps.
 
 ### Baseline
 
 | Model | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baseline (no model) | 1953.5 | 1495.1 | 1401.7 | 1342.3 | 1053.3 |
+| Baseline (no model) | 1612.8 | 1369.4 | 1399.9 | 1301.0 | 1038.6 |
 
 ### Anime4K
 
 | Model | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| A (Fast) | 405.6 | 388.5 | 397.5 | 400.5 | 378.1 |
-| B (Fast) | 406.2 | 411.7 | 403.4 | 399.7 | 378.2 |
-| C (Fast) | 563.0 | 566.0 | 565.1 | 549.9 | 497.9 |
-| A (High Quality) | 230.9 | 230.8 | 268.0 | 367.4 | 321.6 |
-| B (High Quality) | 369.2 | 373.5 | 371.4 | 350.5 | 324.6 |
-| C (High Quality) | 552.2 | 561.9 | 535.1 | 529.1 | 469.9 |
-| A+A (Maximum) | 320.0 | 318.5 | 314.3 | 305.6 | 249.2 |
-| B+B (Maximum) | 291.8 | 313.4 | 316.3 | 315.2 | 247.5 |
-| C+A (Maximum) | 458.3 | 459.6 | 323.9 | 357.1 | 342.4 |
-| 3D Graphics | 961.6 | 1111.6 | 891.7 | 866.5 | 660.8 |
-| Old Film Restore | 362.2 | 454.8 | 529.7 | 530.6 | 507.2 |
-| Deblur | 607.5 | 615.3 | 596.6 | 548.5 | 454.8 |
-| Noise Reduction · Bilateral Mean | 1812.2 | 1848.1 | 1619.5 | 1620.9 | 1279.2 |
-| Noise Reduction · Bilateral Median | 1661.2 | 1594.2 | 1612.0 | 1501.4 | 1214.9 |
-| Noise Reduction · Bilateral Mode | 1696.0 | 1626.9 | 1470.8 | 1483.8 | 1182.4 |
-| Thin Lines · VeryFast | 976.5 | 1062.4 | 1009.6 | 530.9 | 701.7 |
-| Thin Lines · Fast | 1140.1 | 1006.1 | 1119.8 | 995.0 | 906.7 |
-| Thin Lines · HQ | 1109.5 | 1135.6 | 1132.6 | 753.5 | 629.9 |
-| Texture Enhancement · DTD x2 | 713.4 | 608.2 | 688.9 | 668.2 | 604.4 |
-| Texture Enhancement · DoG x2 | 1512.5 | 1506.9 | 1472.7 | 1324.2 | 1080.6 |
-| Darken · VeryFast | 1242.9 | 1199.2 | 1121.3 | 1020.6 | 920.0 |
-| Darken · Fast | 879.2 | 846.0 | 996.3 | 901.9 | 724.8 |
-| Darken · HQ | 939.3 | 922.3 | 943.4 | 932.0 | 1019.5 |
+| A (Fast) | 234.3 | 357.5 | 367.7 | 389.3 | 374.1 |
+| B (Fast) | 393.5 | 398.4 | 384.0 | 362.8 | 359.2 |
+| C (Fast) | 528.8 | 539.6 | 543.7 | 534.0 | 483.3 |
+| A (High Quality) | 228.8 | 228.3 | 228.8 | 223.9 | 278.0 |
+| B (High Quality) | 226.9 | 288.0 | 349.4 | 352.8 | 277.0 |
+| C (High Quality) | 541.7 | 549.7 | 549.8 | 540.2 | 489.4 |
+| A+A (Maximum) | 311.8 | 324.6 | 330.5 | 194.7 | 237.4 |
+| B+B (Maximum) | 328.2 | 319.2 | 335.5 | 330.0 | 238.2 |
+| C+A (Maximum) | 451.3 | 453.6 | 441.8 | 304.1 | 271.3 |
+| 3D Graphics | 1195.5 | 1196.9 | 1201.9 | 1087.3 | 987.2 |
+| Old Film Restore | 559.0 | 550.8 | 489.9 | 544.8 | 492.3 |
+| Deblur | 596.8 | 612.1 | 600.8 | 603.2 | 529.1 |
+| Noise Reduction · Bilateral Mean | 1852.7 | 1681.6 | 1606.6 | 1551.4 | 1321.6 |
+| Noise Reduction · Bilateral Median | 1703.0 | 1654.0 | 1586.7 | 1462.2 | 1151.4 |
+| Noise Reduction · Bilateral Mode | 1633.1 | 1643.5 | 1570.6 | 1439.2 | 1047.3 |
+| Thin Lines · VeryFast | 1129.9 | 1142.0 | 1101.8 | 1012.9 | 700.3 |
+| Thin Lines · Fast | 1011.7 | 993.8 | 972.2 | 917.7 | 662.3 |
+| Thin Lines · HQ | 781.6 | 769.9 | 865.8 | 1018.7 | 833.7 |
+| Texture Enhancement · DTD x2 | 716.9 | 663.8 | 717.0 | 671.9 | 573.2 |
+| Texture Enhancement · DoG x2 | 1550.2 | 1525.8 | 1471.5 | 1334.2 | 1101.8 |
+| Darken · VeryFast | 1240.4 | 1235.7 | 1223.5 | 1124.1 | 981.1 |
+| Darken · Fast | 1271.9 | 1193.4 | 1137.6 | 1097.7 | 825.9 |
+| Darken · HQ | 1114.1 | 1096.7 | 953.5 | 916.8 | 780.4 |
 
 ### AnimeJaNai
 
 | Model | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Quality | 739.1 | 481.9 | 350.2 | 385.3 | 153.0 |
-| Balanced | 740.3 | 480.9 | 348.6 | 383.9 | 153.0 |
-| Performance | 734.2 | 478.8 | 348.0 | 626.2 | 280.2 |
+| Quality | 729.6 | 470.2 | 338.5 | 362.0 | 142.1 |
+| Balanced | 713.6 | 470.0 | 345.6 | 383.9 | 152.7 |
+| Performance | 727.2 | 475.8 | 345.1 | 612.1 | 272.8 |
 
 ### Spatial
 
 | Model | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx | 1174.8 | 843.1 | 647.9 | 382.8 | 152.0 |
-| 2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx | 1474.7 | 1170.2 | 944.0 | 605.6 | 282.6 |
-| 2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx | 1095.6 | 737.5 | 662.8 | 379.8 | 149.6 |
-| 2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx | 1396.8 | 1099.8 | 914.3 | 625.7 | 290.1 |
-| 2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx | 719.6 | 477.3 | 347.2 | 172.5 | 77.9 |
+| 2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx | 1164.3 | 861.6 | 679.8 | 382.2 | 151.7 |
+| 2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx | 1491.5 | 1172.9 | 933.9 | 620.9 | 280.4 |
+| 2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx | 1171.8 | 871.2 | 689.6 | 382.2 | 150.1 |
+| 2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx | 1456.5 | 1133.9 | 874.4 | 581.0 | 259.4 |
+| 2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx | 690.2 | 456.3 | 327.1 | 167.2 | 76.0 |
 
 ## Reproducing and submitting another machine
 
