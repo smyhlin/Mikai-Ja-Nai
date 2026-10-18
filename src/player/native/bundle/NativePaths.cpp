@@ -268,7 +268,10 @@ bool pathWithinRoot(const QString& root, const QString& candidate) {
     const QString cleanRoot = QDir::cleanPath(root);
     const QString cleanCandidate = QDir::cleanPath(candidate);
     if (cleanCandidate.compare(cleanRoot, pathCaseSensitivity()) == 0) return true;
-    return cleanCandidate.startsWith(cleanRoot + QLatin1Char('/'), pathCaseSensitivity());
+    return cleanCandidate.startsWith(cleanRoot, pathCaseSensitivity()) &&
+           (cleanRoot.endsWith(QLatin1Char('/')) ||
+            (cleanCandidate.size() > cleanRoot.size() &&
+             cleanCandidate.at(cleanRoot.size()) == QLatin1Char('/')));
 }
 
 QStringList ancestorChain(const QString& root, const QString& path) {
@@ -279,12 +282,10 @@ QStringList ancestorChain(const QString& root, const QString& path) {
     if (!pathWithinRoot(cleanRoot, current)) return chain;
 
     chain.append(current);
-    const QString rootWithSlash = cleanRoot + QLatin1Char('/');
     while (current.compare(cleanRoot, pathCaseSensitivity()) != 0) {
         const qsizetype slash = current.lastIndexOf(QLatin1Char('/'));
-        if (slash < 0 || slash + 1 <= cleanRoot.size()) break;
-        if (!current.startsWith(rootWithSlash, pathCaseSensitivity())) break;
-        current = current.left(slash);
+        if (slash < 0) break;
+        current.truncate(std::max(slash, cleanRoot.size()));
         chain.append(current);
     }
     return chain;

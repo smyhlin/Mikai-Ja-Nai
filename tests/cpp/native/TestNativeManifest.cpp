@@ -15,6 +15,7 @@
 #include <QtCore/QDirIterator>
 #include <QtCore/QProcess>
 #include <QtCore/QTemporaryDir>
+#include <QtCore/QStorageInfo>
 #include <QtCore/QUuid>
 
 #ifdef Q_OS_WIN
@@ -1278,6 +1279,28 @@ void TestNativeManifest::discardStagingRefusesForeignNamesAndTrees() {
   QCOMPARE(key, QStringLiteral("artifact.unproven"));
   QVERIFY(QFileInfo(staging).isDir());
   QVERIFY(QFileInfo(QDir(staging).filePath(QStringLiteral("sub"))).isDir());
+}
+
+void TestNativeManifest::volumeRootsContainDescendantsAndRemainInTheTrustChain() {
+  QVERIFY(pathWithinRoot(QStringLiteral("/"), QStringLiteral("/tmp/model.onnx")));
+  QCOMPARE(ancestorChain(QStringLiteral("/"), QStringLiteral("/tmp/model.onnx")),
+           QStringList({QStringLiteral("/tmp/model.onnx"), QStringLiteral("/tmp"),
+                        QStringLiteral("/")}));
+#ifdef Q_OS_WIN
+  QVERIFY(pathWithinRoot(QStringLiteral("C:/"), QStringLiteral("C:/models/model.onnx")));
+  QVERIFY(!pathWithinRoot(QStringLiteral("C:/"), QStringLiteral("D:/models/model.onnx")));
+  QCOMPARE(ancestorChain(QStringLiteral("C:/"), QStringLiteral("C:/models/model.onnx")),
+           QStringList({QStringLiteral("C:/models/model.onnx"), QStringLiteral("C:/models"),
+                        QStringLiteral("C:/")}));
+#endif
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString volume = QDir::cleanPath(QStorageInfo(directory.path()).rootPath());
+  QVERIFY(!volume.isEmpty());
+  const QStringList chain = ancestorChain(volume, directory.path());
+  QVERIFY(!chain.isEmpty());
+  QCOMPARE(chain.last(), volume);
+  QVERIFY(pathHasNoReparsePoints(volume, directory.path()));
 }
 
 void TestNativeManifest::pathWithinRootFollowsPlatformCaseRules() {

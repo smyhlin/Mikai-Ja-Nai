@@ -57,4 +57,5 @@ class TestNativeManifest : public QObject {
   void publishRefusesAMismatchedOrExistingArtifact();
   void discardStagingRefusesForeignNamesAndTrees();
   void pathWithinRootFollowsPlatformCaseRules();
+  void volumeRootsContainDescendantsAndRemainInTheTrustChain();
 };
