@@ -1,7 +1,13 @@
 
 #include <QAccessible>
 #include <QApplication>
+#include <QAction>
 #include <QComboBox>
+#include <QColor>
+#include <QCheckBox>
+#include <QFileDialog>
+#include <QTableWidget>
+#include <QTimer>
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QCommandLineParser>
@@ -10,39 +16,61 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QImage>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QGroupBox>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QMenu>
 #include <QLayout>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QLocale>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QPair>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
 #include <QStyle>
 #include <QStyleOptionFrame>
+#include <QToolButton>
 #include <QThread>
 #include <QTemporaryDir>
 #include <QTabWidget>
 #include <QToolButton>
+#include <QTreeWidget>
+#include <QTest>
 #include "ProbeIsolation.hpp"
 #include "ProbeUi.hpp"
+#include "IdentityOnnxFixture.hpp"
 
+#include <chrono>
+#include <functional>
+#include <future>
+#include <memory>
 #include <cstdio>
 
 #include "I18n.hpp"
 #include "backend/MikaiClient.hpp"
 #include "theme/Metrics.hpp"
 #include "dialogs/SettingsDialog.hpp"
+#include "dialogs/AnimeJanaiManagerPanel.hpp"
 #include "dialogs/ComponentStoreTab.hpp"
+#include "player/compare/CompareCanvas.hpp"
+#include "player/compare/CompareWindow.hpp"
+#include "player/core/VideoSurface.hpp"
+#include "player/shell/PlayerPopups.hpp"
+#include "player/shell/PlayerShell.hpp"
 #include "native/bundle/NativePrefs.hpp"
 #include "native/bundle/NativeRuntimeSelection.hpp"
 #include "native/components/NativeGpuProbe.hpp"
 #include "native/models/NativeRife.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
+#include "native/components/AnimeJanaiRuntime.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::Runner;
@@ -51,8 +79,10 @@ using mikai::app::SettingsDialog;
 namespace {
 
 int failures = 0;
+int checks = 0;
 
 void check(bool ok, const char* what) {
+    ++checks;
     std::fprintf(stderr, "%s %s\n", ok ? "PASS" : "FAIL", what);
     if (!ok) {
         ++failures;
@@ -230,6 +260,683 @@ bool bindingFullyVisible(QKeySequenceEdit& field) {
     return true;
 }
 
+QComboBox* comboForLabel(QWidget& root, const QString& labelText) {
+    for (QLabel* label : root.findChildren<QLabel*>()) {
+        if (label->text() == labelText) {
+            if (auto* combo = qobject_cast<QComboBox*>(label->buddy())) return combo;
+        }
+    }
+    return nullptr;
+}
+
+QPushButton* buttonForCaption(QWidget& root, const QString& caption) {
+    for (QPushButton* button : root.findChildren<QPushButton*>()) {
+        if (button->text() == caption) return button;
+    }
+    return nullptr;
+}
+
+struct FileDialogDrive {
+    bool appeared = false;
+    bool accepted = false;
+    bool timedOut = false;
+    QString selected;
+};
+
+FileDialogDrive driveFileDialog(const QString& path, const std::function<void()>& open) {
+    FileDialogDrive result;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QTimer poller;
+    poller.setInterval(50);
+    QObject::connect(&poller, &QTimer::timeout, &poller, [&] {
+        QFileDialog* dialog = qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+        if (dialog == nullptr || !dialog->isVisible()) {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                auto* candidate = qobject_cast<QFileDialog*>(widget);
+                if (candidate != nullptr && candidate->isVisible()) {
+                    dialog = candidate;
+                    break;
+                }
+            }
+        }
+        if (dialog == nullptr) {
+            if (elapsed.elapsed() >= 5000) {
+                result.timedOut = true;
+                if (auto* modal = qobject_cast<QDialog*>(QApplication::activeModalWidget())) {
+                    modal->reject();
+                }
+            }
+            return;
+        }
+
+        if (!result.appeared) {
+            result.appeared = true;
+            QObject::connect(dialog, &QDialog::accepted, &poller,
+                             [&result] { result.accepted = true; });
+        }
+        if (elapsed.elapsed() >= 5000) {
+            result.timedOut = true;
+            dialog->reject();
+            return;
+        }
+        dialog->selectFile(path);
+        if (auto* fileName = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
+            fileName != nullptr && fileName->text() != path) {
+            fileName->setText(path);
+        }
+        result.selected = dialog->selectedFiles().value(0);
+        static_cast<QDialog*>(dialog)->accept();
+    });
+    poller.start();
+    open();
+    poller.stop();
+    return result;
+}
+
+QTableWidget* customModelTable(QWidget& root) {
+    for (QTableWidget* table : root.findChildren<QTableWidget*>()) {
+        if (table->columnCount() == 5) return table;
+    }
+    return nullptr;
+}
+
+int customModelRow(QTableWidget* table, const QString& id) {
+    if (table == nullptr) return -1;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const auto* item = table->item(row, 0);
+        if (item != nullptr && item->data(Qt::UserRole).toString() == id) return row;
+    }
+    return -1;
+}
+
+void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runner) {
+    QTemporaryDir fixtureDir;
+    check(fixtureDir.isValid(), "an isolated ONNX import fixture directory exists");
+    if (!fixtureDir.isValid()) return;
+
+    const QString fixturePath = QDir(fixtureDir.path()).filePath(QStringLiteral("smoke_model.onnx"));
+    QFile fixture(fixturePath);
+    const QByteArray modelProto = mikai::tests::fixtures::makeTestIdentityOnnxGraph();
+    check(modelProto.size() >= 64 &&
+              fixture.open(QIODevice::WriteOnly) &&
+              fixture.write(modelProto) == modelProto.size(),
+          "a real 4D Identity ONNX ModelProto fixture was written");
+    fixture.close();
+
+    SettingsDialog managerDialog(client, runner);
+    const QSize managerWindowSize = fitSettingsDialogSize(
+        managerDialog,
+        QSize(mikai::app::theme::kSettingsDialogMinWidth,
+              mikai::app::theme::kSettingsDialogDefaultHeight));
+    managerDialog.resize(managerWindowSize);
+    managerDialog.showProcessingTab();
+    managerDialog.show();
+    QApplication::processEvents();
+    auto* runtimeChoice =
+        managerDialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+    check(runtimeChoice != nullptr, "the Processing runtime choice is available");
+    if (runtimeChoice != nullptr) {
+        runtimeChoice->setCurrentIndex(
+            runtimeChoice->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    QApplication::processEvents();
+    auto* panelWidget = managerDialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+        QStringLiteral("animeJanaiManagerPanel"));
+    check(panelWidget != nullptr && panelWidget->isVisibleTo(&managerDialog),
+          "Standard runtime shows the custom manager in Settings");
+    if (runtimeChoice != nullptr) {
+        runtimeChoice->setCurrentIndex(
+            runtimeChoice->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
+    }
+    QApplication::processEvents();
+    check(panelWidget != nullptr && !panelWidget->isVisibleTo(&managerDialog),
+          "Native runtime hides the custom manager while exposing private controls");
+    if (runtimeChoice != nullptr) {
+        runtimeChoice->setCurrentIndex(
+            runtimeChoice->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    QApplication::processEvents();
+    check(panelWidget != nullptr && panelWidget->isVisibleTo(&managerDialog),
+          "returning to Standard restores the custom manager");
+    if (panelWidget == nullptr) return;
+    mikai::probes::revealWidget(panelWidget);
+    QApplication::processEvents();
+    mikai::app::AnimeJanaiManagerPanel& panel = *panelWidget;
+
+    QPushButton* importModel = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Import .onnx Model…"));
+    check(importModel != nullptr, "the manager exposes its ONNX import action");
+    FileDialogDrive importDialog;
+    if (importModel != nullptr) {
+        importDialog = driveFileDialog(fixturePath, [importModel] { importModel->click(); });
+    }
+    check(importDialog.appeared && importDialog.accepted && !importDialog.timedOut,
+          "the user ONNX import chooser selected the valid fixture");
+
+    QTableWidget* modelTable = customModelTable(panel);
+    const bool importedInUi =
+        waitForUi([&] { return modelTable != nullptr && modelTable->rowCount() == 1; }, 15000);
+    check(importedInUi, "the asynchronous import reached the model inventory table");
+    auto modelInventory = std::async(std::launch::async, [] {
+        return mplayer::native::listCustomAnimeJanaiModels();
+    });
+    const bool inventoryReady = modelInventory.wait_for(std::chrono::seconds(15)) ==
+                                std::future_status::ready;
+    const auto models = inventoryReady
+                            ? modelInventory.get()
+                            : QVector<mplayer::native::CustomAnimeJanaiModel>{};
+    check(inventoryReady && models.size() == 1 && models.front().valid,
+          "the background custom-model inventory contains the imported model");
+
+    QTemporaryDir externalDirectory;
+    check(externalDirectory.isValid(), "the external model folder is isolated");
+    const QString externalPath =
+        QDir(externalDirectory.path()).filePath(QStringLiteral("external_smoke.onnx"));
+    QFile externalFile(externalPath);
+    check(externalFile.open(QIODevice::WriteOnly) &&
+              externalFile.write(modelProto) == modelProto.size(),
+          "an ordinary external ONNX graph without a sidecar was written");
+    externalFile.close();
+    auto* externalEdit =
+        panel.findChild<QLineEdit*>(QStringLiteral("ajiExternalModelsDirEdit"));
+    check(externalEdit != nullptr, "the external model folder can be edited");
+    if (externalEdit != nullptr) {
+        mikai::probes::revealWidget(externalEdit);
+        externalEdit->setFocus();
+        externalEdit->setText(externalDirectory.path());
+        QTest::keyClick(externalEdit, Qt::Key_Tab);
+    }
+    const bool externalCandidateVisible = waitForUi(
+        [&] { return customModelRow(modelTable, QStringLiteral("external_smoke")) >= 0; },
+        5000);
+    check(externalCandidateVisible, "the external folder presents its unregistered ONNX candidate");
+    if (externalCandidateVisible && importModel != nullptr) {
+        modelTable->selectRow(customModelRow(modelTable, QStringLiteral("external_smoke")));
+        importModel->click();
+    }
+    const bool externalRegistered = waitForUi(
+        [&] {
+            const int row = customModelRow(modelTable, QStringLiteral("external_smoke"));
+            return row >= 0 && !modelTable->item(row, 0)->data(Qt::UserRole + 1).toBool();
+        },
+        15000);
+    check(externalRegistered, "the external candidate is registered through the real Import action");
+    check(QFileInfo(externalPath).isFile() &&
+              !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
+          "external registration leaves the user's graph and directory untouched");
+
+    auto* slotSelector = panel.findChild<QComboBox*>(QStringLiteral("ajiSlotSelectCombo"));
+    QPushButton* activate = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Activate / Reset Slot"));
+    check(slotSelector != nullptr && activate != nullptr,
+          "the manager exposes slot selection and activation actions");
+    if (slotSelector != nullptr && activate != nullptr) {
+        for (int slot = 1; slot <= 10; ++slot) {
+            const int index = slotSelector->findData(slot);
+            check(index >= 0, "slot selector lists every profile slot");
+            if (index >= 0) {
+                slotSelector->setCurrentIndex(index);
+                activate->click();
+            }
+        }
+    }
+
+    QComboBox* chain = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Active chain"));
+    QPushButton* addChain =
+        buttonForCaption(panel, mikai::app::AnimeJanaiManagerPanel::tr("Add Chain"));
+    QPushButton* addStep =
+        buttonForCaption(panel, mikai::app::AnimeJanaiManagerPanel::tr("Add Model Step"));
+    check(chain != nullptr && addChain != nullptr && addStep != nullptr,
+          "the manager exposes chain and model-step actions");
+    if (slotSelector != nullptr && chain != nullptr && addChain != nullptr && addStep != nullptr) {
+        const int firstSlot = slotSelector->findData(1);
+        if (firstSlot >= 0) slotSelector->setCurrentIndex(firstSlot);
+        addChain->click();
+        addStep->click();
+        addStep->click();
+        bool customChoiceFound = false;
+        for (QComboBox* choice : panel.findChildren<QComboBox*>()) {
+            int index = choice->findData(QStringLiteral("smoke_model"));
+            if (index < 0) index = choice->findText(QStringLiteral("smoke_model"));
+            if (index >= 0) {
+                choice->setCurrentIndex(index);
+                customChoiceFound = true;
+                break;
+            }
+        }
+        check(customChoiceFound, "the imported custom model is offered as a chain step");
+    }
+
+    QComboBox* quality = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Quality preset (Slot 1001)"));
+    QComboBox* balanced = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Balanced preset (Slot 1002)"));
+    QComboBox* performance = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Performance preset (Slot 1003)"));
+    check(quality != nullptr && balanced != nullptr && performance != nullptr,
+          "all three Sharp preset selectors are available");
+    if (quality != nullptr) quality->setCurrentIndex(quality->findData(true));
+    if (balanced != nullptr) balanced->setCurrentIndex(balanced->findData(true));
+    if (performance != nullptr) performance->setCurrentIndex(performance->findData(true));
+
+    QCheckBox* logging = nullptr;
+    for (QCheckBox* candidate : panel.findChildren<QCheckBox*>()) {
+        if (candidate->text() ==
+            mikai::app::AnimeJanaiManagerPanel::tr("Backend logging")) {
+            logging = candidate;
+            break;
+        }
+    }
+    check(logging != nullptr, "the backend logging control is available");
+    if (logging != nullptr) logging->setChecked(!logging->isChecked());
+    QCheckBox* chainRife = nullptr;
+    for (QCheckBox* candidate : panel.findChildren<QCheckBox*>()) {
+        if (candidate->text() ==
+            mikai::app::AnimeJanaiManagerPanel::tr("RIFE interpolation")) {
+            chainRife = candidate;
+            break;
+        }
+    }
+    check(chainRife != nullptr, "the custom chain exposes RIFE interpolation settings");
+    if (chainRife != nullptr) chainRife->setChecked(true);
+
+    QComboBox* trt = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("TensorRT engine type"));
+    QComboBox* dynamicMin = comboForLabel(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Dynamic minimum resolution"));
+    check(trt != nullptr && dynamicMin != nullptr,
+          "TensorRT engine type and dynamic-shape controls are available");
+    if (trt != nullptr && dynamicMin != nullptr) {
+        const QVector<QPair<QString, bool>> modes{
+            {QStringLiteral("static"), false},
+            {QStringLiteral("static_onnx"), false},
+            {QStringLiteral("dynamic"), true}};
+        for (const auto& [mode, dynamicVisible] : modes) {
+            const int index = trt->findData(mode);
+            check(index >= 0, "all TensorRT modes are selectable");
+            if (index >= 0) trt->setCurrentIndex(index);
+            check(dynamicMin->isVisibleTo(&panel) == dynamicVisible,
+                  "TensorRT dynamic shapes follow the selected engine mode");
+        }
+    }
+    auto* rawArgs = panel.findChild<QLineEdit*>(QStringLiteral("ajiTrtEngineSettingsEdit"));
+    check(rawArgs != nullptr, "TensorRT raw settings control is available");
+    if (rawArgs != nullptr) {
+        rawArgs->setFocus();
+        rawArgs->selectAll();
+        QTest::keyClicks(rawArgs, QStringLiteral("--builderOptimizationLevel=4"));
+    }
+
+    check(panel.isDirty(), "editing manager controls marks config dirty");
+
+    const QString profilePath =
+        QDir(fixtureDir.path()).filePath(QStringLiteral("smoke_profile.pconf"));
+    QPushButton* exportProfile = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Export .pconf…"));
+    check(exportProfile != nullptr && slotSelector != nullptr,
+          "the custom profile export action is available");
+    FileDialogDrive exportDialog;
+    if (exportProfile != nullptr && slotSelector != nullptr) {
+        exportDialog = driveFileDialog(profilePath, [exportProfile] { exportProfile->click(); });
+    }
+    check(exportDialog.appeared && exportDialog.accepted && !exportDialog.timedOut &&
+              QFileInfo(profilePath).isFile(),
+          "the profile export action wrote a .pconf file through its chooser");
+    QPushButton* importProfile = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Import .pconf…"));
+    FileDialogDrive importProfileDialog;
+    if (importProfile != nullptr && slotSelector != nullptr && QFileInfo(profilePath).isFile()) {
+        const int secondSlot = slotSelector->findData(2);
+        if (secondSlot >= 0) slotSelector->setCurrentIndex(secondSlot);
+        importProfileDialog =
+            driveFileDialog(profilePath, [importProfile] { importProfile->click(); });
+    }
+    check(importProfileDialog.appeared && importProfileDialog.accepted &&
+              !importProfileDialog.timedOut,
+          "the profile import action selected the exported .pconf");
+    check(importProfile != nullptr && slotSelector != nullptr &&
+              panel.currentConfig().customSlots.size() == 10,
+          "the profile import action preserves the complete slot collection");
+
+    const auto edited = panel.currentConfig();
+    check(edited.customSlots.size() == 10,
+          "user activation created all ten profile slots");
+    if (!edited.customSlots.isEmpty()) {
+        bool hasMultipleModelSteps = false;
+        for (const auto& chainConfig : edited.customSlots.front().chains) {
+            hasMultipleModelSteps |= chainConfig.models.size() >= 2;
+        }
+        check(edited.customSlots.front().chains.size() >= 2 && hasMultipleModelSteps,
+              "slot 1 has multiple chains and multiple model steps");
+        check(edited.customSlots.size() > 1 &&
+                  edited.customSlots.at(1).chains.size() >= 2,
+              "importing the .pconf profile populated slot 2");
+    }
+    check(edited.qualitySharp && edited.balancedSharp && edited.performanceSharp,
+          "Sharp choices are reflected in all built-in presets");
+    check(edited.enableLogging == (logging != nullptr && logging->isChecked()) &&
+              edited.trtEngineSettings.contains(QStringLiteral("--builderOptimizationLevel=4")),
+          "logging and TensorRT settings are retained in the edited config");
+
+    const QString fullConfigPath =
+        QDir(fixtureDir.path()).filePath(QStringLiteral("manager.conf"));
+    auto* exportConfig = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Export animejanai.conf…"));
+    auto* importConfig = buttonForCaption(
+        panel, mikai::app::AnimeJanaiManagerPanel::tr("Import animejanai.conf…"));
+    check(exportConfig != nullptr && importConfig != nullptr,
+          "the complete configuration import and export actions are available");
+    if (exportConfig != nullptr) {
+        const auto exported =
+            driveFileDialog(fullConfigPath, [exportConfig] { exportConfig->click(); });
+        check(exported.accepted && QFileInfo::exists(fullConfigPath),
+              "the complete manager configuration was exported through its chooser");
+    }
+    const QString malformedConfig =
+        QDir(fixtureDir.path()).filePath(QStringLiteral("invalid.conf"));
+    QFile invalidFile(malformedConfig);
+    check(invalidFile.open(QIODevice::WriteOnly) &&
+              invalidFile.write("<html>not a configuration</html>") > 0,
+          "a malformed config import fixture was written");
+    invalidFile.close();
+    if (importConfig != nullptr) {
+        const auto rejected =
+            driveFileDialog(malformedConfig, [importConfig] { importConfig->click(); });
+        auto* banner = panel.findChild<QLabel*>(QStringLiteral("status"));
+        check(rejected.accepted && panel.currentConfig() == edited && panel.isDirty() &&
+                  banner != nullptr && banner->isVisibleTo(&panel) && !banner->text().isEmpty(),
+              "a malformed configuration import reports an error and preserves unsaved edits");
+        const auto imported =
+            driveFileDialog(fullConfigPath, [importConfig] { importConfig->click(); });
+        check(imported.accepted && panel.currentConfig() == edited,
+              "the full configuration round-trips through the real import action");
+    }
+
+    check(managerDialog.grab().save(QStringLiteral("native-animejanai-manager.png")),
+          "the visible manager inside the minimum-size Settings window was captured");
+    QPushButton* managerSave = acceptButton(managerDialog.findChild<QDialogButtonBox*>());
+    check(managerSave != nullptr, "Settings exposes its real Save action for the manager");
+    if (managerSave != nullptr) managerSave->click();
+    QApplication::processEvents();
+    check(managerDialog.result() == static_cast<int>(QDialog::Accepted),
+          "the Settings Save action accepted the manager changes");
+
+    QFile savedConfig(mplayer::native::AnimeJanaiConfigStore::configFilePath());
+    const bool schema3Saved =
+        savedConfig.open(QIODevice::ReadOnly) &&
+        savedConfig.readAll().contains(QByteArrayLiteral("config_version=3"));
+    check(schema3Saved, "the Settings Save action wrote schema version 3");
+
+    SettingsDialog reloadedDialog(client, runner);
+    reloadedDialog.showProcessingTab();
+    auto* reloadedRuntime =
+        reloadedDialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+    if (reloadedRuntime != nullptr) {
+        reloadedRuntime->setCurrentIndex(
+            reloadedRuntime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    QApplication::processEvents();
+    auto* reloadedPanel = reloadedDialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+        QStringLiteral("animeJanaiManagerPanel"));
+    check(reloadedPanel != nullptr && reloadedPanel->currentConfig() == edited &&
+              !reloadedPanel->isDirty(),
+          "reopening Settings reloads the saved manager configuration cleanly");
+    if (reloadedPanel == nullptr) return;
+    reloadedDialog.resize(managerWindowSize);
+    reloadedDialog.show();
+    mikai::probes::revealWidget(reloadedPanel);
+    QApplication::processEvents();
+
+    bool customPresetFound = false;
+    for (const auto& preset : mplayer::native::animeJanaiPresets()) {
+        if (preset.id == QStringLiteral("spatial:custom:smoke_model")) {
+            customPresetFound = true;
+            break;
+        }
+    }
+    check(customPresetFound,
+          "the imported custom model is published through AnimeJaNai preset catalogue");
+
+    SettingsDialog benchmarkDialog(client, runner);
+    auto* benchmarkTabs = benchmarkDialog.findChild<QTabWidget*>();
+    QWidget* benchmarkPage = nullptr;
+    if (benchmarkTabs != nullptr) {
+        for (QWidget* page : benchmarkDialog.findChildren<QWidget*>(
+                 QStringLiteral("benchmarkPage"))) {
+            if (benchmarkTabs->indexOf(page) >= 0) {
+                benchmarkPage = page;
+                break;
+            }
+        }
+        if (benchmarkPage != nullptr) benchmarkTabs->setCurrentWidget(benchmarkPage);
+    }
+    QApplication::processEvents();
+    auto* benchmarkTree = benchmarkDialog.findChild<QTreeWidget*>(
+        QStringLiteral("benchmarkModelTree"));
+    bool benchmarkCustomPresent = false;
+    bool benchmarkSlotPresent = false;
+    if (benchmarkTree != nullptr) {
+        for (int groupIndex = 0; groupIndex < benchmarkTree->topLevelItemCount(); ++groupIndex) {
+            const QTreeWidgetItem* group = benchmarkTree->topLevelItem(groupIndex);
+            for (int row = 0; row < group->childCount(); ++row) {
+                const QString id = group->child(row)->data(0, Qt::UserRole + 1).toString();
+                benchmarkCustomPresent |=
+                    id == QStringLiteral("spatial:custom:smoke_model");
+                benchmarkSlotPresent |= id == QStringLiteral("builtin_slot:1");
+            }
+        }
+    }
+    check(benchmarkTree != nullptr && benchmarkCustomPresent && benchmarkSlotPresent,
+          "Benchmark's public catalogue includes custom spatial models and custom slots");
+
+    const auto selectedRuntime = mplayer::native::selectStandardRuntime(
+        qEnvironmentVariable("MIKAI_MPV_MODULE"));
+    check(selectedRuntime.loaded &&
+              selectedRuntime.kind == mplayer::native::BundleKind::Standard &&
+              !selectedRuntime.restartRequired,
+          "the real Standard mpv runtime is selected for player and Compare surfaces");
+    std::fprintf(stderr, "[native_settings_probe] runtime=%s loaded=%d reason=%s\n",
+                 qPrintable(selectedRuntime.modulePath), selectedRuntime.loaded ? 1 : 0,
+                 qPrintable(selectedRuntime.reason));
+
+    mplayer::shell::PlayerShell player;
+    player.resize(QSize(900, 640));
+    player.show();
+    QApplication::processEvents();
+    auto* enhancementButton =
+        player.findChild<QPushButton*>(QStringLiteral("playerEnhanceButton"));
+    auto* enhancementRoot =
+        player.findChild<mplayer::shell::MenuPopup*>(QStringLiteral("playerEnhancementsPopup"));
+    check(enhancementButton != nullptr && enhancementRoot != nullptr,
+          "the real player exposes its enhancement menu");
+    if (enhancementButton != nullptr && enhancementRoot != nullptr) {
+        enhancementButton->click();
+        QApplication::processEvents();
+        auto clickEntry = [](mplayer::shell::MenuPopup* menu,
+                             const std::function<bool(const mplayer::shell::MenuEntry&)>& match) {
+            if (menu == nullptr) return false;
+            for (int index = 0; index < menu->rowCount(); ++index) {
+                if (!match(menu->entryAt(index))) continue;
+                QWidget* row = menu->rowWidget(index);
+                if (row == nullptr) return false;
+                QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, row->rect().center());
+                QApplication::processEvents();
+                return true;
+            }
+            return false;
+        };
+        auto levelMenu = [&player](const QString& level) {
+            for (mplayer::shell::MenuPopup* menu :
+                 player.findChildren<mplayer::shell::MenuPopup*>()) {
+                if (menu->property("enhancementLevel").toString() == level) return menu;
+            }
+            return static_cast<mplayer::shell::MenuPopup*>(nullptr);
+        };
+        const bool enteredAnimeJanai = clickEntry(
+            enhancementRoot, [](const mplayer::shell::MenuEntry& entry) {
+                return entry.payload.toString() == QStringLiteral("level|animejanai");
+            });
+        auto* animeJanaiMenu = levelMenu(QStringLiteral("animejanai"));
+        check(enteredAnimeJanai && animeJanaiMenu != nullptr,
+              "the player menu opens its AnimeJaNai submenu");
+        if (animeJanaiMenu != nullptr) {
+            bool customSlotPresent = false;
+            for (int index = 0; index < animeJanaiMenu->rowCount(); ++index) {
+                customSlotPresent |= animeJanaiMenu->entryAt(index).payload.toString() ==
+                                     QStringLiteral("ajipreset|builtin_slot:1");
+            }
+            check(customSlotPresent, "slot 1 appears as a selectable player-menu preset");
+            const bool enteredSpatial = clickEntry(
+                animeJanaiMenu, [](const mplayer::shell::MenuEntry& entry) {
+                    return entry.payload.toString() ==
+                           QStringLiteral("level|animejanai:spatial");
+                });
+            auto* spatialMenu = levelMenu(QStringLiteral("animejanai:spatial"));
+            bool customModelPresent = false;
+            if (spatialMenu != nullptr) {
+                for (int index = 0; index < spatialMenu->rowCount(); ++index) {
+                    customModelPresent |= spatialMenu->entryAt(index).payload.toString() ==
+                                          QStringLiteral(
+                                              "ajipreset|spatial:custom:smoke_model");
+                }
+            }
+            check(enteredSpatial && customModelPresent,
+                  "the custom ONNX model appears in the player's Spatial menu");
+        }
+    }
+
+    QImage compareFixture(64, 36, QImage::Format_RGB32);
+    for (int y = 0; y < compareFixture.height(); ++y) {
+        for (int x = 0; x < compareFixture.width(); ++x) {
+            compareFixture.setPixelColor(x, y, QColor((x * 4) % 256, (y * 7) % 256,
+                                                       ((x + y) * 3) % 256));
+        }
+    }
+    const QString compareFixturePath =
+        QDir(fixtureDir.path()).filePath(QStringLiteral("compare-candidate-frame.png"));
+    check(compareFixture.save(compareFixturePath),
+          "a small static comparison frame fixture was written");
+    mplayer::VideoSurface* compareSurface = player.videoSurface();
+    const bool compareSourceOpened =
+        compareSurface != nullptr && compareSurface->open(compareFixturePath);
+    check(compareSourceOpened, "the player surface opened the static comparison frame");
+    const bool compareSourceReady =
+        compareSourceOpened &&
+        waitForUi([&] {
+            return compareSurface->hasVideo() && compareSurface->videoWidth() > 0 &&
+                   compareSurface->videoHeight() > 0;
+        }, 5000);
+    check(compareSourceReady, "the static comparison frame reached the player surface");
+    QStringList shaderCandidates;
+    const QString shaderRoot = mplayer::anime4k::findShadersDir();
+    for (const auto& mode : mplayer::anime4k::availableModes()) {
+        const auto candidate = mplayer::anime4k::candidateForId(mode.id, shaderRoot);
+        if (mplayer::anime4k::chainIsComplete(candidate, shaderRoot)) {
+            shaderCandidates.append(mode.id);
+        }
+    }
+    const QString shaderCandidate = shaderCandidates.value(0);
+    check(shaderCandidates.size() >= 2,
+          "two shader-only Compare candidates are available to avoid native inference");
+    if (compareSourceReady && shaderCandidates.size() >= 2) {
+        mplayer::shell::CompareWindow comparison(compareSurface, shaderCandidate, &player);
+        comparison.resize(QSize(900, 600));
+        comparison.show();
+        const bool frameCaptured = waitForUi(
+            [&] {
+                return !comparison.frozenFrame().isNull() &&
+                       !comparison.comparisonPending();
+            },
+            10000);
+        check(frameCaptured, "Compare captured the static frame without an inference backend");
+        if (frameCaptured) {
+            auto* canvas = comparison.findChild<mplayer::shell::CompareCanvas*>(
+                QStringLiteral("compareCanvas"));
+            auto* badge = canvas != nullptr
+                              ? canvas->findChild<QToolButton*>(
+                                    QStringLiteral("compareBadgeA"))
+                              : nullptr;
+            check(badge != nullptr && badge->menu() != nullptr,
+                  "the real Compare candidate selector is available");
+            if (badge != nullptr && badge->menu() != nullptr) {
+                auto compareCustomPresent = std::make_shared<bool>(false);
+                QTimer::singleShot(0, badge, [badge, compareCustomPresent] {
+                    const auto inspectMenu = [compareCustomPresent](
+                                                 const auto& self, const QMenu* menu) -> void {
+                        if (menu == nullptr) return;
+                        for (QAction* action : menu->actions()) {
+                            *compareCustomPresent |=
+                                action->data().toString() ==
+                                QStringLiteral("spatial:custom:smoke_model");
+                            self(self, action->menu());
+                        }
+                    };
+                    inspectMenu(inspectMenu, badge->menu());
+                    badge->menu()->hide();
+                });
+                QTimer::singleShot(5000, badge, [badge] {
+                    if (badge->menu() != nullptr && badge->menu()->isVisible()) {
+                        badge->menu()->hide();
+                    }
+                });
+                badge->showMenu();
+                QApplication::processEvents();
+                check(*compareCustomPresent,
+                      "Compare's real candidate menu lists the imported custom spatial model");
+            }
+        }
+        comparison.close();
+    }
+
+    QTableWidget* modelTableForRemoval = customModelTable(*reloadedPanel);
+    QPushButton* removeModel = buttonForCaption(
+        *reloadedPanel, mikai::app::AnimeJanaiManagerPanel::tr("Remove Selected"));
+    check(modelTableForRemoval != nullptr && removeModel != nullptr,
+          "the custom model removal action is available");
+    if (removeModel != nullptr) {
+        const int externalRow =
+            customModelRow(modelTableForRemoval, QStringLiteral("external_smoke"));
+        if (externalRow >= 0) {
+            modelTableForRemoval->selectRow(externalRow);
+            removeModel->click();
+        }
+    }
+    const bool externalRemoved = waitForUi(
+        [&] {
+            const int row =
+                customModelRow(modelTableForRemoval, QStringLiteral("external_smoke"));
+            return row >= 0 &&
+                   modelTableForRemoval->item(row, 0)->data(Qt::UserRole + 1).toBool();
+        },
+        15000);
+    check(externalRemoved && QFileInfo(externalPath).isFile(),
+          "removing an external registration preserves the graph and presents it as unregistered");
+    if (removeModel != nullptr) {
+        const int importedRow = customModelRow(modelTableForRemoval, QStringLiteral("smoke_model"));
+        if (importedRow >= 0) {
+            modelTableForRemoval->selectRow(importedRow);
+            removeModel->click();
+        }
+    }
+    const bool removedInUi = waitForUi(
+        [&] {
+            return customModelRow(modelTableForRemoval, QStringLiteral("smoke_model")) < 0;
+        },
+        15000);
+    check(removedInUi, "asynchronous removal cleared the imported model from the manager");
+    auto removedInventory = std::async(std::launch::async, [] {
+        return mplayer::native::listCustomAnimeJanaiModels();
+    });
+    const bool removalReady = removedInventory.wait_for(std::chrono::seconds(15)) ==
+                              std::future_status::ready;
+    const auto remainingModels = removalReady
+                                     ? removedInventory.get()
+                                     : QVector<mplayer::native::CustomAnimeJanaiModel>{};
+    check(removalReady && remainingModels.isEmpty(),
+          "background inventory confirms the imported model was removed");
+}
 bool componentCardReachable(QWidget& componentTab, const QString& translatedTitle) {
     for (QLabel* label : componentTab.findChildren<QLabel*>()) {
         if (label->text() == translatedTitle && label->isVisibleTo(&componentTab))
@@ -291,11 +998,11 @@ void exerciseProcessing(SettingsDialog& dialog, mikai::backend::MikaiClient& cli
     auto* processing = dialog.findChild<QWidget*>(QStringLiteral("nativeProcessingScroll"));
     check(processing != nullptr && processing->isVisibleTo(&dialog),
           "the real Processing page is visible");
+    const QString suffix =
+        requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
+            ? QStringLiteral("compact")
+            : QStringLiteral("wide");
     if (processing != nullptr) {
-        const QString suffix =
-            requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
-                ? QStringLiteral("compact")
-                : QStringLiteral("wide");
         check(dialog.grab().save(
                   QStringLiteral("native-processing-%1-%2.png").arg(language, suffix)),
               "the visible Processing page screenshot was saved");
@@ -311,6 +1018,18 @@ void exerciseProcessing(SettingsDialog& dialog, mikai::backend::MikaiClient& cli
     QApplication::processEvents();
     check(privateAssets != nullptr && privateAssets->isVisibleTo(&dialog),
           "choosing Native deliberately exposes the private workflow");
+    if (privateAssets != nullptr) mikai::probes::revealWidget(privateAssets);
+    QApplication::processEvents();
+    check(dialog.grab().save(
+              QStringLiteral("native-processing-%1-%2-native.png").arg(language, suffix)),
+          "the Native Processing surface screenshot was saved");
+    if (runtime != nullptr) {
+        runtime->setCurrentIndex(
+            runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    QApplication::processEvents();
+    check(privateAssets != nullptr && !privateAssets->isVisibleTo(&dialog),
+          "returning from Native to Standard hides private controls again");
     dialog.reject();
     QApplication::processEvents();
 
@@ -576,6 +1295,7 @@ int main(int argc, char** argv) {
     const Gate gate = enter(argc, argv, isolationOptions);
     if (gate != Gate::RunHere) return exitCode();
 
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc, argv);
     if (!mikai::probes::initializeUi(app)) return 2;
     QCommandLineParser parser;
@@ -991,6 +1711,32 @@ int main(int argc, char** argv) {
             exerciseVerifyBackendIsolation(dialog, selectedBackend, inactiveBackend,
                                             installRuntime);
         }
+    }
+
+    exerciseAnimeJanaiManager(client, runner);
+
+    QJsonObject evidence;
+    evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+    evidence.insert(QStringLiteral("passed"), failures == 0);
+    evidence.insert(QStringLiteral("checks"), checks);
+    evidence.insert(QStringLiteral("failures"), failures);
+    QJsonArray screenshots;
+    screenshots.append(QStringLiteral("native-animejanai-manager.png"));
+    screenshots.append(QStringLiteral("native-processing-en-compact.png"));
+    screenshots.append(QStringLiteral("native-processing-en-wide.png"));
+    screenshots.append(QStringLiteral("native-processing-en-compact-native.png"));
+    screenshots.append(QStringLiteral("native-processing-en-wide-native.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-compact.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-compact-native.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-wide.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-wide-native.png"));
+    evidence.insert(QStringLiteral("screenshots"), screenshots);
+    QFile evidenceFile(QStringLiteral("native-animejanai-smoke-evidence.json"));
+    if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        evidenceFile.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+        evidenceFile.close();
+    } else {
+        check(false, "smoke evidence JSON was written");
     }
 
     std::fprintf(stderr, "[native_settings_probe] %s (%d failures)\n",

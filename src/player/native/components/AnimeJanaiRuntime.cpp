@@ -1,6 +1,7 @@
 #include "AnimeJanaiRuntime.hpp"
 
 #include "native/bundle/NativePaths.hpp"
+#include "native/components/AnimeJanaiConfig.hpp"
 #include "native/models/NativeRife.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
 #include "native/status/NativeFilterCommand.hpp"
@@ -13,6 +14,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QSaveFile>
+#include <QtCore/QSet>
 
 #include <algorithm>
 
@@ -68,8 +70,9 @@ bool pathInside(const QString& root, const QString& path) {
 bool copyVerified(const QString& source, const QString& target, qint64 size, const QString& digest,
                   const QString& ownedRoot, const std::function<bool()>& cancelled, QString* error) {
     if (cancelled && cancelled()) { *error = RuntimeText::tr("AnimeJaNai preparation was cancelled."); return false; }
-    if (!hashMatches(source, size, digest, cancelled)) {
-        *error = RuntimeText::tr("The selected model graph is missing or does not match its compiled content pin.");
+    const QFileInfo sourceInfo(source);
+    if (!regularFile(source) || sourceInfo.size() != size) {
+        *error = RuntimeText::tr("The selected model graph is missing or has an unexpected size.");
         return false;
     }
     if (!pathInside(ownedRoot, target) ||
@@ -78,8 +81,16 @@ bool copyVerified(const QString& source, const QString& target, qint64 size, con
         return false;
     }
     if (QFileInfo::exists(target)) {
+        if (!hashMatches(source, size, digest, cancelled)) {
+            *error = cancelled && cancelled()
+                         ? RuntimeText::tr("AnimeJaNai preparation was cancelled.")
+                         : RuntimeText::tr("The selected model graph does not match its pinned content digest.");
+            return false;
+        }
         if (hashMatches(target, size, digest, cancelled)) return true;
-        *error = RuntimeText::tr("An existing staged AnimeJaNai graph is corrupt and will not be replaced.");
+        *error = cancelled && cancelled()
+                     ? RuntimeText::tr("AnimeJaNai preparation was cancelled.")
+                     : RuntimeText::tr("An existing staged AnimeJaNai graph is corrupt and will not be replaced.");
         return false;
     }
     const QString temporary = target + QStringLiteral(".tmp-") + QString::number(QCoreApplication::applicationPid());
@@ -90,6 +101,8 @@ bool copyVerified(const QString& source, const QString& target, qint64 size, con
         *error = !input.isOpen() ? input.errorString() : output.errorString();
         return false;
     }
+    QCryptographicHash copiedHash(QCryptographicHash::Sha256);
+    qint64 copiedBytes = 0;
     QByteArray buffer(64 * 1024, Qt::Uninitialized);
     while (!input.atEnd()) {
         if (cancelled && cancelled()) {
@@ -98,13 +111,37 @@ bool copyVerified(const QString& source, const QString& target, qint64 size, con
             return false;
         }
         const qint64 count = input.read(buffer.data(), buffer.size());
-        if (count <= 0 || output.write(buffer.constData(), count) != count) {
+        if (count <= 0 || copiedBytes > size - count ||
+            output.write(buffer.constData(), count) != count) {
             *error = input.error() != QFile::NoError ? input.errorString() : output.errorString();
             output.cancelWriting();
             return false;
         }
+        copiedBytes += count;
+        copiedHash.addData(QByteArrayView(buffer.constData(), count));
     }
-    if (!output.commit() || !hashMatches(temporary, size, digest, cancelled) || !QFile::rename(temporary, target)) {
+    if (cancelled && cancelled()) {
+        output.cancelWriting();
+        *error = RuntimeText::tr("AnimeJaNai preparation was cancelled.");
+        return false;
+    }
+    if (copiedBytes != size ||
+        QString::fromLatin1(copiedHash.result().toHex()) != digest) {
+        output.cancelWriting();
+        *error = RuntimeText::tr("The selected model graph does not match its pinned content digest.");
+        return false;
+    }
+    if (!output.commit()) {
+        QFile::remove(temporary);
+        *error = RuntimeText::tr("Staged AnimeJaNai graph verification or atomic publication failed.");
+        return false;
+    }
+    if (cancelled && cancelled()) {
+        QFile::remove(temporary);
+        *error = RuntimeText::tr("AnimeJaNai preparation was cancelled.");
+        return false;
+    }
+    if (!QFile::rename(temporary, target)) {
         QFile::remove(temporary);
         *error = RuntimeText::tr("Staged AnimeJaNai graph verification or atomic publication failed.");
         return false;
@@ -118,12 +155,19 @@ const AnimeJanaiPreset* findPreset(const QString& id, const QVector<AnimeJanaiPr
 }
 
 QString safeConfigName(const QString& presetId) {
+    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
+        bool ok = false;
+        const int slotNum = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&ok);
+        if (ok && slotNum > 0) {
+            return QStringLiteral("custom_slot_%1").arg(slotNum);
+        }
+    }
     if (presetId.startsWith(QStringLiteral("builtin"))) return QStringLiteral("builtins");
     return QString::fromLatin1(QCryptographicHash::hash(presetId.toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 
-QByteArray modelLine(int chain, const QString& name) {
-    return QByteArrayLiteral("chain_") + QByteArray::number(chain) + QByteArrayLiteral("_model_1_name=") + name.toUtf8() + '\n';
+QByteArray modelLine(int chain, const QByteArray& name) {
+    return QByteArrayLiteral("chain_") + QByteArray::number(chain) + QByteArrayLiteral("_model_1_name=") + name + '\n';
 }
 
 // Retired SD opset-23 model cleanup (adopted from AnimeJaNaiUpdater MigrateAnimeJaNaiConf).
@@ -146,20 +190,60 @@ void pruneLegacySdModelOrphans(const QString& modelDir) {
     }
 }
 
-QByteArray builtinIni() {
-    const QByteArray hdBalanced = QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16");
-    const QByteArray hdPerformance = QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16");
-    const QByteArray sd = QByteArrayLiteral("2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo");
-    QByteArray ini = QByteArrayLiteral("[global]\nconfig_version=2\nbackend=TensorRT\nlogging=yes\n");
+QByteArray globalIniHeader(const AnimeJanaiConfig& managerConf) {
+    const QString defaultTrtSettings = QStringLiteral(
+        "--builderOptimizationLevel=5 --optShapes=input:%video_resolution% --skipInference");
+    QByteArray ini = QByteArrayLiteral("[global]\nconfig_version=3\n");
+    ini += QByteArrayLiteral("backend=TensorRT\n");
+    ini += managerConf.enableLogging ? QByteArrayLiteral("logging=yes\n")
+                                     : QByteArrayLiteral("logging=no\n");
+    if (!managerConf.trtEngineSettings.trimmed().isEmpty() &&
+        managerConf.trtEngineSettings.trimmed() != defaultTrtSettings) {
+        QString settings = managerConf.trtEngineSettings.trimmed();
+        settings.remove(QChar::Null);
+        settings.replace(u'\r', u' ');
+        settings.replace(u'\n', u' ');
+        ini += QByteArrayLiteral("trt_engine_settings=") + settings.toUtf8() + '\n';
+    }
+    if (managerConf.qualitySharp) {
+        ini += QByteArrayLiteral("quality_preset=sharp\n");
+    }
+    if (managerConf.balancedSharp) {
+        ini += QByteArrayLiteral("balanced_preset=sharp\n");
+    }
+    if (managerConf.performanceSharp) {
+        ini += QByteArrayLiteral("performance_preset=sharp\n");
+    }
+    return ini;
+}
+
+QByteArray builtinIni(const AnimeJanaiConfig& managerConf) {
+    const QByteArray hdBalanced =
+        QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16");
+    const QByteArray hdBalancedSharp =
+        QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16");
+    const QByteArray hdPerformance =
+        QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16");
+    const QByteArray hdPerformanceSharp =
+        QByteArrayLiteral("2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16");
+    const QByteArray sd =
+        QByteArrayLiteral("2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo");
+
+    const QByteArray qualityHd = managerConf.qualitySharp ? hdBalancedSharp : hdBalanced;
+    const QByteArray balancedHd = managerConf.balancedSharp ? hdBalancedSharp : hdBalanced;
+    const QByteArray performanceHd =
+        managerConf.performanceSharp ? hdPerformanceSharp : hdPerformance;
+
+    QByteArray ini = globalIniHeader(managerConf);
     ini += QByteArrayLiteral("[slot_1001]\nprofile_name=Quality\n");
-    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, hdBalanced);
+    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, qualityHd);
     ini += QByteArrayLiteral("chain_2_min_resolution=0x0\nchain_2_max_resolution=1280x720\nchain_2_max_fps=31\n") + modelLine(2, sd);
-    ini += QByteArrayLiteral("chain_3_min_resolution=0x0\nchain_3_max_resolution=1920x1080\nchain_3_max_fps=61\n") + modelLine(3, hdBalanced);
+    ini += QByteArrayLiteral("chain_3_min_resolution=0x0\nchain_3_max_resolution=1920x1080\nchain_3_max_fps=61\n") + modelLine(3, qualityHd);
     ini += QByteArrayLiteral("[slot_1002]\nprofile_name=Balanced\n");
-    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, hdBalanced);
+    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, balancedHd);
     ini += QByteArrayLiteral("chain_2_min_resolution=0x0\nchain_2_max_resolution=1280x720\nchain_2_max_fps=31\n") + modelLine(2, sd);
     ini += QByteArrayLiteral("[slot_1003]\nprofile_name=Performance\n");
-    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, hdPerformance);
+    ini += QByteArrayLiteral("chain_1_min_resolution=1280x720\nchain_1_max_resolution=1920x1080\nchain_1_max_fps=31\n") + modelLine(1, performanceHd);
     ini += QByteArrayLiteral("chain_2_min_resolution=0x0\nchain_2_max_resolution=1280x720\nchain_2_max_fps=31\n") + modelLine(2, sd);
     return ini;
 }
@@ -195,6 +279,17 @@ bool retainSpatialLicense(const SpatialAsset& asset, const QString& graphPath,
     return writeIni(QJsonDocument(record).toJson(), graphPath + QStringLiteral(".source.json"), root, error);
 }
 
+bool retainCustomModelProvenance(const CustomAnimeJanaiModel& model, const QString& graphPath,
+                                 const QString& root, QString* error) {
+    const QJsonObject record{
+        {QStringLiteral("source"), QStringLiteral("user-imported")},
+        {QStringLiteral("upstreamFile"), model.fileName},
+        {QStringLiteral("sha256"), model.sha256},
+        {QStringLiteral("scaleFactor"), model.scaleFactor},
+        {QStringLiteral("architectureHint"), model.architectureHint}};
+    return writeIni(QJsonDocument(record).toJson(), graphPath + QStringLiteral(".source.json"), root, error);
+}
+
 QByteArray officialFilterSpec(const QVector<NativeFilterOption>& options, QString* error) {
     QByteArray result = QByteArrayLiteral("@mikai_aji:animejanai");
     char separator = '=';
@@ -217,20 +312,76 @@ const RifeModelPin* rifeModelPinForFileName(const QString& fileName) {
     return nullptr;
 }
 
+const RifeModelPin* rifeModelPinForCode(int code, bool ensemble) {
+    for (const RifeModelPin& pin : rifeModelPins()) {
+        if (rifeModelCode(pin.version, pin.variant) == code && pin.ensemble == ensemble) {
+            return &pin;
+        }
+    }
+    return nullptr;
+}
+
+const SpatialAsset* findSpatialAssetByStemOrId(const QString& candidate,
+                                               const QVector<SpatialAsset>& catalog) {
+    const QString trimmed = candidate.trimmed();
+    if (trimmed.isEmpty()) return nullptr;
+    for (const SpatialAsset& asset : catalog) {
+        const QString stem = asset.name.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive)
+                                 ? asset.name.chopped(5)
+                                 : asset.name;
+        if (asset.id.compare(trimmed, Qt::CaseInsensitive) == 0 ||
+            asset.name.compare(trimmed, Qt::CaseInsensitive) == 0 ||
+            stem.compare(trimmed, Qt::CaseInsensitive) == 0) {
+            return &asset;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 QVector<AnimeJanaiPreset> animeJanaiPresets() {
     QVector<AnimeJanaiPreset> presets;
     const QVector<SpatialAsset> spatial = spatialAssetCatalog();
+    const QVector<CustomAnimeJanaiModel> customSpatial = listCustomAnimeJanaiModels();
+    const AnimeJanaiConfig managerConf = AnimeJanaiConfigStore::load();
     const QVector<RifeModelPin>& rife = rifeModelPins();
-    presets.reserve(3 + spatial.size() + rife.size());
+
+    presets.reserve(3 + managerConf.customSlots.size() + spatial.size() + customSpatial.size() +
+                    rife.size());
     presets.append({QStringLiteral("builtin1001"), RuntimeText::tr("Quality"), 1001, false, {}, true, {}});
     presets.append({QStringLiteral("builtin1002"), RuntimeText::tr("Balanced"), 1002, false, {}, true, {}});
     presets.append({QStringLiteral("builtin1003"), RuntimeText::tr("Performance"), 1003, false, {}, true, {}});
+
+    for (const AnimeJanaiSlot& slot : managerConf.customSlots) {
+        if (slot.number <= 0 || slot.chains.isEmpty()) continue;
+        const QString profileTitle =
+            slot.profileName.trimmed().isEmpty()
+                ? RuntimeText::tr("Slot %1").arg(slot.number)
+                : slot.profileName.trimmed();
+        presets.append({QStringLiteral("builtin_slot:%1").arg(slot.number),
+                        profileTitle,
+                        slot.number,
+                        false,
+                        {},
+                        true,
+                        slot.descriptionText});
+    }
+
     for (qsizetype i = 0; i < spatial.size(); ++i) {
         const SpatialAsset& asset = spatial.at(i);
         presets.append({QStringLiteral("spatial:") + asset.id, asset.name, 2001 + static_cast<int>(i), false,
                         asset.name, true, {}});
+    }
+    for (qsizetype i = 0; i < customSpatial.size(); ++i) {
+        const CustomAnimeJanaiModel& model = customSpatial.at(i);
+        presets.append({QStringLiteral("spatial:custom:") + model.id,
+                        model.displayName,
+                        2501 + static_cast<int>(i),
+                        false,
+                        model.fileName,
+                        model.valid,
+                        model.reason});
     }
     for (qsizetype i = 0; i < rife.size(); ++i) {
         const RifeModelPin& pin = rife.at(i);
@@ -288,19 +439,168 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         }
     }
 
+    QString managerError;
+    const AnimeJanaiConfig managerConf = AnimeJanaiConfigStore::load(&managerError);
+    if (!managerError.isEmpty()) {
+        fail(plan, QStringLiteral("animejanai.config.invalid"), managerError);
+        return plan;
+    }
     QString ini;
-    if (presetId.startsWith(QStringLiteral("builtin"))) {
+    if (presetId.startsWith(QStringLiteral("builtin_slot:"))) {
+        bool slotOk = false;
+        const int slotNum = presetId.mid(QStringLiteral("builtin_slot:").size()).toInt(&slotOk);
+        const auto slotIt = std::find_if(
+            managerConf.customSlots.cbegin(), managerConf.customSlots.cend(),
+            [slotNum](const AnimeJanaiSlot& candidate) { return candidate.number == slotNum; });
+        if (!slotOk || slotIt == managerConf.customSlots.cend() || slotIt->chains.isEmpty()) {
+            fail(plan, QStringLiteral("animejanai.preset.invalid"),
+                 RuntimeText::tr("The selected custom AnimeJaNai profile slot is empty or invalid."));
+            return plan;
+        }
+
+        AnimeJanaiSlot stagedSlot = *slotIt;
+        const auto pinnedCatalog = spatialAssetCatalog();
+        const auto storedPinned = storedSpatialAssets();
+        QSet<QString> stagedSpatialDigests;
+        QSet<QString> stagedRifeFiles;
+
+        for (AnimeJanaiChain& chain : stagedSlot.chains) {
+            if (chain.models.isEmpty() && !chain.rifeEnabled) {
+                fail(plan, QStringLiteral("animejanai.profile.chainEmpty"),
+                     RuntimeText::tr("Chain %1 in custom profile '%2' has no model or RIFE step.")
+                         .arg(chain.number).arg(stagedSlot.profileName));
+                return plan;
+            }
+            for (AnimeJanaiChainModel& modelStep : chain.models) {
+                const QString rawName = modelStep.name.trimmed();
+                if (rawName.isEmpty()) {
+                    fail(plan, QStringLiteral("animejanai.profile.modelEmpty"),
+                         RuntimeText::tr("Model step %1 in chain %2 of custom profile '%3' has no model.")
+                             .arg(modelStep.number).arg(chain.number).arg(stagedSlot.profileName));
+                    return plan;
+                }
+
+                if (const SpatialAsset* pinned = findSpatialAssetByStemOrId(rawName, pinnedCatalog)) {
+                    const auto item = std::find_if(
+                        storedPinned.cbegin(), storedPinned.cend(),
+                        [pinned](const StoredSpatialAsset& row) { return row.asset.id == pinned->id; });
+                    if (item == storedPinned.cend() || !item->verified) {
+                        fail(plan, QStringLiteral("animejanai.model.missing"),
+                             item == storedPinned.cend()
+                                 ? RuntimeText::tr("A pinned spatial model required by custom profile '%1' is not installed.")
+                                       .arg(stagedSlot.profileName)
+                                 : item->reason);
+                        return plan;
+                    }
+                    if (!stagedSpatialDigests.contains(pinned->sha256)) {
+                        const QString target =
+                            QDir(plan.modelDir).filePath(pinned->sha256 + QStringLiteral(".onnx"));
+                        QString copyError;
+                        if (!copyVerified(item->graphPath, target, pinned->bytes, pinned->sha256,
+                                          ownedRoot, cancelled, &copyError) ||
+                            !retainSpatialLicense(*pinned, target, ownedRoot, &copyError)) {
+                            fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
+                            return plan;
+                        }
+                        stagedSpatialDigests.insert(pinned->sha256);
+                    }
+                    modelStep.name = pinned->sha256;
+                    continue;
+                }
+
+                const std::optional<CustomAnimeJanaiModel> customModel =
+                    findCustomAnimeJanaiModel(rawName);
+                if (!customModel.has_value() || !customModel->valid) {
+                    fail(plan, QStringLiteral("animejanai.model.missing"),
+                         RuntimeText::tr("Custom profile '%1' references ONNX model '%2', which is missing or invalid.")
+                             .arg(stagedSlot.profileName, rawName));
+                    return plan;
+                }
+                if (!stagedSpatialDigests.contains(customModel->sha256)) {
+                    const QString target =
+                        QDir(plan.modelDir).filePath(customModel->sha256 + QStringLiteral(".onnx"));
+                    QString copyError;
+                    if (!copyVerified(customModel->filePath, target, customModel->bytes,
+                                      customModel->sha256, ownedRoot, cancelled, &copyError) ||
+                        !retainCustomModelProvenance(*customModel, target, ownedRoot, &copyError)) {
+                        fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
+                        return plan;
+                    }
+                    stagedSpatialDigests.insert(customModel->sha256);
+                }
+                modelStep.name = customModel->sha256;
+            }
+
+            if (chain.rifeEnabled) {
+                const int code =
+                    AnimeJanaiConfigStore::rifeLabelToValue(chain.rifeModel).toInt();
+                const RifeModelPin* pin = rifeModelPinForCode(code, chain.rifeEnsemble);
+                if (pin == nullptr) {
+                    fail(plan, QStringLiteral("animejanai.model.pinMissing"),
+                         RuntimeText::tr("The RIFE model '%1' in custom profile '%2' has no compiled content pin.")
+                             .arg(chain.rifeModel, stagedSlot.profileName));
+                    return plan;
+                }
+                if (pin->variant == RifeVariant::Heavy && !installation.heavyRifeSupported) {
+                    fail(plan, QStringLiteral("animejanai.preset.rifeHeavyUnsupported"),
+                         RuntimeText::tr("This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model."));
+                    return plan;
+                }
+                const StoredRifeGraph stored = storedRifeGraph(rifeArchiveStore(), *pin);
+                if (!stored.installed) {
+                    fail(plan, QStringLiteral("animejanai.model.missing"),
+                         stored.reason.isEmpty()
+                             ? RuntimeText::tr("The selected pinned RIFE graph is missing or corrupt.")
+                             : stored.reason);
+                    return plan;
+                }
+                if (!stagedRifeFiles.contains(pin->fileName)) {
+                    QString copyError;
+                    if (!copyVerified(stored.path, QDir(plan.rifeModelDir).filePath(pin->fileName),
+                                      pin->bytes, pin->graphSha256, ownedRoot, cancelled, &copyError)) {
+                        fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
+                        return plan;
+                    }
+                    const QJsonObject provenance{
+                        {QStringLiteral("source"),
+                         QStringLiteral("https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0")},
+                        {QStringLiteral("upstreamFile"), pin->fileName},
+                        {QStringLiteral("sha256"), pin->graphSha256},
+                        {QStringLiteral("terms"), QStringLiteral("upstream terms not verified")}};
+                    if (!writeIni(QJsonDocument(provenance).toJson(),
+                                  QDir(plan.rifeModelDir)
+                                      .filePath(pin->fileName + QStringLiteral(".source.json")),
+                                  ownedRoot, &copyError)) {
+                        fail(plan, QStringLiteral("animejanai.model.provenance"), copyError);
+                        return plan;
+                    }
+                    stagedRifeFiles.insert(pin->fileName);
+                }
+            }
+        }
+
+        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+              AnimeJanaiConfigStore::serializeSlotSection(stagedSlot, plan.slot);
+    } else if (presetId.startsWith(QStringLiteral("builtin"))) {
         const auto assets = spatialAssetCatalog();
-        const QStringList requiredNames = {
+        QStringList requiredNames = {
             QStringLiteral("2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"),
             QStringLiteral("2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"),
             QStringLiteral("2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx")};
+        if (managerConf.qualitySharp || managerConf.balancedSharp) {
+            requiredNames.append(QStringLiteral(
+                "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"));
+        }
+        if (managerConf.performanceSharp) {
+            requiredNames.append(QStringLiteral(
+                "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"));
+        }
+        const auto stored = storedSpatialAssets();
         for (const QString& required : requiredNames) {
             const auto assetIt = std::find_if(assets.cbegin(), assets.cend(), [&required](const SpatialAsset& row) { return row.name == required; });
             if (assetIt == assets.cend()) { fail(plan, QStringLiteral("animejanai.model.catalogueMissing"), RuntimeText::tr("A required built-in model is absent from the pinned catalogue.")); return plan; }
-            const auto stored = storedSpatialAssets();
             const auto item = std::find_if(stored.cbegin(), stored.cend(), [&assetIt](const StoredSpatialAsset& row) { return row.asset.id == assetIt->id; });
-            if (item == stored.cend() || !item->verified || !hashMatches(item->graphPath, assetIt->bytes, assetIt->sha256, cancelled)) {
+            if (item == stored.cend() || !item->verified) {
                 fail(plan, QStringLiteral("animejanai.model.missing"), item == stored.cend() ? RuntimeText::tr("A model required by the built-in AnimeJaNai profiles is not installed.") : item->reason);
                 return plan;
             }
@@ -312,13 +612,13 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             }
         }
         pruneLegacySdModelOrphans(plan.modelDir);
-        ini = QString::fromLatin1(builtinIni());
+        ini = QString::fromUtf8(builtinIni(managerConf));
         for (const SpatialAsset& asset : assets)
             ini.replace(asset.name.chopped(5), asset.sha256);
     } else if (preset->rife) {
         const RifeModelPin* pin = selectedRife;
         const StoredRifeGraph stored = storedRifeGraph(rifeArchiveStore(), *pin);
-        if (!stored.installed || !hashMatches(stored.path, pin->bytes, pin->graphSha256, cancelled)) {
+        if (!stored.installed) {
             fail(plan, QStringLiteral("animejanai.model.missing"), stored.reason.isEmpty() ? RuntimeText::tr("The selected pinned RIFE graph is missing or corrupt.") : stored.reason);
             return plan;
         }
@@ -340,14 +640,45 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.provenance"), copyError); return plan;
         }
         const int code = rifeModelCode(pin->version, pin->variant);
-        ini = QStringLiteral("[global]\nconfig_version=2\nbackend=TensorRT\nlogging=yes\n[slot_%1]\nprofile_name=RIFE 2x\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_rife=yes\nchain_1_rife_factor_numerator=2\nchain_1_rife_factor_denominator=1\nchain_1_rife_model=%2\nchain_1_rife_ensemble=%3\n")
-            .arg(plan.slot).arg(code).arg(pin->ensemble ? QStringLiteral("yes") : QStringLiteral("no"));
+        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+              QStringLiteral("[slot_%1]\nprofile_name=RIFE 2x\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_rife=yes\nchain_1_rife_factor_numerator=2\nchain_1_rife_factor_denominator=1\nchain_1_rife_model=%2\nchain_1_rife_ensemble=%3\n")
+                  .arg(plan.slot)
+                  .arg(code)
+                  .arg(pin->ensemble ? QStringLiteral("yes") : QStringLiteral("no"));
+    } else if (presetId.startsWith(QStringLiteral("spatial:custom:"))) {
+        const QString customId = presetId.mid(QStringLiteral("spatial:custom:").size());
+        const std::optional<CustomAnimeJanaiModel> customModel = findCustomAnimeJanaiModel(customId);
+        if (!customModel.has_value()) {
+            fail(plan, QStringLiteral("animejanai.model.invalid"),
+                 RuntimeText::tr("The selected custom ONNX model is not registered."));
+            return plan;
+        }
+        if (!customModel->valid) {
+            fail(plan, QStringLiteral("animejanai.model.missing"),
+                 customModel->reason.isEmpty()
+                     ? RuntimeText::tr("The selected custom ONNX model is missing or failed integrity verification.")
+                     : customModel->reason);
+            return plan;
+        }
+        const QString safeName = customModel->sha256;
+        QString copyError;
+        const QString target = QDir(plan.modelDir).filePath(safeName + QStringLiteral(".onnx"));
+        if (!copyVerified(customModel->filePath, target, customModel->bytes, customModel->sha256,
+                          ownedRoot, cancelled, &copyError) ||
+            !retainCustomModelProvenance(*customModel, target, ownedRoot, &copyError)) {
+            fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
+            return plan;
+        }
+        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+              QStringLiteral("[slot_%1]\nprofile_name=%2\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_model_1_name=%3\n")
+                  .arg(plan.slot)
+                  .arg(customModel->id, safeName);
     } else {
         const SpatialAsset* asset = findSpatialAsset(presetId.mid(QStringLiteral("spatial:").size()));
         if (!asset) { fail(plan, QStringLiteral("animejanai.model.invalid"), RuntimeText::tr("The selected spatial model is not in the pinned catalogue.")); return plan; }
         const auto stored = storedSpatialAssets();
         const auto item = std::find_if(stored.cbegin(), stored.cend(), [asset](const StoredSpatialAsset& row) { return row.asset.id == asset->id; });
-        if (item == stored.cend() || !item->verified || !hashMatches(item->graphPath, asset->bytes, asset->sha256, cancelled)) {
+        if (item == stored.cend() || !item->verified) {
             fail(plan, QStringLiteral("animejanai.model.missing"), item == stored.cend() ? RuntimeText::tr("The selected spatial model is not installed.") : item->reason);
             return plan;
         }
@@ -358,8 +689,10 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             !retainSpatialLicense(*asset, target, ownedRoot, &copyError)) {
             fail(plan, QStringLiteral("animejanai.model.stage"), copyError); return plan;
         }
-        ini = QStringLiteral("[global]\nconfig_version=2\nbackend=TensorRT\nlogging=yes\n[slot_%1]\nprofile_name=Spatial model\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_model_1_name=%2\n")
-            .arg(plan.slot).arg(safeName);
+        ini = QString::fromUtf8(globalIniHeader(managerConf)) +
+              QStringLiteral("[slot_%1]\nprofile_name=Spatial model\nchain_1_min_resolution=0x0\nchain_1_max_resolution=infxinf\nchain_1_model_1_name=%2\n")
+                  .arg(plan.slot)
+                  .arg(safeName);
     }
     if (stop()) { fail(plan, QStringLiteral("animejanai.prepare.cancelled"), RuntimeText::tr("AnimeJaNai preparation was cancelled.")); return plan; }
     if (backend == Backend::DirectML)

@@ -2,6 +2,7 @@
 
 
 #include <app/dialogs/SettingsDialog.hpp>
+#include <app/dialogs/AnimeJanaiManagerPanel.hpp>
 #include <app/support/I18n.hpp>
 #include <app/workers/Runner.hpp>
 #include <backend/MikaiClient.hpp>
@@ -19,6 +20,7 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtTest/QTest>
+#include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
@@ -27,6 +29,7 @@
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QTabWidget>
+#include <QtWidgets/QTableWidget>
 #include <QtWidgets/QWidget>
 
 namespace {
@@ -226,10 +229,61 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
       runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
   QCoreApplication::processEvents();
   QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  auto* manager = dialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+      QStringLiteral("animeJanaiManagerPanel"));
+  QVERIFY(manager != nullptr && manager->isVisibleTo(&dialog));
+  auto* slotSelector = manager->findChild<QComboBox*>(QStringLiteral("ajiSlotSelectCombo"));
+  auto* profileName = manager->findChild<QLineEdit*>(QStringLiteral("ajiProfileNameEdit"));
+  auto* engineArgs = manager->findChild<QLineEdit*>(
+      QStringLiteral("ajiTrtEngineSettingsEdit"));
+  QPushButton* activate = nullptr;
+  for (QPushButton* button : manager->findChildren<QPushButton*>()) {
+    if (button->text() ==
+        mikai::app::AnimeJanaiManagerPanel::tr("Activate / Reset Slot")) {
+      activate = button;
+      break;
+    }
+  }
+  QVERIFY(slotSelector != nullptr && profileName != nullptr && engineArgs != nullptr &&
+          activate != nullptr);
+  QTRY_VERIFY(activate->isEnabled());
+  const int editedSlot = slotSelector->findData(4);
+  QVERIFY(editedSlot >= 0);
+  slotSelector->setCurrentIndex(editedSlot);
+  activate->click();
+  profileName->setText(QStringLiteral("Unsaved multi-chain profile"));
+  engineArgs->setText(QStringLiteral("--builderOptimizationLevel=4 --skipInference"));
+  QCheckBox* chainRife = nullptr;
+  for (QCheckBox* candidate : manager->findChildren<QCheckBox*>()) {
+    if (candidate->text() ==
+        mikai::app::AnimeJanaiManagerPanel::tr("RIFE interpolation")) {
+      chainRife = candidate;
+      break;
+    }
+  }
+  QVERIFY(chainRife != nullptr);
+  chainRife->setChecked(true);
+  QVERIFY(manager->isDirty());
+  const auto managerBefore = manager->currentConfig();
+  const QString activateEnglish = activate->text();
+  auto* managerScroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
+  QVERIFY(managerScroll != nullptr);
+  dialog.resize(dialog.minimumWidth(), dialog.height());
+  QCoreApplication::processEvents();
+  QTRY_VERIFY2(managerScroll->widget()->width() <= managerScroll->viewport()->width(),
+               qPrintable(QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
+                              .arg(managerScroll->widget()->width())
+                              .arg(managerScroll->viewport()->width())));
+  auto* customModels = manager->findChild<QTableWidget*>(
+      QStringLiteral("animeJanaiCustomModelsTable"));
+  QVERIFY(customModels != nullptr);
+  QTRY_COMPARE(customModels->horizontalScrollBar()->maximum(), 0);
+
   runtime->setCurrentIndex(
       runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
   QCoreApplication::processEvents();
   QVERIFY(privateAssets->isVisibleTo(&dialog));
+  QVERIFY(!manager->isVisibleTo(&dialog));
   auto* threshold = dialog.findChild<QLineEdit*>(QStringLiteral("nativeRifeSceneThresholdEdit"));
   auto* factorNum = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorNumSpin"));
   auto* factorDen = dialog.findChild<QSpinBox*>(QStringLiteral("nativeRifeFactorDenSpin"));
@@ -326,6 +380,10 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY2(capture() == before,
            "an unsaved native value, stable id or tab did not survive the retranslation");
   QCOMPARE(scroll->verticalScrollBar()->value(), englishScroll);
+  QVERIFY(manager->currentConfig() == managerBefore);
+  QVERIFY(manager->isDirty());
+  QCOMPARE(slotSelector->currentData().toInt(), 4);
+  QVERIFY(activate->text() != activateEnglish);
 
   QVERIFY2(storeButton->text() != englishSaveText,
            "the RIFE store button still shows the language the dialog opened in");
@@ -337,6 +395,8 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QCoreApplication::processEvents();
   QCOMPARE(capture(), before);
   QCOMPARE(playButton->toolTip(), englishPlayTooltip);
+  QVERIFY(manager->currentConfig() == managerBefore);
+  QCOMPARE(activate->text(), activateEnglish);
   QCOMPARE(storedValues(), storedBefore);
   QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
 
@@ -347,10 +407,19 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
   QCoreApplication::processEvents();
   QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  QTRY_VERIFY(managerScroll->widget()->width() <= managerScroll->viewport()->width());
+  QTRY_COMPARE(customModels->horizontalScrollBar()->maximum(), 0);
   QCOMPARE(storedValues(), storedBefore);
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
   QVERIFY(!privateAssets->isVisibleTo(&dialog));
+  QVERIFY(manager->isVisibleTo(&dialog));
+  QTRY_VERIFY2(managerScroll->widget()->width() <= managerScroll->viewport()->width(),
+               qPrintable(QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
+                              .arg(managerScroll->widget()->width())
+                              .arg(managerScroll->viewport()->width())));
+  QVERIFY(manager->currentConfig() == managerBefore);
+  QVERIFY(manager->isDirty());
   QCOMPARE(storedValues(), storedBefore);
 }
 

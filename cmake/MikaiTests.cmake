@@ -50,9 +50,22 @@ if(MIKAI_BUILD_PROBES)
   )
   set_tests_properties(NativeStageContracts PROPERTIES TIMEOUT 300)
 
+  if(WIN32)
+    add_library(mikai_test_aji_dispatcher SHARED EXCLUDE_FROM_ALL
+      ${CMAKE_SOURCE_DIR}/tests/fixtures/aji_dispatcher_fixture.cpp
+    )
+    set_target_properties(mikai_test_aji_dispatcher PROPERTIES
+      PREFIX ""
+      OUTPUT_NAME "aji"
+      SUFFIX ".dll"
+    )
+  endif()
+
   add_executable(mikai_tests
+
     tests/cpp/main.cpp
     tests/cpp/TestSupport.hpp
+    tests/fixtures/IdentityOnnxFixture.hpp
     # Backend domain & transport suites
     tests/cpp/backend/TestApiClient.hpp
     tests/cpp/backend/TestApiClient.cpp
@@ -155,6 +168,12 @@ if(MIKAI_BUILD_PROBES)
     MIKAI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
   )
   target_link_libraries(mikai_tests PRIVATE mikai_player mikai_app mikai_backend Qt6::Test Qt6::Widgets)
+  if(TARGET mikai_test_aji_dispatcher)
+    add_dependencies(mikai_tests mikai_test_aji_dispatcher)
+    target_compile_definitions(mikai_tests PRIVATE
+      MIKAI_TEST_AJI_DISPATCHER="$<TARGET_FILE:mikai_test_aji_dispatcher>"
+    )
+  endif()
   add_dependencies(mikai_tests mikai_test_launcher)
 
   if(TARGET release_translations)

@@ -8,6 +8,7 @@ endif()
 add_library(mikai_probe_shared INTERFACE)
 target_include_directories(mikai_probe_shared INTERFACE
   ${CMAKE_SOURCE_DIR}/src/probes/shared
+  ${CMAKE_SOURCE_DIR}/tests/fixtures
 )
 
 function(mikai_add_probe target_name source_file)
@@ -101,6 +102,7 @@ if(TARGET mikai_app)
   mikai_add_probe(native_hud_probe src/probes/native/NativeHudProbe.cpp
     LINKS mikai_app Qt6::Widgets)
   mikai_add_probe(native_settings_probe src/probes/native/NativeSettingsProbe.cpp
+    EXTRA_SOURCES tests/fixtures/IdentityOnnxFixture.hpp
     LINKS mikai_app Qt6::Test)
   mikai_add_probe(crash_probe src/probes/player/CrashProbe.cpp
     LINKS mikai_app Qt6::Core)

@@ -2,7 +2,10 @@
 
 #include "PlayerDialog.hpp"
 #include "VideoSurface.hpp"
+#include "../../fixtures/IdentityOnnxFixture.hpp"
+#include "backend/Cancellation.hpp"
 #include "native/bundle/NativePaths.hpp"
+#include "native/components/AnimeJanaiConfig.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 
 #include <QtCore/QCoreApplication>
@@ -19,6 +22,8 @@
 #include <QtCore/QSettings>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QProcess>
+
+#include <atomic>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -72,11 +77,19 @@ QStringList required(Backend backend) {
     return files;
 }
 
-bool writeRecord(Backend backend, const QString& recordedBackend = {}) {
+bool writeRecord(Backend backend, const QString& recordedBackend = {},
+                 bool abiExportingDispatcher = false) {
     const QString root = runtimePath(backend);
     QJsonArray entries;
     for (const QString& name : required(backend)) {
-        const QByteArray bytes = minimalX64Pe();
+        QByteArray bytes = minimalX64Pe();
+#ifdef MIKAI_TEST_AJI_DISPATCHER
+        if (abiExportingDispatcher && name == QLatin1String("aji.dll")) {
+            QFile dispatcher(QString::fromUtf8(MIKAI_TEST_AJI_DISPATCHER));
+            if (!dispatcher.open(QIODevice::ReadOnly)) return false;
+            bytes = dispatcher.readAll();
+        }
+#endif
         if (!writeFile(QDir(root).filePath(name), bytes)) return false;
         QJsonObject e; e.insert(QStringLiteral("path"), name); e.insert(QStringLiteral("bytes"), bytes.size()); e.insert(QStringLiteral("sha256"), sha(bytes)); entries.append(e);
     }
@@ -88,7 +101,7 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {}) {
     record.insert(QStringLiteral("provenance"), QStringLiteral("local"));
     record.insert(QStringLiteral("archiveBytes"), 0);
     record.insert(QStringLiteral("archiveSha256"), QString());
-    record.insert(QStringLiteral("heavyRifeSupported"), false);
+    record.insert(QStringLiteral("heavyRifeSupported"), abiExportingDispatcher);
     record.insert(QStringLiteral("files"), entries);
     record.insert(QStringLiteral("acquisitions"), QJsonArray{});
     return writeFile(QDir(root).filePath(QStringLiteral("install.json")), QJsonDocument(record).toJson(QJsonDocument::Compact));
@@ -115,28 +128,33 @@ bool updateRecordFile(const QString& root, const QString& name, const QByteArray
 } // namespace
 
 void TestAnimeJanaiRuntime::initTestCase() {
-    // main() already refused any pre-existing nonempty native tree. Claim only
-    // this suite's version directory, never an installation left by a caller.
     QVERIFY2(!QFileInfo::exists(fixtureRoot()), "AnimeJaNai fixture root is already occupied");
+    const QString animeJanaiRoot = QDir(nativeRoot()).filePath(QStringLiteral("animejanai"));
+    QVERIFY2(!QFileInfo::exists(animeJanaiRoot), "AnimeJaNai model/config data already exists");
     QVERIFY(QDir().mkpath(fixtureRoot()));
     ownsFixture_ = true;
+    ownsAnimeJanai_ = true;
 }
 
 void TestAnimeJanaiRuntime::init() {
     QVERIFY(ownsFixture_);
     QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
     QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+    if (ownsAnimeJanai_) QDir(QDir(nativeRoot()).filePath(QStringLiteral("animejanai"))).removeRecursively();
 }
 
 void TestAnimeJanaiRuntime::cleanup() {
     if (!ownsFixture_) return;
     QVERIFY(QDir(runtimePath(Backend::DirectML)).removeRecursively());
     QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+    if (ownsAnimeJanai_) QDir(QDir(nativeRoot()).filePath(QStringLiteral("animejanai"))).removeRecursively();
 }
 
 void TestAnimeJanaiRuntime::cleanupTestCase() {
     if (!ownsFixture_) return;
     QVERIFY(QDir(fixtureRoot()).removeRecursively());
+    if (ownsAnimeJanai_) QDir(QDir(nativeRoot()).filePath(QStringLiteral("animejanai"))).removeRecursively();
+    ownsAnimeJanai_ = false;
     ownsFixture_ = false;
 }
 
@@ -411,4 +429,424 @@ void TestAnimeJanaiRuntime::unknownModelAndDefaultPlanRemainPure() {
     QVERIFY(unknown.enabled);
     QVERIFY(!unknown.available);
     QCOMPARE(unknown.reasonKey, QStringLiteral("animejanai.preset.invalid"));
+}
+
+void TestAnimeJanaiRuntime::customOnnxImportIsAtomicAndRemovable() {
+
+    QTemporaryDir sourceDir;
+    QVERIFY(sourceDir.isValid());
+    const QString source =
+        QDir(sourceDir.path()).filePath(QStringLiteral("custom_identity.onnx"));
+    QVERIFY(writeFile(source, mikai::tests::fixtures::makeTestIdentityOnnxGraph()));
+
+    CustomAnimeJanaiModel imported;
+    QString error;
+    QVERIFY2(importCustomAnimeJanaiModel(source, &imported, &error), qPrintable(error));
+    QVERIFY(imported.valid);
+    QVERIFY(!imported.sha256.isEmpty());
+    const QString managedPath =
+        QDir(customAnimeJanaiModelsDir()).filePath(imported.fileName);
+    QVERIFY(QFileInfo::exists(managedPath));
+
+    QString duplicateError;
+    QVERIFY(!importCustomAnimeJanaiModel(source, nullptr, &duplicateError));
+    QVERIFY(!duplicateError.isEmpty());
+    const auto registered = findCustomAnimeJanaiModel(imported.id);
+    QVERIFY(registered.has_value());
+    QCOMPARE(registered->sha256, imported.sha256);
+
+    QFile priorModel(managedPath);
+    QVERIFY(priorModel.open(QIODevice::ReadOnly));
+    const QByteArray priorBytes = priorModel.readAll();
+    priorModel.close();
+    const QString cancelledSource =
+        QDir(sourceDir.path()).filePath(QStringLiteral("cancelled_identity.onnx"));
+    QVERIFY(writeFile(cancelledSource, mikai::tests::fixtures::makeTestIdentityOnnxGraph()));
+    int cancellationChecks = 0;
+    QString cancellationError;
+    QVERIFY(!importCustomAnimeJanaiModel(
+        cancelledSource, nullptr, &cancellationError,
+        [&cancellationChecks] { return ++cancellationChecks >= 2; }));
+    QVERIFY(cancellationError.contains(QStringLiteral("cancelled")));
+    const QString cancelledTarget = QDir(customAnimeJanaiModelsDir())
+                                        .filePath(QStringLiteral("cancelled_identity.onnx"));
+    QVERIFY(!QFileInfo::exists(cancelledTarget));
+    QVERIFY(!QFileInfo::exists(cancelledTarget + QStringLiteral(".source.json")));
+    QFile priorModelAfter(managedPath);
+    QVERIFY(priorModelAfter.open(QIODevice::ReadOnly));
+    QCOMPARE(priorModelAfter.readAll(), priorBytes);
+    priorModelAfter.close();
+
+    std::atomic_bool runnerCancelled{true};
+    const mikai::backend::WorkCancellationScope cancellationScope(&runnerCancelled);
+    QString runnerCancellationError;
+    QVERIFY(!importCustomAnimeJanaiModel(cancelledSource, nullptr, &runnerCancellationError));
+    QVERIFY(!runnerCancellationError.isEmpty());
+
+    QVERIFY(removeCustomAnimeJanaiModel(imported.id, &error));
+    QVERIFY(!QFileInfo::exists(managedPath));
+
+    QVERIFY(!findCustomAnimeJanaiModel(imported.id).has_value());
+}
+
+void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
+#ifdef Q_OS_WIN
+    QVERIFY(writeRecord(Backend::DirectML, {}, true));
+    QTemporaryDir sourceDir;
+    QVERIFY(sourceDir.isValid());
+    const QByteArray graph = mikai::tests::fixtures::makeTestIdentityOnnxGraph();
+    QString importError;
+    const auto importNamed = [&](const QString& name, CustomAnimeJanaiModel* model) {
+        const QString path = QDir(sourceDir.path()).filePath(name + QStringLiteral(".onnx"));
+        QByteArray uniqueGraph = graph;
+        const QByteArray nameBytes = name.toUtf8();
+        QByteArray metadata;
+        metadata.append(char(0x0a));
+        metadata.append(char(1));
+        metadata.append('k');
+        metadata.append(char(0x12));
+        metadata.append(static_cast<char>(nameBytes.size()));
+        metadata.append(nameBytes);
+        uniqueGraph.append(char(0x72));  // ModelProto.metadata_props
+        uniqueGraph.append(static_cast<char>(metadata.size()));
+        uniqueGraph.append(metadata);
+        if (!writeFile(path, uniqueGraph)) return false;
+        return importCustomAnimeJanaiModel(path, model, &importError) && model->valid;
+    };
+
+    CustomAnimeJanaiModel first;
+    CustomAnimeJanaiModel second;
+    CustomAnimeJanaiModel third;
+    QVERIFY2(importNamed(QStringLiteral("4x_Custom_First"), &first), qPrintable(importError));
+    QVERIFY2(importNamed(QStringLiteral("2x_Custom_Second"), &second), qPrintable(importError));
+    QVERIFY2(importNamed(QStringLiteral("3x_Custom_Third"), &third), qPrintable(importError));
+    QString duplicateError;
+    QVERIFY(!importCustomAnimeJanaiModel(
+        QDir(sourceDir.path()).filePath(QStringLiteral("4x_Custom_First.onnx")),
+        nullptr, &duplicateError));
+    QVERIFY(!duplicateError.isEmpty());
+    const auto originalPin = findCustomAnimeJanaiModel(first.id);
+    QVERIFY(originalPin.has_value());
+    QCOMPARE(originalPin->sha256, first.sha256);
+    const QString presetId = QStringLiteral("spatial:custom:") + first.id;
+    const AnimeJanaiPlan directPlan = prepareAnimeJanaiPlan(presetId, Backend::DirectML);
+    QVERIFY2(directPlan.available, qPrintable(directPlan.reason));
+    const QString stagedFirst =
+        QDir(directPlan.modelDir).filePath(first.sha256 + QStringLiteral(".onnx"));
+    QVERIFY(QFileInfo::exists(stagedFirst));
+
+    QFile priorConfig(directPlan.configPath);
+    QVERIFY(priorConfig.open(QIODevice::ReadOnly));
+    const QByteArray priorConfigBytes = priorConfig.readAll();
+    priorConfig.close();
+
+    QFile registeredGraph(first.filePath);
+    QVERIFY(registeredGraph.open(QIODevice::ReadOnly));
+    const QByteArray registeredBytes = registeredGraph.readAll();
+    registeredGraph.close();
+    QByteArray mutated = registeredBytes;
+    mutated[mutated.size() - 1] ^= 1;
+    QVERIFY(writeFile(first.filePath, mutated));
+    const AnimeJanaiPlan changedPlan = prepareAnimeJanaiPlan(presetId, Backend::DirectML);
+    QVERIFY(!changedPlan.available);
+    QCOMPARE(changedPlan.reasonKey, QStringLiteral("animejanai.model.stage"));
+    QVERIFY(changedPlan.filterSpec.isEmpty());
+    QVERIFY(priorConfig.open(QIODevice::ReadOnly));
+    QCOMPARE(priorConfig.readAll(), priorConfigBytes);
+    priorConfig.close();
+
+    QVERIFY(writeFile(first.filePath, registeredBytes));
+    int cancellationChecks = 0;
+    const AnimeJanaiPlan cancelledPlan = prepareAnimeJanaiPlan(
+        presetId, Backend::DirectML, [&cancellationChecks] { return ++cancellationChecks >= 2; });
+    QVERIFY(!cancelledPlan.available);
+    QVERIFY(cancelledPlan.filterSpec.isEmpty());
+    QVERIFY(priorConfig.open(QIODevice::ReadOnly));
+    QCOMPARE(priorConfig.readAll(), priorConfigBytes);
+    priorConfig.close();
+
+    AnimeJanaiConfig config;
+    AnimeJanaiSlot slot;
+    slot.number = 1;
+    slot.profileName = QStringLiteral("Three custom models");
+    AnimeJanaiChain firstChain;
+    firstChain.number = 1;
+    firstChain.models.append({1, first.fileName, 0, 100});
+    firstChain.models.append({2, second.fileName, 0, 100});
+    AnimeJanaiChain secondChain;
+    secondChain.number = 2;
+    secondChain.maxFps = 24;
+    secondChain.models.append({1, third.fileName, 0, 100});
+    slot.chains = {firstChain, secondChain};
+    config.customSlots.append(slot);
+    QString saveError;
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &saveError), qPrintable(saveError));
+
+    const AnimeJanaiPlan slotPlan =
+        prepareAnimeJanaiPlan(QStringLiteral("builtin_slot:1"), Backend::DirectML);
+    QVERIFY2(slotPlan.available, qPrintable(slotPlan.reason));
+    for (const CustomAnimeJanaiModel* model : {&first, &second, &third}) {
+        QVERIFY(QFileInfo::exists(QDir(slotPlan.modelDir)
+                                      .filePath(model->sha256 + QStringLiteral(".onnx"))));
+    }
+    QFile slotConfig(slotPlan.configPath);
+    QVERIFY(slotConfig.open(QIODevice::ReadOnly));
+    const QByteArray slotBytes = slotConfig.readAll();
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("config_version=3")));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("backend=DirectML")));
+    for (const CustomAnimeJanaiModel* model : {&first, &second}) {
+        QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_") +
+                                   (model == &first ? QByteArrayLiteral("1") : QByteArrayLiteral("2")) +
+                                   QByteArrayLiteral("_name=") + model->sha256.toUtf8()));
+    }
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_2_model_1_name=") +
+                               third.sha256.toUtf8()));
+
+    slot.chains[1].rifeEnabled = true;
+    slot.chains[1].rifeModel = QStringLiteral("RIFE 4.26 Heavy");
+    slot.chains[1].rifeEnsemble = true;
+    config.customSlots[0] = slot;
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &saveError), qPrintable(saveError));
+    const AnimeJanaiPlan missingEnsemble =
+        prepareAnimeJanaiPlan(QStringLiteral("builtin_slot:1"), Backend::DirectML);
+    QVERIFY(!missingEnsemble.available);
+    QCOMPARE(missingEnsemble.reasonKey, QStringLiteral("animejanai.model.pinMissing"));
+
+    QVERIFY(removeCustomAnimeJanaiModel(second.id));
+    QVERIFY(!findCustomAnimeJanaiModel(second.id).has_value());
+#else
+    QSKIP("The AnimeJaNai runtime is Windows-only.");
+#endif
+}
+
+void TestAnimeJanaiRuntime::externalModelsRequireExplicitPinAndRepin() {
+    QTemporaryDir externalDir;
+    QVERIFY(externalDir.isValid());
+    const QString externalPath =
+        QDir(externalDir.path()).filePath(QStringLiteral("External_2x.onnx"));
+    const QByteArray graph = mikai::tests::fixtures::makeTestIdentityOnnxGraph();
+    QVERIFY(writeFile(externalPath, graph));
+
+    AnimeJanaiConfig config;
+    config.externalModelsDir = externalDir.path();
+    QString saveError;
+    QTemporaryDir outsideDir;
+    QVERIFY(outsideDir.isValid());
+    const QString outsidePath =
+        QDir(outsideDir.path()).filePath(QStringLiteral("Outside_2x.onnx"));
+    QVERIFY(writeFile(outsidePath, graph));
+    QString outsideError;
+    QVERIFY(!registerExternalCustomAnimeJanaiModel(
+        outsidePath, nullptr, &outsideError, {}, externalDir.path()));
+    QVERIFY(outsideError.contains(QStringLiteral("inside")));
+    QVERIFY(QFileInfo::exists(outsidePath));
+
+    QString scanError;
+    const QVector<CustomAnimeJanaiModel> candidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path(), &scanError);
+    QVERIFY(scanError.isEmpty());
+    QCOMPARE(candidates.size(), 1);
+    QVERIFY(!candidates.first().valid);
+    QVERIFY(candidates.first().sha256.isEmpty());
+    QVERIFY(!candidates.first().reason.isEmpty());
+
+    CustomAnimeJanaiModel pinned;
+    QString pinError;
+    QVERIFY2(registerExternalCustomAnimeJanaiModel(
+                 externalPath, &pinned, &pinError, {}, externalDir.path()),
+             qPrintable(pinError));
+    QVERIFY(pinned.valid);
+    const auto unsavedDirectoryPin = findCustomAnimeJanaiModel(pinned.id);
+    QVERIFY(unsavedDirectoryPin.has_value());
+    QCOMPARE(unsavedDirectoryPin->sha256, pinned.sha256);
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &saveError), qPrintable(saveError));
+    QVERIFY(QFileInfo::exists(QDir(nativeRoot()).filePath(
+        QStringLiteral("animejanai/models/external-models.json"))));
+    QVERIFY(!QFileInfo::exists(externalPath + QStringLiteral(".source.json")));
+    const auto listed = findCustomAnimeJanaiModel(pinned.id);
+    QVERIFY(listed.has_value());
+    QCOMPARE(listed->sha256, pinned.sha256);
+
+    QByteArray changed = graph;
+    changed[changed.size() - 1] ^= 1;
+    QVERIFY(writeFile(externalPath, changed));
+    const QString changedDigest = sha(changed);
+    QVERIFY(changedDigest != pinned.sha256);
+    const auto unchangedPin = findCustomAnimeJanaiModel(pinned.id);
+    QVERIFY(unchangedPin.has_value());
+    QCOMPARE(unchangedPin->sha256, pinned.sha256);
+
+    const QString previousDigest = listed->sha256;
+    const QString cancelledExternal =
+        QDir(externalDir.path()).filePath(QStringLiteral("Cancelled_2x.onnx"));
+    QVERIFY(writeFile(cancelledExternal, graph));
+    int registrationChecks = 0;
+    QString registrationError;
+    QVERIFY(!registerExternalCustomAnimeJanaiModel(
+        cancelledExternal, nullptr, &registrationError,
+        [&registrationChecks] { return ++registrationChecks >= 2; }));
+    QVERIFY(!registrationError.isEmpty());
+    QVERIFY(QFileInfo::exists(cancelledExternal));
+    QVERIFY(!findCustomAnimeJanaiModel(QStringLiteral("Cancelled_2x")).has_value());
+
+    QVERIFY2(registerExternalCustomAnimeJanaiModel(externalPath, &pinned, &pinError),
+             qPrintable(pinError));
+    QVERIFY(pinned.sha256 != previousDigest);
+    QVERIFY(removeCustomAnimeJanaiModel(pinned.id, &pinError));
+    QVERIFY(QFileInfo::exists(externalPath));
+    QVERIFY(!findCustomAnimeJanaiModel(pinned.id).has_value());
+}
+
+void TestAnimeJanaiRuntime::malformedOnnxModelIsRejected() {
+    QTemporaryDir sourceDir;
+    QVERIFY(sourceDir.isValid());
+    const QString malformedPath =
+        QDir(sourceDir.path()).filePath(QStringLiteral("not-a-graph.onnx"));
+    QVERIFY(writeFile(malformedPath, QByteArray(128, 'x')));
+    qint64 bytes = 0;
+    QString reason;
+    QVERIFY(!validateCustomOnnxFile(malformedPath, &bytes, &reason));
+    QVERIFY(!reason.isEmpty());
+    QCOMPARE(bytes, qint64(0));
+    QString importError;
+    QVERIFY(!importCustomAnimeJanaiModel(malformedPath, nullptr, &importError));
+    QVERIFY(!importError.isEmpty());
+
+    const QString externalModel =
+        QDir(sourceDir.path()).filePath(QStringLiteral("external.onnx"));
+    QVERIFY(writeFile(externalModel, mikai::tests::fixtures::makeTestIdentityOnnxGraph()));
+    QString removalError;
+    QVERIFY(!removeCustomAnimeJanaiModel(externalModel, &removalError));
+    QVERIFY(!removalError.isEmpty());
+    QVERIFY(QFileInfo::exists(externalModel));
+
+    AnimeJanaiSlot unsafeSlot;
+    unsafeSlot.profileName = QStringLiteral("Profile\n[slot_2]");
+    AnimeJanaiChain unsafeChain;
+    unsafeChain.models.append({1, QStringLiteral("../../outside\n[slot_2]"), 0, 100});
+    unsafeSlot.chains.append(unsafeChain);
+    const auto roundTrip = AnimeJanaiConfigStore::parse(
+        AnimeJanaiConfigStore::serializeSlotSection(unsafeSlot));
+    QCOMPARE(roundTrip.customSlots.size(), 1);
+    QCOMPARE(roundTrip.customSlots.first().number, 1);
+}
+
+void TestAnimeJanaiRuntime::invalidConfigFilesReportErrorsWithoutReplacingStoredSettings() {
+    AnimeJanaiConfig config;
+    config.qualitySharp = true;
+    QString error;
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &error), qPrintable(error));
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString missing = QDir(directory.path()).filePath(QStringLiteral("missing.conf"));
+    AnimeJanaiConfigStore::loadFromFile(missing, &error);
+    QVERIFY(!error.isEmpty());
+    QVERIFY(AnimeJanaiConfigStore::load().qualitySharp);
+
+    const QString malformed = QDir(directory.path()).filePath(QStringLiteral("malformed.conf"));
+    QVERIFY(writeFile(malformed, QByteArrayLiteral("<html>Not a configuration</html>")));
+    AnimeJanaiConfigStore::loadFromFile(malformed, &error);
+    QVERIFY(!error.isEmpty());
+    QVERIFY(AnimeJanaiConfigStore::load().qualitySharp);
+
+    const QString defaults = QDir(directory.path()).filePath(QStringLiteral("defaults.conf"));
+    QVERIFY(writeFile(defaults, QByteArrayLiteral("[global]\nconfig_version=3\n")));
+    const auto loaded = AnimeJanaiConfigStore::loadFromFile(defaults, &error);
+    QVERIFY(error.isEmpty());
+    QVERIFY(!loaded.qualitySharp);
+    QVERIFY(AnimeJanaiConfigStore::load().qualitySharp);
+}
+
+void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTrtSettings() {
+    AnimeJanaiConfig config;
+    config.enableLogging = false;
+    config.qualitySharp = true;
+    config.balancedSharp = true;
+    config.performanceSharp = true;
+    config.trtEngineSettings = AnimeJanaiConfigStore::setTrtDynamic(config.trtEngineSettings);
+    config.trtEngineSettings =
+        AnimeJanaiConfigStore::setTrtDynamicMinResolution(config.trtEngineSettings, QStringLiteral("480x480"));
+    config.trtEngineSettings =
+        AnimeJanaiConfigStore::setTrtBuilderOptimizationLevel(config.trtEngineSettings, QStringLiteral("4"));
+
+    QVERIFY(AnimeJanaiConfigStore::trtDynamicSelected(config.trtEngineSettings));
+    QCOMPARE(AnimeJanaiConfigStore::trtDynamicMinResolution(config.trtEngineSettings),
+             QStringLiteral("480x480"));
+    QCOMPARE(AnimeJanaiConfigStore::trtBuilderOptimizationLevel(config.trtEngineSettings),
+             QStringLiteral("4"));
+
+    AnimeJanaiSlot slot;
+    slot.number = 1;
+    slot.profileName = QStringLiteral("Custom 2-Step RealESRGAN");
+    slot.descriptionText = QStringLiteral("Two model steps plus frame interpolation");
+    AnimeJanaiChain chain;
+    chain.number = 1;
+    chain.minResolution = QStringLiteral("1280x720");
+    chain.maxResolution = QStringLiteral("1920x1080");
+    chain.minFps = 0;
+    chain.maxFps = 31;
+    chain.models.append({1, QStringLiteral("2x_Custom_Compact"), 720, 75});
+    chain.models.append({2, QStringLiteral("4x_Custom_Sharp"), 1080, 80});
+    chain.rifeEnabled = true;
+    chain.rifeModel = QStringLiteral("RIFE 4.26");
+    chain.rifeFactorNumerator = 2;
+    chain.rifeFactorDenominator = 1;
+    chain.rifeSceneDetectThreshold = 0.150;
+    chain.rifeEnsemble = true;
+    chain.rifeBeforeUpscale = false;
+    slot.chains.append(chain);
+    AnimeJanaiChain secondChain;
+    secondChain.number = 2;
+    secondChain.minResolution = QStringLiteral("0x0");
+    secondChain.maxResolution = QStringLiteral("1280x720");
+    secondChain.maxFps = 24;
+    secondChain.models.append({1, QStringLiteral("2x_Other_Model"), 0, 100});
+    slot.chains.append(secondChain);
+    config.customSlots.append(slot);
+
+    const QString serialized = AnimeJanaiConfigStore::serialize(config);
+    QVERIFY(serialized.contains(QStringLiteral("config_version=3")));
+    const AnimeJanaiConfig roundTrip = AnimeJanaiConfigStore::parse(serialized);
+    QCOMPARE(roundTrip.enableLogging, config.enableLogging);
+    QCOMPARE(roundTrip.qualitySharp, config.qualitySharp);
+    QCOMPARE(roundTrip.balancedSharp, config.balancedSharp);
+    QCOMPARE(roundTrip.performanceSharp, config.performanceSharp);
+    QCOMPARE(roundTrip.trtEngineSettings, config.trtEngineSettings);
+    QCOMPARE(roundTrip.customSlots.size(), 1);
+    QCOMPARE(roundTrip.customSlots.first().profileName, slot.profileName);
+    QCOMPARE(roundTrip.customSlots.first().descriptionText, slot.descriptionText);
+    QCOMPARE(roundTrip.customSlots.first().chains.size(), 2);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().models.size(), 2);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().models.first().resizeHeightBeforeUpscale, 720);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().models.first().resizeFactorBeforeUpscale, 75);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().minResolution, QStringLiteral("1280x720"));
+    QCOMPARE(roundTrip.customSlots.first().chains.first().maxResolution, QStringLiteral("1920x1080"));
+    QCOMPARE(roundTrip.customSlots.first().chains.first().maxFps, 31);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().rifeModel, QStringLiteral("RIFE 4.26"));
+    QCOMPARE(roundTrip.customSlots.first().chains.first().models.at(1).name,
+             QStringLiteral("4x_Custom_Sharp"));
+    QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnabled);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().rifeFactorNumerator, 2);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().rifeFactorDenominator, 1);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().rifeSceneDetectThreshold, 0.150);
+    QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnsemble);
+    QVERIFY(!roundTrip.customSlots.first().chains.first().rifeBeforeUpscale);
+    QCOMPARE(roundTrip.customSlots.first().chains.at(1).models.first().name,
+             QStringLiteral("2x_Other_Model"));
+    const AnimeJanaiConfig unsafeSlots =
+        AnimeJanaiConfigStore::parse(QStringLiteral("[slot_11]\nprofile_name=Unsafe\nchain_1_model_1_name=../../outside\n"));
+    QVERIFY(unsafeSlots.customSlots.isEmpty());
+
+    QTemporaryDir profileDirectory;
+    QVERIFY(profileDirectory.isValid());
+    const QString profilePath =
+        QDir(profileDirectory.path()).filePath(QStringLiteral("custom.pconf"));
+    QString profileError;
+    QVERIFY2(AnimeJanaiConfigStore::saveProfile(profilePath, slot, &profileError),
+             qPrintable(profileError));
+    bool profileOk = false;
+    const AnimeJanaiSlot profile =
+        AnimeJanaiConfigStore::loadProfile(profilePath, &profileOk, &profileError);
+    QVERIFY2(profileOk, qPrintable(profileError));
+    QCOMPARE(profile, slot);
 }

@@ -41,14 +41,14 @@ class MikaiClient;
 namespace mikai::app {
 
 class Runner;
+class AnimeJanaiManagerPanel;
 class NativeComponentProvisioner;
 class ComponentStoreTab;
 
 /// API key, live quota readout, the home-page feed switches, Anime4K preset
 /// hotkeys, runtime choice and private Native processing preferences, in tabs.
-/// Standard Processing keeps the private Native editor out of view; selecting
-/// Native deliberately exposes its separate recipe and preparation workflow.
-/// Official AnimeJaNai choices remain in the player menu and Components tab.
+/// Standard exposes the AnimeJaNai manager; Native exposes its separate recipe
+/// and preparation workflow.
 ///
 /// Preset and native bindings are only written once every binding validates, so
 /// a reserved, duplicated or cross-space key cannot half-apply. Only native
@@ -356,6 +356,7 @@ private:
     QLabel* recipeRowLabel_ = nullptr;
     QLabel* runtimeModuleRowLabel_ = nullptr;
     QLabel* rifeHeading_ = nullptr;
+    QFrame* animeJanaiManagerCard_ = nullptr;
     QFrame* nativeConfigCard_ = nullptr;
     QFrame* nativeAssetsCard_ = nullptr;
     QFrame* nativeRifeCard_ = nullptr;
@@ -392,6 +393,8 @@ private:
     QLabel* runtimeHint_ = nullptr;
     QLabel* nativeStatus_ = nullptr;
     QLabel* nativeError_ = nullptr;
+
+    AnimeJanaiManagerPanel* animeJanaiPanel_ = nullptr;
 
     /// The assets panel this dialog owns. The preparation providers are
     /// forwarded to it live, so one installed after construction still takes.

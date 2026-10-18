@@ -355,107 +355,461 @@
     </message>
 </context>
 <context>
+    <name>AnimeJanaiConfig</name>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="125"/>
+        <source>The external model registry path is untrusted.</source>
+        <translation>Шлях до реєстру зовнішніх моделей не є довіреним.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="134"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="139"/>
+        <source>The external model registry exceeds the supported metadata size.</source>
+        <translation>Реєстр зовнішніх моделей перевищує допустимий розмір метаданих.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="148"/>
+        <source>The external model registry is malformed.</source>
+        <translation>Реєстр зовнішніх моделей має неправильний формат.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="163"/>
+        <source>The external model registry contains an invalid pin.</source>
+        <translation>Реєстр зовнішніх моделей містить некоректний контрольний запис.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="182"/>
+        <source>The app-owned external model registry directory is unavailable or redirected.</source>
+        <translation>Каталог реєстру зовнішніх моделей у сховищі застосунку недоступний або перенаправлений.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="444"/>
+        <source>The selected ONNX model file does not exist or is a symbolic link.</source>
+        <translation>Вибраний файл моделі ONNX не існує або є символічним посиланням.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="447"/>
+        <source>Only .onnx model files are supported by AnimeJaNai.</source>
+        <translation>AnimeJaNai підтримує лише файли моделей .onnx.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="451"/>
+        <source>The ONNX file size (%1 bytes) is outside the valid bounds.</source>
+        <translation>Розмір файлу ONNX (%1 байт) виходить за допустимі межі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="464"/>
+        <source>ONNX model validation was cancelled.</source>
+        <translation>Перевірку моделі ONNX скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="468"/>
+        <source>The ONNX ModelProto has a malformed protobuf field tag.</source>
+        <translation>ONNX ModelProto містить некоректний тег поля protobuf.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="473"/>
+        <source>The ONNX ModelProto has an invalid protobuf field number.</source>
+        <translation>ONNX ModelProto містить недопустимий номер поля protobuf.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="476"/>
+        <source>The ONNX ModelProto ir_version field has an invalid wire type.</source>
+        <translation>Поле ir_version у ONNX ModelProto має недопустимий тип кодування.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="479"/>
+        <source>The ONNX ModelProto graph field has an invalid wire type.</source>
+        <translation>Поле graph у ONNX ModelProto має недопустимий тип кодування.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="484"/>
+        <source>The ONNX ModelProto has a malformed protobuf varint.</source>
+        <translation>ONNX ModelProto містить некоректне ціле число protobuf varint.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="488"/>
+        <source>The ONNX ModelProto ir_version field is implausible.</source>
+        <translation>Поле ir_version у ONNX ModelProto має неправдоподібне значення.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="495"/>
+        <source>The ONNX ModelProto contains a truncated protobuf field.</source>
+        <translation>ONNX ModelProto містить обрізане поле protobuf.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="501"/>
+        <source>The ONNX ModelProto contains an invalid protobuf field length.</source>
+        <translation>ONNX ModelProto містить недопустиму довжину поля protobuf.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="505"/>
+        <source>The ONNX ModelProto has an empty graph field.</source>
+        <translation>ONNX ModelProto містить порожнє поле graph.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="510"/>
+        <source>The ONNX ModelProto graph field could not be skipped safely.</source>
+        <translation>Не вдалося безпечно пропустити поле graph у ONNX ModelProto.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="513"/>
+        <source>The ONNX ModelProto uses an unsupported protobuf wire type.</source>
+        <translation>ONNX ModelProto використовує непідтримуваний тип кодування protobuf.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="517"/>
+        <source>The file does not contain plausible ONNX ModelProto ir_version and graph fields.</source>
+        <translation>Файл не містить правдоподібних полів ir_version і graph структури ONNX ModelProto.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="627"/>
+        <source>The external model directory is not configured or unavailable.</source>
+        <translation>Каталог зовнішніх моделей не налаштований або недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="659"/>
+        <source>The external model size changed since it was pinned; explicitly refresh its pin.</source>
+        <translation>Розмір зовнішньої моделі змінився після фіксації контрольної суми; оновіть її явно.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="660"/>
+        <source>Pin this external model explicitly before using it.</source>
+        <translation>Перед використанням явно зафіксуйте контрольну суму цієї зовнішньої моделі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="703"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="749"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="756"/>
+        <source>External model registration was cancelled.</source>
+        <translation>Реєстрацію зовнішньої моделі скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="969"/>
+        <source>The custom model integrity record path is untrusted.</source>
+        <translation>Шлях до контрольного запису користувацької моделі не є довіреним.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="975"/>
+        <source>The custom model integrity record is missing or exceeds the supported metadata size.</source>
+        <translation>Контрольний запис користувацької моделі відсутній або перевищує допустимий розмір метаданих.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="980"/>
+        <source>The custom model integrity record exceeds the supported metadata size.</source>
+        <translation>Контрольний запис користувацької моделі перевищує допустимий розмір метаданих.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="716"/>
+        <source>The selected model is not a regular file inside the configured external model directory.</source>
+        <translation>Вибрана модель не є звичайним файлом у налаштованому каталозі зовнішніх моделей.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="726"/>
+        <source>The external ONNX filename cannot be converted into a valid model identifier.</source>
+        <translation>Не вдалося перетворити ім’я зовнішнього файлу ONNX на допустимий ідентифікатор моделі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="731"/>
+        <source>Another custom model already uses the identifier %1.</source>
+        <translation>Інша користувацька модель уже використовує ідентифікатор %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="743"/>
+        <source>Another external model already uses the identifier %1.</source>
+        <translation>Інша зовнішня модель уже використовує ідентифікатор %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="752"/>
+        <source>The external model changed while its integrity pin was being calculated.</source>
+        <translation>Зовнішня модель змінилася під час обчислення контрольної суми.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="792"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="849"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="862"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="874"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="892"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="907"/>
+        <source>Custom model import was cancelled.</source>
+        <translation>Імпорт користувацької моделі скасовано.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="804"/>
+        <source>The selected ONNX filename cannot be converted into a valid model identifier.</source>
+        <translation>Не вдалося перетворити ім’я вибраного файлу ONNX на допустимий ідентифікатор моделі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="817"/>
+        <source>Could not create the custom AnimeJaNai models directory.</source>
+        <translation>Не вдалося створити каталог користувацьких моделей AnimeJaNai.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="814"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="820"/>
+        <source>The custom AnimeJaNai models directory is untrusted or redirected.</source>
+        <translation>Каталог користувацьких моделей AnimeJaNai не є довіреним або перенаправлений.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="710"/>
+        <source>Choose an available external model directory before registering a model.</source>
+        <translation>Перед реєстрацією моделі виберіть доступний каталог зовнішніх моделей.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="826"/>
+        <source>A custom model with this identifier already exists; remove it before importing a replacement.</source>
+        <translation>Користувацька модель із цим ідентифікатором уже існує; перед імпортом заміни видаліть її.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="830"/>
+        <source>Another registered custom model already uses the identifier %1.</source>
+        <translation>Інша зареєстрована користувацька модель уже використовує ідентифікатор %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="867"/>
+        <source>The source ONNX model changed while being imported.</source>
+        <translation>Вихідна модель ONNX змінилася під час імпорту.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="880"/>
+        <source>The imported ONNX model size changed during publication.</source>
+        <translation>Розмір імпортованої моделі ONNX змінився під час публікації.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="901"/>
+        <source>Could not persist the imported model integrity record: %1</source>
+        <translation>Не вдалося зберегти контрольний запис імпортованої моделі: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="928"/>
+        <source>No custom model identifier was specified.</source>
+        <translation>Ідентифікатор користувацької моделі не вказаний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="947"/>
+        <source>The custom model %1 does not exist in the registered stores.</source>
+        <translation>Користувацька модель %1 відсутня в зареєстрованих сховищах.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="961"/>
+        <source>The custom model path is not an app-owned regular file.</source>
+        <translation>Шлях до користувацької моделі не вказує на звичайний файл у сховищі застосунку.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="987"/>
+        <source>The custom model integrity record is invalid.</source>
+        <translation>Контрольний запис користувацької моделі некоректний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="992"/>
+        <source>Could not remove %1.</source>
+        <translation>Не вдалося видалити %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1042"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1050"/>
+        <source>Could not read AnimeJaNai configuration &apos;%1&apos;: %2</source>
+        <translation>Не вдалося прочитати конфігурацію AnimeJaNai «%1»: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1046"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1054"/>
+        <source>The AnimeJaNai configuration exceeds the supported size.</source>
+        <translation>Конфігурація AnimeJaNai перевищує допустимий розмір.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1067"/>
+        <source>The file contains no AnimeJaNai global settings or custom profile slots.</source>
+        <translation>Файл не містить глобальних налаштувань AnimeJaNai або слотів користувацьких профілів.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1212"/>
+        <source>The AnimeJaNai config directory is untrusted or redirected.</source>
+        <translation>Каталог конфігурації AnimeJaNai не є довіреним або перенаправлений.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1216"/>
+        <source>The AnimeJaNai config directory could not be safely created.</source>
+        <translation>Не вдалося безпечно створити каталог конфігурації AnimeJaNai.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1227"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1285"/>
+        <source>Could not create directory for %1.</source>
+        <translation>Не вдалося створити каталог для %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1255"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1261"/>
+        <source>The profile configuration exceeds the supported metadata size.</source>
+        <translation>Конфігурація профілю перевищує допустимий розмір метаданих.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1272"/>
+        <source>The profile configuration does not contain a [slot] section.</source>
+        <translation>Конфігурація профілю не містить розділу [slot].</translation>
+    </message>
+</context>
+<context>
     <name>AnimeJanaiRuntime</name>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="70"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="97"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="251"/>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="364"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="72"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="86"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="92"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="110"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="125"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="141"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="402"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="697"/>
         <source>AnimeJaNai preparation was cancelled.</source>
         <translation>Підготовку AnimeJaNai було скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="72"/>
-        <source>The selected model graph is missing or does not match its compiled content pin.</source>
-        <translation>Вибраний граф моделі відсутній або не збігається із закріпленою контрольною сумою.</translation>
-    </message>
-    <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="77"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="80"/>
         <source>The app-owned AnimeJaNai model directory is unavailable or redirected.</source>
         <translation>Папка моделей AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="82"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="87"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="131"/>
+        <source>The selected model graph does not match its pinned content digest.</source>
+        <translation>Граф вибраної моделі не відповідає зафіксованій контрольній сумі вмісту.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="93"/>
         <source>An existing staged AnimeJaNai graph is corrupt and will not be replaced.</source>
         <translation>Наявний підготовлений граф AnimeJaNai пошкоджено і не може бути замінено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="109"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="136"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="146"/>
         <source>Staged AnimeJaNai graph verification or atomic publication failed.</source>
         <translation>Помилка перевірки або атомарної публікації підготовленого графа AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="170"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="254"/>
         <source>The app-owned AnimeJaNai configuration directory is unavailable or redirected.</source>
         <translation>Папка конфігурації AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="203"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="298"/>
         <source>An AnimeJaNai filter option cannot be represented safely.</source>
         <translation>Параметр фільтра AnimeJaNai не може бути безпечно представлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="227"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="352"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="228"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="353"/>
         <source>Balanced</source>
         <translation>Збалансований</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="229"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="354"/>
         <source>Performance</source>
         <translation>Продуктивність</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="254"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="360"/>
+        <source>Slot %1</source>
+        <translation>Слот %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="405"/>
         <source>The selected AnimeJaNai preset is not recognised.</source>
         <translation>Вибраний пресет AnimeJaNai не розпізнано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="260"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="411"/>
         <source>The selected RIFE graph has no compiled content pin.</source>
         <translation>Вибраний граф RIFE не має закріпленої контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="265"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="416"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="546"/>
         <source>This installed AnimeJaNai runtime does not report support for the selected heavy RIFE model.</source>
         <translation>Це встановлене середовище AnimeJaNai не підтримує вибрану важку (Heavy) модель RIFE.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="286"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="437"/>
         <source>The installed TensorRT closure does not include its verified upstream trtexec executable.</source>
         <translation>Встановлене середовище TensorRT не містить перевіреного виконуваного файлу trtexec.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="300"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="457"/>
+        <source>The selected custom AnimeJaNai profile slot is empty or invalid.</source>
+        <translation>Вибраний слот користувацького профілю AnimeJaNai порожній або некоректний.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="470"/>
+        <source>Chain %1 in custom profile &apos;%2&apos; has no model or RIFE step.</source>
+        <translation>Ланцюжок %1 у користувацькому профілі «%2» не містить моделі або кроку RIFE.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="478"/>
+        <source>Model step %1 in chain %2 of custom profile &apos;%3&apos; has no model.</source>
+        <translation>Крок моделі %1 у ланцюжку %2 користувацького профілю «%3» не містить моделі.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="490"/>
+        <source>A pinned spatial model required by custom profile &apos;%1&apos; is not installed.</source>
+        <translation>Закріплена просторова модель, потрібна користувацькому профілю «%1», не встановлена.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="515"/>
+        <source>Custom profile &apos;%1&apos; references ONNX model &apos;%2&apos;, which is missing or invalid.</source>
+        <translation>Користувацький профіль «%1» посилається на модель ONNX «%2», яка відсутня або некоректна.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="540"/>
+        <source>The RIFE model &apos;%1&apos; in custom profile &apos;%2&apos; has no compiled content pin.</source>
+        <translation>Модель RIFE «%1» у користувацькому профілі «%2» не має вбудованої контрольної суми вмісту.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="601"/>
         <source>A required built-in model is absent from the pinned catalogue.</source>
         <translation>Необхідна вбудована модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="304"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="604"/>
         <source>A model required by the built-in AnimeJaNai profiles is not installed.</source>
         <translation>Модель, потрібна для вбудованих профілів AnimeJaNai, не встановлена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="322"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="553"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="622"/>
         <source>The selected pinned RIFE graph is missing or corrupt.</source>
         <translation>Вибраний закріплений граф RIFE відсутній або пошкоджений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="347"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="75"/>
+        <source>The selected model graph is missing or has an unexpected size.</source>
+        <translation>Граф вибраної моделі відсутній або має неочікуваний розмір.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="653"/>
+        <source>The selected custom ONNX model is not registered.</source>
+        <translation>Вибрана користувацька модель ONNX не зареєстрована.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="659"/>
+        <source>The selected custom ONNX model is missing or failed integrity verification.</source>
+        <translation>Вибрана користувацька модель ONNX відсутня або не пройшла перевірку цілісності.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="678"/>
         <source>The selected spatial model is not in the pinned catalogue.</source>
         <translation>Вибрана просторова модель відсутня в закріпленому каталозі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="351"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="682"/>
         <source>The selected spatial model is not installed.</source>
         <translation>Вибрану просторову модель не встановлено.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="373"/>
+        <location filename="../src/player/native/components/AnimeJanaiRuntime.cpp" line="706"/>
         <source>The app-owned AnimeJaNai stats directory is unavailable or redirected.</source>
         <translation>Папка статистики AnimeJaNai недоступна або перенаправлена.</translation>
     </message>
@@ -1745,6 +2099,16 @@
         <source>unknown Windows error</source>
         <translation>невідома помилка Windows</translation>
     </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="242"/>
+        <source>Standard (V3.1)</source>
+        <translation>Стандартний (V3.1)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="243"/>
+        <source>Sharp (V3.1Sharp1)</source>
+        <translation>Чіткий (V3.1Sharp1)</translation>
+    </message>
 </context>
 <context>
     <name>Runner</name>
@@ -1938,6 +2302,616 @@
         <location filename="../src/app/pages/TitlePagePlayerSession.cpp" line="476"/>
         <source>This player has no video any more.</source>
         <translation>У цьому плеєрі більше немає відео.</translation>
+    </message>
+</context>
+<context>
+    <name>mikai::app::AnimeJanaiManagerPanel</name>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="151"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1610"/>
+        <source>Custom RealESRGAN / ONNX spatial models</source>
+        <translation>Користувацькі просторові моделі RealESRGAN / ONNX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="160"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1612"/>
+        <source>Import compatible RealESRGAN, Compact (SRVGGNet), SPAN, DAT, or SwinIR .onnx graph (4D 1x3xHxW RGB). Imported models appear immediately in the player&apos;s ANIMEJANAI -&gt; Spatial models menu, Compare window, Benchmark tab, and custom profile chains.</source>
+        <translation>Імпортуйте сумісний граф .onnx RealESRGAN, Compact (SRVGGNet), SPAN, DAT або SwinIR (4D 1x3xHxW RGB). Імпортовані моделі одразу з’являються в меню програвача ANIMEJANAI -&gt; Просторові моделі, вікні порівняння, вкладці бенчмарку та ланцюжках користувацьких профілів.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="185"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1617"/>
+        <source>Import .onnx Model…</source>
+        <translation>Імпортувати модель .onnx…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="189"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1618"/>
+        <source>Remove Selected</source>
+        <translation>Видалити вибране</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="192"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1619"/>
+        <source>Open Models Folder</source>
+        <translation>Відкрити папку моделей</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="206"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1622"/>
+        <source>Optional external directory containing additional .onnx models…</source>
+        <translation>Необов’язковий зовнішній каталог із додатковими моделями .onnx…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="208"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1620"/>
+        <source>External models folder</source>
+        <translation>Папка зовнішніх моделей</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="209"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1623"/>
+        <source>Browse…</source>
+        <translation>Огляд…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="211"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1624"/>
+        <source>Clear</source>
+        <translation>Очистити</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="228"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1626"/>
+        <source>Built-in preset variants &amp; TensorRT engine settings</source>
+        <translation>Варіанти вбудованих пресетів і налаштування рушія TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="233"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1628"/>
+        <source>Switch built-in Quality, Balanced, and Performance profiles between Standard (V3.1) and Sharp (V3.1Sharp1) models, and customize how TensorRT compiles ONNX graphs.</source>
+        <translation>Перемикайте вбудовані профілі якості, балансу та швидкодії між моделями Standard (V3.1) і Sharp (V3.1Sharp1) та налаштовуйте компіляцію графів ONNX у TensorRT.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="254"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1630"/>
+        <source>Quality preset (Slot 1001)</source>
+        <translation>Пресет якості (слот 1001)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="257"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1631"/>
+        <source>Balanced preset (Slot 1002)</source>
+        <translation>Пресет балансу (слот 1002)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="260"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1632"/>
+        <source>Performance preset (Slot 1003)</source>
+        <translation>Пресет швидкодії (слот 1003)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="284"/>
+        <source>Static (Match Video Resolution)</source>
+        <translation>Статичний (за роздільністю відео)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="285"/>
+        <source>Static ONNX (Fixed Input Shape)</source>
+        <translation>Статичний ONNX (фіксована форма входу)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="286"/>
+        <source>Dynamic (Min / Opt / Max Shapes)</source>
+        <translation>Динамічний (мін. / опт. / макс. форми)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="287"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1634"/>
+        <source>TensorRT engine type</source>
+        <translation>Тип рушія TensorRT</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="293"/>
+        <source>0</source>
+        <translation>0</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="294"/>
+        <source>1</source>
+        <translation>1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="295"/>
+        <source>2</source>
+        <translation>2</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="296"/>
+        <source>3 (TensorRT Default)</source>
+        <translation>3 (типово для TensorRT)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="297"/>
+        <source>4</source>
+        <translation>4</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="298"/>
+        <source>5 (Maximum Optimization)</source>
+        <translation>5 (максимальна оптимізація)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="300"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1635"/>
+        <source>Builder optimization level</source>
+        <translation>Рівень оптимізації збирача</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="323"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1636"/>
+        <source>Dynamic minimum resolution</source>
+        <translation>Мінімальна динамічна роздільність</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="331"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1637"/>
+        <source>Dynamic optimal resolution</source>
+        <translation>Оптимальна динамічна роздільність</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="339"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1638"/>
+        <source>Dynamic maximum resolution</source>
+        <translation>Максимальна динамічна роздільність</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="356"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1639"/>
+        <source>trtexec engine arguments</source>
+        <translation>Аргументи рушія trtexec</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="362"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1640"/>
+        <source>Import animejanai.conf…</source>
+        <translation>Імпортувати animejanai.conf…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="364"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1641"/>
+        <source>Export animejanai.conf…</source>
+        <translation>Експортувати animejanai.conf…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="366"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1642"/>
+        <source>Reset Defaults</source>
+        <translation>Відновити типові значення</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="380"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1644"/>
+        <source>Custom multi-chain profile editor (Slots 1–10)</source>
+        <translation>Редактор багатоланцюжкових профілів (слоти 1–10)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="385"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1646"/>
+        <source>Build custom AnimeJaNai profile slots with resolution/FPS activation conditions, chained ONNX upscalers, pre-upscale downscaling, and per-chain RIFE interpolation. Active custom slots appear in the player&apos;s ANIMEJANAI menu.</source>
+        <translation>Створюйте користувацькі профілі AnimeJaNai з умовами активації за роздільністю та FPS, послідовними моделями ONNX, попереднім зменшенням роздільності й інтерполяцією RIFE для кожного ланцюжка. Активні користувацькі слоти з’являються в меню програвача ANIMEJANAI.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="398"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1649"/>
+        <source>Profile slot</source>
+        <translation>Слот профілю</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="404"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1650"/>
+        <source>Activate / Reset Slot</source>
+        <translation>Активувати / скинути слот</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="406"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1651"/>
+        <source>Clone From…</source>
+        <translation>Клонувати з…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="408"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1652"/>
+        <source>Clear Slot</source>
+        <translation>Очистити слот</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="410"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1653"/>
+        <source>Import .pconf…</source>
+        <translation>Імпортувати .pconf…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="412"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1654"/>
+        <source>Export .pconf…</source>
+        <translation>Експортувати .pconf…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="435"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1655"/>
+        <source>Profile name</source>
+        <translation>Назва профілю</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="446"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1656"/>
+        <source>Active chain</source>
+        <translation>Активний ланцюжок</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="447"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1657"/>
+        <source>Add Chain</source>
+        <translation>Додати ланцюжок</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="449"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1658"/>
+        <source>Remove Chain</source>
+        <translation>Видалити ланцюжок</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="451"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1659"/>
+        <source>Move Up</source>
+        <translation>Перемістити вгору</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="453"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1660"/>
+        <source>Move Down</source>
+        <translation>Перемістити вниз</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="473"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1661"/>
+        <source>Min resolution (WxH)</source>
+        <translation>Мін. роздільність (ШxВ)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="478"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1662"/>
+        <source>Max resolution (WxH)</source>
+        <translation>Макс. роздільність (ШxВ)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="482"/>
+        <source>0 (Any)</source>
+        <translation>0 (будь-який)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="484"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1663"/>
+        <source>Min FPS</source>
+        <translation>Мін. FPS</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="488"/>
+        <source>0 (Unbounded)</source>
+        <translation>0 (без обмежень)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="490"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1664"/>
+        <source>Max FPS</source>
+        <translation>Макс. FPS</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="506"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1665"/>
+        <source>Upscaling model steps in this chain</source>
+        <translation>Кроки моделей масштабування в цьому ланцюжку</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="508"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1666"/>
+        <source>Add Model Step</source>
+        <translation>Додати крок моделі</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="537"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1668"/>
+        <source>Chain RIFE model</source>
+        <translation>Модель RIFE ланцюжка</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="555"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1669"/>
+        <source>Interpolation FPS factor</source>
+        <translation>Множник FPS інтерполяції</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="563"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1670"/>
+        <source>Scene change threshold</source>
+        <translation>Поріг зміни сцени</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="565"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1671"/>
+        <source>RIFE ensemble</source>
+        <translation>Ансамбль RIFE</translation>
+    </message>
+    <message>
+        <source>Backend logging</source>
+        <translation>Журналювання бекенду</translation>
+    </message>
+    <message>
+        <source>RIFE interpolation</source>
+        <translation>Інтерполяція RIFE</translation>
+    </message>
+    <message>
+        <source>RIFE before upscaling</source>
+        <translation>RIFE перед масштабуванням</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="720"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="909"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1426"/>
+        <source>Slot %1: %2</source>
+        <translation>Слот %1: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="721"/>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="907"/>
+        <source>Custom Profile</source>
+        <translation>Користувацький профіль</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="857"/>
+        <source>External — select and Import to register</source>
+        <translation>Зовнішня — виберіть та імпортуйте для реєстрації</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="858"/>
+        <source>Ready</source>
+        <translation>Готово</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="859"/>
+        <source>Invalid: %1</source>
+        <translation>Некоректно: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="862"/>
+        <source>%1 custom</source>
+        <translation>%1 користувацьких</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="911"/>
+        <source>Slot %1 (Unassigned)</source>
+        <translation>Слот %1 (не призначений)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="955"/>
+        <source>Chain %1 (%2 -&gt; %3)</source>
+        <translation>Ланцюжок %1 (%2 -&gt; %3)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="958"/>
+        <source>inf</source>
+        <translation>∞</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1044"/>
+        <source>Model %1</source>
+        <translation>Модель %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1052"/>
+        <source>(None)</source>
+        <translation>(Немає)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1066"/>
+        <source>Pre-resize H (px):</source>
+        <translation>Висота до масштабування (пкс):</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1070"/>
+        <source>0 (Off)</source>
+        <translation>0 (вимк.)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1074"/>
+        <source>Pre-resize %:</source>
+        <translation>Попередній розмір (%):</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1083"/>
+        <source>Remove</source>
+        <translation>Видалити</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1126"/>
+        <source>Slot %1</source>
+        <translation>Слот %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1172"/>
+        <source>External model registration is unavailable.</source>
+        <translation>Реєстрація зовнішніх моделей недоступна.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1179"/>
+        <source>Registering external ONNX model…</source>
+        <translation>Реєстрація зовнішньої моделі ONNX…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1199"/>
+        <source>External ONNX model registered.</source>
+        <translation>Зовнішню модель ONNX зареєстровано.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1210"/>
+        <source>Import RealESRGAN / ONNX Spatial Models</source>
+        <translation>Імпорт просторових моделей RealESRGAN / ONNX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1211"/>
+        <source>ONNX Models (*.onnx)</source>
+        <translation>Моделі ONNX (*.onnx)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1214"/>
+        <source>Model import is unavailable.</source>
+        <translation>Імпорт моделей недоступний.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1223"/>
+        <source>Importing ONNX models…</source>
+        <translation>Імпортування моделей ONNX…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1229"/>
+        <source>Importing ONNX model…</source>
+        <translation>Імпортування моделі ONNX…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1253"/>
+        <source>Imported %1 custom ONNX model(s).</source>
+        <translation>Імпортовано користувацьких моделей ONNX: %1.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1275"/>
+        <source>Removing custom ONNX model…</source>
+        <translation>Видалення користувацької моделі ONNX…</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1292"/>
+        <source>Removed custom ONNX model &apos;%1&apos;.</source>
+        <translation>Користувацьку модель ONNX «%1» видалено.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1305"/>
+        <source>Could not open the custom models folder.</source>
+        <translation>Не вдалося відкрити папку користувацьких моделей.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1312"/>
+        <source>Select External ONNX Models Directory</source>
+        <translation>Вибір каталогу зовнішніх моделей ONNX</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1330"/>
+        <source>Import animejanai.conf</source>
+        <translation>Імпорт animejanai.conf</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1331"/>
+        <source>AnimeJaNai Config (*.conf *.ini);;All Files (*)</source>
+        <translation>Конфігурація AnimeJaNai (*.conf *.ini);;Усі файли (*)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1342"/>
+        <source>Imported configuration from &apos;%1&apos;.</source>
+        <translation>Імпортовано конфігурацію з «%1».</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1349"/>
+        <source>Export animejanai.conf</source>
+        <translation>Експорт animejanai.conf</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1350"/>
+        <source>AnimeJaNai Config (*.conf *.ini)</source>
+        <translation>Конфігурація AnimeJaNai (*.conf *.ini)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1357"/>
+        <source>Exported configuration to &apos;%1&apos;.</source>
+        <translation>Конфігурацію експортовано до «%1».</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1365"/>
+        <source>Reset AnimeJaNai settings and custom slots to defaults.</source>
+        <translation>Налаштування AnimeJaNai та користувацькі слоти скинуто до типових значень.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1373"/>
+        <source>Custom Slot %1</source>
+        <translation>Користувацький слот %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1404"/>
+        <source>Built-in: %1</source>
+        <translation>Вбудований: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1408"/>
+        <source>%1 (Copy)</source>
+        <translation>%1 (копія)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1431"/>
+        <source>%1 (Slot %2)</source>
+        <translation>%1 (слот %2)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1461"/>
+        <source>Import Profile (.pconf)</source>
+        <translation>Імпорт профілю (.pconf)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1462"/>
+        <source>AnimeJaNai Profile (*.pconf *.conf);;All Files (*)</source>
+        <translation>Профіль AnimeJaNai (*.pconf *.conf);;Усі файли (*)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1488"/>
+        <source>Imported profile &apos;%1&apos; into Slot %2.</source>
+        <translation>Профіль «%1» імпортовано до слота %2.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1500"/>
+        <source>Export Profile (.pconf)</source>
+        <translation>Експорт профілю (.pconf)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1501"/>
+        <source>AnimeJaNai Profile (*.pconf)</source>
+        <translation>Профіль AnimeJaNai (*.pconf)</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1508"/>
+        <source>Exported Slot %1 to &apos;%2&apos;.</source>
+        <translation>Слот %1 експортовано до «%2».</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1616"/>
+        <source>Model</source>
+        <translation>Модель</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1616"/>
+        <source>Architecture</source>
+        <translation>Архітектура</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1616"/>
+        <source>Scale</source>
+        <translation>Масштаб</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1616"/>
+        <source>Size</source>
+        <translation>Розмір</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/AnimeJanaiManagerPanel.cpp" line="1616"/>
+        <source>Status</source>
+        <translation>Стан</translation>
     </message>
 </context>
 <context>
@@ -3822,8 +4796,8 @@ This removes only work a cancelled or crashed build left behind; a proven artifa
 <context>
     <name>mikai::app::SettingsDialog</name>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="100"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="289"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="101"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="290"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="107"/>
         <location filename="../src/app/dialogs/settings/SettingsBenchmarkTab.cpp" line="630"/>
         <source>Benchmark</source>
@@ -3906,14 +4880,14 @@ Active: %1 · queued: %2</source>
         <translation>Застосовується миттєво до відкритих вікон, включно з активним плеєром.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="122"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="428"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="132"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="440"/>
         <source>Backend</source>
         <translation>Бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="117"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="292"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="118"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="293"/>
         <source>Cancel</source>
         <translation>Скасувати</translation>
     </message>
@@ -3923,8 +4897,8 @@ Active: %1 · queued: %2</source>
         <translation>Перевірка токена…</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="99"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="287"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="100"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="288"/>
         <source>Components</source>
         <translation>Компоненти</translation>
     </message>
@@ -3963,8 +4937,8 @@ Active: %1 · queued: %2</source>
         <translation>Виберіть поле та натисніть клавішу або комбінацію з Ctrl, Alt чи Shift. Кнопка × очищає прив’язку. Комбінацію можна призначити лише одному пресету; вбудовані клавіші плеєра зарезервовані.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="96"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="281"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="97"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="282"/>
         <source>General</source>
         <translation>Загальні</translation>
     </message>
@@ -4011,60 +4985,72 @@ Active: %1 · queued: %2</source>
         <translation>Токен доступу Mikai API</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="86"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="453"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="87"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="465"/>
         <source>Native</source>
         <translation>Нативний</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="109"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="432"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="106"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="470"/>
+        <source>AnimeJaNai model and profile manager</source>
+        <translation>Менеджер моделей і профілів AnimeJaNai</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="119"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="444"/>
         <source>Native backend</source>
         <translation>Нативний бекенд</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="176"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="458"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="186"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="474"/>
         <source>Native model assets</source>
         <translation>Нативні моделі та артефакти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="447"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="459"/>
         <source>Native processing availability</source>
         <translation>Доступність нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="151"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="161"/>
         <source>Native processing status</source>
         <translation>Стан нативної обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="126"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="433"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="46"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="438"/>
+        <source>Standard manages official AnimeJaNai models and profiles. Select Native to configure the separate private Native workflow.</source>
+        <translation>Standard керує офіційними моделями та профілями AnimeJaNai. Виберіть Native для налаштування окремого приватного робочого процесу Native.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="136"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="445"/>
         <source>Native recipe</source>
         <translation>Нативний рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="403"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="445"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="415"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="457"/>
         <source>No native recipe is available in this build.</source>
         <translation>У цій збірці немає доступних нативних рецептів.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="208"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="189"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="209"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="199"/>
         <source>No source-presence path is wired, so there is no live video to prepare for.</source>
         <translation>Джерело відтворення не підключено, тому немає активного відео для підготовки.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="386"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="442"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="398"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="454"/>
         <source>None (original pipeline)</source>
         <translation>Немає (оригінальний конвеєр)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="97"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="283"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="98"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="284"/>
         <source>Presets</source>
         <translation>Пресети</translation>
     </message>
@@ -4075,51 +5061,51 @@ Active: %1 · queued: %2</source>
         <translation>Натисніть клавішу</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="98"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="285"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="99"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="286"/>
         <source>Processing</source>
         <translation>Обробка</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="44"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="424"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="45"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="436"/>
         <source>Processing runtime</source>
         <translation>Середовище обробки</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="231"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="237"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="456"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="461"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="241"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="247"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="468"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="477"/>
         <source>RIFE interpolation</source>
         <translation>Інтерполяція RIFE</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="133"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="429"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="143"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="441"/>
         <source>Recipe</source>
         <translation>Рецепт</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="94"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="430"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="95"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="442"/>
         <source>Runtime module</source>
         <translation>Модуль середовища</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="373"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="385"/>
         <source>Runtime will change to %1 after restarting Mikai.</source>
         <translation>Модуль середовища зміниться на %1 після перезапуску Mikai.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="119"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="293"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="120"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="294"/>
         <source>Save</source>
         <translation>Зберегти</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="43"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="277"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="44"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="278"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
@@ -4130,16 +5116,10 @@ Active: %1 · queued: %2</source>
         <translation>Комбінація клавіш для %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="84"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="452"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="85"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="464"/>
         <source>Standard</source>
         <translation>Стандартний</translation>
-    </message>
-    <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="45"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="426"/>
-        <source>Standard uses official AnimeJaNai choices from the player menu and Components. Select Native to configure the separate private Native workflow.</source>
-        <translation>Стандартний режим використовує офіційні профілі AnimeJaNai з меню плеєра та вкладки «Компоненти». Виберіть «Нативний», щоб налаштувати окремий конвеєр.</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="111"/>
@@ -4148,22 +5128,27 @@ Active: %1 · queued: %2</source>
         <translation>Перевірити</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="442"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="457"/>
         <source>The %1 interface could not be applied, so the language was left unchanged.</source>
         <translation>Не вдалося застосувати інтерфейс (%1), тому мову залишено без змін.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="374"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="375"/>
         <source>The API key could not be saved, so it was left unchanged: %1</source>
         <translation>Не вдалося зберегти ключ API, тому його залишено без змін: %1</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="415"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="406"/>
+        <source>The AnimeJaNai configuration could not be saved.</source>
+        <translation>Не вдалося зберегти конфігурацію AnimeJaNai.</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="430"/>
         <source>The native preferences could not be saved.</source>
         <translation>Не вдалося зберегти нативні налаштування.</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="427"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="442"/>
         <source>The runtime choice could not be saved.</source>
         <translation>Не вдалося зберегти вибір середовища виконання.</translation>
     </message>
@@ -4174,7 +5159,7 @@ Active: %1 · queued: %2</source>
         <translation>Українська</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="313"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="325"/>
         <source>Unavailable: %1</source>
         <translation>Недоступно: %1</translation>
     </message>
@@ -4196,13 +5181,13 @@ Active: %1 · queued: %2</source>
         <translation>mk_... (залиште порожнім для анонімного доступу)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="82"/>
-        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="454"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="83"/>
+        <location filename="../src/app/dialogs/settings/SettingsProcessingTab.cpp" line="466"/>
         <source>mpv runtime</source>
         <translation>Середовище mpv</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="376"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="377"/>
         <source>the key file could not be written</source>
         <translation>не вдалося записати файл ключа</translation>
     </message>

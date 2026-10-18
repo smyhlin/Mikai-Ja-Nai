@@ -23,7 +23,14 @@ class TestAnimeJanaiRuntime : public QObject {
   void cancelledReplacementPreservesPriorInstall();
   void unsupportedDispatcherIsNotReady();
   void unknownModelAndDefaultPlanRemainPure();
+  void customOnnxImportIsAtomicAndRemovable();
+  void customModelsPrepareAndStagePinnedContent();
+  void externalModelsRequireExplicitPinAndRepin();
+  void malformedOnnxModelIsRejected();
+  void managerConfigParsesAndSerializesMultiChainSlotsAndTrtSettings();
+  void invalidConfigFilesReportErrorsWithoutReplacingStoredSettings();
 
  private:
   bool ownsFixture_ = false;
+  bool ownsAnimeJanai_ = false;
 };

@@ -1,6 +1,7 @@
 #include "dialogs/SettingsDialog.hpp"
 
 #include "I18n.hpp"
+#include "dialogs/AnimeJanaiManagerPanel.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
 #include "state/Feeds.hpp"
@@ -397,6 +398,20 @@ void SettingsDialog::save() {
         }
     }
     settings.endGroup();
+
+    if (animeJanaiPanel_ != nullptr && animeJanaiPanel_->isDirty()) {
+        QString ajiReason;
+        if (!animeJanaiPanel_->saveConfig(&ajiReason)) {
+            showNativeError(ajiReason.isEmpty()
+                                ? tr("The AnimeJaNai configuration could not be saved.")
+                                : ajiReason);
+            if (processingScroll_ != nullptr) {
+                processingScroll_->ensureWidgetVisible(nativeError_);
+            }
+            return;
+        }
+        refreshBenchmarkCatalogue();
+    }
 
     mplayer::native::NativePreferencePatch patch;
     const mplayer::native::Backend chosenBackend =

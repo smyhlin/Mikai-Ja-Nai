@@ -102,6 +102,8 @@ add_library(mikai_native_support STATIC
   src/player/native/components/AnimeJanaiInstallation.cpp
   src/player/native/components/AnimeJanaiRuntime.cpp
   src/player/native/components/AnimeJanaiRuntime.hpp
+  src/player/native/components/AnimeJanaiConfig.cpp
+  src/player/native/components/AnimeJanaiConfig.hpp
   src/player/native/components/NativeComponentCatalog.cpp
   src/player/native/components/NativeComponentCatalog.hpp
   src/player/native/components/NativeComponentProvisioning.cpp
@@ -298,6 +300,7 @@ set(APP_SOURCES
   src/app/dialogs/NativeAssetsPanelWorkflow.cpp
   src/app/dialogs/NativeRifeControls.cpp
   src/app/dialogs/SettingsDialog.cpp
+  src/app/dialogs/AnimeJanaiManagerPanel.cpp
   src/app/dialogs/settings/BenchmarkPlayback.cpp
   src/app/dialogs/settings/SettingsBenchmarkTab.cpp
   src/app/dialogs/settings/SettingsComponentsTab.cpp
@@ -337,6 +340,7 @@ set(APP_HEADERS
   src/app/dialogs/NativeAssetsPanel.hpp
   src/app/dialogs/NativeRifeControls.hpp
   src/app/dialogs/SettingsDialog.hpp
+  src/app/dialogs/AnimeJanaiManagerPanel.hpp
   src/app/dialogs/settings/BenchmarkPlayback.hpp
   src/app/dialogs/settings/SettingsHelpers.hpp
   src/app/dialogs/settings/SettingsUi.hpp

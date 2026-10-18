@@ -6,6 +6,7 @@
 
 #include <functional>
 
+#include "native/components/AnimeJanaiConfig.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
 #include "native/status/NativeTypes.hpp"
 

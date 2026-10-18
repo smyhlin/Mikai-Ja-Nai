@@ -1,5 +1,6 @@
 #include "dialogs/SettingsDialog.hpp"
 
+#include "dialogs/AnimeJanaiManagerPanel.hpp"
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
 #include "theme/Colors.hpp"
@@ -42,7 +43,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
     // ── Editorial Page Header Card ───────────────────────────────────────────
     QFrame* pageHeader = makeSettingsPageHeader(
         page, &nativeHeading_, &nativeDescription_, tr("Processing runtime"),
-        tr("Standard uses official AnimeJaNai choices from the player menu and Components. "
+        tr("Standard manages official AnimeJaNai models and profiles. "
            "Select Native to configure the separate private Native workflow."));
     root->addWidget(pageHeader);
 
@@ -98,6 +99,15 @@ QWidget* SettingsDialog::buildProcessingTab() {
     runtimeLayout->addWidget(runtimeHint_);
 
     root->addWidget(runtimeCard);
+
+    QVBoxLayout* ajiLayout = nullptr;
+    animeJanaiManagerCard_ = makeSettingsCard(page, &ajiLayout);
+    animeJanaiPanel_ = new AnimeJanaiManagerPanel(animeJanaiManagerCard_, &runner_);
+    animeJanaiPanel_->setAccessibleName(tr("AnimeJaNai model and profile manager"));
+    connect(animeJanaiPanel_, &AnimeJanaiManagerPanel::modelsChanged, this,
+            &SettingsDialog::refreshBenchmarkCatalogue);
+    ajiLayout->addWidget(animeJanaiPanel_);
+    root->addWidget(animeJanaiManagerCard_);
 
     // ── Card 2: Private Native Backend & Recipe Selection ────────────────────
     QVBoxLayout* nativeConfigLayout = nullptr;
@@ -254,6 +264,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
         runtimeChoice_->currentData().toInt() ==
             static_cast<int>(mplayer::native::RuntimeChoice::Native) ||
         mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
+    animeJanaiManagerCard_->setVisible(!showPrivateWorkflow);
     for (QWidget* widget : std::initializer_list<QWidget*>{
              nativeConfigCard_, nativeAssetsCard_, nativeRifeCard_,
              nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
@@ -271,6 +282,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
             mplayer::native::restartRequiredFor(mplayer::native::RuntimeChoice::Standard);
         const bool assetsWereRefreshed =
             assetsPanel_ != nullptr && assetsPanel_->hasRefreshed();
+        animeJanaiManagerCard_->setVisible(!showPrivateWorkflow);
         for (QWidget* widget : std::initializer_list<QWidget*>{
                  nativeConfigCard_, nativeAssetsCard_, nativeRifeCard_,
                  nativeBackend_, nativeRecipe_, backendRowLabel_, recipeRowLabel_,
@@ -423,7 +435,7 @@ void SettingsDialog::applyRequestedRecipe(const QString& recipeId) {
 void SettingsDialog::retranslateProcessingTab() {
     nativeHeading_->setText(tr("Processing runtime"));
     nativeDescription_->setText(
-        tr("Standard uses official AnimeJaNai choices from the player menu and Components. "
+        tr("Standard manages official AnimeJaNai models and profiles. "
            "Select Native to configure the separate private Native workflow."));
     backendRowLabel_->setText(tr("Backend"));
     recipeRowLabel_->setText(tr("Recipe"));
@@ -454,6 +466,10 @@ void SettingsDialog::retranslateProcessingTab() {
     runtimeChoice_->setAccessibleName(tr("mpv runtime"));
 
     rifeHeading_->setText(tr("RIFE interpolation"));
+    if (animeJanaiPanel_ != nullptr) {
+        animeJanaiPanel_->setAccessibleName(tr("AnimeJaNai model and profile manager"));
+        animeJanaiPanel_->retranslateUi();
+    }
     if (assetsPanel_ != nullptr) {
         assetsPanel_->setAccessibleName(tr("Native model assets"));
     }
