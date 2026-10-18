@@ -1,11 +1,13 @@
-# Hermetic media and HTTP/HLS fixtures (M02)
+# Hermetic media, HTTP/HLS and AJI fixtures
 
-Everything a later playback, HLS, preparation or failure-recovery proof needs,
-with **no network, no CDN and no API key**. The assets are generated from
-ffmpeg's own `lavfi` sources, so they are project-owned and licence-clean: no
-third-party footage is downloaded, copied or re-encoded.
+Project-owned fixtures for playback, HLS, model/configuration preparation and
+failure recovery, with **no outbound network, CDN or API key** required.
+The media assets are generated from ffmpeg's own `lavfi` sources; no
+third-party footage is downloaded, copied or re-encoded. The AJI fixtures below
+are source-generated ONNX bytes and a test-only dispatcher, not production
+models or inference binaries.
 
-- `generate_media.cmd` — reproduces every asset from scratch.
+- `generate_media.cmd` — reproduces the media/HLS assets from scratch.
 - `media/` — the clip matrix (10 HEVC MP4s).
 - `hls/` — three real HLS renditions with real MPEG-TS segments.
 - `http_fixture.cpp` — the loopback fixture server (CMake target `mikai_http_fixture`).
@@ -177,7 +179,43 @@ legitimately sends a multi-entry `Accept-Language` while mpv's
 `http-header-fields` option requires the single comma-free form — enforcing both
 would make the fixture unusable by one of the two real clients.
 
-## What is verified vs. what is not
+## AJI test fixtures and custom-model coverage
+
+`IdentityOnnxFixture.hpp` constructs a genuine serialized ONNX `ModelProto` in
+memory: a single `Identity` node (`X` → `Y`), FLOAT tensors with fixed shape
+`[1, 3, 4, 4]`, IR version 8 and default-domain opset 19. It is intentionally a
+tiny parser/staging fixture, not a useful upscaler or representative model.
+The Windows-only `aji_dispatcher_fixture.cpp` exports the C ABI symbols
+`aji_api_version()` (8) and `aji_rife_heavy_supported()` (1); it lets the
+runtime tests exercise ABI-export-dependent setup without a production
+dispatcher. On non-Windows the dispatcher target is not built, and the
+custom-model staging test is skipped.
+
+`TestAnimeJanaiRuntime` covers metadata/import identity, duplicate rejection,
+content hashing, planner availability and staging of SHA-pinned ONNX bytes,
+profile serialization with ordered model steps/chains, and refusal after
+registered content changes or cancellation. These tests exercise validation
+and file/config preparation; **they do not execute ONNX tensors, establish
+operator compatibility, validate scale/architecture hints, build TensorRT
+engines, run DirectML/TensorRT inference, or measure playback/throughput**.
+A valid ONNX header/container and the tiny Identity graph are not evidence that
+an arbitrary imported graph works on a native backend.
+
+The test suite is isolated by the CTest launcher and uses its disposable run
+directory, but native runtime/model paths still follow the executable-local
+native root. Keep the test executable and its runtime DLL environment
+consistent with the configured launcher (`PATH` includes the Qt binary
+directory, and the Qt plugin directory and mpv DLL are passed explicitly).
+For focused test work, build `mikai_tests` and invoke the configured launcher
+with one suite name as its optional trailing argument. The launcher
+supplies the required shaders, mpv DLL, Qt runtime/plugins and disposable
+scratch parent. See the [safe PowerShell invocation](../../AGENTS.md#running-individual-test-suites). Test startup refuses an existing populated or unsafe adjacent
+native tree; isolation does not make arbitrary manually launched binaries safe.
+
+## Recorded media/server verification
+
+The following observations record the earlier media/server fixture validation;
+they are not a claim that those probes were rerun for the AJI manager change.
 
 **The media assets are verified** — measured from the encoded files themselves,
 not assumed: every clip's codec, depth, geometry, frame rate, duration, audio and

@@ -15,6 +15,7 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
 - **Real-Time Video Enhancement Pipelines:**
   - **Anime4K GLSL Shaders:** 6 composite modes (`A`, `B`, `C`, `A+A`, `B+B`, `C+A` in Fast and High Quality variants) plus individual Restore, Upscale, Denoise, Deblur, Darken, and Thin shaders.
   - **AnimeJaNai (`3.7.0` / Aji `v0.9.0` ABI-8):** Powered by the [mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai) project and the [animejanai-inference (AJI)](https://github.com/the-database/animejanai-inference) stack. Built-in adaptive profiles (`Quality`, `Balanced`, `Performance`), 5 pinned HD/SD spatial ONNX models, and 47 pinned RIFE frame-interpolation models (`v4.7`–`v4.26`).
+  - **[AnimeJaNai Model & Profile Manager](#animejanai-custom-models--profiles):** Import or register custom ONNX models, choose Standard/Sharp built-in variants, tune TensorRT compilation, and edit ten multi-chain profile slots with optional RIFE.
   - **Prepared Native Bundle Track:** Out-of-process model inspection (`native_inspect`), TensorRT engine preparation (`mikai_native_prep`), numerical verification (`mikai_native_verify`), and bundle verification (`mikai_bundle`).
 - **Workstation Compare Window (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `CompareRenderer`):**
   - Side-by-side and split-screen visual inspection of **Original** vs **Anime4K** vs **AnimeJaNai** vs **Native** models on the exact paused video frame.
@@ -29,13 +30,13 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
 | Platform | Compiler & Generator | Qt Version | `libmpv` Runtime | GPU / Enhancement Support |
 |---|---|---|---|---|
 | **Windows x64** | MinGW-w64 GCC 16.2 (`MinGW Makefiles`) | Qt 6.12.x (`mingw_64` + `LinguistTools`) | Pinned `libmpv-2.dll` (`the-database/mpv-winbuild` `2026-10-07-d6d93599d5`) | Anime4K (OpenGL), AnimeJaNai TensorRT (CUDA 13 / NVML) & DirectML (D3D11VA) |
-| **Linux x64** | GCC 12+ or Clang 15+ (`Unix Makefiles`) | Qt 6.x (`Widgets`, `Network`, `OpenGLWidgets`, `Concurrent`, `Test`, `LinguistTools`) | System `libmpv-dev` (`libmpv.so.2`) or local `MIKAI_DIST_MPV_ARCHIVE` | Anime4K (OpenGL), AnimeJaNai TensorRT (`-linux-x64` CUDA 13 / NVML `.so` packs) |
+| **Linux x64** | GCC 12+ or Clang 15+ (`Unix Makefiles`) | Qt 6.12+ (`Core`, `Gui`, `Widgets`, `OpenGL`, `OpenGLWidgets`, `Network`, `Test`, `LinguistTools`) | System `libmpv-dev` (`libmpv.so.2`) or local `MIKAI_DIST_MPV_ARCHIVE` | Anime4K (OpenGL), AnimeJaNai TensorRT (`-linux-x64` CUDA 13 / NVML `.so` packs) |
 
 ### Windows `libmpv` & Vulkan Loader Prerequisite
-On Windows, CMake automatically downloads (or verifies via `MIKAI_DIST_MPV_ARCHIVE`) the pinned `mpv-dev-x86_64-20261007-git-d6d93599d5.7z` archive (`SHA-256: 077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`), compiles against its headers, and stages `libmpv-2.dll` beside `mikai.exe`. Because `libmpv-2.dll` imports `vulkan-1.dll` in its PE import table, `%SystemRoot%\System32\vulkan-1.dll` (installed by standard NVIDIA, AMD, and Intel graphics drivers) must be present on Windows.
+On Windows, CMake automatically downloads (or verifies via `MIKAI_DIST_MPV_ARCHIVE`) the pinned `mpv-dev-x86_64-20261007-git-d6d93599d5.7z` archive (`SHA-256: 077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`), compiles against its headers, and stages `mpv/libmpv-2.dll` under the application build directory. Because `libmpv-2.dll` imports `vulkan-1.dll` in its PE import table, `%SystemRoot%\System32\vulkan-1.dll` (installed by standard NVIDIA, AMD, and Intel graphics drivers) must be present on Windows.
 
 ### Linux Dependencies
-On Debian/Ubuntu-based distributions, install the standard Qt 6, OpenGL, and `libmpv` development packages:
+On Debian/Ubuntu-based distributions, the following are the required package families. The selected Qt installation must provide **6.12 or newer**; a distribution's older Qt 6 packages alone do not satisfy CMake:
 ```bash
 sudo apt-get install build-essential cmake qt6-base-dev qt6-tools-dev qt6-tools-dev-tools libgl1-mesa-dev libmpv-dev p7zip-full
 ```
@@ -53,17 +54,19 @@ rem 1. Configure Release build
 cmake --preset release
 
 rem 2. Build the application (build/release/mikai.exe)
-cmake --build --preset app --parallel
+cmake --build --preset app --parallel 4
 
 rem 3. Build and run the unit & contract test suite
-cmake --build --preset tests --parallel
+cmake --build --preset tests --parallel 4
 ctest --test-dir build/release --output-on-failure
 
 rem 4. Assemble a self-contained portable distribution in dist-mikai/
 cmake --build build/release --target dist
 ```
 
-If your Qt 6 or MinGW-w64 installation lives outside the default preset paths (`C:/temp/qt6/6.12.0/mingw_64` and `C:/temp/w64devkit`), override `CMAKE_PREFIX_PATH`, `CMAKE_CXX_COMPILER`, and `CMAKE_MAKE_PROGRAM` on the command line.
+If your Qt 6 or MinGW-w64 installation lives outside the default preset paths (`C:/temp/qt6/6.12.0/mingw_64` and `C:/temp/w64dev/w64devkit`), override `CMAKE_PREFIX_PATH`, `CMAKE_CXX_COMPILER`, and `CMAKE_MAKE_PROGRAM` on the command line. The four-job examples limit peak compiler memory; raise the parallelism only if the machine has sufficient headroom.
+
+CTest stages the Qt test executable in an owned disposable directory. Do not run tests beside an existing native store or copy them into a populated `dist-mikai/` just to find DLLs. See [focused-suite and runtime setup](AGENTS.md#running-individual-test-suites) for a safe launcher invocation.
 
 ### Linux (GCC / Clang)
 
@@ -131,6 +134,96 @@ Large GPU-specific runtimes and neural network graphs are never bundled into the
 
 ---
 
+## AnimeJaNai Custom Models & Profiles
+
+In **Settings → Processing**, select the **Standard** runtime to use the AnimeJaNai model and profile manager. Selecting **Native** shows the separate prepared-bundle workflow instead; it does not convert AnimeJaNai profiles into private Native recipes.
+
+### Custom ONNX Models
+
+- Use **Import .onnx Model…** to select self-contained spatial graphs (up to 2 GiB each). The manager checks the ONNX protobuf structure, copies each graph atomically into `<nativeRoot>/animejanai/models/custom/`, and records its size and SHA-256 digest.
+- Imported models appear in the player's **ANIMEJANAI → Spatial models** menu, the Compare candidate menu, the Benchmark **Spatial** group, and profile-chain model choices.
+- An optional external models directory can be used without copying its graphs. Select an external candidate and use **Import** to record its digest in the app-owned registry; the external directory is not modified. After replacing a graph, remove its registration and register it again deliberately.
+- Model import, external registration, and model hashing run off the GUI thread. Menu enumeration reads metadata rather than hashing every model. Preparation verifies the recorded digest before publishing a staged graph.
+- Removing an imported model removes its app-owned copy and matching staged artifacts. Removing an external registration does not delete the external graph.
+
+A model marked ready in the inventory has local metadata; it has not necessarily run on the GPU. Removing a model does not repair profiles that reference it. Select another graph or remove the affected step before using those profiles. Re-importing a replacement requires removing the old identifier first; modifying a pinned file in place is refused during preparation rather than silently accepted.
+
+Filename-derived architecture and scale values are hints, not ONNX tensor inspection. Models still need an AJI-compatible 4D RGB tensor contract (`1×3×H×W`, FP16/FP32) and operators supported by the selected TensorRT or DirectML backend. Import validation is not proof that an arbitrary RealESRGAN, Compact, SPAN, DAT, or SwinIR graph will execute. External-weight ONNX packages are not imported as multi-file bundles.
+
+### Built-in Variants & Engine Settings
+
+Quality, Balanced, and Performance each have a **Standard / Sharp** selector. Sharp changes the HD model; the SD Compact branch remains unchanged. Required pinned models must be installed through **Settings → Components**.
+
+The manager also exposes backend logging and TensorRT engine settings:
+
+- **Static:** match the current video resolution through `%video_resolution%`.
+- **Static ONNX:** use the graph's fixed input shape.
+- **Dynamic:** configure minimum, optimal, and maximum input shapes.
+- Builder optimization level **0–5**, plus the raw `trtexec` argument string.
+
+The default raw settings are:
+
+```text
+--builderOptimizationLevel=5 --optShapes=input:%video_resolution% --skipInference
+```
+
+Static/Dynamic helpers target a tensor named `input` and write NCHW shapes. They do not discover ONNX tensor names. For a differently named input, edit the raw shape arguments to match the graph, or remove shape overrides for a suitable fixed-shape graph. These are global AJI settings, so they must be compatible with every graph used by a selected chain.
+
+Engine flags affect TensorRT, not DirectML. Backend choice remains in the player's AnimeJaNai menu. Engine compilation is runtime- and GPU-specific; changing these controls does not guarantee that an existing engine can be reused. Do not move another GPU's compiled engines as a substitute for building locally.
+
+### Custom Slots 1–10
+
+1. Select a slot from **1–10**, then create/reset it or clone a built-in/custom profile. Give it a recognizable name.
+2. Add chains and set their resolution/FPS activation bounds. `0x0` or `infxinf` represents an unbounded resolution; `0` represents an unbounded FPS limit.
+3. Add model steps in the required order and choose installed/imported model names. Set pre-upscale height or percentage resizing where needed. Model names must resolve locally; a profile export is not a model download.
+4. Optionally enable per-chain RIFE and select the model, numerator/denominator ratio, scene threshold, ensemble, and before/after-upscale position. A chain needs at least one model or an enabled RIFE step.
+5. Press **Save**. Configured slots appear beside the built-in player presets and in Benchmark's **AnimeJaNai** group.
+
+Cloning copies the current model steps. Later Standard/Sharp changes to the original built-in preset do not rewrite the cloned custom profile.
+
+Custom profile IDs are `builtin_slot:<N>`; custom spatial IDs are `spatial:custom:<id>`. Chain and slot switches retain editor changes, including across interface-language changes. Saving the manager does not hot-reload an already running AJI filter; switch to another preset and back, or reopen playback, to prepare the updated configuration.
+
+Use `.pconf` import/export for one profile, or `animejanai.conf` import/export for the complete manager configuration. Importing a profile replaces the selected slot in the editor. Export captures current edits without saving application settings. Neither format embeds model graphs, external registrations, runtime components, or compiled engines; install/register the required models separately on the receiving machine.
+
+**Save** persists settings and profiles; **Cancel** discards those edits but does not undo model imports, registrations, removals, or files already exported. Resetting manager defaults removes custom slot/settings edits, not the model files or external registrations.
+
+Manager settings are stored as schema v3 in `<nativeRoot>/animejanai/animejanai_manager.conf`. Preparation stages every referenced graph, retains provenance, rewrites spatial model names to SHA-256 stems, and emits `<nativeRoot>/animejanai/config/custom_slot_<N>.ini`. Missing, modified, or unsupported referenced models produce a preparation error rather than silently selecting another graph.
+
+External registrations are stored in `<nativeRoot>/animejanai/models/external-models.json`. Clearing the browse folder does not unregister pinned models; use **Remove Selected** for that.
+
+### Preparation Errors & Recovery
+
+| Symptom | Action |
+|---|---|
+| Duplicate model identifier | Remove the old imported model or external registration, then import/register the replacement. |
+| Graph changed since registration | Restore the pinned bytes, or explicitly remove and re-register the replacement. Do not edit provenance to bypass the digest check. |
+| Missing profile model or RIFE variant | Install the required component or select an available graph/variant; the planner does not silently substitute another ensemble. |
+| Configuration import/save fails | Read the Processing error banner; a failed import preserves current edits. A malformed saved manager config must be repaired or reset before preparation. |
+| TensorRT rejects shapes/operators or engine building fails | Read the full failure reason and builder tail. Check backend compatibility, tensor names, shape settings and the local GPU builder resource; an import check is not inference validation. |
+
+For a non-RIFE benchmark, leave the RIFE group unchecked **and** exclude custom slots with chain interpolation enabled. See [benchmark selection and reporting](bench_results.md#reproducing-and-submitting-another-machine). Functional manager smoke results are not native throughput measurements.
+
+### Windows Manager Smoke
+
+Build `native_settings_probe` and run it with Qt/MinGW DLLs on `PATH`. It uses an isolated executable-local store, exercises the real Settings/player/Compare/Benchmark surfaces, and writes `native-animejanai-smoke-evidence.json` plus screenshots to its working directory. The probe uses Qt widget file pickers for deterministic actions; it does not invoke AJI inference, TensorRT compilation, or a RIFE benchmark.
+
+From the repository root in PowerShell:
+
+```powershell
+cmake --build build/release --target native_settings_probe --parallel 4
+$probe = (Resolve-Path build/release/native_settings_probe.exe).Path
+$env:MIKAI_MPV_MODULE = (Resolve-Path build/release/mpv/libmpv-2.dll).Path
+$env:MIKAI_PROBE_TRANSLATION = (Resolve-Path build/release/mikai_uk.qm).Path
+$env:QT_QPA_PLATFORM = "windows"
+$env:QT_OPENGL = "desktop"
+New-Item -ItemType Directory -Force .probe-out/aji-manager | Out-Null
+Push-Location .probe-out/aji-manager
+& $probe
+Pop-Location
+```
+
+---
+
 ## Compare Window Keyboard Shortcuts & Controls
 
 Open the Compare Window from the player toolbar (`Compare` button) while playing any video:
@@ -172,8 +265,10 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 ## Configuration & Data Locations
 
 - **API Key (`.env` or Settings):** Optional `API_KEY=<token>` in `.env` (or configured in **Settings → General**) raises rate limits against `https://api.mikai.me/public/v1`.
-- **Settings (`QSettings`):** Stored under organization `Mikai`, application `MikaiQt`.
-- **Cache & Watch State:** `<StandardPaths::CacheLocation>/covers` for poster thumbnails, `watched.json` for episode progress, `recent.json` for recently opened titles, and `<applicationDir>/crash.log` for unhandled fault traces.
+- **Settings (`QSettings`):** Platform-native settings under organization `Mikai`, application `Mikai Wrapper`. Recently opened titles are JSON in the `home/recentTitles` setting, not a `recent.json` file.
+- **Runtime acquisition cache:** `<LOCALAPPDATA>/MPVBackend/runtime`, or `<home>/MPVBackend/runtime` when `LOCALAPPDATA` is unset.
+- **Native/model data:** `<applicationDir>/native`, independent of working directory or QSettings identity. AJI manager/model locations are described above; back up the manager configuration, owned models/provenance, and external registry together. Borrowed external graphs need their own backup and valid paths on the destination machine.
+- **Diagnostics:** Executable-adjacent `mikai.log`, rotated `mikai.log.1`, and timestamped `mikai-crash-*` reports. They are not named `crash.log`.
 
 ---
 
@@ -181,12 +276,13 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 
 - `src/backend/` — Domain models (`Models.hpp`), API client (`MikaiClient`), HLS stream extractors (`Streams`), verified downloader (`Downloads`), runtime discovery (`Runtime`), and diagnostic scrubbing (`Diagnostics`).
 - `src/gui/` — Shared GUI utilities (`Clipboard`).
-- `src/app/` — Subdivided into `support/` (`CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`), `pages/` (`MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`), `dialogs/` (`SettingsDialog`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`, and `settings/` tabs), `state/`, `widgets/`, `theme/`, and `workers/` (`Runner`).
+- `src/app/` — Subdivided into `support/` (`CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`), `pages/` (`MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`), `dialogs/` (`SettingsDialog`, `AnimeJanaiManagerPanel`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`, and `settings/` tabs), `state/`, `widgets/`, `theme/`, and `workers/` (`Runner`).
 - `src/player/` — Subdivided into `core/` (`MpvApi`, `MpvHandle`, `MpvRenderContext`, `PlaybackDiagnostics`, `VideoSurface`), `shaders/` (`Anime4K`, `PresetShortcuts`), `shell/` (`PlayerDialog`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`), `compare/` (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`), and `native/` (`bundle/`, `components/`, `models/`, `prepare/`, `status/`).
+  - `native/components/AnimeJanaiConfig` owns GUI-free custom-model metadata, schema-v3 manager configuration and profile serialization; `AnimeJanaiRuntime` performs runtime planning/staging. They compile into `mikai_native_support`; the manager widget belongs to `mikai_app`.
 - `src/probes/` — Standalone GUI and headless verification probes (`compare_probe`, `shell_probe`, `dialog_probe`, `native_component_probe`, `probe_runner`, etc.).
 - `cmake/` — Modular CMake build helpers (`MinGWRuntime.cmake`, `FindOrFetchMpv.cmake`, `MikaiProbes.cmake`, `MikaiTests.cmake`, `dist.cmake`, `MikaiTestLauncher.cpp`).
 - `native/` — Standalone MSVC + CUDA + TensorRT inference shim build (`native/CMakeLists.txt`), CLI tools (`mikai_bundle`, `mikai_manifest_check`, `native_inspect`), patches, and provenance manifests (`native/manifest/`).
-- `tests/` — 35 hermetic Qt Test suites grouped into `tests/cpp/{backend,native,player,app}/` and CMake contract tests (`tests/cmake/`, `tests/fixtures/`).
+- `tests/` — Hermetic Qt Test suites grouped into `tests/cpp/{backend,native,player,app}/` and CMake contract tests (`tests/cmake/`, `tests/fixtures/`). [Fixture documentation](tests/fixtures/README.md) distinguishes the Identity ONNX graph and test dispatcher from inference runtimes.
 - `translations/` — Ukrainian translation catalog (`translations/mikai_uk.ts`).
 - `docs.md` — Reference documentation for the Mikai Public API v1.
 

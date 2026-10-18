@@ -36,6 +36,29 @@ PASS**: `mikai_tests` (all suites PASS, `TestLiveOracle` SKIP without a key),
 | KB-22 | `MpvApi::load` reads the module's own PE imports and refuses by name when a required Windows system driver (the Vulkan loader) is missing from `%SystemRoot%\System32`; nothing is copied and no fallback module is tried | `TestRuntimeSelection::aModuleSystemDriverImportIsReadFromItsOwnImage` PASS; docs record the prerequisite as a supporting-loader fact, not a renderer |
 | KB-23, KB-25 | `native/README.md`, `native/sdk-acquisition.md`, `readme.md`, `plan.md`, `native/build-msvc.md`, `native/manifest/*`, the catalogue comment: ESC-5 scoped to the private prepared-helper path with the official `trtexec` path left unresolved; landed header acquisition, executable-local roots, two-part shim provenance and `nvinfer_11` documented | Documentation inspected against the current sources; no remaining statement claims a resolved official path, a manual `MPV_INCLUDE_DIR`, a stock download, a global ESC-5 clearance or a `v2` CPU baseline |
 
+## Current AJI custom-model integration status (2026-10-18)
+
+The later custom-model/profile integration and its checks are separate from the
+historical 28-finding audit below; this note does not imply that those original
+findings were rerun. The `pathWithinRoot` volume-root containment correction in
+`NativePaths.cpp` was covered by
+`TestNativeManifest::volumeRootsContainDescendantsAndRemainInTheTrustChain`;
+the regression checks volume-root ancestor handling and retained reparse-point
+checks. It fixes root containment and does not bypass trust validation.
+
+The recorded release build covered `mikai`, `mikai_tests`,
+`native_settings_probe` and `benchmark_probe`, and the recorded CTest result
+was 4/4 PASS. The Windows native-settings probe passed 220 checks, including
+real file-dialog/user-action and configuration persistence flows, menus, the
+Benchmark catalog, shader-only Compare, and English/Ukrainian compact/wide
+layouts. These are functional UI/configuration checks. Runtime unit coverage
+also exercises custom ONNX import, hash-pinned staging, planner/profile
+serialization, and refusal when a registered source graph changes.
+
+No AJI GPU inference, TensorRT engine build, RIFE benchmark, or Linux runtime
+was executed for this integration. The tiny Identity fixture, planner/staging
+tests, and UI probe are not inference or throughput evidence.
+
 ## Safety and lifetime
 
 ### KB-01 — P1 — Existing download destination is deleted on an overwrite refusal

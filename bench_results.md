@@ -1,5 +1,14 @@
 # Benchmark results
 
+**Historical snapshot:** the 31-model, 160-cell RTX 5090 matrix and the
+2026-10-17 old/new comparison below are preserved historical measurements from
+their recorded revisions and settings. They have not been updated for the
+custom-model/profile integration. The current benchmark catalogue can additionally
+contain imported custom graphs and `builtin_slot:<1..10>` profiles, and current
+configuration/Sharp behavior can change which chain/model a profile selects.
+Do not treat those dynamic entries or current settings as members of the stock
+historical selection, or merge their results into its comparison tables.
+
 Measured results from **Settings → Benchmark**, grouped by machine and model. Compare matching input resolutions, backends, and settings—not GPU names alone. Only observed RTX 5090 results are included; RTX 3080 and RTX 2070 reports will be added when supplied.
 
 **Scope:** all 31 non-RIFE models—23 Anime4K presets, 3 AnimeJaNai profiles, and 5 Spatial graphs—at all five bundled input resolutions, plus baseline. **RIFE is excluded by request.**
@@ -136,7 +145,7 @@ The original full-matrix cells above remain single measurements and unchanged; t
 
 1. Use the same application revision, bundled clips, and model names. In **Settings → Components**, install and verify the runtime, matching GPU builder resource, and spatial models before measuring.
 2. Run **Settings → Benchmark** with all clips, Anime4K, AnimeJaNai, Spatial, and baseline selected. Leave the **RIFE group unchecked**. Keep unrelated GPU workloads stopped. Record each failure's full detail as well as successful fps values.
-3. Include GPU name and VRAM, driver, CPU, RAM, OS, application revision, backend, and input/output dimensions. State any different clips, model revisions, or graphics settings. Do not merge unlike workloads into the same comparison table.
+3. Include GPU name and VRAM, driver, CPU, RAM, OS, application revision, backend, and input/output dimensions. For custom-model results also provide each graph's SHA-256, exported profile/config, selected backend, and TensorRT logging/engine-type/builder flags; state whether engines were cached or built for the run. Custom profiles may enable per-chain RIFE even when the separate RIFE group is unchecked: record whether chain RIFE is enabled and disable it for a non-interpolation comparison. State any different clips, model revisions, or graphics settings. Do not merge unlike workloads into the same comparison table.
 4. Send the result export or screenshots with their model/clip labels. Add each machine as a separate section with the same columns; leave unmeasured cells explicitly unmeasured rather than extrapolating from another GPU.
 5. For controlled old/new comparisons, keep the benchmark application foreground on a connected, non-minimized desktop (including over RDP); repeat comparisons and interleave old/new runs rather than relying on one pass. Record the session and focus state, plus whether each model used a cached engine or first-use build. Keep these comparison medians separate from the original single-cell full matrix.
 
@@ -149,12 +158,26 @@ $env:QT_QPA_PLATFORM = "windows"
 $env:QT_OPENGL = "desktop"
 $env:MIKAI_PROBE_LANGUAGE = "en"
 $ids = .\benchmark_probe.exe --list-models |
-    Where-Object { $_ -notmatch '^RIFE\t' } |
+    Where-Object {
+        $_ -notmatch '^RIFE\t' -and
+        ($_ -split "\t")[1] -notmatch '^(spatial:custom:|builtin_slot:)'
+    } |
     ForEach-Object { ($_ -split "\t")[1] }
-.\benchmark_probe.exe --model ($ids -join ',') --all-clips --output rtx5090-no-rife.json
+.\benchmark_probe.exe --model ($ids -join ',') --all-clips --output rtx5090-stock-no-rife.json
 ```
 
-Use a matching filename such as `rtx3080-no-rife.json` or `rtx2070-no-rife.json` on another machine. `--list-models` lists stable catalogue IDs; `--model <id,id,...> --clip 1280x720.mp4 --output subset.json` captures a smaller selection.
+This filter excludes RIFE and the current custom graph/profile IDs, retaining
+the stock non-RIFE catalogue selection. Current profile IDs for the three
+built-in profiles remain stock entries; their profile chains/configuration may
+differ from the historical revision, so inclusion alone does not make results
+comparable. Verify the emitted IDs and groups with `--list-models` before
+capture; do not assume the live catalogue matches the historical 31-model list. Name current captures explicitly (for example,
+`rtx5090-stock-no-rife.json`). For a historical old/new comparison, reproduce
+the recorded source revisions and settings; current settings—including custom
+profile configuration and Sharp chain behavior—are not interchangeable with
+the older revision. `--list-models` lists stable catalogue IDs;
+`--model <id,id,...> --clip 1280x720.mp4 --output subset.json` captures a
+smaller selection.
 
 For long first-use runs, capture subsets into separate files with `--model <id,id,...> --all-clips --output group.json`. Keep those completed exports so an interrupted process does not require repeating every model. Engine preparation is outside the timed sample, but it can dominate the total capture time.
 

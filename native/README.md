@@ -8,17 +8,126 @@ This directory contains the provenance manifests, license notices, standalone CL
 
 The application supports two distinct neural enhancement contracts alongside the built-in **Anime4K** GLSL shaders:
 
-1. **AnimeJaNai Official ABI-8 Runtime (`AnimeJanaiRuntime`, `AnimeJanaiInstallation`, `ComponentStoreTab`):**
-   - Uses the `vf_animejanai` filter compiled into the `the-database/mpv` core, paired with the `v0.9.0` ABI-8 dispatcher (`aji.dll` + `aji_trt.dll` / `aji_dml.dll` on Windows; `libaji.so` + `libaji_trt.so` on Linux) and the `3.7.0` TensorRT runtime/builder-resource packs (`component-trt-*`).
-   - Engines are built on first use via `trtexec` (`trtexec.exe` on Windows, `trtexec` on Linux) inside the app-owned `<nativeRoot>/animejanai/` directory.
+1. **Standard AnimeJaNai ABI-8 Runtime:** The Qt app's manager/configuration and runtime planning live in `src/app/dialogs/AnimeJanaiManagerPanel.cpp` and `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}` / `AnimeJanaiRuntime.cpp`. It uses the `vf_animejanai` filter in the `the-database/mpv` core and the pinned `v0.9.0` ABI-8 dispatcher (`aji.dll` + `aji_trt.dll` / `aji_dml.dll` on Windows; `libaji.so` + `libaji_trt.so` on Linux), alongside the `3.7.0` TensorRT runtime/builder-resource packs (`component-trt-*`). User-defined model/profile setup is described in [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
    - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
 
 ---
 
-## 2. Pinned Release Manifests (`native/manifest/`)
+## 2. Standard AnimeJaNai Custom Models & Profiles
 
-All external runtime dependencies, model graphs, and source revisions are pinned by cryptographic SHA-256 digest:
+The **Standard** AnimeJaNai integration is managed by the Qt application in
+`src/player/native/components/AnimeJanaiConfig.{hpp,cpp}`,
+`src/player/native/components/AnimeJanaiRuntime.cpp`, and
+`src/app/dialogs/AnimeJanaiManagerPanel.{hpp,cpp}`. It is separate from the
+optional MSVC shim build described in [`build-msvc.md`](./build-msvc.md):
+the manager is part of the normal MinGW/Qt application build and does not
+require recompiling that shim. For the GUI workflow, see
+[AnimeJaNai Custom Models & Profiles](../readme.md#animejanai-custom-models--profiles);
+this section records the storage and runtime boundaries.
+
+### Catalog, storage, and staging
+
+The manager configuration is schema v3 at
+`<nativeRoot>/animejanai/animejanai_manager.conf`. It stores Standard/Sharp
+variant choices, logging and TensorRT settings, the optional external-model
+directory, and custom slots 1–10. `.pconf` profiles and complete `.conf`
+manager imports/exports use the same schema-v3 slot keys. Profile edits and
+manager settings are deferred until **Save**; custom model import, external
+registration, and removal are immediate.
+
+User-imported ONNX files are copied into
+`<nativeRoot>/animejanai/models/custom/`. External candidates remain in their
+original directory; their explicit registrations (including the recorded
+digest) are stored in the app-owned
+`<nativeRoot>/animejanai/models/external-models.json`. A registered external
+graph is borrowed: removing its registration does not remove or modify the
+external file. Importing a model or registering it does not grant Mikai any
+right to redistribute that model. Users remain responsible for the applicable
+model and weight licenses; files are not thereby vendored or licensed for
+redistribution.
+
+When a profile references an imported or registered graph, runtime preparation
+checks its recorded digest, stages it under the app-owned
+`<nativeRoot>/animejanai/models/spatial/<sha256>.onnx` with its
+`.onnx.source.json` provenance, and generates `config/custom_slot_<N>.ini` under
+`<nativeRoot>/animejanai/`. Missing, altered, or otherwise unsupported model
+references fail preparation rather than silently substituting another graph.
+Enumeration is metadata-only; model hashing and import/registration I/O are
+performed away from the GUI thread. This model staging/config path belongs to
+the Standard AJI integration, not the Prepared Native bundle store at
+`<nativeRoot>/runtime/<bundle-id>/`.
+
+### Compatibility and configuration semantics
+
+Imported-file validation checks that the file is a plausible ONNX protobuf
+graph; it does **not** inspect tensors/operators or prove compatibility with
+AJI. Filename-derived scale and architecture fields are hints only. A graph
+must satisfy the AJI/backend input and operator requirements to run; arbitrary
+ONNX files are not promised to work. External-weight packages are not imported
+as multi-file bundles.
+
+The manager supports custom profile IDs `builtin_slot:<1..10>` and imported
+model catalog IDs `spatial:custom:<id>`. A profile has ordered chains with
+resolution and FPS activation bounds. Chains
+contain ordered model steps and optional pre-upscale height/percentage
+resizing, and may include RIFE settings (model, interpolation ratio, scene
+threshold, ensemble, and before/after-upscale position). Sharp selects the
+corresponding HD model variant; it does not replace the SD branch. TensorRT
+configuration supports Static (match the current video resolution), Static
+ONNX (fixed graph input shape), and Dynamic (minimum/optimal/maximum shapes),
+plus builder optimization levels 0–5 and raw `trtexec` arguments. The built-in
+Static/Dynamic shape helpers emit the TensorRT input name `input`; selecting
+Dynamic does not inspect the ONNX graph to discover a tensor name. Models with
+different input names need compatible raw shape arguments, or Static ONNX when
+the graph's fixed input shape is appropriate. These settings affect TensorRT
+engine preparation, not the selected backend: backend choice remains a
+player/runtime choice. Logging and TensorRT flags are not a claim of successful
+inference or a GPU performance result.
+
+### Schema-v3 field reference
+
+`AnimeJanaiConfigStore` writes UTF-8 INI. The manager serializes only custom
+slots 1–10, in numeric order; `.pconf` exports one unnumbered `[slot]` section
+and import assigns it to the editor's selected slot. `C` and `M` below are
+positive chain and model-step numbers, also serialized in numeric order.
+
+| Section / prefix | Keys | Meaning |
+|---|---|---|
+| `[global]` | `config_version`, `logging` | Version `3`; logging is `yes` or `no`. |
+| `[global]` | `external_models_dir` | Optional candidate-browsing directory; registrations remain in the separate app-owned registry. |
+| `[global]` | `trt_engine_settings` | Global raw builder flags; an omitted default uses the application's default settings. |
+| `[global]` | `quality_preset`, `balanced_preset`, `performance_preset` | `sharp` selects each built-in HD variant; omitted values use Standard. |
+| `[slot_N]` / `[slot]` | `profile_name`, `description` | Profile identity and optional description. |
+| `chain_C_` | `min_resolution`, `max_resolution`, `min_fps`, `max_fps` | Resolution/FPS activation bounds. |
+| `chain_C_model_M_` | `name`, `resize_height_before_upscale`, `resize_factor_before_upscale` | Locally resolvable model name, height in pixels (`0` disables), and percentage (`100` leaves size unchanged). |
+| `chain_C_` | `rife`, `rife_model` | Interpolation switch and AJI model code, for example `426` for RIFE 4.26. |
+| `chain_C_` | `rife_factor_numerator`, `rife_factor_denominator`, `rife_scene_detect_threshold` | Interpolation ratio and scene threshold. |
+| `chain_C_` | `rife_ensemble`, `rife_before_upscale` | `yes`/`no` ensemble and interpolation-order controls. |
+
+The manager store does not persist a backend selector. Runtime preparation
+emits `backend=TensorRT` or `backend=DirectML` in the generated plan INI from
+the selected backend. Editing a `backend` key in a manager import does not
+change the player's backend selection. Generated plan INIs also replace model
+references with staged SHA-256 stems; they are derived runtime artifacts, not
+the editable source of the profile.
+
+### Distinction from Prepared Native
+
+Standard AJI profiles configure the official AnimeJaNai ABI-8 filter/runtime;
+they are not Prepared Native recipes. `native_inspect` inspects ONNX inputs and
+outputs and can run a CPU reference inference; `mikai_native_prep` builds a raw
+TensorRT plan out of process; `mikai_native_verify` checks native plan
+bindings/numerics; and the bundle tooling verifies a Prepared Native manifest.
+Those inspection, preparation, verification, and bundle-admission steps are
+distinct from AJI's profile configuration and model staging. Import validation
+or successful AJI preparation must not be described as Prepared Native
+verification, and neither path's documentation implies unobserved GPU inference
+or engine performance.
+
+## 3. Pinned Release Manifests (`native/manifest/`)
+
+The upstream runtime dependencies, stock model graphs, and source revisions below are pinned by cryptographic SHA-256 digest. User-imported graphs have separate local digest records; they are not added to these release manifests:
 
 | Manifest File | Schema / Purpose |
 |---|---|
@@ -46,7 +155,7 @@ All external runtime dependencies, model graphs, and source revisions are pinned
 
 ---
 
-## 3. Rights & Redistribution Boundaries (`ESC-1..6`)
+## 4. Rights & Redistribution Boundaries (`ESC-1..6`)
 
 - **No third-party binaries or model graphs are vendored in this repository or shipped by `cmake/dist.cmake`.**
 - `cmake/dist.cmake` explicitly strips any `components`, `assets`, `models`, or `records` directories from `dist-mikai/native/` and verifies their absence before completing.
@@ -60,9 +169,25 @@ All external runtime dependencies, model graphs, and source revisions are pinned
 
 ---
 
-## 4. Verification & Maintenance Tools
+## 5. Verification & Maintenance Tools
 
-- **`mikai_manifest_check`** (`native/tools/manifest_check.cpp`): Validates `native/manifest/sources.json` and `native/manifest/components.json` schemas, git SHA pins, ABI symbol counts, and digest inventories.
+- **`mikai_manifest_check`** (`native/tools/manifest_check.cpp`): Checks `native/manifest/sources.json` and `native/manifest/components.json` structure, identities, git SHA pins, ABI inventories and rights records. Recomputing source-file digests requires explicit read-only `--source-root id=directory` arguments; observation hashes are format-checked, never recomputed.
 - **`mikai_bundle`** (`native/tools/bundle_tool.cpp`): Generates, inspects, and verifies `<nativeRoot>/runtime/<bundle>/manifest.json` against on-disk PE/ELF binaries.
 - **`native_inspect`** (`native/tools/native_inspect.cpp`, enabled when `MIKAI_WITH_MODEL_INSPECTION=ON`): Inspects ONNX model inputs/outputs and executes CPU reference inference via ONNX Runtime.
 - **Standalone MSVC + CUDA Build (`native/build-msvc.md`):** Instructions for compiling `aji`, `aji_trt`, `aji_dml`, `mikai_native_prep`, and `mikai_native_verify` with MSVC, CUDA 13.4, and TensorRT 11.3.0.99.
+
+### Manifest checker exit codes
+
+| Exit | Meaning |
+|---|---|
+| `0` | Source-file integrity and component identity checks passed; not bundle-loadability or inference proof. |
+| `1` | Invalid identity/schema, digest mismatch, or cross-manifest inconsistency. |
+| `2` | Required digest inventory or source root was not established. |
+| `3` | A component is marked redistribution-blocked. |
+
+Invalid data takes precedence over blocked rights, which take precedence over
+incomplete integrity evidence. The current manifests contain blocked
+components, so the basic command in [`AGENTS.md`](../AGENTS.md#out-of-band-cli-tools--manifest-verification)
+returns `3`; without source roots it also reports unestablished file integrity.
+This is an explicit refusal, not a packaging clearance. User-local acquisition
+and functional tests do not remove redistribution blockers.

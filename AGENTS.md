@@ -18,15 +18,27 @@ Strict architectural layering is enforced by `TestLayering` (`tests/cpp/app/Test
    - `src/player/compare/` — Visual Compare Workstation (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`).
    - `src/player/native/` (`mplayer::native`) — Subdivided into:
      - `bundle/` (`NativeBundle`, `NativeManifest`, `NativePaths`, `NativePeImage`, `NativeRuntimeSelection`, `NativeCapabilities`, `NativePrefs`, `NativeDiagnostics`)
-     - `components/` (`NativeComponentCatalog`, `NativeComponentStore`, `NativeComponentProvisioning`, `NativeComponentToolchain`, `NativeGpuProbe`, `AnimeJanaiRuntime`, `AnimeJanaiInstallation`)
+     - `components/` (`NativeComponentCatalog`, `NativeComponentStore`, `NativeComponentProvisioning`, `NativeComponentToolchain`, `NativeGpuProbe`, `AnimeJanaiConfig`, `AnimeJanaiRuntime`, `AnimeJanaiInstallation`)
      - `models/` (`NativeCatalog`, `NativeModelInventory`, `NativeModelInspect`, `NativeModelImport`, `NativeInspectedPlan`, `NativeProfiles`, `NativeRecipe`, `NativeRife`, `NativeSpatialAssets`, `NativeUserRecipes`)
      - `prepare/` (`NativeArtifactStore`, `NativeBuilder`, `NativeBuilderTools`, `NativeFrameFixture`, `NativeFrameReference`, `NativePreparationContext`, `NativePreparationPlan`, `NativePreparationReferences`, `NativePreparedPlan`, `NativeWorkLease`)
      - `status/` (`NativeFilterCommand`, `NativeMenu`, `NativePlaybackController`, `NativeStatus`, `NativeStatusConsumer`, `NativeTypes`)
 4. **`src/app/` (`mikai::app`) — Application Pages, Settings, Support & Worker Dispatch:**
    - `src/app/support/` — `CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`.
    - `src/app/pages/` — `MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`.
-   - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark), `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
+   - `src/app/dialogs/` — `SettingsDialog` (`settings/` tabs: General, Presets, Processing, Components, Benchmark), `AnimeJanaiManagerPanel`, `ComponentStoreTab` (`ComponentStoreTabAcquisition`), `NativeAssetsPanel` (`NativeAssetsPanelWorkflow`), `NativeRifeControls`, `CoverViewer`.
    - `src/app/workers/` — `Runner` (`src/app/workers/Runner.hpp`) manages 5 dedicated `QThreadPool` queues (`shared`, `stream`, `transfer`, `cover`, `probe`) and `Runner::GuiDispatch` (`runner.post()`).
+
+---
+
+### Standard AJI Configuration & Model Ownership
+
+- `AnimeJanaiConfig` and `AnimeJanaiRuntime` belong to GUI-free `mikai_native_support`; `AnimeJanaiManagerPanel` belongs to `mikai_app`. The Standard AJI manager is not the Prepared Native recipe/verification workflow and needs no optional MSVC shim build.
+- Manager settings use schema v3 at `<nativeRoot>/animejanai/animejanai_manager.conf`. Custom profile IDs are `builtin_slot:<1..10>`; custom spatial model IDs are `spatial:custom:<id>`. Existing player, Compare and Benchmark consumers share `animeJanaiPresets()`.
+- Imported graphs and provenance are app-owned under `animejanai/models/custom/`; borrowed external graphs are pinned in `animejanai/models/external-models.json`. Never modify/delete the borrowed graph or require a user-made sidecar beside it.
+- Enumeration reads bounded metadata, not whole-model hashes. Run import/registration/hash work on a Runner worker, honor cancellation, and validate the recorded digest before publishing SHA-named staged graphs/configuration. A missing/changed reference or missing RIFE ensemble is an explicit error, not permission to substitute another graph.
+- Profile/config edits are deferred until Save; model import, registration and removal are immediate. Commit the current chain's editor values before changing slot/chain or retranslating. Failed config import must leave current edits intact.
+- ONNX container validation is not tensor/operator inspection or inference proof. Architecture/scale fields are filename hints. TensorRT Static/Dynamic helpers emit the input name `input`; preserve the distinction between shape controls, raw flags and actual backend compatibility.
+- All model/artifact writes remain subject to `NativePaths` ownership and ancestor checks. Volume roots must be recognized as ancestors without skipping filesystem-root or reparse-point checks.
 
 ---
 
@@ -62,12 +74,14 @@ All application, player, native-support, and test targets must compile cleanly o
 
 ```bat
 cmake --preset release
-cmake --build --preset app --parallel
-cmake --build --preset tests --parallel
+cmake --build --preset app --parallel 4
+cmake --build --preset tests --parallel 4
 ctest --test-dir build/release --output-on-failure
 ```
 
-*Note on test runtime:* Ensure `Qt6Test.dll` is present in `build/release/` or accessible via `PATH` when running standalone probe executables.
+The four-job examples bound peak compiler memory. Unbounded parallel test builds can exhaust compiler memory; increase the job count only when the machine has headroom.
+
+CTest uses `mikai_test_launcher` to copy the test executable into an owned disposable directory with the required shaders, mpv library and Qt runtime/plugin paths. Merely changing CWD, application name or QSettings does **not** isolate `<applicationDir>/native`. Never run mutable probes/tests next to a populated native store or deploy test executables into the user's distribution to obtain DLLs.
 
 ### Linux (GCC / Clang)
 
@@ -84,19 +98,36 @@ ctest --test-dir build/linux-release --output-on-failure
 # Build manifest checker and bundle inspector
 cmake --build build/release --target mikai_manifest_check mikai_bundle --parallel
 
-# Validate source and component manifest schemas, commit pins, and digests
+# Without source roots this inspects metadata, not source-file integrity.
 ./build/release/mikai_manifest_check --sources native/manifest/sources.json --components native/manifest/components.json
 ```
 
+The current rights manifest intentionally contains redistribution-blocked components, so this invocation returns **3**, not a clean approval. Without explicit `--source-root id=directory` arguments it also cannot recompute source-file digests. See the [manifest exit-code contract](native/README.md#manifest-checker-exit-codes); do not suppress these refusals or describe format-checked observation hashes as verified files.
+
 ### Running Individual Test Suites
 
-`mikai_tests` runs all 35 hermetic test suites by default, or a single named suite (with optional QTest flags in any position):
+`mikai_tests` runs its registered hermetic suites by default. The launcher accepts **one suite name per invocation**, followed by optional QTest flags. The configured CTest command is the safe default; use the launcher for a focused run rather than a test executable beside an existing native store.
 
-```bash
-./build/release/mikai_tests TestNativeComponents
-./build/release/mikai_tests -v2 TestI18n
-./build/release/mikai_tests -v2 TestDownloads
+Windows PowerShell example from the repository root, using the preset's Qt/MinGW paths:
+
+```powershell
+$qt = "C:/temp/qt6/6.12.0/mingw_64"
+$env:PATH = "$qt/bin;C:/temp/w64dev/w64devkit/bin;$env:PATH"
+.\build\release\mikai_test_launcher.exe `
+    (Resolve-Path build/release/mikai_tests.exe).Path `
+    (Resolve-Path shaders).Path `
+    (Resolve-Path build/release/mpv/libmpv-2.dll).Path `
+    "$qt/bin" "$qt/plugins" "$PWD/build/release/_test-runs" `
+    TestAnimeJanaiRuntime -v2
 ```
+
+Replace the final suite with `TestLayering`, `TestNativeManifest`, `TestI18n`, or another registered name as needed. Adjust the Qt/MinGW paths if the build uses a different installation. The launcher stages and removes only its own scratch tree; the test refuses a populated or unsafe executable-adjacent `native/`.
+
+### AJI Manager UI Smoke
+
+Build `native_settings_probe` and follow the [Windows manager smoke command](readme.md#windows-manager-smoke). It exercises real Settings actions, config/profile persistence, player/Compare menus, Benchmark catalogue entries, Standard/Native visibility, and compact/wide English/Ukrainian layouts. Its JSON/screenshots are functional evidence, not native inference or throughput proof. The generated Identity ONNX and Windows test dispatcher are described in [`tests/fixtures/README.md`](tests/fixtures/README.md).
+
+Do not launch new TensorRT builds or RIFE benchmarks merely to verify manager documentation. Native inference and performance require separate, explicitly recorded model/backend/GPU runs; see [`bench_results.md`](bench_results.md).
 
 ### Internationalization (`translations/mikai_uk.ts`)
 
@@ -104,5 +135,5 @@ All user-facing strings use `tr()` or `QCoreApplication::translate()`. After add
 
 ```bash
 cmake --build build/release --target update_translations release_translations
-./build/release/mikai_tests TestI18n
+ctest --test-dir build/release --output-on-failure
 ```

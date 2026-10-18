@@ -6,9 +6,11 @@ The native AnimeJaNai shim is a **second, optional toolchain**. The GUI
 `lib=` and speaks only the C ABI in `include/aji.h`.
 
 Nothing in this document changes the default build. With
-`MIKAI_WITH_NATIVE=OFF` — the default — the root `CMakeLists.txt` never calls
-`add_subdirectory(native)`, and no file under `native/` is configured, compiled
-or hashed.
+`MIKAI_WITH_NATIVE=OFF` — the default — the root `CMakeLists.txt` does not call
+`add_subdirectory(native)`, so the optional SDK-dependent targets defined by
+`native/CMakeLists.txt` are not configured or built. Root-managed native tools
+and application runtime/provenance code may still be configured, built, or
+hashed by their own root-project targets.
 
 ## What is built
 
@@ -29,10 +31,9 @@ The three DLLs are the default target; the two CLIs and the two self-checks are
 `mikai_native_prep` and `mikai_native_verify` are separate processes that are
 never on a decoder, render or frame path. They build in **out-of-band** targets
 that link the TensorRT and CUDA libraries they actually use, and neither links
-`aji` or `aji_trt`. The Qt application is unaffected: it still imports only
-`Qt6*`, `KERNEL32`, `msvcrt` and `SHELL32`, and takes no TensorRT, CUDA, ORT or
-DirectML dependency. That separation is the point of the split, and it is what
-keeps the default MinGW/Qt build free of the native SDK.
+`aji` or `aji_trt`. The Qt application is unaffected and takes no TensorRT, CUDA, ORT or
+DirectML link dependency. This separation is the point of the split and keeps
+the default MinGW/Qt application build free of the native SDK.
 
 ### Release is a configure-time requirement under Ninja
 
@@ -511,7 +512,7 @@ The standalone route is preferred: one toolchain per build directory.
 
 ## Effect on the MinGW/Qt build
 
-None. The default configuration never enters this directory:
+The default configuration never enters this directory:
 
 - `MIKAI_WITH_NATIVE` is `OFF` by default, so `add_subdirectory(native)` is not
   reached and no CUDA compiler is probed.
@@ -519,11 +520,20 @@ None. The default configuration never enters this directory:
   `aji_harness`, `aji_kernel_test`) are defined only inside `native/`, so the
   default build's target list, link line and binary are unchanged.
 - `native/tools/bundle_tool.cpp` and `native/tools/manifest_check.cpp` belong to
-  the **root** project and are unaffected by anything here; the native-only tool
-  is `native/tools/mikai_native_prep.cpp`, which this project builds.
+  the **root** project and are unaffected by anything here; the native-only
+  tool is `native/tools/mikai_native_prep.cpp`, which this project builds.
 - Verified: configuring the root project with the default MinGW generator and no
   `MIKAI_WITH_NATIVE` produces a tree whose target list contains none of the
   native targets.
+
+This separation applies to the optional MSVC shim, not to the Standard
+AnimeJaNai custom-model/profile manager. The manager UI lives in the ordinary
+Qt application (`src/app/dialogs/AnimeJanaiManagerPanel.cpp`) and its
+GUI-independent configuration/runtime logic lives under
+`src/player/native/components/`. Build the normal Qt application to use those
+features; rebuilding this MSVC shim does not build or update the manager.
+Standard AJI model/profile storage and its distinction from Prepared Native are
+documented in [`README.md`](./README.md#2-standard-animejanai-custom-models--profiles).
 
 ## Licensing note
 
