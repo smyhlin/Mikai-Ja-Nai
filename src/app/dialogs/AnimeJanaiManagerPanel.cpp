@@ -5,8 +5,10 @@
 #include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
 #include "widgets/FlowLayout.hpp"
+#include "player/shaders/Anime4K.hpp"
 
 #include <QAbstractItemView>
+#include <QCoreApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -15,7 +17,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
-#include <QGridLayout>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -49,8 +51,8 @@ QString formatByteSize(qint64 bytes) {
 QLabel* makeFieldLabel(const QString& text, QWidget* parent, QWidget* buddy = nullptr) {
     auto* label = new QLabel(text, parent);
     label->setObjectName(QStringLiteral("SettingsFormLabel"));
-    yieldCaptionWidth(label);
-    label->setMinimumWidth(theme::kSettingsFormLabelMinWidth);
+    label->setWordWrap(true);
+    label->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     if (buddy != nullptr) label->setBuddy(buddy);
     return label;
 }
@@ -240,10 +242,12 @@ void AnimeJanaiManagerPanel::buildUi() {
         return combo;
     };
 
-    auto* variantsGrid = new QGridLayout();
-    variantsGrid->setContentsMargins(0, 0, 0, 0);
-    variantsGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    variantsGrid->setVerticalSpacing(theme::kSpacingSmall);
+    auto* variantsForm = new QFormLayout();
+    variantsForm->setContentsMargins(0, 0, 0, 0);
+    variantsForm->setHorizontalSpacing(theme::kSpacingMedium);
+    variantsForm->setVerticalSpacing(theme::kSpacingSmall);
+    variantsForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    variantsForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     qualityVariantCombo_ = makeVariantCombo();
     qualityVariantLabel_ =
@@ -255,14 +259,10 @@ void AnimeJanaiManagerPanel::buildUi() {
     performanceVariantLabel_ =
         makeFieldLabel(tr("Performance preset (Slot 1003)"), globalCard, performanceVariantCombo_);
 
-    variantsGrid->addWidget(qualityVariantLabel_, 0, 0);
-    variantsGrid->addWidget(qualityVariantCombo_, 0, 1);
-    variantsGrid->addWidget(balancedVariantLabel_, 1, 0);
-    variantsGrid->addWidget(balancedVariantCombo_, 1, 1);
-    variantsGrid->addWidget(performanceVariantLabel_, 2, 0);
-    variantsGrid->addWidget(performanceVariantCombo_, 2, 1);
-    variantsGrid->setColumnStretch(1, 1);
-    globalLayout->addLayout(variantsGrid);
+    variantsForm->addRow(qualityVariantLabel_, qualityVariantCombo_);
+    variantsForm->addRow(balancedVariantLabel_, balancedVariantCombo_);
+    variantsForm->addRow(performanceVariantLabel_, performanceVariantCombo_);
+    globalLayout->addLayout(variantsForm);
 
     loggingCheck_ = new QCheckBox(tr("Backend logging"), globalCard);
     polishInteractiveControl(loggingCheck_, 0);
@@ -270,10 +270,12 @@ void AnimeJanaiManagerPanel::buildUi() {
 
     globalLayout->addWidget(makeSettingsDivider(globalCard));
 
-    auto* trtGrid = new QGridLayout();
-    trtGrid->setContentsMargins(0, 0, 0, 0);
-    trtGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    trtGrid->setVerticalSpacing(theme::kSpacingSmall);
+    auto* trtForm = new QFormLayout();
+    trtForm->setContentsMargins(0, 0, 0, 0);
+    trtForm->setHorizontalSpacing(theme::kSpacingMedium);
+    trtForm->setVerticalSpacing(theme::kSpacingSmall);
+    trtForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    trtForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     trtModeCombo_ = new QComboBox(globalCard);
     polishInteractiveControl(trtModeCombo_);
@@ -281,8 +283,7 @@ void AnimeJanaiManagerPanel::buildUi() {
     trtModeCombo_->addItem(tr("Static ONNX (Fixed Input Shape)"), QStringLiteral("static_onnx"));
     trtModeCombo_->addItem(tr("Dynamic (Min / Opt / Max Shapes)"), QStringLiteral("dynamic"));
     trtModeLabel_ = makeFieldLabel(tr("TensorRT engine type"), globalCard, trtModeCombo_);
-    trtGrid->addWidget(trtModeLabel_, 0, 0);
-    trtGrid->addWidget(trtModeCombo_, 0, 1);
+    trtForm->addRow(trtModeLabel_, trtModeCombo_);
 
     trtOptLevelCombo_ = new QComboBox(globalCard);
     polishInteractiveControl(trtOptLevelCombo_);
@@ -294,16 +295,16 @@ void AnimeJanaiManagerPanel::buildUi() {
     trtOptLevelCombo_->addItem(tr("5 (Maximum Optimization)"), QStringLiteral("5"));
     trtOptLevelLabel_ =
         makeFieldLabel(tr("Builder optimization level"), globalCard, trtOptLevelCombo_);
-    trtGrid->addWidget(trtOptLevelLabel_, 1, 0);
-    trtGrid->addWidget(trtOptLevelCombo_, 1, 1);
-    trtGrid->setColumnStretch(1, 1);
-    globalLayout->addLayout(trtGrid);
+    trtForm->addRow(trtOptLevelLabel_, trtOptLevelCombo_);
+    globalLayout->addLayout(trtForm);
 
     trtDynamicContainer_ = new QWidget(globalCard);
-    auto* dynGrid = new QGridLayout(trtDynamicContainer_);
-    dynGrid->setContentsMargins(0, 0, 0, 0);
-    dynGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    dynGrid->setVerticalSpacing(theme::kSpacingXs);
+    auto* dynForm = new QFormLayout(trtDynamicContainer_);
+    dynForm->setContentsMargins(0, 0, 0, 0);
+    dynForm->setHorizontalSpacing(theme::kSpacingMedium);
+    dynForm->setVerticalSpacing(theme::kSpacingXs);
+    dynForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    dynForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     auto populateResCombo = [](QComboBox* combo, const QStringList& resolutions) {
         combo->setEditable(true);
@@ -334,25 +335,22 @@ void AnimeJanaiManagerPanel::buildUi() {
     trtMaxResLabel_ =
         makeFieldLabel(tr("Dynamic maximum resolution"), trtDynamicContainer_, trtMaxResCombo_);
 
-    dynGrid->addWidget(trtMinResLabel_, 0, 0);
-    dynGrid->addWidget(trtMinResCombo_, 0, 1);
-    dynGrid->addWidget(trtOptResLabel_, 1, 0);
-    dynGrid->addWidget(trtOptResCombo_, 1, 1);
-    dynGrid->addWidget(trtMaxResLabel_, 2, 0);
-    dynGrid->addWidget(trtMaxResCombo_, 2, 1);
-    dynGrid->setColumnStretch(1, 1);
+    dynForm->addRow(trtMinResLabel_, trtMinResCombo_);
+    dynForm->addRow(trtOptResLabel_, trtOptResCombo_);
+    dynForm->addRow(trtMaxResLabel_, trtMaxResCombo_);
     globalLayout->addWidget(trtDynamicContainer_);
 
-    auto* rawArgsRow = new QHBoxLayout();
-    rawArgsRow->setContentsMargins(0, 0, 0, 0);
-    rawArgsRow->setSpacing(theme::kSpacingMedium);
+    auto* rawArgsForm = new QFormLayout();
+    rawArgsForm->setContentsMargins(0, 0, 0, 0);
+    rawArgsForm->setHorizontalSpacing(theme::kSpacingMedium);
+    rawArgsForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    rawArgsForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     trtRawArgsEdit_ = new QLineEdit(globalCard);
     trtRawArgsEdit_->setObjectName(QStringLiteral("ajiTrtEngineSettingsEdit"));
     polishInteractiveControl(trtRawArgsEdit_);
     trtRawArgsLabel_ = makeFieldLabel(tr("trtexec engine arguments"), globalCard, trtRawArgsEdit_);
-    rawArgsRow->addWidget(trtRawArgsLabel_);
-    rawArgsRow->addWidget(trtRawArgsEdit_, 1);
-    globalLayout->addLayout(rawArgsRow);
+    rawArgsForm->addRow(trtRawArgsLabel_, trtRawArgsEdit_);
+    globalLayout->addLayout(rawArgsForm);
 
     auto* confToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     importConfButton_ = new QPushButton(tr("Import animejanai.conf…"), globalCard);
@@ -379,25 +377,27 @@ void AnimeJanaiManagerPanel::buildUi() {
 
     profilesSubtitle_ = new QLabel(
         tr("Build custom AnimeJaNai profile slots with resolution/FPS activation conditions, "
-           "chained ONNX upscalers, pre-upscale downscaling, and per-chain RIFE interpolation. "
+           "ordered ONNX and Anime4K processing steps, input resizing, and per-chain RIFE interpolation. "
            "Active custom slots appear in the player's ANIMEJANAI menu."),
         profilesCard);
     styleMutedCaption(profilesSubtitle_);
     profilesLayout->addWidget(profilesSubtitle_);
 
-    auto* slotSelectRow = new QHBoxLayout();
-    slotSelectRow->setContentsMargins(0, 0, 0, 0);
-    slotSelectRow->setSpacing(theme::kSpacingSmall);
+    auto* slotSelectForm = new QFormLayout();
+    slotSelectForm->setContentsMargins(0, 0, 0, 0);
+    slotSelectForm->setHorizontalSpacing(theme::kSpacingSmall);
+    slotSelectForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    slotSelectForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     slotSelectCombo_ = new QComboBox(profilesCard);
     slotSelectCombo_->setObjectName(QStringLiteral("ajiSlotSelectCombo"));
     polishInteractiveControl(slotSelectCombo_);
     slotSelectLabel_ = makeFieldLabel(tr("Profile slot"), profilesCard, slotSelectCombo_);
-    slotSelectRow->addWidget(slotSelectLabel_);
-    slotSelectRow->addWidget(slotSelectCombo_, 1);
-    profilesLayout->addLayout(slotSelectRow);
+    slotSelectForm->addRow(slotSelectLabel_, slotSelectCombo_);
+    profilesLayout->addLayout(slotSelectForm);
 
     auto* slotToolbar = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     createSlotButton_ = new QPushButton(tr("Activate / Reset Slot"), profilesCard);
+    createSlotButton_->setObjectName(QStringLiteral("ajiCreateSlotButton"));
     polishInteractiveControl(createSlotButton_);
     cloneSlotButton_ = new QPushButton(tr("Clone From…"), profilesCard);
     polishInteractiveControl(cloneSlotButton_);
@@ -421,17 +421,18 @@ void AnimeJanaiManagerPanel::buildUi() {
     editorLayout->setContentsMargins(0, 0, 0, 0);
     editorLayout->setSpacing(theme::kSpacingSmall);
 
-    auto* profileNameRow = new QHBoxLayout();
-    profileNameRow->setContentsMargins(0, 0, 0, 0);
-    profileNameRow->setSpacing(theme::kSpacingMedium);
+    auto* profileNameForm = new QFormLayout();
+    profileNameForm->setContentsMargins(0, 0, 0, 0);
+    profileNameForm->setHorizontalSpacing(theme::kSpacingMedium);
+    profileNameForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    profileNameForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     profileNameEdit_ = new QLineEdit(slotEditorContainer_);
     profileNameEdit_->setObjectName(QStringLiteral("ajiProfileNameEdit"));
     polishInteractiveControl(profileNameEdit_);
     profileNameLabel_ =
         makeFieldLabel(tr("Profile name"), slotEditorContainer_, profileNameEdit_);
-    profileNameRow->addWidget(profileNameLabel_);
-    profileNameRow->addWidget(profileNameEdit_, 1);
-    editorLayout->addLayout(profileNameRow);
+    profileNameForm->addRow(profileNameLabel_, profileNameEdit_);
+    editorLayout->addLayout(profileNameForm);
 
     auto* chainToolbar = new QVBoxLayout();
     chainToolbar->setContentsMargins(0, 0, 0, 0);
@@ -458,10 +459,12 @@ void AnimeJanaiManagerPanel::buildUi() {
     chainToolbar->addLayout(chainActions);
     editorLayout->addLayout(chainToolbar);
 
-    auto* condGrid = new QGridLayout();
-    condGrid->setContentsMargins(0, 0, 0, 0);
-    condGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    condGrid->setVerticalSpacing(theme::kSpacingXs);
+    auto* condForm = new QFormLayout();
+    condForm->setContentsMargins(0, 0, 0, 0);
+    condForm->setHorizontalSpacing(theme::kSpacingMedium);
+    condForm->setVerticalSpacing(theme::kSpacingXs);
+    condForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    condForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     minResEdit_ = new QLineEdit(slotEditorContainer_);
     minResEdit_->setPlaceholderText(QStringLiteral("0x0"));
@@ -485,23 +488,19 @@ void AnimeJanaiManagerPanel::buildUi() {
     polishInteractiveControl(maxFpsSpin_);
     maxFpsLabel_ = makeFieldLabel(tr("Max FPS"), slotEditorContainer_, maxFpsSpin_);
 
-    condGrid->addWidget(minResLabel_, 0, 0);
-    condGrid->addWidget(minResEdit_, 0, 1);
-    condGrid->addWidget(maxResLabel_, 1, 0);
-    condGrid->addWidget(maxResEdit_, 1, 1);
-    condGrid->addWidget(minFpsLabel_, 2, 0);
-    condGrid->addWidget(minFpsSpin_, 2, 1);
-    condGrid->addWidget(maxFpsLabel_, 3, 0);
-    condGrid->addWidget(maxFpsSpin_, 3, 1);
-    condGrid->setColumnStretch(1, 1);
-    editorLayout->addLayout(condGrid);
+    condForm->addRow(minResLabel_, minResEdit_);
+    condForm->addRow(maxResLabel_, maxResEdit_);
+    condForm->addRow(minFpsLabel_, minFpsSpin_);
+    condForm->addRow(maxFpsLabel_, maxFpsSpin_);
+    editorLayout->addLayout(condForm);
 
     auto* stepsHeaderRow = new QHBoxLayout();
     stepsHeaderRow->setContentsMargins(0, 0, 0, 0);
     stepsHeaderRow->setSpacing(theme::kSpacingSmall);
-    upscaleStepsHeading_ = new QLabel(tr("Upscaling model steps in this chain"), slotEditorContainer_);
+    upscaleStepsHeading_ = new QLabel(tr("Processing steps in this chain"), slotEditorContainer_);
     styleSectionHeading(upscaleStepsHeading_);
-    addModelStepButton_ = new QPushButton(tr("Add Model Step"), slotEditorContainer_);
+    addModelStepButton_ = new QPushButton(tr("Add Processing Step"), slotEditorContainer_);
+    addModelStepButton_->setObjectName(QStringLiteral("ajiAddStepButton"));
     polishInteractiveControl(addModelStepButton_);
     stepsHeaderRow->addWidget(upscaleStepsHeading_, 1, Qt::AlignVCenter);
     stepsHeaderRow->addWidget(addModelStepButton_, 0, Qt::AlignVCenter);
@@ -519,10 +518,12 @@ void AnimeJanaiManagerPanel::buildUi() {
     editorLayout->addWidget(chainRifeEnableCheck_);
 
     chainRifeContainer_ = new QWidget(slotEditorContainer_);
-    auto* rifeGrid = new QGridLayout(chainRifeContainer_);
-    rifeGrid->setContentsMargins(0, 0, 0, 0);
-    rifeGrid->setHorizontalSpacing(theme::kSpacingMedium);
-    rifeGrid->setVerticalSpacing(theme::kSpacingXs);
+    auto* rifeForm = new QFormLayout(chainRifeContainer_);
+    rifeForm->setContentsMargins(0, 0, 0, 0);
+    rifeForm->setHorizontalSpacing(theme::kSpacingMedium);
+    rifeForm->setVerticalSpacing(theme::kSpacingXs);
+    rifeForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    rifeForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     chainRifeModelCombo_ = new QComboBox(chainRifeContainer_);
     polishInteractiveControl(chainRifeModelCombo_);
@@ -564,15 +565,11 @@ void AnimeJanaiManagerPanel::buildUi() {
         new QCheckBox(tr("RIFE before upscaling"), chainRifeContainer_);
     polishInteractiveControl(chainRifeBeforeUpscaleCheck_, 0);
 
-    rifeGrid->addWidget(chainRifeModelLabel_, 0, 0);
-    rifeGrid->addWidget(chainRifeModelCombo_, 0, 1);
-    rifeGrid->addWidget(chainRifeFactorLabel_, 1, 0);
-    rifeGrid->addWidget(factorBox, 1, 1);
-    rifeGrid->addWidget(chainRifeSceneLabel_, 2, 0);
-    rifeGrid->addWidget(chainRifeSceneSpin_, 2, 1);
-    rifeGrid->addWidget(chainRifeEnsembleCheck_, 3, 0, 1, 2);
-    rifeGrid->addWidget(chainRifeBeforeUpscaleCheck_, 4, 0, 1, 2);
-    rifeGrid->setColumnStretch(1, 1);
+    rifeForm->addRow(chainRifeModelLabel_, chainRifeModelCombo_);
+    rifeForm->addRow(chainRifeFactorLabel_, factorBox);
+    rifeForm->addRow(chainRifeSceneLabel_, chainRifeSceneSpin_);
+    rifeForm->addRow(chainRifeEnsembleCheck_);
+    rifeForm->addRow(chainRifeBeforeUpscaleCheck_);
     editorLayout->addWidget(chainRifeContainer_);
 
     profilesLayout->addWidget(slotEditorContainer_);
@@ -759,8 +756,8 @@ void AnimeJanaiManagerPanel::buildUi() {
 
     for (QComboBox* combo : findChildren<QComboBox*>()) {
         combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        combo->setMinimumContentsLength(12);
-        combo->setMinimumWidth(0);
+        combo->setMinimumContentsLength(theme::kSettingsCompactChoiceLengthChars);
+        combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
     retranslateUi();
 }
@@ -1012,10 +1009,11 @@ void AnimeJanaiManagerPanel::loadSelectedChainIntoEditor() {
 void AnimeJanaiManagerPanel::rebuildModelStepRows() {
     const bool prevUpdating = updatingUi_;
     updatingUi_ = true;
-
     for (ModelStepRow& row : modelStepRows_) {
         if (row.frame != nullptr) {
             modelStepsLayout_->removeWidget(row.frame);
+            row.frame->hide();
+            row.frame->setParent(nullptr);
             row.frame->deleteLater();
         }
     }
@@ -1026,73 +1024,178 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
         updatingUi_ = prevUpdating;
         return;
     }
-
     const QStringList availableModels =
         mplayer::native::AnimeJanaiConfigStore::availableUpscaleModelNames();
+    const auto a4kModes = mplayer::anime4k::availableModes();
+    const auto stableA4kId = [](const QString& id) {
+        static const QStringList ids = {
+            QStringLiteral("fast_a"), QStringLiteral("fast_b"), QStringLiteral("fast_c"),
+            QStringLiteral("hq_a"), QStringLiteral("hq_b"), QStringLiteral("hq_c"),
+            QStringLiteral("hq_aa"), QStringLiteral("hq_bb"), QStringLiteral("hq_ca")};
+        return ids.contains(id);
+    };
 
-    for (int i = 0; i < chain->models.size(); ++i) {
-        const auto& modelStep = chain->models.at(i);
+    for (int i = 0; i < chain->steps.size(); ++i) {
+        const auto& step = chain->steps.at(i);
         ModelStepRow row;
         row.frame = new QFrame(modelStepsContainer_);
-        row.frame->setObjectName(QStringLiteral("presetShortcutRow"));
-        auto* rowLayout = new QGridLayout(row.frame);
+        row.frame->setObjectName(QStringLiteral("animeJanaiStepRow_%1").arg(i + 1));
+        auto* rowLayout = new QVBoxLayout(row.frame);
         rowLayout->setContentsMargins(theme::kSpacingSmall, theme::kSpacingXs,
                                       theme::kSpacingSmall, theme::kSpacingXs);
-        rowLayout->setHorizontalSpacing(theme::kSpacingSmall);
-        rowLayout->setVerticalSpacing(theme::kSpacingXs);
+        rowLayout->setSpacing(theme::kSpacingXs);
 
-        row.stepLabel = new QLabel(tr("Model %1").arg(i + 1), row.frame);
+        row.stepLabel = new QLabel(tr("Step %1").arg(i + 1), row.frame);
         row.stepLabel->setObjectName(QStringLiteral("SettingsFormLabel"));
+        row.kindCombo = new QComboBox(row.frame);
+        row.kindCombo->setObjectName(QStringLiteral("animeJanaiStepKind_%1").arg(i + 1));
+        row.kindCombo->setProperty("stepIndex", i);
+        row.kindCombo->addItem(tr("ONNX model"), static_cast<int>(
+            mplayer::native::AnimeJanaiStepKind::OnnxModel));
+        row.kindCombo->addItem(tr("Anime4K preset"), static_cast<int>(
+            mplayer::native::AnimeJanaiStepKind::Anime4K));
+        row.kindCombo->setCurrentIndex(row.kindCombo->findData(static_cast<int>(step.kind)));
+        row.kindCombo->setAccessibleName(tr("Step %1 type").arg(i + 1));
+        polishInteractiveControl(row.kindCombo);
 
+        const bool isA4k = step.kind == mplayer::native::AnimeJanaiStepKind::Anime4K;
         row.modelCombo = new QComboBox(row.frame);
-        row.modelCombo->setEditable(true);
+        row.modelCombo->setObjectName(QStringLiteral("animeJanaiStepId_%1").arg(i + 1));
         row.modelCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        row.modelCombo->setMinimumContentsLength(12);
-        polishInteractiveControl(row.modelCombo);
-        row.modelCombo->addItem(tr("(None)"), QString());
-        for (const QString& name : availableModels) {
-            row.modelCombo->addItem(name, name);
-        }
-        if (!modelStep.name.isEmpty() && row.modelCombo->findData(modelStep.name) < 0) {
-            row.modelCombo->addItem(modelStep.name, modelStep.name);
-        }
-        const int foundIdx = row.modelCombo->findData(modelStep.name);
-        if (foundIdx >= 0) {
-            row.modelCombo->setCurrentIndex(foundIdx);
+        row.modelCombo->setMinimumContentsLength(theme::kSettingsCompactChoiceLengthChars);
+        row.modelCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        if (isA4k) {
+            for (const auto& mode : a4kModes) {
+                if (!stableA4kId(mode.id)) continue;
+                QString label;
+                if (mode.id == QLatin1String("fast_a")) label = QCoreApplication::translate("Anime4K", "A (Fast)");
+                else if (mode.id == QLatin1String("fast_b")) label = QCoreApplication::translate("Anime4K", "B (Fast)");
+                else if (mode.id == QLatin1String("fast_c")) label = QCoreApplication::translate("Anime4K", "C (Fast)");
+                else if (mode.id == QLatin1String("hq_a")) label = QCoreApplication::translate("Anime4K", "A (High Quality)");
+                else if (mode.id == QLatin1String("hq_b")) label = QCoreApplication::translate("Anime4K", "B (High Quality)");
+                else if (mode.id == QLatin1String("hq_c")) label = QCoreApplication::translate("Anime4K", "C (High Quality)");
+                else if (mode.id == QLatin1String("hq_aa")) label = QCoreApplication::translate("Anime4K", "A+A (Maximum)");
+                else if (mode.id == QLatin1String("hq_bb")) label = QCoreApplication::translate("Anime4K", "B+B (Maximum)");
+                else if (mode.id == QLatin1String("hq_ca")) label = QCoreApplication::translate("Anime4K", "C+A (Maximum)");
+                row.modelCombo->addItem(label, mode.id);
+            }
+            int found = row.modelCombo->findData(step.id);
+            if (found < 0 && !step.id.isEmpty()) {
+                row.modelCombo->addItem(step.id, step.id);
+                found = row.modelCombo->count() - 1;
+            }
+            if (found >= 0) row.modelCombo->setCurrentIndex(found);
+            row.modelCombo->setEditable(false);
         } else {
-            row.modelCombo->setCurrentText(modelStep.name);
+            row.modelCombo->setEditable(true);
+            row.modelCombo->addItem(tr("(None)"), QString());
+            for (const QString& name : availableModels) row.modelCombo->addItem(name, name);
+            if (!step.id.isEmpty() && row.modelCombo->findData(step.id) < 0)
+                row.modelCombo->addItem(step.id, step.id);
+            const int found = row.modelCombo->findData(step.id);
+            if (found >= 0) row.modelCombo->setCurrentIndex(found);
+            else row.modelCombo->setCurrentText(step.id);
         }
+        row.modelLabel = makeFieldLabel(isA4k ? tr("Anime4K preset") : tr("ONNX model"),
+                                        row.frame, row.modelCombo);
+        row.modelCombo->setAccessibleName(isA4k ? tr("Step %1 Anime4K preset").arg(i + 1)
+                                                : tr("Step %1 ONNX model").arg(i + 1));
+        polishInteractiveControl(row.modelCombo);
 
-        row.resizeHeightLabel = new QLabel(tr("Pre-resize H (px):"), row.frame);
-        styleMutedCaption(row.resizeHeightLabel);
+        row.resizeHeightLabel = makeFieldLabel(tr("Input resize height (px)"), row.frame);
         row.resizeHeightSpin = new QSpinBox(row.frame);
+        row.resizeHeightSpin->setObjectName(QStringLiteral("animeJanaiStepResizeHeight_%1").arg(i + 1));
         row.resizeHeightSpin->setRange(0, 4320);
         row.resizeHeightSpin->setSpecialValueText(tr("0 (Off)"));
-        row.resizeHeightSpin->setValue(modelStep.resizeHeightBeforeUpscale);
+        row.resizeHeightSpin->setValue(step.resizeHeightBeforeUpscale);
+        row.resizeHeightSpin->setAccessibleName(tr("Step %1 input resize height").arg(i + 1));
         polishInteractiveControl(row.resizeHeightSpin);
+        row.resizeHeightLabel->setBuddy(row.resizeHeightSpin);
 
-        row.resizeFactorLabel = new QLabel(tr("Pre-resize %:"), row.frame);
-        styleMutedCaption(row.resizeFactorLabel);
+        row.resizeFactorLabel = makeFieldLabel(tr("Input resize percentage"), row.frame);
         row.resizeFactorSpin = new QSpinBox(row.frame);
+        row.resizeFactorSpin->setObjectName(QStringLiteral("animeJanaiStepResizePercent_%1").arg(i + 1));
         row.resizeFactorSpin->setRange(1, 100);
         row.resizeFactorSpin->setSuffix(QStringLiteral("%"));
-        row.resizeFactorSpin->setValue(
-            std::clamp(modelStep.resizeFactorBeforeUpscale, 1, 100));
+        row.resizeFactorSpin->setValue(std::clamp(step.resizeFactorBeforeUpscale, 1, 100));
+        row.resizeFactorSpin->setAccessibleName(tr("Step %1 input resize percentage").arg(i + 1));
         polishInteractiveControl(row.resizeFactorSpin);
+        row.resizeFactorLabel->setBuddy(row.resizeFactorSpin);
 
-        row.removeButton = new QPushButton(tr("Remove"), row.frame);
+        row.scaleLabel = makeFieldLabel(tr("Anime4K output scale"), row.frame);
+        row.scaleCombo = new QComboBox(row.frame);
+        row.scaleCombo->setObjectName(QStringLiteral("animeJanaiStepScale_%1").arg(i + 1));
+        for (const int scale : {1, 2, 4}) row.scaleCombo->addItem(tr("%1×").arg(scale), scale);
+        const int scaleIndex = row.scaleCombo->findData(step.scaleFactor);
+        row.scaleCombo->setCurrentIndex(scaleIndex >= 0 ? scaleIndex : row.scaleCombo->findData(2));
+        row.scaleCombo->setAccessibleName(tr("Step %1 Anime4K output scale").arg(i + 1));
+        polishInteractiveControl(row.scaleCombo);
+        row.scaleLabel->setBuddy(row.scaleCombo);
+        row.scaleLabel->setVisible(isA4k);
+        row.scaleCombo->setVisible(isA4k);
+
+        row.moveUpButton = new QPushButton(QStringLiteral("↑"), row.frame);
+        row.moveUpButton->setToolTip(tr("Move Up"));
+        row.moveUpButton->setObjectName(QStringLiteral("animeJanaiStepMoveUp_%1").arg(i + 1));
+        row.moveUpButton->setAccessibleName(tr("Move step %1 up").arg(i + 1));
+        row.moveUpButton->setEnabled(i > 0);
+        row.moveDownButton = new QPushButton(QStringLiteral("↓"), row.frame);
+        row.moveDownButton->setToolTip(tr("Move Down"));
+        row.moveDownButton->setObjectName(QStringLiteral("animeJanaiStepMoveDown_%1").arg(i + 1));
+        row.moveDownButton->setAccessibleName(tr("Move step %1 down").arg(i + 1));
+        row.moveDownButton->setEnabled(i + 1 < chain->steps.size());
+        row.removeButton = new QPushButton(QStringLiteral("×"), row.frame);
+        row.removeButton->setAccessibleName(tr("Remove step %1").arg(i + 1));
+        row.removeButton->setToolTip(tr("Remove"));
+        row.removeButton->setObjectName(QStringLiteral("animeJanaiStepRemove_%1").arg(i + 1));
+        polishInteractiveControl(row.moveUpButton);
+        polishInteractiveControl(row.moveDownButton);
         polishInteractiveControl(row.removeButton);
 
-        rowLayout->addWidget(row.stepLabel, 0, 0);
-        rowLayout->addWidget(row.removeButton, 0, 1, Qt::AlignRight);
-        rowLayout->addWidget(row.modelCombo, 1, 0, 1, 2);
-        rowLayout->addWidget(row.resizeHeightLabel, 2, 0);
-        rowLayout->addWidget(row.resizeHeightSpin, 2, 1);
-        rowLayout->addWidget(row.resizeFactorLabel, 3, 0);
-        rowLayout->addWidget(row.resizeFactorSpin, 3, 1);
-        rowLayout->setColumnStretch(0, 1);
+        auto* stepHeader = new QHBoxLayout();
+        stepHeader->setContentsMargins(0, 0, 0, 0);
+        stepHeader->setSpacing(theme::kSpacingSmall);
+        stepHeader->addWidget(row.stepLabel, 1);
+        stepHeader->addWidget(row.moveUpButton);
+        stepHeader->addWidget(row.moveDownButton);
+        stepHeader->addWidget(row.removeButton);
+        rowLayout->addLayout(stepHeader);
+        auto* stepForm = new QFormLayout();
+        stepForm->setContentsMargins(0, 0, 0, 0);
+        stepForm->setHorizontalSpacing(theme::kSpacingSmall);
+        stepForm->setVerticalSpacing(theme::kSpacingXs);
+        stepForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+        stepForm->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+        auto* kindLabel = makeFieldLabel(tr("Step type"), row.frame, row.kindCombo);
+        stepForm->addRow(kindLabel, row.kindCombo);
+        stepForm->addRow(row.modelLabel, row.modelCombo);
+        stepForm->addRow(row.resizeHeightLabel, row.resizeHeightSpin);
+        stepForm->addRow(row.resizeFactorLabel, row.resizeFactorSpin);
+        stepForm->addRow(row.scaleLabel, row.scaleCombo);
+        rowLayout->addLayout(stepForm);
 
         const int stepIndex = i;
+        connect(row.kindCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+            if (updatingUi_) return;
+            auto* kindCombo = qobject_cast<QComboBox*>(sender());
+            const int changedIndex = kindCombo != nullptr
+                                         ? kindCombo->property("stepIndex").toInt() : -1;
+            commitCurrentChainFromEditor();
+            auto* currentChain = currentMutableChain();
+            if (currentChain != nullptr && changedIndex >= 0 &&
+                changedIndex < currentChain->steps.size()) {
+                auto& changedStep = currentChain->steps[changedIndex];
+                if (changedStep.kind == mplayer::native::AnimeJanaiStepKind::Anime4K)
+                    changedStep.id = QStringLiteral("fast_a");
+                else if (changedStep.kind == mplayer::native::AnimeJanaiStepKind::OnnxModel) {
+                    const QStringList models =
+                        mplayer::native::AnimeJanaiConfigStore::availableUpscaleModelNames();
+                    changedStep.id = models.isEmpty() ? QString() : models.first();
+                }
+            }
+            rebuildModelStepRows();
+            markDirty();
+        });
         connect(row.modelCombo, &QComboBox::currentTextChanged, this, [this](const QString&) {
             if (updatingUi_) return;
             commitCurrentChainFromEditor();
@@ -1108,14 +1211,23 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
             commitCurrentChainFromEditor();
             markDirty();
         });
+        connect(row.scaleCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+            if (updatingUi_) return;
+            commitCurrentChainFromEditor();
+            markDirty();
+        });
+        connect(row.moveUpButton, &QPushButton::clicked, this, [this, stepIndex]() {
+            onMoveModelStep(stepIndex, -1);
+        });
+        connect(row.moveDownButton, &QPushButton::clicked, this, [this, stepIndex]() {
+            onMoveModelStep(stepIndex, 1);
+        });
         connect(row.removeButton, &QPushButton::clicked, this, [this, stepIndex]() {
             onRemoveModelStep(stepIndex);
         });
-
         modelStepsLayout_->addWidget(row.frame);
         modelStepRows_.append(row);
     }
-
     updatingUi_ = prevUpdating;
 }
 
@@ -1137,21 +1249,24 @@ void AnimeJanaiManagerPanel::commitCurrentChainFromEditor() {
     chain->minFps = minFpsSpin_->value();
     chain->maxFps = maxFpsSpin_->value();
 
-    chain->models.clear();
+    chain->steps.clear();
     for (int i = 0; i < modelStepRows_.size(); ++i) {
         const ModelStepRow& row = modelStepRows_.at(i);
-        mplayer::native::AnimeJanaiChainModel step;
+        mplayer::native::AnimeJanaiChainStep step;
         step.number = i + 1;
-        const int comboIdx = row.modelCombo->currentIndex();
-        if (comboIdx == 0 && row.modelCombo->itemData(0).toString().isEmpty() &&
-            row.modelCombo->currentText() == row.modelCombo->itemText(0)) {
-            step.name.clear();
+        step.kind = static_cast<mplayer::native::AnimeJanaiStepKind>(
+            row.kindCombo->currentData().toInt());
+        if (step.kind == mplayer::native::AnimeJanaiStepKind::Anime4K &&
+            row.modelCombo->currentData().isValid()) {
+            step.id = row.modelCombo->currentData().toString();
         } else {
-            step.name = row.modelCombo->currentText().trimmed();
+            step.id = row.modelCombo->currentText() == tr("(None)")
+                          ? QString() : row.modelCombo->currentText().trimmed();
         }
         step.resizeHeightBeforeUpscale = row.resizeHeightSpin->value();
         step.resizeFactorBeforeUpscale = row.resizeFactorSpin->value();
-        chain->models.append(step);
+        step.scaleFactor = row.scaleCombo->currentData().toInt();
+        chain->steps.append(step);
     }
 
     chain->rifeEnabled = chainRifeEnableCheck_->isChecked();
@@ -1326,6 +1441,7 @@ void AnimeJanaiManagerPanel::onClearExternalModelsFolder() {
 }
 
 void AnimeJanaiManagerPanel::onImportFullConf() {
+    commitCurrentChainFromEditor();
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Import animejanai.conf"), QString(),
         tr("AnimeJaNai Config (*.conf *.ini);;All Files (*)"));
@@ -1359,6 +1475,7 @@ void AnimeJanaiManagerPanel::onExportFullConf() {
 }
 
 void AnimeJanaiManagerPanel::onResetDefaults() {
+    commitCurrentChainFromEditor();
     config_ = mplayer::native::AnimeJanaiConfig{};
     loadConfigIntoWidgets(config_);
     markDirty();
@@ -1367,6 +1484,7 @@ void AnimeJanaiManagerPanel::onResetDefaults() {
 }
 
 void AnimeJanaiManagerPanel::onCreateOrResetSlot() {
+    commitCurrentChainFromEditor();
     const int slotNum = currentSlotNumber();
     mplayer::native::AnimeJanaiSlot fresh;
     fresh.number = slotNum;
@@ -1377,10 +1495,11 @@ void AnimeJanaiManagerPanel::onCreateOrResetSlot() {
     defaultChain.maxResolution = QStringLiteral("1920x1080");
     const QStringList models =
         mplayer::native::AnimeJanaiConfigStore::availableUpscaleModelNames();
-    mplayer::native::AnimeJanaiChainModel step;
+    mplayer::native::AnimeJanaiChainStep step;
     step.number = 1;
-    step.name = models.isEmpty() ? QString() : models.first();
-    defaultChain.models.append(step);
+    step.kind = mplayer::native::AnimeJanaiStepKind::OnnxModel;
+    step.id = models.isEmpty() ? QString() : models.first();
+    defaultChain.steps.append(step);
     fresh.chains.append(defaultChain);
 
     if (auto* existing = findMutableSlot(slotNum)) {
@@ -1446,6 +1565,7 @@ void AnimeJanaiManagerPanel::onCloneSlotMenu() {
 }
 
 void AnimeJanaiManagerPanel::onDeleteSlot() {
+    commitCurrentChainFromEditor();
     const int slotNum = currentSlotNumber();
     config_.customSlots.erase(
         std::remove_if(config_.customSlots.begin(), config_.customSlots.end(),
@@ -1457,6 +1577,7 @@ void AnimeJanaiManagerPanel::onDeleteSlot() {
 }
 
 void AnimeJanaiManagerPanel::onImportProfilePconf() {
+    commitCurrentChainFromEditor();
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Import Profile (.pconf)"), QString(),
         tr("AnimeJaNai Profile (*.pconf *.conf);;All Files (*)"));
@@ -1517,12 +1638,13 @@ void AnimeJanaiManagerPanel::onAddChain() {
     chain.number = static_cast<int>(slot->chains.size()) + 1;
     chain.minResolution = QStringLiteral("0x0");
     chain.maxResolution = QStringLiteral("0x0");
-    mplayer::native::AnimeJanaiChainModel step;
+    mplayer::native::AnimeJanaiChainStep step;
     step.number = 1;
+    step.kind = mplayer::native::AnimeJanaiStepKind::OnnxModel;
     const QStringList models =
         mplayer::native::AnimeJanaiConfigStore::availableUpscaleModelNames();
-    if (!models.isEmpty()) step.name = models.first();
-    chain.models.append(step);
+    if (!models.isEmpty()) step.id = models.first();
+    chain.steps.append(step);
     slot->chains.append(chain);
     rebuildChainCombo();
     {
@@ -1584,12 +1706,13 @@ void AnimeJanaiManagerPanel::onAddModelStep() {
     commitCurrentChainFromEditor();
     auto* chain = currentMutableChain();
     if (chain == nullptr) return;
-    mplayer::native::AnimeJanaiChainModel step;
-    step.number = static_cast<int>(chain->models.size()) + 1;
+    mplayer::native::AnimeJanaiChainStep step;
+    step.number = static_cast<int>(chain->steps.size()) + 1;
+    step.kind = mplayer::native::AnimeJanaiStepKind::OnnxModel;
     const QStringList models =
         mplayer::native::AnimeJanaiConfigStore::availableUpscaleModelNames();
-    if (!models.isEmpty()) step.name = models.first();
-    chain->models.append(step);
+    if (!models.isEmpty()) step.id = models.first();
+    chain->steps.append(step);
     rebuildModelStepRows();
     markDirty();
 }
@@ -1597,16 +1720,27 @@ void AnimeJanaiManagerPanel::onAddModelStep() {
 void AnimeJanaiManagerPanel::onRemoveModelStep(int index) {
     commitCurrentChainFromEditor();
     auto* chain = currentMutableChain();
-    if (chain == nullptr || index < 0 || index >= chain->models.size()) return;
-    chain->models.removeAt(index);
-    for (int i = 0; i < chain->models.size(); ++i) {
-        chain->models[i].number = i + 1;
-    }
+    if (chain == nullptr || index < 0 || index >= chain->steps.size()) return;
+    chain->steps.removeAt(index);
+    for (int i = 0; i < chain->steps.size(); ++i) chain->steps[i].number = i + 1;
+    rebuildModelStepRows();
+    markDirty();
+}
+
+void AnimeJanaiManagerPanel::onMoveModelStep(int index, int direction) {
+    commitCurrentChainFromEditor();
+    auto* chain = currentMutableChain();
+    const int target = index + direction;
+    if (chain == nullptr || index < 0 || index >= chain->steps.size() ||
+        target < 0 || target >= chain->steps.size()) return;
+    chain->steps.swapItemsAt(index, target);
+    for (int i = 0; i < chain->steps.size(); ++i) chain->steps[i].number = i + 1;
     rebuildModelStepRows();
     markDirty();
 }
 
 void AnimeJanaiManagerPanel::retranslateUi() {
+    commitCurrentChainFromEditor();
     modelsHeading_->setText(tr("Custom RealESRGAN / ONNX spatial models"));
     modelsSubtitle_->setText(
         tr("Import compatible RealESRGAN, Compact (SRVGGNet), SPAN, DAT, or SwinIR .onnx graph "
@@ -1644,7 +1778,7 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     profilesHeading_->setText(tr("Custom multi-chain profile editor (Slots 1–10)"));
     profilesSubtitle_->setText(
         tr("Build custom AnimeJaNai profile slots with resolution/FPS activation conditions, "
-           "chained ONNX upscalers, pre-upscale downscaling, and per-chain RIFE interpolation. "
+           "ordered ONNX and Anime4K processing steps, input resizing, and per-chain RIFE interpolation. "
            "Active custom slots appear in the player's ANIMEJANAI menu."));
     slotSelectLabel_->setText(tr("Profile slot"));
     createSlotButton_->setText(tr("Activate / Reset Slot"));
@@ -1662,8 +1796,8 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     maxResLabel_->setText(tr("Max resolution (WxH)"));
     minFpsLabel_->setText(tr("Min FPS"));
     maxFpsLabel_->setText(tr("Max FPS"));
-    upscaleStepsHeading_->setText(tr("Upscaling model steps in this chain"));
-    addModelStepButton_->setText(tr("Add Model Step"));
+    upscaleStepsHeading_->setText(tr("Processing steps in this chain"));
+    addModelStepButton_->setText(tr("Add Processing Step"));
     chainRifeEnableCheck_->setText(tr("RIFE interpolation"));
     chainRifeModelLabel_->setText(tr("Chain RIFE model"));
     chainRifeFactorLabel_->setText(tr("Interpolation FPS factor"));
@@ -1674,6 +1808,7 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     refreshCustomModels();
     rebuildSlotCombo();
     rebuildChainCombo();
+    rebuildModelStepRows();
 }
 
 }  // namespace mikai::app

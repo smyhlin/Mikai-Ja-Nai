@@ -18,6 +18,7 @@ using mplayer::anime4k::categoryContainsPreset;
 using mplayer::anime4k::categoryLabel;
 using mplayer::anime4k::chainIsComplete;
 using mplayer::anime4k::filesForId;
+using mplayer::anime4k::filterShaderProgramForCandidate;
 using mplayer::anime4k::findShadersDir;
 using mplayer::anime4k::Kind;
 using mplayer::anime4k::menuRows;
@@ -303,6 +304,43 @@ void TestAnime4K::missingStageMakesTheEntireChainIncomplete() {
   QStringList expectedPaths;
   for (const QString& file : chain) expectedPaths.append(QDir(fixture.path()).filePath(file));
   QCOMPARE(shaderString.split(separator), expectedPaths);
+}
+
+void TestAnime4K::filterShaderProgramReportsOffAndUnknownCandidates() {
+  QString reason;
+  QVERIFY(filterShaderProgramForCandidate(QStringLiteral("off"), QStringLiteral("/unused"),
+                                          &reason).isEmpty());
+  QVERIFY(reason.contains(QStringLiteral("off"), Qt::CaseInsensitive));
+  QVERIFY(filterShaderProgramForCandidate(QStringLiteral("not-a-preset"),
+                                          QStringLiteral("/unused"), &reason).isEmpty());
+  QVERIFY(reason.contains(QStringLiteral("not-a-preset")));
+  QVERIFY(reason.contains(QStringLiteral("Unknown")));
+}
+
+void TestAnime4K::filterShaderProgramRejectsIncompleteAndUnreadableSources() {
+  QTemporaryDir missingDir;
+  QVERIFY(missingDir.isValid());
+  const QString firstFile = filesForId(QStringLiteral("fast_a")).first();
+  QFile first(missingDir.filePath(firstFile));
+  QVERIFY(first.open(QIODevice::WriteOnly));
+  QCOMPARE(first.write("first-stage"), qint64(11));
+  first.close();
+
+  QString reason;
+  const QByteArray missing = filterShaderProgramForCandidate(
+      QStringLiteral("fast_a"), missingDir.path(), &reason);
+  QVERIFY(missing.isEmpty());
+  QVERIFY(reason.contains(filesForId(QStringLiteral("fast_a")).at(1)));
+  QVERIFY(reason.contains(QStringLiteral("Cannot read")));
+
+  QTemporaryDir unreadableDir;
+  QVERIFY(unreadableDir.isValid());
+  QVERIFY(QDir().mkdir(unreadableDir.filePath(firstFile)));
+  const QByteArray unreadable = filterShaderProgramForCandidate(
+      QStringLiteral("fast_a"), unreadableDir.path(), &reason);
+  QVERIFY(unreadable.isEmpty());
+  QVERIFY(reason.contains(firstFile));
+  QVERIFY(reason.contains(QStringLiteral("Cannot read")));
 }
 
 void TestAnime4K::individualShaderIdsResolveAndDownscaleStagesAreNotStandalone() {

@@ -9,6 +9,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QTimer>
 
 #include <string>
@@ -16,9 +17,64 @@
 
 namespace mplayer {
 
+namespace {
+
+QStringList animeJanaiFilterLabels(const native::AnimeJanaiPlan& plan) {
+    QStringList labels;
+    static const QRegularExpression labelPattern(QStringLiteral("@([A-Za-z0-9_]+):"));
+    for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
+        QRegularExpressionMatchIterator matches = labelPattern.globalMatch(
+            QString::fromUtf8(stage.filterSpec));
+        while (matches.hasNext()) {
+            const QString label = matches.next().captured(1);
+            if (!labels.contains(label)) labels.append(label);
+        }
+        if (labels.isEmpty() && !stage.filterLabel.isEmpty())
+            labels.append(stage.filterLabel);
+    }
+    if (labels.isEmpty() && plan.requiresAji)
+        labels.append(QString::fromLatin1(native::kAnimeJanaiFilterLabel));
+    return labels;
+}
+
+}  // namespace
+
+void VideoSurface::removeAnimeJanaiFilters(uint64_t epoch, quint64 generation,
+                                           std::function<void()> completion) {
+    if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+        generation != animeJanaiGeneration_) return;
+    if (animeJanaiBoundFilterLabels_.isEmpty()) {
+        animeJanaiFilterBound_ = false;
+        if (completion) completion();
+        return;
+    }
+    const std::string label = "@" + animeJanaiBoundFilterLabels_.first().toStdString();
+    animeJanaiRequest_ = mpv_->commandAsync(
+        {"vf", "remove", label},
+        [this, epoch, generation, completion = std::move(completion)](
+            const AsyncReply& reply) mutable {
+            if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                generation != animeJanaiGeneration_) return;
+            animeJanaiRequest_ = {};
+            if (!reply.ok()) {
+                animeJanaiBusy_ = false;
+                animeJanaiFail(QStringLiteral("animejanai.filter.removeRefused"),
+                               QString::fromStdString(mpv_->describeError(reply.error)));
+                return;
+            }
+            animeJanaiBoundFilterLabels_.removeFirst();
+            removeAnimeJanaiFilters(epoch, generation, std::move(completion));
+        });
+    if (!animeJanaiRequest_.valid()) {
+        animeJanaiBusy_ = false;
+        animeJanaiFail(QStringLiteral("animejanai.filter.removeNotSubmitted"),
+                       QStringLiteral("mpv did not accept removing an owned filter"));
+    }
+}
+
 void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
     const uint64_t currentSourceEpoch = mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
-    const bool samePlan =
+    bool samePlan =
         animeJanaiPlan_.enabled == plan.enabled &&
         animeJanaiPlan_.available == plan.available &&
         animeJanaiPlan_.presetId == plan.presetId &&
@@ -33,7 +89,27 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
         animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir &&
         animeJanaiPlan_.statsPath == plan.statsPath &&
-        animeJanaiPlan_.filterSpec == plan.filterSpec;
+        animeJanaiPlan_.filterSpec == plan.filterSpec &&
+        animeJanaiPlan_.selectedChainNumber == plan.selectedChainNumber &&
+        animeJanaiPlan_.requiresAji == plan.requiresAji &&
+        animeJanaiPlan_.stages.size() == plan.stages.size();
+    if (samePlan) {
+        for (int i = 0; i < plan.stages.size(); ++i) {
+            const native::AnimeJanaiPlanStage& oldStage = animeJanaiPlan_.stages.at(i);
+            const native::AnimeJanaiPlanStage& newStage = plan.stages.at(i);
+            if (oldStage.kind != newStage.kind || oldStage.filterLabel != newStage.filterLabel ||
+                oldStage.filterSpec != newStage.filterSpec ||
+                oldStage.configPath != newStage.configPath ||
+                oldStage.statsPath != newStage.statsPath ||
+                oldStage.firstStepNumber != newStage.firstStepNumber ||
+                oldStage.lastStepNumber != newStage.lastStepNumber ||
+                oldStage.presetId != newStage.presetId ||
+                oldStage.scaleFactor != newStage.scaleFactor) {
+                samePlan = false;
+                break;
+            }
+        }
+    }
     const bool preserveProcessingObservation =
         mpv_ != nullptr && samePlan && animeJanaiPlan_.enabled &&
         animeJanaiPlan_.available && animeJanaiFilterBound_ && !animeJanaiBusy_ &&
@@ -50,12 +126,36 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiPlan_.rifeModelDir == plan.rifeModelDir &&
         animeJanaiPlan_.trtexecPath == plan.trtexecPath &&
         animeJanaiPlan_.trtexecLibDir == plan.trtexecLibDir;
-    const bool slotOnlyChange = animeJanaiFilterBound_ && plan.enabled &&
-                                sameConfiguration && animeJanaiPlan_.slot != plan.slot;
+    const bool slotOnlyChange = animeJanaiFilterBound_ && plan.enabled && plan.requiresAji &&
+                                plan.stages.size() <= 1 && sameConfiguration &&
+                                animeJanaiPlan_.stages.size() <= 1 &&
+                                animeJanaiPlan_.slot != plan.slot;
     const bool configurationChange = animeJanaiFilterBound_ && plan.enabled &&
-                                     !sameConfiguration;
+                                     (!sameConfiguration ||
+                                      animeJanaiPlan_.filterSpec != plan.filterSpec);
+    const bool planWillReconfigureOutput =
+        (plan.enabled && plan.available &&
+         (!animeJanaiFilterBound_ || slotOnlyChange || configurationChange)) ||
+        (!plan.enabled && (animeJanaiFilterBound_ || animeJanaiEngineBuildActive_));
+    const bool processingConfigurationChanged =
+        planWillReconfigureOutput && mpv_ != nullptr && currentSourceEpoch != 0 &&
+        animeJanaiSourceRequested_ && !pendingOpen_ && !url_.isEmpty();
+    if (processingConfigurationChanged) setEngineFrameHold(true);
     cancelAnimeJanaiOperation();
     animeJanaiPlan_ = plan;
+    if (!samePlan) {
+        animeJanaiAjiStageCount_ = 0;
+        for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
+            if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji)
+                ++animeJanaiAjiStageCount_;
+        }
+        if (plan.requiresAji && animeJanaiAjiStageCount_ == 0)
+            animeJanaiAjiStageCount_ = 1;
+        animeJanaiConfiguredAjiStageCount_ = 0;
+        animeJanaiAggregateBuildGate_ = {};
+        animeJanaiPendingAjiBuildCount_ = 0;
+        animeJanaiBuildPollStageIndex_ = 0;
+    }
     if (preserveProcessingObservation) {
         animeJanaiObserved_ = true;
         animeJanaiObservedEpoch_ = currentSourceEpoch;
@@ -89,31 +189,21 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         const quint64 generation = animeJanaiGeneration_;
         const uint64_t epoch = animeJanaiEpoch_;
         if (!animeJanaiFilterBound_ && !animeJanaiEngineBuildActive_) {
+            if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+            animeJanaiStageBuildLease_.reset();
+            setEngineFrameHold(false);
             restoreAnimeJanaiHwdec(epoch, generation);
             return;
         }
         animeJanaiBusy_ = true;
-        animeJanaiRequest_ = mpv_->commandAsync(
-            {"vf", "remove", std::string("@") + native::kAnimeJanaiFilterLabel},
-            [this, epoch, generation](const AsyncReply& reply) {
-                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
-                    generation != animeJanaiGeneration_) return;
-                animeJanaiRequest_ = {};
-                animeJanaiBusy_ = false;
-                if (!reply.ok()) {
-                    animeJanaiFail(QStringLiteral("animejanai.filter.removeRefused"),
-                                   QString::fromStdString(mpv_->describeError(reply.error)));
-                    return;
-                }
-                animeJanaiFilterBound_ = false;
-                finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build cancelled."));
-                restoreAnimeJanaiHwdec(epoch, generation);
-            });
-        if (!animeJanaiRequest_.valid()) {
+        removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation] {
             animeJanaiBusy_ = false;
-            animeJanaiFail(QStringLiteral("animejanai.filter.removeNotSubmitted"),
-                           QStringLiteral("mpv did not accept the AnimeJaNai filter removal request"));
-        }
+            if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+            animeJanaiStageBuildLease_.reset();
+            finishAnimeJanaiEngineBuild(false, tr("TensorRT engine build cancelled."));
+            setEngineFrameHold(false);
+            restoreAnimeJanaiHwdec(epoch, generation);
+        });
         return;
     }
     if (!plan.available) {
@@ -123,14 +213,21 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
                                              : plan.reason);
         return;
     }
-    const QByteArray expectedFilterPrefix =
-        QByteArray("@") + native::kAnimeJanaiFilterLabel + QByteArray(":");
-    if (plan.filterSpec.isEmpty() || !plan.filterSpec.startsWith(expectedFilterPrefix)) {
+    if (plan.filterSpec.isEmpty() || plan.stages.isEmpty()) {
         animeJanaiFail(QStringLiteral("animejanai.plan.filterSpecInvalid"),
-                       QStringLiteral("available AnimeJaNai plan has no mikai_aji filter specification"));
+                       QStringLiteral("available AnimeJaNai plan has no executable filter stages"));
         return;
     }
-    if (plan.slot == 0) {
+    if (plan.requiresAji &&
+        std::none_of(plan.stages.cbegin(), plan.stages.cend(),
+                     [](const native::AnimeJanaiPlanStage& stage) {
+                         return stage.kind == native::AnimeJanaiPlanStage::Kind::Aji;
+                     })) {
+        animeJanaiFail(QStringLiteral("animejanai.plan.filterSpecInvalid"),
+                       QStringLiteral("AJI plan has no AnimeJaNai stage"));
+        return;
+    }
+    if (plan.requiresAji && plan.slot == 0) {
         animeJanaiFail(QStringLiteral("animejanai.slot.bypass"),
                        QStringLiteral("AnimeJaNai slot 0 is passthrough and cannot be reported as processing"));
         return;
@@ -140,28 +237,14 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         const quint64 generation = animeJanaiGeneration_;
         animeJanaiBusy_ = true;
         setAnimeJanaiStatus(QStringLiteral("Switching AnimeJaNai configuration"));
-        animeJanaiRequest_ = mpv_->commandAsync(
-            {"vf", "remove", std::string("@") + native::kAnimeJanaiFilterLabel},
-            [this, epoch, generation](const AsyncReply& reply) {
-                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
-                    generation != animeJanaiGeneration_) return;
-                animeJanaiRequest_ = {};
-                animeJanaiBusy_ = false;
-                if (!reply.ok()) {
-                    animeJanaiFail(QStringLiteral("animejanai.backend.removeRefused"),
-                                   QString::fromStdString(mpv_->describeError(reply.error)));
-                    return;
-                }
-                animeJanaiFilterBound_ = false;
-                finishAnimeJanaiEngineBuild(false, tr("Previous TensorRT engine build stopped."));
-                animeJanaiReconfigureAfterRestore_ = true;
-                restoreAnimeJanaiHwdec(epoch, generation);
-            });
-        if (!animeJanaiRequest_.valid()) {
+        removeAnimeJanaiFilters(epoch, generation, [this, epoch, generation] {
             animeJanaiBusy_ = false;
-            animeJanaiFail(QStringLiteral("animejanai.backend.removeNotSubmitted"),
-                           QStringLiteral("mpv did not accept removing the old backend filter"));
-        }
+            if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+            animeJanaiStageBuildLease_.reset();
+            animeJanaiReconfigureAfterRestore_ = true;
+            finishAnimeJanaiEngineBuild(false, tr("Previous TensorRT engine build stopped."));
+            restoreAnimeJanaiHwdec(epoch, generation);
+        });
         return;
     }
     const native::NativePlaybackController::Status nativeStatus = nativePlayback_.status();
@@ -176,7 +259,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         nativeState == native::NativePlaybackController::State::Off ||
         nativeState == native::NativePlaybackController::State::Failed;
     const bool noPrivateFilterOrTransition = !nativeFilterBound_ && stateCanBeUnbound;
-    if (nativeFilterBound_ || !noPrivateFilterOrTransition) {
+    if (plan.requiresAji && (nativeFilterBound_ || !noPrivateFilterOrTransition)) {
         const QString details =
             QStringLiteral("private mikai_native state=%1 bound=%2 reason=%3: %4; "
                            "AnimeJaNai cannot run concurrently")
@@ -188,8 +271,42 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiFail(QStringLiteral("animejanai.privateNativeConflict"), details);
         return;
     }
+    if (!plan.requiresAji) {
+        const uint64_t epoch = mpv_->sourceEpoch();
+        const quint64 generation = animeJanaiGeneration_;
+        const std::string spec(plan.filterSpec.constData(),
+                               static_cast<size_t>(plan.filterSpec.size()));
+        animeJanaiBusy_ = true;
+        animeJanaiReportPending_ = true;
+        animeJanaiRequest_ = mpv_->commandAsync(
+            {"vf", "add", spec},
+            [this, epoch, generation](const AsyncReply& attached) {
+                if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
+                    generation != animeJanaiGeneration_) return;
+                animeJanaiRequest_ = {};
+                animeJanaiBusy_ = false;
+                animeJanaiReportPending_ = false;
+                if (!attached.ok()) {
+                    animeJanaiFail(QStringLiteral("animejanai.filter.attachRefused"),
+                                   QString::fromStdString(mpv_->describeError(attached.error)));
+                    return;
+                }
+                animeJanaiFilterBound_ = true;
+                animeJanaiBoundFilterLabels_ = animeJanaiFilterLabels(animeJanaiPlan_);
+                setAnimeJanaiStatus(QStringLiteral("Configured; waiting for Anime4K output"));
+                refreshRenderState();
+                setEngineFrameHold(false);
+            });
+        if (!animeJanaiRequest_.valid()) {
+            animeJanaiReportPending_ = false;
+            animeJanaiBusy_ = false;
+            animeJanaiFail(QStringLiteral("animejanai.filter.attachNotSubmitted"),
+                           QStringLiteral("mpv did not accept the Anime4K filter request"));
+        }
+        return;
+    }
     const native::RuntimeSelection& selection = native::currentSelection();
-    if (!native::isAnimeJanaiForkRuntime(selection)) {
+    if (plan.requiresAji && !native::isAnimeJanaiForkRuntime(selection)) {
         animeJanaiFail(QStringLiteral("animejanai.core.unsupported"),
                        QStringLiteral("AnimeJaNai requires the official Standard fork d6d93599d5; "
                                       "the loaded libmpv core is not that supported fork"));
@@ -217,6 +334,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
                 setAnimeJanaiStatus(QStringLiteral(
                     "Configured; filter accepted (inference not observed)"));
                 publishPendingAnimeJanaiObservation(epoch, generation);
+                if (!animeJanaiEngineBuildActive_) setEngineFrameHold(false);
             });
         if (!animeJanaiRequest_.valid()) {
             animeJanaiReportPending_ = false;
@@ -248,8 +366,9 @@ void VideoSurface::resetAnimeJanaiObservation() {
 // libmpv has one client-level log threshold, so verbose delivery is scoped to
 // the active official plan that consumes these backend reports.
 bool VideoSurface::animeJanaiBackendLogsNeeded() const {
-    return mpv_ != nullptr && animeJanaiSourceRequested_ && !pendingOpen_ &&
+            return mpv_ != nullptr && animeJanaiSourceRequested_ && !pendingOpen_ &&
            animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
+           animeJanaiPlan_.requiresAji &&
            native::isAnimeJanaiForkRuntime(native::currentSelection());
 }
 
@@ -260,19 +379,61 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
         animeJanaiEpoch_ != mpv_->sourceEpoch()) return;
 
     const QString lower = (prefix + QLatin1Char(' ') + line).toLower();
+    const int buildLogSlot = animeJanaiPlan_.selectedChainNumber > 0
+                                 ? 1 : animeJanaiPlan_.slot;
     const native::AnimeJanaiBuildLogEvent buildLogEvent =
-        native::classifyAnimeJanaiBuildLog(prefix, line, animeJanaiPlan_.backend,
-                                           animeJanaiPlan_.slot);
+        animeJanaiPlan_.backend == native::Backend::TensorRT
+            ? animeJanaiAggregateBuildGate_.observeLog(prefix, line, animeJanaiPlan_.backend,
+                                                       buildLogSlot)
+            : native::classifyAnimeJanaiBuildLog(prefix, line, animeJanaiPlan_.backend,
+                                                 buildLogSlot);
+    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtBuildFailed) {
+        const QString enginePath = native::animeJanaiBuildFailureEnginePath(prefix, line);
+        QStringList failureDetails;
+        if (!enginePath.isEmpty()) {
+            failureDetails = native::readAnimeJanaiBuildLogTail(
+                enginePath + QStringLiteral(".build.log"), native::nativeRoot());
+        }
+        if (failureDetails.isEmpty()) failureDetails << line.trimmed();
+        animeJanaiFail(QStringLiteral("animejanai.build.failed"),
+                       failureDetails.join(QLatin1Char('\n')));
+        return;
+    }
+    const QString trimmedLine = line.trimmed();
+    if (animeJanaiEngineBuildActive_ &&
+        trimmedLine.compare(
+            QLatin1String("background engine build finished; reconfiguring"),
+            Qt::CaseInsensitive) == 0) {
+        animeJanaiBackgroundBuildFinished_ = true;
+    }
     if (buildLogEvent == native::AnimeJanaiBuildLogEvent::TensorRtBuildStarted) {
+        ++animeJanaiPendingAjiBuildCount_;
         if (!animeJanaiEngineBuildActive_) {
             animeJanaiBuildPollingRefused_ = false;
             animeJanaiBuildNextPollMs_ = 0;
+            animeJanaiBackgroundBuildFinished_ = false;
             beginEnginePause();
         }
-        animeJanaiEngineBuildActive_ = true;
         const QString detail = tr("Compiling the selected model for this video resolution.");
+        setEngineFrameHold(true);
         setAnimeJanaiStatus(tr("Building TensorRT engine…"));
         emit animeJanaiEngineBuildChanged(true, false, detail);
+    }
+    if (buildLogEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
+        animeJanaiConfiguredAjiStageCount_ =
+            qMin(animeJanaiAjiStageCount_, animeJanaiConfiguredAjiStageCount_ + 1);
+        if (animeJanaiPendingAjiBuildCount_ > 0) --animeJanaiPendingAjiBuildCount_;
+        if (animeJanaiConfiguredAjiStageCount_ < animeJanaiAjiStageCount_) {
+            setAnimeJanaiStatus(
+                tr("Configured AnimeJaNai stage %1 of %2; waiting for remaining stages.")
+                    .arg(animeJanaiConfiguredAjiStageCount_)
+                    .arg(animeJanaiAjiStageCount_));
+            return;
+        }
+        if (animeJanaiPendingAjiBuildCount_ > 0) {
+            setAnimeJanaiStatus(tr("Waiting for all AnimeJaNai engine builds to finish."));
+            return;
+        }
     }
     const QString backendShort =
         animeJanaiPlan_.backend == native::Backend::TensorRT
@@ -288,7 +449,8 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
     QString observed;
     if (animeJanaiPlan_.presetId.startsWith(QStringLiteral("rife:"), Qt::CaseInsensitive) &&
         lower.contains(QStringLiteral("rife active:")) &&
-        lower.contains(QStringLiteral("interpolation"))) {
+        lower.contains(QStringLiteral("interpolation")) &&
+        (!animeJanaiEngineBuildActive_ || animeJanaiBackgroundBuildFinished_)) {
         double factor = 2.0;
         static const QRegularExpression kRifeFactorRe(
             QStringLiteral("rife\\s+active:\\s*(\\d+)\\s*/\\s*(\\d+)"),
@@ -298,25 +460,25 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
             const double den = m.captured(2).toDouble();
             if (num > 0.0 && den > 0.0) factor = num / den;
         }
-        const double baseFps =
-            observedContainerFps_ > 0.0
-                ? observedContainerFps_
-                : (streamFramesPerSecond_ > 0.0 ? streamFramesPerSecond_ / factor : 23.98);
+        const double baseFps = observedContainerFps_;
         const double targetFps = baseFps * factor;
         const int srcH = videoHeight_ > 0
                              ? videoHeight_
                              : static_cast<int>(std::lround(observedVideoHeight_));
-        if (srcH > 0) {
+        if (srcH > 0 && baseFps > 0.0) {
             observed = QStringLiteral("%1 · %2 · %3p · %4 → %5 FPS")
                            .arg(backendShort, presetLabel)
                            .arg(srcH)
                            .arg(baseFps, 0, 'f', 2)
                            .arg(targetFps, 0, 'f', 2);
-        } else {
+        } else if (baseFps > 0.0) {
             observed = QStringLiteral("%1 · %2 · %3 → %4 FPS")
                            .arg(backendShort, presetLabel)
                            .arg(baseFps, 0, 'f', 2)
                            .arg(targetFps, 0, 'f', 2);
+        } else {
+            observed = QStringLiteral("%1 · %2 · interpolation active")
+                           .arg(backendShort, presetLabel);
         }
     } else {
         if (buildLogEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
@@ -334,14 +496,14 @@ void VideoSurface::observeAnimeJanaiBackendLog(const QString& prefix, const QStr
                 outH = m.captured(4).toInt();
             }
             if (inH > 0 && outH > 0) {
-                observed = QStringLiteral("%1 · %2 · %3p → %4p (%5×%6)")
+                observed = QStringLiteral("Configured · %1 · %2 · %3p → %4p (%5×%6)")
                                .arg(backendShort, presetLabel)
                                .arg(inH)
                                .arg(outH)
                                .arg(outW)
                                .arg(outH);
             } else {
-                observed = QStringLiteral("%1 · %2").arg(backendShort, presetLabel);
+                observed = QStringLiteral("Configured · %1 · %2").arg(backendShort, presetLabel);
             }
         }
     }
@@ -366,7 +528,9 @@ void VideoSurface::publishAnimeJanaiObservation(const QString& status, uint64_t 
     animeJanaiObservedGeneration_ = generation;
     animeJanaiObservedStatus_ = status;
     setAnimeJanaiStatus(status);
-    finishAnimeJanaiEngineBuild(true, tr("TensorRT engine ready; processing started."));
+    finishAnimeJanaiEngineBuild(true, tr("TensorRT engine ready; backend configuration observed."));
+    if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+    animeJanaiStageBuildLease_.reset();
 }
 
 void VideoSurface::publishPendingAnimeJanaiObservation(uint64_t epoch, quint64 generation) {
@@ -440,35 +604,61 @@ void VideoSurface::pollAnimeJanaiEngineBuild() {
     animeJanaiBuildNextPollMs_ = nativeStatusClock_.elapsed() + 500;
     const uint64_t epoch = mpv_->sourceEpoch();
     const quint64 generation = animeJanaiGeneration_;
-    // The official filter's poll command wakes completion without advancing playback.
-    // The payload is required by the transport and ignored by the filter.
+    QStringList ajiLabels;
+    for (const native::AnimeJanaiPlanStage& stage : animeJanaiPlan_.stages) {
+        if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji &&
+            !stage.filterLabel.isEmpty())
+            ajiLabels.append(stage.filterLabel);
+    }
+    if (ajiLabels.isEmpty())
+        ajiLabels.append(QString::fromLatin1(native::kAnimeJanaiFilterLabel));
+    const int pollIndex = animeJanaiBuildPollStageIndex_ % ajiLabels.size();
+    const std::string pollLabel = ajiLabels.at(pollIndex).toStdString();
+    // Each AJI context owns its poll command; rotate across all build-capable stages.
     animeJanaiBuildPollRequest_ = mpv_->commandAsync(
-        {"vf-command", native::kAnimeJanaiFilterLabel, "poll", ""},
-        [this, epoch, generation](const AsyncReply& reply) {
+        {"vf-command", pollLabel, "poll", ""},
+        [this, epoch, generation, pollIndex, stageCount = ajiLabels.size()](const AsyncReply& reply) {
             if (mpv_ == nullptr || epoch != mpv_->sourceEpoch() ||
                 generation != animeJanaiGeneration_) return;
             animeJanaiBuildPollRequest_ = {};
+            if (reply.ok() && stageCount > 1)
+                animeJanaiBuildPollStageIndex_ = (pollIndex + 1) % stageCount;
             if (!reply.ok() && animeJanaiEngineBuildActive_) {
                 animeJanaiBuildPollingRefused_ = true;
-                emit animeJanaiFailure(QStringLiteral("animejanai.build.pollRefused: ") +
-                                      QString::fromStdString(mpv_->describeError(reply.error)));
+                animeJanaiFail(QStringLiteral("animejanai.build.pollRefused"),
+                               QString::fromStdString(mpv_->describeError(reply.error)));
             }
         });
     if (!animeJanaiBuildPollRequest_.valid()) {
         animeJanaiBuildPollingRefused_ = true;
-        emit animeJanaiFailure(QStringLiteral("animejanai.build.pollNotSubmitted"));
+        animeJanaiFail(QStringLiteral("animejanai.build.pollNotSubmitted"),
+                       QStringLiteral("mpv did not accept the engine build status poll"));
     }
 }
 
 void VideoSurface::finishAnimeJanaiEngineBuild(bool succeeded, const QString& detail) {
     if (!animeJanaiEngineBuildActive_) return;
-    animeJanaiEngineBuildActive_ = false;
-    endEnginePause(true);
+    setEngineFrameHold(false);
     emit animeJanaiEngineBuildChanged(false, succeeded, detail);
+    endEnginePause(true);
 }
 
 void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reason) {
     animeJanaiReportPending_ = false;
+    if (animeJanaiFilterBound_ && !animeJanaiFailureCleanupActive_ && mpv_ != nullptr) {
+        animeJanaiFailureCleanupActive_ = true;
+        const uint64_t epoch = mpv_->sourceEpoch();
+        const quint64 generation = animeJanaiGeneration_;
+        removeAnimeJanaiFilters(epoch, generation, [this] {
+            animeJanaiFailureCleanupActive_ = false;
+            if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+            animeJanaiStageBuildLease_.reset();
+        });
+    } else if (!animeJanaiFilterBound_) {
+        if (animeJanaiStageBuildLease_) animeJanaiStageBuildLease_->release();
+        animeJanaiStageBuildLease_.reset();
+    }
+    animeJanaiBackgroundBuildFinished_ = false;
     resetAnimeJanaiObservation();
     if (mpv_ != nullptr) {
         try {
@@ -479,11 +669,13 @@ void VideoSurface::animeJanaiFail(const QString& reasonKey, const QString& reaso
     }
     const QString detail = reasonKey + QStringLiteral(": ") + reason;
     finishAnimeJanaiEngineBuild(false, detail);
+    setEngineFrameHold(false);
     setAnimeJanaiStatus(QStringLiteral("Processing failed — ") + detail);
     emit animeJanaiFailure(detail);
 }
 
 void VideoSurface::cancelAnimeJanaiOperation() {
+    animeJanaiBackgroundBuildFinished_ = false;
     if (mpv_ != nullptr && animeJanaiBuildPollRequest_.valid()) {
         mpv_->cancelAsync(animeJanaiBuildPollRequest_);
     }
@@ -574,6 +766,37 @@ void VideoSurface::processAnimeJanaiPlan() {
                                 restoreAnimeJanaiHwdec(epoch, generation);
                                 return;
                             }
+                            if (!animeJanaiStageBuildLease_) {
+                                if (animeJanaiPlan_.cacheKeys.isEmpty()) {
+                                    animeJanaiBusy_ = false;
+                                    animeJanaiFail(QStringLiteral("animejanai.cache.keysMissing"),
+                                                   QStringLiteral("The AJI plan has no owned engine-cache keys."));
+                                    restoreAnimeJanaiHwdec(epoch, generation);
+                                    return;
+                                }
+                                QString busyKey;
+                                QString busyOwner;
+                                animeJanaiStageBuildLease_ = animeJanaiPlan_.cacheLease;
+                                if (!animeJanaiStageBuildLease_ ||
+                                    !animeJanaiStageBuildLease_->held())
+                                    animeJanaiStageBuildLease_ =
+                                    native::AnimeJanaiStageBuildLease::tryAcquire(
+                                        animeJanaiPlan_.cacheKeys,
+                                        QStringLiteral("%1:%2:%3")
+                                            .arg(animeJanaiPlan_.presetId)
+                                            .arg(epoch)
+                                            .arg(generation),
+                                        &busyKey, &busyOwner);
+                                if (!animeJanaiStageBuildLease_) {
+                                    animeJanaiBusy_ = false;
+                                    animeJanaiFail(
+                                        QStringLiteral("animejanai.cache.busy"),
+                                        tr("The engine cache is in use by %1 (%2).")
+                                            .arg(busyOwner, busyKey));
+                                    restoreAnimeJanaiHwdec(epoch, generation);
+                                    return;
+                                }
+                            }
                             const std::string spec(animeJanaiPlan_.filterSpec.constData(),
                                                    static_cast<size_t>(animeJanaiPlan_.filterSpec.size()));
                             animeJanaiReportPending_ = true;
@@ -592,6 +815,8 @@ void VideoSurface::processAnimeJanaiPlan() {
                                         return;
                                     }
                                     animeJanaiFilterBound_ = true;
+                                    animeJanaiBoundFilterLabels_ =
+                                        animeJanaiFilterLabels(animeJanaiPlan_);
                                     animeJanaiReportPending_ = false;
                                     setAnimeJanaiStatus(QStringLiteral(
                                         "Configured; filter accepted (inference not observed)"));
@@ -600,6 +825,7 @@ void VideoSurface::processAnimeJanaiPlan() {
                                     // a paused one produces no frame to rebuild
                                     // it on, so the render state is refreshed.
                                     refreshRenderState();
+                                    if (!animeJanaiEngineBuildActive_) setEngineFrameHold(false);
                                 });
                             if (!animeJanaiRequest_.valid()) {
                                 animeJanaiReportPending_ = false;
@@ -633,6 +859,7 @@ void VideoSurface::processAnimeJanaiPlan() {
 void VideoSurface::restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation) {
     if (!mpv_ || animeJanaiPreviousHwdec_.isNull() || animeJanaiPreviousHwdec_.isEmpty()) {
         if (animeJanaiReconfigureAfterRestore_) {
+            setEngineFrameHold(true);
             animeJanaiReconfigureAfterRestore_ = false;
             processAnimeJanaiPlan();
         } else if (!animeJanaiPlan_.enabled) {
@@ -655,6 +882,7 @@ void VideoSurface::restoreAnimeJanaiHwdec(uint64_t epoch, quint64 generation) {
                 return;
             }
             if (animeJanaiReconfigureAfterRestore_) {
+                setEngineFrameHold(true);
                 animeJanaiReconfigureAfterRestore_ = false;
                 processAnimeJanaiPlan();
             } else if (!animeJanaiPlan_.enabled) {

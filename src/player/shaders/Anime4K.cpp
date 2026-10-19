@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 
 #include <algorithm>
@@ -582,6 +583,62 @@ QString findShadersDir() {
         }
     }
     return QString();
+}
+
+QByteArray filterShaderProgramForCandidate(const QString& id, const QString& shadersDir,
+                                           QString* reason) {
+    if (reason != nullptr) {
+        reason->clear();
+    }
+    if (id == QLatin1String("off")) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Anime4K candidate 'off' is disabled");
+        }
+        return {};
+    }
+
+    const QStringList files = filesForId(id, shadersDir);
+    if (files.isEmpty()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Unknown Anime4K candidate '%1'").arg(id);
+        }
+        return {};
+    }
+
+    const QString dir = shadersDir.isEmpty() ? findShadersDir() : shadersDir;
+    if (dir.isEmpty()) {
+        if (reason != nullptr) {
+            *reason = QStringLiteral("Shader directory unavailable for Anime4K candidate '%1'")
+                          .arg(id);
+        }
+        return {};
+    }
+
+    QByteArray program;
+    for (const QString& name : files) {
+        const QString path = QDir(dir).filePath(name);
+        QFile shader(path);
+        if (!shader.open(QIODevice::ReadOnly)) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("Cannot read Anime4K shader '%1': %2")
+                              .arg(name, shader.errorString());
+            }
+            return {};
+        }
+        const QByteArray source = shader.readAll();
+        if (shader.error() != QFileDevice::NoError) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("Cannot read Anime4K shader '%1': %2")
+                              .arg(name, shader.errorString());
+            }
+            return {};
+        }
+        program.append(source);
+        if (!source.endsWith('\n')) {
+            program.append('\n');
+        }
+    }
+    return program;
 }
 
 QString shaderStringForCandidate(const QString& id, const QString& shadersDir) {

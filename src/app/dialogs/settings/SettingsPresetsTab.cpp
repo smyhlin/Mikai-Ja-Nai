@@ -86,6 +86,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
     auto* scroll = new QScrollArea(page);
     scroll->setObjectName(QStringLiteral("presetsScroll"));
     scroll->setWidgetResizable(true);
+    scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 

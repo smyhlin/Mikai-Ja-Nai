@@ -29,6 +29,7 @@ inline constexpr int kSettingsPresetListMaxHeight = 440;
 // Characters a settings combo reserves for its widest entry, so a long stored
 // identifier cannot widen the page; the popup still shows the entry in full.
 inline constexpr int kSettingsChoiceLengthChars = 30;
+inline constexpr int kSettingsCompactChoiceLengthChars = 12;
 inline constexpr int kNativeAssetsTableMaxHeight = 160;
 inline constexpr int kBenchmarkSelectorHeight = 192;
 inline constexpr int kBenchmarkResultsMaxHeight = 240;

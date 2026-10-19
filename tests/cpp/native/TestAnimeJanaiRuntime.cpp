@@ -534,6 +534,8 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
     const QString stagedFirst =
         QDir(directPlan.modelDir).filePath(first.sha256 + QStringLiteral(".onnx"));
     QVERIFY(QFileInfo::exists(stagedFirst));
+    QVERIFY(directPlan.cacheLease != nullptr);
+    directPlan.cacheLease->release();
 
     QFile priorConfig(directPlan.configPath);
     QVERIFY(priorConfig.open(QIODevice::ReadOnly));
@@ -571,12 +573,12 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
     slot.profileName = QStringLiteral("Three custom models");
     AnimeJanaiChain firstChain;
     firstChain.number = 1;
-    firstChain.models.append({1, first.fileName, 0, 100});
-    firstChain.models.append({2, second.fileName, 0, 100});
+    firstChain.steps.append({1, AnimeJanaiStepKind::OnnxModel, first.fileName, 0, 100, 2});
+    firstChain.steps.append({2, AnimeJanaiStepKind::OnnxModel, second.fileName, 0, 100, 2});
     AnimeJanaiChain secondChain;
     secondChain.number = 2;
     secondChain.maxFps = 24;
-    secondChain.models.append({1, third.fileName, 0, 100});
+    secondChain.steps.append({1, AnimeJanaiStepKind::OnnxModel, third.fileName, 0, 100, 2});
     slot.chains = {firstChain, secondChain};
     config.customSlots.append(slot);
     QString saveError;
@@ -602,6 +604,8 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
     QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_2_model_1_name=") +
                                third.sha256.toUtf8()));
 
+    QVERIFY(slotPlan.cacheLease != nullptr);
+    slotPlan.cacheLease->release();
     slot.chains[1].rifeEnabled = true;
     slot.chains[1].rifeModel = QStringLiteral("RIFE 4.26 Heavy");
     slot.chains[1].rifeEnsemble = true;
@@ -723,7 +727,8 @@ void TestAnimeJanaiRuntime::malformedOnnxModelIsRejected() {
     AnimeJanaiSlot unsafeSlot;
     unsafeSlot.profileName = QStringLiteral("Profile\n[slot_2]");
     AnimeJanaiChain unsafeChain;
-    unsafeChain.models.append({1, QStringLiteral("../../outside\n[slot_2]"), 0, 100});
+    unsafeChain.steps.append({1, AnimeJanaiStepKind::OnnxModel,
+                              QStringLiteral("../../outside\n[slot_2]"), 0, 100, 2});
     unsafeSlot.chains.append(unsafeChain);
     const auto roundTrip = AnimeJanaiConfigStore::parse(
         AnimeJanaiConfigStore::serializeSlotSection(unsafeSlot));
@@ -785,8 +790,10 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     chain.maxResolution = QStringLiteral("1920x1080");
     chain.minFps = 0;
     chain.maxFps = 31;
-    chain.models.append({1, QStringLiteral("2x_Custom_Compact"), 720, 75});
-    chain.models.append({2, QStringLiteral("4x_Custom_Sharp"), 1080, 80});
+    chain.steps.append({1, AnimeJanaiStepKind::OnnxModel,
+                        QStringLiteral("2x_Custom_Compact"), 720, 75, 2});
+    chain.steps.append({2, AnimeJanaiStepKind::OnnxModel,
+                        QStringLiteral("4x_Custom_Sharp"), 1080, 80, 2});
     chain.rifeEnabled = true;
     chain.rifeModel = QStringLiteral("RIFE 4.26");
     chain.rifeFactorNumerator = 2;
@@ -800,7 +807,8 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     secondChain.minResolution = QStringLiteral("0x0");
     secondChain.maxResolution = QStringLiteral("1280x720");
     secondChain.maxFps = 24;
-    secondChain.models.append({1, QStringLiteral("2x_Other_Model"), 0, 100});
+    secondChain.steps.append({1, AnimeJanaiStepKind::OnnxModel,
+                              QStringLiteral("2x_Other_Model"), 0, 100, 2});
     slot.chains.append(secondChain);
     config.customSlots.append(slot);
 
@@ -816,14 +824,14 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     QCOMPARE(roundTrip.customSlots.first().profileName, slot.profileName);
     QCOMPARE(roundTrip.customSlots.first().descriptionText, slot.descriptionText);
     QCOMPARE(roundTrip.customSlots.first().chains.size(), 2);
-    QCOMPARE(roundTrip.customSlots.first().chains.first().models.size(), 2);
-    QCOMPARE(roundTrip.customSlots.first().chains.first().models.first().resizeHeightBeforeUpscale, 720);
-    QCOMPARE(roundTrip.customSlots.first().chains.first().models.first().resizeFactorBeforeUpscale, 75);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.size(), 2);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.first().resizeHeightBeforeUpscale, 720);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.first().resizeFactorBeforeUpscale, 75);
     QCOMPARE(roundTrip.customSlots.first().chains.first().minResolution, QStringLiteral("1280x720"));
     QCOMPARE(roundTrip.customSlots.first().chains.first().maxResolution, QStringLiteral("1920x1080"));
     QCOMPARE(roundTrip.customSlots.first().chains.first().maxFps, 31);
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeModel, QStringLiteral("RIFE 4.26"));
-    QCOMPARE(roundTrip.customSlots.first().chains.first().models.at(1).name,
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.at(1).id,
              QStringLiteral("4x_Custom_Sharp"));
     QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnabled);
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeFactorNumerator, 2);
@@ -831,7 +839,7 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeSceneDetectThreshold, 0.150);
     QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnsemble);
     QVERIFY(!roundTrip.customSlots.first().chains.first().rifeBeforeUpscale);
-    QCOMPARE(roundTrip.customSlots.first().chains.at(1).models.first().name,
+    QCOMPARE(roundTrip.customSlots.first().chains.at(1).steps.first().id,
              QStringLiteral("2x_Other_Model"));
     const AnimeJanaiConfig unsafeSlots =
         AnimeJanaiConfigStore::parse(QStringLiteral("[slot_11]\nprofile_name=Unsafe\nchain_1_model_1_name=../../outside\n"));
@@ -849,4 +857,172 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
         AnimeJanaiConfigStore::loadProfile(profilePath, &profileOk, &profileError);
     QVERIFY2(profileOk, qPrintable(profileError));
     QCOMPARE(profile, slot);
+}
+
+void TestAnimeJanaiRuntime::mixedAnime4KPlanUsesSourceSelectionWithoutAji() {
+#ifdef Q_OS_WIN
+    AnimeJanaiConfig config;
+    AnimeJanaiSlot slot;
+    slot.number = 1;
+    AnimeJanaiChain first;
+    first.number = 1;
+    first.minResolution = QStringLiteral("1920x1080");
+    first.maxResolution = QStringLiteral("1920x1080");
+    first.minFps = 23;
+    first.maxFps = 24;
+    first.steps.append({1, AnimeJanaiStepKind::Anime4K, QStringLiteral("fast_a"), 720, 75, 1});
+    AnimeJanaiChain second;
+    second.number = 2;
+    second.minResolution = QStringLiteral("3000x2000");
+    second.maxResolution = QStringLiteral("4000x3000");
+    second.steps.append({1, AnimeJanaiStepKind::Anime4K, QStringLiteral("hq_b"), 0, 100, 4});
+    slot.chains = {first, second};
+    config.customSlots.append(slot);
+    QString error;
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &error), qPrintable(error));
+
+    auto resolver = [](const QString& id, QString* reason) {
+        if (reason) reason->clear();
+        return QByteArrayLiteral("shader:") + id.toUtf8();
+    };
+    AnimeJanaiPlan deferred = prepareAnimeJanaiPlan(
+        QStringLiteral("builtin_slot:1"), Backend::DirectML, {}, {}, resolver);
+    QVERIFY(deferred.enabled);
+    QVERIFY(!deferred.available);
+    QVERIFY(deferred.needsSourceContext);
+    QVERIFY(!deferred.requiresAji);
+
+    const AnimeJanaiSourceContext source{1920, 1080, 24.0};
+    const AnimeJanaiPlan plan = prepareAnimeJanaiPlan(
+        QStringLiteral("builtin_slot:1"), Backend::DirectML, {}, source, resolver);
+    QVERIFY2(plan.available, qPrintable(plan.reason));
+    QVERIFY(!plan.requiresAji);
+    QCOMPARE(plan.selectedChainNumber, 1);
+    QCOMPARE(plan.stages.size(), 1);
+    QCOMPARE(plan.stages.first().kind, AnimeJanaiPlanStage::Kind::Anime4K);
+    QCOMPARE(plan.stages.first().scaleFactor, 1);
+    QVERIFY(plan.filterSpec.contains(QByteArrayLiteral("w=iw*1")));
+    QVERIFY(plan.filterSpec.contains(QByteArrayLiteral("h=ih*1")));
+    QVERIFY(plan.filterSpec.contains(QByteArrayLiteral("mikai_a4k_resize_1")));
+    for (const int scale : {2, 4}) {
+        config.customSlots[0].chains[0].steps[0].scaleFactor = scale;
+        QVERIFY2(AnimeJanaiConfigStore::save(config, &error), qPrintable(error));
+        const AnimeJanaiPlan scaled = prepareAnimeJanaiPlan(
+            QStringLiteral("builtin_slot:1"), Backend::DirectML, {}, source, resolver);
+        QVERIFY2(scaled.available, qPrintable(scaled.reason));
+        QCOMPARE(scaled.stages.first().scaleFactor, scale);
+        QVERIFY(scaled.filterSpec.contains(QByteArrayLiteral("w=iw*") + QByteArray::number(scale)));
+        QVERIFY(scaled.filterSpec.contains(QByteArrayLiteral("h=ih*") + QByteArray::number(scale)));
+    }
+    const AnimeJanaiPlan noMatch = prepareAnimeJanaiPlan(
+        QStringLiteral("builtin_slot:1"), Backend::DirectML, {}, {1280, 720, 24.0}, resolver);
+    QVERIFY(!noMatch.available);
+    QCOMPARE(noMatch.reasonKey, QStringLiteral("animejanai.profile.noChain"));
+#else
+    QSKIP("The AnimeJaNai runtime is Windows-only.");
+#endif
+}
+
+void TestAnimeJanaiRuntime::stageCacheLeasesRefuseOverlapAndReleaseAtTerminal() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString firstKey = QDir(directory.path()).filePath(QStringLiteral("first"));
+    const QString secondKey = QDir(directory.path()).filePath(QStringLiteral("second"));
+    const QString thirdKey = QDir(directory.path()).filePath(QStringLiteral("third"));
+    auto first = AnimeJanaiStageBuildLease::tryAcquire(
+        {firstKey, secondKey}, QStringLiteral("Player"));
+    QVERIFY(first != nullptr);
+    const auto retainedPlanCopy = first;
+    QString busyKey;
+    QString busyOwner;
+    QVERIFY(!AnimeJanaiStageBuildLease::tryAcquire(
+        {secondKey, thirdKey}, QStringLiteral("Compare"), &busyKey, &busyOwner));
+    QCOMPARE(busyKey, secondKey);
+    QCOMPARE(busyOwner, QStringLiteral("Player"));
+    auto unrelated = AnimeJanaiStageBuildLease::tryAcquire(
+        {thirdKey}, QStringLiteral("Benchmark"));
+    QVERIFY(unrelated != nullptr);
+    first->release();
+    QVERIFY(!retainedPlanCopy->held());
+    auto replacement = AnimeJanaiStageBuildLease::tryAcquire(
+        {firstKey, secondKey}, QStringLiteral("Player"));
+    QVERIFY(replacement != nullptr);
+    retainedPlanCopy->release();
+    QVERIFY(!AnimeJanaiStageBuildLease::tryAcquire(
+        {secondKey}, QStringLiteral("Compare")));
+    replacement.reset();
+    QVERIFY(AnimeJanaiStageBuildLease::tryAcquire(
+        {firstKey, secondKey}, QStringLiteral("Compare")) != nullptr);
+}
+
+void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
+    QString legacyError;
+    const AnimeJanaiConfig legacy = AnimeJanaiConfigStore::parse(
+        QStringLiteral("[slot_1]\nprofile_name=Legacy\n"
+                       "chain_1_model_2_name=second\n"
+                       "chain_1_model_2_resize_height_before_upscale=540\n"
+                       "chain_1_model_2_resize_factor_before_upscale=75\n"
+                       "chain_1_model_1_name=first\n"), &legacyError);
+    QVERIFY2(legacyError.isEmpty(), qPrintable(legacyError));
+    QCOMPARE(legacy.customSlots.size(), 1);
+    QCOMPARE(legacy.customSlots.first().chains.size(), 1);
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.size(), 2);
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.at(0).id, QStringLiteral("first"));
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).id, QStringLiteral("second"));
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeHeightBeforeUpscale, 540);
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeFactorBeforeUpscale, 75);
+
+    AnimeJanaiSlot slot;
+    slot.profileName = QStringLiteral("Mixed");
+    AnimeJanaiChain chain;
+    chain.steps = {
+        {1, AnimeJanaiStepKind::OnnxModel, QStringLiteral("2x_Custom"), 720, 75, 2},
+        {2, AnimeJanaiStepKind::Anime4K, QStringLiteral("fast_b"), 480, 80, 4},
+        {3, AnimeJanaiStepKind::OnnxModel, QStringLiteral("custom_sha"), 0, 100, 2},
+    };
+    slot.chains.append(chain);
+    AnimeJanaiChain secondChain;
+    secondChain.number = 2;
+    secondChain.steps = {
+        {1, AnimeJanaiStepKind::Anime4K, QStringLiteral("hq_ca"), 0, 100, 1}};
+    slot.chains.append(secondChain);
+    const QString exported = AnimeJanaiConfigStore::serializeProfile(slot);
+    QVERIFY(exported.contains(QStringLiteral("mikai_chain_steps_version=1")));
+    QVERIFY(exported.contains(QStringLiteral("chain_1_step_2_kind=anime4k")));
+    bool ok = false;
+    QString error;
+    const AnimeJanaiSlot imported = AnimeJanaiConfigStore::parseProfile(exported, &ok, &error);
+    QVERIFY2(ok, qPrintable(error));
+    QCOMPARE(imported, slot);
+
+    (void)AnimeJanaiConfigStore::parse(
+        QStringLiteral("[global]\nconfig_version=3\nmikai_chain_steps_version=7\n"), &error);
+    QVERIFY(!error.isEmpty());
+
+    for (const QString& invalidStep : {
+             QStringLiteral("chain_1_step_1_kind=unknown\nchain_1_step_1_id=x\nchain_1_step_1_scale_factor=2\n"),
+             QStringLiteral("chain_1_step_1_kind=anime4k\nchain_1_step_1_id=fast_a\nchain_1_step_1_scale_factor=3\n")}) {
+        const QString input = QStringLiteral(
+            "[slot]\nmikai_chain_steps_version=1\nchain_1_min_resolution=0x0\n"
+            "chain_1_step_1_resize_height_before_upscale=0\n"
+            "chain_1_step_1_resize_factor_before_upscale=100\n") +
+            invalidStep;
+        (void)AnimeJanaiConfigStore::parseProfile(input, &ok, &error);
+        QVERIFY(!ok);
+        QVERIFY(!error.isEmpty());
+    }
+    AnimeJanaiConfig invalidConfig;
+    slot.chains[0].steps[1].scaleFactor = 3;
+    invalidConfig.customSlots.append(slot);
+    QVERIFY(!AnimeJanaiConfigStore::validateAnimeJanaiConfig(invalidConfig, &error));
+    QVERIFY(!error.isEmpty());
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString protectedPath = QDir(directory.path()).filePath(QStringLiteral("saved.conf"));
+    const QByteArray original = QByteArrayLiteral("preserve existing data");
+    QVERIFY(writeFile(protectedPath, original));
+    QVERIFY(!AnimeJanaiConfigStore::saveToFile(protectedPath, invalidConfig, &error));
+    QFile protectedFile(protectedPath);
+    QVERIFY(protectedFile.open(QIODevice::ReadOnly));
+    QCOMPARE(protectedFile.readAll(), original);
 }

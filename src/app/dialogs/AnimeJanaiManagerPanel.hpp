@@ -43,11 +43,17 @@ private:
     struct ModelStepRow {
         QFrame* frame = nullptr;
         QLabel* stepLabel = nullptr;
+        QComboBox* kindCombo = nullptr;
+        QLabel* modelLabel = nullptr;
         QComboBox* modelCombo = nullptr;
         QLabel* resizeHeightLabel = nullptr;
         QSpinBox* resizeHeightSpin = nullptr;
         QLabel* resizeFactorLabel = nullptr;
         QSpinBox* resizeFactorSpin = nullptr;
+        QLabel* scaleLabel = nullptr;
+        QComboBox* scaleCombo = nullptr;
+        QPushButton* moveUpButton = nullptr;
+        QPushButton* moveDownButton = nullptr;
         QPushButton* removeButton = nullptr;
     };
 
@@ -82,6 +88,7 @@ private:
     void onMoveChainDown();
     void onAddModelStep();
     void onRemoveModelStep(int index);
+    void onMoveModelStep(int index, int direction);
 
     int currentSlotNumber() const;
     mplayer::native::AnimeJanaiSlot* findMutableSlot(int slotNumber);

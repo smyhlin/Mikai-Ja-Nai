@@ -237,13 +237,7 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   auto* engineArgs = manager->findChild<QLineEdit*>(
       QStringLiteral("ajiTrtEngineSettingsEdit"));
   QPushButton* activate = nullptr;
-  for (QPushButton* button : manager->findChildren<QPushButton*>()) {
-    if (button->text() ==
-        mikai::app::AnimeJanaiManagerPanel::tr("Activate / Reset Slot")) {
-      activate = button;
-      break;
-    }
-  }
+  activate = manager->findChild<QPushButton*>(QStringLiteral("ajiCreateSlotButton"));
   QVERIFY(slotSelector != nullptr && profileName != nullptr && engineArgs != nullptr &&
           activate != nullptr);
   QTRY_VERIFY(activate->isEnabled());
@@ -263,8 +257,27 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   }
   QVERIFY(chainRife != nullptr);
   chainRife->setChecked(true);
+  auto* addStep = manager->findChild<QPushButton*>(QStringLiteral("ajiAddStepButton"));
+  QVERIFY(addStep != nullptr);
+  addStep->click();
+  auto* kind = manager->findChild<QComboBox*>(QStringLiteral("animeJanaiStepKind_1"));
+  QVERIFY(kind != nullptr);
+  kind->setCurrentIndex(kind->findData(
+      static_cast<int>(mplayer::native::AnimeJanaiStepKind::Anime4K)));
+  auto* scale = manager->findChild<QComboBox*>(QStringLiteral("animeJanaiStepScale_1"));
+  QVERIFY(scale != nullptr);
+  scale->setCurrentIndex(scale->findData(4));
+  auto* moveDown = manager->findChild<QPushButton*>(QStringLiteral("animeJanaiStepMoveDown_1"));
+  QVERIFY(moveDown != nullptr);
+  moveDown->click();
   QVERIFY(manager->isDirty());
   const auto managerBefore = manager->currentConfig();
+  const auto mixedChain = managerBefore.customSlots.last().chains.last();
+  QCOMPARE(mixedChain.steps.size(), 2);
+  QCOMPARE(mixedChain.steps.at(0).kind, mplayer::native::AnimeJanaiStepKind::OnnxModel);
+  QCOMPARE(mixedChain.steps.at(1).kind, mplayer::native::AnimeJanaiStepKind::Anime4K);
+  QCOMPARE(mixedChain.steps.at(1).id, QStringLiteral("fast_a"));
+  QCOMPARE(mixedChain.steps.at(1).scaleFactor, 4);
   const QString activateEnglish = activate->text();
   auto* managerScroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
   QVERIFY(managerScroll != nullptr);
@@ -421,6 +434,109 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(manager->currentConfig() == managerBefore);
   QVERIFY(manager->isDirty());
   QCOMPARE(storedValues(), storedBefore);
+}
+
+void TestI18n::processingFormsRemainReadableWhenResized_data() {
+  QTest::addColumn<QString>("language");
+  QTest::addColumn<int>("width");
+  for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
+    for (const int width : {560, 760, 1100}) {
+      const QByteArray name = QStringLiteral("%1-%2").arg(language).arg(width).toLatin1();
+      QTest::newRow(name.constData()) << language << width;
+    }
+  }
+}
+
+void TestI18n::processingFormsRemainReadableWhenResized() {
+  QFETCH(QString, language);
+  QFETCH(int, width);
+  QVERIFY(mikai::app::applyInterfaceLanguage(language, builtCatalogPath()));
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
+  QVERIFY(tabs != nullptr);
+  for (int index = 0; index < tabs->count(); ++index) {
+    if (tabs->tabText(index) == mikai::app::SettingsDialog::tr("Benchmark")) {
+      tabs->setCurrentIndex(index);
+      break;
+    }
+  }
+  const QSize compactSize(width, dialog.minimumHeight());
+  dialog.resize(compactSize);
+  dialog.show();
+  QTRY_COMPARE(dialog.size(), compactSize);
+  auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
+  QVERIFY(footer != nullptr);
+  QVERIFY(dialog.rect().contains(QRect(footer->mapTo(&dialog, QPoint()), footer->size())));
+  dialog.showProcessingTab();
+
+  auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+  auto* manager = dialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+      QStringLiteral("animeJanaiManagerPanel"));
+  auto* scroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
+  QVERIFY(runtime != nullptr && manager != nullptr && scroll != nullptr);
+  runtime->setCurrentIndex(
+      runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+
+  QPushButton* activate =
+      manager->findChild<QPushButton*>(QStringLiteral("ajiCreateSlotButton"));
+  QPushButton* addStep =
+      manager->findChild<QPushButton*>(QStringLiteral("ajiAddStepButton"));
+  QVERIFY(activate != nullptr && addStep != nullptr);
+  QTRY_VERIFY(activate->isEnabled());
+  activate->click();
+  QTRY_VERIFY(addStep->isEnabled());
+  addStep->click();
+  auto* stepKind = manager->findChild<QComboBox*>(QStringLiteral("animeJanaiStepKind_1"));
+  QVERIFY(stepKind != nullptr);
+  stepKind->setCurrentIndex(stepKind->findData(
+      static_cast<int>(mplayer::native::AnimeJanaiStepKind::Anime4K)));
+  auto* stepScale = manager->findChild<QComboBox*>(QStringLiteral("animeJanaiStepScale_1"));
+  QVERIFY(stepScale != nullptr);
+  stepScale->setCurrentIndex(stepScale->findData(2));
+  QComboBox* engineType = nullptr;
+  for (QLabel* label : manager->findChildren<QLabel*>()) {
+    if (label->text() == mikai::app::AnimeJanaiManagerPanel::tr("TensorRT engine type")) {
+      engineType = qobject_cast<QComboBox*>(label->buddy());
+      break;
+    }
+  }
+  QVERIFY(engineType != nullptr);
+  const int dynamic = engineType->findData(QStringLiteral("dynamic"));
+  QVERIFY(dynamic >= 0);
+  engineType->setCurrentIndex(dynamic);
+  for (QCheckBox* check : manager->findChildren<QCheckBox*>()) {
+    if (check->text() == mikai::app::AnimeJanaiManagerPanel::tr("RIFE interpolation")) {
+      check->setChecked(true);
+    }
+  }
+
+  const auto layoutProblem = [&]() -> QString {
+    if (scroll->widget()->width() > scroll->viewport()->width()) {
+      return QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
+          .arg(scroll->widget()->width()).arg(scroll->viewport()->width());
+    }
+    for (QLabel* label : manager->findChildren<QLabel*>()) {
+      QWidget* field = label->buddy();
+      if (field == nullptr || !label->isVisibleTo(&dialog)) continue;
+      const QRect caption(label->mapTo(&dialog, QPoint()), label->size());
+      const QRect editor(field->mapTo(&dialog, QPoint()), field->size());
+      if (caption.intersects(editor)) {
+        return QStringLiteral("Caption overlaps its editor: %1").arg(label->text());
+      }
+      const int requiredHeight = label->heightForWidth(label->width());
+      if (label->height() < requiredHeight) {
+        return QStringLiteral("Clipped caption %1: %2x%3, requires %4 px height.")
+            .arg(label->text()).arg(label->width()).arg(label->height()).arg(requiredHeight);
+      }
+    }
+    return {};
+  };
+  for (const int resizedWidth : {width, 1100, width}) {
+    dialog.resize(resizedWidth, 780);
+    QTRY_VERIFY2(layoutProblem().isEmpty(), qPrintable(layoutProblem()));
+  }
 }
 
 void TestI18n::unavailableLanguageIsRefusedByNameAndKeepsTheWorkingTranslation() {

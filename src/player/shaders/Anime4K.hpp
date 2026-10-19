@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -167,6 +168,14 @@ bool chainIsComplete(const Candidate& candidate, const QString& shadersDir = QSt
 /// Resolves a candidate's file names into an mpv-compatible `glsl-shaders`
 /// string of absolute paths. Empty for Off, an unknown id, or a missing folder.
 QString shaderStringForCandidate(const QString& id, const QString& shadersDir = QString());
+/// Resolves a candidate's ordered shader files into one libplacebo custom shader
+/// program. Returns empty on Off, unknown candidates, or source I/O failures;
+/// `reason`, when supplied, identifies the cause. This only assembles source
+/// bytes and does not validate shaders or inference graphs.
+QByteArray filterShaderProgramForCandidate(const QString& id,
+                                           const QString& shadersDir = QString(),
+                                           QString* reason = nullptr);
+
 
 /// Finds the directory containing Anime4K .glsl files.
 QString findShadersDir();

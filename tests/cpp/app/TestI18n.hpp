@@ -21,6 +21,8 @@ class TestI18n : public QObject {
   /// unsaved value, the selection and the scroll position survive, en -> uk ->
   /// en, and an unavailable choice is refused by name rather than downgraded.
   void openSettingsRetranslatesInPlaceAndKeepsUnsavedValues();
+  void processingFormsRemainReadableWhenResized_data();
+  void processingFormsRemainReadableWhenResized();
   void unavailableLanguageIsRefusedByNameAndKeepsTheWorkingTranslation();
   void cancelChangesNoLanguageAtAll();
 

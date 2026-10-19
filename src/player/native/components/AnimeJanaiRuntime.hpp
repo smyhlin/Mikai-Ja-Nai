@@ -2,9 +2,11 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
+#include <QtCore/QStringList>
 #include <QtCore/QVector>
 
 #include <functional>
+#include <memory>
 
 #include "native/components/AnimeJanaiConfig.hpp"
 #include "native/components/NativeComponentProvisioning.hpp"
@@ -55,6 +57,50 @@ ComponentProvisionResult importAnimeJanaiRuntime(
     const std::function<void(const ComponentProvisionProgress&)>& progress,
     const std::function<bool()>& cancelled);
 
+struct AnimeJanaiSourceContext {
+    int width = 0;
+    int height = 0;
+    double fps = 0.0;
+};
+
+using Anime4KShaderProgramResolver = std::function<QByteArray(const QString&, QString*)>;
+
+/// Process-local, all-or-nothing ownership for app-managed AJI engine-cache paths.
+/// Planning acquires the complete cache-key set before staging artifacts; consumers
+/// retain the shared token until the entire pipeline reaches a terminal state.
+class AnimeJanaiStageBuildLease final {
+public:
+    AnimeJanaiStageBuildLease(const AnimeJanaiStageBuildLease&) = delete;
+    AnimeJanaiStageBuildLease& operator=(const AnimeJanaiStageBuildLease&) = delete;
+    ~AnimeJanaiStageBuildLease();
+
+    static std::shared_ptr<AnimeJanaiStageBuildLease> tryAcquire(
+        const QStringList& cacheKeys, const QString& ownerContext,
+        QString* busyKey = nullptr, QString* busyOwner = nullptr);
+    void release();
+    bool held() const;
+
+private:
+    AnimeJanaiStageBuildLease(QStringList cacheKeys, QString ownerContext);
+    QStringList cacheKeys_;
+    QString ownerContext_;
+    bool held_ = true;
+};
+
+struct AnimeJanaiPlanStage {
+    enum class Kind { Aji, Anime4K };
+    Kind kind = Kind::Aji;
+    QString filterLabel;
+    QByteArray filterSpec;
+    QString configPath;
+    QString statsPath;
+    int firstStepNumber = 0;
+    int lastStepNumber = 0;
+    QString presetId;
+    int scaleFactor = 1;
+    std::shared_ptr<AnimeJanaiStageBuildLease> cacheLease;
+};
+
 struct AnimeJanaiPlan {
     bool enabled = false;
     bool available = false;
@@ -71,9 +117,18 @@ struct AnimeJanaiPlan {
     QString trtexecLibDir;
     QString statsPath;
     QByteArray filterSpec;
+    QVector<AnimeJanaiPlanStage> stages;
+    int selectedChainNumber = 0;
+    bool needsSourceContext = false;
+    bool requiresAji = false;
+    QStringList cacheKeys;
+    std::shared_ptr<AnimeJanaiStageBuildLease> cacheLease;
 };
 
-AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
-                                     const std::function<bool()>& cancelled = {});
+AnimeJanaiPlan prepareAnimeJanaiPlan(
+    const QString& presetId, Backend backend,
+    const std::function<bool()>& cancelled = {},
+    const AnimeJanaiSourceContext& source = {},
+    const Anime4KShaderProgramResolver& shaderResolver = {});
 
 }  // namespace mplayer::native

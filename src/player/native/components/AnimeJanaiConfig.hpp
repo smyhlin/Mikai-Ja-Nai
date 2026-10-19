@@ -57,13 +57,17 @@ bool importCustomAnimeJanaiModel(const QString& sourceFilePath,
 /// External graphs are borrowed; removing their registration never removes the graph.
 bool removeCustomAnimeJanaiModel(const QString& id, QString* errorOut = nullptr);
 
-struct AnimeJanaiChainModel {
+enum class AnimeJanaiStepKind { OnnxModel, Anime4K, Unsupported };
+
+struct AnimeJanaiChainStep {
     int number = 1;
-    QString name;
+    AnimeJanaiStepKind kind = AnimeJanaiStepKind::OnnxModel;
+    QString id;
     int resizeHeightBeforeUpscale = 0;    ///< px (0 = disabled)
     int resizeFactorBeforeUpscale = 100;  ///< percent (100 = no pre-resize)
+    int scaleFactor = 2;
 
-    bool operator==(const AnimeJanaiChainModel&) const = default;
+    bool operator==(const AnimeJanaiChainStep&) const = default;
 };
 
 struct AnimeJanaiChain {
@@ -72,7 +76,7 @@ struct AnimeJanaiChain {
     QString maxResolution = QStringLiteral("0x0");
     int minFps = 0;
     int maxFps = 0;
-    QVector<AnimeJanaiChainModel> models;
+    QVector<AnimeJanaiChainStep> steps;
     bool rifeEnabled = false;
     QString rifeModel = QStringLiteral("RIFE 4.26");
     int rifeFactorNumerator = 2;
@@ -113,7 +117,7 @@ public:
 
     static AnimeJanaiConfig load(QString* error = nullptr);
     static AnimeJanaiConfig loadFromFile(const QString& path, QString* error = nullptr);
-    static AnimeJanaiConfig parse(QStringView text);
+    static AnimeJanaiConfig parse(QStringView text, QString* error = nullptr);
     static bool save(const AnimeJanaiConfig& config, QString* error = nullptr);
     static bool saveToFile(const QString& path, const AnimeJanaiConfig& config,
                            QString* error = nullptr);
@@ -151,6 +155,11 @@ public:
 
     static QString rifeLabelToValue(QStringView label);
     static QString rifeValueToLabel(QStringView value);
+
+    static bool validateAnimeJanaiChainSteps(const AnimeJanaiChain& chain,
+                                             QString* error = nullptr);
+    static bool validateAnimeJanaiConfig(const AnimeJanaiConfig& config,
+                                         QString* error = nullptr);
 };
 
 }  // namespace mplayer::native

@@ -3,6 +3,7 @@
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
+#include "native/components/AnimeJanaiBuildLog.hpp"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -13,6 +14,7 @@
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
 #include <QTemporaryDir>
+#include <QStringList>
 #include <QThread>
 
 #include <algorithm>
@@ -83,6 +85,13 @@ struct CompareRenderer::State {
     bool processingObserved = false;
     bool useUpscaleTarget = false;
     int requestedSlot = 0;
+    native::Backend requestedBackend = native::Backend::TensorRT;
+    native::AnimeJanaiBuildGate buildGate;
+    int configuredStages = 0;
+    QStringList diagnosticTail;
+    int ajiPollIndex = 0;
+    QStringList ajiLabels;
+    std::shared_ptr<native::AnimeJanaiStageBuildLease> stageBuildLease;
 
     ~State() {
         // State dies on CompareWindow's GUI thread, so the guard makes the
@@ -146,8 +155,10 @@ struct CompareRenderer::State {
                 const auto* message = static_cast<mpv_event_log_message*>(event->data);
                 const QString text = QString::fromUtf8(message->text).trimmed();
                 const QString prefix = QString::fromUtf8(message->prefix);
-                if (message->log_level <= MPV_LOG_LEVEL_FATAL) {
-                    error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1").arg(text);
+                if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR &&
+                    !diagnosticTail.contains(text)) {
+                    diagnosticTail.append(text);
+                    while (diagnosticTail.size() > 3) diagnosticTail.removeFirst();
                 }
                 const QString combined = prefix + QLatin1Char(' ') + text;
                 const bool isAjiLog =
@@ -157,20 +168,24 @@ struct CompareRenderer::State {
                     combined.contains(QLatin1String("TensorRT engine"), Qt::CaseInsensitive) ||
                     combined.contains(QLatin1String("building engine:"), Qt::CaseInsensitive);
                 if (!isAjiLog) return;
-                if ((text.contains(QStringLiteral("Configured slot %1:").arg(requestedSlot),
-                                   Qt::CaseInsensitive) ||
-                     (requestedSlot > 0 &&
-                      text.contains(QStringLiteral("Configured slot"), Qt::CaseInsensitive))) &&
-                    text.contains(QLatin1String(" -> "))) {
-                    processingObserved = true;
+                const auto buildEvent = requestedBackend == native::Backend::TensorRT
+                    ? buildGate.observeLog(prefix, text, requestedBackend, requestedSlot)
+                    : native::classifyAnimeJanaiBuildLog(prefix, text, requestedBackend,
+                                                         requestedSlot);
+                if (buildEvent == native::AnimeJanaiBuildLogEvent::SlotConfigured) {
+                    ++configuredStages;
+                    processingObserved = configuredStages >= ajiLabels.size();
                 }
                 if (text.contains(QStringLiteral("Building TensorRT engine"), Qt::CaseInsensitive) ||
                     text.contains(QStringLiteral("building engine:"), Qt::CaseInsensitive) ||
                     text.contains(QStringLiteral("background engine build:"), Qt::CaseInsensitive))
                     buildDetail = QCoreApplication::translate("CompareRenderer", "Building the comparison TensorRT engine");
-                if (message->log_level <= MPV_LOG_LEVEL_ERROR ||
-                    text.contains(QLatin1String("build failed"), Qt::CaseInsensitive))
-                    error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1").arg(text);
+                if (buildGate.failed()) {
+                    const QStringList tail = native::readAnimeJanaiBuildLogTail(
+                        buildGate.failureLogPath(), native::nativeRoot());
+                    error = QCoreApplication::translate("CompareRenderer", "The comparison model failed: %1")
+                                .arg((tail.isEmpty() ? diagnosticTail : tail).join(QLatin1Char('\n')));
+                }
             });
             // No update callback: this renderer is driven by its own paint path
             // and never enables advanced control, so nothing waits for one.
@@ -297,14 +312,15 @@ struct CompareRenderer::State {
             const QImage image = pump();
             if (cancelled() || !error.isEmpty()) return {};
             if (requireProcessing && !processingObserved &&
-                (!buildPoll || buildPoll->finished)) {
-                buildPoll = command({"vf-command", native::kAnimeJanaiFilterLabel, "poll", ""});
+                (!buildPoll || buildPoll->finished) && !ajiLabels.isEmpty()) {
+                const QString label = ajiLabels.at(ajiPollIndex++ % ajiLabels.size());
+                buildPoll = command({"vf-command", label.toStdString(), "poll", ""});
             }
             if (requireProcessing && processingObserved && !processingFrameRequested) {
                 processingFrameRequested = true;
                 restarted = false;
                 previous = {};
-                if (!waitForCommand(command({"seek", "0", "absolute+exact"}), cancelled)) return {};
+                core->loadFile(framePath.toStdString());
                 continue;
             }
             if (!buildDetail.isEmpty() && buildDetail != reported) {
@@ -316,8 +332,11 @@ struct CompareRenderer::State {
                 image == previous) return image;
             previous = image;
         }
-        if (!cancelled() && error.isEmpty())
+        if (!cancelled() && error.isEmpty()) {
             error = QCoreApplication::translate("CompareRenderer", "The comparison output did not settle.");
+            if (!diagnosticTail.isEmpty())
+                error += QLatin1Char('\n') + diagnosticTail.join(QLatin1Char('\n'));
+        }
         return {};
     }
 };
@@ -415,23 +434,75 @@ QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanai
         // The whole vf chain is cleared before the new one goes in: `set vf ""`
         // drops the filter the previous candidate left in the core, so a switch
         // between two AnimeJaNai models cannot leave the first one running and
-        // answering for the second. The attach is then `vf add`, exactly as the
-        // live surface submits its own plan - whose spec carries the @mikai_aji
-        // label and therefore replaces by label.
+        // answering for the second. The full ordered plan is then attached as
+        // one vf pipeline, with unique app-owned labels for its native stages.
         const std::string targetHwdec =
             (plan.enabled && plan.backend == native::Backend::DirectML) ? "d3d11va" : "nvdec";
-        state.requestedSlot = plan.enabled ? plan.slot : 0;
+        state.ajiLabels.clear();
+        for (const native::AnimeJanaiPlanStage& stage : plan.stages) {
+            if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji)
+                state.ajiLabels.append(stage.filterLabel);
+        }
+        if (state.ajiLabels.isEmpty() && plan.requiresAji)
+            state.ajiLabels.append(QString::fromLatin1(native::kAnimeJanaiFilterLabel));
+        if (state.stageBuildLease) {
+            state.error = QCoreApplication::translate(
+                "CompareRenderer",
+                "The previous AnimeJaNai comparison pipeline has not been detached.");
+            return {};
+        }
+        if (plan.requiresAji) {
+            if (plan.cacheKeys.isEmpty()) {
+                state.error = QCoreApplication::translate(
+                    "CompareRenderer",
+                    "The comparison plan has no owned AnimeJaNai cache keys.");
+                return {};
+            }
+            QString busyKey;
+            QString busyOwner;
+            state.stageBuildLease = plan.cacheLease;
+            if (!state.stageBuildLease || !state.stageBuildLease->held())
+                state.stageBuildLease = native::AnimeJanaiStageBuildLease::tryAcquire(
+                plan.cacheKeys, QStringLiteral("Compare isolated renderer"),
+                &busyKey, &busyOwner);
+            if (!state.stageBuildLease) {
+                state.error = QCoreApplication::translate(
+                    "CompareRenderer",
+                    "The AnimeJaNai stage cache %1 is already in use by %2.")
+                                  .arg(busyKey, busyOwner);
+                return {};
+            }
+        }
+        state.requestedSlot = plan.requiresAji
+                                  ? (plan.stages.size() > 1 ? 1 : plan.slot)
+                                  : 0;
+        state.ajiPollIndex = 0;
         state.processingObserved = false;
+        state.requestedBackend = plan.backend;
+        state.buildGate = {};
+        state.configuredStages = 0;
+        state.diagnosticTail.clear();
         if (!state.waitForCommand(state.command({"stop"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "vf", ""}), cancelled) ||
             !state.waitForCommand(state.command({"set", "hwdec", targetHwdec}), cancelled) ||
             !state.waitForCommand(state.command({"set", "start", "0"}), cancelled) ||
             !state.waitForCommand(state.command({"set", "glsl-shaders", chain.toStdString()}), cancelled)) return {};
-        if (!filter.isEmpty() &&
-            !state.waitForCommand(state.command({"vf", "add", filter.toStdString()}), cancelled)) return {};
+        if (!filter.isEmpty()) {
+            // Buffered filters need repeated input even though Compare freezes one frame.
+            const QString frozenPipeline = QStringLiteral(
+                "@mikai_compare_repeat:lavfi=[loop=loop=-1:size=1:start=0],") + filter;
+            if (!state.waitForCommand(
+                    state.command({"vf", "add", frozenPipeline.toStdString()}), cancelled))
+                return {};
+        }
         state.restarted = false;
         state.core->loadFile(state.framePath.toStdString());
-        return state.settle(true, plan.enabled, cancelled, progress);
+        QImage output = state.settle(true, plan.requiresAji, cancelled, progress);
+        if (!output.isNull()) {
+            if (state.stageBuildLease) state.stageBuildLease->release();
+            state.stageBuildLease.reset();
+        }
+        return output;
     } catch (const MpvError& error) {
         state.error = QCoreApplication::translate("CompareRenderer", "The comparison renderer failed: %1").arg(QString::fromUtf8(error.what()));
         return {};
@@ -445,11 +516,17 @@ void CompareRenderer::stop() {
     // down while its own core still answers. The scoped context keeps that call
     // off the driver's deallocation path.
     State& state = *state_;
-    if (!state.core) return;
+    if (!state.core) {
+        if (state.stageBuildLease) state.stageBuildLease->release();
+        state.stageBuildLease.reset();
+        return;
+    }
     const ScopedCurrent current(state.context, &state.target);
-    const std::string label = "@" + std::string(native::kAnimeJanaiFilterLabel);
     try {
-        state.core->commandAsync({"vf", "remove", label}, [](const AsyncReply&) {});
+        for (const QString& filterLabel : state.ajiLabels) {
+            const std::string label = "@" + filterLabel.toStdString();
+            state.core->commandAsync({"vf", "remove", label}, [](const AsyncReply&) {});
+        }
         // One drain so the request reaches the core before it is destroyed: the
         // reply itself is discarded, because a detached filter has nothing left
         // to say that this caller needs.
@@ -459,6 +536,8 @@ void CompareRenderer::stop() {
     }
     state.rendering.reset();
     state.core.reset();
+    if (state.stageBuildLease) state.stageBuildLease->release();
+    state.stageBuildLease.reset();
 }
 
 QString CompareRenderer::error() const { return state_->error; }

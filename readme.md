@@ -91,6 +91,8 @@ The player uses **Qt Widgets + desktop OpenGL**, not Qt Quick's RHI. Rendering s
 - `VideoSurface` enables libmpv advanced control. Native update callbacks queue a coalesced GUI-thread notification; render updates and skipped frames run with the surface's OpenGL context current.
 - Each `paintGL()` redraws the video into `defaultFramebufferObject()` at Qt-rounded physical-pixel dimensions, including paused HUD-only repaints. `NoPartialUpdate` makes rendering only on newly decoded frames incorrect.
 - Render calls pass an **`int` zero** for `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME`; the interactive core also uses `video-timing-offset=0`. libmpv never sleeps the GUI thread waiting for a target presentation time.
+- TensorRT transitions retain one clean GPU video snapshot, not a copy on every normal frame. The held picture survives UI repaints and is released only after an actual new output frame, excluding mpv redraw/repeat requests. Build feedback is indeterminate, includes elapsed time, and can replay an already-active build when its UI owner changes.
+- The **+85** control beside Play seeks the active player forward 85 seconds, clamps to known media duration, and preserves pause intent.
 - `frameSwapped()` reports a swap only when the surface rendered an unacknowledged frame. Hidden, minimized, and fully covered surfaces consume updates with `SKIP_RENDERING` outside `paintGL()` and acknowledge the discarded frame. Decoding and native inference can still consume GPU resources.
 - On-video controls paint through `QPainter(this)` in the surface's GL pass. Existing widgets retain input, focus, accessibility, and layout roles; popovers and off-video chrome remain normal widgets. The native block restores Qt's FBO, VAO, and pixel-unpack state before painter drawing resumes.
 - Renderer cleanup runs both on `aboutToBeDestroyed` and during destruction with the correct context current. A recreated context reloads the current source at its observed position and pause state. GUI playback commands are asynchronous.
@@ -148,9 +150,13 @@ In **Settings → Processing**, select the **Standard** runtime to use the Anime
 
 A model marked ready in the inventory has local metadata; it has not necessarily run on the GPU. Removing a model does not repair profiles that reference it. Select another graph or remove the affected step before using those profiles. Re-importing a replacement requires removing the old identifier first; modifying a pinned file in place is refused during preparation rather than silently accepted.
 
-Filename-derived architecture and scale values are hints, not ONNX tensor inspection. Models still need an AJI-compatible 4D RGB tensor contract (`1×3×H×W`, FP16/FP32) and operators supported by the selected TensorRT or DirectML backend. Import validation is not proof that an arbitrary RealESRGAN, Compact, SPAN, DAT, or SwinIR graph will execute. External-weight ONNX packages are not imported as multi-file bundles.
+Filename-derived architecture and scale values are hints, not ONNX tensor inspection. Spatial models need an AJI-compatible 4D RGB tensor contract (`1×3×H×W`) and operators supported by the selected backend. The current TensorRT path binds FP16 buffers directly, so its input/output tensors must remain FP16; accepting a file at import does not establish compatibility with another boundary dtype. Import validation is not proof that an arbitrary RealESRGAN, Compact, SPAN, DAT, or SwinIR graph will execute. External-weight ONNX packages are not imported as multi-file bundles.
+
+Optional FP8, sparse, fused, architecture-folding, luma, and RIFE coordinate-specialization experiments were evaluated and retired; no Python optimization feature or dedicated optimization probe is shipped. Only production correctness fixes remain. The [historical RTX 5090 findings](bench_results.md#rtx-5090--retired-model-graph-experiments-2026-10-18) retain measured results and limitations; they are not supported workflows or product-performance claims.
 
 ### Built-in Variants & Engine Settings
+
+Settings supports edge/corner resizing and maximization. Processing captions wrap without overlapping their editors; longer form rows put the editor below its caption when needed. Scrollable tab bodies yield to smaller work areas while **Save / Cancel** remain outside the scroll area.
 
 Quality, Balanced, and Performance each have a **Standard / Sharp** selector. Sharp changes the HD model; the SD Compact branch remains unchanged. Required pinned models must be installed through **Settings → Components**.
 
@@ -175,11 +181,15 @@ Engine flags affect TensorRT, not DirectML. Backend choice remains in the player
 
 1. Select a slot from **1–10**, then create/reset it or clone a built-in/custom profile. Give it a recognizable name.
 2. Add chains and set their resolution/FPS activation bounds. `0x0` or `infxinf` represents an unbounded resolution; `0` represents an unbounded FPS limit.
-3. Add model steps in the required order and choose installed/imported model names. Set pre-upscale height or percentage resizing where needed. Model names must resolve locally; a profile export is not a model download.
+3. Add processing steps in the required order: **ONNX model** or **Anime4K preset**. Anime4K supports A/B/C Fast and HQ plus A+A/B+B/C+A HQ combinations, with a per-step **1×/2×/4× output scale**. Both step types expose input-height and percentage resizing. Move steps up/down to place shaders before, after, or between ONNX runs. Model names must resolve locally; a profile export is not a model download.
 4. Optionally enable per-chain RIFE and select the model, numerator/denominator ratio, scene threshold, ensemble, and before/after-upscale position. A chain needs at least one model or an enabled RIFE step.
 5. Press **Save**. Configured slots appear beside the built-in player presets and in Benchmark's **AnimeJaNai** group.
 
 Cloning copies the current model steps. Later Standard/Sharp changes to the original built-in preset do not rewrite the cloned custom profile.
+
+Mixed chains select the first matching chain in ascending chain order using the **original source** pixel area and FPS, with inclusive bounds. Missing source metadata defers preparation rather than guessing a frame rate. Consecutive ONNX steps share an AJI segment; Anime4K steps split the graph into real ordered video filters. RIFE runs once at the configured before/after position. Shader-only profiles require no AJI installation.
+
+These mixed filters are not the player's final `glsl-shaders` overlay. CUDA/D3D11 frames are negotiated to software NV12 before Anime4K; later AJI stages upload them again. This can introduce GPU/host transfers and reduces the boundary to 8-bit NV12, so mixed processing is not a zero-copy or HDR-preservation promise. Existing model-only profiles retain their prior path.
 
 Custom profile IDs are `builtin_slot:<N>`; custom spatial IDs are `spatial:custom:<id>`. Chain and slot switches retain editor changes, including across interface-language changes. Saving the manager does not hot-reload an already running AJI filter; switch to another preset and back, or reopen playback, to prepare the updated configuration.
 
@@ -187,7 +197,7 @@ Use `.pconf` import/export for one profile, or `animejanai.conf` import/export f
 
 **Save** persists settings and profiles; **Cancel** discards those edits but does not undo model imports, registrations, removals, or files already exported. Resetting manager defaults removes custom slot/settings edits, not the model files or external registrations.
 
-Manager settings are stored as schema v3 in `<nativeRoot>/animejanai/animejanai_manager.conf`. Preparation stages every referenced graph, retains provenance, rewrites spatial model names to SHA-256 stems, and emits `<nativeRoot>/animejanai/config/custom_slot_<N>.ini`. Missing, modified, or unsupported referenced models produce a preparation error rather than silently selecting another graph.
+Manager settings remain schema v3 in `<nativeRoot>/animejanai/animejanai_manager.conf`, with `mikai_chain_steps_version=1` for typed ordered steps. Legacy model-only configurations migrate on read; mixed profiles require an app version that understands the extension. Preparation retains provenance and digest checks, stages owned shaders, and emits separate configs/stats for each AJI segment. Stable content-addressed stage directories preserve existing GPU/shape-specific engine reuse. Concurrent preparations of the same owned cache are explicitly refused while its build lease is held. Missing, modified, or unsupported referenced models produce a preparation error rather than silently selecting another graph.
 
 External registrations are stored in `<nativeRoot>/animejanai/models/external-models.json`. Clearing the browse folder does not unregister pinned models; use **Remove Selected** for that.
 
@@ -206,6 +216,8 @@ For a non-RIFE benchmark, leave the RIFE group unchecked **and** exclude custom 
 ### Windows Manager Smoke
 
 Build `native_settings_probe` and run it with Qt/MinGW DLLs on `PATH`. It uses an isolated executable-local store, exercises the real Settings/player/Compare/Benchmark surfaces, and writes `native-animejanai-smoke-evidence.json` plus screenshots to its working directory. The probe uses Qt widget file pickers for deterministic actions; it does not invoke AJI inference, TensorRT compilation, or a RIFE benchmark.
+
+The smoke also checks compact/wide English and Ukrainian Processing captions, captures the preset/TensorRT form, and exercises Settings maximization/restoration and the fixed action dock. The log records the actual device-pixel ratio; `QT_SCALE_FACTOR` multiplies the operating system's existing display scale.
 
 From the repository root in PowerShell:
 
@@ -249,6 +261,8 @@ See [benchmark results by machine](bench_results.md) for measured per-model thro
 The [controlled RTX 5090 AnimeJaNai follow-up](bench_results.md#controlled-animejanai-follow-up) documents a separate old/new comparison and its measurement controls. For repeat comparisons, keep the app foreground on a connected, non-minimized desktop, interleave old/new runs, and record session/focus and cached-engine versus first-use conditions. These controls do not imply stutter-free playback or zero GPU cost.
 
 Settings → Benchmark compares selected clips and models, with an optional unfiltered baseline. Search and group selection keep their choices while filtering; the run action stays visible while the page scrolls.
+
+Every completed Settings run automatically writes one atomic `bench/benchmark-<UTC timestamp>-<UUID>.json` beside the executable, including failed rows. It records stable model IDs, numeric FPS or a null measurement with the failure reason, source/target geometry, engine preparation time, timestamps, backend, GPU/driver/SM, OS and Qt. The completion message names the report; write errors remain visible. Report creation runs on the benchmark worker and does not depend on the Settings window remaining open.
 
 Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
 

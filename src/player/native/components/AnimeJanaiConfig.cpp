@@ -309,7 +309,11 @@ QVector<int> sortedIndices(const QMap<QString, QString>& keys,
     return result;
 }
 
-QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly) {
+QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly,
+                                               QString* error = nullptr) {
+    const auto fail = [error](const QString& message) {
+        if (error) *error = message;
+    };
     QVector<AnimeJanaiSlot> parsedSlots;
     static const QRegularExpression slotRx(QStringLiteral("^slot_(\\d+)$"));
     static const QRegularExpression chainRx(QStringLiteral("^chain_(\\d+)_"));
@@ -322,6 +326,15 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
             continue;
         }
         const auto& keys = secIt.value();
+        const QString profileExtensionVersion = keys.value(QStringLiteral("mikai_chain_steps_version"));
+        if (!profileExtensionVersion.isEmpty()) {
+            bool versionOk = false;
+            const int parsedVersion = profileExtensionVersion.toInt(&versionOk);
+            if (!versionOk || parsedVersion != 1) {
+                fail(ConfigText::tr("The AnimeJaNai mixed-chain extension version is unsupported or malformed."));
+                return {};
+            }
+        }
         AnimeJanaiSlot slot;
         slot.number = profileOnly ? 1 : captureNumber(sectionName, slotRx);
         if (slot.number <= 0) continue;
@@ -358,6 +371,31 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
                     keys.value(prefix + QStringLiteral("rife_model")));
             }
 
+            const QString extensionVersion = keys.value(
+                QStringLiteral("mikai_chain_steps_version"),
+                iniValue(ini, QStringLiteral("global"), QStringLiteral("mikai_chain_steps_version")));
+            const QRegularExpression anyStepRx(
+                QStringLiteral("^chain_%1_step_\\d+_").arg(chainNumber));
+            bool containsMixedStepKeys = false;
+            for (auto keyIt = keys.cbegin(); keyIt != keys.cend(); ++keyIt) {
+                if (anyStepRx.match(keyIt.key()).hasMatch()) {
+                    containsMixedStepKeys = true;
+                    break;
+                }
+            }
+            if (extensionVersion.isEmpty() && containsMixedStepKeys) {
+                fail(ConfigText::tr("Mixed AnimeJaNai steps are missing their extension version."));
+                return {};
+            }
+            int parsedExtensionVersion = 0;
+            if (!extensionVersion.isEmpty()) {
+                bool versionOk = false;
+                parsedExtensionVersion = extensionVersion.toInt(&versionOk);
+                if (!versionOk || parsedExtensionVersion != 1) {
+                    fail(ConfigText::tr("The AnimeJaNai mixed-chain extension version is unsupported or malformed."));
+                    return {};
+                }
+            }
             QSet<int> modelNumbers;
             for (auto keyIt = keys.cbegin(); keyIt != keys.cend(); ++keyIt) {
                 const QRegularExpressionMatch match = modelRx.match(keyIt.key());
@@ -371,18 +409,83 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
             for (const int modelNumber : orderedModels) {
                 const QString modelPrefix =
                     prefix + QStringLiteral("model_%1_").arg(modelNumber);
-                AnimeJanaiChainModel model;
-                model.number = modelNumber;
-                model.name = keys.value(modelPrefix + QStringLiteral("name"));
-                model.resizeHeightBeforeUpscale = std::clamp(
-                    toInt(keys.value(modelPrefix + QStringLiteral("resize_height_before_upscale")),
-                          0),
+                AnimeJanaiChainStep step;
+                step.number = static_cast<int>(chain.steps.size()) + 1;
+                step.kind = AnimeJanaiStepKind::OnnxModel;
+                step.id = keys.value(modelPrefix + QStringLiteral("name"));
+                step.resizeHeightBeforeUpscale = std::clamp(
+                    toInt(keys.value(modelPrefix + QStringLiteral("resize_height_before_upscale")), 0),
                     0, 4320);
-                model.resizeFactorBeforeUpscale = std::clamp(
-                    toInt(keys.value(modelPrefix + QStringLiteral("resize_factor_before_upscale")),
-                          100),
+                step.resizeFactorBeforeUpscale = std::clamp(
+                    toInt(keys.value(modelPrefix + QStringLiteral("resize_factor_before_upscale")), 100),
                     1, 400);
-                chain.models.push_back(std::move(model));
+                chain.steps.push_back(std::move(step));
+            }
+            if (parsedExtensionVersion == 1 && containsMixedStepKeys) {
+                static const QRegularExpression stepRx(
+                    QStringLiteral("^chain_(\\d+)_step_(\\d+)_"));
+                QSet<int> stepNumbers;
+                for (auto keyIt = keys.cbegin(); keyIt != keys.cend(); ++keyIt) {
+                    const auto match = stepRx.match(keyIt.key());
+                    if (match.hasMatch() && toInt(match.captured(1), -1) == chainNumber) {
+                        const int stepNumber = toInt(match.captured(2), -1);
+                        if (stepNumber > 0) stepNumbers.insert(stepNumber);
+                    }
+                }
+                QVector<int> orderedSteps(stepNumbers.cbegin(), stepNumbers.cend());
+                std::sort(orderedSteps.begin(), orderedSteps.end());
+                QVector<AnimeJanaiChainStep> mixedSteps;
+                for (const int stepNumber : orderedSteps) {
+                    const QString stepPrefix = prefix + QStringLiteral("step_%1_").arg(stepNumber);
+                    if (!keys.contains(stepPrefix + QStringLiteral("kind")) ||
+                        !keys.contains(stepPrefix + QStringLiteral("id")) ||
+                        !keys.contains(stepPrefix + QStringLiteral("scale_factor")) ||
+                        !keys.contains(stepPrefix + QStringLiteral("resize_height_before_upscale")) ||
+                        !keys.contains(stepPrefix + QStringLiteral("resize_factor_before_upscale"))) {
+                        fail(ConfigText::tr("The AnimeJaNai mixed-chain step is incomplete."));
+                        return {};
+                    }
+                    AnimeJanaiChainStep step;
+                    step.number = stepNumber;
+                    const QString kind = keys.value(stepPrefix + QStringLiteral("kind"));
+                    if (kind == QStringLiteral("onnx")) step.kind = AnimeJanaiStepKind::OnnxModel;
+                    else if (kind == QStringLiteral("anime4k")) step.kind = AnimeJanaiStepKind::Anime4K;
+                    else {
+                        fail(ConfigText::tr("The AnimeJaNai mixed-chain step kind is unsupported."));
+                        return {};
+                    }
+                    step.id = keys.value(stepPrefix + QStringLiteral("id"));
+                    bool scaleOk = false;
+                    step.scaleFactor = keys.value(stepPrefix + QStringLiteral("scale_factor")).toInt(&scaleOk);
+                    if (!scaleOk || (step.scaleFactor != 1 && step.scaleFactor != 2 &&
+                                     step.scaleFactor != 4)) {
+                        fail(ConfigText::tr("The AnimeJaNai mixed-chain scale factor is invalid."));
+                        return {};
+                    }
+                    bool heightOk = false;
+                    bool resizeFactorOk = false;
+                    step.resizeHeightBeforeUpscale = keys.value(
+                        stepPrefix + QStringLiteral("resize_height_before_upscale")).toInt(&heightOk);
+                    step.resizeFactorBeforeUpscale = keys.value(
+                        stepPrefix + QStringLiteral("resize_factor_before_upscale")).toInt(&resizeFactorOk);
+                    if (!heightOk || !resizeFactorOk || step.resizeHeightBeforeUpscale < 0 ||
+                        step.resizeHeightBeforeUpscale > 4320 ||
+                        step.resizeFactorBeforeUpscale < 1 || step.resizeFactorBeforeUpscale > 400) {
+                        fail(ConfigText::tr("The AnimeJaNai mixed-chain resize settings are invalid."));
+                        return {};
+                    }
+                    mixedSteps.push_back(std::move(step));
+                }
+                if (mixedSteps.isEmpty()) {
+                    fail(ConfigText::tr("The AnimeJaNai mixed-chain extension contains no steps."));
+                    return {};
+                }
+                chain.steps = std::move(mixedSteps);
+                QString stepError;
+                if (!AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(chain, &stepError)) {
+                    fail(stepError);
+                    return {};
+                }
             }
             slot.chains.push_back(std::move(chain));
         }
@@ -1066,10 +1169,10 @@ AnimeJanaiConfig AnimeJanaiConfigStore::loadFromFile(const QString& path, QStrin
     if (!recognized) {
         return fail(ConfigText::tr("The file contains no AnimeJaNai global settings or custom profile slots."));
     }
-    return parse(text);
+    return parse(text, error);
 }
 
-AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text) {
+AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text, QString* error) {
     const ParsedIni ini = parseIniText(text);
     AnimeJanaiConfig config;
     config.enableLogging =
@@ -1079,6 +1182,16 @@ AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text) {
 
     const int version =
         toInt(iniValue(ini, QStringLiteral("global"), QStringLiteral("config_version"), QStringLiteral("1")), 1);
+    const QString extensionVersion =
+        iniValue(ini, QStringLiteral("global"), QStringLiteral("mikai_chain_steps_version"));
+    if (!extensionVersion.isEmpty()) {
+        bool extensionOk = false;
+        const int parsed = extensionVersion.toInt(&extensionOk);
+        if (!extensionOk || parsed != 1) {
+            if (error) *error = ConfigText::tr("The AnimeJaNai mixed-chain extension version is unsupported or malformed.");
+            return {};
+        }
+    }
     QString trt = iniValue(ini, QStringLiteral("global"), QStringLiteral("trt_engine_settings"));
     if (version < 2 &&
         (trt == QString::fromLatin1(kDefaultTrtSettings) ||
@@ -1104,7 +1217,9 @@ AnimeJanaiConfig AnimeJanaiConfigStore::parse(QStringView text) {
     config.qualitySharp = isSharp(QStringLiteral("quality_preset"));
     config.balancedSharp = isSharp(QStringLiteral("balanced_preset"));
     config.performanceSharp = isSharp(QStringLiteral("performance_preset"));
-    config.customSlots = parseSlotsFromIni(ini, false);
+    config.customSlots = parseSlotsFromIni(ini, false, error);
+    if (error && !error->isEmpty()) return {};
+    if (error) error->clear();
     return config;
 }
 
@@ -1121,6 +1236,15 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
     if (!slot.descriptionText.isEmpty()) {
         putLine(output, QStringLiteral("description"), slot.descriptionText);
     }
+    const bool hasMixedSteps = std::any_of(
+        slot.chains.cbegin(), slot.chains.cend(), [](const AnimeJanaiChain& chain) {
+            return std::any_of(chain.steps.cbegin(), chain.steps.cend(),
+                               [](const AnimeJanaiChainStep& step) {
+                                   return step.kind == AnimeJanaiStepKind::Anime4K;
+                               });
+        });
+    if (hasMixedSteps)
+        putLine(output, QStringLiteral("mikai_chain_steps_version"), QStringLiteral("1"));
 
     QVector<const AnimeJanaiChain*> chains;
     chains.reserve(slot.chains.size());
@@ -1138,21 +1262,41 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
         putLine(output, p + QStringLiteral("min_fps"), QString::number(chain.minFps));
         putLine(output, p + QStringLiteral("max_fps"), QString::number(chain.maxFps));
 
-        QVector<const AnimeJanaiChainModel*> models;
-        models.reserve(chain.models.size());
-        for (const AnimeJanaiChainModel& model : chain.models) models.push_back(&model);
-        std::sort(models.begin(), models.end(),
-                  [](const AnimeJanaiChainModel* a, const AnimeJanaiChainModel* b) {
+        const bool mixed = std::any_of(chain.steps.cbegin(), chain.steps.cend(),
+                                       [](const AnimeJanaiChainStep& step) {
+                                           return step.kind == AnimeJanaiStepKind::Anime4K;
+                                       });
+        QVector<const AnimeJanaiChainStep*> steps;
+        steps.reserve(chain.steps.size());
+        for (const AnimeJanaiChainStep& step : chain.steps) steps.push_back(&step);
+        std::sort(steps.begin(), steps.end(),
+                  [](const AnimeJanaiChainStep* a, const AnimeJanaiChainStep* b) {
                       return a->number < b->number;
                   });
-        for (const AnimeJanaiChainModel* modelPtr : models) {
-            const AnimeJanaiChainModel& model = *modelPtr;
-            const QString m = p + QStringLiteral("model_%1_").arg(model.number);
-            putLine(output, m + QStringLiteral("resize_height_before_upscale"),
-                    QString::number(model.resizeHeightBeforeUpscale));
-            putLine(output, m + QStringLiteral("resize_factor_before_upscale"),
-                    QString::number(model.resizeFactorBeforeUpscale));
-            putLine(output, m + QStringLiteral("name"), model.name);
+        int legacyModelNumber = 0;
+        for (const AnimeJanaiChainStep* stepPtr : steps) {
+            const AnimeJanaiChainStep& step = *stepPtr;
+            if (step.kind == AnimeJanaiStepKind::OnnxModel) {
+                const QString m = p + QStringLiteral("model_%1_").arg(++legacyModelNumber);
+                putLine(output, m + QStringLiteral("resize_height_before_upscale"),
+                        QString::number(step.resizeHeightBeforeUpscale));
+                putLine(output, m + QStringLiteral("resize_factor_before_upscale"),
+                        QString::number(step.resizeFactorBeforeUpscale));
+                putLine(output, m + QStringLiteral("name"), step.id);
+            }
+            if (mixed) {
+                const QString s = p + QStringLiteral("step_%1_").arg(step.number);
+                putLine(output, s + QStringLiteral("kind"),
+                        step.kind == AnimeJanaiStepKind::OnnxModel ? QStringLiteral("onnx") :
+                        step.kind == AnimeJanaiStepKind::Anime4K ? QStringLiteral("anime4k") :
+                        QStringLiteral("unsupported"));
+                putLine(output, s + QStringLiteral("id"), step.id);
+                putLine(output, s + QStringLiteral("scale_factor"), QString::number(step.scaleFactor));
+                putLine(output, s + QStringLiteral("resize_height_before_upscale"),
+                        QString::number(step.resizeHeightBeforeUpscale));
+                putLine(output, s + QStringLiteral("resize_factor_before_upscale"),
+                        QString::number(step.resizeFactorBeforeUpscale));
+            }
         }
         putLine(output, p + QStringLiteral("rife"),
                 chain.rifeEnabled ? QStringLiteral("yes") : QStringLiteral("no"));
@@ -1174,6 +1318,18 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
 QString AnimeJanaiConfigStore::serialize(const AnimeJanaiConfig& config) {
     QString output = QStringLiteral("[global]\n");
     putLine(output, QStringLiteral("config_version"), QStringLiteral("3"));
+    const bool hasMixedSteps = std::any_of(
+        config.customSlots.cbegin(), config.customSlots.cend(), [](const AnimeJanaiSlot& slot) {
+            return std::any_of(slot.chains.cbegin(), slot.chains.cend(),
+                               [](const AnimeJanaiChain& chain) {
+                                   return std::any_of(chain.steps.cbegin(), chain.steps.cend(),
+                                                      [](const AnimeJanaiChainStep& step) {
+                                                          return step.kind == AnimeJanaiStepKind::Anime4K;
+                                                      });
+                               });
+        });
+    if (hasMixedSteps)
+        putLine(output, QStringLiteral("mikai_chain_steps_version"), QStringLiteral("1"));
     putLine(output, QStringLiteral("logging"),
             config.enableLogging ? QStringLiteral("yes") : QStringLiteral("no"));
     if (!config.externalModelsDir.trimmed().isEmpty()) {
@@ -1202,6 +1358,7 @@ QString AnimeJanaiConfigStore::serialize(const AnimeJanaiConfig& config) {
 }
 
 bool AnimeJanaiConfigStore::save(const AnimeJanaiConfig& config, QString* error) {
+    if (!validateAnimeJanaiConfig(config, error)) return false;
     const QString root = animeJanaiRootDir();
     const auto rootTrusted = [&] {
         return nativePathTrust(root, true).trusted &&
@@ -1221,6 +1378,7 @@ bool AnimeJanaiConfigStore::save(const AnimeJanaiConfig& config, QString* error)
 
 bool AnimeJanaiConfigStore::saveToFile(const QString& path, const AnimeJanaiConfig& config,
                                        QString* error) {
+    if (!validateAnimeJanaiConfig(config, error)) return false;
     const QFileInfo info(path);
     if (!QDir().mkpath(info.absolutePath())) {
         if (error != nullptr) {
@@ -1265,7 +1423,11 @@ AnimeJanaiSlot AnimeJanaiConfigStore::loadProfile(const QString& path, bool* ok,
 }
 
 AnimeJanaiSlot AnimeJanaiConfigStore::parseProfile(QStringView text, bool* ok, QString* error) {
-    const QVector<AnimeJanaiSlot> slotsList = parseSlotsFromIni(parseIniText(text), true);
+    const QVector<AnimeJanaiSlot> slotsList = parseSlotsFromIni(parseIniText(text), true, error);
+    if (error && !error->isEmpty()) {
+        if (ok) *ok = false;
+        return {};
+    }
     if (slotsList.isEmpty()) {
         if (ok != nullptr) *ok = false;
         if (error != nullptr) {
@@ -1280,6 +1442,9 @@ AnimeJanaiSlot AnimeJanaiConfigStore::parseProfile(QStringView text, bool* ok, Q
 
 bool AnimeJanaiConfigStore::saveProfile(const QString& path, const AnimeJanaiSlot& slot,
                                         QString* error) {
+    for (const AnimeJanaiChain& chain : slot.chains) {
+        if (!validateAnimeJanaiChainSteps(chain, error)) return false;
+    }
     const QFileInfo info(path);
     if (!QDir().mkpath(info.absolutePath())) {
         if (error != nullptr) *error = ConfigText::tr("Could not create directory for %1.").arg(path);
@@ -1307,20 +1472,20 @@ QString AnimeJanaiConfigStore::serializeProfile(const AnimeJanaiSlot& slot) {
 QVector<AnimeJanaiSlot> AnimeJanaiConfigStore::defaultProfiles(const AnimeJanaiConfig& config) {
     static const QString sd = QStringLiteral(
         "2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo");
-    const auto makeModel = [](int number, const QString& name) {
-        AnimeJanaiChainModel m;
-        m.number = number;
-        m.name = name;
-        return m;
+    const auto makeModel = [](int number, const QString& id) {
+        AnimeJanaiChainStep step;
+        step.number = number;
+        step.id = id;
+        return step;
     };
     const auto makeChain = [](int number, const QString& minRes, const QString& maxRes, int maxFps,
-                              const QVector<AnimeJanaiChainModel>& models) {
+                              const QVector<AnimeJanaiChainStep>& steps) {
         AnimeJanaiChain c;
         c.number = number;
         c.minResolution = minRes;
         c.maxResolution = maxRes;
         c.maxFps = maxFps;
-        c.models = models;
+        c.steps = steps;
         return c;
     };
     const auto hdBalanced = [](bool sharp) {
@@ -1427,6 +1592,47 @@ QString AnimeJanaiConfigStore::rifeLabelToValue(QStringView label) {
            (suffix == QStringLiteral("lite")
                 ? QStringLiteral("1")
                 : (suffix == QStringLiteral("heavy") ? QStringLiteral("2") : QString()));
+}
+
+bool AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(const AnimeJanaiChain& chain,
+                                                          QString* error) {
+    for (qsizetype index = 0; index < chain.steps.size(); ++index) {
+        const AnimeJanaiChainStep& step = chain.steps[index];
+        if (step.number != index + 1) {
+            if (error) *error = ConfigText::tr("AnimeJaNai chain step numbers must be contiguous and ordered.");
+            return false;
+        }
+        if (step.kind == AnimeJanaiStepKind::Unsupported) {
+            if (error) *error = ConfigText::tr("The AnimeJaNai chain contains an unsupported step kind.");
+            return false;
+        }
+        if (step.kind != AnimeJanaiStepKind::OnnxModel &&
+            step.kind != AnimeJanaiStepKind::Anime4K) {
+            if (error) *error = ConfigText::tr("The AnimeJaNai chain contains an unsupported step kind.");
+            return false;
+        }
+        if (step.id.trimmed().isEmpty()) {
+            if (error) *error = ConfigText::tr("The AnimeJaNai chain contains a step without an identifier.");
+            return false;
+        }
+        if (step.scaleFactor != 1 && step.scaleFactor != 2 && step.scaleFactor != 4) {
+            if (error) *error = ConfigText::tr("The AnimeJaNai chain scale factor must be 1, 2, or 4.");
+            return false;
+        }
+    }
+    if (error) error->clear();
+    return true;
+}
+
+bool AnimeJanaiConfigStore::validateAnimeJanaiConfig(const AnimeJanaiConfig& config,
+                                                      QString* error) {
+    for (const AnimeJanaiSlot& slot : config.customSlots) {
+        for (const AnimeJanaiChain& chain : slot.chains) {
+            if (!validateAnimeJanaiChainSteps(chain, error)) return false;
+        }
+    }
+    if (error) error->clear();
+    return true;
 }
 
 QString AnimeJanaiConfigStore::rifeValueToLabel(QStringView value) {

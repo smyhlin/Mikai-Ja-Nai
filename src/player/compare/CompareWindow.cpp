@@ -1336,10 +1336,17 @@ QImage CompareWindow::renderIsolated(const QString& id) {
         pendingAjiId_ = id;
         pendingAjiPreparation_ = true;
         updateInfo();
-        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend] {
-            task->plan = native::prepareAnimeJanaiPlan(id, backend, [task] {
-                return task->cancelled.load(std::memory_order_acquire);
-            });
+        const native::AnimeJanaiSourceContext source = surface_->animeJanaiSourceContext();
+        QThreadPool::globalInstance()->start(QRunnable::create([task, id, backend, source] {
+            const native::Anime4KShaderProgramResolver shaderResolver =
+                [](const QString& presetId, QString* reason) {
+                    return anime4k::filterShaderProgramForCandidate(
+                        presetId, anime4k::findShadersDir(), reason);
+                };
+            task->plan = native::prepareAnimeJanaiPlan(
+                id, backend, [task] {
+                    return task->cancelled.load(std::memory_order_acquire);
+                }, source, shaderResolver);
             task->finished.store(true, std::memory_order_release);
         }));
         while (!task->finished.load(std::memory_order_acquire)) {

@@ -29,6 +29,9 @@ class TestAnimeJanaiRuntime : public QObject {
   void malformedOnnxModelIsRejected();
   void managerConfigParsesAndSerializesMultiChainSlotsAndTrtSettings();
   void invalidConfigFilesReportErrorsWithoutReplacingStoredSettings();
+  void mixedConfigStepsRoundTripAndRejectInvalidData();
+  void mixedAnime4KPlanUsesSourceSelectionWithoutAji();
+  void stageCacheLeasesRefuseOverlapAndReleaseAtTerminal();
 
  private:
   bool ownsFixture_ = false;

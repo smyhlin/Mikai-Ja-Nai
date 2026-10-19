@@ -32,7 +32,9 @@ The manager configuration is schema v3 at
 `<nativeRoot>/animejanai/animejanai_manager.conf`. It stores Standard/Sharp
 variant choices, logging and TensorRT settings, the optional external-model
 directory, and custom slots 1–10. `.pconf` profiles and complete `.conf`
-manager imports/exports use the same schema-v3 slot keys. Profile edits and
+manager imports/exports retain schema-v3 slot keys, with
+`mikai_chain_steps_version=1` for typed ordered ONNX/Anime4K steps. Legacy model
+keys migrate on read. Profile edits and
 manager settings are deferred until **Save**; custom model import, external
 registration, and removal are immediate.
 
@@ -50,8 +52,18 @@ redistribution.
 When a profile references an imported or registered graph, runtime preparation
 checks its recorded digest, stages it under the app-owned
 `<nativeRoot>/animejanai/models/spatial/<sha256>.onnx` with its
-`.onnx.source.json` provenance, and generates `config/custom_slot_<N>.ini` under
-`<nativeRoot>/animejanai/`. Missing, altered, or otherwise unsupported model
+`.onnx.source.json` provenance for model-only profiles. Mixed profiles instead
+use content-addressed per-stage model directories, configs and stats under
+`<nativeRoot>/animejanai/`. Consecutive ONNX steps share an AJI filter; each
+Anime4K step becomes a real ordered libplacebo filter with its own input resize
+and 1×/2×/4× output scale. Owned shader programs are staged atomically.
+Software NV12 negotiation before Anime4K handles CUDA inputs and subsequent
+AJI uploads; this route entails transfers and an 8-bit boundary, not guaranteed
+zero-copy or HDR preservation. Shader-only profiles require no AJI closure.
+Source-based activation uses original dimensions/FPS, never transformed output
+or filename guesses. Stage cache paths remain stable across preparations;
+process-local keyed leases prevent overlapping app-managed builds and are
+released at terminal outcomes. Missing, altered, or otherwise unsupported model
 references fail preparation rather than silently substituting another graph.
 Enumeration is metadata-only; model hashing and import/registration I/O are
 performed away from the GUI thread. This model staging/config path belongs to
@@ -111,6 +123,34 @@ the selected backend. Editing a `backend` key in a manager import does not
 change the player's backend selection. Generated plan INIs also replace model
 references with staged SHA-256 stems; they are derived runtime artifacts, not
 the editable source of the profile.
+
+### Retired Model-Graph Experiments
+
+The experimental FP8, 2:4 sparse, fusion, SpaceToDepth/RepConv folding,
+one-channel luma, and RIFE 4.25 coordinate-specialization tools and dedicated
+probe have been removed. No experimental graph tools, Python optimization
+runtime or dedicated optimization probe remain; only production correctness
+fixes were retained from this work. Historical measurements, hashes, methods
+and limitations are in
+[`bench_results.md`](../bench_results.md#rtx-5090--retired-model-graph-experiments-2026-10-18).
+FP8 selectively helped throughput but also regressed a model. Sparse variants
+gave small benefits with major output drift. Fusion helped one custom chain;
+cubic pre-resize did not. Existing SPAN graphs had no eligible fold, new
+SpaceToDepth/RepConv and luma designs lacked trained weights, and RIFE
+specialization gains were marginal with overlapping ranges.
+These are experiment results, not shipped capabilities or general speed/quality
+claims.
+
+The retained production builder diagnostic recognizes AJI's explicit
+background-engine-build failure and includes a bounded `.engine.build.log`
+error summary rather than waiting for the ten-minute timeout. Ordinary mpv
+error-level chatter remains diagnostic-only. Only an authoritative builder
+tail is frozen: source-error logs arriving after `END_FILE` remain available,
+so the original file/open error is not replaced by generic chatter.
+
+The existing `benchmark_probe --diagnostic-log-smoke <local-video>` command,
+run from an owned test deployment, checks benign build chatter and a real
+source failure without model inference or engine compilation.
 
 ### Distinction from Prepared Native
 

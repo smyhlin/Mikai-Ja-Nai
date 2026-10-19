@@ -17,7 +17,7 @@
 #include <initializer_list>
 
 #include <QComboBox>
-#include <QHBoxLayout>
+#include <QFormLayout>
 #include <QLabel>
 #include <QScrollArea>
 #include <QSignalBlocker>
@@ -60,16 +60,23 @@ QWidget* SettingsDialog::buildProcessingTab() {
 
     auto addRowTo = [](QVBoxLayout* targetLayout, QWidget* parentWidget,
                        const QString& label, QWidget* field) {
-        auto* row = new QHBoxLayout();
-        row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(theme::kSpacingMedium);
+        auto* form = new QFormLayout();
+        form->setContentsMargins(0, 0, 0, 0);
+        form->setHorizontalSpacing(theme::kSpacingMedium);
+        form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+        form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
         auto* name = new QLabel(label, parentWidget);
         name->setObjectName(QStringLiteral("SettingsFormLabel"));
-        name->setMinimumWidth(theme::kSettingsFormLabelMinWidth);
+        name->setWordWrap(true);
+        name->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
         name->setBuddy(field);
-        row->addWidget(name, 0, Qt::AlignVCenter);
-        row->addWidget(field, 1, Qt::AlignVCenter);
-        targetLayout->addLayout(row);
+        if (auto* combo = qobject_cast<QComboBox*>(field)) {
+            combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            combo->setMinimumContentsLength(theme::kSettingsCompactChoiceLengthChars);
+            combo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        }
+        form->addRow(name, field);
+        targetLayout->addLayout(form);
         return name;
     };
 
@@ -135,9 +142,6 @@ QWidget* SettingsDialog::buildProcessingTab() {
     nativeRecipe_->setObjectName(QStringLiteral("nativeRecipeCombo"));
     nativeRecipe_->setAccessibleName(tr("Native recipe"));
     polishInteractiveControl(nativeRecipe_, theme::kSettingsControlSize);
-    nativeRecipe_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    nativeRecipe_->setMinimumContentsLength(theme::kSettingsChoiceLengthChars);
-    nativeRecipe_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     populateRecipeChoices(nativePreferences_.recipeId);
     recipeRowLabel_ =
         addRowTo(nativeConfigLayout, nativeConfigCard_, tr("Recipe"), nativeRecipe_);

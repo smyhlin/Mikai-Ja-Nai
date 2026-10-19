@@ -34,7 +34,9 @@
 #include <QPair>
 #include <QPushButton>
 #include <QScreen>
+#include <QScrollBar>
 #include <QSettings>
+#include <QSpinBox>
 #include <QStyle>
 #include <QStyleOptionFrame>
 #include <QToolButton>
@@ -487,7 +489,7 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     QPushButton* addChain =
         buttonForCaption(panel, mikai::app::AnimeJanaiManagerPanel::tr("Add Chain"));
     QPushButton* addStep =
-        buttonForCaption(panel, mikai::app::AnimeJanaiManagerPanel::tr("Add Model Step"));
+        panel.findChild<QPushButton*>(QStringLiteral("ajiAddStepButton"));
     check(chain != nullptr && addChain != nullptr && addStep != nullptr,
           "the manager exposes chain and model-step actions");
     if (slotSelector != nullptr && chain != nullptr && addChain != nullptr && addStep != nullptr) {
@@ -496,17 +498,47 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
         addChain->click();
         addStep->click();
         addStep->click();
-        bool customChoiceFound = false;
-        for (QComboBox* choice : panel.findChildren<QComboBox*>()) {
-            int index = choice->findData(QStringLiteral("smoke_model"));
-            if (index < 0) index = choice->findText(QStringLiteral("smoke_model"));
-            if (index >= 0) {
-                choice->setCurrentIndex(index);
-                customChoiceFound = true;
-                break;
-            }
+        auto* a4kKind = panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepKind_2"));
+        check(a4kKind != nullptr, "the mixed chain exposes a typed second step");
+        if (a4kKind != nullptr) {
+            a4kKind->setCurrentIndex(a4kKind->findData(
+                static_cast<int>(mplayer::native::AnimeJanaiStepKind::Anime4K)));
         }
-        check(customChoiceFound, "the imported custom model is offered as a chain step");
+        auto* a4kPreset = panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_2"));
+        const QStringList expectedA4kIds{
+            QStringLiteral("fast_a"), QStringLiteral("fast_b"), QStringLiteral("fast_c"),
+            QStringLiteral("hq_a"), QStringLiteral("hq_b"), QStringLiteral("hq_c"),
+            QStringLiteral("hq_aa"), QStringLiteral("hq_bb"), QStringLiteral("hq_ca")};
+        bool allA4kPresetsAvailable = a4kPreset != nullptr;
+        if (a4kPreset != nullptr) {
+            for (const QString& id : expectedA4kIds)
+                allA4kPresetsAvailable &= a4kPreset->findData(id) >= 0;
+        }
+        check(allA4kPresetsAvailable,
+              "the A4K selector offers A/B/C Fast, A/B/C HQ, and all combined HQ stable ids");
+        if (a4kPreset != nullptr) a4kPreset->setCurrentIndex(a4kPreset->findData(QStringLiteral("hq_aa")));
+        auto* a4kScale = panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepScale_2"));
+        check(a4kScale != nullptr && a4kScale->findData(4) >= 0,
+              "the A4K output scale selector offers exact 1x/2x/4x targets");
+        if (a4kScale != nullptr) a4kScale->setCurrentIndex(a4kScale->findData(4));
+        auto* inputHeight =
+            panel.findChild<QSpinBox*>(QStringLiteral("animeJanaiStepResizeHeight_2"));
+        auto* inputPercent =
+            panel.findChild<QSpinBox*>(QStringLiteral("animeJanaiStepResizePercent_2"));
+        if (inputHeight != nullptr) inputHeight->setValue(720);
+        if (inputPercent != nullptr) inputPercent->setValue(80);
+        QComboBox* customChoice =
+            panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_3"));
+        const int customModelIndex =
+            customChoice != nullptr ? customChoice->findData(QStringLiteral("smoke_model")) : -1;
+        const bool customChoiceFound = customModelIndex >= 0;
+        if (customChoiceFound) customChoice->setCurrentIndex(customModelIndex);
+        check(customChoiceFound, "the imported custom ONNX model remains distinct and selectable");
+        auto* reorderUp =
+            panel.findChild<QPushButton*>(QStringLiteral("animeJanaiStepMoveUp_3"));
+        check(reorderUp != nullptr, "each step has an explicit move control");
+        if (reorderUp != nullptr) reorderUp->click();
+        QApplication::processEvents();
     }
 
     QComboBox* quality = comboForLabel(
@@ -605,14 +637,39 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
           "user activation created all ten profile slots");
     if (!edited.customSlots.isEmpty()) {
         bool hasMultipleModelSteps = false;
+        bool mixedChainRoundTrip = false;
         for (const auto& chainConfig : edited.customSlots.front().chains) {
-            hasMultipleModelSteps |= chainConfig.models.size() >= 2;
+            hasMultipleModelSteps |= chainConfig.steps.size() >= 2;
+            if (chainConfig.steps.size() >= 3 &&
+                chainConfig.steps.at(1).kind == mplayer::native::AnimeJanaiStepKind::OnnxModel &&
+                chainConfig.steps.at(1).id == QStringLiteral("smoke_model") &&
+                chainConfig.steps.at(2).kind == mplayer::native::AnimeJanaiStepKind::Anime4K &&
+                chainConfig.steps.at(2).id == QStringLiteral("hq_aa") &&
+                chainConfig.steps.at(2).scaleFactor == 4 &&
+                chainConfig.steps.at(2).resizeHeightBeforeUpscale == 720 &&
+                chainConfig.steps.at(2).resizeFactorBeforeUpscale == 80) {
+                mixedChainRoundTrip = true;
+            }
         }
         check(edited.customSlots.front().chains.size() >= 2 && hasMultipleModelSteps,
-              "slot 1 has multiple chains and multiple model steps");
+              "slot 1 has multiple chains and multiple ordered steps");
+        check(mixedChainRoundTrip,
+              "Save/reopen retains ONNX/A4K order, combined HQ id, input resize, and 4x target");
         check(edited.customSlots.size() > 1 &&
                   edited.customSlots.at(1).chains.size() >= 2,
               "importing the .pconf profile populated slot 2");
+        bool pconfMixedChainPreserved = false;
+        if (edited.customSlots.size() > 1) {
+            for (const auto& chainConfig : edited.customSlots.at(1).chains) {
+                pconfMixedChainPreserved |= chainConfig.steps.size() >= 3 &&
+                    chainConfig.steps.at(1).id == QStringLiteral("smoke_model") &&
+                    chainConfig.steps.at(2).kind == mplayer::native::AnimeJanaiStepKind::Anime4K &&
+                    chainConfig.steps.at(2).id == QStringLiteral("hq_aa") &&
+                    chainConfig.steps.at(2).scaleFactor == 4;
+            }
+        }
+        check(pconfMixedChainPreserved,
+              "the .pconf export/import retains the ordered mixed chain and A4K output scale");
     }
     check(edited.qualitySharp && edited.balancedSharp && edited.performanceSharp,
           "Sharp choices are reflected in all built-in presets");
@@ -664,10 +721,12 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
           "the Settings Save action accepted the manager changes");
 
     QFile savedConfig(mplayer::native::AnimeJanaiConfigStore::configFilePath());
-    const bool schema3Saved =
-        savedConfig.open(QIODevice::ReadOnly) &&
-        savedConfig.readAll().contains(QByteArrayLiteral("config_version=3"));
-    check(schema3Saved, "the Settings Save action wrote schema version 3");
+    const QByteArray savedBytes =
+        savedConfig.open(QIODevice::ReadOnly) ? savedConfig.readAll() : QByteArray{};
+    check(savedBytes.contains(QByteArrayLiteral("config_version=3")),
+          "the Settings Save action wrote schema version 3");
+    check(savedBytes.contains(QByteArrayLiteral("mikai_chain_steps_version=1")),
+          "the Settings Save action wrote the ordered-step extension version");
 
     SettingsDialog reloadedDialog(client, runner);
     reloadedDialog.showProcessingTab();
@@ -1006,6 +1065,53 @@ void exerciseProcessing(SettingsDialog& dialog, mikai::backend::MikaiClient& cli
         check(dialog.grab().save(
                   QStringLiteral("native-processing-%1-%2.png").arg(language, suffix)),
               "the visible Processing page screenshot was saved");
+    }
+
+    auto* manager = dialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+        QStringLiteral("animeJanaiManagerPanel"));
+    auto* scroll = qobject_cast<QScrollArea*>(processing);
+    check(manager != nullptr && manager->isVisibleTo(&dialog) && scroll != nullptr,
+          "the visible Standard form is available for layout inspection");
+    if (manager != nullptr && scroll != nullptr) {
+        bool captionsFit = true;
+        for (QLabel* label : manager->findChildren<QLabel*>()) {
+            QWidget* field = label->buddy();
+            if (field == nullptr || !label->isVisibleTo(&dialog)) continue;
+            const QRect caption(label->mapTo(&dialog, QPoint()), label->size());
+            const QRect editor(field->mapTo(&dialog, QPoint()), field->size());
+            const bool fits = !caption.intersects(editor) &&
+                              label->height() >= label->heightForWidth(label->width());
+            if (!fits) {
+                std::fprintf(stderr, "Clipped or overlapping Processing caption: %s\n",
+                             qPrintable(label->text()));
+            }
+            captionsFit &= fits;
+        }
+        check(captionsFit && scroll->widget()->width() <= scroll->viewport()->width() &&
+                  scroll->horizontalScrollBar()->maximum() == 0,
+              "Processing captions fit without editor overlap or horizontal page scrolling");
+        auto* rawArgs = manager->findChild<QLineEdit*>(QStringLiteral("ajiTrtEngineSettingsEdit"));
+        check(rawArgs != nullptr, "the TensorRT section is available for visual inspection");
+        if (rawArgs != nullptr) {
+            mikai::probes::revealWidget(rawArgs);
+            check(dialog.grab().save(
+                      QStringLiteral("native-processing-%1-%2-trt.png").arg(language, suffix)),
+                  "the visible preset and TensorRT form was captured");
+        }
+    }
+    if (language == QLatin1String("uk") && suffix == QLatin1String("wide")) {
+        dialog.showMaximized();
+        check(waitForUi([&dialog] { return dialog.isMaximized(); }, 2000),
+              "Settings can maximize on the native desktop");
+        check(mikai::probes::dialogActionsFit(dialog, dialog.size()),
+              "maximized Settings keeps Save and Cancel visible");
+        check(dialog.grab().save(QStringLiteral("native-settings-uk-maximized.png")),
+              "the maximized Settings window was captured");
+        dialog.showNormal();
+        check(waitForUi([&dialog, requestedSize] {
+                  return !dialog.isMaximized() && dialog.size() == requestedSize;
+              }, 2000),
+              "Settings restores its resizable normal window dimensions");
     }
 
     QApplication::processEvents();
@@ -1639,14 +1745,14 @@ int main(int argc, char** argv) {
     {
         const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
         for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
-            const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
-            check(applied, "the Processing surface language was installed");
-            if (!applied) continue;
             for (const QSize size : {
                      QSize(mikai::app::theme::kSettingsDialogMinWidth,
                            mikai::app::theme::kSettingsDialogDefaultHeight),
                      QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
                            mikai::app::theme::kSettingsDialogDefaultHeight)}) {
+                const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
+                check(applied, "the Processing surface language was installed");
+                if (!applied) continue;
                 SettingsDialog dialog(client, runner);
                 exerciseProcessing(dialog, client, runner, size, language);
             }
@@ -1655,14 +1761,14 @@ int main(int argc, char** argv) {
     {
         const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
         for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
-            const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
-            check(applied, "the Components surface language was installed");
-            if (!applied) continue;
             for (const QSize size : {
                      QSize(mikai::app::theme::kSettingsDialogMinWidth,
                            mikai::app::theme::kSettingsDialogDefaultHeight),
                      QSize(mikai::app::theme::kSettingsDialogDefaultWidth,
                            mikai::app::theme::kSettingsDialogDefaultHeight)}) {
+                const bool applied = mikai::app::applyInterfaceLanguage(language, catalog);
+                check(applied, "the Components surface language was installed");
+                if (!applied) continue;
                 SettingsDialog dialog(client, runner);
                 exerciseComponents(dialog, size, language);
             }
@@ -1730,6 +1836,11 @@ int main(int argc, char** argv) {
     screenshots.append(QStringLiteral("native-processing-uk-compact-native.png"));
     screenshots.append(QStringLiteral("native-processing-uk-wide.png"));
     screenshots.append(QStringLiteral("native-processing-uk-wide-native.png"));
+    screenshots.append(QStringLiteral("native-processing-en-compact-trt.png"));
+    screenshots.append(QStringLiteral("native-processing-en-wide-trt.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-compact-trt.png"));
+    screenshots.append(QStringLiteral("native-processing-uk-wide-trt.png"));
+    screenshots.append(QStringLiteral("native-settings-uk-maximized.png"));
     evidence.insert(QStringLiteral("screenshots"), screenshots);
     QFile evidenceFile(QStringLiteral("native-animejanai-smoke-evidence.json"));
     if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
