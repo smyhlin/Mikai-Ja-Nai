@@ -111,26 +111,40 @@ class LoopbackApi : public QObject {
     QMap<QString, QString> headers;
   };
 
+  // Everything that belongs to one TCP connection, keyed by its socket only
+  // while that socket is alive. The record is dropped the moment the connection
+  // ends: the allocator can hand a later connection the address of a socket
+  // that has already been destroyed, and state left under that address would
+  // read the new request as one already served, so it would never be answered.
+  struct Connection {
+    QByteArray buffer;
+    bool served = false;
+  };
+
   void onNewConnection() {
     while (QTcpSocket* socket = server_.nextPendingConnection()) {
       sockets_.append(socket);
+      connections_.insert(socket, Connection{});
       connect(socket, &QTcpSocket::readyRead, this, [this, socket] { onReadyRead(socket); });
       connect(socket, &QTcpSocket::disconnected, socket, [this, socket] {
         sockets_.removeOne(socket);
+        connections_.remove(socket);
         socket->deleteLater();
       });
     }
   }
 
   void onReadyRead(QTcpSocket* socket) {
-    incoming_[socket] += socket->readAll();
-    const QByteArray buffer = incoming_.value(socket);
-    const int headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd < 0 || served_.contains(socket)) return;
-    served_.insert(socket);
+    const auto it = connections_.find(socket);
+    if (it == connections_.end()) return;
+    Connection& connection = *it;
+    connection.buffer += socket->readAll();
+    const int headerEnd = connection.buffer.indexOf("\r\n\r\n");
+    if (headerEnd < 0 || connection.served) return;
+    connection.served = true;
 
     CapturedRequest request;
-    const QList<QByteArray> lines = buffer.left(headerEnd).split('\n');
+    const QList<QByteArray> lines = connection.buffer.left(headerEnd).split('\n');
     for (const QByteArray& line : lines.mid(1)) {
       const int colon = line.indexOf(':');
       if (colon <= 0) continue;
@@ -185,8 +199,7 @@ class LoopbackApi : public QObject {
   mutable QMutex mutex_;
   QList<Reply> pending_;
   QVector<CapturedRequest> captured_;
-  QHash<QTcpSocket*, QByteArray> incoming_;
-  QSet<QTcpSocket*> served_;
+  QHash<QTcpSocket*, Connection> connections_;
   QList<QTcpSocket*> sockets_;
 };
 
@@ -229,9 +242,23 @@ class CallOutcome {
   explicit CallOutcome(MikaiClient* client, const QString& query)
       : client_(client), query_(query) {}
 
+  CallOutcome(const CallOutcome&) = delete;
+  CallOutcome& operator=(const CallOutcome&) = delete;
+
+  ~CallOutcome() {
+    // The worker points at a client that lives on the test's stack, so it must
+    // not outlive the test function. A failing assertion returns early, while
+    // the call may still be parked or in flight; joining here ends that call
+    // (the client bounds each request with its own deadline) instead of leaving
+    // a thread behind with a dangling client.
+    if (thread_ != nullptr) {
+      thread_->wait();
+      delete thread_;
+    }
+  }
+
   void start() {
     thread_ = QThread::create([this] { run(); });
-    QObject::connect(thread_, &QThread::finished, thread_, &QObject::deleteLater);
     thread_->start();
   }
 
