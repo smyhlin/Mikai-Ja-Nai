@@ -11,6 +11,7 @@
 #include <QMetaObject>
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
+#include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
 #include <QPainter>
 #include <QRegularExpression>
@@ -365,6 +366,15 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     // The swap report mpv asks for names the moment its frame was presented, and
     // that is what Qt reports here, after the composition it belongs to.
     connect(this, &QOpenGLWidget::frameSwapped, this, &VideoSurface::onFrameSwapped);
+    // Keep a replayable snapshot ahead of external listeners: a dialog that
+    // reconnects after missing the original signal can synchronize from these
+    // typed getters without dynamic properties or a second event source.
+    connect(this, &VideoSurface::animeJanaiEngineBuildChanged, this,
+            [this](bool active, bool succeeded, const QString& detail) {
+                Q_UNUSED(succeeded);
+                animeJanaiEngineBuildActive_ = active;
+                animeJanaiEngineBuildDetail_ = detail;
+            });
     nativeStatusClock_.start();
     nativePlaybackClock_.start();
     diagnosticsClock_.start();
@@ -426,6 +436,105 @@ VideoSurface::VideoSurface(QWidget* parent) : QOpenGLWidget(parent) {
     });
 }
 
+void VideoSurface::setEngineFrameHold(bool active) {
+    if (active) {
+        if (engineFrameHoldActive_) return;
+        engineFrameHoldActive_ = true;
+        engineFrameHoldAwaitingOutput_ = false;
+        // The caller acquires this hold before changing mpv's filter chain. Copy
+        // the last clean Qt video FBO once at that boundary; paintGL must not
+        // turn ordinary playback into a per-frame copy path.
+        if (!engineFrameHoldFbo_) captureEngineFrameHold();
+        update();
+        return;
+    }
+    if (!engineFrameHoldActive_ && !engineFrameHoldAwaitingOutput_) return;
+    engineFrameHoldActive_ = false;
+    engineFrameHoldAwaitingOutput_ = engineFrameHoldFbo_ != nullptr;
+    // If there was no retained picture, the next paint can show the current
+    // renderer state directly; otherwise the first successful new output frame
+    // is the only event that replaces the held image.
+    update();
+}
+
+void VideoSurface::invalidateEngineFrameHold() {
+    engineFrameHoldActive_ = false;
+    engineFrameHoldAwaitingOutput_ = false;
+    hasVisibleOutputFrame_ = false;
+    if (!engineFrameHoldFbo_) return;
+    QOpenGLContext* previous = nullptr;
+    const bool current = makeRenderContextCurrent(&previous);
+    engineFrameHoldFbo_.reset();
+    if (current) releaseRenderContextCurrent(previous);
+}
+
+bool VideoSurface::captureEngineFrameHold() {
+    if (!contextReady_ || context_ == nullptr || render_ == nullptr ||
+        !hasVisibleOutputFrame_) return false;
+    QOpenGLContext* previous = nullptr;
+    if (!makeRenderContextCurrent(&previous)) return false;
+    const QSize size = lastRenderedFboSize_;
+    if (size.isEmpty()) {
+        releaseRenderContextCurrent(previous);
+        return false;
+    }
+    auto snapshot = std::make_unique<QOpenGLFramebufferObject>(
+        size, QOpenGLFramebufferObject::NoAttachment);
+    if (!snapshot->isValid()) {
+        releaseRenderContextCurrent(previous);
+        return false;
+    }
+
+    // Re-render mpv's cached image into a video-only target. The Qt widget FBO
+    // may already contain paintOverlay() from its previous composition, so
+    // blitting it would bake HUD pixels into the transition image.
+    const uint64_t updateFlags = render_->update();
+    const bool hasNewOutput = framePending_ ||
+                              (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
+    const int result = render_->render(snapshot->handle(), size.width(), size.height(), 0);
+    if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
+        extra->glBindVertexArray(0);
+        extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
+    context_->functions()->glBindFramebuffer(
+        GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
+    if (result < 0) {
+        releaseRenderContextCurrent(previous);
+        return false;
+    }
+
+    engineFrameHoldFbo_ = std::move(snapshot);
+    framePending_ = false;
+    hasVisibleOutputFrame_ = true;
+    if (hasNewOutput) {
+        videoFramePainted_ = true;
+        ++diagnostics_.renderedOutputFrames;
+    }
+    releaseRenderContextCurrent(previous);
+    return true;
+}
+
+bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int height) {
+    if (!engineFrameHoldFbo_ || !engineFrameHoldFbo_->isValid() || width <= 0 || height <= 0)
+        return false;
+    QOpenGLContext* glContext = QOpenGLContext::currentContext();
+    if (glContext == nullptr) return false;
+    QOpenGLExtraFunctions* gl = glContext->extraFunctions();
+    if (gl == nullptr) return false;
+    GLint previousRead = 0;
+    GLint previousDraw = 0;
+    gl->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousRead);
+    gl->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDraw);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, engineFrameHoldFbo_->handle());
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+    gl->glBlitFramebuffer(0, 0, engineFrameHoldFbo_->width(), engineFrameHoldFbo_->height(),
+                          0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousRead));
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDraw));
+    return true;
+}
+
 VideoSurface::~VideoSurface() {
     cancelAnimeJanaiOperation();
     // The render context holds a pointer to the mpv core, so it has to go first,
@@ -453,6 +562,7 @@ VideoSurface::~VideoSurface() {
 }
 
 bool VideoSurface::open(const QString& url) {
+    invalidateEngineFrameHold();
     discardEnginePause();
     finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
     animeJanaiSourceRequested_ = !url.isEmpty();
@@ -468,6 +578,8 @@ bool VideoSurface::open(const QString& url) {
     streamFpsSource_ = StreamFpsSource::Unknown;
     statsClock_.restart();
     observedContainerFps_ = 0.0;
+    observedVideoWidth_ = 0.0;
+    observedVideoHeight_ = 0.0;
     emit streamStatsChanged(0.0, 0.0, StreamFpsSource::Unknown);
     try {
         if (mpv_ != nullptr) {
@@ -534,6 +646,7 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         return false;
     }
+    invalidateEngineFrameHold();
     // The source ends HERE, before the load is issued: the epoch is what retires
     // a reply for the source being replaced, and a command queued behind this
     // one must already be reading the new epoch when its reply lands.
@@ -567,11 +680,13 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     // two racing a rebind on the next pump.
     syncNativeSource();
     animeJanaiEpoch_ = mpv_->sourceEpoch();
+    emit sourceEpochChanged(animeJanaiEpoch_);
     if (animeJanaiPlan_.enabled) processAnimeJanaiPlan();
     return true;
 }
 
 void VideoSurface::close() {
+    invalidateEngineFrameHold();
     discardEnginePause();
     finishAnimeJanaiEngineBuild(false, tr("Playback closed during engine preparation."));
     animeJanaiSourceRequested_ = false;
@@ -598,9 +713,21 @@ void VideoSurface::close() {
     // that is ending, so it is dropped before the stop is issued.
     mpv_->invalidateAsyncEpoch();
     animeJanaiEpoch_ = mpv_->sourceEpoch();
+    observedVideoWidth_ = 0.0;
+    observedVideoHeight_ = 0.0;
+    observedContainerFps_ = 0.0;
     emit sourceEpochChanged(mpv_->sourceEpoch());
-    // A stop on an already-dead core is not worth reporting.
-    issueCoreCommand({"stop"}, "stop", /*reportRefusal=*/false);
+    // A stop on an already-dead core is not worth reporting. Keep the keyed
+    // cache lease until mpv acknowledges that the old pipeline has stopped.
+    const auto stoppingLease = animeJanaiStageBuildLease_;
+    const AsyncRequestId stopRequest = mpv_->commandAsync(
+        {"stop"}, [this, stoppingLease](const AsyncReply& reply) {
+            if (!reply.ok()) return;
+            if (stoppingLease) stoppingLease->release();
+            if (animeJanaiStageBuildLease_ == stoppingLease)
+                animeJanaiStageBuildLease_.reset();
+        });
+    Q_UNUSED(stopRequest);
     animeJanaiEpoch_ = 0;
     // Emitted before the reset so the chrome falls back to its play glyph
     // while the surface still reports a loaded file.
@@ -856,6 +983,14 @@ double VideoSurface::position() const { return position_; }
 double VideoSurface::duration() const { return duration_; }
 int VideoSurface::videoWidth() const { return videoWidth_; }
 int VideoSurface::videoHeight() const { return videoHeight_; }
+native::AnimeJanaiSourceContext VideoSurface::animeJanaiSourceContext() const {
+    native::AnimeJanaiSourceContext source;
+    source.width = observedVideoWidth_ > 0.0 ? static_cast<int>(observedVideoWidth_) : 0;
+    source.height = observedVideoHeight_ > 0.0 ? static_cast<int>(observedVideoHeight_) : 0;
+    source.fps = std::isfinite(observedContainerFps_) && observedContainerFps_ > 0.0
+                     ? observedContainerFps_ : 0.0;
+    return source;
+}
 bool VideoSurface::hasVideo() const { return hasVideo_; }
 uint64_t VideoSurface::sourceEpoch() const {
     return mpv_ != nullptr ? mpv_->sourceEpoch() : 0;
@@ -971,9 +1106,18 @@ void VideoSurface::paintGL() {
     // it carried counts the same as one this call reports.
     const uint64_t updateFlags = render_->update();
     const bool newOutputFrame = (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0 || framePending_;
+    bool freshOutputFrame = false;
+    if (engineFrameHoldAwaitingOutput_) {
+        mpv_render_frame_info frameInfo{};
+        freshOutputFrame = render_->nextFrameInfo(frameInfo) && isRealNewFrame(frameInfo);
+    }
     // forceRender_ covers the framebuffer Qt hands back empty: a resize or a
     // re-show wipes the picture, and with a paused core no new frame is coming.
     const bool haveFrame = framePending_ || newOutputFrame || forceRender_;
+
+    const bool retainedPictureVisible =
+        engineFrameHoldFbo_ &&
+        (engineFrameHoldActive_ || (engineFrameHoldAwaitingOutput_ && !freshOutputFrame));
 
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
     // make mpv bind the window's default framebuffer and paint nothing. That
@@ -1009,21 +1153,69 @@ void VideoSurface::paintGL() {
     // so both are put back inside the native window.
     QPainter painter(this);
     painter.beginNativePainting();
-    const int renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
-    if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
-        extra->glBindVertexArray(0);
-        extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    int renderResult = 0;
+    if (retainedPictureVisible) {
+        if (newOutputFrame) {
+            // mpv's advanced renderer must consume each frame even while the
+            // visible plane is held. Skip is asynchronous and never waits for
+            // target-time; its frame is acknowledged immediately.
+            renderResult = render_->skipRendering();
+            if (renderResult == 0) render_->reportSwap();
+        }
+        const bool copied = drawEngineFrameHold(target, targetWidth, targetHeight);
+        if (!copied) {
+            // A failed retained blit is not allowed to turn into a permanent
+            // black mask; resume the ordinary renderer path and report failures.
+            renderResult = render_->render(static_cast<int>(target), targetWidth,
+                                           targetHeight, 0);
+            if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
+                extra->glBindVertexArray(0);
+                extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+                extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            }
+            gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
+            painter.endNativePainting();
+        }
+    } else {
+        renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
+        if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
+            extra->glBindVertexArray(0);
+            extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        }
+        // mpv unbinds; Qt invalidates next.
+        gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     }
-    // mpv unbinds; Qt invalidates next.
-    gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     painter.endNativePainting();
+    lastRenderedFboSize_ = deviceSize;
+    hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
+    if (renderResult < 0 && engineFrameHoldFbo_ &&
+        (engineFrameHoldActive_ || engineFrameHoldAwaitingOutput_)) {
+        painter.beginNativePainting();
+        drawEngineFrameHold(target, targetWidth, targetHeight);
+        painter.endNativePainting();
+    }
+    if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible) {
+        hasVisibleOutputFrame_ = true;
+        engineFrameHoldAwaitingOutput_ = false;
+        // The fresh output has replaced the transition snapshot. Release its
+        // GPU storage now; normal playback retains no extra video framebuffer.
+        engineFrameHoldFbo_.reset();
+    } else if (renderResult == 0 && freshOutputFrame && retainedPictureVisible) {
+        // A skipped output frame is consumed for mpv's advanced-control
+        // contract, but it was not rendered into Qt and cannot satisfy handoff.
+        // The retained snapshot remains visible until a later direct render.
+    }
+    if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible &&
+        animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
+        !animeJanaiPlan_.requiresAji && animeJanaiFilterBound_) {
+        setAnimeJanaiStatus(QStringLiteral("Anime4K output observed"));
+    }
 
     // Monotonic: paintCanHappen() reads it as "this widget has painted at least
     // once", which a failed render does not undo.
-    hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
-    lastRenderedFboSize_ = deviceSize;
-    if (newOutputFrame && renderResult == 0) ++diagnostics_.renderedOutputFrames;
+    if (newOutputFrame && renderResult == 0 && !retainedPictureVisible)
+        ++diagnostics_.renderedOutputFrames;
     if (renderResult < 0) {
         // The buffer holds the defined black rather than that frame, so a report
         // for it would name a presentation that is no longer on screen.
@@ -1035,7 +1227,7 @@ void VideoSurface::paintGL() {
             QMetaObject::invokeMethod(this, [this, message] { emit errorOccurred(message); },
                                       Qt::QueuedConnection);
         }
-    } else if (haveFrame) {
+    } else if (haveFrame && !retainedPictureVisible) {
         // Only ever set: a UI-only repaint must not throw away the report the
         // frame before it is still owed.
         videoFramePainted_ = true;
@@ -1161,6 +1353,7 @@ void VideoSurface::releaseRenderContext() {
     if (render_ == nullptr) return;
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
+    if (current) engineFrameHoldFbo_.reset();
     if (current) {
         // The render context's destructor detaches mpv's update callback before
         // it frees the context: a callback in flight cannot reach a freed one.
@@ -1176,6 +1369,10 @@ void VideoSurface::releaseRenderContext() {
     }
     contextReady_ = false;
     context_ = nullptr;
+    engineFrameHoldFbo_.reset();
+    engineFrameHoldActive_ = false;
+    engineFrameHoldAwaitingOutput_ = false;
+    hasVisibleOutputFrame_ = false;
     videoFramePainted_ = false;
     framePending_ = false;
     forceRender_ = false;
@@ -1283,6 +1480,7 @@ void VideoSurface::pumpEvents() {
     // epoch the controller is currently bound to.
     syncNativeSource();
     if (animeJanaiEpoch_ != 0 && animeJanaiEpoch_ != mpv_->sourceEpoch()) {
+        invalidateEngineFrameHold();
         discardEnginePause();
         finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
         cancelAnimeJanaiOperation();

@@ -5,6 +5,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QElapsedTimer>
+#include <QMetaMethod>
 #include <QLabel>
 #include <QMimeData>
 #include <QPointer>
@@ -761,6 +762,8 @@ int main(int argc, char** argv) {
     dialog->endEnginePreparation(false, QStringLiteral("Cancelled"));
     verdict.require(waitFor([surface] { return corePaused(surface, false); }),
                     QStringLiteral("acknowledged cancellation restores surviving playing intent"));
+    verdict.require(labelTexts(overlay).contains(QStringLiteral("Cancelled")),
+                    QStringLiteral("cancellation terminal detail remains readable"));
 
     dialog->beginEnginePreparation(QStringLiteral("First build"));
     dialog->endEnginePreparation(true, QStringLiteral("Complete"));
@@ -842,7 +845,15 @@ int main(int argc, char** argv) {
 
     const QString buildDetail = QStringLiteral("Compiling spatial test engine");
     verdict.require(announceAnimeJanaiBuild(surface, true, false, buildDetail),
-                    QStringLiteral("real player receives an official engine-build start"));
+                    QStringLiteral("controlled build-start notification reaches the player"));
+    verdict.require(dialog->enginePreparationVisible() && overlay != nullptr &&
+                        labelTexts(overlay).contains(buildDetail) &&
+                        labelTexts(overlay).contains(QStringLiteral("TensorRT compilation")) &&
+                        labelTexts(overlay).contains(QStringLiteral("Preset:")) &&
+                        labelTexts(overlay).contains(QStringLiteral("Elapsed:")),
+                    QStringLiteral("ongoing build status shows phase, detail and current preset"));
+    verdict.require(progress != nullptr && progress->minimum() == 0 && progress->maximum() == 0,
+                    QStringLiteral("builder notification does not invent percentage progress"));
     dialog->togglePip();
     PipFloat* pip = nullptr;
     const bool floated = waitFor([&pip] {
@@ -854,14 +865,15 @@ int main(int argc, char** argv) {
         requireHeld(verdict, pip->videoSurface(), QStringLiteral("PiP receives active preparation hold"));
         verdict.require(!pip->videoSurface()->animeJanaiPlan().enabled,
                         QStringLiteral("PiP does not attach a second AnimeJaNai engine build"));
-        verdict.require(announceAnimeJanaiBuild(surface, false, true,
-                                                 QStringLiteral("TensorRT engine ready")),
-                        QStringLiteral("engine completion settles through the owning core"));
+        const QString readyDetail = QStringLiteral("TensorRT engine ready");
+        verdict.require(announceAnimeJanaiBuild(surface, false, true, readyDetail),
+                        QStringLiteral("controlled ready notification settles through the owning core"));
+        verdict.require(labelTexts(overlay).contains(readyDetail),
+                        QStringLiteral("ready terminal detail remains visible to the viewer"));
         verdict.require(waitFor([pip] {
             const auto plan = pip->videoSurface()->animeJanaiPlan();
             return plan.enabled && plan.presetId == QStringLiteral("builtin1001");
-        }), QStringLiteral("PiP receives the plan only after the existing engine build settles"));
-        dialog->endEnginePreparation(true, QStringLiteral("Complete"));
+        }), QStringLiteral("PiP receives the plan only after the controlled build notification settles"));
         verdict.require(waitFor([pip, surface] {
             return corePaused(pip->videoSurface(), false) && corePaused(surface, true);
         }), QStringLiteral("held Play resumes only the float after preparation handoff"));
@@ -899,10 +911,23 @@ int main(int argc, char** argv) {
     verdict.require(waitFor([surface] {
         return surface->hasVideo() && corePaused(surface, false) && surface->position() > 0.2;
     }), QStringLiteral("reopening after close has no stale operation hold"));
-    dialog->beginEnginePreparation(QStringLiteral("Closing with work"));
     auto* tool = dialog->findChild<ProcessingOverlay*>();
-    verdict.require(tool != nullptr && tool->isVisible(),
-                    QStringLiteral("operation window visible before close"));
+    if (tool != nullptr) tool->hide();
+    // Controlled state exercises late UI replay only; it is not evidence that an engine built.
+    const QMetaMethod buildSignal =
+        QMetaMethod::fromSignal(&mplayer::VideoSurface::animeJanaiEngineBuildChanged);
+    verdict.require(QObject::disconnect(surface, buildSignal, dialog, QMetaMethod()),
+                    QStringLiteral("dialog can be detached to exercise late state replay"));
+    const QString lateBuildDetail = QStringLiteral("Synthetic retained build state");
+    verdict.require(announceAnimeJanaiBuild(surface, true, false, lateBuildDetail) &&
+                        surface->animeJanaiEngineBuildActive() &&
+                        !dialog->enginePreparationVisible(),
+                    QStringLiteral("a start missed while detached remains in the surface state"));
+    dialog->syncAnimeJanaiEngineBuildState(surface);
+    verdict.require(tool != nullptr && dialog->enginePreparationVisible() &&
+                        labelTexts(tool).contains(lateBuildDetail),
+                    QStringLiteral("late attachment replays the active build into a visible tool"));
+    requireHeld(verdict, surface, QStringLiteral("late-attached build status"));
     QPointer<QWidget> toolGuard(tool);
     QPointer<PlayerDialog> dialogGuard(dialog);
     dialog->close();

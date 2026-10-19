@@ -24,9 +24,11 @@
 #include <QSettings>
 #include <QThreadPool>
 #include <QTimer>
+#include <QStringList>
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -46,6 +48,15 @@ constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
 QString animeJanaiBackendName(native::Backend backend) {
     return backend == native::Backend::DirectML ? QStringLiteral("directml")
                                                  : QStringLiteral("tensorrt");
+}
+QString animeJanaiPresetLabel(const VideoSurface* owner) {
+    if (owner == nullptr) return {};
+    const QString presetId = owner->animeJanaiPlan().presetId;
+    if (presetId.isEmpty()) return {};
+    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+        if (preset.id.compare(presetId, Qt::CaseInsensitive) == 0) return preset.label;
+    }
+    return presetId;
 }
 
 }  // namespace
@@ -234,6 +245,7 @@ void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString
 
 void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
     const QString presetId = id;
+    animeJanaiWaitingForSourceContext_ = false;
     animeJanaiPresetId_ = id;
     QSettings settings;
     settings.setValue(kAnimeJanaiPresetSettingKey, id);
@@ -248,6 +260,14 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
                                    id.isEmpty() ? tr("Turning off…") : tr("Preparing…"));
     const QString requestedPreset = presetId;
     const native::Backend backend = animeJanaiBackend_;
+    VideoSurface* preparationSurface = playbackSurface();
+    if (preparationSurface == nullptr) preparationSurface = surface_;
+    const native::AnimeJanaiSourceContext source =
+        preparationSurface != nullptr ? preparationSurface->animeJanaiSourceContext()
+                                      : native::AnimeJanaiSourceContext{};
+    const uint64_t sourceEpoch = preparationSurface != nullptr
+                                     ? preparationSurface->sourceEpoch() : 0;
+    animeJanaiPendingPreparationSourceEpoch_ = sourceEpoch;
     // Raw owner: copying a QPointer on the worker would race dialog
     // destruction (QPointer is GUI-thread only). A plain address copies safely;
     // the queued body runs on the dialog's own thread, where it checks the
@@ -257,14 +277,18 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
     // alive for the rest of the body.
     PlayerDialog* ownerDialog = this;
     QThreadPool::globalInstance()->start(QRunnable::create(
-        [ownerDialog, cancelled, sequence, requestedPreset, backend] {
+        [ownerDialog, cancelled, sequence, requestedPreset, backend, source, sourceEpoch] {
             native::AnimeJanaiPlan plan = native::prepareAnimeJanaiPlan(
-                requestedPreset, backend, [cancelled] { return cancelled->load(); });
+                requestedPreset, backend, [cancelled] { return cancelled->load(); }, source,
+                [](const QString& id, QString* reason) {
+                    return anime4k::filterShaderProgramForCandidate(id, QString(), reason);
+                });
             if (cancelled->load()) return;
             QObject* appRoot = QCoreApplication::instance();
             if (appRoot == nullptr) return;
             QMetaObject::invokeMethod(appRoot,
-                [ownerDialog, cancelled, sequence, plan = std::move(plan)]() mutable {
+                [ownerDialog, cancelled, sequence, sourceEpoch, source,
+                 plan = std::move(plan)]() mutable {
                     if (cancelled->load()) return;
                     // Local guard on the GUI thread: safe here (never copied
                     // off-thread). Every call below can reenter via nested
@@ -273,6 +297,20 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
                     QPointer<PlayerDialog> guard(ownerDialog);
                     if (guard.isNull() || cancelled->load() ||
                         guard->closed_ || guard->animeJanaiSequence_ != sequence) return;
+                    VideoSurface* currentOwner = guard->playbackSurface();
+                    if (currentOwner == nullptr) currentOwner = guard->surface_;
+                    if (currentOwner == nullptr || currentOwner->sourceEpoch() != sourceEpoch) return;
+                    guard->animeJanaiPreparationSourceEpoch_ = sourceEpoch;
+                    guard->animeJanaiLastPreparedSource_ = source;
+                    guard->animeJanaiPendingPreparationSourceEpoch_ = 0;
+                    guard->animeJanaiWaitingForSourceContext_ = plan.needsSourceContext;
+                    if (plan.needsSourceContext) {
+                        guard->animeJanaiPlan_ = plan;
+                        guard->animeJanaiPlanGeneration_ = sequence;
+                        guard->shell_->setAnimeJanaiSelection(
+                            plan.presetId, PlayerDialog::tr("Waiting for source metadata…"));
+                        return;
+                    }
                     if (guard->lastProcessingReasonKey_.startsWith(
                             QLatin1String("animejanai.")) &&
                         (!plan.enabled || plan.available)) {
@@ -297,6 +335,26 @@ void PlayerDialog::applyAnimeJanaiRequest(const QString& id) {
         }));
 }
 
+void PlayerDialog::onAnimeJanaiSourceContextChanged() {
+    if (closed_ || animeJanaiPresetId_.isEmpty()) return;
+    VideoSurface* owner = playbackSurface();
+    if (owner == nullptr) owner = surface_;
+    if (owner == nullptr) return;
+    const uint64_t epoch = owner->sourceEpoch();
+    if (epoch == 0) return;
+    const native::AnimeJanaiSourceContext source = owner->animeJanaiSourceContext();
+    const bool hasDimensions = source.width > 0 && source.height > 0;
+    if (!hasDimensions) return;
+    const bool sourceChanged = animeJanaiPreparationSourceEpoch_ != 0 &&
+                               animeJanaiPreparationSourceEpoch_ != epoch;
+    const bool contextChanged = source.width != animeJanaiLastPreparedSource_.width ||
+                                source.height != animeJanaiLastPreparedSource_.height ||
+                                source.fps != animeJanaiLastPreparedSource_.fps;
+    if ((sourceChanged || (animeJanaiWaitingForSourceContext_ && contextChanged)) &&
+        animeJanaiPendingPreparationSourceEpoch_ != epoch)
+        applyAnimeJanaiRequest(animeJanaiPresetId_);
+}
+
 void PlayerDialog::applyAnimeJanaiBackend(const QString& backendName) {
     const auto backend = native::backendFromName(backendName);
     if (!backend) return;
@@ -307,7 +365,9 @@ void PlayerDialog::applyAnimeJanaiBackend(const QString& backendName) {
 }
 
 void PlayerDialog::onAnimeJanaiStatusChanged(const QString& status) {
-    if (closed_ || sender() != playbackSurface()) return;
+    auto* owner = qobject_cast<VideoSurface*>(sender());
+    if (closed_ || owner == nullptr || owner != playbackSurface()) return;
+    syncAnimeJanaiEngineBuildState(owner);
     shell_->setAnimeJanaiSelection(animeJanaiPresetId_, status);
 }
 
@@ -345,18 +405,48 @@ void PlayerDialog::settleAnimeJanaiPlanOnSurface(VideoSurface* completed, bool s
 
 void PlayerDialog::onAnimeJanaiEngineBuildChanged(bool active, bool succeeded,
                                                  const QString& detail) {
-    auto* owner = qobject_cast<VideoSurface*>(sender());
+    handleAnimeJanaiEngineBuildChanged(qobject_cast<VideoSurface*>(sender()), active, succeeded,
+                                       detail);
+}
+
+void PlayerDialog::syncAnimeJanaiEngineBuildState(VideoSurface* owner) {
+    if (closed_) return;
+    if (owner == nullptr) owner = playbackSurface();
+    if (owner == nullptr || owner != playbackSurface()) return;
+    if (owner->animeJanaiEngineBuildActive()) {
+        handleAnimeJanaiEngineBuildChanged(owner, true, false,
+                                           owner->animeJanaiEngineBuildDetail());
+    }
+}
+
+void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool active,
+                                                       bool succeeded, const QString& detail) {
     if (closed_ || owner == nullptr) return;
     if (active) {
         if (owner != playbackSurface()) return;
+        owner->setEngineFrameHold(true);
         if (animeJanaiBuildingSurface_ != owner) {
             beginEnginePreparation(tr("Building TensorRT engine"));
             animeJanaiBuildGeneration_ = enginePreparationGeneration_;
             animeJanaiBuildingSurface_ = owner;
         }
-        updateEnginePreparation(-1, 0, tr("Preparing model"), detail);
+        QString ongoingDetail = detail;
+        QStringList facts;
+        const QString presetLabel = animeJanaiPresetLabel(owner);
+        if (!presetLabel.isEmpty()) facts << tr("Preset: %1").arg(presetLabel);
+        const int width = owner->videoWidth();
+        const int height = owner->videoHeight();
+        if (width > 0 && height > 0) {
+            facts << tr("Source: %1 × %2").arg(width).arg(height);
+        }
+        if (!facts.isEmpty()) {
+            if (!ongoingDetail.isEmpty()) ongoingDetail += QStringLiteral(" · ");
+            ongoingDetail += facts.join(QStringLiteral(" · "));
+        }
+        updateEnginePreparation(-1, 0, tr("TensorRT compilation"), ongoingDetail);
         return;
     }
+    if (!owner->animeJanaiEngineBuildActive()) owner->setEngineFrameHold(false);
     if (animeJanaiBuildingSurface_ != owner) return;
     animeJanaiBuildingSurface_.clear();
     settleAnimeJanaiPlanOnSurface(owner, succeeded);
@@ -1054,6 +1144,7 @@ void PlayerDialog::enterPip() {
     }
     pip_ = window;
     moveEnginePreparationPause(window->videoSurface(), enteringPauseIntent);
+    syncAnimeJanaiEngineBuildState(window->videoSurface());
     // The owning core changes here, so a capture asked of the main core can no
     // longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
@@ -1137,6 +1228,7 @@ void PlayerDialog::leavePip(bool closing) {
     surface_->setAnimeJanaiPlan(animeJanaiPlan_);
     pip_ = nullptr;
     // The hold moves BEFORE the explicit request is applied: with the hold in
+    syncAnimeJanaiEngineBuildState(surface_);
     // place the request only records the intent.
     moveEnginePreparationPause(closing || closed_ ? nullptr : surface_);
     if (!closing && !closed_) surface_->setPaused(returningPaused);

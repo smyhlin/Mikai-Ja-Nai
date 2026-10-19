@@ -128,6 +128,8 @@ public:
     /// GUI thread; unavailable prerequisites remain visible as a failed request.
     void applyAnimeJanaiRequest(const QString& id);
     void applyAnimeJanaiBackend(const QString& backend);
+    /// Retry deferred mixed-chain preparation when the owning core publishes source metadata.
+    void onAnimeJanaiSourceContextChanged();
     /// Monotonic generation of the last AnimeJaNai preparation result installed
     /// by this dialog's worker. Probe callers can distinguish a fresh async
     /// completion from a retained status for an older request.
@@ -229,6 +231,9 @@ public:
     void endEnginePreparation(bool ok, const QString& summary);
     /// True while the preparation window is up.
     bool enginePreparationVisible() const;
+    /// Replays the owning surface's retained builder state after its signal has
+    /// been connected, so a build already in flight still gets a visible tool.
+    void syncAnimeJanaiEngineBuildState(VideoSurface* owner = nullptr);
 
 signals:
     /// The viewer pressed Cancel on the preparation window. The host owns the
@@ -362,6 +367,8 @@ private:
     void onAnimeJanaiStatusChanged(const QString& status);
     void onAnimeJanaiFailure(const QString& reason);
     void onAnimeJanaiEngineBuildChanged(bool active, bool succeeded, const QString& detail);
+    void handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool active, bool succeeded,
+                                            const QString& detail);
     /// The filter's own status changed. The held inputs, the HUD and the
     /// availability follow it, and nothing here re-arms a poll the surface has
     /// already stopped. A document from a core that no longer owns playback is
@@ -510,6 +517,10 @@ private:
     quint64 animeJanaiSequence_ = 0;
     quint64 animeJanaiPlanGeneration_ = 0;
     std::shared_ptr<std::atomic_bool> animeJanaiCancellation_;
+    bool animeJanaiWaitingForSourceContext_ = false;
+    uint64_t animeJanaiPreparationSourceEpoch_ = 0;
+    uint64_t animeJanaiPendingPreparationSourceEpoch_ = 0;
+    native::AnimeJanaiSourceContext animeJanaiLastPreparedSource_;
     /// The comparison window, created on first use and kept: it borrows the
     /// surface, and two of them would fight over the same core.
     CompareWindow* compare_ = nullptr;

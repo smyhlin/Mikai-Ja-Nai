@@ -25,6 +25,7 @@
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
+#include "native/components/AnimeJanaiBuildLog.hpp"
 #include "PlaybackDiagnostics.hpp"
 #include "native/prepare/NativeFrameFixture.hpp"
 #include "native/status/NativePlaybackController.hpp"
@@ -36,6 +37,7 @@
 // Declared where the view is complete: paintOverlay() hands the overlay code a
 // painter, never an owned object.
 class QPainter;
+class QOpenGLFramebufferObject;
 
 namespace mplayer {
 class MpvHandle;
@@ -130,6 +132,11 @@ public:
     bool pauseObserved() const { return observedPaused_; }
     /// Holds output paused during engine work, retaining explicit viewer intent.
     void setEnginePreparationPaused(bool active, bool restoreIntent = true);
+    /// Retains the last visible output through an engine/filter transition. A
+    /// single video-only GPU snapshot is captured at activation and held until
+    /// a fresh output frame arrives after deactivation; source and GL-context
+    /// changes invalidate it.
+    void setEngineFrameHold(bool active);
     bool playbackPauseIntent() const;
     /// Advances for every explicit pause/play request, including togglePause.
     quint64 pauseRequestGeneration() const { return pauseRequestGeneration_; }
@@ -144,8 +151,12 @@ public:
     // take effect once it does.
     void setAnime4KMode(anime4k::Mode mode);
     void setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan);
+    /// Original decoded source facts observed asynchronously from mpv, never vf/display dimensions.
+    native::AnimeJanaiSourceContext animeJanaiSourceContext() const;
     native::AnimeJanaiPlan animeJanaiPlan() const { return animeJanaiPlan_; }
     QString animeJanaiStatus() const { return animeJanaiStatus_; }
+    bool animeJanaiEngineBuildActive() const { return animeJanaiEngineBuildActive_; }
+    QString animeJanaiEngineBuildDetail() const { return animeJanaiEngineBuildDetail_; }
     bool animeJanaiProcessingObserved() const;
     anime4k::Mode anime4KMode() const { return anime4kMode_; }
     /// Swaps in an arbitrary chain by candidate id, which is what the compare
@@ -702,6 +713,14 @@ private:
     /// Advances the render state on demand, for a caller that knows the core
     /// changed something (a shader chain swap) and needs a repaint of it.
     void refreshRenderState();
+    /// Releases a retained picture without letting it cross a source boundary.
+    void invalidateEngineFrameHold();
+    /// Captures the current video-only output into a bounded GPU framebuffer
+    /// once at transition-hold acquisition, never during ordinary playback.
+    bool captureEngineFrameHold();
+    /// Composites the retained image into Qt's current framebuffer, scaling after
+    /// a resize while preserving the surface's device-pixel dimensions.
+    bool drawEngineFrameHold(unsigned int target, int width, int height);
     /// Brings this widget's context current for render work done outside
     /// paintGL. False when there is none; on true, `previous` holds whatever was
     /// current before, which releaseRenderContextCurrent() puts back.
@@ -732,6 +751,13 @@ private:
     QString animeJanaiStatus_;
     QString animeJanaiObservedStatus_;
     bool animeJanaiEngineBuildActive_ = false;
+    QString animeJanaiEngineBuildDetail_;
+    int animeJanaiAjiStageCount_ = 0;
+    int animeJanaiConfiguredAjiStageCount_ = 0;
+    native::AnimeJanaiBuildGate animeJanaiAggregateBuildGate_;
+    int animeJanaiPendingAjiBuildCount_ = 0;
+    int animeJanaiBuildPollStageIndex_ = 0;
+    bool animeJanaiBackgroundBuildFinished_ = false;
     bool enginePreparationPaused_ = false;
     uint64_t enginePauseEpoch_ = 0;
     quint64 enginePauseRequestGeneration_ = 0;
@@ -761,6 +787,11 @@ private:
     bool animeJanaiFilterBound_ = false;
     bool animeJanaiBusy_ = false;
     bool animeJanaiReconfigureAfterRestore_ = false;
+    QStringList animeJanaiBoundFilterLabels_;
+    std::shared_ptr<native::AnimeJanaiStageBuildLease> animeJanaiStageBuildLease_;
+    bool animeJanaiFailureCleanupActive_ = false;
+    void removeAnimeJanaiFilters(uint64_t epoch, quint64 generation,
+                                 std::function<void()> completion);
 
     // mpv keeps running whether or not we repaint, so the state pump cannot
     // live in paintGL: a paused video produces no frames, and the clock,
@@ -839,6 +870,13 @@ private:
     /// the previous picture is no longer there to composite.
     bool forceRender_ = true;
     bool hasRenderedFrame_ = false;
+    /// True only after a successfully rendered output frame, not a forced redraw
+    /// of an empty renderer. A hold never invents a picture before this point.
+    bool hasVisibleOutputFrame_ = false;
+    /// A transition keeps one snapshot only until mpv supplies a replacement.
+    bool engineFrameHoldActive_ = false;
+    bool engineFrameHoldAwaitingOutput_ = false;
+    std::unique_ptr<QOpenGLFramebufferObject> engineFrameHoldFbo_;
     QSize lastRenderedFboSize_;
     bool playing_ = false;
     double position_ = 0.0;

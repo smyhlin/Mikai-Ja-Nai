@@ -318,6 +318,13 @@ PlayerDialog::PlayerDialog(const QString& caption,
             &PlayerDialog::onAnimeJanaiFailure);
     connect(surface_, &VideoSurface::animeJanaiEngineBuildChanged, this,
             &PlayerDialog::onAnimeJanaiEngineBuildChanged);
+    syncAnimeJanaiEngineBuildState(surface_);
+    connect(surface_, &VideoSurface::videoSizeChanged, this,
+            &PlayerDialog::onAnimeJanaiSourceContextChanged);
+    connect(surface_, &VideoSurface::streamStatsChanged, this,
+            &PlayerDialog::onAnimeJanaiSourceContextChanged);
+    connect(surface_, &VideoSurface::sourceEpochChanged, this,
+            &PlayerDialog::onAnimeJanaiSourceContextChanged);
     shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
     shell_->setAnimeJanaiSelection(animeJanaiPresetId_, tr("Unavailable · not prepared"));
     if (!animeJanaiPresetId_.isEmpty()) {

@@ -576,6 +576,53 @@ int runRenderLifecycle(const Options& options) {
                                  lastRepaint),
                     QStringLiteral("artifact %1_paused_hud.png written").arg(options.outPrefix));
 
+    // Exercise the transition hold without requiring a TensorRT runtime: the
+    // paused picture must survive HUD-only paints, then a real output frame must
+    // replace it after the hold is released.
+    const QImage beforeHold = surface->grabFramebuffer();
+    surface->setEngineFrameHold(true);
+    surface->update();
+    pumpEvents(200);
+    const QImage held = surface->grabFramebuffer();
+    const PictureStats heldPicture =
+        statsOf(held, beforeHold, surface->videoWidth(), surface->videoHeight(), dpr);
+    verdict.require(heldPicture.compared > 0 && heldPicture.changedFraction() <= 0.02,
+                    QStringLiteral("a transition hold keeps the paused video unchanged through a "
+                                   "HUD repaint (%1% changed)")
+                        .arg(100.0 * heldPicture.changedFraction(), 0, 'f', 2));
+    surface->setEngineFrameHold(false);
+    surface->update();
+    pumpEvents(200);
+    const QImage waitingForOutput = surface->grabFramebuffer();
+    const PictureStats waitingPicture =
+        statsOf(waitingForOutput, held, surface->videoWidth(), surface->videoHeight(), dpr);
+    verdict.require(waitingPicture.compared > 0 && waitingPicture.changedFraction() <= 0.02,
+                    QStringLiteral("releasing while paused keeps the snapshot until fresh output "
+                                   "(%1% changed)")
+                        .arg(100.0 * waitingPicture.changedFraction(), 0, 'f', 2));
+
+    const quint64 framesBeforeHandoff = renderedFrames();
+    surface->setPaused(false);
+    const bool handedOff = waitUntil(
+        [&] {
+            return !surface->pauseObserved() &&
+                   renderedFrames() >= framesBeforeHandoff + 3;
+        },
+        4000);
+    verdict.require(handedOff,
+                    QStringLiteral("the released hold hands off to three fresh output frames"));
+    if (handedOff) {
+        const QImage fresh = surface->grabFramebuffer();
+        const PictureStats replacement =
+            statsOf(fresh, held, surface->videoWidth(), surface->videoHeight(), dpr);
+        verdict.require(replacement.changedFraction() >= kMinMotionChangedFraction,
+                        QStringLiteral("fresh output replaces the retained picture (%1% changed)")
+                            .arg(100.0 * replacement.changedFraction(), 0, 'f', 2));
+    }
+    surface->setPaused(true);
+    verdict.require(waitUntil([&] { return surface->pauseObserved(); }, 3000),
+                    QStringLiteral("the player returned to pause after the hold handoff"));
+
     const double beforeDoubleToggle = surface->position();
     surface->togglePause();
     surface->togglePause();
