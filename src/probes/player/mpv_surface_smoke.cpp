@@ -576,6 +576,41 @@ int runRenderLifecycle(const Options& options) {
                                  lastRepaint),
                     QStringLiteral("artifact %1_paused_hud.png written").arg(options.outPrefix));
 
+    // A paused core cannot distinguish a retained snapshot from a cached-frame redraw.
+    surface->setPaused(false);
+    const bool resumedForHold = waitUntil([&] { return !surface->pauseObserved(); }, 4000);
+    verdict.require(resumedForHold, QStringLiteral("playback resumed for the hold freeze check"));
+    pumpEvents(300);
+    const QImage motionStart = surface->grabFramebuffer();
+    pumpEvents(400);
+    const QImage motionEnd = surface->grabFramebuffer();
+    const PictureStats holdMotion =
+        statsOf(motionEnd, motionStart, surface->videoWidth(), surface->videoHeight(), dpr);
+    if (resumedForHold && holdMotion.compared > 0 &&
+        holdMotion.changedFraction() >= kMinMotionChangedFraction) {
+        const double positionBeforeHold = surface->position();
+        surface->setEngineFrameHold(true);
+        surface->update();
+        pumpEvents(500);
+        verdict.require(surface->position() >= positionBeforeHold + 0.25,
+                        QStringLiteral("the media clock advances while the picture is held"));
+        const QImage held = surface->grabFramebuffer();
+        const PictureStats frozen =
+            statsOf(held, motionEnd, surface->videoWidth(), surface->videoHeight(), dpr);
+        const double freezeTolerance = std::min(0.02, holdMotion.changedFraction() / 4.0);
+        verdict.require(frozen.compared > 0 && frozen.changedFraction() <= freezeTolerance,
+                        QStringLiteral("a transition hold freezes the live picture (%1% changed)")
+                            .arg(100.0 * frozen.changedFraction(), 0, 'f', 2));
+        surface->setEngineFrameHold(false);
+    } else {
+        verdict.inconclusive(
+            QStringLiteral("transition-hold freeze needs observable motion (%1% changed)")
+                .arg(100.0 * holdMotion.changedFraction(), 0, 'f', 2));
+    }
+    surface->setPaused(true);
+    verdict.require(waitUntil([&] { return surface->pauseObserved(); }, 3000),
+                    QStringLiteral("the player returned to pause before the paused hold check"));
+
     // Exercise the transition hold without requiring a TensorRT runtime: the
     // paused picture must survive HUD-only paints, then a real output frame must
     // replace it after the hold is released.

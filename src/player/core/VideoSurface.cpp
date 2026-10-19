@@ -481,6 +481,7 @@ bool VideoSurface::captureEngineFrameHold() {
     auto snapshot = std::make_unique<QOpenGLFramebufferObject>(
         size, QOpenGLFramebufferObject::NoAttachment);
     if (!snapshot->isValid()) {
+        snapshot.reset();
         releaseRenderContextCurrent(previous);
         return false;
     }
@@ -489,8 +490,7 @@ bool VideoSurface::captureEngineFrameHold() {
     // may already contain paintOverlay() from its previous composition, so
     // blitting it would bake HUD pixels into the transition image.
     const uint64_t updateFlags = render_->update();
-    const bool hasNewOutput = framePending_ ||
-                              (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
+    const bool frameConsumed = framePending_ || (updateFlags & MPV_RENDER_UPDATE_FRAME) != 0;
     const int result = render_->render(snapshot->handle(), size.width(), size.height(), 0);
     if (QOpenGLExtraFunctions* extra = context_->extraFunctions()) {
         extra->glBindVertexArray(0);
@@ -500,16 +500,17 @@ bool VideoSurface::captureEngineFrameHold() {
     context_->functions()->glBindFramebuffer(
         GL_FRAMEBUFFER, static_cast<GLuint>(defaultFramebufferObject()));
     if (result < 0) {
+        snapshot.reset();
         releaseRenderContextCurrent(previous);
         return false;
     }
 
     engineFrameHoldFbo_ = std::move(snapshot);
     framePending_ = false;
-    hasVisibleOutputFrame_ = true;
-    if (hasNewOutput) {
-        videoFramePainted_ = true;
-        ++diagnostics_.renderedOutputFrames;
+    // Capturing can consume an update, but it is not an on-screen presentation.
+    if (frameConsumed || videoFramePainted_) {
+        videoFramePainted_ = false;
+        render_->reportSwap();
     }
     releaseRenderContextCurrent(previous);
     return true;
@@ -1118,6 +1119,7 @@ void VideoSurface::paintGL() {
     const bool retainedPictureVisible =
         engineFrameHoldFbo_ &&
         (engineFrameHoldActive_ || (engineFrameHoldAwaitingOutput_ && !freshOutputFrame));
+    bool presentedFrame = false;
 
     // Qt renders QOpenGLWidget into its own framebuffer object, so fbo=0 would
     // make mpv bind the window's default framebuffer and paint nothing. That
@@ -1154,38 +1156,21 @@ void VideoSurface::paintGL() {
     QPainter painter(this);
     painter.beginNativePainting();
     int renderResult = 0;
-    if (retainedPictureVisible) {
+    if (retainedPictureVisible && drawEngineFrameHold(target, targetWidth, targetHeight)) {
         if (newOutputFrame) {
-            // mpv's advanced renderer must consume each frame even while the
-            // visible plane is held. Skip is asynchronous and never waits for
-            // target-time; its frame is acknowledged immediately.
             renderResult = render_->skipRendering();
             if (renderResult == 0) render_->reportSwap();
         }
-        const bool copied = drawEngineFrameHold(target, targetWidth, targetHeight);
-        if (!copied) {
-            // A failed retained blit is not allowed to turn into a permanent
-            // black mask; resume the ordinary renderer path and report failures.
-            renderResult = render_->render(static_cast<int>(target), targetWidth,
-                                           targetHeight, 0);
-            if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
-                extra->glBindVertexArray(0);
-                extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-                extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-            }
-            gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
-            painter.endNativePainting();
-        }
     } else {
         renderResult = render_->render(static_cast<int>(target), targetWidth, targetHeight, 0);
-        if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
-            extra->glBindVertexArray(0);
-            extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-            extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-        }
-        // mpv unbinds; Qt invalidates next.
-        gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
+        presentedFrame = haveFrame;
     }
+    if (QOpenGLExtraFunctions* extra = glContext->extraFunctions()) {
+        extra->glBindVertexArray(0);
+        extra->glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        extra->glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, target);
     painter.endNativePainting();
     lastRenderedFboSize_ = deviceSize;
     hasRenderedFrame_ = hasRenderedFrame_ || renderResult == 0;
@@ -1201,10 +1186,6 @@ void VideoSurface::paintGL() {
         // The fresh output has replaced the transition snapshot. Release its
         // GPU storage now; normal playback retains no extra video framebuffer.
         engineFrameHoldFbo_.reset();
-    } else if (renderResult == 0 && freshOutputFrame && retainedPictureVisible) {
-        // A skipped output frame is consumed for mpv's advanced-control
-        // contract, but it was not rendered into Qt and cannot satisfy handoff.
-        // The retained snapshot remains visible until a later direct render.
     }
     if (renderResult == 0 && freshOutputFrame && !retainedPictureVisible &&
         animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
@@ -1214,8 +1195,10 @@ void VideoSurface::paintGL() {
 
     // Monotonic: paintCanHappen() reads it as "this widget has painted at least
     // once", which a failed render does not undo.
-    if (newOutputFrame && renderResult == 0 && !retainedPictureVisible)
+    if (newOutputFrame && renderResult == 0 && presentedFrame) {
+        hasVisibleOutputFrame_ = true;
         ++diagnostics_.renderedOutputFrames;
+    }
     if (renderResult < 0) {
         // The buffer holds the defined black rather than that frame, so a report
         // for it would name a presentation that is no longer on screen.
@@ -1227,7 +1210,7 @@ void VideoSurface::paintGL() {
             QMetaObject::invokeMethod(this, [this, message] { emit errorOccurred(message); },
                                       Qt::QueuedConnection);
         }
-    } else if (haveFrame && !retainedPictureVisible) {
+    } else if (presentedFrame) {
         // Only ever set: a UI-only repaint must not throw away the report the
         // frame before it is still owed.
         videoFramePainted_ = true;
