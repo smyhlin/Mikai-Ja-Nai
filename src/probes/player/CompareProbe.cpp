@@ -40,6 +40,7 @@
 #include "PlayerShell.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiConfig.hpp"
 #include "ProbeRuntime.hpp"
 #include "ProbePicture.hpp"
 
@@ -1400,6 +1401,152 @@ int main(int argc, char** argv) {
                       compare->renderedSideA() == immutableOriginal &&
                       compare->renderedSideB() == immutableOriginal,
                   "both sides return to exact raw pixels after all cross-family transitions");
+
+            const native::AnimeJanaiConfig mixedConfig = native::AnimeJanaiConfigStore::load();
+            const native::AnimeJanaiSourceContext sourceContext =
+                surface->animeJanaiSourceContext();
+            QString mixedPresetId;
+            native::AnimeJanaiChain mixedChain;
+            const qint64 sourceArea = qint64(sourceContext.width) * sourceContext.height;
+            for (const native::AnimeJanaiSlot& slot : mixedConfig.customSlots) {
+                QVector<native::AnimeJanaiChain> chains = slot.chains;
+                std::sort(chains.begin(), chains.end(),
+                          [](const native::AnimeJanaiChain& left,
+                             const native::AnimeJanaiChain& right) {
+                              return left.number < right.number;
+                          });
+                for (const native::AnimeJanaiChain& chain : chains) {
+                    bool hasAjiStep = false;
+                    bool hasAnime4KStep = false;
+                    for (const native::AnimeJanaiChainStep& step : chain.steps) {
+                        hasAjiStep |= step.kind == native::AnimeJanaiStepKind::OnnxModel;
+                        hasAnime4KStep |= step.kind == native::AnimeJanaiStepKind::Anime4K;
+                    }
+                    const auto areaBound = [](const QString& text) {
+                        if (text.compare(QStringLiteral("infxinf"), Qt::CaseInsensitive) == 0)
+                            return qint64(0);
+                        const qsizetype x = text.indexOf(QLatin1Char('x'));
+                        if (x <= 0) return qint64(-1);
+                        bool widthOk = false;
+                        bool heightOk = false;
+                        const qint64 width = text.left(x).toLongLong(&widthOk);
+                        const qint64 height = text.mid(x + 1).toLongLong(&heightOk);
+                        if (!widthOk || !heightOk || width == 0 || height == 0)
+                            return qint64(0);
+                        return width * height;
+                    };
+                    const qint64 minimumArea = areaBound(chain.minResolution);
+                    const qint64 maximumArea = areaBound(chain.maxResolution);
+                    const bool sourceMatches =
+                        sourceContext.width > 0 && sourceContext.height > 0 &&
+                        std::isfinite(sourceContext.fps) && sourceContext.fps > 0.0 &&
+                        minimumArea >= 0 && maximumArea >= 0 &&
+                        sourceArea >= minimumArea &&
+                        (maximumArea == 0 || sourceArea <= maximumArea) &&
+                        sourceContext.fps >= chain.minFps &&
+                        (chain.maxFps <= 0 || sourceContext.fps <= chain.maxFps);
+                    if (sourceMatches) {
+                        if (hasAjiStep && hasAnime4KStep) {
+                            mixedPresetId = QStringLiteral("builtin_slot:%1").arg(slot.number);
+                            mixedChain = chain;
+                        }
+                        break;
+                    }
+                }
+                if (!mixedPresetId.isEmpty()) break;
+            }
+            if (mixedPresetId.isEmpty()) {
+                std::fprintf(stderr,
+                             "SKIP configured mixed Compare scenario: no mixed ONNX/Anime4K slot exists in the read-only native config; fixture requirement is one slot with both step kinds and installed referenced assets.\\n");
+            } else {
+                const native::Anime4KShaderProgramResolver shaderResolver =
+                    [](const QString& presetId, QString* reason) {
+                        return anime4k::filterShaderProgramForCandidate(
+                            presetId, anime4k::findShadersDir(), reason);
+                    };
+                const native::AnimeJanaiPlan mixedPlan = native::prepareAnimeJanaiPlan(
+                    mixedPresetId, ajiBackend, {}, sourceContext, shaderResolver);
+                if (!mixedPlan.available) {
+                    std::fprintf(stderr,
+                                 "SKIP configured mixed Compare scenario: fixture assets or source activation are unavailable: %s\\n",
+                                 qPrintable(mixedPlan.reason));
+                } else {
+                    native::AnimeJanaiSourceContext unknownCadence = sourceContext;
+                    unknownCadence.fps = 0.0;
+                    const native::AnimeJanaiPlan deferredPlan =
+                        native::prepareAnimeJanaiPlan(mixedPresetId, ajiBackend, {},
+                                                       unknownCadence, {});
+                    check(deferredPlan.needsSourceContext && !deferredPlan.available,
+                          "unknown observed FPS defers mixed-chain selection without a guessed cadence or fallback");
+                    check(mixedPlan.selectedChainNumber == mixedChain.number,
+                          "mixed Compare selects the configured chain using original source dimensions and observed FPS");
+                    QVector<QPair<native::AnimeJanaiPlanStage::Kind, QPair<int, int>>> expectedStages;
+                    for (const native::AnimeJanaiChainStep& step : mixedChain.steps) {
+                        if (step.kind == native::AnimeJanaiStepKind::OnnxModel &&
+                            !expectedStages.isEmpty() &&
+                            expectedStages.last().first == native::AnimeJanaiPlanStage::Kind::Aji) {
+                            expectedStages.last().second.second = step.number;
+                        } else {
+                            expectedStages.append({
+                                step.kind == native::AnimeJanaiStepKind::Anime4K
+                                    ? native::AnimeJanaiPlanStage::Kind::Anime4K
+                                    : native::AnimeJanaiPlanStage::Kind::Aji,
+                                {step.number, step.number}});
+                        }
+                    }
+                    QVector<QPair<native::AnimeJanaiPlanStage::Kind, QPair<int, int>>> actualStages;
+                    for (const native::AnimeJanaiPlanStage& stage : mixedPlan.stages) {
+                        if (stage.firstStepNumber > 0) {
+                            actualStages.append({stage.kind,
+                                                 {stage.firstStepNumber,
+                                                  stage.lastStepNumber}});
+                        }
+                    }
+                    const bool ordered = actualStages == expectedStages;
+                    int ajiStages = 0;
+                    int shaderStages = 0;
+                    for (const native::AnimeJanaiPlanStage& stage : mixedPlan.stages) {
+                        if (stage.kind == native::AnimeJanaiPlanStage::Kind::Aji) ++ajiStages;
+                        else if (stage.kind == native::AnimeJanaiPlanStage::Kind::Anime4K) ++shaderStages;
+                    }
+                    check(ordered && ajiStages > 0 && shaderStages > 0,
+                          "mixed Compare plan preserves configured A4K/AJI stage order");
+                    bool scaleMatches = true;
+                    for (const native::AnimeJanaiPlanStage& stage : mixedPlan.stages) {
+                        if (stage.kind != native::AnimeJanaiPlanStage::Kind::Anime4K) continue;
+                        const auto configured = std::find_if(
+                            mixedChain.steps.cbegin(), mixedChain.steps.cend(),
+                            [&stage](const native::AnimeJanaiChainStep& step) {
+                                return step.number == stage.firstStepNumber &&
+                                       step.kind == native::AnimeJanaiStepKind::Anime4K;
+                            });
+                        scaleMatches &= configured != mixedChain.steps.cend() &&
+                                        stage.scaleFactor == configured->scaleFactor;
+                    }
+                    check(scaleMatches,
+                          "each comparison shader stage uses its configured output scale");
+                    check(triggerChoice(compare, 0, mixedPresetId),
+                          "Compare accepts the actual configured mixed profile");
+                    QImage mixedOutput;
+                    QString mixedFailure;
+                    const bool mixedRendered = waitForRenderedSide(
+                        compare, mixedPresetId, 0, &mixedOutput, &mixedFailure);
+                    check(mixedRendered && !mixedOutput.isNull() &&
+                              visibleSideMatches(compare, 0, mixedPresetId, mixedOutput, surface) &&
+                              mixedOutput != immutableOriginal,
+                          "configured mixed chain renders through isolated Compare in its declared order and scale");
+                    if (!mixedRendered) {
+                        std::fprintf(stderr, "FAIL mixed Compare %s: %s\\n",
+                                     qPrintable(mixedPresetId), qPrintable(mixedFailure));
+                        app.exit(1);
+                        return;
+                    }
+                    check(triggerChoice(compare, 0, offId) &&
+                              compare->renderedSideA() == immutableOriginal &&
+                              unchangedLivePlayback(),
+                          "switching away from mixed Compare restores the exact frozen and unrelated live output");
+                }
+            }
 
             bool supersededWhilePending = false;
             QTimer rapidSelection;
