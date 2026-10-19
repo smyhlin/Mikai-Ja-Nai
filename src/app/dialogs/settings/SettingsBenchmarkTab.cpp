@@ -1,11 +1,13 @@
 #include "dialogs/SettingsDialog.hpp"
 
 #include "dialogs/settings/BenchmarkPlayback.hpp"
+#include "dialogs/settings/BenchmarkReport.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
 #include <native/components/AnimeJanaiRuntime.hpp>
+#include <native/components/NativeGpuProbe.hpp>
 #include <native/models/NativeRife.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <player/shaders/Anime4K.hpp>
@@ -14,6 +16,7 @@
 #include <QCheckBox>
 #include <QColor>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -31,6 +34,7 @@
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QSysInfo>
 #include <QSurfaceFormat>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -64,6 +68,12 @@ struct BenchmarkResultRow {
     bool successful = false;
 };
 
+/// The stable identifier a report row carries, never the translated label.
+QString benchmarkBackendId(mplayer::native::Backend backend) {
+    return backend == mplayer::native::Backend::TensorRT ? QStringLiteral("tensorrt")
+                                                         : QStringLiteral("directml");
+}
+
 QString benchmarkElapsedText(qint64 milliseconds) {
     const qint64 seconds = milliseconds / 1000;
     return QStringLiteral("%1:%2:%3")
@@ -86,6 +96,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     auto* scroll = new QScrollArea(page);
     scroll->setObjectName(QStringLiteral("benchmarkScroll"));
     scroll->setWidgetResizable(true);
+    scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -748,6 +759,44 @@ void SettingsDialog::runBenchmark() {
             const mplayer::native::Backend backend =
                 mplayer::native::loadNativePreferences().backend;
 
+            // Settings can close before this worker finishes; report ownership cannot be a widget.
+            mikai::app::BenchmarkReport report;
+            report.startedAt = QDateTime::currentDateTimeUtc();
+            const mplayer::native::GpuComputeCapability& gpu =
+                mplayer::native::observeComputeCapability();
+            report.runtimeMetadata = {
+                {QStringLiteral("applicationVersion"), QCoreApplication::applicationVersion()},
+                {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
+                {QStringLiteral("os"), QSysInfo::prettyProductName()},
+                {QStringLiteral("gpu"), gpu.name},
+                {QStringLiteral("gpuDriver"), gpu.driverVersion},
+                {QStringLiteral("gpuSmMajor"), gpu.smMajor},
+                {QStringLiteral("gpuSmMinor"), gpu.smMinor},
+                {QStringLiteral("backend"), benchmarkBackendId(backend)}};
+
+            const auto recordResult = [&report](const QString& modelId, const QString& modelLabel,
+                                                const QString& clipFile, const QString& sourcePath,
+                                                const QSize& sourceSize, const QSize& targetSize,
+                                                double fps, const QString& failureReason,
+                                                const QString& backendId, qint64 enginePrepMs,
+                                                const QDateTime& startedAt,
+                                                const QDateTime& finishedAt) {
+                mikai::app::BenchmarkReportResult entry;
+                entry.modelId = modelId;
+                entry.modelLabel = modelLabel;
+                entry.clip = clipFile;
+                entry.sourcePath = sourcePath;
+                entry.sourceSize = sourceSize;
+                entry.targetSize = targetSize;
+                entry.fps = fps;
+                entry.failureReason = failureReason;
+                entry.backend = backendId;
+                entry.enginePrepMs = enginePrepMs;
+                entry.startedAt = startedAt;
+                entry.finishedAt = finishedAt;
+                report.results.append(entry);
+            };
+
             const auto publishActivity = [dialog, application](const QString& text) {
                 QMetaObject::invokeMethod(
                     application,
@@ -872,26 +921,43 @@ void SettingsDialog::runBenchmark() {
                     Qt::QueuedConnection);
             };
 
-            const auto measure = [&append, &publishActivity, &publishEngineBuild, &surface, dialog](
-                                     const QString& label, const QString& clipName,
+            QHash<QString, mplayer::native::AnimeJanaiSourceContext> sourceContexts;
+            QHash<QString, QString> sourceErrors;
+            for (const QString& clip : clips) {
+                QString error;
+                const QString path = SettingsDialog::locateBenchmarkClip(clip);
+                sourceContexts.insert(clip, readBenchmarkSourceContext(path, &error));
+                if (!error.isEmpty()) sourceErrors.insert(clip, error);
+            }
+            const auto measure = [&append, &publishActivity, &publishEngineBuild,
+                                  &recordResult, &sourceContexts, &surface, dialog](
+                                     const QString& modelId, const QString& label,
+                                     const QString& clipName,
                                      const std::vector<std::pair<std::string, std::string>>&
                                          options,
                                      int slot = -1,
                                      mplayer::native::Backend engineBackend =
-                                         mplayer::native::Backend::DirectML) {
+                                         mplayer::native::Backend::DirectML,
+                                     const QString& backendId = QString(),
+                                     int ajiStageCount = 1) {
+                const auto source = sourceContexts.value(clipName);
+                const QSize sourceSize(source.width, source.height);
+                const QSize targetSize = sourceSize * 2;
                 const QString path = SettingsDialog::locateBenchmarkClip(clipName);
                 if (path.isEmpty()) {
-                    append(label, clipName, SettingsDialog::tr("clip not found"), false);
+                    const QString reason = SettingsDialog::tr("clip not found");
+                    append(label, clipName, reason, false);
+                    recordResult(modelId, label, clipName, {}, sourceSize, targetSize, -1.0, reason,
+                                 backendId, -1, QDateTime::currentDateTimeUtc(),
+                                 QDateTime::currentDateTimeUtc());
                     return;
                 }
 
-                const QStringList dimensions =
-                    QFileInfo(clipName).completeBaseName().split(QLatin1Char('x'));
-                const QSize sourceSize(dimensions.value(0).toInt(), dimensions.value(1).toInt());
                 const QString clipLabel = QFileInfo(clipName).completeBaseName().replace(
                     QLatin1Char('x'), QStringLiteral(" × "));
                 const QString runLabel = QStringLiteral("%1 · %2").arg(label, clipLabel);
                 publishActivity(SettingsDialog::tr("Loading clip · %1").arg(runLabel));
+                const QDateTime runStartedAt = QDateTime::currentDateTimeUtc();
                 QMetaObject::invokeMethod(
                     QCoreApplication::instance(),
                     [dialog] {
@@ -907,17 +973,22 @@ void SettingsDialog::runBenchmark() {
                     [&publishEngineBuild, &runLabel](BenchmarkEngineBuildUpdate update,
                                                      const QString&) {
                         publishEngineBuild(update, runLabel);
-                    });
+                    }, ajiStageCount);
                 const bool successful = result.error.isEmpty() && result.fps > 0;
                 append(label, clipName,
                        successful ? SettingsDialog::tr("%1 fps").arg(result.fps, 0, 'f', 1)
                                   : result.error,
                        successful);
+                recordResult(modelId, label, clipName, path, sourceSize, targetSize,
+                             successful ? result.fps : -1.0,
+                             successful ? QString() : result.error, backendId,
+                             result.enginePrepMs, runStartedAt, QDateTime::currentDateTimeUtc());
             };
 
             if (measureRaw) {
                 for (const QString& clip : clips) {
-                    measure(SettingsDialog::tr("Baseline"), clip, {});
+                    measure(QStringLiteral("baseline"), SettingsDialog::tr("Baseline"), clip, {},
+                            -1, mplayer::native::Backend::DirectML, QStringLiteral("none"));
                 }
             }
 
@@ -926,47 +997,96 @@ void SettingsDialog::runBenchmark() {
                     const QString shader =
                         mplayer::anime4k::shaderStringForCandidate(model.key.mid(8));
                     if (shader.isEmpty()) {
+                        const QString reason = SettingsDialog::tr("shader chain is not available");
                         for (const QString& clip : clips) {
-                            append(model.label, clip,
-                                   SettingsDialog::tr("shader chain is not available"), false);
+                            append(model.label, clip, reason, false);
+                            const QDateTime now = QDateTime::currentDateTimeUtc();
+                            recordResult(model.key, model.label, clip, {}, {}, {}, -1.0, reason,
+                                         QStringLiteral("anime4k"), -1, now, now);
                         }
                         continue;
                     }
                     for (const QString& clip : clips) {
-                        measure(model.label, clip, {{"glsl-shaders", shader.toStdString()}});
+                        measure(model.key, model.label, clip,
+                                {{"glsl-shaders", shader.toStdString()}}, -1,
+                                mplayer::native::Backend::DirectML, QStringLiteral("anime4k"));
                     }
                     continue;
                 }
 
-                const mplayer::native::AnimeJanaiPlan plan =
-                    mplayer::native::prepareAnimeJanaiPlan(model.key, backend);
-                if (!plan.available) {
-                    const QString reason =
-                        plan.reason.isEmpty() ? SettingsDialog::tr("plan is not available")
-                                              : plan.reason;
-                    for (const QString& clip : clips) append(model.label, clip, reason, false);
-                    continue;
-                }
-                const std::vector<std::pair<std::string, std::string>> options{
-                    {"hwdec", "nvdec"},
-                    {"vf", plan.filterSpec.toStdString()},
-                };
                 for (const QString& clip : clips) {
-                    measure(model.label, clip, options, plan.slot, plan.backend);
+                    const auto source = sourceContexts.value(clip);
+                    const auto plan = mplayer::native::prepareAnimeJanaiPlan(
+                        model.key, backend, {}, source,
+                        [](const QString& preset, QString* reason) {
+                            return mplayer::anime4k::filterShaderProgramForCandidate(
+                                preset, QString(), reason);
+                        });
+                    if (!plan.available) {
+                        const QString reason = !sourceErrors.value(clip).isEmpty()
+                            ? sourceErrors.value(clip)
+                            : (plan.reason.isEmpty()
+                                ? SettingsDialog::tr("plan is not available") : plan.reason);
+                        append(model.label, clip, reason, false);
+                        const QDateTime now = QDateTime::currentDateTimeUtc();
+                        recordResult(model.key, model.label, clip,
+                                     SettingsDialog::locateBenchmarkClip(clip),
+                                     QSize(source.width, source.height),
+                                     QSize(source.width, source.height) * 2,
+                                     -1.0, reason, benchmarkBackendId(backend), -1, now, now);
+                        continue;
+                    }
+                    std::vector<std::pair<std::string, std::string>> options{
+                        {"vf", plan.filterSpec.toStdString()}};
+                    if (plan.requiresAji)
+                        options.emplace_back("hwdec",
+                            plan.backend == mplayer::native::Backend::TensorRT ? "nvdec" : "d3d11va");
+                    const int ajiStages = static_cast<int>(std::count_if(
+                        plan.stages.cbegin(), plan.stages.cend(),
+                        [](const mplayer::native::AnimeJanaiPlanStage& stage) {
+                            return stage.kind ==
+                                mplayer::native::AnimeJanaiPlanStage::Kind::Aji;
+                        }));
+                    measure(model.key, model.label, clip, options,
+                            plan.requiresAji ? plan.slot : -1, plan.backend,
+                            plan.requiresAji ? benchmarkBackendId(plan.backend)
+                                             : QStringLiteral("anime4k"), ajiStages);
+                    if (plan.cacheLease) plan.cacheLease->release();
                 }
+            }
+
+            report.finishedAt = QDateTime::currentDateTimeUtc();
+            const mikai::app::BenchmarkReportWriteResult written =
+                mikai::app::writeBenchmarkReport(QCoreApplication::applicationDirPath(), report);
+            if (!written.success) {
+                std::fprintf(stderr, "[benchmark] report was not written: %s\n",
+                             qPrintable(written.error));
             }
 
             const int resultCount = completedRuns;
             const int failedCount = failedRuns;
+            const QString reportPath = written.path;
+            const QString reportError = written.error;
             QMetaObject::invokeMethod(
                 application,
-                [dialog, resultCount, failedCount] {
+                [dialog, resultCount, failedCount, reportPath, reportError] {
                     if (dialog->isNull()) return;
                     SettingsDialog* self = dialog->data();
                     self->benchmarkResultStack_->setCurrentWidget(self->benchmarkResults_);
                     self->benchmarkProgress_->setValue(resultCount);
                     self->benchmarkProgress_->hide();
-                    self->benchmarkActivity_->hide();
+                    if (reportError.isEmpty()) {
+                        self->benchmarkActivity_->setText(
+                            SettingsDialog::tr("Report saved · %1")
+                                .arg(QFileInfo(reportPath).fileName()));
+                        self->benchmarkActivity_->setToolTip(reportPath);
+                        self->benchmarkActivity_->show();
+                    } else {
+                        self->benchmarkActivity_->setText(
+                            SettingsDialog::tr("Report not saved · %1").arg(reportError));
+                        self->benchmarkActivity_->setToolTip(reportError);
+                        self->benchmarkActivity_->show();
+                    }
                     self->benchmarkProgress_->setProperty(
                         "runState", failedCount > 0 ? QStringLiteral("failure")
                                                     : QStringLiteral("success"));

@@ -6,6 +6,7 @@
 
 #include "TestAnimeJanaiRuntime.hpp"
 #include "TestAnime4K.hpp"
+#include "TestBenchmarkReport.hpp"
 #include "TestI18n.hpp"
 #include "TestLayering.hpp"
 #include "TestWindowRaise.hpp"
@@ -87,7 +88,8 @@ constexpr const char* kSuites[] = {
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
-    "TestModels", "TestReleases", "TestAnime4K", "TestI18n", "TestStreams", "TestPagers",
+    "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestI18n",
+    "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestDownloads", "TestDiagnostics", "TestApiClient",
     "TestFeedRender", "TestRunner",
     "TestLayering", "TestWindowRaise", "TestClipboard", "TestLiveOracle"};
@@ -237,6 +239,7 @@ int main(int argc, char** argv) {
   TestModels models;
   TestReleases releases;
   TestAnime4K anime4k;
+  TestBenchmarkReport benchmarkReport;
   TestI18n i18n;
   TestStreams streams;
   TestPagers pagers;
@@ -350,6 +353,7 @@ int main(int argc, char** argv) {
   run("TestModels", &models, true);
   run("TestReleases", &releases, true);
   run("TestAnime4K", &anime4k, true);
+  run("TestBenchmarkReport", &benchmarkReport, true);
   run("TestI18n", &i18n, true);
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);

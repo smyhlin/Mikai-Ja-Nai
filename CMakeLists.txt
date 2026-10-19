@@ -302,6 +302,7 @@ set(APP_SOURCES
   src/app/dialogs/SettingsDialog.cpp
   src/app/dialogs/AnimeJanaiManagerPanel.cpp
   src/app/dialogs/settings/BenchmarkPlayback.cpp
+  src/app/dialogs/settings/BenchmarkReport.cpp
   src/app/dialogs/settings/SettingsBenchmarkTab.cpp
   src/app/dialogs/settings/SettingsComponentsTab.cpp
   src/app/dialogs/settings/SettingsGeneralTab.cpp
@@ -342,6 +343,7 @@ set(APP_HEADERS
   src/app/dialogs/SettingsDialog.hpp
   src/app/dialogs/AnimeJanaiManagerPanel.hpp
   src/app/dialogs/settings/BenchmarkPlayback.hpp
+  src/app/dialogs/settings/BenchmarkReport.hpp
   src/app/dialogs/settings/SettingsHelpers.hpp
   src/app/dialogs/settings/SettingsUi.hpp
   src/app/pages/EpisodeGrid.hpp

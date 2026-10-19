@@ -30,6 +30,7 @@ class TestFeedRender : public QObject {
   void benchmarkModelSearchFiltersRowsAndRestoresSelections();
   void buildLogDetectionDistinguishesCompilationFromOtherBackendWork();
   void theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigured();
+  void anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogTail();
   void interpolationOnlyRunsWaitForTheirSelectedSlot_data();
   void interpolationOnlyRunsWaitForTheirSelectedSlot();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();

@@ -42,6 +42,8 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
                                  ComponentStoreTab* adoptedComponents)
     : QDialog(parent), client_(client), runner_(runner), adoptedComponents_(adoptedComponents) {
     setWindowTitle(tr("Settings"));
+    setWindowFlag(Qt::WindowMaximizeButtonHint, true);
+    setSizeGripEnabled(true);
     QScreen* targetScreen = parent != nullptr ? parent->screen() : QGuiApplication::primaryScreen();
     QSize initialSize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
     int minimumWidth = theme::kSettingsDialogMinWidth;

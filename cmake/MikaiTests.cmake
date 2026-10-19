@@ -132,6 +132,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/native/TestRuntimeSelection.hpp
     tests/cpp/native/TestRuntimeSelection.cpp
     # Application, UI, threading & architecture layering suites
+    tests/cpp/app/TestBenchmarkReport.hpp
+    tests/cpp/app/TestBenchmarkReport.cpp
     tests/cpp/app/TestFeedRender.hpp
     tests/cpp/app/TestFeedRender.cpp
     tests/cpp/app/TestI18n.hpp

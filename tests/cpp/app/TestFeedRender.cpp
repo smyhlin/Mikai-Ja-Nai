@@ -12,6 +12,7 @@
 #include <workers/Runner.hpp>
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QHash>
 #include <QtCore/QJsonArray>
@@ -22,6 +23,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtCore/QStringList>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -619,6 +621,65 @@ void TestFeedRender::theEngineBuildGateWithholdsMeasurementUntilTheSlotIsConfigu
             AnimeJanaiBuildLogEvent::None);
   QVERIFY(gate.failed());
   QVERIFY(!gate.readyToMeasure());
+}
+
+void TestFeedRender::anAuthoritativeBackgroundBuildFailureSurfacesItsBoundedLogTail() {
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString enginePath =
+      QDir(directory.path()).filePath(QStringLiteral("aji-71de4197.trt.engine"));
+  const QString buildLogPath = enginePath + QStringLiteral(".build.log");
+  QFile file(buildLogPath);
+  QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+  const QByteArray log =
+      "[10/18/2026-14:28:57] [E] Static model does not take explicit shapes since the shape of inference tensors "
+      "will be determined by the model itself\n"
+      "[10/18/2026-14:28:57] [E] Network And Config setup failed\n"
+      "[10/18/2026-14:28:57] [E] Building engine failed\n"
+      "[10/18/2026-14:28:57] [E] Building engine failed\n"
+      "[10/18/2026-14:28:57] [E] Unable to create a tactic for node 42\n"
+      "[aji] build process exit code: 1 (0x1)\n";
+  QCOMPARE(file.write(log), static_cast<qint64>(log.size()));
+  file.close();
+
+  constexpr int slot = 1001;
+  AnimeJanaiBuildGate gate;
+  const auto observe = [&gate](const QString& prefix, const QString& line) {
+    return gate.observeLog(prefix, line, Backend::TensorRT, slot);
+  };
+  QCOMPARE(observe(QStringLiteral("aji"), QStringLiteral("background engine build: spatial")),
+           AnimeJanaiBuildLogEvent::TensorRtBuildStarted);
+  QCOMPARE(observe(QStringLiteral("ffmpeg"), QStringLiteral("error while selecting stream")),
+           AnimeJanaiBuildLogEvent::None);
+  QVERIFY(gate.buildActive());
+  QVERIFY(!gate.failed());
+
+  const QString failure =
+      QStringLiteral("[aji] background engine build failed: %1 (see .build.log)").arg(enginePath);
+  QCOMPARE(observe(QStringLiteral("animejanai"), failure),
+           AnimeJanaiBuildLogEvent::TensorRtBuildFailed);
+  QVERIFY(gate.failed());
+  QVERIFY(!gate.buildActive());
+  QCOMPARE(gate.failureLogPath(), buildLogPath);
+
+  const QStringList tail =
+      mplayer::native::readAnimeJanaiBuildLogTail(gate.failureLogPath(), directory.path());
+  QCOMPARE(tail.size(), 2);
+  QCOMPARE(tail.at(0),
+           QStringLiteral("[E] Static model does not take explicit shapes since the shape of "
+                          "inference tensors will be determined by the model itself"));
+  QCOMPARE(tail.at(1), QStringLiteral("[E] Unable to create a tactic for node 42"));
+  QCOMPARE(tail.count(QStringLiteral("[E] Building engine failed")), 0);
+  QVERIFY(mplayer::native::readAnimeJanaiBuildLogTail(
+              gate.failureLogPath(), QDir(directory.path()).filePath(QStringLiteral("elsewhere")))
+              .isEmpty());
+
+  AnimeJanaiBuildGate diagnosticOnly;
+  QCOMPARE(diagnosticOnly.observeLog(
+               QStringLiteral("aji"), QStringLiteral("error: transient cplayer message"),
+               Backend::TensorRT, slot),
+           AnimeJanaiBuildLogEvent::None);
+  QVERIFY(!diagnosticOnly.failed());
 }
 
 void TestFeedRender::interpolationOnlyRunsWaitForTheirSelectedSlot_data() {

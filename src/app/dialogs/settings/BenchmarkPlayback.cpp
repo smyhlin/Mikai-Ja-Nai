@@ -8,6 +8,7 @@
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions>
+#include <QThread>
 
 #include <atomic>
 #include <chrono>
@@ -36,6 +37,44 @@ struct CurrentContextGuard {
 
 }  // namespace
 
+mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
+    const QString& clipPath, QString* error) {
+    if (error) error->clear();
+    try {
+        mplayer::MpvHandle handle({{"vo", "null"}, {"audio", "no"}, {"hwdec", "no"},
+                                  {"pause", "yes"}, {"config", "no"}});
+        bool loaded = false;
+        QString failure;
+        handle.setEventSink([&](mpv_event* event) {
+            if (event == nullptr) return;
+            if (event->event_id == MPV_EVENT_FILE_LOADED) loaded = true;
+            if (event->event_id == MPV_EVENT_END_FILE && event->data != nullptr) {
+                const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
+                if (ended->reason == MPV_END_FILE_REASON_ERROR)
+                    failure = QString::fromStdString(handle.describeError(ended->error));
+            }
+        });
+        handle.loadFile(clipPath.toStdString());
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!loaded && failure.isEmpty() && deadline.elapsed() < kStartupTimeoutMs) {
+            handle.drainEvents();
+            QThread::msleep(5);
+        }
+        if (!loaded) {
+            if (error) *error = failure.isEmpty()
+                ? PlaybackText::tr("Timed out reading benchmark source metadata.") : failure;
+            return {};
+        }
+        return {static_cast<int>(handle.getNumber("video-params/w")),
+                static_cast<int>(handle.getNumber("video-params/h")),
+                handle.getNumber("container-fps")};
+    } catch (const mplayer::MpvError& failure) {
+        if (error) *error = QString::fromUtf8(failure.what());
+        return {};
+    }
+}
+
 BenchmarkSampleResult runBenchmarkSample(
     const QString& clipPath,
     const QSize& targetSize,
@@ -44,7 +83,8 @@ BenchmarkSampleResult runBenchmarkSample(
     int slot,
     QOffscreenSurface& surface,
     const std::function<void(const QString&)>& onPhase,
-    const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine) {
+    const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine,
+    int ajiStageCount) {
     BenchmarkSampleResult result;
     if (clipPath.isEmpty() || targetSize.width() <= 0 || targetSize.height() <= 0) {
         result.error = PlaybackText::tr("Invalid benchmark clip or output size.");
@@ -76,6 +116,7 @@ BenchmarkSampleResult runBenchmarkSample(
     std::atomic<bool> updatePending{false};
     BenchmarkFrameSample sample;
     mplayer::native::AnimeJanaiBuildGate buildGate;
+    int configuredAjiStages = 0;
     const bool watchBuild = slot >= 0 && backend == mplayer::native::Backend::TensorRT;
     QElapsedTimer startupTimer;
     QElapsedTimer buildTimer;
@@ -138,9 +179,32 @@ BenchmarkSampleResult runBenchmarkSample(
             const QString line = QString::fromUtf8(message->text ? message->text : "").trimmed();
             if (line.isEmpty()) return;
             const QString prefix = QString::fromUtf8(message->prefix ? message->prefix : "");
-            if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR) {
+            if (!watchBuild) {
+                if (message->log_level > 0 && message->log_level <= MPV_LOG_LEVEL_ERROR) {
+                    noteBackendLog(prefix + QStringLiteral(": ") + line);
+                }
+                return;
+            }
+            const bool wasBuilding = buildGate.buildActive();
+            const auto buildEvent = buildGate.observeLog(prefix, line, backend, slot);
+            if (buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::SlotConfigured)
+                ++configuredAjiStages;
+            const bool authoritativeBuildFailure =
+                buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::TensorRtBuildFailed;
+            if (authoritativeBuildFailure) {
+                const QStringList buildTail = mplayer::native::readAnimeJanaiBuildLogTail(
+                    buildGate.failureLogPath(), mplayer::native::nativeRoot());
+                if (buildTail.isEmpty()) {
+                    noteBackendLog(prefix + QStringLiteral(": ") + line);
+                } else {
+                    for (const QString& detail : buildTail) noteBackendLog(detail);
+                }
+                publishEngine(BenchmarkEngineBuildUpdate::Failed);
+            } else if (buildGate.failureLogPath().isEmpty() && message->log_level > 0 &&
+                       message->log_level <= MPV_LOG_LEVEL_ERROR) {
+                // END_FILE can precede its source-error log; freeze only an authoritative builder tail.
                 noteBackendLog(prefix + QStringLiteral(": ") + line);
-            } else if (watchBuild && buildGate.buildActive()) {
+            } else if (buildGate.buildActive()) {
                 const QString lowered = line.toLower();
                 if (lowered.contains(QLatin1String("error")) ||
                     lowered.contains(QLatin1String("failed")) ||
@@ -150,9 +214,6 @@ BenchmarkSampleResult runBenchmarkSample(
                     noteBackendLog(prefix + QStringLiteral(": ") + line);
                 }
             }
-            if (!watchBuild) return;
-            const bool wasBuilding = buildGate.buildActive();
-            const auto buildEvent = buildGate.observeLog(prefix, line, backend, slot);
             if (buildEvent == mplayer::native::AnimeJanaiBuildLogEvent::TensorRtBuildStarted &&
                 !wasBuilding) {
                 sample.reset();
@@ -222,7 +283,9 @@ BenchmarkSampleResult runBenchmarkSample(
                                        .arg(static_cast<quint32>(glError), 0, 16);
                     break;
                 }
-                const bool eligible = !watchBuild || buildGate.readyToMeasure();
+                const bool eligible = !watchBuild ||
+                    (buildGate.readyToMeasure() &&
+                     (ajiStageCount <= 1 || configuredAjiStages >= ajiStageCount));
                 if (eligible && mplayer::isRealNewFrame(frameInfo)) {
                     const bool startingSample = !sample.started();
                     sample.recordFrame(clock.nsecsElapsed());

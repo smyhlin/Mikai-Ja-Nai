@@ -9,11 +9,50 @@ configuration/Sharp behavior can change which chain/model a profile selects.
 Do not treat those dynamic entries or current settings as members of the stock
 historical selection, or merge their results into its comparison tables.
 
+The separately dated **retired model-graph experiments** at the end preserve
+historical measurements from tools removed by user decision. They are not an
+update to the historical stock matrix or a currently reproducible feature.
+
 Measured results from **Settings → Benchmark**, grouped by machine and model. Compare matching input resolutions, backends, and settings—not GPU names alone. Only observed RTX 5090 results are included; RTX 3080 and RTX 2070 reports will be added when supplied.
 
-**Scope:** all 31 non-RIFE models—23 Anime4K presets, 3 AnimeJaNai profiles, and 5 Spatial graphs—at all five bundled input resolutions, plus baseline. **RIFE is excluded by request.**
+**Historical matrix scope:** all 31 non-RIFE models—23 Anime4K presets, 3 AnimeJaNai profiles, and 5 Spatial graphs—at all five bundled input resolutions, plus baseline. **RIFE was excluded from that matrix by request.** The later RIFE 4.25-only default/variant comparison is recorded separately below.
 
 > **Workload limitation:** the bundled clips are synthetic black-frame H.264 fixtures, not anime footage. These measurements describe this reproducible fixture workload; they are **not a guarantee of real-scene playback performance**. Black frames omit motion, scene changes, and real-scene complexity. A runtime refusal is not evidence that a GPU lacks performance or VRAM.
+
+## 2026-10-18 — RTX 5090 integration smoke
+
+A bounded Settings run verified automatic JSON export, not a replacement matrix.
+Machine: NVIDIA GeForce RTX 5090, SM 12.0, driver 616.92, Windows 11 25H2,
+Qt 6.12.0. Input: the bundled black-frame 1280×720 clip; render target:
+2560×1440; three-second samples; no RIFE.
+
+| Row | Rendered FPS |
+| --- | ---: |
+| Unfiltered baseline | 1559.4 |
+| Anime4K A (Fast), existing final-shader path | 390.2 |
+
+The Settings action automatically produced one `bench/benchmark-*.json` with
+both stable IDs and full-precision numeric FPS. A separate missing-runtime run
+also exported its failed Quality row with `fps: null` and the original
+installation-record error; that refusal is not a Quality throughput result.
+
+Functional GPU checks separately exercised all nine mixed-chain Anime4K
+presets at 2× output, plus A at 1× and 4×. Real tiny Identity ONNX inference
+also ran AJI → shader, shader → AJI, and two AJI instances with a shader
+between them. The actual PlayerDialog cold-build popup, isolated Compare renderer
+and Settings Benchmark all executed a four-stage ONNX → Anime4K → ONNX →
+Anime4K profile from a disposable executable-local store. Both engine sessions
+completed before readiness; switching Off removed every owned filter. Compare
+repeats the same frozen frame to feed buffered filters without changing the
+selected source frame. These checks establish execution/order/geometry, not production
+model throughput, visual improvement, or DirectML compatibility. Mixed chains
+negotiate software NV12 at shader boundaries and may pay transfer and bit-depth
+costs; do not compare them as a zero-copy optimization.
+
+Completed Settings runs now save their own JSON beside the executable under
+`bench/`, including source/target dimensions, backend, preparation time,
+timestamps, GPU/driver/SM, OS and Qt. Share that file with matching configuration
+and model provenance when supplying another machine's results.
 
 ## Reading the numbers
 
@@ -182,3 +221,244 @@ smaller selection.
 For long first-use runs, capture subsets into separate files with `--model <id,id,...> --all-clips --output group.json`. Keep those completed exports so an interrupted process does not require repeating every model. Engine preparation is outside the timed sample, but it can dominate the total capture time.
 
 A complete run can return exit code 1 because a model failed, including a known unsupported model. The JSON still contains every row: require `"complete": true`, then distinguish measured `fps` from `null` accompanied by `reason`. Exit code 2 identifies a setup, argument, or evidence-write error. An incomplete capture must not be presented as a completed matrix.
+
+## RTX 5090 — retired model-graph experiments (2026-10-18)
+
+**Status:** historical experiment record only; the optimization tools and
+dedicated comparison probe were removed by user decision. No Python
+optimization feature or probe is shipped, and only production correctness
+fixes remain. Numerical tables, quality limits, measured methods and hashes
+below are preserved unchanged; none of these methods is a supported workflow.
+
+**Good / bad findings:** FP8 was selectively useful but lossy and could also
+regress throughput. Sparse pruning offered little benefit with major output
+drift. Fusion helped the tested custom multi-model chain; adding cubic
+pre-resize did not help and changed resampling. Existing SPAN had no eligible
+fold; a new SpaceToDepth/RepConv or luma architecture needs trained weights.
+RIFE coordinate specialization was marginal. The tables below retain the
+measurements; short CGI runs on one GPU do not establish general speed or
+quality guarantees.
+
+### Machine and controls
+
+| Setting | Observed value |
+| --- | --- |
+| GPU / driver | NVIDIA GeForce RTX 5090, SM 12.0 / 616.92 |
+| Installed GPU memory | 32,607 MiB reported by NVIDIA; not a per-model minimum |
+| CPU / system RAM | AMD Ryzen 7 5800X3D / 47.9 GiB reported |
+| OS / Qt | Windows 11 Pro x64, 10.0.26200 / Qt 6.12.0 |
+| Runtime | Standard AJI v0.9.0 / TensorRT 11.3.0 / desktop OpenGL / requested NVDEC |
+| Source | Base `0d1f49f`, with the uncommitted optional-tool/comparison changes on `optimizations-flow` |
+| Isolation | Dedicated owned deployment; mutable models, configuration and caches cloned separately from `dist-mikai` |
+| Interpolation | RIFE disabled in every profile and excluded from all measurements |
+
+Eight corrected comparisons completed, with **64 published steady-state
+samples**. Each comparison first ran a separate preparation/capture invocation;
+all of its FPS values were excluded. The cached measurement invocation then
+ran ABBA twice: four three-second samples per variant. Tables show medians and
+the observed minimum–maximum, not confidence intervals. No steady-state sample
+reported engine preparation.
+
+Both sides used the same clip, target, TensorRT builder optimization level 5,
+and application `runBenchmarkSample` path. Sparse candidates alone added
+`--sparsity=enable`. Dynamic source graphs used
+`--optShapes=input:%video_resolution%`; fixed-shape fused graphs used Static
+ONNX settings without explicit shape arguments. Both resolve to the same
+concrete per-stage dimensions. Results describe graph variants; detailed
+engine tactics were not captured, so neither sparse-kernel selection nor
+universal FP8 tensor-core acceleration is claimed.
+
+The footage was a local **3D CGI** clip, re-encoded to 23.976 fps at 1280 × 720
+and 640 × 360. It is not a representative licensed anime corpus or ground
+truth. FP8 calibration used eight real frames with 128 × 128 crop/resize
+inputs. Four disjoint held-out frames were checked numerically at that size;
+one separate full-frame native capture per comparison supplied the image
+agreement columns below. No source footage, model weights or screenshots are
+included in the repository.
+
+The actual initial comparison window was observed foreground. Continuous
+focus/session state, clocks, temperature, power and peak VRAM were not
+recorded. Other benchmark/inference jobs were not run concurrently with the
+published steady-state measurements. These short comparisons do not prove
+sustained interactive playback or cross-machine performance.
+
+### Standard preset model variants
+
+These were source-matched **custom profile clones**, not modified stock
+catalogue entries. At 1280 × 720 and 23.976 fps, Standard Quality and Balanced
+both select the HD Balanced SPAN graph; Performance selects HD Performance.
+At 640 × 360 all three select the SD Compact graph. Those shared paths are
+measured once rather than presented as distinct algorithms. Sharp is not
+covered.
+
+`PSNR` measures agreement with the original model's 8-bit RGB capture, **not
+ground-truth quality**. MAE is the mean channel error on a 0–255 scale.
+
+| Active model / input | Variant | Original median fps (range) | Variant median fps (range) | Change | PSNR dB | MAE |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| HD Balanced / 1280 × 720 → 2560 × 1440 | FP8 Q/DQ | 368.70 (368.31–369.82) | 419.38 (418.80–420.75) | +13.75% | 51.78 | 0.394 |
+| HD Performance / 1280 × 720 → 2560 × 1440 | FP8 Q/DQ | 584.78 (580.83–587.27) | 480.17 (480.07–481.49) | −17.89% | 48.90 | 0.615 |
+| SD Compact / 640 × 360 → 1280 × 720 | FP8 Q/DQ | 491.28 (489.72–491.75) | 580.44 (579.64–583.16) | +18.15% | 47.85 | 0.567 |
+| HD Balanced / 1280 × 720 → 2560 × 1440 | 2:4 sparse | 368.01 (366.42–370.62) | 371.22 (365.41–372.82) | +0.87% | 25.15 | 9.537 |
+| HD Performance / 1280 × 720 → 2560 × 1440 | 2:4 sparse | 580.84 (574.91–587.70) | 581.44 (577.93–592.04) | +0.10% | 20.74 | 18.196 |
+| SD Compact / 640 × 360 → 1280 × 720 | 2:4 sparse | 490.78 (489.14–492.10) | 503.83 (501.40–505.19) | +2.66% | 37.02 | 1.924 |
+
+FP8 is lossy even where agreement is high. Maximum channel differences in the
+native captures were 10/255, 17/255 and 28/255 for HD Balanced, HD Performance
+and SD respectively. Sparse HD maximum differences reached 150/255 and
+169/255; the small throughput changes do not justify calling it a
+quality-preserving replacement. No fine-tuning or energy compensation was
+applied.
+
+### Custom multi-model fusion
+
+Reference chains used SD Compact 2× followed by HD Performance 2×. The fused
+candidate combined those trained graphs without pruning or quantization.
+These are custom workloads: the stock built-in chains above each use one
+spatial model.
+
+| Workload / input → target | Sequential median fps (range) | Fused median fps (range) | Change | PSNR dB | MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Two-model 4× / 640 × 360 → 2560 × 1440 | 308.04 (306.76–308.30) | 331.43 (330.77–331.89) | +7.59% | 60.15 | 0.063 |
+| 75% pre-resize then two models, 3× / 640 × 360 → 1920 × 1080 | 528.20 (504.87–531.79) | 527.57 (523.98–529.58) | −0.12% | 48.89 | 0.350 |
+
+Without pre-resize, the native capture differed by at most 2/255 per channel.
+The pre-resize candidate uses ONNX cubic interpolation instead of AJI's native
+resizer and differed by up to 50/255; it is not bit-identical. The −0.12%
+median difference lies within overlapping sample ranges. No shared-memory/L2
+placement or the guide's proposed 15–30% gain is inferred from fusion.
+
+### Applicability, diagnostics and recorded verification
+
+- Existing Standard SPAN graphs already have deployed unshuffle structure; the
+  real graph inspection found no eligible Conv3×3 + Conv1×1 + identity pattern
+  to fold. The folding tool was checked numerically on compatible fixtures;
+  there is no additional stock-model GPU speed result to report.
+- A new narrower SpaceToDepth or one-channel luma network needs trained
+  weights. None were supplied. RGB/luma wrapping was checked with numerical
+  fixtures, but no random checkpoint or unsupported luma speed claim was
+  published.
+- This spatial-only run did not expose or execute RIFE: numeric pinned
+  selection cannot choose arbitrary renamed custom graphs, and specialization
+  depends on exact padded geometry. A subsequently requested, separate
+  RIFE 4.25-only comparison is documented below; it is not part of these eight
+  spatial comparisons.
+- The first fusion attempt used inappropriate `--optShapes` with a static
+  graph. TensorRT refused immediately, but the old diagnostic gate waited for
+  a build timeout. That failed preparation was retained separately and
+  excluded from every table. Corrected Static ONNX settings completed.
+  The gate now recognizes the authoritative AJI background-build-failed event
+  and includes its bounded `.engine.build.log` error summary. A real
+  after-fix refusal smoke returned `TensorRT engine build failed` with
+  `Static model does not take explicit shapes...`, without waiting for the
+  ten-minute timeout. Generic mpv error-level lines remain diagnostic-only.
+- Verification passed: application/tests/probe builds, all four CTest entries,
+  27 Python graph-tool tests, real sparse/FP8/fusion exports, paired native
+  captures, the unsafe-workspace refusal, and the real builder-refusal smoke.
+  Hash checks confirmed all five original stock graphs were unchanged and no
+  original manager configuration was created.
+
+Local ignored historical evidence is under `.probe-out/aji-optimizations/`:
+`comparison-summary.json`, `measurement-provenance.json`, `dataset.json`,
+`machine.json`, `specs/`, `results/*-steady.json`, paired capture metrics,
+full builder logs, and test/build logs. Every published comparison retains
+graph/profile hashes and actual engine flags. Generated graphs, engines,
+calibration data and private captures remain outside the source deliverable.
+The historical results earlier in this file are unchanged; no RTX 3080 or
+RTX 2070 optimization result is extrapolated.
+
+## RTX 5090 — retired RIFE 4.25 experiment (2026-10-18)
+
+**Status:** historical measurement only; the geometry-specific coordinate
+specialization and dedicated probe have been removed by user decision. The
+stock RIFE graph and production catalogue were not changed. The small measured
+gains do not justify replacing the stock default; sample ranges overlap.
+No other RIFE version or spatial preset was benchmarked in this run.
+
+| Source / native render target | Padded neural input | Default median output fps (range) | Specialized median output fps (range) | Change |
+| --- | --- | ---: | ---: | ---: |
+| 1280 × 720 | 1×11×768×1280 | 584.77 (576.32–588.21) | 592.26 (587.62–594.80) | +1.28% |
+| 1920 × 1080 | 1×11×1088×1920 | 398.81 (396.83–401.24) | 401.75 (398.14–404.75) | +0.74% |
+
+These are rendered **output frames per second**, including original and
+interpolated frames—not neural inferences per second. Source cadence was
+23.976 fps; the selected 2× profile produces 47.952 fps at normal playback
+speed. Both measured pipelines have substantial throughput headroom for this
+clip, but this is not a sustained all-content playback guarantee.
+
+### Controls and interpretation
+
+- NVIDIA GeForce RTX 5090, SM 12.0, driver 616.92, 32,607 MiB installed VRAM;
+  Standard AJI v0.9.0, TensorRT 11.3.0, Qt 6.12.0, desktop OpenGL, requested
+  NVDEC. Same Ryzen 7 5800X3D/Windows 11 machine as the earlier experiments.
+- RIFE **4.25 full**, code `425`, factor `2/1`, scene threshold `0.150`,
+  ensemble off and before-upscale on. No spatial model or spatial upscaling.
+  Scene detection remains enabled, so scene-cut behavior is part of the
+  default pipeline rather than bypassed for this comparison.
+- Each geometry had a separate first-use preparation invocation, excluded in
+  full from the table. The published invocation used ABBA twice: four
+  three-second samples per graph. All **16 published samples** succeeded,
+  with no engine preparation during measurement.
+- Both sides used the same moving local 3D CGI segment, source interval
+  80–110 seconds, re-encoded to matching 23.976-fps clips. This differs from
+  earlier workloads and is not representative anime or interpolation ground
+  truth. Continuous focus, power, clocks, temperature and peak VRAM were not
+  recorded. The actual comparison window was observed foreground.
+- Requested RIFE arguments and executed toolchain arguments are distinct.
+  Builder logs confirm the same effective `--stronglyTyped`,
+  `--optShapes=input:1x11xPHxPW`, `--skipInference` and per-role timing-cache
+  settings. The installed toolchain omits upstream legacy I/O-format/tactic
+  exclusions. The manager's spatial builder-optimization setting does not
+  control RIFE's hardcoded stage; no forced tactic-selection claim is made.
+
+### What the optional graph changes
+
+The actual 4.25 graph splits its input into `[6,1,2,2]`: two RGB frames,
+timestep, mesh coordinates and normalization multipliers. Its first Conv
+reads **3 channels**, not 11. The guide's proposed 11→7 first-convolution
+reduction therefore does not apply to this model.
+
+The optional export embeds only the four coordinate planes for the exact
+mod-64 padded geometry. RGB frames and timestep remain dynamic, the external
+11-channel ABI remains intact, and all **158 original initializers** are
+unchanged. A symbolic input batch axis permits AJI's existing shape override;
+the actual engine profile remains batch one. Geometry-specific constants add
+model storage; they are not a new trained model or a general batching feature.
+
+Stock and candidate graphs were copied to separate role-and-full-SHA
+directories inside the disposable native store, retaining the runtime's
+expected filename. Neither the official graph nor its acquisition record was
+replaced; no cache-key migration, runtime DLL patch or production RIFE
+selection change was needed.
+
+### Temporal correctness and limits
+
+A real adjacent moving-frame pair at each resolution was run through both
+graphs at timestep `0.5` using ONNX Runtime 1.31.0 CPU. Centered black padding
+matched the native geometry. The cropped midpoint tensors were **bit-identical
+at both sizes**: mean and maximum differences were zero. The default
+midpoints differed from both source frames, so this was actual temporal
+inference rather than a still-image or copied-frame surrogate.
+
+That is CPU numerical agreement on one pair per geometry, not native GPU
+pixel-identity proof, a temporal-artifact survey or ground-truth quality.
+Four focused experimental regression tests exercised multiple timesteps,
+multiple padded sizes, wrong geometry/layout refusal and source preservation;
+those tests were removed with the prototype, not retained as current coverage.
+The installed 4.25 source digest remains
+`de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c`.
+
+Recorded experiment verification: the comparison completed at both
+geometries, and the non-425 request was refused before interpolation or engine
+preparation. Original RIFE/spatial graph hashes and the distribution's manager
+configuration remained unchanged. No commit or distribution update was made.
+No active reproduction instructions remain. Local ignored historical evidence
+is under `.probe-out/aji-rife425/`: paired specs, warm-up/steady exports,
+`comparison-summary.json`, moving-frame provenance, CPU midpoint agreement,
+build/test logs and the source-only refusal smoke.
+Generated model variants, the private Python environment, compiled experimental
+probe and disposable runtime/engine store were removed after the review.
+Numerical exports, builder logs, quality metrics and private media remain as
+historical evidence; paths inside old exports are not current installation
+paths. This section does not alter earlier tables or establish an RTX 3080 or
+RTX 2070 result.

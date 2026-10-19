@@ -9,11 +9,14 @@
 #include <utility>
 #include <vector>
 
-#include <native/status/NativeTypes.hpp>
+#include <native/components/AnimeJanaiRuntime.hpp>
 
 namespace mikai::app {
 
 enum class BenchmarkEngineBuildUpdate { Started, Ready, Failed };
+
+mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
+    const QString& clipPath, QString* error);
 
 struct BenchmarkSampleResult {
     int measuredFrames = 0;
@@ -31,7 +34,8 @@ BenchmarkSampleResult runBenchmarkSample(
     int slot,
     QOffscreenSurface& surface,
     const std::function<void(const QString&)>& onPhase,
-    const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine);
+    const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine,
+    int ajiStageCount = 1);
 
 struct BenchmarkFrameSample {
     qint64 startedAtNs = -1;

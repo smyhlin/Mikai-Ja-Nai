@@ -560,6 +560,10 @@ int main(int argc, char** argv) {
     benchmarkScroll->verticalScrollBar()->setValue(benchmarkScroll->verticalScrollBar()->minimum());
     QApplication::processEvents();
 
+    const QDir reportDirectory(
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("bench")));
+    const QStringList reportsBefore = reportDirectory.entryList(
+        {QStringLiteral("benchmark-*.json")}, QDir::Files);
     if (runButton) runButton->click();
     QApplication::processEvents();
 
@@ -573,6 +577,29 @@ int main(int argc, char** argv) {
                static_cast<qint64>(results->rowCount()) >= expectedRows;
     }, deadlineMs);
     check(completed, "run completed within the deadline, button reenabled, rows present");
+    if (completed) {
+        QStringList newReports = reportDirectory.entryList(
+            {QStringLiteral("benchmark-*.json")}, QDir::Files);
+        for (const QString& oldReport : reportsBefore) newReports.removeAll(oldReport);
+        check(newReports.size() == 1, "completion automatically writes exactly one benchmark JSON");
+        if (newReports.size() == 1) {
+            QFile report(reportDirectory.filePath(newReports.first()));
+            check(report.open(QIODevice::ReadOnly), "the automatic report can be read");
+            const QJsonDocument document = QJsonDocument::fromJson(report.readAll());
+            const QJsonArray rows = document.object().value(QStringLiteral("results")).toArray();
+            check(document.isObject() && rows.size() == expectedRows,
+                  "the automatic report contains every measured or failed row");
+            for (const QJsonValue& value : rows) {
+                const QJsonObject row = value.toObject();
+                check(!row.value(QStringLiteral("modelId")).toString().isEmpty(),
+                      "automatic report rows retain stable model identifiers");
+                check(row.value(QStringLiteral("fps")).isDouble() ||
+                          (row.value(QStringLiteral("fps")).isNull() &&
+                           !row.value(QStringLiteral("failureReason")).toString().isEmpty()),
+                      "automatic report throughput is numeric or has an explicit failure cause");
+            }
+        }
+    }
 
     if (results) {
         mikai::probes::revealWidget(results);
