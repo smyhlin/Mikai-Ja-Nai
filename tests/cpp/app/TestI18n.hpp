@@ -52,6 +52,15 @@ class TestI18n : public QObject {
   void processingOverlayKeepsItsRunAcrossLanguageSwitches();
   void pillButtonCaptionFollowsTheLanguage();
 
+  /// The popover's speed presets are one `const char*` table, so the only thing
+  /// that makes them translatable is the context-carrying extraction the
+  /// catalogue is built from. A catalogue that skipped that table left every row
+  /// English while the numbers beside them were already Ukrainian. An open
+  /// popover, at a rate that is not the default, must restate all six
+  /// descriptions en -> uk -> en and keep the checked rate and the quality
+  /// choice where they were, without reporting either as a fresh selection.
+  void settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting();
+
   /// The quota chip is fed by a real rate-limit answer over loopback and a
   /// genuinely parked request. An open label must restate its tooltip and
   /// accessible name in the new language while the quota, the reset window,

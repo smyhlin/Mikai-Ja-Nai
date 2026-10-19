@@ -371,449 +371,447 @@
         <translation>Шлях до реєстру зовнішніх моделей не є довіреним.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="134"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="139"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="133"/>
         <source>The external model registry exceeds the supported metadata size.</source>
         <translation>Реєстр зовнішніх моделей перевищує допустимий розмір метаданих.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="148"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="146"/>
         <source>The external model registry is malformed.</source>
         <translation>Реєстр зовнішніх моделей має неправильний формат.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="163"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="161"/>
         <source>The external model registry contains an invalid pin.</source>
         <translation>Реєстр зовнішніх моделей містить некоректний контрольний запис.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="182"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="180"/>
         <source>The app-owned external model registry directory is unavailable or redirected.</source>
         <translation>Каталог реєстру зовнішніх моделей у сховищі застосунку недоступний або перенаправлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="294"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="293"/>
         <source>This model is not registered; register it explicitly before using it.</source>
         <translation>Цю модель не зареєстровано; зареєструйте її явно перед використанням.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="304"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="303"/>
         <source>The model integrity record is not an app-owned regular file.</source>
         <translation>Контрольний запис моделі не є звичайним файлом у сховищі застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="312"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="316"/>
         <source>The model integrity record is unreadable or exceeds the supported metadata size.</source>
         <translation>Контрольний запис моделі не читається або перевищує допустимий розмір метаданих.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="319"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="314"/>
         <source>The model integrity record exceeds the supported metadata size.</source>
         <translation>Контрольний запис моделі перевищує допустимий розмір метаданих.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="333"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="330"/>
         <source>The model integrity record is malformed.</source>
         <translation>Контрольний запис моделі має неправильний формат.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="338"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="335"/>
         <source>The model changed since it was registered; remove its integrity record, then register it again.</source>
         <translation>Модель змінилася після реєстрації; видаліть її контрольний запис, а потім зареєструйте її знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="457"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="518"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1535"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="454"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="515"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1537"/>
         <source>The AnimeJaNai mixed-chain extension version is unsupported or malformed.</source>
         <translation>Версія розширення змішаних ланцюжків AnimeJaNai не підтримується або пошкоджена.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="510"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="507"/>
         <source>Mixed AnimeJaNai steps are missing their extension version.</source>
         <translation>Для змішаних кроків AnimeJaNai не вказано версію розширення.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="568"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="565"/>
         <source>The AnimeJaNai mixed-chain step is incomplete.</source>
         <translation>Крок змішаного ланцюжка AnimeJaNai містить неповні дані.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="577"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="574"/>
         <source>The AnimeJaNai mixed-chain step kind is unsupported.</source>
         <translation>Тип кроку змішаного ланцюжка AnimeJaNai не підтримується.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="585"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="582"/>
         <source>The AnimeJaNai mixed-chain scale factor is invalid.</source>
         <translation>Некоректний коефіцієнт масштабування змішаного ланцюжка AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="597"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="594"/>
         <source>The AnimeJaNai mixed-chain resize settings are invalid.</source>
         <translation>Некоректні параметри зміни розміру змішаного ланцюжка AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="603"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="600"/>
         <source>The AnimeJaNai mixed-chain extension contains no steps.</source>
         <translation>Розширення змішаного ланцюжка AnimeJaNai не містить кроків.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="670"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="667"/>
         <source>The selected ONNX model file does not exist or is a symbolic link.</source>
         <translation>Вибраний файл моделі ONNX не існує або є символічним посиланням.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="673"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="670"/>
         <source>Only .onnx model files are supported by AnimeJaNai.</source>
         <translation>AnimeJaNai підтримує лише файли моделей .onnx.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="677"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="674"/>
         <source>The ONNX file size (%1 bytes) is outside the valid bounds.</source>
         <translation>Розмір файлу ONNX (%1 байт) виходить за допустимі межі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="690"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="687"/>
         <source>ONNX model validation was cancelled.</source>
         <translation>Перевірку моделі ONNX скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="694"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="691"/>
         <source>The ONNX ModelProto has a malformed protobuf field tag.</source>
         <translation>ONNX ModelProto містить некоректний тег поля protobuf.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="699"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="696"/>
         <source>The ONNX ModelProto has an invalid protobuf field number.</source>
         <translation>ONNX ModelProto містить недопустимий номер поля protobuf.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="702"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="699"/>
         <source>The ONNX ModelProto ir_version field has an invalid wire type.</source>
         <translation>Поле ir_version у ONNX ModelProto має недопустимий тип кодування.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="705"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="702"/>
         <source>The ONNX ModelProto graph field has an invalid wire type.</source>
         <translation>Поле graph у ONNX ModelProto має недопустимий тип кодування.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="710"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="707"/>
         <source>The ONNX ModelProto has a malformed protobuf varint.</source>
         <translation>ONNX ModelProto містить некоректне ціле число protobuf varint.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="714"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="711"/>
         <source>The ONNX ModelProto ir_version field is implausible.</source>
         <translation>Поле ir_version у ONNX ModelProto має неправдоподібне значення.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="721"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="718"/>
         <source>The ONNX ModelProto contains a truncated protobuf field.</source>
         <translation>ONNX ModelProto містить обрізане поле protobuf.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="727"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="724"/>
         <source>The ONNX ModelProto contains an invalid protobuf field length.</source>
         <translation>ONNX ModelProto містить недопустиму довжину поля protobuf.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="731"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="728"/>
         <source>The ONNX ModelProto has an empty graph field.</source>
         <translation>ONNX ModelProto містить порожнє поле graph.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="736"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="733"/>
         <source>The ONNX ModelProto graph field could not be skipped safely.</source>
         <translation>Не вдалося безпечно пропустити поле graph у ONNX ModelProto.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="739"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="736"/>
         <source>The ONNX ModelProto uses an unsupported protobuf wire type.</source>
         <translation>ONNX ModelProto використовує непідтримуваний тип кодування protobuf.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="743"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="740"/>
         <source>The file does not contain plausible ONNX ModelProto ir_version and graph fields.</source>
         <translation>Файл не містить правдоподібних полів ir_version і graph структури ONNX ModelProto.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="834"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="831"/>
         <source>This model file is smaller than a complete ONNX graph; replace it with a finished model before registering it.</source>
         <translation>Цей файл моделі менший за повний граф ONNX; замініть його завершеною моделлю перед реєстрацією.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="837"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="834"/>
         <source>This model file exceeds the supported ONNX size bound.</source>
         <translation>Цей файл моделі перевищує допустимий розмір ONNX.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="864"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="861"/>
         <source>The external model directory is not configured or unavailable.</source>
         <translation>Каталог зовнішніх моделей не налаштований або недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="896"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="893"/>
         <source>The external model size changed since it was pinned; explicitly refresh its pin.</source>
         <translation>Розмір зовнішньої моделі змінився після фіксації контрольної суми; оновіть її явно.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="897"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="894"/>
         <source>Pin this external model explicitly before using it.</source>
         <translation>Перед використанням явно зафіксуйте контрольну суму цієї зовнішньої моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="940"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="986"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="993"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="937"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="983"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="990"/>
         <source>External model registration was cancelled.</source>
         <translation>Реєстрацію зовнішньої моделі скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1946"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1953"/>
         <source>AnimeJaNai chain step numbers must be contiguous and ordered.</source>
         <translation>Номери кроків ланцюжка AnimeJaNai мають бути послідовними та впорядкованими.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1950"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1955"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1957"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1962"/>
         <source>The AnimeJaNai chain contains an unsupported step kind.</source>
         <translation>Ланцюжок AnimeJaNai містить непідтримуваний тип кроку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1959"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1966"/>
         <source>The AnimeJaNai chain contains a step without an identifier.</source>
         <translation>Ланцюжок AnimeJaNai містить крок без ідентифікатора.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1963"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1970"/>
         <source>The AnimeJaNai chain scale factor must be 1, 2, or 4.</source>
         <translation>Коефіцієнт масштабування ланцюжка AnimeJaNai має дорівнювати 1, 2 або 4.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="953"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="950"/>
         <source>The selected model is not a regular file inside the configured external model directory.</source>
         <translation>Вибрана модель не є звичайним файлом у налаштованому каталозі зовнішніх моделей.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="963"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="960"/>
         <source>The external ONNX filename cannot be converted into a valid model identifier.</source>
         <translation>Не вдалося перетворити ім’я зовнішнього файлу ONNX на допустимий ідентифікатор моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="968"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="965"/>
         <source>Another custom model already uses the identifier %1.</source>
         <translation>Інша користувацька модель уже використовує ідентифікатор %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="980"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="977"/>
         <source>Another external model already uses the identifier %1.</source>
         <translation>Інша зовнішня модель уже використовує ідентифікатор %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="989"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="986"/>
         <source>The external model changed while its integrity pin was being calculated.</source>
         <translation>Зовнішня модель змінилася під час обчислення контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1199"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1256"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1269"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1281"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1299"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1314"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1201"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1258"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1271"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1283"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1301"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1321"/>
         <source>Custom model import was cancelled.</source>
         <translation>Імпорт користувацької моделі скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1211"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1213"/>
         <source>The selected ONNX filename cannot be converted into a valid model identifier.</source>
         <translation>Не вдалося перетворити ім’я вибраного файлу ONNX на допустимий ідентифікатор моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1224"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1226"/>
         <source>Could not create the custom AnimeJaNai models directory.</source>
         <translation>Не вдалося створити каталог користувацьких моделей AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1036"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1221"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1227"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1033"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1223"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1229"/>
         <source>The custom AnimeJaNai models directory is untrusted or redirected.</source>
         <translation>Каталог користувацьких моделей AnimeJaNai не є довіреним або перенаправлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="947"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="944"/>
         <source>Choose an available external model directory before registering a model.</source>
         <translation>Перед реєстрацією моделі виберіть доступний каталог зовнішніх моделей.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1029"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1115"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1123"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1154"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1167"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1026"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1112"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1120"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1151"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1169"/>
         <source>Custom model registration was cancelled.</source>
         <translation>Реєстрацію користувацької моделі скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1040"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1037"/>
         <source>The custom AnimeJaNai models directory is unavailable.</source>
         <translation>Каталог користувацьких моделей AnimeJaNai недоступний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1045"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1042"/>
         <source>The selected ONNX model does not exist or is not an app-owned regular file.</source>
         <translation>Вибрана модель ONNX не існує або не є звичайним файлом у сховищі застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1054"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1051"/>
         <source>Only models already inside the app-owned custom model folder can be registered; borrowed external models are pinned in their own store.</source>
         <translation>Реєструвати можна лише моделі, що вже містяться в папці користувацьких моделей застосунку; позичені зовнішні моделі фіксуються у власному сховищі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1064"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1142"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1061"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1139"/>
         <source>This model already has an integrity record; remove the registered model before registering it again.</source>
         <translation>Ця модель уже має контрольний запис; видаліть зареєстровану модель, перш ніж реєструвати її знову.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1077"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1074"/>
         <source>The selected model is no longer present in the app-owned custom model folder.</source>
         <translation>Вибрана модель більше не міститься в папці користувацьких моделей застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1081"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1078"/>
         <source>The ONNX filename cannot be converted into a valid model identifier.</source>
         <translation>Ім’я файлу ONNX не вдається перетворити на допустимий ідентифікатор моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1089"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1086"/>
         <source>Another model file in the custom folder already uses the identifier %1.</source>
         <translation>Інший файл моделі в папці користувацьких моделей уже використовує ідентифікатор %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1099"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1096"/>
         <source>This model is already registered as an external model pin; remove that pin before registering it in place.</source>
         <translation>Цю модель уже зареєстровано як контрольний запис зовнішньої моделі; видаліть цей запис, перш ніж реєструвати її на місці.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1103"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1100"/>
         <source>Another registered model already uses the identifier %1.</source>
         <translation>Інша зареєстрована модель уже використовує ідентифікатор %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1126"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1123"/>
         <source>The custom model could not be read while its integrity digest was being calculated.</source>
         <translation>Не вдалося прочитати користувацьку модель під час обчислення її контрольної суми.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1138"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1135"/>
         <source>The custom model changed while its integrity record was being prepared.</source>
         <translation>Користувацька модель змінилася під час підготовки її контрольного запису.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1162"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1159"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1164"/>
         <source>Could not write the model integrity record: %1</source>
         <translation>Не вдалося записати контрольний запис моделі: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1233"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1235"/>
         <source>A custom model with this identifier already exists; remove it before importing a replacement.</source>
         <translation>Користувацька модель із цим ідентифікатором уже існує; перед імпортом заміни видаліть її.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1237"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1239"/>
         <source>Another registered custom model already uses the identifier %1.</source>
         <translation>Інша зареєстрована користувацька модель уже використовує ідентифікатор %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1274"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1276"/>
         <source>The source ONNX model changed while being imported.</source>
         <translation>Вихідна модель ONNX змінилася під час імпорту.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1287"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1289"/>
         <source>The imported ONNX model size changed during publication.</source>
         <translation>Розмір імпортованої моделі ONNX змінився під час публікації.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1308"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1310"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1315"/>
         <source>Could not persist the imported model integrity record: %1</source>
         <translation>Не вдалося зберегти контрольний запис імпортованої моделі: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1343"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1350"/>
         <source>No custom model identifier was specified.</source>
         <translation>Ідентифікатор користувацької моделі не вказаний.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1387"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1394"/>
         <source>The custom model identifier %1 matches more than one file (%2); remove it by exact filename.</source>
         <translation>Ідентифікатор користувацької моделі %1 збігається з кількома файлами (%2); видаляйте за точним ім’ям файлу.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1400"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1407"/>
         <source>The custom model %1 is not registered; only registered models can be removed.</source>
         <translation>Користувацьку модель %1 не зареєстровано; видаляти можна лише зареєстровані моделі.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1435"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1442"/>
         <source>The custom model %1 does not exist in the registered stores.</source>
         <translation>Користувацька модель %1 відсутня в зареєстрованих сховищах.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1411"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1418"/>
         <source>The custom model path is not an app-owned regular file.</source>
         <translation>Шлях до користувацької моделі не вказує на звичайний файл у сховищі застосунку.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1417"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1424"/>
         <source>Could not remove %1.</source>
         <translation>Не вдалося видалити %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1489"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1497"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1499"/>
         <source>Could not read AnimeJaNai configuration &apos;%1&apos;: %2</source>
         <translation>Не вдалося прочитати конфігурацію AnimeJaNai «%1»: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1493"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1501"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1503"/>
         <source>The AnimeJaNai configuration exceeds the supported size.</source>
         <translation>Конфігурація AnimeJaNai перевищує допустимий розмір.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1514"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1516"/>
         <source>The file contains no AnimeJaNai global settings or custom profile slots.</source>
         <translation>Файл не містить глобальних налаштувань AnimeJaNai або слотів користувацьких профілів.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1713"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1715"/>
         <source>The AnimeJaNai config directory is untrusted or redirected.</source>
         <translation>Каталог конфігурації AnimeJaNai не є довіреним або перенаправлений.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1717"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1719"/>
         <source>The AnimeJaNai config directory could not be safely created.</source>
         <translation>Не вдалося безпечно створити каталог конфігурації AnimeJaNai.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1729"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1794"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1731"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1800"/>
         <source>Could not create directory for %1.</source>
         <translation>Не вдалося створити каталог для %1.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1757"/>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1763"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1769"/>
         <source>The profile configuration exceeds the supported metadata size.</source>
         <translation>Конфігурація профілю перевищує допустимий розмір метаданих.</translation>
     </message>
     <message>
-        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1778"/>
+        <location filename="../src/player/native/components/AnimeJanaiConfig.cpp" line="1784"/>
         <source>The profile configuration does not contain a [slot] section.</source>
         <translation>Конфігурація профілю не містить розділу [slot].</translation>
     </message>
@@ -6437,22 +6435,22 @@ Active: %1 · queued: %2</source>
         <translation>Збирання рушія TensorRT скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="807"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="819"/>
         <source>pause: %1</source>
         <translation>Пауза: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="814"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="829"/>
         <source>pause: the mpv transport did not accept the command</source>
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="873"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="888"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="887"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="902"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
     </message>
@@ -6548,7 +6546,7 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurface.cpp" line="568"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1468"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1483"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
@@ -6593,7 +6591,7 @@ Active: %1 · queued: %2</source>
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1208"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1223"/>
         <source>Video render failed (mpv: %1)</source>
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
@@ -7043,58 +7041,58 @@ Active: %1 · queued: %2</source>
 <context>
     <name>mplayer::shell::KeyHints</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="827"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="830"/>
         <source>Choose audio track</source>
         <translation>Вибрати аудіодоріжку</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="828"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="831"/>
         <source>Choose subtitle track</source>
         <translation>Вибрати субтитри</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="832"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="835"/>
         <source>Close panel / window</source>
         <translation>Закрити панель / вікно</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="826"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="829"/>
         <source>Episode list</source>
         <translation>Список серій</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="824"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="827"/>
         <source>Fullscreen / windowed</source>
         <translation>На весь екран / у вікні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="846"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="883"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="849"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="886"/>
         <source>KEYBOARD SHORTCUTS</source>
         <translation>ГАРЯЧІ КЛАВІШІ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="825"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="828"/>
         <source>Mute / unmute audio</source>
         <translation>Вимкнути / увімкнути звук</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="823"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="826"/>
         <source>Pause / play</source>
         <translation>Пауза / відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="829"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="832"/>
         <source>Quality and speed</source>
         <translation>Якість та швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="830"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="833"/>
         <source>Seek ∓5s</source>
         <translation>Перемотування ∓5 с</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="831"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="834"/>
         <source>Volume ±10%</source>
         <translation>Гучність ±10%</translation>
     </message>
@@ -7111,7 +7109,7 @@ Active: %1 · queued: %2</source>
 <context>
     <name>mplayer::shell::PillButton</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="746"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="749"/>
         <source>Original File</source>
         <translation>Оригінальний файл</translation>
     </message>
@@ -7815,26 +7813,56 @@ Active: %1 · queued: %2</source>
 <context>
     <name>mplayer::shell::SettingsFlyout</name>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="359"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="504"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="46"/>
+        <source>Slow</source>
+        <translation>Повільно</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="47"/>
+        <source>Normal</source>
+        <translation>Звичайно</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="48"/>
+        <source>Slightly faster</source>
+        <translation>Трохи швидше</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="49"/>
+        <source>Fast</source>
+        <translation>Швидко</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="50"/>
+        <source>Very fast</source>
+        <translation>Дуже швидко</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="51"/>
+        <source>Double speed</source>
+        <translation>Подвійна швидкість</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="362"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="507"/>
         <source>SPEED</source>
         <translation>ШВИДКІСТЬ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="375"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="507"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="378"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="510"/>
         <source>Speed</source>
         <translation>Швидкість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="406"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="508"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="409"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="511"/>
         <source>Quality</source>
         <translation>Якість</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="413"/>
-        <location filename="../src/player/shell/ShellWidgets.cpp" line="505"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="416"/>
+        <location filename="../src/player/shell/ShellWidgets.cpp" line="508"/>
         <source>QUALITY</source>
         <translation>ЯКІСТЬ</translation>
     </message>

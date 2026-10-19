@@ -25,6 +25,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QHash>
 #include <QtCore/QMutex>
+#include <QtCore/QPoint>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QTemporaryDir>
@@ -34,6 +35,7 @@
 #include <QtCore/QSettings>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+#include <QtCore/QVector>
 #include <QtCore/QSize>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
@@ -1540,6 +1542,223 @@ void TestI18n::pillButtonCaptionFollowsTheLanguage() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
   QCOMPARE(pill.accessibleName(), english);
+}
+
+void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
+  QVERIFY2(primeBuiltCatalogForSwitching(),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
+  // The installed catalog is process state, so English goes back even when an
+  // assertion below ends the test before its last line.
+  const auto restoreLanguage =
+      qScopeGuard([] { mikai::app::applyInterfaceLanguage(QStringLiteral("en")); });
+  Q_UNUSED(restoreLanguage);
+
+  // The popover is reached the way the player reaches it: a child of an overlay
+  // host, so the language change arrives as a child event and not as the
+  // top-level one.
+  QWidget host;
+  auto* hostLayout = new QVBoxLayout(&host);
+  auto* flyout = new mplayer::shell::SettingsFlyout(&host);
+  hostLayout->addWidget(flyout);
+  host.show();
+  QCoreApplication::processEvents();
+
+  // Every preset the production table offers, in its own order. The numeric rate
+  // is what identifies a row without reading the widget's internals, the English
+  // is the source a skipped extraction leaves on screen, and the Ukrainian is
+  // what the real catalogue must deliver for that row.
+  struct Preset {
+    const char* rate;
+    const char* english;
+  };
+  static const Preset kPresets[] = {
+      {"0.5", "Slow"},
+      {"1", "Normal"},
+      {"1.2", "Slightly faster"},
+      {"1.5", "Fast"},
+      {"1.7", "Very fast"},
+      {"2", "Double speed"},
+  };
+  const auto at = [](int index) { return QString::fromLatin1(kPresets[index].rate); };
+  // The table's fifth entry, "1.7x", is the rate this test opens the popover at.
+  constexpr int kChecked = 4;
+
+  // A row paints its rate first and its description after it; the checked row
+  // carries a mark in front of that number. Dropping everything before the first
+  // digit is all this test needs to read a row, and it is what keeps the search
+  // below off the checked mark's exact glyph.
+  const auto rowFromRate = [](const QPushButton* row) {
+    QString text = row->text();
+    while (!text.isEmpty() && !text.at(0).isDigit()) {
+      text = text.mid(1);
+    }
+    return text;
+  };
+  // The speed rows are the popover's own buttons; the quality rows are nested in
+  // the quality section. A parent test keeps the two apart without touching any
+  // field the popover keeps to itself.
+  const auto speedRowFor = [flyout, &rowFromRate](const QString& rate) -> QPushButton* {
+    const QString prefix = rate + QStringLiteral("x");
+    for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
+      if (button->parentWidget() != flyout) {
+        continue;
+      }
+      if (rowFromRate(button).startsWith(prefix)) {
+        return button;
+      }
+    }
+    return nullptr;
+  };
+  int ownButtons = 0;
+  for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
+    if (button->parentWidget() == flyout) {
+      ++ownButtons;
+    }
+  }
+  QCOMPARE(ownButtons, 6);
+
+  // A rate that is not the 1.0 the popover starts at, so a row that falls back
+  // to the default selection is visible.
+  flyout->setRate(1.7);
+  flyout->setQuality(QStringLiteral("1080p"));
+  struct QualityFixture {
+    int height;
+    const char* label;
+  };
+  static const QualityFixture kQualities[] = {
+      {1080, "1080p"},
+      {720, "720p"},
+      {480, "480p"},
+  };
+  QVector<mplayer::shell::SettingsFlyout::QualityOption> options;
+  for (const QualityFixture& entry : kQualities) {
+    mplayer::shell::SettingsFlyout::QualityOption option;
+    option.height = entry.height;
+    option.label = QString::fromLatin1(entry.label);
+    option.current = entry.height == 1080;
+    options << option;
+  }
+  flyout->setQualityOptions(options);
+  QCoreApplication::processEvents();
+
+  flyout->popupNear(QPoint(240, 240));
+  QCoreApplication::processEvents();
+  QVERIFY2(flyout->isVisible(), "the popover was not open during the language switch");
+
+  QSignalSpy speedPicks(flyout, &mplayer::shell::SettingsFlyout::speedSelected);
+  QSignalSpy qualityPicks(flyout, &mplayer::shell::SettingsFlyout::qualitySelected);
+
+  // The badge is the popover's only label that is exactly the numeric rate; the
+  // checked row carries a mark before the same number.
+  QLabel* rateBadge = nullptr;
+  for (QLabel* label : flyout->findChildren<QLabel*>()) {
+    if (label->text() == QStringLiteral("1.7x")) {
+      rateBadge = label;
+      break;
+    }
+  }
+  auto* qualityLabel = flyout->findChild<QLabel*>(QStringLiteral("playerQualityLabel"));
+  auto* qualitySection = flyout->findChild<QWidget*>(QStringLiteral("playerQualitySection"));
+  QVERIFY2(rateBadge != nullptr && qualityLabel != nullptr && qualitySection != nullptr,
+           "the popover exposes the numeric rate, the quality label and the quality section");
+  const QString qualityChoice = qualityLabel->text();
+  QCOMPARE(qualityChoice, QStringLiteral("1080p"));
+  const auto qualityRowLabels = [qualitySection]() {
+    QStringList labels;
+    for (QPushButton* button : qualitySection->findChildren<QPushButton*>()) {
+      labels << button->text();
+    }
+    return labels;
+  };
+  const QStringList qualityRows = qualityRowLabels();
+  QCOMPARE(qualityRows.size(), options.size());
+
+  QStringList englishRows;
+  for (int i = 0; i < 6; ++i) {
+    QPushButton* row = speedRowFor(at(i));
+    QVERIFY2(row != nullptr,
+             qPrintable(QStringLiteral("no speed row for %1x").arg(at(i))));
+    QVERIFY2(row->text().contains(QString::fromUtf8(kPresets[i].english)),
+             qPrintable(QStringLiteral("the English %1x row is not showing its own source: %2")
+                            .arg(at(i))
+                            .arg(row->text())));
+    englishRows << row->text();
+  }
+  // Only the rate the popover opened at is checked, and it is checked while the
+  // popover is still in English.
+  QVERIFY2(englishRows.at(kChecked).startsWith(QStringLiteral("✓")),
+           qPrintable(englishRows.at(kChecked)));
+  for (int i = 0; i < englishRows.size(); ++i) {
+    if (i == kChecked) {
+      continue;
+    }
+    QVERIFY2(!englishRows.at(i).startsWith(QStringLiteral("✓")),
+             qPrintable(englishRows.at(i)));
+  }
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+
+  // Every one of the six descriptions is restated. A row still carrying its
+  // English source is exactly what a catalogue that missed the const char* table
+  // produced, and it has to fail here rather than read as a translated row.
+  for (int i = 0; i < 6; ++i) {
+    QPushButton* row = speedRowFor(at(i));
+    QVERIFY2(row != nullptr,
+             qPrintable(QStringLiteral("the %1x row disappeared").arg(at(i))));
+    const QString ukrainian = QCoreApplication::translate(
+        "mplayer::shell::SettingsFlyout", kPresets[i].english);
+    QVERIFY2(!row->text().contains(QString::fromUtf8(kPresets[i].english)),
+             qPrintable(QStringLiteral("the %1x row is still English under Ukrainian: %2")
+                            .arg(at(i))
+                            .arg(row->text())));
+    QVERIFY2(row->text().contains(ukrainian),
+             qPrintable(
+                 QStringLiteral("the %1x row does not carry the catalogue's Ukrainian (%2): %3")
+                     .arg(at(i), ukrainian, row->text())));
+  }
+
+  // The words changed; the checked rate, the numeric rate, the quality choice
+  // and the quality rows' own labels did not, and the restatement never reported
+  // a selection to the owner.
+  QStringList ukrainianRows;
+  for (int i = 0; i < 6; ++i) {
+    QPushButton* row = speedRowFor(at(i));
+    QVERIFY(row != nullptr);
+    ukrainianRows << row->text();
+    QVERIFY2(rowFromRate(row).startsWith(at(i) + QStringLiteral("x")),
+             qPrintable(row->text()));
+  }
+  QVERIFY2(ukrainianRows.at(kChecked).startsWith(QStringLiteral("✓")),
+           qPrintable(ukrainianRows.at(kChecked)));
+  for (int i = 0; i < ukrainianRows.size(); ++i) {
+    if (i == kChecked) {
+      continue;
+    }
+    QVERIFY2(!ukrainianRows.at(i).startsWith(QStringLiteral("✓")),
+             qPrintable(ukrainianRows.at(i)));
+  }
+  QCOMPARE(rateBadge->text(), QStringLiteral("1.7x"));
+  QCOMPARE(qualityLabel->text(), qualityChoice);
+  QCOMPARE(qualityRowLabels(), qualityRows);
+  QCOMPARE(speedPicks.count(), 0);
+  QCOMPARE(qualityPicks.count(), 0);
+  QVERIFY2(flyout->isVisible(), "the language switch closed the popover");
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+
+  for (int i = 0; i < 6; ++i) {
+    QPushButton* row = speedRowFor(at(i));
+    QVERIFY(row != nullptr);
+    QCOMPARE(row->text(), englishRows.at(i));
+  }
+  QCOMPARE(rateBadge->text(), QStringLiteral("1.7x"));
+  QCOMPARE(qualityLabel->text(), qualityChoice);
+  QCOMPARE(qualityRowLabels(), qualityRows);
+  QCOMPARE(speedPicks.count(), 0);
+  QCOMPARE(qualityPicks.count(), 0);
+  QVERIFY2(flyout->isVisible(), "the popover did not survive the round trip");
 }
 
 void TestI18n::rateLimitLabelRetranslatesWithoutMovingTheQuotaOrAsking() {

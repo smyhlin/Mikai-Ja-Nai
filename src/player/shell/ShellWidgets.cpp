@@ -43,9 +43,12 @@ struct SpeedPreset {
 
 // SPEED_PRESETS — order matters, the selected row is picked by proximity.
 const SpeedPreset kSpeedPresets[] = {
-    {0.5, "Slow"},          {1.0, "Normal"},
-    {1.2, "Slightly faster"},  {1.5, "Fast"},
-    {1.7, "Very fast"},     {2.0, "Double speed"},
+    {0.5, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Slow")},
+    {1.0, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Normal")},
+    {1.2, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Slightly faster")},
+    {1.5, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Fast")},
+    {1.7, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Very fast")},
+    {2.0, QT_TRANSLATE_NOOP("mplayer::shell::SettingsFlyout", "Double speed")},
 };
 
 /// Label for the preset at `index`. Rows are appended in `kSpeedPresets` order,
