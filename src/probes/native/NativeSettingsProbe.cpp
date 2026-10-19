@@ -482,16 +482,109 @@ AtomicReplaceOutcome replaceFileAtomically(const QString& path, const QByteArray
     return outcome;
 }
 
-/// Clicks the manager's model action only when the selected row really is an
-/// unregistered candidate. With any other selection the same button opens a
-/// modal file picker, which this headless probe cannot drive, so a failed
-/// precondition would hang the run instead of reporting it.
+/// True when two spellings name the same catalogue file.
+bool sameCataloguePath(const QString& left, const QString& right) {
+    if (left.isEmpty() || right.isEmpty()) return false;
+    if (QDir::cleanPath(left) == QDir::cleanPath(right)) return true;
+    const QString leftCanonical = QFileInfo(left).canonicalFilePath();
+    const QString rightCanonical = QFileInfo(right).canonicalFilePath();
+    return !leftCanonical.isEmpty() &&
+           leftCanonical.compare(rightCanonical, Qt::CaseInsensitive) == 0;
+}
+
+/// The manager publishes an asynchronous import's progress and its verdict in
+/// its own status banner, so that line - and not a clock - is what tells the
+/// probe whether a click is still running, was refused, or is done.
+QLabel* managerStatusLabel(mikai::app::AnimeJanaiManagerPanel& panel) {
+    return panel.findChild<QLabel*>(QStringLiteral("status"));
+}
+
+QString managerStatusText(mikai::app::AnimeJanaiManagerPanel& panel) {
+    QLabel* label = managerStatusLabel(panel);
+    return label != nullptr ? label->text().trimmed() : QString();
+}
+
+bool managerIsRegistering(mikai::app::AnimeJanaiManagerPanel& panel) {
+    const QString status = managerStatusText(panel);
+    return status ==
+               mikai::app::AnimeJanaiManagerPanel::tr("Registering external ONNX model…") ||
+           status == mikai::app::AnimeJanaiManagerPanel::tr("Registering owned ONNX model…");
+}
+
+/// Waits for the manager's own registration to settle.
+///
+/// The row is asked for its settled state while the manager still reports the
+/// import as running, so a completion that lands after the caller's budget is
+/// waited out instead of being reported as a refusal. The budget stays the
+/// caller's, and only while the banner names the running import may the wait
+/// outlive it: the app's own line, not a guessed duration, is what says the
+/// import really ended. The cap is a probe hang guard, never a verdict.
+bool waitForImportSettle(mikai::app::AnimeJanaiManagerPanel& panel, const auto& settled,
+                         int budgetMs) {
+    constexpr int kHangGuardMs = 60000;
+    QElapsedTimer clock;
+    clock.start();
+    while (true) {
+        QApplication::processEvents();
+        if (settled()) return true;
+        const int elapsed = static_cast<int>(clock.elapsed());
+        if (elapsed >= kHangGuardMs) break;
+        if (elapsed >= budgetMs && !managerIsRegistering(panel)) break;
+        QThread::msleep(10);
+    }
+    QApplication::processEvents();
+    return settled();
+}
+
+/// Whether the native registry carries @p id, read straight from the public
+/// inventory the manager's own table is built from.
+bool registeredModelHasId(const QString& id) {
+    if (id.isEmpty()) return false;
+    for (const auto& model : mplayer::native::listCustomAnimeJanaiModels()) {
+        if (model.id.compare(id, Qt::CaseInsensitive) == 0) return true;
+    }
+    return false;
+}
+
+/// What the manager itself says about the import of @p path, so a refused or
+/// still-running registration is reported with the app's own words, the row it
+/// acted on, and whether the underlying registry was written at all, instead of
+/// only the verdict the probe expected.
+QString importOutcomeDetail(mikai::app::AnimeJanaiManagerPanel& panel, QTableWidget* table,
+                            const QString& path) {
+    const CatalogueRowView row = catalogueRowForPath(table, path);
+    const QString id = row.row >= 0 && !row.id.isEmpty() ? row.id
+                                                         : QFileInfo(path).completeBaseName();
+    return QStringLiteral("manager status '%1'; row %2; registry %3")
+        .arg(managerStatusText(panel),
+             row.row < 0
+                 ? QStringLiteral("absent")
+                 : QStringLiteral("origin %1, state %2, candidate %3, id %4")
+                       .arg(row.origin, row.state,
+                            row.candidate ? QStringLiteral("yes") : QStringLiteral("no"),
+                            row.id),
+             registeredModelHasId(id) ? QStringLiteral("holds %1").arg(id)
+                                      : QStringLiteral("does not hold %1").arg(id));
+}
+
+/// Clicks the manager's model action only when the row the manager would act on
+/// really is @p expectedPath as an unregistered candidate. With any other
+/// selection the same button opens a modal file picker, which this headless
+/// probe cannot drive, so a failed precondition would hang the run instead of
+/// reporting it - and a row index that a catalogue refresh has moved under the
+/// probe would silently import a different model.
 bool clickImportForCandidate(QTableWidget* table, QPushButton* button,
-                             const char* failedMessage) {
+                             const QString& expectedPath, const char* failedMessage) {
     const CatalogueRowView selected =
         catalogueRowAt(table, table != nullptr ? table->currentRow() : -1);
-    if (button == nullptr || selected.row < 0 || !selected.candidate) {
-        check(false, failedMessage);
+    if (button == nullptr || selected.row < 0 || !selected.candidate ||
+        !sameCataloguePath(selected.path, expectedPath)) {
+        check(false, failedMessage,
+              QStringLiteral("selected row %1 (%2, %3) is not the expected candidate %4")
+                  .arg(selected.row)
+                  .arg(selected.origin.isEmpty() ? QStringLiteral("none") : selected.origin,
+                       selected.state.isEmpty() ? QStringLiteral("none") : selected.state,
+                       expectedPath));
         return false;
     }
     button->click();
@@ -669,16 +762,25 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
             customModelRow(modelTable, QStringLiteral("external_smoke")), 0);
         QApplication::processEvents();
         externalRegistrationClicked = clickImportForCandidate(
-            modelTable, importModel,
+            modelTable, importModel, externalPath,
             "the external_smoke candidate was selected as the candidate to register");
     }
-    const bool externalRegistered = externalRegistrationClicked && waitForUi(
-        [&] {
-            const int row = customModelRow(modelTable, QStringLiteral("external_smoke"));
-            return row >= 0 && !modelTable->item(row, 0)->data(Qt::UserRole + 1).toBool();
-        },
-        15000);
-    check(externalRegistered, "the external candidate is registered through the real Import action");
+    const bool externalRegistered = externalRegistrationClicked &&
+                                    waitForImportSettle(
+                                        panel,
+                                        [&] {
+                                            const int row = customModelRow(
+                                                modelTable, QStringLiteral("external_smoke"));
+                                            return row >= 0 &&
+                                                   !modelTable->item(row, 0)
+                                                        ->data(Qt::UserRole + 1)
+                                                        .toBool();
+                                        },
+                                        15000);
+    check(externalRegistered,
+          "the external candidate is registered through the real Import action",
+          externalRegistered ? QString()
+                             : importOutcomeDetail(panel, modelTable, externalPath));
     check(QFileInfo(externalPath).isFile() &&
               !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
           "external registration leaves the user's graph and directory untouched");
@@ -1518,19 +1620,25 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     if (selectedRaw.row >= 0) modelTable->setCurrentCell(selectedRaw.row, 0);
     QApplication::processEvents();
     const bool ownedImportClicked = clickImportForCandidate(
-        modelTable, importModel,
+        modelTable, importModel, rawPath,
         "the owned raw paste was selected as the candidate to register");
     QApplication::processEvents();
     check(QApplication::activeModalWidget() == nullptr,
           "registering a selected owned candidate needs no copy chooser");
-    const bool ownedRegistered = ownedImportClicked && waitForUi(
-        [&] {
-            const auto row = catalogueRowForPath(modelTable, rawPath);
-            return row.row >= 0 && row.origin == QStringLiteral("owned") &&
-                   row.state == QStringLiteral("registered") && !row.candidate;
-        },
-        20000);
-    check(ownedRegistered, "the Import action registered the raw paste in place");
+    const bool ownedRegistered = ownedImportClicked &&
+                                 waitForImportSettle(
+                                     panel,
+                                     [&] {
+                                         const auto row =
+                                             catalogueRowForPath(modelTable, rawPath);
+                                         return row.row >= 0 &&
+                                                row.origin == QStringLiteral("owned") &&
+                                                row.state == QStringLiteral("registered") &&
+                                                !row.candidate;
+                                     },
+                                     20000);
+    check(ownedRegistered, "the Import action registered the raw paste in place",
+          ownedRegistered ? QString() : importOutcomeDetail(panel, modelTable, rawPath));
     check(QFileInfo(rawPath).isFile() && QFileInfo(rawPath).size() == modelProto.size() &&
               fileBytes(rawPath) == modelProto &&
               QFileInfo(rawPath + QStringLiteral(".source.json")).isFile(),
@@ -1641,16 +1749,35 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
     if (externalRow.row >= 0) modelTable->setCurrentCell(externalRow.row, 0);
     QApplication::processEvents();
     const bool externalImportClicked = clickImportForCandidate(
-        modelTable, importModel,
+        modelTable, importModel, externalPath,
         "the borrowed external paste was selected as the candidate to pin");
-    const bool externalRegistered = externalImportClicked && waitForUi(
-        [&] {
-            const auto row = catalogueRowForPath(modelTable, externalPath);
-            return row.row >= 0 && row.origin == QStringLiteral("external") &&
-                   row.state == QStringLiteral("registered") && !row.candidate;
-        },
-        20000);
-    check(externalRegistered, "the Import action pinned the external graph explicitly");
+    // The click either entered the registration branch - which publishes the
+    // running line synchronously - or it fell through to the modal chooser this
+    // headless probe cannot drive. Ask the manager which one it was before any
+    // completion predicate is waited on, so a click that never started an
+    // import is reported instead of being read as a refused import.
+    const bool externalImportStarted = externalImportClicked && managerIsRegistering(panel);
+    check(externalImportStarted,
+          "the Import action started the external registration it was clicked for",
+          externalImportStarted ? QString()
+                                : importOutcomeDetail(panel, modelTable, externalPath));
+    const bool externalRegistered = externalImportStarted &&
+                                    waitForImportSettle(
+                                        panel,
+                                        [&] {
+                                            const auto row = catalogueRowForPath(
+                                                modelTable, externalPath);
+                                            return row.row >= 0 &&
+                                                   row.origin ==
+                                                       QStringLiteral("external") &&
+                                                   row.state ==
+                                                       QStringLiteral("registered") &&
+                                                   !row.candidate;
+                                        },
+                                        20000);
+    check(externalRegistered, "the Import action pinned the external graph explicitly",
+          externalRegistered ? QString()
+                             : importOutcomeDetail(panel, modelTable, externalPath));
     check(QFileInfo(externalPath).isFile() && fileBytes(externalPath) == modelProto &&
               !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
           "borrowed registration never writes beside the user's external graph");
@@ -1768,17 +1895,31 @@ void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& run
             modelTable->setCurrentCell(changedExternal.row, 0);
         QApplication::processEvents();
         const bool repinClicked = clickImportForCandidate(
-            modelTable, importModel,
+            modelTable, importModel, externalPath,
             "the replaced external model was selected as the candidate to re-pin");
-        const bool externalRepinned = repinClicked && waitForUi(
-            [&] {
-                const auto row = catalogueRowForPath(modelTable, externalPath);
-                return row.row >= 0 && row.origin == QStringLiteral("external") &&
-                       row.state == QStringLiteral("registered") && !row.candidate;
-            },
-            20000);
+        const bool repinImportStarted = repinClicked && managerIsRegistering(panel);
+        check(repinImportStarted,
+              "the Import action started the external re-pin it was clicked for",
+              repinImportStarted ? QString()
+                                 : importOutcomeDetail(panel, modelTable, externalPath));
+        const bool externalRepinned = repinImportStarted &&
+                                      waitForImportSettle(
+                                          panel,
+                                          [&] {
+                                              const auto row = catalogueRowForPath(
+                                                  modelTable, externalPath);
+                                              return row.row >= 0 &&
+                                                     row.origin ==
+                                                         QStringLiteral("external") &&
+                                                     row.state ==
+                                                         QStringLiteral("registered") &&
+                                                     !row.candidate;
+                                          },
+                                          20000);
         check(externalRepinned,
-              "the Import action explicitly re-pinned the atomically replaced graph");
+              "the Import action explicitly re-pinned the atomically replaced graph",
+              externalRepinned ? QString()
+                               : importOutcomeDetail(panel, modelTable, externalPath));
         check(fileBytes(externalPath) == externalReplacement &&
                   !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
               "re-pinning keeps the replaced graph in the user's external folder");

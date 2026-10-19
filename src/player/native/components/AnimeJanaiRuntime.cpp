@@ -276,11 +276,11 @@ bool writeIni(const QByteArray& ini, const QString& path, const QString& root, Q
     }
     QSaveFile file(path);
     file.setDirectWriteFallback(false);
-    if (!file.open(QIODevice::WriteOnly) || file.write(ini) != ini.size() || !file.commit()) {
+    if (!file.open(QIODevice::WriteOnly) || file.write(ini) != ini.size()) {
         *error = file.errorString();
         return false;
     }
-    return true;
+    return commitMetadataFile(file, error);
 }
 
 bool retainSpatialLicense(const SpatialAsset& asset, const QString& graphPath,

@@ -7,7 +7,6 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -15,11 +14,6 @@
 #include <QtCore/QSet>
 
 #include <algorithm>
-
-#ifdef Q_OS_WIN
-#  define WIN32_LEAN_AND_MEAN
-#  include <windows.h>
-#endif
 
 namespace mplayer::native {
 namespace {
@@ -32,53 +26,6 @@ constexpr int kCoalesceMilliseconds = 250;
 // Unrelated names (engines, stats, temp files) are filtered by name below and
 // never enter the signature, which is what keeps a noisy folder quiet.
 constexpr qint64 kMaxRegistryBytes = 4LL * 1024LL * 1024LL;
-
-#ifdef Q_OS_WIN
-// QFileInfo::metadataChangeTime() cannot see an in-place write on Windows: Qt
-// stores the last-write time in its change-time slot (see
-// QFileSystemMetaData::fillFromFindInfo), so a write that restores the
-// modification time leaves the observed metadata identical. NTFS maintains a
-// separate, system-managed change time that every write advances and that
-// QFile::setFileTime cannot reset; it is only reachable through a file handle.
-qint64 nativeChangeTimeMs(const QString& path) {
-    QString nativePath = QDir::toNativeSeparators(path);
-    // Qt itself stats such paths; use the extended form so a catalogue deeper
-    // than MAX_PATH keeps the same coverage instead of silently dropping it.
-    if (!nativePath.startsWith(QStringLiteral("\\\\?\\"))) {
-        nativePath = nativePath.startsWith(QStringLiteral("\\\\"))
-                         ? QStringLiteral("\\\\?\\UNC\\") + nativePath.mid(2)
-                         : QStringLiteral("\\\\?\\") + nativePath;
-    }
-    const HANDLE handle =
-        ::CreateFileW(reinterpret_cast<LPCWSTR>(nativePath.utf16()), FILE_READ_ATTRIBUTES,
-                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (handle == INVALID_HANDLE_VALUE) return -1;
-    FILE_BASIC_INFO basicInfo{};
-    const BOOL queried =
-        ::GetFileInformationByHandleEx(handle, FileBasicInfo, &basicInfo, sizeof(basicInfo));
-    ::CloseHandle(handle);
-    if (!queried) return -1;
-    const qint64 ticks = basicInfo.ChangeTime.QuadPart;
-    if (ticks <= 0) return -1;
-    constexpr qint64 kTicksPerMillisecond = 10000;                // FILETIME is 100 ns
-    constexpr qint64 kEpochOffsetMilliseconds = 11644473600000;   // 1601 -> 1970
-    return ticks / kTicksPerMillisecond - kEpochOffsetMilliseconds;
-}
-#endif
-
-qint64 metadataChangeMs(const QString& path, const QFileInfo& info) {
-#ifdef Q_OS_WIN
-    const qint64 nativeChangeMs = nativeChangeTimeMs(path);
-    if (nativeChangeMs > 0) return nativeChangeMs;
-#else
-    Q_UNUSED(path);
-#endif
-    // Non-Windows platforms expose a real inode change time. The Windows
-    // fallback only matters when the handle query failed or the file system
-    // keeps no change time, where it degrades to the modification time.
-    return info.metadataChangeTime().toMSecsSinceEpoch();
-}
 
 QString externalRegistryPath() {
     // The public API exposes the custom models directory but not the registry
@@ -173,11 +120,13 @@ struct WatchCollector {
 
 QStringList registeredGraphPaths(const QString& registryPath) {
     QStringList paths;
-    QFile file(registryPath);
-    if (!file.open(QIODevice::ReadOnly)) return paths;
-    if (file.size() < 0 || file.size() > kMaxRegistryBytes) return paths;
-    const QByteArray bytes = file.read(kMaxRegistryBytes + 1);
-    if (bytes.size() > kMaxRegistryBytes) return paths;
+    // The bounded read closes its handle before parsing, and coordinates with
+    // an in-process registry commit through the metadata read lock.
+    QByteArray bytes;
+    if (readSharedMetadataFile(registryPath, kMaxRegistryBytes, &bytes) !=
+        SharedMetadataReadStatus::Ok) {
+        return paths;
+    }
 
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
@@ -253,7 +202,7 @@ AnimeJanaiCatalogWatcher::Observation AnimeJanaiCatalogWatcher::observe() const 
         if (info.isFile()) {
             entry.bytes = info.size();
             entry.modifiedMs = info.lastModified().toMSecsSinceEpoch();
-            entry.metadataChangedMs = metadataChangeMs(entry.path, info);
+            entry.metadataChangedMs = metadataChangeTimeMs(entry.path, info);
         }
         observation.entries.push_back(entry);
     };
@@ -292,7 +241,7 @@ AnimeJanaiCatalogWatcher::Observation AnimeJanaiCatalogWatcher::observe() const 
             entry.exists = true;
             entry.bytes = info.size();
             entry.modifiedMs = info.lastModified().toMSecsSinceEpoch();
-            entry.metadataChangedMs = metadataChangeMs(entry.path, info);
+            entry.metadataChangedMs = metadataChangeTimeMs(entry.path, info);
             observation.entries.push_back(entry);
             watch.add(filePath);
         }

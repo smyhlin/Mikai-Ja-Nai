@@ -125,18 +125,16 @@ QVector<ExternalModelPin> readExternalModelPins(QString* error = nullptr) {
         if (error) *error = ConfigText::tr("The external model registry path is untrusted.");
         return pins;
     }
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (error) *error = file.errorString();
-        return pins;
-    }
-    if (file.size() < 0 || file.size() > kMaxModelMetadataBytes) {
+    QByteArray bytes;
+    QString readError;
+    const SharedMetadataReadStatus readStatus =
+        readSharedMetadataFile(path, kMaxModelMetadataBytes, &bytes, &readError);
+    if (readStatus == SharedMetadataReadStatus::TooLarge) {
         if (error) *error = ConfigText::tr("The external model registry exceeds the supported metadata size.");
         return pins;
     }
-    const QByteArray bytes = file.read(kMaxModelMetadataBytes + 1);
-    if (bytes.size() > kMaxModelMetadataBytes) {
-        if (error) *error = ConfigText::tr("The external model registry exceeds the supported metadata size.");
+    if (readStatus != SharedMetadataReadStatus::Ok) {
+        if (error) *error = readError;
         return pins;
     }
     QJsonParseError parseError;
@@ -195,10 +193,11 @@ bool writeExternalModelPins(const QVector<ExternalModelPin>& pins, QString* erro
         {QStringLiteral("models"), models}}).toJson(QJsonDocument::Compact);
     QSaveFile file(path);
     file.setDirectWriteFallback(false);
-    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) {
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size()) {
         if (error) *error = file.errorString();
         return false;
     }
+    if (!commitMetadataFile(file, error)) return false;
     if (error) error->clear();
     return true;
 }
@@ -305,19 +304,17 @@ OwnedSidecar readOwnedSidecar(const QString& graphPath, qint64 graphBytes,
             "The model integrity record is not an app-owned regular file.");
         return record;
     }
-    QFile sidecar(sidecarPath);
-    if (!sidecar.open(QIODevice::ReadOnly) || sidecar.size() < 0 ||
-        sidecar.size() > kMaxModelSidecarBytes) {
+    QByteArray sidecarBytes;
+    const SharedMetadataReadStatus sidecarStatus =
+        readSharedMetadataFile(sidecarPath, kMaxModelSidecarBytes, &sidecarBytes);
+    if (sidecarStatus != SharedMetadataReadStatus::Ok) {
         record.state = OwnedSidecarState::Invalid;
-        record.reason = ConfigText::tr(
-            "The model integrity record is unreadable or exceeds the supported metadata size.");
-        return record;
-    }
-    const QByteArray sidecarBytes = sidecar.read(kMaxModelSidecarBytes + 1);
-    if (sidecarBytes.size() > kMaxModelSidecarBytes) {
-        record.state = OwnedSidecarState::Invalid;
-        record.reason = ConfigText::tr(
-            "The model integrity record exceeds the supported metadata size.");
+        record.reason =
+            sidecarStatus == SharedMetadataReadStatus::TooLarge
+                ? ConfigText::tr(
+                      "The model integrity record exceeds the supported metadata size.")
+                : ConfigText::tr(
+                      "The model integrity record is unreadable or exceeds the supported metadata size.");
         return record;
     }
     QJsonParseError parseError;
@@ -1158,9 +1155,14 @@ bool registerOwnedCustomAnimeJanaiModel(const QString& sourceFilePath,
     const QByteArray provenanceBytes =
         QJsonDocument(provenance).toJson(QJsonDocument::Compact);
     if (!sidecar.open(QIODevice::WriteOnly) ||
-        sidecar.write(provenanceBytes) != provenanceBytes.size() || !sidecar.commit()) {
+        sidecar.write(provenanceBytes) != provenanceBytes.size()) {
         return fail(ConfigText::tr("Could not write the model integrity record: %1")
                         .arg(sidecar.errorString()));
+    }
+    QString commitError;
+    if (!commitMetadataFile(sidecar, &commitError)) {
+        return fail(ConfigText::tr("Could not write the model integrity record: %1")
+                        .arg(commitError));
     }
     if (isCancelled()) {
         QFile::remove(sidecarPath);
@@ -1302,10 +1304,15 @@ bool importCustomAnimeJanaiModel(const QString& sourceFilePath,
     sidecar.setDirectWriteFallback(false);
     const QByteArray provenanceBytes = QJsonDocument(provenance).toJson(QJsonDocument::Compact);
     if (!sidecar.open(QIODevice::WriteOnly) ||
-        sidecar.write(provenanceBytes) != provenanceBytes.size() || !sidecar.commit()) {
+        sidecar.write(provenanceBytes) != provenanceBytes.size()) {
         const QString sidecarError = sidecar.errorString();
         QFile::remove(targetPath);
         return fail(ConfigText::tr("Could not persist the imported model integrity record: %1").arg(sidecarError));
+    }
+    QString commitError;
+    if (!commitMetadataFile(sidecar, &commitError)) {
+        QFile::remove(targetPath);
+        return fail(ConfigText::tr("Could not persist the imported model integrity record: %1").arg(commitError));
     }
 
     if (isCancelled()) {
@@ -1484,20 +1491,15 @@ AnimeJanaiConfig AnimeJanaiConfigStore::loadFromFile(const QString& path, QStrin
         }
         return AnimeJanaiConfig{};
     };
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QByteArray bytes;
+    QString readError;
+    const SharedMetadataReadStatus readStatus =
+        readSharedMetadataFile(path, kMaxModelMetadataBytes, &bytes, &readError);
+    if (readStatus == SharedMetadataReadStatus::Unreadable) {
         return fail(ConfigText::tr("Could not read AnimeJaNai configuration '%1': %2")
-                        .arg(path, file.errorString()));
+                        .arg(path, readError));
     }
-    if (file.size() < 0 || file.size() > kMaxModelMetadataBytes) {
-        return fail(ConfigText::tr("The AnimeJaNai configuration exceeds the supported size."));
-    }
-    const QByteArray bytes = file.read(kMaxModelMetadataBytes + 1);
-    if (file.error() != QFile::NoError) {
-        return fail(ConfigText::tr("Could not read AnimeJaNai configuration '%1': %2")
-                        .arg(path, file.errorString()));
-    }
-    if (bytes.size() > kMaxModelMetadataBytes) {
+    if (readStatus == SharedMetadataReadStatus::TooLarge) {
         return fail(ConfigText::tr("The AnimeJaNai configuration exceeds the supported size."));
     }
     const QString text = QString::fromUtf8(bytes);
@@ -1737,28 +1739,32 @@ bool AnimeJanaiConfigStore::saveToFile(const QString& path, const AnimeJanaiConf
         return false;
     }
     const QByteArray bytes = serialize(config).toUtf8();
-    if (file.write(bytes) != bytes.size() || !file.commit()) {
+    if (file.write(bytes) != bytes.size()) {
         if (error != nullptr) *error = file.errorString();
         return false;
     }
+    if (!commitMetadataFile(file, error)) return false;
     if (error != nullptr) error->clear();
     return true;
 }
 
 AnimeJanaiSlot AnimeJanaiConfigStore::loadProfile(const QString& path, bool* ok, QString* error) {
     QFile file(path);
-    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (!file.exists()) {
         if (ok != nullptr) *ok = false;
         if (error != nullptr) *error = file.errorString();
         return {};
     }
-    if (file.size() < 0 || file.size() > kMaxModelMetadataBytes) {
+    QByteArray bytes;
+    QString readError;
+    const SharedMetadataReadStatus readStatus =
+        readSharedMetadataFile(path, kMaxModelMetadataBytes, &bytes, &readError);
+    if (readStatus == SharedMetadataReadStatus::Unreadable) {
         if (ok != nullptr) *ok = false;
-        if (error != nullptr) *error = ConfigText::tr("The profile configuration exceeds the supported metadata size.");
+        if (error != nullptr) *error = readError;
         return {};
     }
-    const QByteArray bytes = file.read(kMaxModelMetadataBytes + 1);
-    if (bytes.size() > kMaxModelMetadataBytes) {
+    if (readStatus == SharedMetadataReadStatus::TooLarge) {
         if (ok != nullptr) *ok = false;
         if (error != nullptr) *error = ConfigText::tr("The profile configuration exceeds the supported metadata size.");
         return {};
@@ -1801,10 +1807,11 @@ bool AnimeJanaiConfigStore::saveProfile(const QString& path, const AnimeJanaiSlo
         return false;
     }
     const QByteArray bytes = serializeProfile(slot).toUtf8();
-    if (file.write(bytes) != bytes.size() || !file.commit()) {
+    if (file.write(bytes) != bytes.size()) {
         if (error != nullptr) *error = file.errorString();
         return false;
     }
+    if (!commitMetadataFile(file, error)) return false;
     if (error != nullptr) error->clear();
     return true;
 }

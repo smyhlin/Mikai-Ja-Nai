@@ -27,6 +27,10 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
+class QByteArray;
+class QFileInfo;
+class QSaveFile;
+
 namespace mplayer {
 namespace native {
 
@@ -121,6 +125,42 @@ QStringList nativeSubdirectoryNames();
 /// with `reason` set for anything else. Never created by this call.
 QString nativeSubdirectory(const QString& name, QString* reason = nullptr);
 QString nativeToolsDirectory();
+
+/// The outcome of `readSharedMetadataFile`. `Unreadable` means the file could
+/// not be opened or read; `TooLarge` means it held more than the caller's byte
+/// bound; `Ok` means `bytes` holds the file's snapshot.
+enum class SharedMetadataReadStatus {
+    Ok,
+    Unreadable,
+    TooLarge,
+};
+
+/// Reads at most `maxBytes` from `path` and stores the snapshot in `bytes`.
+/// `bytes` is cleared on every non-Ok outcome. `error`, when given, carries
+/// the platform's open/read reason for `Unreadable`.
+///
+/// On Windows the bounded open/read/close runs under the metadata read lock,
+/// so an in-process `commitMetadataFile` cannot replace the file mid-read;
+/// parsing stays outside the lock. The read is bounded to `maxBytes + 1`
+/// bytes, so a file that grows after any size probe is refused as `TooLarge`
+/// rather than parsed truncated.
+SharedMetadataReadStatus readSharedMetadataFile(const QString& path, qint64 maxBytes,
+                                                QByteArray* bytes, QString* error = nullptr);
+
+/// NTFS's system change time in milliseconds, or `info.metadataChangeTime()`
+/// when the platform exposes no separate change time. On Windows the attribute
+/// handle is opened under the metadata read lock, so an in-process commit
+/// cannot run between the query and its handle close.
+qint64 metadataChangeTimeMs(const QString& path, const QFileInfo& info);
+
+/// Commits `file` to its destination and reports QSaveFile's original failure
+/// through `error`, which is cleared on success. On Windows the commit runs
+/// under a write lock because Qt 6.12's QSaveFile::commit() uses a non-POSIX
+/// replace-rename that refuses to replace a destination with any open handle;
+/// the lock therefore excludes every in-process metadata reader. Elsewhere it
+/// is an ordinary commit. Callers keep writing, hashing and preparing before
+/// the call, outside the lock.
+bool commitMetadataFile(QSaveFile& file, QString* error = nullptr);
 
 }  // namespace native
 }  // namespace mplayer

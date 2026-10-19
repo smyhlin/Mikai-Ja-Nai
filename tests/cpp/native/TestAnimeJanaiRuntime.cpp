@@ -22,6 +22,7 @@
 #include <QtCore/QSaveFile>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QScopeGuard>
+#include <QtCore/QSemaphore>
 #include <QtCore/QSettings>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QProcess>
@@ -29,6 +30,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <memory>
+#include <thread>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -1359,6 +1362,349 @@ void TestAnimeJanaiRuntime::catalogWatcherObservesCompleteCatalogueBeyondLegacyL
         listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
     QVERIFY(listsFileNamed(afterNoise, modelNames.constLast()));
     QVERIFY(!listsFileNamed(afterNoise, QStringLiteral("000_noise_added.tmp")));
+}
+
+void TestAnimeJanaiRuntime::boundedMetadataReadAllowsAtomicRegistryReplacement() {
+    // A metadata read must never deny the atomic replacement an updater
+    // performs. Qt 6.12's Windows QSaveFile::commit() replaces the destination
+    // through SetFileInformationByHandle(FileRenameInfo, ReplaceIfExists)
+    // without FILE_RENAME_FLAG_POSIX_SEMANTICS; that replace-rename is refused
+    // with ERROR_ACCESS_DENIED while any handle on the destination is open,
+    // even one opened with FILE_SHARE_DELETE. Share-delete licenses
+    // DeleteFileW and POSIX-semantics renames, not that call. The catalogue
+    // reader therefore owns its handle only for the bounded read and closes it
+    // before returning, so a publication that follows a completed read cannot
+    // be refused on account of the reader. The default-reader control below
+    // still reproduces the original open-handle conflict.
+    //
+    // The fixture is a registry-shaped document in a temporary directory, so
+    // no user store and no real native tree is involved, and both payloads
+    // stay inside the bounded metadata size the production readers enforce.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString path =
+        QDir(temp.path()).filePath(QStringLiteral("external-models.json"));
+
+    const auto registryJson = [](const QString& id, const QString& modelPath) {
+        const QJsonObject pin{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("path"), modelPath},
+            {QStringLiteral("displayName"), id},
+            {QStringLiteral("bytes"), 64},
+            {QStringLiteral("sha256"), QStringLiteral("a").repeated(64)}};
+        return QJsonDocument(
+                   QJsonObject{{QStringLiteral("schema"),
+                                QStringLiteral("animejanai.external-models/1")},
+                               {QStringLiteral("models"), QJsonArray{pin}}})
+            .toJson(QJsonDocument::Compact);
+    };
+
+    const QByteArray oldPayload =
+        registryJson(QStringLiteral("external_old"),
+                     QDir(temp.path()).filePath(QStringLiteral("External_Old_2x.onnx")));
+    const QByteArray newPayload =
+        registryJson(QStringLiteral("external_new"),
+                     QDir(temp.path()).filePath(QStringLiteral("External_New_2x.onnx")));
+    QVERIFY(!oldPayload.isEmpty());
+    QVERIFY(!newPayload.isEmpty());
+    QVERIFY(oldPayload.size() <= 4LL * 1024LL * 1024LL);
+    QVERIFY(newPayload.size() <= 4LL * 1024LL * 1024LL);
+    QVERIFY(writeFile(path, oldPayload));
+
+    // Exactly the bounded read a catalogue scan performs. The helper releases
+    // its handle before it returns, leaving no reader on the destination.
+    QByteArray readBytes;
+    QString error;
+    QVERIFY2(readSharedMetadataFile(path, 4LL * 1024LL * 1024LL, &readBytes, &error) ==
+                 SharedMetadataReadStatus::Ok,
+             qPrintable(error));
+    QCOMPARE(readBytes, oldPayload);
+    QVERIFY(error.isEmpty());
+
+    // The atomic replace an external updater performs, through the same
+    // publication helper production callers use. It must land because the
+    // bounded read above owns no handle by the time it returns. This ordered
+    // case alone cannot prove the concurrent case; the overlap test below
+    // holds a writer inside commit() while a read starts. The control at the
+    // end still proves the same commit is refused while a default handle is
+    // open.
+    QSaveFile replacement(path);
+    QVERIFY2(replacement.open(QIODevice::WriteOnly), qPrintable(replacement.errorString()));
+    QCOMPARE(replacement.write(newPayload), qint64(newPayload.size()));
+    QString commitError;
+    const bool committed = commitMetadataFile(replacement, &commitError);
+    QVERIFY2(committed, qPrintable(commitError.isEmpty()
+                                       ? QStringLiteral("the registry replacement was refused")
+                                       : commitError));
+    QVERIFY(replacement.error() == QFileDevice::NoError);
+
+    // A fresh bounded read sees the committed payload.
+    QVERIFY2(readSharedMetadataFile(path, 4LL * 1024LL * 1024LL, &readBytes, &error) ==
+                 SharedMetadataReadStatus::Ok,
+             qPrintable(error));
+    QCOMPARE(readBytes, newPayload);
+
+    // The byte bound survives the bounded read: an over-bound registry is
+    // refused after the read, never parsed, and never becomes a candidate.
+    // The registry lives under the app-owned native tree, not a user store.
+    const QString registryPath = QDir(nativeRoot())
+        .filePath(QStringLiteral("animejanai/models/external-models.json"));
+    QByteArray overBound = oldPayload;
+    overBound.append(QByteArray(4 * 1024 * 1024, ' '));
+    QVERIFY(overBound.size() > 4LL * 1024LL * 1024LL);
+    QVERIFY(writeFile(registryPath, overBound));
+    // The read is bounded, refuses the over-bound file, and clears the sink so
+    // a caller can never mistake stale bytes for this snapshot.
+    QByteArray overBoundRead = oldPayload;
+    QString overBoundError;
+    QVERIFY(readSharedMetadataFile(registryPath, 4LL * 1024LL * 1024LL, &overBoundRead,
+                                   &overBoundError) == SharedMetadataReadStatus::TooLarge);
+    QVERIFY(overBoundRead.isEmpty());
+    QString registryError;
+    const QVector<CustomAnimeJanaiModel> bounded =
+        listExternalCustomAnimeJanaiModelCandidates(temp.path(), &registryError);
+    QVERIFY(bounded.isEmpty());
+    QVERIFY2(!registryError.isEmpty(),
+             "An over-bound registry must be refused with its failure cause");
+}
+
+void TestAnimeJanaiRuntime::metadataPublicationSerializesWithConcurrentBoundedRead() {
+    // aboutToClose parks the flushed writer before rename, while it still owns
+    // the publication lock; an overlapping reader must wait on Windows.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString path =
+        QDir(temp.path()).filePath(QStringLiteral("external-models.json"));
+
+    const auto registryJson = [](const QString& id, const QString& modelPath) {
+        const QJsonObject pin{
+            {QStringLiteral("id"), id},
+            {QStringLiteral("path"), modelPath},
+            {QStringLiteral("displayName"), id},
+            {QStringLiteral("bytes"), 64},
+            {QStringLiteral("sha256"), QStringLiteral("a").repeated(64)}};
+        return QJsonDocument(
+                   QJsonObject{{QStringLiteral("schema"),
+                                QStringLiteral("animejanai.external-models/1")},
+                               {QStringLiteral("models"), QJsonArray{pin}}})
+            .toJson(QJsonDocument::Compact);
+    };
+
+    const QByteArray oldPayload =
+        registryJson(QStringLiteral("external_old"),
+                     QDir(temp.path()).filePath(QStringLiteral("External_Old_2x.onnx")));
+    const QByteArray newPayload =
+        registryJson(QStringLiteral("external_new"),
+                     QDir(temp.path()).filePath(QStringLiteral("External_New_2x.onnx")));
+    constexpr qint64 kBound = 4LL * 1024LL * 1024LL;
+    QVERIFY(!oldPayload.isEmpty());
+    QVERIFY(!newPayload.isEmpty());
+    QVERIFY(oldPayload.size() <= kBound);
+    QVERIFY(newPayload.size() <= kBound);
+    QVERIFY(oldPayload != newPayload);
+    QVERIFY(writeFile(path, oldPayload));
+
+    const auto parsesAsRegistry = [](const QByteArray& bytes, const QString& expectedId) {
+        QJsonParseError parseError{};
+        const QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) return false;
+        const QJsonArray models = document.object().value(QStringLiteral("models")).toArray();
+        return models.size() == 1 &&
+               models.first().toObject().value(QStringLiteral("id")).toString() == expectedId;
+    };
+    QVERIFY(parsesAsRegistry(oldPayload, QStringLiteral("external_old")));
+
+    struct Overlap {
+        QString path;
+        QByteArray oldPayload;
+        QByteArray newPayload;
+        qint64 bound = 0;
+        QSemaphore writerInsideCommit;
+        QSemaphore releaseWriter;
+        QSemaphore writerFinished;
+        QSemaphore readerStarted;
+        QSemaphore readerFinished;
+        std::atomic_bool writerDone{false};
+        std::atomic_bool readerDone{false};
+        std::atomic_bool commitOk{false};
+        QString writerError;
+        SharedMetadataReadStatus readStatus = SharedMetadataReadStatus::Unreadable;
+        QByteArray readBytes;
+        QString readError;
+    };
+
+    auto state = std::make_shared<Overlap>();
+    state->path = path;
+    state->oldPayload = oldPayload;
+    state->newPayload = newPayload;
+    state->bound = kBound;
+
+    // Releases every barrier on the assertion-failure path, then reaps both
+    // workers with a bounded wait. A worker that still cannot exit is fatal:
+    // detaching it would let it outlive this fixture while holding the global
+    // metadata publication lock, poisoning later tests and running past the
+    // temporary directory's teardown. qFatal fails this isolated test process
+    // with the fixture path instead.
+    //
+    // The done flags disambiguate "the worker finished" from "completion token
+    // already consumed by an assertion": the Windows negative probe consumes
+    // the reader's token only when it fails (the reader finished early), and
+    // reap() consumes a token and joins in the same step. The workers publish
+    // their last writes before setting the flag and releasing the semaphore,
+    // and join() itself synchronizes with the thread's exit.
+    struct ThreadGuard {
+        QSemaphore* releaseWriter = nullptr;
+        QSemaphore* writerFinished = nullptr;
+        QSemaphore* readerFinished = nullptr;
+        const Overlap* fixture = nullptr;
+        std::thread writer;
+        std::thread reader;
+
+        ~ThreadGuard() {
+            if (releaseWriter != nullptr) releaseWriter->release();
+            if (writer.joinable() &&
+                !reapBounded(writer, writerFinished, fixture == nullptr ? nullptr
+                                                                        : &fixture->writerDone)) {
+                failFast("writer");
+            }
+            if (reader.joinable() &&
+                !reapBounded(reader, readerFinished, fixture == nullptr ? nullptr
+                                                                        : &fixture->readerDone)) {
+                failFast("reader");
+            }
+        }
+
+        [[noreturn]] void failFast(const char* role) const {
+            const QString path = fixture == nullptr ? QStringLiteral("<unknown>") : fixture->path;
+            qFatal("metadataPublicationSerializesWithConcurrentBoundedRead: the %s worker did "
+                   "not exit after every barrier was released; the fixture '%s' cannot be torn "
+                   "down with a worker that may still hold the metadata publication lock",
+                   role, qUtf8Printable(path));
+        }
+
+        static bool reapBounded(std::thread& thread, QSemaphore* finished,
+                                const std::atomic_bool* done) {
+            // The token may already have been consumed by an assertion: a
+            // worker that set its done flag has no work left but its thread
+            // exit, so joining is bounded.
+            if (done != nullptr && done->load(std::memory_order_acquire)) {
+                thread.join();
+                return true;
+            }
+            if (finished != nullptr && finished->tryAcquire(1, 15000)) {
+                thread.join();
+                return true;
+            }
+            if (done != nullptr && done->load(std::memory_order_acquire)) {
+                thread.join();
+                return true;
+            }
+            return false;
+        }
+
+        bool reap(std::thread& thread, QSemaphore& finished) {
+            if (!finished.tryAcquire(1, 15000)) return false;
+            thread.join();
+            return true;
+        }
+    } guard;
+    guard.releaseWriter = &state->releaseWriter;
+    guard.writerFinished = &state->writerFinished;
+    guard.readerFinished = &state->readerFinished;
+    guard.fixture = state.get();
+
+    guard.writer = std::thread([state] {
+        QSaveFile file(state->path);
+        if (!file.open(QIODevice::WriteOnly)) {
+            state->writerError = file.errorString();
+            state->writerDone.store(true);
+            state->writerFinished.release();
+            return;
+        }
+        if (file.write(state->newPayload) != qint64(state->newPayload.size())) {
+            state->writerError = file.errorString();
+            file.cancelWriting();
+            state->writerDone.store(true);
+            state->writerFinished.release();
+            return;
+        }
+        // Direct connection: QFileDevice::close() emits this on the writer
+        // thread while commit() is running and the publication write lock is
+        // held. Waiting here parks the commit before the destination rename.
+        QObject::connect(
+            &file, &QIODevice::aboutToClose, &file,
+            [state] {
+                state->writerInsideCommit.release();
+                state->releaseWriter.acquire();
+            },
+            Qt::DirectConnection);
+        state->commitOk.store(commitMetadataFile(file, &state->writerError));
+        state->writerDone.store(true);
+        state->writerFinished.release();
+    });
+
+    QVERIFY2(state->writerInsideCommit.tryAcquire(1, 15000),
+             "the writer never reached the pre-rename window inside commit()");
+    QVERIFY2(state->writerError.isEmpty(), qPrintable(state->writerError));
+
+    guard.reader = std::thread([state] {
+        state->readerStarted.release();
+        state->readStatus =
+            readSharedMetadataFile(state->path, state->bound, &state->readBytes, &state->readError);
+        state->readerDone.store(true);
+        state->readerFinished.release();
+    });
+    QVERIFY2(state->readerStarted.tryAcquire(1, 15000), "the bounded reader never started");
+
+#ifdef Q_OS_WIN
+    // The publication holds the in-process write lock across commit(), so the
+    // bounded read must not complete while the destination is pending. A
+    // correct read wait cannot finish at any duration; the bounded probe only
+    // bounds how long this test observes the blocked state.
+    QVERIFY2(!state->readerFinished.tryAcquire(1, 2000),
+             "the bounded read completed while a publication held the destination");
+#else
+    // POSIX rename is atomic, so a read that wins the race observes the old
+    // complete document, never a truncated one. The writer is still parked
+    // before the rename, so that is the only valid outcome here.
+    QVERIFY2(guard.reap(guard.reader, state->readerFinished),
+             "the bounded read did not complete against the pending destination");
+    QCOMPARE(state->readStatus, SharedMetadataReadStatus::Ok);
+    QCOMPARE(state->readBytes, state->oldPayload);
+    QVERIFY(state->readError.isEmpty());
+    QVERIFY(parsesAsRegistry(state->readBytes, QStringLiteral("external_old")));
+#endif
+
+    // Let the commit rename the destination, then require it to succeed. On
+    // Windows the reader was waiting on the very lock the commit needed, so
+    // this is the outcome that used to be "Access is denied.".
+    state->releaseWriter.release();
+    QVERIFY2(guard.reap(guard.writer, state->writerFinished),
+             "the publication did not finish after the writer was released");
+    QVERIFY2(state->commitOk.load(),
+             state->writerError.isEmpty()
+                 ? "the publication was refused while a bounded read was concurrent"
+                 : qPrintable(state->writerError));
+    QVERIFY(state->writerError.isEmpty());
+
+#ifdef Q_OS_WIN
+    QVERIFY2(guard.reap(guard.reader, state->readerFinished),
+             "the bounded read did not resume after the publication");
+    QCOMPARE(state->readStatus, SharedMetadataReadStatus::Ok);
+    QCOMPARE(state->readBytes, state->newPayload);
+    QVERIFY(state->readError.isEmpty());
+    QVERIFY(parsesAsRegistry(state->readBytes, QStringLiteral("external_new")));
+#endif
+
+    // Whatever the scheduling, a read that begins after the commit sees only
+    // the complete new document.
+    QByteArray freshBytes;
+    QString freshError;
+    QVERIFY2(readSharedMetadataFile(path, kBound, &freshBytes, &freshError) ==
+                 SharedMetadataReadStatus::Ok,
+             qPrintable(freshError));
+    QCOMPARE(freshBytes, newPayload);
+    QVERIFY(parsesAsRegistry(freshBytes, QStringLiteral("external_new")));
 }
 
 void TestAnimeJanaiRuntime::pastedOwnedModelRequiresExplicitRegistration() {

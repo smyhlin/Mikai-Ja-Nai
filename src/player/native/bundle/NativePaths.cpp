@@ -2,11 +2,17 @@
 
 #include "native/bundle/NativeDiagnostics.hpp"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QDir>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QIODevice>
+#include <QtCore/QReadWriteLock>
+#include <QtCore/QSaveFile>
 
 #include <algorithm>
+#include <limits>
 
 #ifdef Q_OS_WIN
 #  include <windows.h>
@@ -99,6 +105,35 @@ bool isDevicePrefix(const QString& path) {
            (path.at(2) == QLatin1Char('?') || path.at(2) == QLatin1Char('.')) &&
            path.at(3) == QLatin1Char('\\');
 }
+
+#ifdef Q_OS_WIN
+/// The spelling a Win32 file API needs so that neither MAX_PATH nor the normal
+/// parser rewrites the name. An already-extended path is left alone, a share
+/// keeps its root under the UNC form, and a local path gains the plain prefix.
+QString extendedWindowsPath(const QString& path) {
+    const QString nativePath = QDir::toNativeSeparators(path);
+    if (nativePath.startsWith(QLatin1String("\\\\?\\"))) return nativePath;
+    if (nativePath.startsWith(QLatin1String("\\\\"))) {
+        return QStringLiteral("\\\\?\\UNC\\") + nativePath.mid(2);
+    }
+    // The extended form only qualifies a fully rooted name; a drive-relative or
+    // relative path must keep the form CreateFile already resolves.
+    const bool driveRooted =
+        nativePath.size() >= 3 && nativePath.at(0).isLetter() &&
+        nativePath.at(1) == QLatin1Char(':') && nativePath.at(2) == QLatin1Char('\\');
+    if (!driveRooted) return nativePath;
+    return QStringLiteral("\\\\?\\") + nativePath;
+}
+
+/// Serializes in-process metadata publication with every in-process reader of
+/// the same files. Qt 6.12's Windows QSaveFile::commit() replaces the
+/// destination with a non-POSIX FileRenameInfo that refuses any open handle.
+QReadWriteLock& metadataPublicationLock() {
+    static QReadWriteLock lock;
+    return lock;
+}
+
+#endif
 
 }  // namespace
 
@@ -326,6 +361,86 @@ QString nativeSubdirectory(const QString& name, QString* reason) {
 QString nativeToolsDirectory() {
     const QString root = nativeRoot();
     return root.isEmpty() ? QString{} : QDir(root).filePath(QStringLiteral("tools/7zip-26.03"));
+}
+
+qint64 metadataChangeTimeMs(const QString& path, const QFileInfo& info) {
+#ifdef Q_OS_WIN
+    {
+        const QReadLocker locker(&metadataPublicationLock());
+        const QString nativePath = extendedWindowsPath(path);
+        const HANDLE handle = ::CreateFileW(
+            reinterpret_cast<LPCWSTR>(nativePath.utf16()), FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle != INVALID_HANDLE_VALUE) {
+            FILE_BASIC_INFO basicInfo{};
+            const BOOL queried = ::GetFileInformationByHandleEx(
+                handle, FileBasicInfo, &basicInfo, sizeof(basicInfo));
+            ::CloseHandle(handle);
+            const qint64 ticks = basicInfo.ChangeTime.QuadPart;
+            if (queried && ticks > 0) {
+                constexpr qint64 kTicksPerMillisecond = 10000;               // FILETIME is 100 ns
+                constexpr qint64 kEpochOffsetMilliseconds = 11644473600000;  // 1601 -> 1970
+                return ticks / kTicksPerMillisecond - kEpochOffsetMilliseconds;
+            }
+        }
+    }
+#else
+    Q_UNUSED(path);
+#endif
+    return info.metadataChangeTime().toMSecsSinceEpoch();
+}
+
+SharedMetadataReadStatus readSharedMetadataFile(const QString& path, qint64 maxBytes,
+                                                QByteArray* bytes, QString* error) {
+    if (bytes != nullptr) bytes->clear();
+    if (error != nullptr) error->clear();
+    if (bytes == nullptr) {
+        if (error != nullptr) *error = QStringLiteral("The metadata byte sink is unavailable.");
+        return SharedMetadataReadStatus::Unreadable;
+    }
+    // `maxBytes + 1` is how the read proves the bound, so the bound cannot be
+    // the largest qint64 without overflowing that expression.
+    if (maxBytes < 0 || maxBytes == std::numeric_limits<qint64>::max()) {
+        if (error != nullptr) *error = QStringLiteral("The metadata byte bound is invalid.");
+        return SharedMetadataReadStatus::Unreadable;
+    }
+    QFile file(path);
+    QByteArray data;
+    bool readFailed = false;
+    QString readError;
+    {
+#ifdef Q_OS_WIN
+        const QReadLocker locker(&metadataPublicationLock());
+#endif
+        if (!file.open(QIODevice::ReadOnly)) {
+            if (error != nullptr) *error = file.errorString();
+            return SharedMetadataReadStatus::Unreadable;
+        }
+        // One byte past the bound distinguishes an at-bound file from an
+        // over-bound one, and also catches a file that grows after any probe.
+        data = file.read(maxBytes + 1);
+        readFailed = file.error() != QFile::NoError;
+        if (readFailed) readError = file.errorString();
+        file.close();
+    }
+    if (readFailed) {
+        if (error != nullptr) *error = readError;
+        return SharedMetadataReadStatus::Unreadable;
+    }
+    if (data.size() > maxBytes) return SharedMetadataReadStatus::TooLarge;
+    *bytes = data;
+    return SharedMetadataReadStatus::Ok;
+}
+
+bool commitMetadataFile(QSaveFile& file, QString* error) {
+    if (error != nullptr) error->clear();
+#ifdef Q_OS_WIN
+    const QWriteLocker locker(&metadataPublicationLock());
+#endif
+    if (file.commit()) return true;
+    if (error != nullptr) *error = file.errorString();
+    return false;
 }
 
 }  // namespace native

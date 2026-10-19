@@ -38,6 +38,8 @@ class TestAnimeJanaiRuntime : public QObject {
   void catalogWatcherSwitchesOverrideWithoutWatchingOldDirectory();
   void catalogWatcherKeepsExternalPinsExplicit();
   void catalogWatcherObservesCompleteCatalogueBeyondLegacyLimits();
+  void boundedMetadataReadAllowsAtomicRegistryReplacement();
+  void metadataPublicationSerializesWithConcurrentBoundedRead();
   void pastedOwnedModelRequiresExplicitRegistration();
 
  private:

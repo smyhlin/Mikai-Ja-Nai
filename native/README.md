@@ -54,6 +54,14 @@ never hashes, imports, registers, runs inference, compiles an engine, or
 benchmarks. Consumers re-enumerate the existing catalogue APIs and refresh
 already-open lists in place.
 
+On Windows, bounded metadata reads and change-time queries share a read lock
+with `commitMetadataFile`'s exclusive publication lock. Qt's atomic
+replacement rejects open destination handles, even with delete sharing; closing
+a reader before parsing alone does not prevent a concurrent worker commit from
+racing it. Hashing, graph copying, JSON parsing and callbacks stay outside this
+lock. POSIX retains its ordinary open-reader/atomic-rename behavior. Failures
+caused by external processes remain explicit errors, not automatic retries.
+
 User-imported ONNX files are copied into
 `<nativeRoot>/animejanai/models/custom/`. External candidates remain in their
 original directory; their explicit registrations (including the recorded
