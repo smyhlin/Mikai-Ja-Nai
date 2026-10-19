@@ -16,6 +16,7 @@
 #include <exception>
 #include <mutex>
 
+#include <backend/Cancellation.hpp>
 #include <native/components/AnimeJanaiBuildLog.hpp>
 
 namespace mikai::app {
@@ -40,6 +41,10 @@ struct CurrentContextGuard {
 mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
     const QString& clipPath, QString* error) {
     if (error) error->clear();
+    if (backend::WorkCancellationScope::cancellationRequested()) {
+        if (error) *error = PlaybackText::tr("Benchmark cancelled.");
+        return {};
+    }
     try {
         mplayer::MpvHandle handle({{"vo", "null"}, {"audio", "no"}, {"hwdec", "no"},
                                   {"pause", "yes"}, {"config", "no"}});
@@ -57,9 +62,14 @@ mplayer::native::AnimeJanaiSourceContext readBenchmarkSourceContext(
         handle.loadFile(clipPath.toStdString());
         QElapsedTimer deadline;
         deadline.start();
-        while (!loaded && failure.isEmpty() && deadline.elapsed() < kStartupTimeoutMs) {
+        while (!loaded && failure.isEmpty() && deadline.elapsed() < kStartupTimeoutMs &&
+               !backend::WorkCancellationScope::cancellationRequested()) {
             handle.drainEvents();
             QThread::msleep(5);
+        }
+        if (backend::WorkCancellationScope::cancellationRequested()) {
+            if (error) *error = PlaybackText::tr("Benchmark cancelled.");
+            return {};
         }
         if (!loaded) {
             if (error) *error = failure.isEmpty()
@@ -84,8 +94,14 @@ BenchmarkSampleResult runBenchmarkSample(
     QOffscreenSurface& surface,
     const std::function<void(const QString&)>& onPhase,
     const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine,
-    int ajiStageCount) {
+    int ajiStageCount,
+    const std::atomic<bool>* cancelled) {
     BenchmarkSampleResult result;
+    if (backend::WorkCancellationScope::cancellationRequested() ||
+        (cancelled != nullptr && cancelled->load(std::memory_order_relaxed))) {
+        result.error = PlaybackText::tr("Benchmark cancelled.");
+        return result;
+    }
     if (clipPath.isEmpty() || targetSize.width() <= 0 || targetSize.height() <= 0) {
         result.error = PlaybackText::tr("Invalid benchmark clip or output size.");
         return result;
@@ -235,6 +251,11 @@ BenchmarkSampleResult runBenchmarkSample(
 
         for (;;) {
             handle.drainEvents();
+            if (backend::WorkCancellationScope::cancellationRequested() ||
+                (cancelled != nullptr && cancelled->load(std::memory_order_relaxed))) {
+                result.error = PlaybackText::tr("Benchmark cancelled.");
+                break;
+            }
             if (!playbackError.isEmpty()) {
                 result.error = playbackError;
                 break;

@@ -272,6 +272,168 @@ double parseFps(const QString& text) {
     return ok ? v : -1.0;
 }
 
+int verifyBenchmarkSourceErrors(MikaiClient& client, Runner& runner) {
+    const QDir clips(QCoreApplication::applicationDirPath() + QStringLiteral("/benchmarks"));
+    QTemporaryDir fixture(clips.filePath(QStringLiteral("metadata-error-XXXXXX")));
+    if (!fixture.isValid()) return 2;
+    const QString corruptPath = QDir(fixture.path()).filePath(QStringLiteral("corrupt.mp4"));
+    QSaveFile corrupt(corruptPath);
+    if (!corrupt.open(QIODevice::WriteOnly) ||
+        corrupt.write("not a media container") != 21 || !corrupt.commit()) return 2;
+    QString sourceError;
+    mikai::app::readBenchmarkSourceContext(corruptPath, &sourceError);
+    check(!sourceError.isEmpty(), "metadata: libmpv refuses the real corrupt source");
+
+    SettingsDialog dialog(client, runner);
+    dialog.show();
+    auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
+    auto* run = dialog.findChild<QPushButton*>(QStringLiteral("benchmarkRunButton"));
+    auto* results = dialog.findChild<QTableWidget*>(QStringLiteral("benchmarkResults"));
+    auto* baseline = dialog.findChild<QCheckBox*>(QStringLiteral("benchmarkRawBox"));
+    if (!tree || !run || !results || !baseline) return 2;
+    bool shaderSelected = false;
+    for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
+        auto* group = tree->topLevelItem(groupIndex);
+        group->setCheckState(0, Qt::Unchecked);
+        for (int index = 0; index < group->childCount(); ++index) {
+            auto* model = group->child(index);
+            if (model->data(0, Qt::UserRole + 1).toString() == QLatin1String("anime4k:fast_a")) {
+                model->setCheckState(0, Qt::Checked);
+                shaderSelected = true;
+            }
+        }
+    }
+    check(shaderSelected, "metadata: baseline and a real Anime4K preset are selected");
+    baseline->setChecked(true);
+    bool firstClip = true;
+    for (auto* clip : dialog.findChildren<QCheckBox*>(QStringLiteral("benchmarkClipCheck"))) {
+        clip->setChecked(firstClip);
+        if (firstClip) clip->setProperty("benchmarkClipName", clips.relativeFilePath(corruptPath));
+        firstClip = false;
+    }
+    const QDir reports(QCoreApplication::applicationDirPath() + QStringLiteral("/bench"));
+    const auto before = reports.entryList({QStringLiteral("benchmark-*.json")}, QDir::Files);
+    run->click();
+    check(waitForUi([&] { return run->isEnabled(); }, 10000),
+          "metadata: a failed source does not leave the controls disabled");
+    check(results->rowCount() == 2, "metadata: both selected rows report the failure");
+    for (int row = 0; row < results->rowCount(); ++row) {
+        const auto* item = results->item(row, 2);
+        check(item && item->data(Qt::UserRole).toString() == sourceError,
+              "metadata: the table preserves the libmpv source failure");
+    }
+    QStringList added = reports.entryList({QStringLiteral("benchmark-*.json")}, QDir::Files);
+    for (const auto& name : before) added.removeAll(name);
+    check(added.size() == 1, "metadata: exactly one failed-run report is saved");
+    if (added.size() == 1) {
+        QFile report(reports.filePath(added.first()));
+        if (!report.open(QIODevice::ReadOnly)) return 2;
+        const auto rows = QJsonDocument::fromJson(report.readAll()).object().value(
+            QStringLiteral("results")).toArray();
+        check(rows.size() == 2, "metadata: the report includes both failed rows");
+        for (const auto& value : rows) {
+            const auto row = value.toObject();
+            check(row.value(QStringLiteral("fps")).isNull() &&
+                      row.value(QStringLiteral("failureReason")).toString() == sourceError,
+                  "metadata: the JSON retains the cause and contains no false FPS");
+        }
+    }
+    return failures == 0 ? 0 : 1;
+}
+
+int verifyBenchmarkLifecycle(MikaiClient& client, Runner& runner) {
+    // Probe executables do not embed the application's Ukrainian catalog.
+    QSettings().setValue(QStringLiteral("ui/language"), QStringLiteral("en"));
+    SettingsDialog dialog(client, runner);
+    dialog.show();
+    auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
+    auto* run = dialog.findChild<QPushButton*>(QStringLiteral("benchmarkRunButton"));
+    auto* activity = dialog.findChild<QLabel*>(QStringLiteral("benchmarkActivity"));
+    auto* status = dialog.findChild<QLabel*>(QStringLiteral("benchmarkRunStatus"));
+    auto* results = dialog.findChild<QTableWidget*>(QStringLiteral("benchmarkResults"));
+    auto* baseline = dialog.findChild<QCheckBox*>(QStringLiteral("benchmarkRawBox"));
+    if (!tree || !run || !activity || !status || !results || !baseline) return 2;
+    for (int group = 0; group < tree->topLevelItemCount(); ++group)
+        tree->topLevelItem(group)->setCheckState(0, Qt::Unchecked);
+    baseline->setChecked(true);
+    int clipCount = 0;
+    for (auto* clip : dialog.findChildren<QCheckBox*>(QStringLiteral("benchmarkClipCheck")))
+        clip->setChecked(clipCount++ < 2);
+
+    const QDir reports(QCoreApplication::applicationDirPath() + QStringLiteral("/bench"));
+    const auto reportNames = [&] {
+        return reports.entryList({QStringLiteral("benchmark-*.json")}, QDir::Files);
+    };
+    const auto before = reportNames();
+    run->click();
+    check(waitForUi([&] {
+        return activity->text().contains(QStringLiteral("Measuring throughput"));
+    }, 20000), "lifecycle: a real sample starts before closing Settings");
+
+    QElapsedTimer cancellationTime;
+    cancellationTime.start();
+    dialog.reject();
+    check(!dialog.isVisible(), "lifecycle: reject hides the still-live dialog");
+    check(waitForUi([&] { return run->isEnabled(); }, 2000),
+          "lifecycle: reject cancels sampling without waiting for dialog destruction");
+    check(status->text().contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+          "lifecycle: a canceled run is not reported as complete");
+    check(results->rowCount() <= 1, "lifecycle: cancellation does not start the second clip");
+    check(waitForUi([&] { return reportNames().size() == before.size() + 1; }, 5000),
+          "lifecycle: closing writes one partial report");
+
+    // A failed cancellation check must still leave no background work behind.
+    waitForUi([&] { return run->isEnabled(); }, 20000);
+    dialog.show();
+    run->click();
+    check(waitForUi([&] {
+        return activity->text().contains(QStringLiteral("Measuring throughput")) &&
+               !run->isEnabled();
+    }, 20000), "lifecycle: the same dialog can start a new run after cancellation");
+    auto* buttons = dialog.findChild<QDialogButtonBox*>();
+    QPushButton* save = nullptr;
+    if (buttons) {
+        for (auto* button : buttons->findChildren<QPushButton*>()) {
+            if (buttons->buttonRole(button) == QDialogButtonBox::AcceptRole) save = button;
+        }
+    }
+    check(save != nullptr, "lifecycle: the real Settings Save action exists");
+    if (save) save->click();
+    check(!dialog.isVisible() && dialog.result() == QDialog::Accepted,
+          "lifecycle: Save accepts the active dialog");
+    check(waitForUi([&] { return run->isEnabled(); }, 2000) &&
+              status->text().contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
+          "lifecycle: Save also cancels sampling without destroying Settings");
+    check(waitForUi([&] { return reportNames().size() == before.size() + 2; }, 5000),
+          "lifecycle: Save retains the canceled run's report");
+    waitForUi([&] { return run->isEnabled(); }, 20000);
+    dialog.show();
+    run->click();
+    check(waitForUi([&] {
+        return activity->text().contains(QStringLiteral("Measuring throughput")) &&
+               !run->isEnabled();
+    }, 20000), "lifecycle: another real sample starts before application shutdown");
+
+    int heartbeat = 0;
+    QTimer timer;
+    timer.setInterval(1);
+    QObject::connect(&timer, &QTimer::timeout, [&] { ++heartbeat; });
+    timer.start();
+    bool drained = false;
+    Runner::shutdownAll([&] { drained = true; });
+    check(waitForUi([&] { return drained; }, 5000),
+          "lifecycle: application shutdown drains active benchmark work");
+    check(heartbeat > 0, "lifecycle: the GUI continues processing during shutdown");
+    check(reportNames().size() == before.size() + 3,
+          "lifecycle: shutdown finishes the benchmark report before reporting drained");
+    timer.stop();
+    waitForUi([&] { return reportNames().size() >= before.size() + 3; }, 20000);
+    std::fprintf(stderr, "[benchmark lifecycle] %s (%d failures, cancel/drain %lld ms)\n",
+                 failures == 0 ? "PASS" : "FAIL", failures,
+                 static_cast<long long>(cancellationTime.elapsed()));
+    return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -315,6 +477,14 @@ int main(int argc, char** argv) {
         QStringLiteral("exercise benign build chatter and a real source error, without inference"),
         QStringLiteral("video"));
     parser.addOption(diagnosticsOpt);
+    QCommandLineOption lifecycleOpt(
+        QStringLiteral("lifecycle-smoke"),
+        QStringLiteral("exercise close/reopen and application shutdown during real sampling"));
+    parser.addOption(lifecycleOpt);
+    QCommandLineOption sourceErrorOpt(
+        QStringLiteral("source-error-smoke"),
+        QStringLiteral("verify corrupt source causes in baseline and Anime4K rows and JSON"));
+    parser.addOption(sourceErrorOpt);
     parser.process(app);
     if (parser.isSet(diagnosticsOpt)) {
         if (!mplayer::probes::selectRuntime()) return 2;
@@ -386,6 +556,8 @@ int main(int argc, char** argv) {
 
     MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
+    if (parser.isSet(lifecycleOpt)) return verifyBenchmarkLifecycle(client, runner);
+    if (parser.isSet(sourceErrorOpt)) return verifyBenchmarkSourceErrors(client, runner);
 
     SettingsDialog dialog(client, runner);
     const QSize minSize = dialog.minimumSize();

@@ -4,6 +4,7 @@
 #include <QSize>
 #include <QString>
 
+#include <atomic>
 #include <functional>
 #include <string>
 #include <utility>
@@ -35,7 +36,8 @@ BenchmarkSampleResult runBenchmarkSample(
     QOffscreenSurface& surface,
     const std::function<void(const QString&)>& onPhase,
     const std::function<void(BenchmarkEngineBuildUpdate, const QString&)>& onEngine,
-    int ajiStageCount = 1);
+    int ajiStageCount = 1,
+    const std::atomic<bool>* cancelled = nullptr);
 
 struct BenchmarkFrameSample {
     qint64 startedAtNs = -1;
