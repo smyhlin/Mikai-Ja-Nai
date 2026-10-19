@@ -38,16 +38,45 @@ keys migrate on read. Profile edits and
 manager settings are deferred until **Save**; custom model import, external
 registration, and removal are immediate.
 
+Catalogue observation is owned by
+`src/player/native/components/AnimeJanaiCatalogWatcher.{hpp,cpp}`, a
+QtCore-only `QObject` that emits `catalogChanged()` for filesystem activity
+coalesced over 250 ms. It watches the app-owned custom model
+directory (graphs and owned sidecars), the saved external directory or the
+manager's unsaved override, the manager configuration, the external registry,
+and every registered pin path. Directory observation is direct-child only:
+nested subfolders and private Prepared Native bundle directories are not
+searched. Missing, created, and recreated directories are re-armed, and atomic
+replacements or in-place edits that preserve byte count and modification time
+still signal. The observer compares metadata only (existence, byte count,
+modification time, native metadata-change time, and directory entry names); it
+never hashes, imports, registers, runs inference, compiles an engine, or
+benchmarks. Consumers re-enumerate the existing catalogue APIs and refresh
+already-open lists in place.
+
 User-imported ONNX files are copied into
 `<nativeRoot>/animejanai/models/custom/`. External candidates remain in their
 original directory; their explicit registrations (including the recorded
 digest) are stored in the app-owned
 `<nativeRoot>/animejanai/models/external-models.json`. A registered external
-graph is borrowed: removing its registration does not remove or modify the
-external file. Importing a model or registering it does not grant Mikai any
-right to redistribute that model. Users remain responsible for the applicable
-model and weight licenses; files are not thereby vendored or licensed for
-redistribution.
+graph is borrowed: removing its registration does not copy, remove, or modify
+the external file, and the file returns to the unregistered candidate list.
+Importing a model or registering it does not grant Mikai any right to
+redistribute that model. Users remain responsible for the applicable model and
+weight licenses; files are not thereby vendored or licensed for redistribution.
+
+A graph written directly into the app-owned custom directory without an
+integrity sidecar is listed only by
+`listUnregisteredOwnedAnimeJanaiModels()` as an unregistered candidate. It is
+metadata-only and never executable: profiles, the player's spatial-model menu,
+Compare, and Benchmark cannot use it yet. Selecting that candidate and using
+the manager's **Import .onnx Model…** action registers it in place:
+`registerOwnedCustomAnimeJanaiModel` validates and digests the graph on a worker
+and publishes the `.onnx.source.json` record without renaming, moving, or
+rewriting the pasted graph. An unregistered external candidate uses the same
+action and `registerExternalCustomAnimeJanaiModel`; a raw paste is not silently
+promoted to a preset. Unregistered candidates are not removable through the
+manager's removal action.
 
 When a profile references an imported or registered graph, runtime preparation
 checks its recorded digest, stages it under the app-owned

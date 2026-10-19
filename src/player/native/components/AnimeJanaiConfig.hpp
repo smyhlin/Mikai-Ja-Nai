@@ -33,6 +33,11 @@ bool validateCustomOnnxFile(const QString& filePath, qint64* bytesOut = nullptr,
 
 QVector<CustomAnimeJanaiModel> listCustomAnimeJanaiModels();
 
+/// Lists pasted graphs in the app-owned custom directory that are not registered,
+/// including missing or invalid integrity records. Metadata only: candidates are
+/// never executable until `registerOwnedCustomAnimeJanaiModel` succeeds.
+QVector<CustomAnimeJanaiModel> listUnregisteredOwnedAnimeJanaiModels();
+
 std::optional<CustomAnimeJanaiModel> findCustomAnimeJanaiModel(const QString& idOrStem);
 
 /// Lists external-folder ONNX candidates; unpinned candidates are invalid until explicitly registered.
@@ -48,13 +53,26 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
                                             const std::function<bool()>& cancelled = {},
                                             const QString& externalDirectory = {});
 
+/// Registers an in-place `.onnx` graph already inside the app-owned custom
+/// directory by publishing its integrity sidecar. Call on a worker: validation
+/// and digesting are bounded, cancellable, and never run on the GUI thread.
+/// Refuses an existing integrity record, a conflicting identifier, or a
+/// borrowed external graph; the graph itself is never renamed, moved, or
+/// rewritten.
+bool registerOwnedCustomAnimeJanaiModel(const QString& sourceFilePath,
+                                        CustomAnimeJanaiModel* registeredOut = nullptr,
+                                        QString* errorOut = nullptr,
+                                        const std::function<bool()>& cancelled = {});
+
 /// Atomically imports a user `.onnx` file into `<nativeRoot>/animejanai/models/custom/`.
 bool importCustomAnimeJanaiModel(const QString& sourceFilePath,
                                  CustomAnimeJanaiModel* importedOut = nullptr,
                                  QString* errorOut = nullptr,
                                  const std::function<bool()>& cancelled = {});
 
-/// External graphs are borrowed; removing their registration never removes the graph.
+/// Accepts a registered identifier, the raw stem, or the actual on-disk
+/// filename. Owned graphs are removed with their integrity record; external
+/// graphs are borrowed, so removing their registration never removes the graph.
 bool removeCustomAnimeJanaiModel(const QString& id, QString* errorOut = nullptr);
 
 enum class AnimeJanaiStepKind { OnnxModel, Anime4K, Unsupported };

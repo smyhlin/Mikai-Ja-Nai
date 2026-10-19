@@ -99,6 +99,8 @@ add_library(mikai_native_support STATIC
   src/player/native/bundle/NativeRuntimeSelection.hpp
   # Native component store, GPU NVML probe & AnimeJaNai runtime
   src/player/native/components/AnimeJanaiBuildLog.hpp
+  src/player/native/components/AnimeJanaiCatalogWatcher.cpp
+  src/player/native/components/AnimeJanaiCatalogWatcher.hpp
   src/player/native/components/AnimeJanaiInstallation.cpp
   src/player/native/components/AnimeJanaiRuntime.cpp
   src/player/native/components/AnimeJanaiRuntime.hpp
@@ -166,7 +168,7 @@ target_include_directories(mikai_native_support PUBLIC
   ${MIKAI_MPV_HEADERS}
 )
 target_link_libraries(mikai_native_support PUBLIC Qt6::Core mikai_backend ${CMAKE_DL_LIBS})
-set_target_properties(mikai_native_support PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(mikai_native_support PROPERTIES POSITION_INDEPENDENT_CODE ON AUTOMOC ON)
 
 add_executable(mikai_bundle EXCLUDE_FROM_ALL native/tools/bundle_tool.cpp)
 target_link_libraries(mikai_bundle PRIVATE mikai_native_support)

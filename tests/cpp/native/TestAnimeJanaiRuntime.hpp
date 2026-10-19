@@ -32,6 +32,13 @@ class TestAnimeJanaiRuntime : public QObject {
   void mixedConfigStepsRoundTripAndRejectInvalidData();
   void mixedAnime4KPlanUsesSourceSelectionWithoutAji();
   void stageCacheLeasesRefuseOverlapAndReleaseAtTerminal();
+  void catalogWatcherReportsPastedRenamedAndRemovedModels();
+  void catalogWatcherRearmsAfterAtomicReplacementAndInPlaceEdit();
+  void catalogWatcherTracksMissingCreatedAndRecreatedDirectory();
+  void catalogWatcherSwitchesOverrideWithoutWatchingOldDirectory();
+  void catalogWatcherKeepsExternalPinsExplicit();
+  void catalogWatcherObservesCompleteCatalogueBeyondLegacyLimits();
+  void pastedOwnedModelRequiresExplicitRegistration();
 
  private:
   bool ownsFixture_ = false;

@@ -222,6 +222,129 @@ QString hashFileSha256(const QString& path, qint64* bytesOut,
     return QString::fromLatin1(hash.result().toHex());
 }
 
+struct OwnedOnnxEntry {
+    QString path;           ///< Absolute graph path as the directory spells it.
+    QString canonicalPath;  ///< Canonical identity used for trust comparisons.
+    QString fileName;       ///< Actual on-disk name, preserving spaces and case.
+    QString rawStem;
+    QString id;             ///< Sanitized identifier; may collide with another stem.
+    qint64 bytes = 0;
+};
+
+/// Enumerates regular `.onnx` files directly inside the app-owned custom model
+/// directory. Metadata only: no graph is opened and no model bytes are read.
+QVector<OwnedOnnxEntry> ownedOnnxEntries() {
+    QVector<OwnedOnnxEntry> entries;
+    const QString dirPath = customAnimeJanaiModelsDir();
+    if (!nativePathTrust(dirPath, true).trusted ||
+        !pathWithinRoot(nativeRoot(), dirPath) ||
+        !pathHasNoReparsePoints(nativeRoot(), dirPath)) {
+        return entries;
+    }
+    const QDir dir(dirPath);
+    if (!dir.exists()) return entries;
+    const QFileInfoList candidates =
+        dir.entryInfoList(QDir::Files | QDir::NoSymLinks, QDir::Name);
+    for (const QFileInfo& candidate : candidates) {
+        if (candidate.isSymLink() ||
+            candidate.suffix().compare(QStringLiteral("onnx"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+        const QString absolute = candidate.absoluteFilePath();
+        const QString canonical = candidate.canonicalFilePath();
+        if (canonical.isEmpty() || !nativePathTrust(absolute, true).trusted ||
+            !nativePathTrust(canonical, true).trusted ||
+            !pathWithinRoot(dirPath, canonical) ||
+            !pathWithinRoot(dirPath, absolute) ||
+            !pathHasNoReparsePoints(nativeRoot(), absolute) ||
+            !pathHasNoReparsePoints(nativeRoot(), canonical)) {
+            continue;
+        }
+        OwnedOnnxEntry entry;
+        entry.path = absolute;
+        entry.canonicalPath = canonical;
+        entry.fileName = candidate.fileName();
+        entry.rawStem = candidate.completeBaseName();
+        entry.id = sanitizeModelStem(entry.rawStem);
+        entry.bytes = candidate.size();
+        entries.push_back(std::move(entry));
+    }
+    return entries;
+}
+
+enum class OwnedSidecarState { Absent, Invalid, Valid };
+
+struct OwnedSidecar {
+    OwnedSidecarState state = OwnedSidecarState::Absent;
+    QString reason;
+    QString sha256;
+    qint64 bytes = 0;
+};
+
+/// Classifies the integrity record beside an owned graph. Metadata only.
+/// `requireGraphSizeMatch` is false only for removal, where a graph that changed
+/// since registration must still be deletable while an unregistered paste is not.
+OwnedSidecar readOwnedSidecar(const QString& graphPath, qint64 graphBytes,
+                              bool requireGraphSizeMatch = true) {
+    OwnedSidecar record;
+    const QString sidecarPath = graphPath + QStringLiteral(".source.json");
+    const QFileInfo sidecarInfo(sidecarPath);
+    if (!sidecarInfo.exists() && !sidecarInfo.isSymLink()) {
+        record.state = OwnedSidecarState::Absent;
+        record.reason = ConfigText::tr(
+            "This model is not registered; register it explicitly before using it.");
+        return record;
+    }
+    const QString dirPath = customAnimeJanaiModelsDir();
+    if (!sidecarInfo.isFile() || sidecarInfo.isSymLink() ||
+        !nativePathTrust(sidecarPath, true).trusted ||
+        !pathWithinRoot(dirPath, sidecarPath) ||
+        !pathHasNoReparsePoints(nativeRoot(), sidecarPath)) {
+        record.state = OwnedSidecarState::Invalid;
+        record.reason = ConfigText::tr(
+            "The model integrity record is not an app-owned regular file.");
+        return record;
+    }
+    QFile sidecar(sidecarPath);
+    if (!sidecar.open(QIODevice::ReadOnly) || sidecar.size() < 0 ||
+        sidecar.size() > kMaxModelSidecarBytes) {
+        record.state = OwnedSidecarState::Invalid;
+        record.reason = ConfigText::tr(
+            "The model integrity record is unreadable or exceeds the supported metadata size.");
+        return record;
+    }
+    const QByteArray sidecarBytes = sidecar.read(kMaxModelSidecarBytes + 1);
+    if (sidecarBytes.size() > kMaxModelSidecarBytes) {
+        record.state = OwnedSidecarState::Invalid;
+        record.reason = ConfigText::tr(
+            "The model integrity record exceeds the supported metadata size.");
+        return record;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(sidecarBytes, &parseError);
+    const QJsonObject provenance = document.object();
+    const QString digest = provenance.value(QStringLiteral("sha256")).toString().toLower();
+    const qint64 pinnedBytes =
+        provenance.value(QStringLiteral("bytes")).toVariant().toLongLong();
+    static const QRegularExpression digestRx(QStringLiteral("^[0-9a-f]{64}$"));
+    if (parseError.error != QJsonParseError::NoError || !document.isObject() ||
+        !digestRx.match(digest).hasMatch() || pinnedBytes < 0) {
+        record.state = OwnedSidecarState::Invalid;
+        record.reason = ConfigText::tr("The model integrity record is malformed.");
+        return record;
+    }
+    if (requireGraphSizeMatch && pinnedBytes != graphBytes) {
+        record.state = OwnedSidecarState::Invalid;
+        record.reason = ConfigText::tr(
+            "The model changed since it was registered; remove its integrity record, then register it again.");
+        return record;
+    }
+    record.state = OwnedSidecarState::Valid;
+    record.sha256 = digest;
+    record.bytes = pinnedBytes;
+    return record;
+}
+
 bool readProtoVarint(QFile& file, qint64 fileSize, qint64* scanned, quint64* value) {
     *value = 0;
     for (int index = 0; index < 10; ++index) {
@@ -627,63 +750,26 @@ bool validateCustomOnnxFile(const QString& filePath, qint64* bytesOut, QString* 
 QVector<CustomAnimeJanaiModel> listCustomAnimeJanaiModels() {
     QVector<CustomAnimeJanaiModel> models;
     QSet<QString> seenIds;
-    const QStringList directories{customAnimeJanaiModelsDir()};
-    for (const QString& dirPath : directories) {
-        if (!nativePathTrust(dirPath, true).trusted ||
-            !pathWithinRoot(nativeRoot(), dirPath) ||
-            !pathHasNoReparsePoints(nativeRoot(), dirPath)) {
+    for (const OwnedOnnxEntry& entry : ownedOnnxEntries()) {
+        if (entry.id.isEmpty() || seenIds.contains(entry.id.toLower()) ||
+            entry.bytes < kMinOnnxFileBytes || entry.bytes > kMaxOnnxFileBytes) {
             continue;
         }
-        const QDir dir(dirPath);
-        if (!dir.exists()) continue;
-        const QFileInfoList entries = dir.entryInfoList(
-            {QStringLiteral("*.onnx")}, QDir::Files | QDir::NoSymLinks, QDir::Name);
-        for (const QFileInfo& entry : entries) {
-            const QString rawStem = entry.completeBaseName();
-            const QString id = sanitizeModelStem(rawStem);
-            if (id.isEmpty() || seenIds.contains(id.toLower())) continue;
-            const QString fullPath = entry.absoluteFilePath();
-            if (!nativePathTrust(fullPath, true).trusted ||
-                !pathWithinRoot(dirPath, fullPath) ||
-                !pathHasNoReparsePoints(nativeRoot(), fullPath)) {
-                continue;
-            }
-            const qint64 bytes = entry.size();
-            if (bytes < kMinOnnxFileBytes || bytes > kMaxOnnxFileBytes) continue;
-            const QString sidecarPath = fullPath + QStringLiteral(".source.json");
-            const QFileInfo sidecarInfo(sidecarPath);
-            if (!sidecarInfo.isFile() || sidecarInfo.isSymLink() ||
-                !nativePathTrust(sidecarPath, true).trusted ||
-                !pathWithinRoot(dirPath, sidecarPath) ||
-                !pathHasNoReparsePoints(nativeRoot(), sidecarPath)) {
-                continue;
-            }
-            QFile sidecar(sidecarPath);
-            if (!sidecar.open(QIODevice::ReadOnly) || sidecar.size() < 0 ||
-                sidecar.size() > kMaxModelSidecarBytes) {
-                continue;
-            }
-            const QByteArray sidecarBytes = sidecar.read(kMaxModelSidecarBytes + 1);
-            if (sidecarBytes.size() > kMaxModelSidecarBytes) continue;
-            const QJsonObject provenance = QJsonDocument::fromJson(sidecarBytes).object();
-            const QString digest = provenance.value(QStringLiteral("sha256")).toString().toLower();
-            const qint64 pinnedBytes = provenance.value(QStringLiteral("bytes")).toVariant().toLongLong();
-            static const QRegularExpression digestRx(QStringLiteral("^[0-9a-f]{64}$"));
-            if (!digestRx.match(digest).hasMatch() || pinnedBytes != bytes) continue;
+        const OwnedSidecar sidecar = readOwnedSidecar(entry.path, entry.bytes);
+        if (sidecar.state != OwnedSidecarState::Valid) continue;
 
-            CustomAnimeJanaiModel model;
-            model.id = id;
-            model.fileName = entry.fileName();
-            model.displayName = rawStem;
-            model.filePath = fullPath;
-            model.bytes = bytes;
-            model.sha256 = digest;
-            model.scaleFactor = inferScaleFactor(rawStem);
-            model.architectureHint = inferArchitectureHint(rawStem);
-            model.valid = true;
-            models.push_back(std::move(model));
-            seenIds.insert(id.toLower());
-        }
+        CustomAnimeJanaiModel model;
+        model.id = entry.id;
+        model.fileName = entry.fileName;
+        model.displayName = entry.rawStem;
+        model.filePath = entry.path;
+        model.bytes = entry.bytes;
+        model.sha256 = sidecar.sha256;
+        model.scaleFactor = inferScaleFactor(entry.rawStem);
+        model.architectureHint = inferArchitectureHint(entry.rawStem);
+        model.valid = true;
+        models.push_back(std::move(model));
+        seenIds.insert(entry.id.toLower());
     }
 
     const QVector<ExternalModelPin> pins = readExternalModelPins();
@@ -712,6 +798,54 @@ QVector<CustomAnimeJanaiModel> listCustomAnimeJanaiModels() {
                   return a.displayName.compare(b.displayName, Qt::CaseInsensitive) < 0;
               });
     return models;
+}
+
+QVector<CustomAnimeJanaiModel> listUnregisteredOwnedAnimeJanaiModels() {
+    QVector<CustomAnimeJanaiModel> candidates;
+    const auto pathKey = [](const QString& path) {
+        const QString clean = QDir::cleanPath(path);
+        return pathCaseSensitivity() == Qt::CaseInsensitive ? clean.toLower() : clean;
+    };
+    QSet<QString> registeredPaths;
+    for (const ExternalModelPin& pin : readExternalModelPins()) {
+        registeredPaths.insert(pathKey(pin.filePath));
+    }
+    for (const OwnedOnnxEntry& entry : ownedOnnxEntries()) {
+        if (entry.id.isEmpty() || registeredPaths.contains(pathKey(entry.path))) {
+            continue;
+        }
+        const OwnedSidecar sidecar = readOwnedSidecar(entry.path, entry.bytes);
+        const bool withinSizeBounds =
+            entry.bytes >= kMinOnnxFileBytes && entry.bytes <= kMaxOnnxFileBytes;
+        // A valid record within bounds is already executable through
+        // listCustomAnimeJanaiModels(); anything else is still a candidate.
+        if (sidecar.state == OwnedSidecarState::Valid && withinSizeBounds) continue;
+
+        CustomAnimeJanaiModel candidate;
+        candidate.id = entry.id;
+        candidate.fileName = entry.fileName;
+        candidate.displayName = entry.rawStem;
+        candidate.filePath = entry.path;
+        candidate.bytes = entry.bytes;
+        candidate.scaleFactor = inferScaleFactor(entry.rawStem);
+        candidate.architectureHint = inferArchitectureHint(entry.rawStem);
+        candidate.valid = false;
+        if (entry.bytes < kMinOnnxFileBytes) {
+            candidate.reason = ConfigText::tr(
+                "This model file is smaller than a complete ONNX graph; replace it with a finished model before registering it.");
+        } else if (entry.bytes > kMaxOnnxFileBytes) {
+            candidate.reason = ConfigText::tr(
+                "This model file exceeds the supported ONNX size bound.");
+        } else {
+            candidate.reason = sidecar.reason;
+        }
+        candidates.push_back(std::move(candidate));
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [](const CustomAnimeJanaiModel& a, const CustomAnimeJanaiModel& b) {
+                  return a.displayName.compare(b.displayName, Qt::CaseInsensitive) < 0;
+              });
+    return candidates;
 }
 
 QVector<CustomAnimeJanaiModel> listExternalCustomAnimeJanaiModelCandidates(QString* errorOut) {
@@ -879,6 +1013,176 @@ bool registerExternalCustomAnimeJanaiModel(const QString& sourceFilePath,
     return true;
 }
 
+bool registerOwnedCustomAnimeJanaiModel(const QString& sourceFilePath,
+                                        CustomAnimeJanaiModel* registeredOut,
+                                        QString* errorOut,
+                                        const std::function<bool()>& cancelled) {
+    const auto fail = [errorOut](const QString& message) {
+        if (errorOut) *errorOut = message;
+        return false;
+    };
+    const auto isCancelled = [&] {
+        return (cancelled && cancelled()) ||
+               mikai::backend::WorkCancellationScope::cancellationRequested();
+    };
+    if (isCancelled()) {
+        return fail(ConfigText::tr("Custom model registration was cancelled."));
+    }
+
+    const QString ownedRoot = customAnimeJanaiModelsDir();
+    if (!nativePathTrust(ownedRoot, true).trusted ||
+        !pathWithinRoot(nativeRoot(), ownedRoot) ||
+        !pathHasNoReparsePoints(nativeRoot(), ownedRoot)) {
+        return fail(ConfigText::tr("The custom AnimeJaNai models directory is untrusted or redirected."));
+    }
+    const QString canonicalRoot = QFileInfo(ownedRoot).canonicalFilePath();
+    if (canonicalRoot.isEmpty()) {
+        return fail(ConfigText::tr("The custom AnimeJaNai models directory is unavailable."));
+    }
+
+    const QFileInfo sourceInfo(sourceFilePath);
+    if (!sourceInfo.exists() || !sourceInfo.isFile() || sourceInfo.isSymLink()) {
+        return fail(ConfigText::tr("The selected ONNX model does not exist or is not an app-owned regular file."));
+    }
+    const QString canonicalSource = sourceInfo.canonicalFilePath();
+    if (canonicalSource.isEmpty() ||
+        !nativePathTrust(canonicalSource, true).trusted ||
+        QDir::cleanPath(QFileInfo(canonicalSource).absolutePath())
+                .compare(QDir::cleanPath(canonicalRoot), pathCaseSensitivity()) != 0 ||
+        !pathWithinRoot(canonicalRoot, canonicalSource) ||
+        !pathHasNoReparsePoints(nativeRoot(), canonicalSource)) {
+        return fail(ConfigText::tr(
+            "Only models already inside the app-owned custom model folder can be registered; borrowed external models are pinned in their own store."));
+    }
+
+    const QString sidecarPath = canonicalSource + QStringLiteral(".source.json");
+    const auto sidecarPresent = [&sidecarPath] {
+        const QFileInfo info(sidecarPath);
+        return info.exists() || info.isSymLink();
+    };
+    if (sidecarPresent()) {
+        return fail(ConfigText::tr(
+            "This model already has an integrity record; remove the registered model before registering it again."));
+    }
+
+    const QString cleanSource = QDir::cleanPath(canonicalSource);
+    std::optional<OwnedOnnxEntry> selected;
+    for (const OwnedOnnxEntry& entry : ownedOnnxEntries()) {
+        if (QDir::cleanPath(entry.canonicalPath)
+                .compare(cleanSource, pathCaseSensitivity()) == 0) {
+            selected = entry;
+        }
+    }
+    if (!selected.has_value()) {
+        return fail(ConfigText::tr(
+            "The selected model is no longer present in the app-owned custom model folder."));
+    }
+    if (selected->id.isEmpty()) {
+        return fail(ConfigText::tr(
+            "The ONNX filename cannot be converted into a valid model identifier."));
+    }
+    for (const OwnedOnnxEntry& entry : ownedOnnxEntries()) {
+        if (!entry.id.isEmpty() &&
+            entry.id.compare(selected->id, Qt::CaseInsensitive) == 0 &&
+            QDir::cleanPath(entry.canonicalPath)
+                    .compare(cleanSource, pathCaseSensitivity()) != 0) {
+            return fail(ConfigText::tr(
+                "Another model file in the custom folder already uses the identifier %1.")
+                            .arg(selected->id));
+        }
+    }
+    QString registryError;
+    const QVector<ExternalModelPin> pins = readExternalModelPins(&registryError);
+    if (!registryError.isEmpty()) return fail(registryError);
+    for (const ExternalModelPin& pin : pins) {
+        if (QDir::cleanPath(pin.filePath).compare(cleanSource, pathCaseSensitivity()) == 0) {
+            return fail(ConfigText::tr(
+                "This model is already registered as an external model pin; remove that pin before registering it in place."));
+        }
+        if (pin.id.compare(selected->id, Qt::CaseInsensitive) == 0) {
+            return fail(ConfigText::tr(
+                "Another registered model already uses the identifier %1.")
+                            .arg(selected->id));
+        }
+    }
+
+    qint64 bytes = 0;
+    QString validationError;
+    if (!validateCustomOnnxFile(canonicalSource, &bytes, &validationError)) {
+        return fail(validationError);
+    }
+    if (isCancelled()) {
+        return fail(ConfigText::tr("Custom model registration was cancelled."));
+    }
+
+    const QFileInfo beforeHash(canonicalSource);
+    const QDateTime modifiedBeforeHash = beforeHash.lastModified();
+    qint64 hashedBytes = 0;
+    const QString digest = hashFileSha256(canonicalSource, &hashedBytes, cancelled);
+    if (isCancelled()) {
+        return fail(ConfigText::tr("Custom model registration was cancelled."));
+    }
+    if (digest.isEmpty()) {
+        return fail(ConfigText::tr(
+            "The custom model could not be read while its integrity digest was being calculated."));
+    }
+    const QFileInfo afterHash(canonicalSource);
+    if (hashedBytes != bytes ||
+        !afterHash.isFile() || afterHash.isSymLink() ||
+        afterHash.size() != bytes ||
+        afterHash.lastModified() != modifiedBeforeHash ||
+        afterHash.canonicalFilePath().compare(canonicalSource, pathCaseSensitivity()) != 0 ||
+        !nativePathTrust(canonicalSource, true).trusted ||
+        !pathWithinRoot(canonicalRoot, canonicalSource) ||
+        !pathHasNoReparsePoints(nativeRoot(), canonicalSource)) {
+        return fail(ConfigText::tr(
+            "The custom model changed while its integrity record was being prepared."));
+    }
+    if (sidecarPresent()) {
+        return fail(ConfigText::tr(
+            "This model already has an integrity record; remove the registered model before registering it again."));
+    }
+
+    const QJsonObject provenance{
+        {QStringLiteral("id"), selected->id},
+        {QStringLiteral("originalFileName"), selected->fileName},
+        {QStringLiteral("bytes"), bytes},
+        {QStringLiteral("sha256"), digest},
+        {QStringLiteral("registeredAt"),
+         QDateTime::currentDateTimeUtc().toString(Qt::ISODate)}};
+    if (isCancelled()) {
+        return fail(ConfigText::tr("Custom model registration was cancelled."));
+    }
+    QSaveFile sidecar(sidecarPath);
+    sidecar.setDirectWriteFallback(false);
+    const QByteArray provenanceBytes =
+        QJsonDocument(provenance).toJson(QJsonDocument::Compact);
+    if (!sidecar.open(QIODevice::WriteOnly) ||
+        sidecar.write(provenanceBytes) != provenanceBytes.size() || !sidecar.commit()) {
+        return fail(ConfigText::tr("Could not write the model integrity record: %1")
+                        .arg(sidecar.errorString()));
+    }
+    if (isCancelled()) {
+        QFile::remove(sidecarPath);
+        return fail(ConfigText::tr("Custom model registration was cancelled."));
+    }
+
+    if (registeredOut != nullptr) {
+        registeredOut->id = selected->id;
+        registeredOut->fileName = selected->fileName;
+        registeredOut->displayName = selected->rawStem;
+        registeredOut->filePath = selected->path;
+        registeredOut->bytes = bytes;
+        registeredOut->sha256 = digest;
+        registeredOut->scaleFactor = inferScaleFactor(selected->rawStem);
+        registeredOut->architectureHint = inferArchitectureHint(selected->rawStem);
+        registeredOut->valid = true;
+        registeredOut->reason.clear();
+    }
+    if (errorOut != nullptr) errorOut->clear();
+    return true;
+}
+
 bool importCustomAnimeJanaiModel(const QString& sourceFilePath,
                                  CustomAnimeJanaiModel* importedOut,
                                  QString* errorOut,
@@ -1025,17 +1329,98 @@ bool importCustomAnimeJanaiModel(const QString& sourceFilePath,
 }
 
 bool removeCustomAnimeJanaiModel(const QString& id, QString* errorOut) {
-    const QString sanitized = sanitizeModelStem(id);
-    if (sanitized.isEmpty()) {
+    QString query = id.trimmed();
+    if (query.startsWith(QStringLiteral("spatial:custom:"), Qt::CaseInsensitive)) {
+        query = query.mid(QStringLiteral("spatial:custom:").size());
+    } else if (query.startsWith(QStringLiteral("custom:"), Qt::CaseInsensitive)) {
+        query = query.mid(QStringLiteral("custom:").size());
+    }
+    if (query.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive)) query.chop(5);
+    query = query.trimmed();
+    const QString sanitized = sanitizeModelStem(query);
+    if (query.isEmpty() || sanitized.isEmpty()) {
         if (errorOut != nullptr) {
             *errorOut = ConfigText::tr("No custom model identifier was specified.");
         }
         return false;
     }
-    const QString targetDir = customAnimeJanaiModelsDir();
-    const QString targetPath = QDir(targetDir).filePath(sanitized + QStringLiteral(".onnx"));
+
     QString digest;
-    if (!QFileInfo::exists(targetPath)) {
+    QVector<OwnedOnnxEntry> ownedMatches;
+    for (const OwnedOnnxEntry& entry : ownedOnnxEntries()) {
+        if (entry.id.isEmpty()) continue;
+        if (entry.fileName.compare(query, pathCaseSensitivity()) == 0 ||
+            entry.rawStem.compare(query, pathCaseSensitivity()) == 0 ||
+            entry.id.compare(query, pathCaseSensitivity()) == 0 ||
+            entry.id.compare(sanitized, pathCaseSensitivity()) == 0) {
+            ownedMatches.push_back(entry);
+        }
+    }
+    if (ownedMatches.size() > 1) {
+        // Prefer an exact actual-filename/stem match, then the single registered
+        // graph; only a genuine tie is reported as ambiguous.
+        QVector<OwnedOnnxEntry> exactMatches;
+        for (const OwnedOnnxEntry& entry : ownedMatches) {
+            if (entry.fileName.compare(query, pathCaseSensitivity()) == 0 ||
+                entry.rawStem.compare(query, pathCaseSensitivity()) == 0) {
+                exactMatches.push_back(entry);
+            }
+        }
+        if (exactMatches.size() == 1) {
+            ownedMatches = exactMatches;
+        } else {
+            QVector<OwnedOnnxEntry> registeredMatches;
+            for (const OwnedOnnxEntry& entry : ownedMatches) {
+                if (readOwnedSidecar(entry.path, entry.bytes, false).state ==
+                    OwnedSidecarState::Valid) {
+                    registeredMatches.push_back(entry);
+                }
+            }
+            if (!registeredMatches.isEmpty()) ownedMatches = registeredMatches;
+        }
+    }
+    if (ownedMatches.size() > 1) {
+        QStringList names;
+        names.reserve(ownedMatches.size());
+        for (const OwnedOnnxEntry& entry : ownedMatches) names.append(entry.fileName);
+        if (errorOut != nullptr) {
+            *errorOut = ConfigText::tr(
+                "The custom model identifier %1 matches more than one file (%2); remove it by exact filename.")
+                            .arg(query, names.join(QStringLiteral(", ")));
+        }
+        return false;
+    }
+    if (ownedMatches.size() == 1) {
+        // Resolve the actual on-disk graph, so a pasted filename with spaces or
+        // mixed case is addressed exactly rather than as `<sanitized-id>.onnx`.
+        const OwnedOnnxEntry& target = ownedMatches.first();
+        const OwnedSidecar sidecar = readOwnedSidecar(target.path, target.bytes, false);
+        if (sidecar.state != OwnedSidecarState::Valid) {
+            if (errorOut != nullptr) {
+                *errorOut = ConfigText::tr(
+                    "The custom model %1 is not registered; only registered models can be removed.")
+                                .arg(target.fileName);
+            }
+            return false;
+        }
+        if (!QFileInfo(target.path).isFile() || QFileInfo(target.path).isSymLink() ||
+            !nativePathTrust(target.path, true).trusted ||
+            !pathWithinRoot(customAnimeJanaiModelsDir(), target.path) ||
+            !pathHasNoReparsePoints(nativeRoot(), target.path)) {
+            if (errorOut != nullptr) {
+                *errorOut = ConfigText::tr("The custom model path is not an app-owned regular file.");
+            }
+            return false;
+        }
+        if (!QFile::remove(target.path)) {
+            if (errorOut != nullptr) {
+                *errorOut = ConfigText::tr("Could not remove %1.").arg(target.path);
+            }
+            return false;
+        }
+        QFile::remove(target.path + QStringLiteral(".source.json"));
+        digest = sidecar.sha256;
+    } else {
         QString registryError;
         QVector<ExternalModelPin> pins = readExternalModelPins(&registryError);
         if (!registryError.isEmpty()) {
@@ -1054,49 +1439,8 @@ bool removeCustomAnimeJanaiModel(const QString& id, QString* errorOut) {
         }
         digest = external->sha256;
         pins.erase(external);
+        // Borrowed external graphs are never deleted; only their registration is.
         if (!writeExternalModelPins(pins, errorOut)) return false;
-    } else {
-        const QFileInfo targetInfo(targetPath);
-        if (!targetInfo.isFile() || targetInfo.isSymLink() ||
-            !nativePathTrust(targetDir, true).trusted ||
-            !pathWithinRoot(nativeRoot(), targetPath) ||
-            !pathHasNoReparsePoints(nativeRoot(), targetPath)) {
-            if (errorOut != nullptr) *errorOut = ConfigText::tr("The custom model path is not an app-owned regular file.");
-            return false;
-        }
-        const QString metadataPath = targetPath + QStringLiteral(".source.json");
-        const QFileInfo metadataInfo(metadataPath);
-        if (!metadataInfo.isFile() || metadataInfo.isSymLink() ||
-            !nativePathTrust(metadataPath, true).trusted ||
-            !pathHasNoReparsePoints(nativeRoot(), metadataPath)) {
-            if (errorOut != nullptr) *errorOut = ConfigText::tr("The custom model integrity record path is untrusted.");
-            return false;
-        }
-        QFile metadata(metadataPath);
-        if (!metadata.open(QIODevice::ReadOnly) || metadata.size() < 0 ||
-            metadata.size() > kMaxModelSidecarBytes) {
-            if (errorOut != nullptr) *errorOut = ConfigText::tr("The custom model integrity record is missing or exceeds the supported metadata size.");
-            return false;
-        }
-        const QByteArray metadataBytes = metadata.read(kMaxModelSidecarBytes + 1);
-        if (metadataBytes.size() > kMaxModelSidecarBytes) {
-            if (errorOut != nullptr) *errorOut = ConfigText::tr("The custom model integrity record exceeds the supported metadata size.");
-            return false;
-        }
-        const QJsonObject record = QJsonDocument::fromJson(metadataBytes).object();
-        digest = record.value(QStringLiteral("sha256")).toString().toLower();
-        static const QRegularExpression digestRx(QStringLiteral("^[0-9a-f]{64}$"));
-        if (!digestRx.match(digest).hasMatch()) {
-            if (errorOut != nullptr) *errorOut = ConfigText::tr("The custom model integrity record is invalid.");
-            return false;
-        }
-        if (!QFile::remove(targetPath)) {
-            if (errorOut != nullptr) {
-                *errorOut = ConfigText::tr("Could not remove %1.").arg(targetPath);
-            }
-            return false;
-        }
-        QFile::remove(targetPath + QStringLiteral(".source.json"));
     }
     const QString stagedDirPath = stagedSpatialModelsDir();
     if (nativePathTrust(stagedDirPath, true).trusted &&

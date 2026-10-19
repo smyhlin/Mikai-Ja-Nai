@@ -5,11 +5,13 @@
 #include "../../fixtures/IdentityOnnxFixture.hpp"
 #include "backend/Cancellation.hpp"
 #include "native/bundle/NativePaths.hpp"
+#include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiConfig.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -17,12 +19,15 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QLibraryInfo>
+#include <QtCore/QSaveFile>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QSettings>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QProcess>
+#include <QtTest/QSignalSpy>
 
+#include <algorithm>
 #include <atomic>
 
 #ifdef Q_OS_WIN
@@ -41,6 +46,48 @@ QString fixtureRoot() {
 QString runtimePath(Backend backend = Backend::TensorRT) {
     const QString name = backend == Backend::TensorRT ? QStringLiteral("trt") : QStringLiteral("dml");
     return QDir(fixtureRoot()).filePath(name);
+}
+
+/// A valid identity ModelProto whose metadata tag changes the file size, so a
+/// replacement is observable from public inventory without graph inspection.
+QByteArray taggedIdentityGraph(const QByteArray& tag) {
+    QByteArray graph = mikai::tests::fixtures::makeTestIdentityOnnxGraph();
+    QByteArray metadata;
+    metadata.append(char(0x0a));
+    metadata.append(char(1));
+    metadata.append('k');
+    metadata.append(char(0x12));
+    metadata.append(static_cast<char>(tag.size()));
+    metadata.append(tag);
+    graph.append(char(0x72));  // ModelProto.metadata_props
+    graph.append(static_cast<char>(metadata.size()));
+    graph.append(metadata);
+    return graph;
+}
+
+bool listsFileNamed(const QVector<CustomAnimeJanaiModel>& models, const QString& fileName) {
+    return std::any_of(models.begin(), models.end(),
+                       [&fileName](const CustomAnimeJanaiModel& model) {
+                           return model.fileName == fileName;
+                       });
+}
+
+const CustomAnimeJanaiModel* modelNamed(const QVector<CustomAnimeJanaiModel>& models,
+                                        const QString& fileName) {
+    for (const CustomAnimeJanaiModel& model : models) {
+        if (model.fileName == fileName) return &model;
+    }
+    return nullptr;
+}
+
+/// Rewrites the final byte in place, keeping size and leaving the graph valid.
+bool rewriteLastByteSameSize(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadWrite)) return false;
+    const qint64 size = file.size();
+    if (size <= 0 || !file.seek(size - 1)) return false;
+    const char replacement = 0x78;
+    return file.write(&replacement, 1) == 1 && file.flush();
 }
 
 bool writeFile(const QString& path, const QByteArray& data) {
@@ -1025,4 +1072,349 @@ void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
     QFile protectedFile(protectedPath);
     QVERIFY(protectedFile.open(QIODevice::ReadOnly));
     QCOMPARE(protectedFile.readAll(), original);
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherReportsPastedRenamedAndRemovedModels() {
+    QTemporaryDir externalDir;
+    QVERIFY(externalDir.isValid());
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(externalDir.path());
+    watcher.refresh();
+
+    const QString pastedName = QStringLiteral("External_Paste_2x.onnx");
+    const QString pastedPath = QDir(externalDir.path()).filePath(pastedName);
+    QVERIFY(writeFile(pastedPath, taggedIdentityGraph(QByteArrayLiteral("pasted"))));
+    QVERIFY(changed.wait(5000));
+    const QVector<CustomAnimeJanaiModel> pastedCandidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* pasted = modelNamed(pastedCandidates, pastedName);
+    QVERIFY(pasted != nullptr);
+    QVERIFY(!pasted->valid);
+    QVERIFY(!pasted->reason.isEmpty());
+
+    const QString renamedName = QStringLiteral("External_Renamed_2x.onnx");
+    const QString renamedPath = QDir(externalDir.path()).filePath(renamedName);
+    changed.clear();
+    QVERIFY(QFile::rename(pastedPath, renamedPath));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), renamedName),
+        5000);
+    QVERIFY(!listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()),
+                            pastedName));
+
+    changed.clear();
+    QVERIFY(QFile::remove(renamedPath));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), renamedName),
+        5000);
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherRearmsAfterAtomicReplacementAndInPlaceEdit() {
+    QTemporaryDir externalDir;
+    QVERIFY(externalDir.isValid());
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(externalDir.path());
+    watcher.refresh();
+
+    const QString name = QStringLiteral("External_Replace_2x.onnx");
+    const QString path = QDir(externalDir.path()).filePath(name);
+    QVERIFY(writeFile(path, taggedIdentityGraph(QByteArrayLiteral("first"))));
+    QVERIFY(changed.wait(5000));
+    const qint64 initialBytes = QFileInfo(path).size();
+    const QVector<CustomAnimeJanaiModel> initialCandidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* initialModel = modelNamed(initialCandidates, name);
+    QVERIFY(initialModel != nullptr);
+    QCOMPARE(initialModel->bytes, initialBytes);
+
+    changed.clear();
+    {
+        QSaveFile replacement(path);
+        QVERIFY(replacement.open(QIODevice::WriteOnly));
+        const QByteArray replacementBytes = taggedIdentityGraph(QByteArrayLiteral("atomic-replacement"));
+        QVERIFY(replacement.write(replacementBytes) == replacementBytes.size());
+        QVERIFY(replacement.commit());
+    }
+    QVERIFY(changed.wait(5000));
+    const qint64 replacedBytes = QFileInfo(path).size();
+    QVERIFY(replacedBytes != initialBytes);
+    const QVector<CustomAnimeJanaiModel> replacedCandidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* replacedModel = modelNamed(replacedCandidates, name);
+    QVERIFY(replacedModel != nullptr);
+    QCOMPARE(replacedModel->bytes, replacedBytes);
+
+    changed.clear();
+    QVERIFY(rewriteLastByteSameSize(path));
+    QVERIFY(changed.wait(5000));
+    QCOMPARE(QFileInfo(path).size(), replacedBytes);
+    const QVector<CustomAnimeJanaiModel> editedCandidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* editedModel = modelNamed(editedCandidates, name);
+    QVERIFY(editedModel != nullptr);
+    QCOMPARE(editedModel->bytes, replacedBytes);
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherTracksMissingCreatedAndRecreatedDirectory() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString watched = QDir(root.path()).filePath(QStringLiteral("catalog"));
+    QVERIFY(!QFileInfo::exists(watched));
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(watched);
+    watcher.refresh();
+    QVERIFY(listExternalCustomAnimeJanaiModelCandidates(watched).isEmpty());
+
+    QVERIFY(QDir().mkpath(watched));
+    QVERIFY(writeFile(QDir(watched).filePath(QStringLiteral("Created_2x.onnx")),
+                      taggedIdentityGraph(QByteArrayLiteral("created"))));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(watched),
+                       QStringLiteral("Created_2x.onnx")),
+        5000);
+
+    changed.clear();
+    QVERIFY(QDir(watched).removeRecursively());
+    QVERIFY(changed.wait(5000));
+    QVERIFY(listExternalCustomAnimeJanaiModelCandidates(watched).isEmpty());
+
+    changed.clear();
+    QVERIFY(QDir().mkpath(watched));
+    QVERIFY(writeFile(QDir(watched).filePath(QStringLiteral("Recreated_2x.onnx")),
+                      taggedIdentityGraph(QByteArrayLiteral("recreated"))));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(watched),
+                       QStringLiteral("Recreated_2x.onnx")),
+        5000);
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherSwitchesOverrideWithoutWatchingOldDirectory() {
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString first = QDir(root.path()).filePath(QStringLiteral("first"));
+    const QString second = QDir(root.path()).filePath(QStringLiteral("second"));
+    QVERIFY(QDir().mkpath(first));
+    QVERIFY(QDir().mkpath(second));
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(first);
+    watcher.refresh();
+    QVERIFY(writeFile(QDir(first).filePath(QStringLiteral("First_2x.onnx")),
+                      taggedIdentityGraph(QByteArrayLiteral("first"))));
+    QVERIFY(changed.wait(5000));
+    QCOMPARE(listExternalCustomAnimeJanaiModelCandidates(first).size(), 1);
+
+    watcher.setExternalModelsDirectory(second);
+    watcher.refresh();
+    changed.clear();
+    QVERIFY(writeFile(QDir(first).filePath(QStringLiteral("Late_2x.onnx")),
+                      taggedIdentityGraph(QByteArrayLiteral("late"))));
+    QVERIFY(!changed.wait(1500));
+    QVERIFY(listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(first),
+                           QStringLiteral("Late_2x.onnx")));
+    QVERIFY(!listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(second),
+                            QStringLiteral("Late_2x.onnx")));
+
+    QVERIFY(writeFile(QDir(second).filePath(QStringLiteral("Second_2x.onnx")),
+                      taggedIdentityGraph(QByteArrayLiteral("second"))));
+    QVERIFY(changed.wait(5000));
+    QVERIFY(listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(second),
+                           QStringLiteral("Second_2x.onnx")));
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherKeepsExternalPinsExplicit() {
+    QTemporaryDir externalDir;
+    QVERIFY(externalDir.isValid());
+    const QString name = QStringLiteral("External_Pin_2x.onnx");
+    const QString path = QDir(externalDir.path()).filePath(name);
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(externalDir.path());
+    watcher.refresh();
+    QVERIFY(writeFile(path, taggedIdentityGraph(QByteArrayLiteral("pin"))));
+    QVERIFY(changed.wait(5000));
+
+    const QVector<CustomAnimeJanaiModel> candidates =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* candidate = modelNamed(candidates, name);
+    QVERIFY(candidate != nullptr);
+    QVERIFY(!candidate->valid);
+    QVERIFY(listCustomAnimeJanaiModels().isEmpty());
+
+    changed.clear();
+    CustomAnimeJanaiModel pinned;
+    QString error;
+    QVERIFY2(registerExternalCustomAnimeJanaiModel(path, &pinned, &error, {}, externalDir.path()),
+             qPrintable(error));
+    QVERIFY(changed.wait(5000));
+    const auto listed = findCustomAnimeJanaiModel(pinned.id);
+    QVERIFY(listed.has_value());
+    QCOMPARE(listed->sha256, pinned.sha256);
+    QVERIFY(!listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), name));
+
+    changed.clear();
+    QVERIFY(rewriteLastByteSameSize(path));
+    QVERIFY(changed.wait(5000));
+    const auto retained = findCustomAnimeJanaiModel(pinned.id);
+    QVERIFY(retained.has_value());
+    QCOMPARE(retained->sha256, pinned.sha256);
+
+    QVERIFY2(removeCustomAnimeJanaiModel(pinned.id, &error), qPrintable(error));
+    QVERIFY(QFileInfo::exists(path));
+    QVERIFY(!findCustomAnimeJanaiModel(pinned.id).has_value());
+    QVERIFY(listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), name));
+}
+
+void TestAnimeJanaiRuntime::catalogWatcherObservesCompleteCatalogueBeyondLegacyLimits() {
+    QTemporaryDir externalDir;
+    QVERIFY(externalDir.isValid());
+    const QDir directory(externalDir.path());
+
+    // The legacy observation signature adopted at most the first 512 matching
+    // metadata rows after examining at most 4096 directory entries. With noise
+    // entries ahead of the catalogue, every model fell outside that window, so
+    // the watcher could not report changes the public inventory already lists.
+    const QByteArray modelBytes = taggedIdentityGraph(QByteArrayLiteral("overflow"));
+    for (int index = 0; index < 4100; ++index) {
+        const QString name =
+            QStringLiteral("000_noise_%1.tmp").arg(index, 4, 10, QLatin1Char('0'));
+        QVERIFY(writeFile(directory.filePath(name), QByteArrayLiteral("n")));
+    }
+    QStringList modelNames;
+    modelNames.reserve(530);
+    for (int index = 0; index < 530; ++index) {
+        const QString name =
+            QStringLiteral("Anime_2x_%1.onnx").arg(index, 4, 10, QLatin1Char('0'));
+        QVERIFY(writeFile(directory.filePath(name), modelBytes));
+        modelNames.push_back(name);
+    }
+
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.setExternalModelsDirectory(externalDir.path());
+    watcher.refresh();
+
+    // Inventory agreement: the first and last legacy scan-order names must
+    // already be consumer-visible before the watcher is asked to follow them.
+    const QVector<CustomAnimeJanaiModel> baseline =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    QVERIFY(listsFileNamed(baseline, modelNames.constFirst()));
+    QVERIFY(listsFileNamed(baseline, modelNames.constLast()));
+
+    // A lexicographically late paste must notify even though the legacy bounded
+    // signature never contained it.
+    const QString lateName = QStringLiteral("Zzz_Late_Paste_2x.onnx");
+    const QString latePath = directory.filePath(lateName);
+    QVERIFY(writeFile(latePath, taggedIdentityGraph(QByteArrayLiteral("late"))));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), lateName),
+        5000);
+    const qint64 pastedBytes = QFileInfo(latePath).size();
+
+    // In-place replacement keeping byte count and modification time must still
+    // notify: the observed file itself is the evidence, not the metadata diff.
+    QTest::qWait(400);
+    changed.clear();
+    const QDateTime pastedModified = QFileInfo(latePath).lastModified();
+    QVERIFY(rewriteLastByteSameSize(latePath));
+    {
+        QFile restored(latePath);
+        QVERIFY(restored.open(QIODevice::ReadWrite));
+        // The premise is that the write really is hidden from metadata: fail
+        // here rather than silently degrading into an ordinary mtime change.
+        QVERIFY(restored.setFileTime(pastedModified, QFileDevice::FileModificationTime));
+    }
+    QVERIFY(changed.wait(5000));
+    const QVector<CustomAnimeJanaiModel> edited =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    const CustomAnimeJanaiModel* editedModel = modelNamed(edited, lateName);
+    QVERIFY(editedModel != nullptr);
+    QCOMPARE(editedModel->bytes, pastedBytes);
+
+    QTest::qWait(400);
+    changed.clear();
+    QVERIFY(QFile::remove(latePath));
+    QVERIFY(changed.wait(5000));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !listsFileNamed(listExternalCustomAnimeJanaiModelCandidates(externalDir.path()), lateName),
+        5000);
+
+    // Non-model churn shares the watched directory but is not catalogue state.
+    QTest::qWait(400);
+    changed.clear();
+    QVERIFY(writeFile(directory.filePath(QStringLiteral("000_noise_0000.tmp")),
+                      QByteArrayLiteral("m")));
+    QVERIFY(writeFile(directory.filePath(QStringLiteral("000_noise_added.tmp")),
+                      QByteArrayLiteral("n")));
+    QVERIFY(!changed.wait(1500));
+    const QVector<CustomAnimeJanaiModel> afterNoise =
+        listExternalCustomAnimeJanaiModelCandidates(externalDir.path());
+    QVERIFY(listsFileNamed(afterNoise, modelNames.constLast()));
+    QVERIFY(!listsFileNamed(afterNoise, QStringLiteral("000_noise_added.tmp")));
+}
+
+void TestAnimeJanaiRuntime::pastedOwnedModelRequiresExplicitRegistration() {
+    AnimeJanaiCatalogWatcher watcher;
+    QSignalSpy changed(&watcher, &AnimeJanaiCatalogWatcher::catalogChanged);
+    watcher.refresh();
+
+    const QString fileName = QStringLiteral("4x Pasted Model (v2).onnx");
+    const QString pastedPath = QDir(customAnimeJanaiModelsDir()).filePath(fileName);
+    const QByteArray graph = taggedIdentityGraph(QByteArrayLiteral("owned-paste"));
+    QVERIFY(writeFile(pastedPath, graph));
+    QVERIFY(changed.wait(5000));
+
+    const QVector<CustomAnimeJanaiModel> candidates = listUnregisteredOwnedAnimeJanaiModels();
+    QCOMPARE(candidates.size(), 1);
+    const CustomAnimeJanaiModel candidate = candidates.first();
+    QCOMPARE(candidate.filePath, pastedPath);
+    QCOMPARE(candidate.fileName, fileName);
+    QVERIFY(!candidate.valid);
+    QVERIFY(!candidate.reason.isEmpty());
+    QVERIFY(candidate.sha256.isEmpty());
+    QCOMPARE(candidate.bytes, qint64(graph.size()));
+    QVERIFY(listCustomAnimeJanaiModels().isEmpty());
+    QVERIFY(!findCustomAnimeJanaiModel(candidate.id).has_value());
+
+    {
+        std::atomic_bool runnerCancelled{true};
+        const mikai::backend::WorkCancellationScope cancellationScope(&runnerCancelled);
+        QString cancellationError;
+        QVERIFY(!registerOwnedCustomAnimeJanaiModel(pastedPath, nullptr, &cancellationError));
+        QVERIFY(!cancellationError.isEmpty());
+    }
+    QVERIFY(!QFileInfo::exists(pastedPath + QStringLiteral(".source.json")));
+    QVERIFY(QFileInfo::exists(pastedPath));
+    QVERIFY(listCustomAnimeJanaiModels().isEmpty());
+    QCOMPARE(listUnregisteredOwnedAnimeJanaiModels().size(), 1);
+
+    changed.clear();
+    CustomAnimeJanaiModel registered;
+    QString error;
+    QVERIFY2(registerOwnedCustomAnimeJanaiModel(pastedPath, &registered, &error), qPrintable(error));
+    QVERIFY(registered.valid);
+    QCOMPARE(registered.sha256, sha(graph));
+    QCOMPARE(registered.bytes, qint64(graph.size()));
+    QCOMPARE(registered.fileName, fileName);
+    QVERIFY(!registered.id.isEmpty());
+    QVERIFY(QFileInfo::exists(pastedPath + QStringLiteral(".source.json")));
+    QVERIFY(changed.wait(5000));
+    const auto runtimeVisible = findCustomAnimeJanaiModel(registered.id);
+    QVERIFY(runtimeVisible.has_value());
+    QCOMPARE(runtimeVisible->sha256, registered.sha256);
+    QVERIFY(listUnregisteredOwnedAnimeJanaiModels().isEmpty());
+
+    QVERIFY2(removeCustomAnimeJanaiModel(registered.fileName, &error), qPrintable(error));
+    QVERIFY(!QFileInfo::exists(pastedPath));
+    QVERIFY(!QFileInfo::exists(pastedPath + QStringLiteral(".source.json")));
+    QVERIFY(!findCustomAnimeJanaiModel(registered.id).has_value());
+    QVERIFY(listUnregisteredOwnedAnimeJanaiModels().isEmpty());
 }
