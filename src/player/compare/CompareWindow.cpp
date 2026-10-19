@@ -6,6 +6,7 @@
 #include "CompareRenderer.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/status/NativePlaybackController.hpp"
 
@@ -16,6 +17,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDoubleSpinBox>
+#include <QEvent>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFrame>
@@ -83,6 +85,18 @@ QStringList categoryPath(const QString& categoryId) {
         }
     }
     return path;
+}
+
+// A side can keep showing a model the catalogue no longer offers. The caption
+// reuses the catalogue's existing words: no new translatable string is
+// introduced, and a language switch restates the same entry in place.
+QString unavailableChoiceCaption(const QString& label) {
+    return QCoreApplication::translate("SettingsDialog", "%1 (not available)").arg(label);
+}
+
+QString missingCatalogueReason() {
+    return QCoreApplication::translate("AnimeJanaiRuntime",
+                                       "The selected AnimeJaNai preset is not recognised.");
 }
 
 QFrame* createVerticalDivider(QWidget* parent) {
@@ -227,6 +241,12 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
     }
     buildUi();
     populateCandidates();
+    // One observer for this window's whole life. It follows the saved manager
+    // configuration by default; the window never edits that configuration.
+    catalogWatcher_ = new native::AnimeJanaiCatalogWatcher(this);
+    connect(catalogWatcher_, &native::AnimeJanaiCatalogWatcher::catalogChanged, this,
+            &CompareWindow::onCatalogChanged);
+    catalogWatcher_->refresh();
     // Capture after mapping; position updates prevent accepting a late seek's old frame.
     if (surface_ != nullptr) {
         connect(surface_, &VideoSurface::playingChanged, this,
@@ -296,6 +316,7 @@ void CompareWindow::togglePin(bool pinned) {
         const QSignalBlocker blocker(pinButton_);
         pinButton_->setChecked(pinned_);
         pinButton_->setText(pinned_ ? tr("Pinned") : tr("Pin"));
+        pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
     const bool wasVisible = isVisible();
     togglingPin_ = true;
@@ -393,6 +414,101 @@ void CompareWindow::hideEvent(QHideEvent* event) {
     }
     requestPlaybackHoldRelease();
     QDialog::hideEvent(event);
+}
+
+void CompareWindow::changeEvent(QEvent* event) {
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void CompareWindow::retranslateUi() {
+    // Only words are restated. The captured frame, both rendered pictures, the
+    // A/B ids, the opaque errors, the camera, the selection and the playback
+    // hold are read from their own state and never touched.
+    setWindowTitle(tr("Quality Comparison"));
+    if (modeCaption_ != nullptr) {
+        modeCaption_->setText(tr("Mode:"));
+    }
+    if (modeBox_ != nullptr) {
+        // Restated through each item's stable mode key, never its index.
+        for (int index = 0; index < modeBox_->count(); ++index) {
+            CompareMode mode;
+            if (modeFromKey(modeBox_->itemData(index).toString().toLatin1().constData(), mode)) {
+                modeBox_->setItemText(index, QString::fromUtf8(modeLabel(mode)));
+            }
+        }
+    }
+    if (filterCaption_ != nullptr) {
+        filterCaption_->setText(tr("Filter:"));
+    }
+    if (filterBox_ != nullptr) {
+        const int bilinear = filterBox_->findData(true);
+        if (bilinear >= 0) filterBox_->setItemText(bilinear, tr("Bilinear"));
+        const int nearest = filterBox_->findData(false);
+        if (nearest >= 0) filterBox_->setItemText(nearest, tr("Nearest Neighbor"));
+        filterBox_->setToolTip(tr("How the picture is scaled"));
+        filterBox_->setAccessibleName(tr("Filter"));
+    }
+    if (fitButton_ != nullptr) {
+        fitButton_->setText(tr("Fit"));
+        fitButton_->setToolTip(tr("Fit the picture (F)"));
+        fitButton_->setAccessibleName(tr("Fit the picture"));
+    }
+    if (zoom_ != nullptr) {
+        zoom_->setText(tr("%1%").arg(zoomPercent_));
+        zoom_->setToolTip(tr("View scale"));
+        zoom_->setAccessibleName(tr("View scale"));
+    }
+    if (swapButton_ != nullptr) {
+        swapButton_->setText(tr("Swap A ⇄ B"));
+        swapButton_->setToolTip(tr("Swap Side A and Side B (S)"));
+        swapButton_->setAccessibleName(tr("Swap A ⇄ B"));
+    }
+    if (recaptureButton_ != nullptr) {
+        recaptureButton_->setText(tr("Recapture"));
+        recaptureButton_->setToolTip(tr("Capture the current player frame (R)"));
+        recaptureButton_->setAccessibleName(tr("Recapture"));
+    }
+    if (pinButton_ != nullptr) {
+        pinButton_->setText(pinned_ ? tr("Pinned") : tr("Pin"));
+        pinButton_->setToolTip(tr("Keep Compare window always on top (P)"));
+        pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
+    }
+    if (splitLabel_ != nullptr) splitLabel_->setText(tr("Split:"));
+    if (flickerLabel_ != nullptr) flickerLabel_->setText(tr("Flicker, Hz:"));
+    if (gainLabel_ != nullptr) gainLabel_->setText(tr("Gain:"));
+    if (split_ != nullptr) split_->setToolTip(tr("Divider position"));
+    if (flicker_ != nullptr) flicker_->setToolTip(tr("How fast the two pictures alternate"));
+    if (gain_ != nullptr) gain_->setToolTip(tr("Amplify the difference"));
+    refreshHoverText();
+
+    // Selector captions are translated catalogue text, so they are re-read
+    // from the same semantic catalogue and republished through the existing
+    // choice setters. This neither rebuilds a surface nor renders a picture.
+    if (rendering_) {
+        // The render pumps the event loop and reads the choice lists; defer
+        // only the catalogue snapshot while the app-owned chrome is already
+        // restated above.
+        catalogueRefreshPending_ = true;
+        scheduleCatalogueRefresh();
+        updateInfo();
+    } else {
+        refreshCandidates();
+    }
+
+    if (processingOverlay_ != nullptr) {
+        if (buildOperationActive_) {
+            // Running: retitle without resetting the run, its timer or its
+            // progress. The stage words are the caller's and stay verbatim.
+            processingOverlay_->setOperationTitle(tr("Build comparison TensorRT engine"));
+        } else if (buildSummaryKind_ != BuildSummaryKind::None) {
+            // Terminal: only the app-owned wrapper around an opaque failure
+            // detail is rebuilt; the detail itself is preserved verbatim.
+            processingOverlay_->setSummary(buildSummaryText());
+        }
+    }
 }
 
 void CompareWindow::captureNow() {
@@ -508,7 +624,8 @@ void CompareWindow::buildUi() {
     header->setContentsMargins(10, 6, 10, 6);
     header->setSpacing(kGapSmall);
 
-    header->addWidget(new QLabel(tr("Mode:"), toolbarCard));
+    modeCaption_ = new QLabel(tr("Mode:"), toolbarCard);
+    header->addWidget(modeCaption_);
     modeBox_ = new QComboBox(toolbarCard);
     modeBox_->setObjectName(QStringLiteral("compareMode"));
     modeBox_->setFocusPolicy(Qt::NoFocus);
@@ -528,7 +645,8 @@ void CompareWindow::buildUi() {
 
     header->addWidget(createVerticalDivider(toolbarCard));
 
-    header->addWidget(new QLabel(tr("Filter:"), toolbarCard));
+    filterCaption_ = new QLabel(tr("Filter:"), toolbarCard);
+    header->addWidget(filterCaption_);
     filterBox_ = new QComboBox(toolbarCard);
     filterBox_->setObjectName(QStringLiteral("compareFilter"));
     filterBox_->setFocusPolicy(Qt::NoFocus);
@@ -539,18 +657,18 @@ void CompareWindow::buildUi() {
     filterBox_->setAccessibleName(tr("Filter"));
     header->addWidget(filterBox_);
 
-    auto* fit = new QToolButton(toolbarCard);
-    fit->setObjectName(QStringLiteral("compareFit"));
-    fit->setFocusPolicy(Qt::NoFocus);
-    fit->setCursor(Qt::PointingHandCursor);
-    fit->setText(tr("Fit"));
-    fit->setToolTip(tr("Fit the picture (F)"));
-    fit->setAccessibleName(tr("Fit the picture"));
-    connect(fit, &QToolButton::clicked, this, [this] {
+    fitButton_ = new QToolButton(toolbarCard);
+    fitButton_->setObjectName(QStringLiteral("compareFit"));
+    fitButton_->setFocusPolicy(Qt::NoFocus);
+    fitButton_->setCursor(Qt::PointingHandCursor);
+    fitButton_->setText(tr("Fit"));
+    fitButton_->setToolTip(tr("Fit the picture (F)"));
+    fitButton_->setAccessibleName(tr("Fit the picture"));
+    connect(fitButton_, &QToolButton::clicked, this, [this] {
         if (mode_ == CompareMode::SideBySide) grid_->fitToContent();
         else canvas_->fitToContent();
     });
-    header->addWidget(fit);
+    header->addWidget(fitButton_);
 
     zoom_ = new QLabel(tr("%1%").arg(100), toolbarCard);
     zoom_->setObjectName(QStringLiteral("compareZoom"));
@@ -572,6 +690,7 @@ void CompareWindow::buildUi() {
     swapButton_->setFocusPolicy(Qt::NoFocus);
     swapButton_->setCursor(Qt::PointingHandCursor);
     swapButton_->setToolTip(tr("Swap Side A and Side B (S)"));
+    swapButton_->setAccessibleName(tr("Swap A ⇄ B"));
     connect(swapButton_, &QPushButton::clicked, this, &CompareWindow::swapSides);
     header->addWidget(swapButton_);
 
@@ -580,6 +699,7 @@ void CompareWindow::buildUi() {
     recaptureButton_->setFocusPolicy(Qt::NoFocus);
     recaptureButton_->setCursor(Qt::PointingHandCursor);
     recaptureButton_->setToolTip(tr("Capture the current player frame (R)"));
+    recaptureButton_->setAccessibleName(tr("Recapture"));
     connect(recaptureButton_, &QPushButton::clicked, this, &CompareWindow::captureNow);
     header->addWidget(recaptureButton_);
 
@@ -589,6 +709,7 @@ void CompareWindow::buildUi() {
     pinButton_->setFocusPolicy(Qt::NoFocus);
     pinButton_->setCursor(Qt::PointingHandCursor);
     pinButton_->setToolTip(tr("Keep Compare window always on top (P)"));
+    pinButton_->setAccessibleName(tr("Pin"));
     connect(pinButton_, &QPushButton::toggled, this, &CompareWindow::togglePin);
     header->addWidget(pinButton_);
 
@@ -689,6 +810,7 @@ void CompareWindow::buildUi() {
     connect(canvas_, &CompareCanvas::candidateChosen, this, &CompareWindow::onCandidateChosen);
     connect(canvas_, &CompareCanvas::hoverPixel, this, &CompareWindow::onHoverPixel);
     connect(canvas_, &CompareCanvas::zoomChanged, this, [this](int percent) {
+        zoomPercent_ = percent;
         if (mode_ != CompareMode::SideBySide && zoom_ != nullptr) {
             zoom_->setText(tr("%1%").arg(percent));
         }
@@ -708,6 +830,7 @@ void CompareWindow::buildUi() {
     connect(grid_, &CompareGrid::choiceChosen, this, &CompareWindow::onCandidateChosen);
     connect(grid_, &CompareGrid::hoverPixel, this, &CompareWindow::onHoverPixel);
     connect(grid_, &CompareGrid::zoomChanged, this, [this](int percent) {
+        zoomPercent_ = percent;
         if (mode_ == CompareMode::SideBySide && zoom_ != nullptr) {
             zoom_->setText(tr("%1%").arg(percent));
         }
@@ -743,17 +866,18 @@ void CompareWindow::buildUi() {
     connect(flickerTimer_, &QTimer::timeout, this, &CompareWindow::onFlickerTimeout);
 }
 
-void CompareWindow::populateCandidates() {
+void CompareWindow::rebuildCandidates() {
     const QVector<anime4k::ModeInfo> presets = anime4k::availableModes();
     const QVector<native::AnimeJanaiPreset> ajiPresets = native::animeJanaiPresets();
     const QString shadersDir = anime4k::findShadersDir();
     const native::Backend ajiBackend = ajiBackend_;
-    candidates_.clear();
-    candidates_.reserve(presets.size() + ajiPresets.size());
-    choices_.clear();
-    choices_.reserve(presets.size() + ajiPresets.size());
-    ajiBackends_.clear();
-    ajiErrors_.clear();
+
+    QStringList candidates;
+    QVector<ChoiceEntry> choices;
+    QHash<QString, QString> baseLabels;
+    QHash<QString, native::Backend> backends;
+    candidates.reserve(presets.size() + ajiPresets.size());
+    choices.reserve(presets.size() + ajiPresets.size());
     for (const anime4k::ModeInfo& preset : presets) {
         const anime4k::Candidate candidate = anime4k::candidateForId(preset.id, shadersDir);
         const bool complete = anime4k::chainIsComplete(candidate, shadersDir);
@@ -761,6 +885,7 @@ void CompareWindow::populateCandidates() {
         entry.id = preset.id;
         entry.label = preset.label;
         entry.path = categoryPath(preset.category);
+        baseLabels.insert(preset.id, preset.label);
         if (!complete) {
             entry.disabled = true;
             QStringList missingFiles;
@@ -777,31 +902,172 @@ void CompareWindow::populateCandidates() {
             entry.tooltip =
                 tr("Missing shader file(s): %1").arg(missingFiles.join(QStringLiteral(", ")));
         } else {
-            candidates_.append(preset.id);
+            candidates.append(preset.id);
         }
-        choices_.append(entry);
+        choices.append(entry);
     }
     for (const native::AnimeJanaiPreset& preset : ajiPresets) {
         if (preset.rife || !preset.id.startsWith(QLatin1String("spatial:"))) {
             continue;
         }
-        candidates_.append(preset.id);
-        ajiBackends_.insert(preset.id, ajiBackend);
-        choices_.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")}, false, {}});
+        // The registered catalogue is offered exactly as enumerated: an entry
+        // that turns out to be unbuildable names its refusal when it is
+        // rendered, rather than being second-guessed here.
+        baseLabels.insert(preset.id, preset.label);
+        choices.append({preset.id, preset.label, {tr("AnimeJaNai"), tr("Spatial models")},
+                        false, {}});
+        candidates.append(preset.id);
+        backends.insert(preset.id, ajiBackend);
     }
+    // A side keeps the id it was showing. When the catalogue no longer offers
+    // it, the window adds one disabled entry so the refusal is visible instead
+    // of silently substituting another model.
+    for (const QString& selected : selection_) {
+        if (selected.isEmpty()) {
+            continue;
+        }
+        const bool offered = std::any_of(
+            choices.cbegin(), choices.cend(),
+            [&selected](const ChoiceEntry& entry) { return entry.id == selected; });
+        if (offered) {
+            continue;
+        }
+        // The base name comes from the previous pass, never from a caption
+        // that already carries the suffix, so refreshes cannot stack
+        // "(not available)" on itself.
+        QString baseLabel = choiceBaseLabels_.value(selected);
+        if (baseLabel.isEmpty()) {
+            const anime4k::Candidate candidate = anime4k::candidateForId(selected);
+            baseLabel = candidate.label;
+        }
+        if (baseLabel.isEmpty()) {
+            baseLabel = selected;
+        }
+        ChoiceEntry missingEntry;
+        missingEntry.id = selected;
+        missingEntry.label = unavailableChoiceCaption(baseLabel);
+        missingEntry.disabled = true;
+        // The id left the catalogue, so its old reason no longer applies; the
+        // refusal is the catalogue's own "not recognised" wording.
+        missingEntry.tooltip = missingCatalogueReason();
+        baseLabels.insert(selected, baseLabel);
+        choices.append(missingEntry);
+    }
+    candidates_ = std::move(candidates);
+    choices_ = std::move(choices);
+    choiceBaseLabels_ = std::move(baseLabels);
+    ajiBackends_ = std::move(backends);
+}
+
+void CompareWindow::chooseDefaultSelection() {
     selection_.clear();
-    if (candidates_.isEmpty()) {
+    if (candidates_.isEmpty() && currentCandidateId_.isEmpty()) {
         return;
     }
-    // Two sides, always: the chain the player is running opens as A and another
-    // candidate as B, so the window opens on a comparison rather than on an
-    // empty pane. A catalogue of one compares a chain with itself.
-    const qsizetype current =
-        std::max<qsizetype>(0, candidates_.indexOf(currentCandidateId_));
-    selection_.append(candidates_.value(current));
-    const qsizetype other = current == 0 ? std::min<qsizetype>(1, candidates_.size() - 1) : 0;
-    if (other != current) {
-        selection_.append(candidates_.at(other));
+    // The requested chain is A even when the catalogue cannot offer it: that
+    // missing id is then shown, disabled, rather than replaced. B is the first
+    // different renderable candidate, so a requested model that is unavailable
+    // still opens beside something real.
+    const QString primary =
+        currentCandidateId_.isEmpty() ? candidates_.value(0) : currentCandidateId_;
+    if (primary.isEmpty()) {
+        return;
+    }
+    selection_.append(primary);
+    for (const QString& id : candidates_) {
+        if (id != primary) {
+            selection_.append(id);
+            break;
+        }
+    }
+}
+
+void CompareWindow::populateCandidates() {
+    ajiErrors_.clear();
+    rebuildCandidates();
+    chooseDefaultSelection();
+    // The requested chain may be outside what the catalogue offers. The second
+    // pass adds that id's explicit disabled entry; it never replaces the id.
+    rebuildCandidates();
+    publishCandidateChoices();
+    updateInfo();
+}
+
+void CompareWindow::refreshCandidates() {
+    rebuildCandidates();
+    publishCandidateChoices();
+    updateInfo();
+}
+
+void CompareWindow::publishCandidateChoices() {
+    if (canvas_ == nullptr) {
+        return;
+    }
+    dismissCandidateMenus();
+    // Labels and choices only: the pictures, the frozen frame, the camera and
+    // the pane content are untouched, so a refresh never refits or rebuilds.
+    canvas_->setSideNames(labelFor(sideA()), labelFor(sideB()));
+    canvas_->setChoices(choices_, sideA(), sideB());
+    if (grid_ != nullptr) {
+        grid_->setChoices(choices_, {sideA(), sideB()});
+    }
+}
+
+void CompareWindow::onCatalogChanged() {
+    invalidateAjiCatalogueCache();
+    catalogueRefreshPending_ = true;
+    if (rendering_) {
+        // The render pumps the event loop, so rebuilding its inputs here would
+        // race the run reading them. The invalidation above has already
+        // cancelled it; the lists are refreshed once it unwinds.
+        scheduleCatalogueRefresh();
+        return;
+    }
+    applyCatalogueRefresh();
+}
+
+void CompareWindow::applyCatalogueRefresh() {
+    catalogueRefreshPending_ = false;
+    refreshCandidates();
+}
+
+void CompareWindow::scheduleCatalogueRefresh() {
+    if (catalogueRefreshScheduled_) {
+        return;
+    }
+    catalogueRefreshScheduled_ = true;
+    QTimer::singleShot(kPollIntervalMs, this, [this] {
+        catalogueRefreshScheduled_ = false;
+        if (rendering_) {
+            scheduleCatalogueRefresh();
+            return;
+        }
+        applyCatalogueRefresh();
+    });
+}
+
+void CompareWindow::invalidateAjiCatalogueCache() {
+    // Only AnimeJaNai outputs depend on the observed catalogue. Anime4K images,
+    // the frozen frame and the frozen timestamp survive a model paste or edit.
+    if (!renderedAId_.isEmpty() && ajiBackends_.contains(renderedAId_)) {
+        renderedA_ = QImage();
+        renderedAId_.clear();
+    }
+    if (!renderedBId_.isEmpty() && ajiBackends_.contains(renderedBId_)) {
+        renderedB_ = QImage();
+        renderedBId_.clear();
+    }
+    const bool ajiInFlight =
+        !pendingAjiId_.isEmpty() && ajiBackends_.contains(pendingAjiId_);
+    if (!rendering_ || !(pendingAjiPreparation_ || ajiInFlight)) {
+        return;
+    }
+    // The build or render in flight was started against the old graph. Bumping
+    // the generation makes its own cancellation checks refuse to publish, and
+    // cancelling the task stops the worker without waiting for it.
+    ++selectionGeneration_;
+    if (preparationTask_) {
+        preparationTask_->cancelled.store(true, std::memory_order_release);
     }
 }
 
@@ -1074,22 +1340,25 @@ void CompareWindow::setCurrentCandidateId(const QString& candidateId) {
             }
         }
     }
-    if (resolved == currentCandidateId_ || candidates_.isEmpty()) {
+    if (resolved == currentCandidateId_) {
         return;
     }
     currentCandidateId_ = resolved;
-    selection_.clear();
-    const qsizetype current =
-        std::max<qsizetype>(0, candidates_.indexOf(currentCandidateId_));
-    selection_.append(candidates_.value(current));
-    const qsizetype other = current == 0 ? std::min<qsizetype>(1, candidates_.size() - 1) : 0;
-    if (other != current) {
-        selection_.append(candidates_.at(other));
-    }
+    chooseDefaultSelection();
+    refreshCandidates();
 }
 QString CompareWindow::sideA() const { return selection_.value(0); }
 
 QString CompareWindow::sideB() const { return selection_.value(1); }
+
+QString CompareWindow::selectedCandidateId(int side) const {
+    return side == 0 ? sideA() : (side == 1 ? sideB() : QString());
+}
+
+QString CompareWindow::candidateError(const QString& id) const {
+    const QString engineError = ajiErrors_.value(id);
+    return engineError.isEmpty() ? unavailableReason(id) : engineError;
+}
 
 QImage CompareWindow::grabSettledFrame() {
     QPointer<CompareWindow> self(this);
@@ -1297,6 +1566,8 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     const auto progress = [self](const QString& detail) {
         if (self == nullptr || self->buildOperationActive_) return;
         self->buildOperationActive_ = true;
+        self->buildSummaryKind_ = BuildSummaryKind::None;
+        self->buildFailureDetail_.clear();
         self->processingOverlay_->anchorTo(self);
         self->processingOverlay_->begin(CompareWindow::tr("Build comparison TensorRT engine"));
         self->processingOverlay_->setStage(-1, 0, detail, QString());
@@ -1385,11 +1656,11 @@ QImage CompareWindow::renderIsolated(const QString& id) {
     if (self == nullptr) return {};
     if (!stopped && image.isNull()) {
         ajiErrors_.insert(id, renderer->error());
-        settleIsolatedBuild(false, tr("Comparison engine build failed: %1").arg(renderer->error()));
+        finishIsolatedBuild(BuildSummaryKind::Failed, renderer->error());
     } else if (image.isNull()) {
-        settleIsolatedBuild(false, tr("Comparison engine build cancelled."));
+        finishIsolatedBuild(BuildSummaryKind::Cancelled);
     } else {
-        settleIsolatedBuild(true, tr("Comparison engine ready."));
+        finishIsolatedBuild(BuildSummaryKind::Ready);
     }
     pendingAjiId_.clear();
     return stopped ? QImage() : image;
@@ -1407,15 +1678,33 @@ void CompareWindow::abandonIsolatedRenderer() {
 void CompareWindow::finishIsolatedRetry() {
     pendingAjiPreparation_ = false;
     pendingAjiId_.clear();
-    settleIsolatedBuild(false, tr("Comparison engine build cancelled."));
+    finishIsolatedBuild(BuildSummaryKind::Cancelled);
 }
 
-void CompareWindow::settleIsolatedBuild(bool ok, const QString& summary) {
-    if (buildOperationActive_) {
-        buildOperationActive_ = false;
-        processingOverlay_->finish(ok, summary);
+void CompareWindow::finishIsolatedBuild(BuildSummaryKind kind, const QString& detail) {
+    if (!buildOperationActive_) {
+        if (!isVisible()) processingOverlay_->hide();
+        return;
     }
+    buildSummaryKind_ = kind;
+    buildFailureDetail_ = kind == BuildSummaryKind::Failed ? detail : QString();
+    buildOperationActive_ = false;
+    processingOverlay_->finish(kind == BuildSummaryKind::Ready, buildSummaryText());
     if (!isVisible()) processingOverlay_->hide();
+}
+
+QString CompareWindow::buildSummaryText() const {
+    switch (buildSummaryKind_) {
+        case BuildSummaryKind::Ready:
+            return tr("Comparison engine ready.");
+        case BuildSummaryKind::Failed:
+            return tr("Comparison engine build failed: %1").arg(buildFailureDetail_);
+        case BuildSummaryKind::Cancelled:
+            return tr("Comparison engine build cancelled.");
+        case BuildSummaryKind::None:
+            break;
+    }
+    return QString();
 }
 
 void CompareWindow::render() {
@@ -1473,6 +1762,10 @@ void CompareWindow::renderOnce() {
     const QString renderAId = sideA();
     const QString renderBId = sideB();
     const auto candidateOutput = [this](const QString& id) {
+        // An id the catalogue no longer offers has no renderer and no backend;
+        // asking the isolated core for it would compare against a model that is
+        // not there. The side stays empty and updateInfo() names the refusal.
+        if (id.isEmpty() || !candidates_.contains(id)) return QImage();
         if (ajiErrors_.contains(id)) return QImage();
         const bool backendMatches = !ajiBackends_.contains(id) || renderedBackend_ == ajiBackend_;
         if (backendMatches && id == renderedAId_ && !renderedA_.isNull()) return renderedA_;
@@ -1720,24 +2013,58 @@ void CompareWindow::flushDeferredGridClear() {
 }
 
 void CompareWindow::onHoverPixel(int x, int y, bool valid, QRgb rgb) {
-    if (!valid) {
-        hover_->clear();
-        hoverSwatch_->hide();
+    hoverValid_ = valid;
+    hoverX_ = x;
+    hoverY_ = y;
+    hoverRgb_ = rgb;
+    refreshHoverText();
+}
+
+void CompareWindow::refreshHoverText() {
+    if (hover_ == nullptr) {
         return;
     }
-    const QColor color(rgb);
+    if (!hoverValid_) {
+        hover_->clear();
+        if (hoverSwatch_ != nullptr) hoverSwatch_->hide();
+        return;
+    }
+    const QColor color(hoverRgb_);
     hover_->setText(
         tr("%1, %2 · %3 (%4, %5, %6)")
-            .arg(x)
-            .arg(y)
+            .arg(hoverX_)
+            .arg(hoverY_)
             .arg(color.name().toUpper())
             .arg(color.red())
             .arg(color.green())
             .arg(color.blue()));
-    hoverSwatch_->setStyleSheet(
-        QStringLiteral("background: %1; border: 1px solid #4b5563; border-radius: 3px;")
-            .arg(color.name()));
-    hoverSwatch_->show();
+    if (hoverSwatch_ != nullptr) {
+        hoverSwatch_->setStyleSheet(
+            QStringLiteral("background: %1; border: 1px solid #4b5563; border-radius: 3px;")
+                .arg(color.name()));
+        hoverSwatch_->show();
+    }
+}
+
+QString CompareWindow::unavailableReason(const QString& id) const {
+    if (id.isEmpty()) {
+        return QString();
+    }
+    for (const ChoiceEntry& entry : choices_) {
+        if (entry.id != id) {
+            continue;
+        }
+        if (entry.disabled && !entry.tooltip.isEmpty()) {
+            // The catalogue's own refusal, verbatim: a missing graph or shader
+            // is opaque to this window and is never re-worded.
+            return entry.tooltip;
+        }
+        break;
+    }
+    if (!candidates_.contains(id)) {
+        return missingCatalogueReason();
+    }
+    return QString();
 }
 
 void CompareWindow::updateInfo() {
@@ -1749,8 +2076,14 @@ void CompareWindow::updateInfo() {
                                            : tr("Rendering %1…").arg(labelFor(pendingAjiId_)));
     }
     for (const QString& id : {sideA(), sideB()}) {
-        if (ajiErrors_.contains(id))
+        if (id.isEmpty()) {
+            continue;
+        }
+        if (!candidates_.contains(id)) {
+            parts.append(tr("%1 unavailable: %2").arg(labelFor(id), unavailableReason(id)));
+        } else if (ajiErrors_.contains(id)) {
             parts.append(tr("%1 unavailable: %2").arg(labelFor(id), ajiErrors_.value(id)));
+        }
     }
     if (queuedNativeChanges() > 0)
         parts.append(tr("%n native change(s) queued until Compare closes", nullptr, queuedNativeChanges()));
@@ -1763,6 +2096,13 @@ void CompareWindow::updateInfo() {
 }
 
 QString CompareWindow::labelFor(const QString& id) const {
+    // The choice list is the snapshot every label on screen was built from, so
+    // it stays the freshest name even for an id the catalogue has dropped.
+    for (const ChoiceEntry& entry : choices_) {
+        if (entry.id == id) {
+            return entry.label;
+        }
+    }
     if (ajiBackends_.contains(id)) {
         const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
         for (const native::AnimeJanaiPreset& preset : presets) {

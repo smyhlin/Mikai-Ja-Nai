@@ -23,6 +23,7 @@
 #include "ShellSliders.hpp"
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
+#include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 
 namespace mplayer {
@@ -79,6 +80,43 @@ QString rifeRangeLabel(int range) {
     const int first = 7 + range * 5;
     return QObject::tr("RIFE v4.%1–v4.%2").arg(first).arg(first + 4);
 }
+/// Whether `levelId` is a RIFE level whose existence is derived from the
+/// catalogue: one version range, or one version. The root, SPATIAL, RIFE and
+/// BACKEND levels are structural and always stand, so only these two can go
+/// stale when the last pin that named them is removed.
+bool isCatalogueRifeLevel(const QString& levelId) {
+    const QString rife = QString::fromLatin1(kAnimeJanaiRife);
+    return levelId.startsWith(rife + QStringLiteral(":range:")) ||
+           levelId.startsWith(rife + QStringLiteral(":version:"));
+}
+
+/// Whether at least one catalogue preset still hangs in a RIFE range or
+/// version level. A level nobody hangs in is a dead panel.
+bool rifeLevelHasPreset(const QString& levelId,
+                        const QVector<native::AnimeJanaiPreset>& presets) {
+    const QString rife = QString::fromLatin1(kAnimeJanaiRife);
+    if (levelId.startsWith(rife + QStringLiteral(":range:"))) {
+        const int range = levelId.section(QLatin1Char(':'), -1).toInt();
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.rife && rifeRange(rifeVersion(preset)) == range) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (levelId.startsWith(rife + QStringLiteral(":version:"))) {
+        const QString version = levelId.section(QLatin1Char(':'), -1);
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.rife && rifeVersion(preset) == version) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // Not a catalogue-derived level: nothing to lose.
+    return true;
+}
+
 QString animeJanaiTitle(const QString& levelId) {
     if (levelId == QLatin1String(kAnimeJanaiRoot)) return QStringLiteral("ANIMEJANAI");
     if (levelId == QLatin1String(kAnimeJanaiSpatial)) return QObject::tr("SPATIAL MODELS");
@@ -119,6 +157,29 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
                 entry.current = preset.id == currentId;
                 entries.append(entry);
             }
+        }
+        // A selection whose graph is gone is still the selection: the filter
+        // was asked for that id. It is shown as an explicit unavailable row
+        // rather than falling back to Off or to a model nobody chose, and the
+        // id itself is what the row names, because the catalogue has no label
+        // for it any more.
+        bool selectionInCatalogue = currentId.isEmpty();
+        for (const native::AnimeJanaiPreset& preset : presets) {
+            if (preset.id.compare(currentId, Qt::CaseInsensitive) == 0) {
+                selectionInCatalogue = true;
+                break;
+            }
+        }
+        if (!selectionInCatalogue) {
+            MenuEntry missing;
+            missing.text = QObject::tr("Unavailable · %1").arg(currentId);
+            missing.tooltip = QObject::tr(
+                "This model is no longer in the catalogue. The selection is kept until you choose "
+                "another.");
+            missing.payload = QStringLiteral("ajipreset|") + currentId;
+            missing.current = true;
+            missing.disabled = true;
+            entries.append(missing);
         }
         addSubmenu(QObject::tr("Spatial models"), QString::fromLatin1(kAnimeJanaiSpatial));
         addSubmenu(QObject::tr("RIFE models"), QString::fromLatin1(kAnimeJanaiRife));
@@ -192,6 +253,33 @@ QVector<MenuEntry> animeJanaiEntries(const QString& levelId, const QString& curr
         }
     }
     return entries;
+}
+
+/// Whether a panel already shows exactly these rows. A rebuild retires every
+/// row widget, so a refresh that finds nothing new must not do it: the rows
+/// under the pointer, the keyboard highlight and the widget focus are state
+/// that a catalogue event nobody can see has no reason to reset.
+bool sameEntries(const QVector<MenuEntry>& entries, const MenuPopup* panel) {
+    if (panel == nullptr) {
+        return false;
+    }
+    int spot = 0;
+    for (const MenuEntry& next : entries) {
+        if (!next.heading.isEmpty()) {
+            continue;
+        }
+        if (spot >= panel->rowCount()) {
+            return false;
+        }
+        const MenuEntry shown = panel->entryAt(spot);
+        if (next.text != shown.text || next.tooltip != shown.tooltip ||
+            next.payload != shown.payload || next.current != shown.current ||
+            next.submenu != shown.submenu || next.disabled != shown.disabled) {
+            return false;
+        }
+        ++spot;
+    }
+    return spot == panel->rowCount();
 }
 
 QVector<MenuEntry> enhancementEntries(const QString& levelId, const QString& currentId,
@@ -334,6 +422,13 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     buildFooter();
     buildOverlays();
     buildPictureMenu();
+    // The catalogue the enhancement tree draws from is observed for as long as
+    // the shell lives: a graph pasted, registered or removed while the player is
+    // open must reach the menu without a reopen. Lifetime-owned, and it starts
+    // from the saved config, which is the catalogue this menu shows.
+    animeJanaiCatalogWatcher_ = new native::AnimeJanaiCatalogWatcher(this);
+    connect(animeJanaiCatalogWatcher_, &native::AnimeJanaiCatalogWatcher::catalogChanged,
+            this, &PlayerShell::onAnimeJanaiCatalogueChanged);
     // Not z-order over the picture any more, but the child order ChromeList
     // walks - stated once, because a raise() per layout pass is a child-order
     // mutation that invalidates the region it covers.
@@ -725,6 +820,7 @@ void PlayerShell::openPictureMenu(const QPoint& position) {
     if (pictureMenu_ == nullptr) {
         return;
     }
+    pictureMenuAnchor_ = position;
     pictureMenu_->popupNear(mapToGlobal(position));
 }
 void PlayerShell::buildOverlays() {
@@ -1192,6 +1288,23 @@ void PlayerShell::setQualityOptions(const QVector<SettingsFlyout::QualityOption>
 void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& status) {
     const bool selectionChanged = animeJanaiPresetId_ != id;
     animeJanaiPresetId_ = id;
+    // Retained as well as rendered: a language change re-derives this chip from
+    // the same selection and status instead of asking the host for it again.
+    animeJanaiStatus_ = status;
+    updateAnimeJanaiChip();
+    if (selectionChanged) {
+        refreshEnhancementTree();
+    }
+    updateInfoChip();
+}
+
+/// The chip's own text, tooltip and accessible name, from the retained
+/// selection and status. The status line is partly ours - "Preparing…" and the
+/// backend/model form - so it has to be rebuilt on a language change; the
+/// status text itself is the host's and is never invented here.
+void PlayerShell::updateAnimeJanaiChip() {
+    const QString& id = animeJanaiPresetId_;
+    const QString& status = animeJanaiStatus_;
     if (lblAnimeJanai_ != nullptr) {
         if (id.isEmpty()) {
             lblAnimeJanai_->hide();
@@ -1201,11 +1314,28 @@ void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& statu
                     ? QStringLiteral("DML")
                     : QStringLiteral("TRT");
             QString presetLabel = id;
+            bool presetInCatalogue = false;
             for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
                 if (preset.id.compare(id, Qt::CaseInsensitive) == 0) {
                     presetLabel = preset.label;
+                    presetInCatalogue = true;
                     break;
                 }
+            }
+            if (!presetInCatalogue) {
+                // The retained selection outlived its graph. It is still the
+                // selection - the filter was asked for that id - so the chip
+                // says out loud that the catalogue cannot resolve it instead of
+                // falling back to Off or to a model the viewer never chose. The
+                // host's status stays in the tooltip, word for word.
+                const QString missing = tr("Unavailable · %1").arg(id);
+                lblAnimeJanai_->setText(
+                    QStringLiteral("│ %1 · %2").arg(backendShort, missing));
+                lblAnimeJanai_->setToolTip(status.isEmpty() ? missing : status);
+                lblAnimeJanai_->setAccessibleName(missing);
+                lblAnimeJanai_->show();
+                footerLeft_->adjustSize();
+                return;
             }
             QString visibleStatus = status;
             if (status.startsWith(QLatin1String("Configured;"))) {
@@ -1249,10 +1379,6 @@ void PlayerShell::setAnimeJanaiSelection(const QString& id, const QString& statu
         }
         footerLeft_->adjustSize();
     }
-    if (selectionChanged) {
-        refreshEnhancementTree();
-    }
-    updateInfoChip();
 }
 
 void PlayerShell::setAnimeJanaiBackend(const QString& backend) {
@@ -1342,14 +1468,72 @@ void PlayerShell::refreshEnhancementTree() {
             const QString label = anime4k::categoryLabel(level);
             panel->setTitle(label.isEmpty() ? QStringLiteral("ANIME4K") : label.toUpper());
         }
-        panel->setEntries(enhancementEntries(
+        const QVector<MenuEntry> entries = enhancementEntries(
             enhancementLevels_.at(depth),
             enhancementLevels_.at(depth) == QLatin1String(kAnimeJanaiBackend)
                 ? animeJanaiBackend_
                 : (enhancementLevels_.at(depth).startsWith(QLatin1String("animejanai"))
                        ? animeJanaiPresetId_ : currentId),
-            nativeInputs_));
+            nativeInputs_);
+        if (!sameEntries(entries, panel)) {
+            panel->setEntries(entries);
+        }
         watchEnhancementRows(panel);
+    }
+}
+
+void PlayerShell::onAnimeJanaiCatalogueChanged() {
+    // A catalogue change is not a choice: the retained preset id and backend
+    // stay exactly as they are, no preset is requested, no chain is reloaded
+    // and no status text is rewritten. Only what the catalogue can offer is
+    // redrawn - the open levels, their labels and tooltips, and the chip's
+    // label. Rows are replaced through MenuPopup::setEntries(), which retires
+    // the old widgets with deleteLater(), so no click handler is ever running
+    // inside a row that this pass destroys.
+    pruneStaleEnhancementLevels();
+    refreshEnhancementTree();
+    updateAnimeJanaiChip();
+    // A level keeps the place it was opened at. Only a card that grew past the
+    // window that parents it is pulled back inside, because a row nobody can
+    // click is worse than a card that moved a few pixels.
+    for (MenuPopup* panel : enhancementPanels_) {
+        if (!panel->isVisible()) {
+            continue;
+        }
+        QWidget* host = panel->parentWidget();
+        if (host == nullptr) {
+            continue;
+        }
+        const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+        panel->move(qBound(bounds.left(), panel->x(), bounds.right() - panel->width() + 1),
+                    qBound(bounds.top(), panel->y(), bounds.bottom() - panel->height() + 1));
+    }
+}
+
+void PlayerShell::pruneStaleEnhancementLevels() {
+    if (enhancementPanels_.isEmpty()) {
+        return;
+    }
+    const QVector<native::AnimeJanaiPreset> presets = native::animeJanaiPresets();
+    // Deepest first: a range that lost its last version takes the version level
+    // under it, and closing the child before the parent leaves no stale panel
+    // behind for the refresh to draw.
+    for (int depth = enhancementPanels_.size() - 1; depth > 0; --depth) {
+        MenuPopup* panel = enhancementPanels_.at(depth);
+        if (!panel->isVisible()) {
+            continue;
+        }
+        const QString& level = enhancementLevels_.at(depth);
+        if (!isCatalogueRifeLevel(level) || rifeLevelHasPreset(level, presets)) {
+            continue;
+        }
+        // Closing a level is not a selection change: the retained id remains
+        // selected and, if its graph is gone, is drawn as an explicit
+        // unavailable row in the level that is still standing.
+        cancelEnhancementHover();
+        panel->close();
+        enhancementLevels_[depth].clear();
+        panel->setProperty("enhancementLevel", QString());
     }
 }
 
@@ -1947,35 +2131,63 @@ void PlayerShell::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+        // Qt hands the event to a widget before its children, and the controls
+        // that carry text of their own - the "Original File" pill - re-measure
+        // when their turn comes, after this pass already sized the window
+        // controls from the old hint. A longer translation would then be drawn
+        // past the panel, with the buttons beside it clipped and unclickable.
+        // One pass once the whole propagation is done re-fits the row.
+        QTimer::singleShot(0, this, [this] { layoutChrome(); });
     }
 }
 
 void PlayerShell::retranslateUi() {
     const QString name = path_.isEmpty() ? tr("no media loaded") : QFileInfo(path_).fileName();
     setWindowTitle(tr("%1 · Media Lightbox").arg(name));
+    // An IconButton copies its tooltip into an accessible name when it is built,
+    // so restating the tooltip alone would leave the announced name - what a
+    // screen reader reads out - in the language the window opened in. Both come
+    // from one string here.
+    const auto relabel = [](IconButton* button, const QString& text) {
+        button->setToolTip(text);
+        button->setAccessibleName(text);
+    };
     btnOriginal_->setToolTip(tr("Open the original file"));
-    titleMin_->setToolTip(tr("Minimize the window"));
-    titleMax_->setToolTip(tr("Toggle fullscreen / windowed"));
-    titleClose_->setToolTip(tr("Exit the player  (Esc)"));
-    btnMin_->setToolTip(tr("Minimize the window"));
-    btnClose_->setToolTip(tr("Exit the player  (Esc)"));
-    btnPrev_->setToolTip(tr("Previous episode  (←)"));
-    btnNext_->setToolTip(tr("Next episode  (→)"));
+    relabel(titleMin_, tr("Minimize the window"));
+    relabel(titleMax_, tr("Toggle fullscreen / windowed"));
+    relabel(titleClose_, tr("Exit the player  (Esc)"));
+    relabel(btnMin_, tr("Minimize the window"));
+    relabel(btnClose_, tr("Exit the player  (Esc)"));
+    relabel(btnPrev_, tr("Previous episode  (←)"));
+    relabel(btnNext_, tr("Next episode  (→)"));
+    // The play control is built with a short spoken name ("Play") while its
+    // tooltip carries the full gesture hint. A relabel would overwrite the
+    // accessible name with the tooltip, so a language round trip would leave
+    // assistive technology reading a different (and longer) name than the one
+    // the control was built with. Restate them separately.
     btnPlay_->setToolTip(tr("Play / pause  (Space)"));
-    btnPlay_->setAccessibleName(tr("Play / pause  (Space)"));
-    btnSkipForward_->setToolTip(tr("Skip forward 85 seconds"));
-    btnSkipForward_->setAccessibleName(tr("Skip forward 85 seconds"));
+    btnPlay_->setAccessibleName(tr("Play"));
+    relabel(btnSkipForward_, tr("Skip forward 85 seconds"));
     vol_->setAccessibleName(tr("Volume"));
     scrub_->setAccessibleName(tr("Timeline"));
-    btnPip_->setToolTip(tr("Picture in picture"));
-    btnAudio_->setToolTip(tr("Audio — choose a dub  (T)"));
-    btnSubs_->setToolTip(tr("Subtitles — choose a track  (C)"));
-    btnEnhance_->setToolTip(tr("Open enhancements"));
-    btnSettings_->setToolTip(tr("Quality and speed"));
-    btnWindowMode_->setToolTip(fullscreen_ ? tr("Windowed mode") : tr("Fullscreen mode"));
+    relabel(btnPip_, tr("Picture in picture"));
+    relabel(btnAudio_, tr("Audio — choose a dub  (T)"));
+    relabel(btnSubs_, tr("Subtitles — choose a track  (C)"));
+    relabel(btnEnhance_, tr("Open enhancements"));
+    relabel(btnSettings_, tr("Quality and speed"));
+    relabel(btnWindowMode_, fullscreen_ ? tr("Windowed mode") : tr("Fullscreen mode"));
 
     updatePictureMenu();
+    // Re-placed, not rebuilt: the rows above changed width, and a card left at
+    // its old top-left can now run past the window that parents it. The anchor
+    // is the point it was opened from, so it lands where it was, clamped.
+    if (pictureMenu_->isVisible()) {
+        pictureMenu_->popupNear(mapToGlobal(pictureMenuAnchor_));
+    }
     refreshEnhancementTree();
+    // The AnimeJaNai chip carries our own wording around the host's status
+    // text, so it is re-derived here; the status itself is not re-requested.
+    updateAnimeJanaiChip();
     updateInfoChip();
     updateTimeLabels();
     layoutChrome();

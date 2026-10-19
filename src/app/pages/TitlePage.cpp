@@ -141,27 +141,29 @@ void TitlePage::buildUi() {
     root->setSpacing(theme::kSpacingSmall);
 
     auto* top = new QHBoxLayout();
-    auto* back = new QPushButton(tr("← Back"), this);
-    connect(back, &QPushButton::clicked, this, &TitlePage::backRequested);
+    // Held as members, not locals: a language switch re-words them without
+    // rebuilding the row.
+    backButton_ = new QPushButton(tr("← Back"), this);
+    connect(backButton_, &QPushButton::clicked, this, &TitlePage::backRequested);
     status_ = new QLabel(this);
     status_->setObjectName(QStringLiteral("status"));
     // Right-aligned against the rate chip: the stretch absorbs text-length
     // changes on the left, so flashes never push the rate/settings controls.
     status_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     status_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto* settingsButton = new QPushButton(this);
-    settingsButton->setObjectName(QStringLiteral("settingsChip"));
-    settingsButton->setIcon(theme::gearIcon());
-    settingsButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton->setToolTip(tr("API token settings"));
-    settingsButton->setAccessibleName(tr("API token settings"));
-    connect(settingsButton, &QPushButton::clicked, this, &TitlePage::settingsRequested);
+    settingsButton_ = new QPushButton(this);
+    settingsButton_->setObjectName(QStringLiteral("settingsChip"));
+    settingsButton_->setIcon(theme::gearIcon());
+    settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    settingsButton_->setToolTip(tr("API token settings"));
+    settingsButton_->setAccessibleName(tr("API token settings"));
+    connect(settingsButton_, &QPushButton::clicked, this, &TitlePage::settingsRequested);
     rateLabel_ = new RateLimitLabel(client_, this);
-    top->addWidget(back);
+    top->addWidget(backButton_);
     top->addStretch();
     top->addWidget(status_);
     top->addWidget(rateLabel_);
-    top->addWidget(settingsButton);
+    top->addWidget(settingsButton_);
     root->addLayout(top);
 
     overviewScroll_ = new QScrollArea(this);
@@ -176,6 +178,7 @@ void TitlePage::buildUi() {
     pageLayout->setSpacing(theme::kTitleColumnSpacing);
 
     cover_ = new CoverLabel(tr("Loading…"), page);
+    coverState_ = CoverState::Loading;
     cover_->setObjectName(QStringLiteral("titleCover"));
     cover_->setFixedSize(theme::kTitleCoverWidth, theme::kTitleCoverHeight);
     connect(cover_, &CoverLabel::activated, this, &TitlePage::openCoverViewer);
@@ -280,9 +283,9 @@ void TitlePage::buildUi() {
     auto* releaseSection = new QVBoxLayout();
     releaseSection->setContentsMargins(0, theme::kSpacingSmall, 0, 0);
     releaseSection->setSpacing(theme::kSpacingXs);
-    auto* episodesHeading = new QLabel(tr("Episodes"), this);
-    episodesHeading->setObjectName(QStringLiteral("episodeSectionHeading"));
-    releaseSection->addWidget(episodesHeading);
+    episodesHeading_ = new QLabel(tr("Episodes"), this);
+    episodesHeading_->setObjectName(QStringLiteral("episodeSectionHeading"));
+    releaseSection->addWidget(episodesHeading_);
 
     releaseChipsHost_ = new QWidget(this);
     releaseChipsHost_->setObjectName(QStringLiteral("releaseChipsHost"));
@@ -321,8 +324,9 @@ void TitlePage::buildUi() {
 }
 
 void TitlePage::load() {
-    setStatus(tr("Loading…"));
+    setStatusKind(BaseStatus::Loading);
     failure_->clear();
+    hasFailure_ = false;
     // A task can outlive the page: the worker lambda runs on a pool thread, and
     // the delivery lambdas are queued to the GUI thread, so both may fire after
     // the widget is gone. The worker captures the client and ref by value (the
@@ -398,6 +402,7 @@ void TitlePage::joinLoad(const std::shared_ptr<LoadState>& state) {
 void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player) {
     rateLabel_->refresh();
     failure_->clear();
+    hasFailure_ = false;
     const QString name = backend::displayName(detail.titles);
     heading_->setText(name == QLatin1String("?") ? ref_ : name);
     subtitle_->setText(detail.titles.english.isEmpty() ? detail.titles.original
@@ -408,9 +413,8 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
                              cover.isEmpty() ? posterHint_ : cover);
     loadRecommendations(detail);
 
-    fullDescription_ = detail.description.trimmed().isEmpty()
-                           ? tr("No description available.")
-                           : detail.description.trimmed();
+    rawDescription_ = detail.description.trimmed();
+    fullDescription_ = rawDescription_.isEmpty() ? tr("No description available.") : rawDescription_;
     descriptionExpanded_ = false;
     description_->setText(descriptionPreview());
     descriptionButton_->setText(tr("Read more"));
@@ -421,6 +425,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     } else if (!posterHint_.isEmpty()) {
         loadCover(posterHint_, false);
     } else {
+        coverState_ = CoverState::Missing;
         cover_->setText(tr("No cover"));
     }
 
@@ -431,7 +436,7 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
     rebuildReleaseChips();
 
     if (releases_.isEmpty()) {
-        setStatus(tr("No releases available"));
+        setStatusKind(BaseStatus::NoReleases);
         return;
     }
     releaseChips_.first()->setChecked(true);
@@ -441,14 +446,28 @@ void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::Play
 void TitlePage::onError(const backend::Failure& failure) {
     rateLabel_->refresh();
     setStatus(backend::failureLine(failure));
+    hasFailure_ = true;
     failure_->showFailure(failure, tr("Could not open this title"));
     cover_->setZoomable(false);
+    coverState_ = CoverState::Missing;
     cover_->setText(tr("No cover"));
 }
 
 void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
-    scores_->setText(scoresText(detail));
+    // Retained for the language switches that follow: every caption the page
+    // derives from the title is derived from this copy, never from a new call.
+    detail_ = detail;
+    hasDetail_ = true;
     populateRelated(detail);
+    refreshDetailTexts();
+}
+
+/// Restates the facts, scores, details rows and links from the retained detail.
+/// Run once when the detail lands and again after each language switch: the
+/// rows are rebuilt from the model, and nothing outside the metadata grid and
+/// the facts/score/link labels is touched.
+void TitlePage::refreshDetailTexts() {
+    scores_->setText(scoresText(detail_));
 
     while (metaGrid_->count() > 0) {
         QLayoutItem* item = metaGrid_->takeAt(0);
@@ -458,7 +477,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
         delete item;
     }
 
-    const backend::EpisodeStats& episodes = detail.episodes;
+    const backend::EpisodeStats& episodes = detail_.episodes;
     QString episodesLabel;
     if (episodes.aired > 0 || episodes.localized > 0) {
         const int total = episodes.total.value_or(0);
@@ -468,9 +487,9 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
                             : QString::number(localized);
     }
 
-    const QString statusText = labels::status(detail.status);
-    const QString formatText = labels::format(detail.format);
-    const QString seasonText = labels::season(detail.start_date);
+    const QString statusText = labels::status(detail_.status);
+    const QString formatText = labels::format(detail_.format);
+    const QString seasonText = labels::season(detail_.start_date);
     QStringList facts;
     if (!statusText.isEmpty()) facts << statusText;
     if (!formatText.isEmpty()) facts << formatText;
@@ -486,16 +505,18 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     }
     if (!statusText.isEmpty()) rows.append({tr("Status"), statusText});
     if (!seasonText.isEmpty()) rows.append({tr("Season"), seasonText});
-    if (!detail.source.isEmpty()) {
-        rows.append({tr("Original source"), labels::source(detail.source)});
+    if (!detail_.source.isEmpty()) {
+        rows.append({tr("Original source"), labels::source(detail_.source)});
     }
-    if (!detail.studio.isEmpty()) rows.append({tr("Studio"), detail.studio});
-    if (!detail.country.isEmpty()) rows.append({tr("Country"), labels::country(detail.country)});
-    if (!detail.age_rating.isEmpty()) {
-        rows.append({tr("Age rating"), labels::ageRating(detail.age_rating)});
+    if (!detail_.studio.isEmpty()) rows.append({tr("Studio"), detail_.studio});
+    if (!detail_.country.isEmpty()) {
+        rows.append({tr("Country"), labels::country(detail_.country)});
+    }
+    if (!detail_.age_rating.isEmpty()) {
+        rows.append({tr("Age rating"), labels::ageRating(detail_.age_rating)});
     }
     QStringList genres;
-    for (const backend::GenreTag& genre : detail.genres) {
+    for (const backend::GenreTag& genre : detail_.genres) {
         const QString text = genre.ua.isEmpty() ? genre.name : genre.ua;
         if (!text.isEmpty()) {
             genres << text;
@@ -503,7 +524,7 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
     }
     if (!genres.isEmpty()) rows.append({tr("Genres"), genres.join(QStringLiteral(", "))});
     QStringList tags;
-    for (const backend::GenreTag& tag : detail.tags) {
+    for (const backend::GenreTag& tag : detail_.tags) {
         const QString text = tag.ua.isEmpty() ? tag.name : tag.ua;
         if (!text.isEmpty()) {
             tags << text;
@@ -523,12 +544,12 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
         ++row;
     }
 
-    QVector<std::pair<QString, QString>> links = backend::externalLinks(detail);
+    QVector<std::pair<QString, QString>> links = backend::externalLinks(detail_);
     // The site serves the title at /anime/<id>-<slug> and 404s on either half
     // alone, so the link is built from both rather than preferring the slug.
     const QString page =
-        backend::animePageUrl(detail.ref, detail.ids.value(QStringLiteral("slug")).toString());
-    if (!detail.ref.isEmpty()) {
+        backend::animePageUrl(detail_.ref, detail_.ids.value(QStringLiteral("slug")).toString());
+    if (!detail_.ref.isEmpty()) {
         links.prepend({tr("Mikai"), page});
     }
     QStringList anchors;
@@ -540,6 +561,12 @@ void TitlePage::populateDetail(const backend::AnimeDetail& detail) {
 }
 
 void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
+    // The carousels are being rebuilt from a fresh detail, so the registrations
+    // of the ones going away are dropped with them.
+    relatedHeadings_.clear();
+    relatedPagerButtons_.clear();
+    relatedKindLabels_.clear();
+    relatedPosterLabels_.clear();
     while (relatedLayout_->count() > 0) {
         QLayoutItem* item = relatedLayout_->takeAt(0);
         if (item->widget() != nullptr) {
@@ -567,10 +594,10 @@ void TitlePage::populateRelated(const backend::AnimeDetail& detail) {
         return;
     }
     if (!relations.isEmpty()) {
-        relatedLayout_->addWidget(buildRelatedCarousel(tr("Related titles"), relations));
+        relatedLayout_->addWidget(buildRelatedCarousel(QStringLiteral("related"), relations));
     }
     if (!similar.isEmpty()) {
-        relatedLayout_->addWidget(buildRelatedCarousel(tr("Similar anime"), similar));
+        relatedLayout_->addWidget(buildRelatedCarousel(QStringLiteral("similar"), similar));
     }
     setRelatedExpanded(true, false);
 }
@@ -614,14 +641,15 @@ void TitlePage::loadRecommendations(const backend::AnimeDetail& detail) {
             const bool expand =
                 self->relatedHost_->isVisible() || !self->relatedButton_->isVisible();
             self->relatedLayout_->addWidget(
-                self->buildRelatedCarousel(tr("Recommended on Mikai"), entries));
+                self->buildRelatedCarousel(QStringLiteral("recommendation"), entries));
             self->setRelatedExpanded(expand, false);
         },
         [](const backend::Failure&) {});
 }
 
 QWidget* TitlePage::buildRelatedCarousel(
-    const QString& heading, const QVector<std::pair<QString, backend::AnimeSummary>>& entries) {
+    const QString& headingKey,
+    const QVector<std::pair<QString, backend::AnimeSummary>>& entries) {
     auto* section = new QWidget(relatedHost_);
     auto* layout = new QVBoxLayout(section);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -629,8 +657,11 @@ QWidget* TitlePage::buildRelatedCarousel(
 
     auto* header = new QHBoxLayout();
     header->setSpacing(theme::kSpacingSmall);
-    auto* title = new QLabel(heading, section);
+    auto* title = new QLabel(relatedHeadingText(headingKey), section);
     title->setObjectName(QStringLiteral("titleSectionHeading"));
+    // Registered by its semantic key: a language switch re-words this label in
+    // place instead of rebuilding the carousel and its posters.
+    relatedHeadings_.append({headingKey, title});
     header->addWidget(title);
     header->addStretch();
     auto* previous = new QPushButton(section);
@@ -639,6 +670,7 @@ QWidget* TitlePage::buildRelatedCarousel(
     auto* next = new QPushButton(section);
     next->setIcon(theme::chevronRightIcon(16));
     next->setToolTip(tr("Next page"));
+    relatedPagerButtons_.emplaceBack(previous, next);
     for (QPushButton* button : {previous, next}) {
         button->setObjectName(QStringLiteral("carouselControl"));
         button->setIconSize(QSize(16, 16));
@@ -681,12 +713,17 @@ QWidget* TitlePage::buildRelatedCarousel(
         posterLabel->setFixedSize(theme::kCarouselPosterWidth, theme::kCarouselPosterHeight);
         posterLabel->setWordWrap(true);
         posterLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        // Registered only for its fallback: a switch re-words the label while it
+        // is still empty, and leaves a landed poster alone.
+        relatedPosterLabels_.append(posterLabel);
         cardLayout->addWidget(posterLabel, 0, Qt::AlignHCenter);
 
         auto* kind = new QLabel(labels::relation(entry.first), card);
         kind->setObjectName(QStringLiteral("carouselKind"));
         kind->setAlignment(Qt::AlignCenter);
         kind->setAttribute(Qt::WA_TransparentForMouseEvents);
+        // Keyed by the raw relation, so the caption is re-derived on a switch.
+        relatedKindLabels_.append({entry.first, kind});
         cardLayout->addWidget(kind);
 
         auto* titleLabel = new QLabel(card);
@@ -865,6 +902,7 @@ QString TitlePage::releaseTrackLabel(const backend::Release& release) const {
 }
 
 void TitlePage::rebuildReleaseChips() {
+    releaseKindLabels_.clear();
     for (QAbstractButton* button : releaseGroup_->buttons()) {
         releaseGroup_->removeButton(button);
     }
@@ -896,6 +934,9 @@ void TitlePage::rebuildReleaseChips() {
 
         auto* kindLabel = new QLabel(labels::kind(kind), rowWidget);
         kindLabel->setObjectName(QStringLiteral("releaseKind"));
+        // Keyed by the raw kind so a language switch re-words the row's caption
+        // in place rather than rebuilding the chips and their selection.
+        releaseKindLabels_.append({kind, kindLabel});
         kindLabels.append(kindLabel);
         row->addWidget(kindLabel, 0, Qt::AlignTop);
         auto* chips = new FlowLayout(theme::kSpacingSmall, theme::kSpacingXs);
@@ -1017,7 +1058,7 @@ void TitlePage::fillEpisodes(int index) {
         }
     }
 
-    setStatus(tabs_->count() > 0 ? QString() : tr("No sources in this release"));
+    setStatusKind(tabs_->count() > 0 ? BaseStatus::Empty : BaseStatus::NoSources);
     fitEpisodeSection();
 }
 
@@ -1157,6 +1198,13 @@ void TitlePage::keyPressEvent(QKeyEvent* event) {
         return;
     }
     QWidget::keyPressEvent(event);
+}
+
+void TitlePage::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
 }
 
 void TitlePage::fitEpisodeSection() {
@@ -1562,6 +1610,9 @@ QVector<QVariantMap> TitlePage::tabPlaylist(int stateIndex, const QString& numbe
 
 
 void TitlePage::loadCover(const QString& url, bool allowHint) {
+    // A fetch is in flight, so a language switch landing before its callback
+    // re-words the cover to its loading text rather than leaving stale wording.
+    coverState_ = CoverState::Loading;
     // The client outlives the page, so the worker copies the address and the
     // callbacks hold a QPointer: an image landing after the page was disposed
     // is dropped instead of dereferencing freed widget state.
@@ -1575,6 +1626,7 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
             }
             QPixmap pixmap;
             if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
+                self->coverState_ = CoverState::Ready;
                 self->coverPixmap_ = pixmap;
                 self->coverUrl_ = url;
                 self->cover_->setZoomable(true);
@@ -1591,6 +1643,7 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
             if (allowHint && !self->posterHint_.isEmpty() && self->posterHint_ != url) {
                 self->loadCover(self->posterHint_, false);
             } else {
+                self->coverState_ = CoverState::Missing;
                 self->cover_->setZoomable(false);
                 self->cover_->setText(QCoreApplication::translate("TitlePage", "No cover"));
             }
@@ -1661,8 +1714,63 @@ void TitlePage::openCoverViewer() {
 }
 
 void TitlePage::setStatus(const QString& text) {
+    // A line the app did not word itself (the backend's failure line): kept
+    // verbatim, and restated verbatim on a language switch.
+    statusKind_ = BaseStatus::Raw;
     baseStatus_ = text;
     status_->setText(text);
+}
+
+void TitlePage::setStatusKind(BaseStatus kind) {
+    statusKind_ = kind;
+    baseStatus_ = baseStatusText(kind);
+    status_->setText(baseStatus_);
+}
+
+QString TitlePage::baseStatusText(BaseStatus kind) const {
+    switch (kind) {
+    case BaseStatus::Loading:
+        return tr("Loading…");
+    case BaseStatus::NoReleases:
+        return tr("No releases available");
+    case BaseStatus::NoSources:
+        return tr("No sources in this release");
+    case BaseStatus::Empty:
+        return {};
+    case BaseStatus::Raw:
+        return baseStatus_;
+    }
+    return {};
+}
+
+QString TitlePage::relatedHeadingText(const QString& key) const {
+    if (key == QLatin1String("related")) {
+        return tr("Related titles");
+    }
+    if (key == QLatin1String("similar")) {
+        return tr("Similar anime");
+    }
+    if (key == QLatin1String("recommendation")) {
+        return tr("Recommended on Mikai");
+    }
+    return key;
+}
+
+void TitlePage::applyCoverFallback() {
+    switch (coverState_) {
+    case CoverState::Loading:
+        cover_->setText(tr("Loading…"));
+        break;
+    case CoverState::Missing:
+        cover_->setText(tr("No cover"));
+        break;
+    case CoverState::Ready:
+        // The pixmap stays where it is; only the tooltip naming the click is
+        // re-worded. The explicit context matches loadCover's lambda, where the
+        // tooltip is first set, so both paths share one catalog entry.
+        cover_->setToolTip(QCoreApplication::translate("TitlePage", "Click to open the cover"));
+        break;
+    }
 }
 
 void TitlePage::flashStatus(const QString& text, bool failure) {
@@ -1678,5 +1786,166 @@ void TitlePage::flashStatus(const QString& text, bool failure) {
     });
 }
 
+void TitlePage::retranslateUi() {
+    if (backButton_ != nullptr) {
+        backButton_->setText(tr("← Back"));
+    }
+    if (settingsButton_ != nullptr) {
+        settingsButton_->setToolTip(tr("API token settings"));
+        settingsButton_->setAccessibleName(tr("API token settings"));
+    }
+    if (episodesHeading_ != nullptr) {
+        episodesHeading_->setText(tr("Episodes"));
+    }
+
+    // A flash still on screen is left to run out: its own timer restores the
+    // base line below, which is re-worded here.
+    const bool showingBase = status_ != nullptr && status_->text() == baseStatus_;
+    baseStatus_ = baseStatusText(statusKind_);
+    if (showingBase) {
+        status_->setText(baseStatus_);
+    }
+
+    applyCoverFallback();
+
+    if (hasDetail_) {
+        refreshDetailTexts();
+        fullDescription_ =
+            rawDescription_.isEmpty() ? tr("No description available.") : rawDescription_;
+        description_->setText(descriptionExpanded_ ? fullDescription_ : descriptionPreview());
+        descriptionButton_->setText(descriptionExpanded_ ? tr("Collapse description")
+                                                          : tr("Read more"));
+    }
+    if (metaButton_ != nullptr) {
+        metaButton_->setText(metaButton_->isChecked() ? tr("Hide details") : tr("More details"));
+    }
+    if (relatedButton_ != nullptr) {
+        relatedButton_->setText(relatedButton_->isChecked() ? tr("Hide similar")
+                                                            : tr("Related and similar"));
+    }
+    if (hasFailure_) {
+        // The view re-words its own canonical line; only the context clause is
+        // the page's. setContext restates just that: no re-show, no
+        // re-classification and no second accessibility announcement.
+        failure_->setContext(tr("Could not open this title"));
+    }
+
+    refreshRelatedTexts();
+    refreshReleaseTexts();
+    refreshEpisodeTexts();
+}
+
+void TitlePage::refreshRelatedTexts() {
+    for (const auto& heading : relatedHeadings_) {
+        if (!heading.second.isNull()) {
+            heading.second->setText(relatedHeadingText(heading.first));
+        }
+    }
+    for (const auto& pager : relatedPagerButtons_) {
+        if (!pager.first.isNull()) {
+            pager.first->setToolTip(tr("Previous page"));
+        }
+        if (!pager.second.isNull()) {
+            pager.second->setToolTip(tr("Next page"));
+        }
+    }
+    for (const auto& kind : relatedKindLabels_) {
+        if (!kind.second.isNull()) {
+            kind.second->setText(labels::relation(kind.first));
+        }
+    }
+    for (const QPointer<QLabel>& poster : relatedPosterLabels_) {
+        if (poster.isNull()) {
+            continue;
+        }
+        // A landed poster owns its label: setText would drop the pixmap it is
+        // showing, so only a label still on its fallback is re-worded.
+        if (poster->pixmap().isNull()) {
+            poster->setText(tr("Poster unavailable"));
+        }
+    }
+}
+
+void TitlePage::refreshReleaseTexts() {
+    // Releasing the fixed width first is what lets sizeHint() answer with the
+    // width of the re-worded text instead of the width the previous language
+    // clamped the label to.
+    for (const auto& kind : releaseKindLabels_) {
+        if (!kind.second.isNull()) {
+            kind.second->setMinimumWidth(0);
+            kind.second->setMaximumWidth(QWIDGETSIZE_MAX);
+        }
+    }
+    int kindWidth = 0;
+    for (const auto& kind : releaseKindLabels_) {
+        if (kind.second.isNull()) {
+            continue;
+        }
+        kind.second->setText(labels::kind(kind.first));
+        kindWidth = qMax(kindWidth, kind.second->sizeHint().width());
+    }
+    for (const auto& kind : releaseKindLabels_) {
+        if (!kind.second.isNull()) {
+            kind.second->setFixedWidth(kindWidth);
+        }
+    }
+
+    for (int index = 0; index < releaseChips_.size() && index < releases_.size(); ++index) {
+        QPushButton* chip = releaseChips_.at(index);
+        if (chip == nullptr) {
+            continue;
+        }
+        QString label = releaseChipLabel(releases_.at(index));
+        QString tooltip = releaseChipToolTip(releases_.at(index));
+        // A probed quality is not a translation: it is appended again to the
+        // re-worded label rather than dropped with the old text.
+        const int quality = releaseQuality_.value(index, 0);
+        if (quality > 0) {
+            const QString suffix = QStringLiteral(" · %1p").arg(quality);
+            label += suffix;
+            tooltip += suffix;
+        }
+        chip->setText(label);
+        chip->setToolTip(tooltip);
+    }
+}
+
+void TitlePage::refreshEpisodeTexts() {
+    if (tabs_ != nullptr) {
+        for (int index = 0; index < tabStates_.size() && index < tabs_->count(); ++index) {
+            const QString provider = tabStates_.at(index).provider;
+            const QString known = labels::provider(provider);
+            tabs_->setTabText(index, known.isEmpty() ? capitalize(provider) : known);
+        }
+    }
+    // Labels are plain data: every entry carries one for the player's episode
+    // list, whether or not its pill is built right now.
+    for (EpisodeEntry* entry : ownedEntries_) {
+        if (entry != nullptr) {
+            entry->label = tr("Episode %1").arg(entry->number);
+        }
+    }
+    // Tooltips only where a live pill exists. An entry whose page left its grid
+    // still holds the pointer of a button already scheduled for deletion, so it
+    // is skipped here and re-worded when that page is rendered again.
+    for (const TabState& state : tabStates_) {
+        if (!state.rendered) {
+            continue;
+        }
+        const int start = state.page * state.pageSize;
+        const int end = qMin(start + state.pageSize, state.entries.size());
+        for (int index = start; index < end; ++index) {
+            EpisodeEntry* entry = state.entries.at(index);
+            if (entry == nullptr || entry->button == nullptr) {
+                continue;
+            }
+            // A disabled pill is one markNoSource disabled: its tooltip names
+            // the missing video, so "watch" there would be a lie.
+            entry->button->setToolTip(entry->button->isEnabled()
+                                          ? tr("%1 — watch").arg(entry->label)
+                                          : tr("This player has no video for this episode"));
+        }
+    }
+}
 
 }  // namespace mikai::app

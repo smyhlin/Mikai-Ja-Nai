@@ -50,7 +50,6 @@
 
 #include <stdexcept>
 #include <optional>
-#include <functional>
 
 namespace mikai::app {
 
@@ -647,6 +646,10 @@ void ComponentStoreTab::changeEvent(QEvent* event) {
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
         renderCards();
+        // The status line is app-owned text, not a static label: re-derive it
+        // in the live language and let the existing notification restate it
+        // outside this tab. No run, progress, selection or timer is touched.
+        restateStatus();
     }
 }
 
@@ -765,9 +768,10 @@ void ComponentStoreTab::scheduleInventoryRefresh() {
                 componentStagePending_ = false;
                 acquisitionSequenceActive_ = false;
             }
+            const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),
-                        tr("Component inventory failed: %1")
-                            .arg(backend::failureLine(failure)));
+                        StatusReason{.kind = StatusReason::Kind::InventoryFailed,
+                                     .detail = cause});
             updateControls();
             emit inventoryUpdated();
         });
@@ -970,7 +974,7 @@ void ComponentStoreTab::verifyAll() {
     if (verifying_) return;
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noRunner"),
-                    tr("Verifying the installed components needs a runner."));
+                    StatusReason{.kind = StatusReason::Kind::VerifyNeedsRunner});
         updateControls();
         return;
     }
@@ -1022,36 +1026,17 @@ void ComponentStoreTab::applyVerifyResult(int verified, int failed, int failedRi
     renderCards();
     if (progress_ != nullptr) progress_->hide();
     if (failed == 0) {
-        applyStatus(QString(), tr("%1 elements verified, none changed.").arg(verified));
+        applyStatus(QString(),
+                    StatusReason{.kind = StatusReason::Kind::VerifiedCount, .count = verified});
     } else {
-        QStringList reported;
-        for (const QString& entry : failures) {
-            const int separator = entry.indexOf(QLatin1Char(':'));
-            const QString label = entry.left(separator);
-            const QString detail = entry.mid(separator + 1);
-            if (label == QLatin1String("tensorrt"))
-                reported.append(tr("TensorRT / CUDA 13 closure: %1").arg(
-                    detail == QLatin1String("animejanai.installation.incomplete")
-                        ? tr("one or more required dependencies are missing or corrupt")
-                        : detail));
-            else if (label == QLatin1String("directml"))
-                reported.append(tr("DirectML closure: %1").arg(
-                    detail == QLatin1String("animejanai.installation.incomplete")
-                        ? tr("one or more required dependencies are missing or corrupt")
-                        : detail));
-            else
-                reported.append(entry);
-        }
-        if (failedRife > 0)
-            reported.append(tr("%1 RIFE interpolation model(s) failed verification.")
-                                .arg(failedRife));
-        if (failedSpatial > 0)
-            reported.append(tr("%1 spatial model(s) failed verification.")
-                                .arg(failedSpatial));
+        // The worker's raw per-element causes are copied, never referenced, and
+        // only the app-owned framing around them is re-rendered later.
         applyStatus(QStringLiteral("native.components.digest"),
-                    tr("%1 elements failed verification: %2")
-                        .arg(failed)
-                        .arg(reported.join(QStringLiteral("; "))));
+                    StatusReason{.kind = StatusReason::Kind::VerifyDigest,
+                                 .causes = failures,
+                                 .count = failed,
+                                 .rifeFailures = failedRife,
+                                 .spatialFailures = failedSpatial});
     }
     updateControls();
 }
@@ -1179,9 +1164,10 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
             verifying_ = false;
             ++runGeneration_;
             if (progress_ != nullptr) progress_->hide();
+            const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),
-                        tr("The components could not be verified: %1")
-                            .arg(backend::failureLine(failure)));
+                        StatusReason{.kind = StatusReason::Kind::NotVerified,
+                                     .detail = cause});
             updateControls();
         });
 }

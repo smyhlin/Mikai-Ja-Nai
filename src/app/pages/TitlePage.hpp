@@ -7,6 +7,7 @@
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
 #include <QMap>
+#include <QPair>
 #include <QPoint>
 #include <QPointer>
 #include <QSet>
@@ -142,6 +143,15 @@ private:
         bool hasPlayer = false;
     };
 
+    /// What the page's own status line currently stands for. The line is
+    /// restated from this after a language switch instead of keeping translated
+    /// text that would then be stale.
+    enum class BaseStatus { Empty, Loading, NoReleases, NoSources, Raw };
+
+    /// What the cover is showing, so a switch can re-word the fallback without
+    /// touching a pixmap that has already landed.
+    enum class CoverState { Loading, Missing, Ready };
+
     void buildUi();
     void load();
     /// Hand the page its title once both halves of a two-task load have landed.
@@ -152,8 +162,12 @@ private:
     void populateDetail(const backend::AnimeDetail& detail);
     void populateRelated(const backend::AnimeDetail& detail);
     void loadRecommendations(const backend::AnimeDetail& detail);
+    /// `headingKey` is a semantic key ("related", "similar", "recommendation"),
+    /// not a word: the heading is worded from it and re-worded from it after a
+    /// language switch.
     QWidget* buildRelatedCarousel(
-        const QString& heading, const QVector<std::pair<QString, backend::AnimeSummary>>& entries);
+        const QString& headingKey,
+        const QVector<std::pair<QString, backend::AnimeSummary>>& entries);
     /// `fromUser` is false when data landing expands the block itself. Only a
     /// toggle the reader pressed scrolls the overview: the recommendations
     /// carousel arriving is not a request to be scrolled away from whatever
@@ -240,12 +254,37 @@ private:
     void saveCover();
     void openCoverViewer();
 
+    /// Raw, untranslated status line: the failure line the backend produced.
     void setStatus(const QString& text);
+    /// The status line for a state the app words itself, kept as a state so a
+    /// language switch restates it.
+    void setStatusKind(BaseStatus kind);
+    QString baseStatusText(BaseStatus kind) const;
+    QString relatedHeadingText(const QString& key) const;
+    /// Re-words the cover's loading/missing fallback; a landed pixmap is left.
+    void applyCoverFallback();
     void flashStatus(const QString& text, bool failure = false);
+
+    /// Restates every static caption in place after a LanguageChange. The loaded
+    /// title, the release/episode selection, the expansion toggles, the scroll
+    /// position, the open players and every task in flight are left exactly as
+    /// they were: nothing is reloaded, refetched or rebuilt from data.
+    void retranslateUi();
+    /// Facts, scores, details rows and links, rebuilt from the retained detail.
+    void refreshDetailTexts();
+    /// Carousel headings, pager tooltips, relation captions and poster
+    /// fallbacks, keeping every painted poster and the carousels themselves.
+    void refreshRelatedTexts();
+    /// Release kind labels and chips, keeping the selection and any quality
+    /// suffix a probe already appended.
+    void refreshReleaseTexts();
+    /// Provider tab names and every episode pill's label and tooltip.
+    void refreshEpisodeTexts();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
     Runner& runner_;
     backend::MikaiClient& client_;
@@ -282,6 +321,12 @@ protected:
     QVBoxLayout* releaseRowsLayout_ = nullptr;
     QButtonGroup* releaseGroup_ = nullptr;
     QVector<QPushButton*> releaseChips_;
+    /// The row's kind captions, keyed by the raw kind, so a switch re-words
+    /// them without rebuilding the rows.
+    QVector<QPair<QString, QPointer<QLabel>>> releaseKindLabels_;
+    QPushButton* backButton_ = nullptr;
+    QPushButton* settingsButton_ = nullptr;
+    QLabel* episodesHeading_ = nullptr;
     QLabel* status_ = nullptr;
     QScrollArea* overviewScroll_ = nullptr;
     RateLimitLabel* rateLabel_ = nullptr;
@@ -294,14 +339,27 @@ protected:
 
     QPixmap coverPixmap_;
     QString coverUrl_;
+    CoverState coverState_ = CoverState::Loading;
     /// The already-fetched detail for ref_, if the caller had one. When it is
     /// set, load() skips the redundant getAnime call.
     backend::AnimeDetail detailHint_;
     bool hasDetailHint_ = false;
+    /// The detail the page painted from, retained so a language switch can
+    /// re-word its captions without asking the backend for it again.
+    backend::AnimeDetail detail_;
+    bool hasDetail_ = false;
+    /// Whether the page is currently showing a failure, so a language switch
+    /// re-words only that failure's context clause (the widget re-words the
+    /// rest itself) and never re-shows or re-classifies it.
+    bool hasFailure_ = false;
     CoverViewer* coverViewer_ = nullptr;
+    /// The description as the backend sent it; the shown text is derived from
+    /// it, including the missing-description fallback.
+    QString rawDescription_;
     QString fullDescription_;
     bool descriptionExpanded_ = false;
     QString baseStatus_;
+    BaseStatus statusKind_ = BaseStatus::Empty;
 
     /// Bumped by every runtime request, so a completion belonging to a
     /// superseded attempt is dropped instead of starting a player the user has
@@ -320,6 +378,16 @@ protected:
     QMap<EpisodeEntry*,
          QVector<std::function<void(EpisodeEntry*, const QMap<int, QString>&)>>>
         entryCallbacks_;
+
+    /// What each related carousel registered when it was built, so a language
+    /// switch re-words the captions in place. Rebuilding the carousels instead
+    /// would drop every poster already fetched and restart their downloads, so
+    /// the headings, pager tooltips, relation captions and still-empty poster
+    /// fallbacks are all that is kept here.
+    QVector<QPair<QString, QPointer<QLabel>>> relatedHeadings_;
+    QVector<QPair<QPointer<QPushButton>, QPointer<QPushButton>>> relatedPagerButtons_;
+    QVector<QPair<QString, QPointer<QLabel>>> relatedKindLabels_;
+    QVector<QPointer<QLabel>> relatedPosterLabels_;
 };
 
 }  // namespace mikai::app

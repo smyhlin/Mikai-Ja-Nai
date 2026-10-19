@@ -4,6 +4,7 @@
 #include "theme/Metrics.hpp"
 
 #include <QCoreApplication>
+#include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -117,6 +118,25 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
 
 TitleCard::~TitleCard() = default;
 
+void TitleCard::changeEvent(QEvent* event) {
+    QPushButton::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void TitleCard::retranslateUi() {
+    // A landed poster owns the label: setText would drop the pixmap it is
+    // showing, so only a label still on its fallback is re-worded.
+    if (poster_ != nullptr && poster_->pixmap().isNull()) {
+        poster_->setText(tr("Poster unavailable"));
+    }
+    const QString status = labels::status(statusRaw_);
+    status_->setText(status.isEmpty() ? QString::fromLatin1(kPending) : status);
+    const QString count = episodeCountText(aired_, planned_);
+    episodes_->setText(count.isEmpty() ? QString::fromLatin1(kPending) : count);
+}
+
 QLabel* TitleCard::makeLabel(const QString& objectName, const QString& text) {
     auto* label = new QLabel(text, this);
     label->setObjectName(objectName);
@@ -195,6 +215,8 @@ void TitleCard::applyPixmap(const QPixmap& pixmap) {
 }
 
 void TitleCard::applyStatus(const QString& status) {
+    // Retained untranslated: a language switch re-derives the label from it.
+    statusRaw_ = status;
     const bool live = status == QLatin1String("ongoing");
     if (live != statusLive_) {
         statusLive_ = live;
@@ -212,6 +234,7 @@ void TitleCard::applyStatus(const QString& status) {
 }
 
 void TitleCard::applyEpisodes(int aired, int planned) {
+    aired_ = aired;
     if (planned > 0) {
         planned_ = planned;
     }

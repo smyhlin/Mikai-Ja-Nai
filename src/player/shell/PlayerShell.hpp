@@ -60,6 +60,9 @@ QT_END_NAMESPACE
 namespace mplayer {
 class VideoSurface;
 enum class StreamFpsSource : int;
+namespace native {
+class AnimeJanaiCatalogWatcher;
+}
 }
 
 namespace mplayer {
@@ -278,11 +281,25 @@ private:
     /// Rebuilds the rows of every level on screen, which is how the marks
     /// follow a chain that changed underneath them.
     void refreshEnhancementTree();
+    /// A relevant catalogue file changed on disk: re-enumerate the presets and
+    /// redraw the levels that are open plus the footer chip. It reads no
+    /// selection and writes none - a paste or a removal changes what the menu
+    /// can offer, not what the viewer chose.
+    void onAnimeJanaiCatalogueChanged();
+    /// Closes the open levels that no longer name anything in the catalogue,
+    /// deepest first, so a removed RIFE pin takes its now-empty version level
+    /// with it instead of leaving a dead panel standing.
+    void pruneStaleEnhancementLevels();
     /// Puts the hover filter on the rows of one panel, so resting on a row
     /// opens what sits under it.
     void watchEnhancementRows(MenuPopup* panel);
     void cancelEnhancementHover();
     bool hasVisibleEnhancementDescendant(int depth) const;
+    /// The AnimeJaNai chip's own text, tooltip and accessible name, derived from
+    /// the retained selection and the last status the host reported. Separated
+    /// from setAnimeJanaiSelection() so a language change re-derives the chip
+    /// without re-announcing a selection to the filter.
+    void updateAnimeJanaiChip();
     void updateInfoChip();
     void retranslateUi();
     void openKeys();
@@ -305,6 +322,11 @@ private:
     ChromeList chrome_;
 
     MenuPopup* pictureMenu_ = nullptr;
+    /// Where the picture menu was opened, in shell coordinates: an open menu is
+    /// re-placed against it after a language change, because a longer
+    /// translation grows the card and an unrepositioned one is clamped by
+    /// nothing and clipped by the window that parents it.
+    QPoint pictureMenuAnchor_;
     Panel* windowControls_ = nullptr;
     Panel* titleBar_ = nullptr;
     IconButton* titleMin_ = nullptr;
@@ -348,8 +370,17 @@ private:
     QVector<SettingsFlyout::QualityOption> qualityOptions_;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
     QString animeJanaiPresetId_;
+    /// The last status text the host reported for `animeJanaiPresetId_`, kept
+    /// so the chip can be rebuilt in another language: its wording is partly
+    /// ours ("Preparing…") and only the host can say what the filter is doing.
+    QString animeJanaiStatus_;
     QString animeJanaiBackend_ = QStringLiteral("tensorrt");
     ChromeLabel* lblAnimeJanai_ = nullptr;
+    /// Lifetime-owned observation of the catalogue the enhancement tree draws
+    /// from. It is a child of the shell because the tree must follow a paste,
+    /// a registration or a removal for as long as the viewer has the player
+    /// open, without anyone reopening the menu to force a re-read.
+    native::AnimeJanaiCatalogWatcher* animeJanaiCatalogWatcher_ = nullptr;
 
     Panel* footerLeft_ = nullptr;
     ChromeLabel* lblEpisode_ = nullptr;

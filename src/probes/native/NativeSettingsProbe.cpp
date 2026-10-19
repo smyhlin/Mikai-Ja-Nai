@@ -35,6 +35,7 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollBar>
+#include <QSaveFile>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStyle>
@@ -90,6 +91,19 @@ void check(bool ok, const char* what) {
         ++failures;
     }
 }
+
+/// Same verdict line, with the failure's own words. A refused atomic replace
+/// is silent at the Qt level, so the reason the operation reported is the only
+/// evidence of why the destination could not be replaced.
+void check(bool ok, const char* what, const QString& detail) {
+    ++checks;
+    std::fprintf(stderr, "%s %s%s%s\n", ok ? "PASS" : "FAIL", what,
+                 detail.isEmpty() ? "" : ": ", qPrintable(detail));
+    if (!ok) {
+        ++failures;
+    }
+}
+
 QString fileSha256(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return {};
@@ -132,6 +146,18 @@ QPushButton* acceptButton(QDialogButtonBox* box) {
     }
     for (QAbstractButton* button : box->buttons()) {
         if (box->buttonRole(button) == QDialogButtonBox::AcceptRole) {
+            return qobject_cast<QPushButton*>(button);
+        }
+    }
+    return nullptr;
+}
+
+QPushButton* rejectButton(QDialogButtonBox* box) {
+    if (box == nullptr) {
+        return nullptr;
+    }
+    for (QAbstractButton* button : box->buttons()) {
+        if (box->buttonRole(button) == QDialogButtonBox::RejectRole) {
             return qobject_cast<QPushButton*>(button);
         }
     }
@@ -337,6 +363,10 @@ FileDialogDrive driveFileDialog(const QString& path, const std::function<void()>
 }
 
 QTableWidget* customModelTable(QWidget& root) {
+    if (auto* named =
+            root.findChild<QTableWidget*>(QStringLiteral("animeJanaiCustomModelsTable"))) {
+        return named;
+    }
     for (QTableWidget* table : root.findChildren<QTableWidget*>()) {
         if (table->columnCount() == 5) return table;
     }
@@ -350,6 +380,186 @@ int customModelRow(QTableWidget* table, const QString& id) {
         if (item != nullptr && item->data(Qt::UserRole).toString() == id) return row;
     }
     return -1;
+}
+struct CatalogueRowView {
+    int row = -1;
+    QString id;
+    QString origin;
+    QString state;
+    QString path;
+    bool candidate = false;
+};
+
+CatalogueRowView catalogueRowAt(QTableWidget* table, int row) {
+    CatalogueRowView view;
+    if (table == nullptr || row < 0 || row >= table->rowCount()) return view;
+    const QTableWidgetItem* item = table->item(row, 0);
+    if (item == nullptr) return view;
+    view.row = row;
+    view.id = item->data(Qt::UserRole).toString();
+    view.candidate = item->data(Qt::UserRole + 1).toBool();
+    view.origin = item->data(Qt::UserRole + 2).toString();
+    view.state = item->data(Qt::UserRole + 3).toString();
+    view.path = item->data(Qt::UserRole + 4).toString();
+    return view;
+}
+
+CatalogueRowView catalogueRowForPath(QTableWidget* table, const QString& path) {
+    if (table == nullptr) return {};
+    const QString cleaned = QDir::cleanPath(path);
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const CatalogueRowView view = catalogueRowAt(table, row);
+        if (view.row < 0) continue;
+        if (QDir::cleanPath(view.path) == cleaned) return view;
+        if (!canonical.isEmpty() &&
+            QFileInfo(view.path).canonicalFilePath().compare(canonical,
+                                                             Qt::CaseInsensitive) == 0) {
+            return view;
+        }
+    }
+    return {};
+}
+
+QByteArray fileBytes(const QString& path) {
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
+
+struct AtomicReplaceOutcome {
+    bool opened = false;
+    bool wrote = false;
+    bool replaced = false;
+    int attempts = 0;
+    QString error;
+};
+
+/// Replaces @p path with @p bytes through a QSaveFile, which is the atomic
+/// replace an external updater performs. On Windows Qt opens every file handle
+/// without FILE_SHARE_DELETE, and QSaveFile commits through
+/// SetFileInformationByHandle(FileRenameInfo, ReplaceIfExists), so commit()
+/// returns false while *any* other handle holds the destination: a catalogue
+/// scan, an integrity check or another process. No fixture handle may be left
+/// open on the graph, and a fresh QSaveFile is retried over a bounded window
+/// the way a real updater retries a busy file. Success is always verified on
+/// disk, so a replacement that never landed is never reported as one. The last
+/// refusal is kept even after a later attempt succeeds, so a busy destination
+/// stays visible in the log.
+AtomicReplaceOutcome replaceFileAtomically(const QString& path, const QByteArray& bytes) {
+    AtomicReplaceOutcome outcome;
+    QElapsedTimer clock;
+    clock.start();
+    while (true) {
+        ++outcome.attempts;
+        {
+            QSaveFile replacement(path);
+            if (replacement.open(QIODevice::WriteOnly)) {
+                outcome.opened = true;
+                if (replacement.write(bytes) == bytes.size()) {
+                    outcome.wrote = true;
+                    if (replacement.commit() && fileBytes(path) == bytes) {
+                        outcome.replaced = true;
+                        return outcome;
+                    }
+                    outcome.error = replacement.errorString().isEmpty()
+                                        ? QStringLiteral("the replacement could not replace the "
+                                                         "destination file")
+                                        : replacement.errorString();
+                } else {
+                    outcome.error = replacement.errorString().isEmpty()
+                                        ? QStringLiteral("the replacement could not be written")
+                                        : replacement.errorString();
+                }
+            } else {
+                outcome.error = replacement.errorString().isEmpty()
+                                    ? QStringLiteral("the destination is not writable")
+                                    : replacement.errorString();
+            }
+        }
+        if (clock.elapsed() >= 3000) break;
+        QThread::msleep(50);
+    }
+    return outcome;
+}
+
+/// Clicks the manager's model action only when the selected row really is an
+/// unregistered candidate. With any other selection the same button opens a
+/// modal file picker, which this headless probe cannot drive, so a failed
+/// precondition would hang the run instead of reporting it.
+bool clickImportForCandidate(QTableWidget* table, QPushButton* button,
+                             const char* failedMessage) {
+    const CatalogueRowView selected =
+        catalogueRowAt(table, table != nullptr ? table->currentRow() : -1);
+    if (button == nullptr || selected.row < 0 || !selected.candidate) {
+        check(false, failedMessage);
+        return false;
+    }
+    button->click();
+    return true;
+}
+
+QString customPresetId(const QString& stem) {
+    return QStringLiteral("spatial:custom:") + stem;
+}
+
+bool presetCatalogueHas(const QString& id) {
+    for (const auto& preset : mplayer::native::animeJanaiPresets()) {
+        if (preset.id == id) return true;
+    }
+    return false;
+}
+
+mplayer::shell::MenuPopup* enhancementLevelMenu(mplayer::shell::PlayerShell& player,
+                                                const QString& level) {
+    for (mplayer::shell::MenuPopup* menu :
+         player.findChildren<mplayer::shell::MenuPopup*>()) {
+        if (menu->property("enhancementLevel").toString() == level) return menu;
+    }
+    return nullptr;
+}
+
+bool menuHasPayload(mplayer::shell::MenuPopup* menu, const QString& payload) {
+    if (menu == nullptr) return false;
+    for (int index = 0; index < menu->rowCount(); ++index) {
+        if (menu->entryAt(index).payload.toString() == payload) return true;
+    }
+    return false;
+}
+
+mplayer::shell::MenuEntry menuEntryForPayload(mplayer::shell::MenuPopup* menu,
+                                              const QString& payload) {
+    if (menu != nullptr) {
+        for (int index = 0; index < menu->rowCount(); ++index) {
+            const auto entry = menu->entryAt(index);
+            if (entry.payload.toString() == payload) return entry;
+        }
+    }
+    return {};
+}
+
+bool clickMenuPayload(mplayer::shell::MenuPopup* menu, const QString& payload) {
+    if (menu == nullptr) return false;
+    for (int index = 0; index < menu->rowCount(); ++index) {
+        if (menu->entryAt(index).payload.toString() != payload) continue;
+        QWidget* row = menu->rowWidget(index);
+        if (row == nullptr) return false;
+        QTest::mouseClick(row, Qt::LeftButton, Qt::NoModifier, row->rect().center());
+        QApplication::processEvents();
+        return true;
+    }
+    return false;
+}
+
+QTreeWidgetItem* benchmarkItem(QTreeWidget* tree, const QString& id) {
+    if (tree == nullptr) return nullptr;
+    for (int groupIndex = 0; groupIndex < tree->topLevelItemCount(); ++groupIndex) {
+        const QTreeWidgetItem* group = tree->topLevelItem(groupIndex);
+        for (int row = 0; row < group->childCount(); ++row) {
+            QTreeWidgetItem* item = group->child(row);
+            if (item->data(0, Qt::UserRole + 1).toString() == id) return item;
+        }
+    }
+    return nullptr;
 }
 
 void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runner) {
@@ -453,11 +663,16 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
         [&] { return customModelRow(modelTable, QStringLiteral("external_smoke")) >= 0; },
         5000);
     check(externalCandidateVisible, "the external folder presents its unregistered ONNX candidate");
+    bool externalRegistrationClicked = false;
     if (externalCandidateVisible && importModel != nullptr) {
-        modelTable->selectRow(customModelRow(modelTable, QStringLiteral("external_smoke")));
-        importModel->click();
+        modelTable->setCurrentCell(
+            customModelRow(modelTable, QStringLiteral("external_smoke")), 0);
+        QApplication::processEvents();
+        externalRegistrationClicked = clickImportForCandidate(
+            modelTable, importModel,
+            "the external_smoke candidate was selected as the candidate to register");
     }
-    const bool externalRegistered = waitForUi(
+    const bool externalRegistered = externalRegistrationClicked && waitForUi(
         [&] {
             const int row = customModelRow(modelTable, QStringLiteral("external_smoke"));
             return row >= 0 && !modelTable->item(row, 0)->data(Qt::UserRole + 1).toBool();
@@ -996,6 +1211,801 @@ void exerciseAnimeJanaiManager(mikai::backend::MikaiClient& client, Runner& runn
     check(removalReady && remainingModels.isEmpty(),
           "background inventory confirms the imported model was removed");
 }
+
+/// Filesystem discovery seen through the public surfaces the viewer actually
+/// uses: the Settings manager table and actions, Benchmark's catalogue, the
+/// player's enhancement menu and Compare's candidate list. Every consumer is
+/// constructed and visible before a graph is pasted, so a pass here is a real
+/// refresh of an already-built UI and not a fresh dialog reading the disk.
+void exerciseLiveModelDiscovery(mikai::backend::MikaiClient& client, Runner& runner) {
+    const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+    check(mikai::app::applyInterfaceLanguage(QStringLiteral("en"), catalog),
+          "the live model discovery scenario runs in English");
+
+    QTemporaryDir workDir;
+    QTemporaryDir externalDir;
+    check(workDir.isValid() && externalDir.isValid(),
+          "the live catalogue scenario has isolated work and external folders");
+    if (!workDir.isValid() || !externalDir.isValid()) return;
+
+    const QString customDir = mplayer::native::customAnimeJanaiModelsDir();
+    check(QDir().mkpath(customDir), "the isolated owned custom model folder exists");
+    const QString rawPath = QDir(customDir).filePath(QStringLiteral("raw_live_model.onnx"));
+    const QString decoyPath = QDir(customDir).filePath(QStringLiteral("owned_decoy.onnx"));
+    const QString renamedDecoyPath =
+        QDir(customDir).filePath(QStringLiteral("owned_decoy_renamed.onnx"));
+    const QString externalPath =
+        QDir(externalDir.path()).filePath(QStringLiteral("external_live_model.onnx"));
+    const QString recreatedExternalPath =
+        QDir(externalDir.path()).filePath(QStringLiteral("external_recreated.onnx"));
+    const QString rawPreset = customPresetId(QStringLiteral("raw_live_model"));
+    const QString externalPreset = customPresetId(QStringLiteral("external_live_model"));
+    const QString recreatedPreset = customPresetId(QStringLiteral("external_recreated"));
+    const QByteArray modelProto = mikai::tests::fixtures::makeTestIdentityOnnxGraph();
+    check(modelProto.size() >= 64, "a real ONNX graph is available for live catalogue paste");
+    for (const QString& stale : {rawPath, rawPath + QStringLiteral(".source.json"), decoyPath,
+                                 renamedDecoyPath, externalPath, recreatedExternalPath}) {
+        QFile::remove(stale);
+    }
+
+    SettingsDialog managerDialog(client, runner);
+    const QSize managerWindowSize = fitSettingsDialogSize(
+        managerDialog,
+        QSize(mikai::app::theme::kSettingsDialogMinWidth,
+              mikai::app::theme::kSettingsDialogDefaultHeight));
+    managerDialog.resize(managerWindowSize);
+    managerDialog.showProcessingTab();
+    managerDialog.show();
+    QApplication::processEvents();
+    auto* managerRuntime =
+        managerDialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+    if (managerRuntime != nullptr) {
+        managerRuntime->setCurrentIndex(managerRuntime->findData(
+            static_cast<int>(mplayer::native::RuntimeChoice::Standard)));
+    }
+    QApplication::processEvents();
+    auto* panelWidget = managerDialog.findChild<mikai::app::AnimeJanaiManagerPanel*>(
+        QStringLiteral("animeJanaiManagerPanel"));
+    check(panelWidget != nullptr && panelWidget->isVisibleTo(&managerDialog),
+          "the manager exists and is visible before the catalogue changes");
+    if (panelWidget == nullptr) return;
+    mikai::app::AnimeJanaiManagerPanel& panel = *panelWidget;
+    mikai::probes::revealWidget(&panel);
+    QApplication::processEvents();
+
+    QTableWidget* modelTable = customModelTable(panel);
+    QPushButton* importModel =
+        panel.findChild<QPushButton*>(QStringLiteral("ajiImportModelButton"));
+    QPushButton* removeModel =
+        panel.findChild<QPushButton*>(QStringLiteral("ajiRemoveModelButton"));
+    auto* slotSelector =
+        panel.findChild<QComboBox*>(QStringLiteral("ajiSlotSelectCombo"));
+    auto* externalEdit =
+        panel.findChild<QLineEdit*>(QStringLiteral("ajiExternalModelsDirEdit"));
+    auto* profileName = panel.findChild<QLineEdit*>(QStringLiteral("ajiProfileNameEdit"));
+    check(modelTable != nullptr && importModel != nullptr && removeModel != nullptr &&
+              slotSelector != nullptr && externalEdit != nullptr && profileName != nullptr,
+          "the manager exposes its model table, registration and draft controls");
+    if (modelTable == nullptr || importModel == nullptr || removeModel == nullptr ||
+        slotSelector == nullptr || externalEdit == nullptr || profileName == nullptr) {
+        return;
+    }
+
+    externalEdit->setText(externalDir.path());
+    externalEdit->setFocus();
+    QTest::keyClick(externalEdit, Qt::Key_Tab);
+    QApplication::processEvents();
+    const QSize managerInitialSize = managerDialog.size();
+
+    const int slotOne = slotSelector->findData(1);
+    if (slotOne >= 0) slotSelector->setCurrentIndex(slotOne);
+    profileName->setFocus();
+    profileName->selectAll();
+    QTest::keyClicks(profileName, QStringLiteral("Live Draft Profile"));
+    QPushButton* addChain =
+        buttonForCaption(panel, mikai::app::AnimeJanaiManagerPanel::tr("Add Chain"));
+    QPushButton* addStep =
+        panel.findChild<QPushButton*>(QStringLiteral("ajiAddStepButton"));
+    check(addChain != nullptr && addStep != nullptr,
+          "the manager exposes the draft chain editing actions");
+    if (addChain != nullptr) addChain->click();
+    if (addStep != nullptr) addStep->click();
+    QApplication::processEvents();
+    auto* firstStepKind =
+        panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepKind_1"));
+    auto* firstStepId =
+        panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_1"));
+    if (firstStepKind != nullptr) {
+        firstStepKind->setCurrentIndex(firstStepKind->findData(
+            static_cast<int>(mplayer::native::AnimeJanaiStepKind::Anime4K)));
+    }
+    QApplication::processEvents();
+    firstStepId = panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_1"));
+    if (firstStepId != nullptr) {
+        firstStepId->setCurrentIndex(firstStepId->findData(QStringLiteral("fast_a")));
+    }
+    QApplication::processEvents();
+    QComboBox* chainCombo =
+        comboForLabel(panel, mikai::app::AnimeJanaiManagerPanel::tr("Active chain"));
+    check(chainCombo != nullptr, "the manager exposes its active chain selector");
+    QApplication::processEvents();
+
+    auto draftConfig = panel.currentConfig();
+    const QString draftProfileName = profileName->text();
+    const int draftSlot = slotSelector->currentData().toInt();
+    int draftChainIndex = chainCombo != nullptr ? chainCombo->currentIndex() : -1;
+    QString draftStepId =
+        firstStepId != nullptr ? firstStepId->currentData().toString() : QString();
+    check(panel.isDirty() && draftProfileName == QStringLiteral("Live Draft Profile") &&
+              draftStepId == QStringLiteral("fast_a") &&
+              QDir::cleanPath(draftConfig.externalModelsDir) ==
+                  QDir::cleanPath(externalDir.path()),
+          "the manager holds an unsaved profile, chain and external-folder draft");
+
+    SettingsDialog benchmarkDialog(client, runner);
+    auto* benchmarkTabs = benchmarkDialog.findChild<QTabWidget*>();
+    QWidget* benchmarkPage = nullptr;
+    if (benchmarkTabs != nullptr) {
+        for (QWidget* page : benchmarkDialog.findChildren<QWidget*>(
+                 QStringLiteral("benchmarkPage"))) {
+            if (benchmarkTabs->indexOf(page) >= 0) {
+                benchmarkPage = page;
+                break;
+            }
+        }
+        if (benchmarkPage != nullptr) benchmarkTabs->setCurrentWidget(benchmarkPage);
+    }
+    benchmarkDialog.resize(managerWindowSize);
+    benchmarkDialog.show();
+    QApplication::processEvents();
+    auto* benchmarkTree =
+        benchmarkDialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
+    auto* benchmarkSearch =
+        benchmarkDialog.findChild<QLineEdit*>(QStringLiteral("benchmarkModelSearch"));
+    check(benchmarkTree != nullptr && benchmarkSearch != nullptr &&
+              benchmarkPage != nullptr && benchmarkPage->isVisibleTo(&benchmarkDialog),
+          "Benchmark's catalogue exists and is visible before the graph is pasted");
+    if (benchmarkTree == nullptr || benchmarkSearch == nullptr) return;
+    QTreeWidgetItem* stableBenchmarkRow = benchmarkItem(benchmarkTree, QStringLiteral("builtin1001"));
+    check(stableBenchmarkRow != nullptr, "Benchmark offers a stable built-in row to preserve");
+    if (stableBenchmarkRow != nullptr) stableBenchmarkRow->setCheckState(0, Qt::Checked);
+    benchmarkSearch->setText(QStringLiteral("spatial"));
+    QApplication::processEvents();
+    const QString benchmarkFilter = benchmarkSearch->text();
+    const bool stableBenchmarkChecked =
+        stableBenchmarkRow != nullptr && stableBenchmarkRow->checkState(0) == Qt::Checked;
+    check(benchmarkFilter == QStringLiteral("spatial") && stableBenchmarkChecked,
+          "Benchmark holds a user filter and checked stable model before the change");
+    check(benchmarkItem(benchmarkTree, rawPreset) == nullptr,
+          "Benchmark does not list an unregistered raw paste");
+
+    const auto selectedRuntime = mplayer::native::selectStandardRuntime(
+        qEnvironmentVariable("MIKAI_MPV_MODULE"));
+    check(selectedRuntime.loaded &&
+              selectedRuntime.kind == mplayer::native::BundleKind::Standard,
+          "the real Standard runtime is available for the live player and Compare surfaces");
+    mplayer::shell::PlayerShell player;
+    player.resize(QSize(900, 640));
+    player.show();
+    QApplication::processEvents();
+    auto* enhancementButton =
+        player.findChild<QPushButton*>(QStringLiteral("playerEnhanceButton"));
+    auto* enhancementRoot =
+        player.findChild<mplayer::shell::MenuPopup*>(QStringLiteral("playerEnhancementsPopup"));
+    check(enhancementButton != nullptr && enhancementRoot != nullptr,
+          "the player enhancement menu exists before the catalogue changes");
+    if (enhancementButton == nullptr || enhancementRoot == nullptr) return;
+    enhancementButton->click();
+    QApplication::processEvents();
+    const bool enteredRoot =
+        clickMenuPayload(enhancementRoot, QStringLiteral("level|animejanai"));
+    auto* animeJanaiMenu = enhancementLevelMenu(player, QStringLiteral("animejanai"));
+    const bool enteredSpatial =
+        animeJanaiMenu != nullptr &&
+        clickMenuPayload(animeJanaiMenu, QStringLiteral("level|animejanai:spatial"));
+    auto* spatialMenu = enhancementLevelMenu(player, QStringLiteral("animejanai:spatial"));
+    check(enteredRoot && enteredSpatial && spatialMenu != nullptr && spatialMenu->isVisible(),
+          "the player's open Spatial menu is visible before the graph is pasted");
+    if (spatialMenu == nullptr) return;
+    check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset),
+          "the player menu does not offer an unregistered raw paste");
+    auto* playerChip =
+        player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
+    check(playerChip != nullptr, "the player exposes its AnimeJaNai status chip");
+
+    QImage compareFixture(64, 36, QImage::Format_RGB32);
+    for (int y = 0; y < compareFixture.height(); ++y) {
+        for (int x = 0; x < compareFixture.width(); ++x) {
+            compareFixture.setPixelColor(
+                x, y, QColor((x * 4) % 256, (y * 7) % 256, ((x + y) * 3) % 256));
+        }
+    }
+    const QString compareFixturePath =
+        QDir(workDir.path()).filePath(QStringLiteral("live-compare-frame.png"));
+    check(compareFixture.save(compareFixturePath),
+          "a static Compare frame was written for the live catalogue scenario");
+    mplayer::VideoSurface* compareSurface = player.videoSurface();
+    check(compareSurface != nullptr && compareSurface->open(compareFixturePath) &&
+              waitForUi([&] {
+                  return compareSurface->hasVideo() && compareSurface->videoWidth() > 0;
+              }, 5000),
+          "the player surface holds the static Compare frame before the change");
+    QStringList shaderCandidates;
+    const QString shaderRoot = mplayer::anime4k::findShadersDir();
+    for (const auto& mode : mplayer::anime4k::availableModes()) {
+        const auto candidate = mplayer::anime4k::candidateForId(mode.id, shaderRoot);
+        if (mplayer::anime4k::chainIsComplete(candidate, shaderRoot)) {
+            shaderCandidates.append(mode.id);
+        }
+    }
+    check(shaderCandidates.size() >= 2,
+          "two shader-only Compare candidates avoid native inference in this scenario");
+    if (shaderCandidates.size() < 2) return;
+    mplayer::shell::CompareWindow comparison(compareSurface, shaderCandidates.value(0), &player);
+    comparison.resize(QSize(900, 600));
+    comparison.show();
+    const bool compareFrozen = waitForUi(
+        [&] { return !comparison.frozenFrame().isNull() && !comparison.comparisonPending(); },
+        10000);
+    check(compareFrozen, "Compare froze the static frame before the catalogue change");
+    if (!compareFrozen) return;
+    const QImage frozenBefore = comparison.frozenFrame();
+    const QString selectedBefore = comparison.selectedCandidateId(0);
+    check(!selectedBefore.isEmpty() && !comparison.candidateAvailable(rawPreset),
+          "Compare holds a stable selection and does not offer the raw paste");
+
+    // ── a raw graph pasted into the app-owned folder ─────────────────────────
+    {
+        QFile raw(rawPath);
+        check(raw.open(QIODevice::WriteOnly) && raw.write(modelProto) == modelProto.size(),
+              "a raw ONNX graph was pasted into the app-owned custom folder");
+        raw.close();
+    }
+    const bool rawCandidateVisible = waitForUi(
+        [&] {
+            const auto row = catalogueRowForPath(modelTable, rawPath);
+            return row.row >= 0 && row.id == QStringLiteral("raw_live_model") &&
+                   row.origin == QStringLiteral("owned") &&
+                   row.state == QStringLiteral("unregistered") && row.candidate;
+        },
+        15000);
+    check(rawCandidateVisible,
+          "the open manager presents the owned raw paste as an unregistered candidate");
+    const auto rawCandidate = catalogueRowForPath(modelTable, rawPath);
+    check(rawCandidate.row >= 0 &&
+              modelTable->item(rawCandidate.row, 4)->text().startsWith(
+                  QStringLiteral("Not registered")),
+          "the candidate row names registration as the missing step");
+    check(!presetCatalogueHas(rawPreset),
+          "the raw owned paste is not a usable preset before explicit registration");
+    check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset),
+          "the open player menu refuses the unregistered raw paste");
+    check(!comparison.candidateAvailable(rawPreset),
+          "the open Compare catalogue refuses the unregistered raw paste");
+    check(benchmarkItem(benchmarkTree, rawPreset) == nullptr,
+          "the open Benchmark catalogue refuses the unregistered raw paste");
+
+    if (rawCandidate.row >= 0) modelTable->setCurrentCell(rawCandidate.row, 0);
+    QApplication::processEvents();
+
+    // A second unrelated paste must not move the selected candidate, reload the
+    // draft or lose the editor focus state.
+    {
+        QFile decoy(decoyPath);
+        check(decoy.open(QIODevice::WriteOnly) &&
+                  decoy.write(modelProto) == modelProto.size(),
+              "a second unrelated owned graph was pasted");
+        decoy.close();
+    }
+    check(waitForUi(
+              [&] { return catalogueRowForPath(modelTable, decoyPath).row >= 0; }, 15000),
+          "the unrelated paste appeared without a manual refresh");
+    const auto currentAfterSecondPaste = catalogueRowAt(modelTable, modelTable->currentRow());
+    check(currentAfterSecondPaste.row >= 0 &&
+              currentAfterSecondPaste.id == QStringLiteral("raw_live_model") &&
+              currentAfterSecondPaste.state == QStringLiteral("unregistered") &&
+              catalogueRowForPath(modelTable, rawPath).row ==
+                  currentAfterSecondPaste.row,
+          "the manager keeps the selected candidate across an unrelated paste");
+    check(panel.currentConfig() == draftConfig && panel.isDirty() &&
+              profileName->text() == draftProfileName &&
+              slotSelector->currentData().toInt() == draftSlot &&
+              chainCombo != nullptr && chainCombo->currentIndex() == draftChainIndex,
+          "the unsaved profile, chain, slot and dirty state survive the paste");
+
+    // ── explicit in-place registration ──────────────────────────────────────
+    const auto selectedRaw = catalogueRowForPath(modelTable, rawPath);
+    if (selectedRaw.row >= 0) modelTable->setCurrentCell(selectedRaw.row, 0);
+    QApplication::processEvents();
+    const bool ownedImportClicked = clickImportForCandidate(
+        modelTable, importModel,
+        "the owned raw paste was selected as the candidate to register");
+    QApplication::processEvents();
+    check(QApplication::activeModalWidget() == nullptr,
+          "registering a selected owned candidate needs no copy chooser");
+    const bool ownedRegistered = ownedImportClicked && waitForUi(
+        [&] {
+            const auto row = catalogueRowForPath(modelTable, rawPath);
+            return row.row >= 0 && row.origin == QStringLiteral("owned") &&
+                   row.state == QStringLiteral("registered") && !row.candidate;
+        },
+        20000);
+    check(ownedRegistered, "the Import action registered the raw paste in place");
+    check(QFileInfo(rawPath).isFile() && QFileInfo(rawPath).size() == modelProto.size() &&
+              fileBytes(rawPath) == modelProto &&
+              QFileInfo(rawPath + QStringLiteral(".source.json")).isFile(),
+          "in-place registration published only the integrity record beside the graph");
+    const auto rawRegisteredRow = catalogueRowForPath(modelTable, rawPath);
+    check(rawRegisteredRow.row >= 0 && rawRegisteredRow.id == QStringLiteral("raw_live_model") &&
+              QFileInfo(rawRegisteredRow.path).size() == modelProto.size(),
+          "the registered row keeps the original identifier and file");
+    check(waitForUi([&] { return presetCatalogueHas(rawPreset); }, 5000),
+          "the registered owned graph became a usable catalogue preset");
+    const bool playerSawOwned = waitForUi(
+        [&] {
+            const auto entry =
+                menuEntryForPayload(spatialMenu, QStringLiteral("ajipreset|") + rawPreset);
+            return !entry.text.isEmpty() && !entry.disabled;
+        },
+        15000);
+    check(playerSawOwned,
+          "the open player Spatial menu gained the registered graph without reopening");
+    const bool benchmarkSawOwned = waitForUi(
+        [&] { return benchmarkItem(benchmarkTree, rawPreset) != nullptr; }, 15000);
+    check(benchmarkSawOwned, "the open Benchmark catalogue gained the registered graph");
+    const bool compareSawOwned = waitForUi(
+        [&] { return comparison.candidateAvailable(rawPreset); }, 15000);
+    check(compareSawOwned, "the open Compare catalogue gained the registered graph");
+    QTreeWidgetItem* ownedBenchmarkRow = benchmarkItem(benchmarkTree, rawPreset);
+    check(ownedBenchmarkRow != nullptr && ownedBenchmarkRow->checkState(0) == Qt::Unchecked,
+          "a newly discovered Benchmark model starts unchecked");
+    if (ownedBenchmarkRow != nullptr) ownedBenchmarkRow->setCheckState(0, Qt::Checked);
+    QApplication::processEvents();
+
+    player.setAnimeJanaiSelection(rawPreset, QStringLiteral("Configured; live probe"));
+    QApplication::processEvents();
+    check(playerChip != nullptr && playerChip->isVisibleTo(&player) &&
+              !playerChip->accessibleName().contains(QStringLiteral("Unavailable")),
+          "the player chip shows the registered selection");
+
+    check(panel.currentConfig() == draftConfig && panel.isDirty() &&
+              profileName->text() == draftProfileName,
+          "registration preserves the unsaved profile and chain draft");
+    QTreeWidgetItem* restoredStableRow =
+        benchmarkItem(benchmarkTree, QStringLiteral("builtin1001"));
+    check(benchmarkSearch->text() == benchmarkFilter && restoredStableRow != nullptr &&
+              restoredStableRow->checkState(0) == Qt::Checked,
+          "registration preserves Benchmark's filter and checked stable model");
+    check(comparison.frozenFrame() == frozenBefore &&
+              comparison.selectedCandidateId(0) == selectedBefore &&
+              !comparison.comparisonPending(),
+          "the open Compare keeps its frozen frame and selection through registration");
+
+    // Pin the newly registered model into the unsaved chain so a later removal
+    // can prove the selected id stays selected instead of being substituted.
+    addStep->click();
+    QApplication::processEvents();
+    auto* registeredModelStep =
+        panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_2"));
+    const int registeredModelChoice =
+        registeredModelStep != nullptr
+            ? registeredModelStep->findData(QStringLiteral("raw_live_model"))
+            : -1;
+    check(registeredModelChoice >= 0,
+          "the registered owned model is selectable as an ONNX chain step");
+    if (registeredModelChoice >= 0) {
+        registeredModelStep->setCurrentIndex(registeredModelChoice);
+        QApplication::processEvents();
+    }
+    draftConfig = panel.currentConfig();
+    draftChainIndex = chainCombo != nullptr ? chainCombo->currentIndex() : draftChainIndex;
+    draftStepId = registeredModelStep != nullptr
+                      ? registeredModelStep->currentData().toString()
+                      : draftStepId;
+    check(draftStepId == QStringLiteral("raw_live_model") && panel.isDirty(),
+          "the unsaved draft now selects the registered model in its chain");
+    check(managerDialog.grab().save(QStringLiteral("native-live-model-discovery.png")),
+          "the manager's live registered catalogue was captured");
+    check(benchmarkDialog.grab().save(QStringLiteral("native-live-benchmark.png")),
+          "Benchmark's live catalogue was captured");
+    check(player.grab().save(QStringLiteral("native-live-player-menu.png")),
+          "the player's live Spatial menu was captured");
+    check(comparison.grab().save(QStringLiteral("native-live-compare.png")),
+          "Compare's live candidate surface was captured");
+
+    // ── a borrowed external graph stays a candidate until pinned ────────────
+    {
+        QFile external(externalPath);
+        check(external.open(QIODevice::WriteOnly) &&
+                  external.write(modelProto) == modelProto.size(),
+              "an external-folder ONNX graph was pasted");
+        external.close();
+    }
+    const bool externalCandidateVisible = waitForUi(
+        [&] {
+            const auto row = catalogueRowForPath(modelTable, externalPath);
+            return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                   row.state == QStringLiteral("unregistered") && row.candidate;
+        },
+        15000);
+    check(externalCandidateVisible,
+          "the open manager presents the external paste as an unregistered candidate");
+    check(!presetCatalogueHas(externalPreset),
+          "the borrowed external graph is not a preset before explicit registration");
+    check(!menuHasPayload(spatialMenu, QStringLiteral("ajipreset|") + externalPreset),
+          "the open player menu refuses the unpinned external graph");
+    check(!comparison.candidateAvailable(externalPreset) &&
+              benchmarkItem(benchmarkTree, externalPreset) == nullptr,
+          "Compare and Benchmark refuse the unregistered external graph");
+    const auto externalRow = catalogueRowForPath(modelTable, externalPath);
+    if (externalRow.row >= 0) modelTable->setCurrentCell(externalRow.row, 0);
+    QApplication::processEvents();
+    const bool externalImportClicked = clickImportForCandidate(
+        modelTable, importModel,
+        "the borrowed external paste was selected as the candidate to pin");
+    const bool externalRegistered = externalImportClicked && waitForUi(
+        [&] {
+            const auto row = catalogueRowForPath(modelTable, externalPath);
+            return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                   row.state == QStringLiteral("registered") && !row.candidate;
+        },
+        20000);
+    check(externalRegistered, "the Import action pinned the external graph explicitly");
+    check(QFileInfo(externalPath).isFile() && fileBytes(externalPath) == modelProto &&
+              !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
+          "borrowed registration never writes beside the user's external graph");
+    check(waitForUi([&] { return presetCatalogueHas(externalPreset); }, 5000),
+          "the pinned external graph became a usable preset");
+    check(waitForUi(
+              [&] { return comparison.candidateAvailable(externalPreset); }, 15000),
+          "the open Compare catalogue gained the pinned external graph");
+    const bool externalInBenchmark = waitForUi(
+        [&] { return benchmarkItem(benchmarkTree, externalPreset) != nullptr; }, 15000);
+    check(externalInBenchmark,
+          "the open Benchmark catalogue gained the pinned external graph");
+    QTreeWidgetItem* externalBenchmarkRow = benchmarkItem(benchmarkTree, externalPreset);
+    check(externalBenchmarkRow != nullptr &&
+              externalBenchmarkRow->checkState(0) == Qt::Unchecked,
+          "a newly discovered external Benchmark model starts unchecked");
+    if (externalBenchmarkRow != nullptr)
+        externalBenchmarkRow->setCheckState(0, Qt::Checked);
+    QApplication::processEvents();
+
+    // ── atomic replacement of the pinned external graph ────────────────────
+    const QByteArray externalOriginal = fileBytes(externalPath);
+    // A different-sized but still well-framed ModelProto: a duplicate
+    // ir_version varint keeps the protobuf stream valid for the bounded
+    // validator while making the byte count differ from the existing pin.
+    QByteArray externalReplacement = modelProto;
+    externalReplacement.append(QByteArrayLiteral("\x08\x01"));
+    check(externalOriginal == modelProto &&
+              externalReplacement.size() != externalOriginal.size(),
+          "a different-sized replacement graph was prepared for the pinned model");
+
+    // The fixture holds no handle on the graph: every paste in this scenario
+    // scopes and closes its QFile before the manager is asked to notice it.
+    // A QSaveFile still retries a refused commit, because Windows refuses the
+    // rename while any other handle holds the destination, and one short-lived
+    // reader (a catalogue scan, an integrity check or another process) must not
+    // make the scenario report a replacement it never performed.
+    const AtomicReplaceOutcome replacement =
+        replaceFileAtomically(externalPath, externalReplacement);
+    check(replacement.opened,
+          "the pinned external graph is writable for an atomic replacement");
+    check(replacement.wrote, "the atomic replacement wrote the replacement graph");
+    check(replacement.replaced, "the replacement was committed atomically",
+          replacement.replaced
+              ? QString()
+              : QStringLiteral("%1 (after %2 attempts)")
+                    .arg(replacement.error)
+                    .arg(replacement.attempts));
+    if (replacement.replaced && replacement.attempts > 1) {
+        std::fprintf(stderr, "note the atomic replacement needed %d attempts: %s\n",
+                     replacement.attempts, qPrintable(replacement.error));
+    }
+    const bool replacementLanded =
+        replacement.replaced && fileBytes(externalPath) == externalReplacement &&
+        QFileInfo(externalPath).size() == externalReplacement.size();
+    check(replacementLanded,
+          "the external graph now holds the different-sized replacement");
+
+    // Everything below observes the app's reaction to a replacement that really
+    // landed. Without one there is no invalidation to observe and no candidate
+    // to re-pin, so the failed replace is reported instead of a re-pin that
+    // would silently register the untouched graph or open a modal picker.
+    if (replacementLanded) {
+        const bool externalReplacementInvalidated = waitForUi(
+            [&] {
+                const auto row = catalogueRowForPath(modelTable, externalPath);
+                return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                       row.state == QStringLiteral("unregistered") && row.candidate;
+            },
+            15000);
+        check(externalReplacementInvalidated,
+              "the open manager noticed the atomic replacement and invalidated the pin");
+        const auto changedExternalRow = catalogueRowForPath(modelTable, externalPath);
+        check(changedExternalRow.row >= 0 &&
+                  modelTable->item(changedExternalRow.row, 4)->text().startsWith(
+                      QStringLiteral("Not registered")),
+              "the replaced external model is presented as needing an explicit re-pin");
+        check(waitForUi([&] { return !presetCatalogueHas(externalPreset); }, 5000),
+              "the replaced external graph leaves the preset catalogue without a fallback");
+        check(waitForUi(
+                  [&] {
+                      const auto entry = menuEntryForPayload(
+                          spatialMenu, QStringLiteral("ajipreset|") + externalPreset);
+                      return entry.text.isEmpty();
+                  },
+                  15000),
+              "the open player Spatial menu dropped the replaced external graph");
+        check(waitForUi([&] { return !comparison.candidateAvailable(externalPreset); },
+                        15000),
+              "the open Compare catalogue dropped the replaced external graph");
+        check(waitForUi(
+                  [&] {
+                      QTreeWidgetItem* missing = benchmarkItem(benchmarkTree, externalPreset);
+                      return missing != nullptr &&
+                             !(missing->flags() & Qt::ItemIsUserCheckable) &&
+                             missing->checkState(0) == Qt::Checked;
+                  },
+                  15000),
+              "Benchmark keeps the replaced checked external model visible and unrunnable");
+        check(panel.currentConfig() == draftConfig && panel.isDirty() &&
+                  profileName->text() == draftProfileName &&
+                  slotSelector->currentData().toInt() == draftSlot &&
+                  chainCombo != nullptr && chainCombo->currentIndex() == draftChainIndex,
+              "the atomic replacement preserves the unsaved manager profile and chain");
+        QTreeWidgetItem* preservedStableRow =
+            benchmarkItem(benchmarkTree, QStringLiteral("builtin1001"));
+        check(benchmarkSearch->text() == benchmarkFilter &&
+                  preservedStableRow != nullptr &&
+                  preservedStableRow->checkState(0) == Qt::Checked &&
+                  comparison.frozenFrame() == frozenBefore &&
+                  comparison.selectedCandidateId(0) == selectedBefore,
+              "the atomic replacement preserves Benchmark's filter and Compare's selection");
+        const auto changedExternal = catalogueRowForPath(modelTable, externalPath);
+        if (changedExternal.row >= 0)
+            modelTable->setCurrentCell(changedExternal.row, 0);
+        QApplication::processEvents();
+        const bool repinClicked = clickImportForCandidate(
+            modelTable, importModel,
+            "the replaced external model was selected as the candidate to re-pin");
+        const bool externalRepinned = repinClicked && waitForUi(
+            [&] {
+                const auto row = catalogueRowForPath(modelTable, externalPath);
+                return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                       row.state == QStringLiteral("registered") && !row.candidate;
+            },
+            20000);
+        check(externalRepinned,
+              "the Import action explicitly re-pinned the atomically replaced graph");
+        check(fileBytes(externalPath) == externalReplacement &&
+                  !QFileInfo::exists(externalPath + QStringLiteral(".source.json")),
+              "re-pinning keeps the replaced graph in the user's external folder");
+        check(waitForUi([&] { return presetCatalogueHas(externalPreset); }, 5000),
+              "the re-pinned replacement graph returned to the preset catalogue");
+        check(waitForUi(
+                  [&] {
+                      const auto entry = menuEntryForPayload(
+                          spatialMenu, QStringLiteral("ajipreset|") + externalPreset);
+                      return !entry.text.isEmpty() && !entry.disabled;
+                  },
+                  15000),
+              "the open player menu offers the re-pinned replacement graph");
+        check(waitForUi([&] { return comparison.candidateAvailable(externalPreset); },
+                        15000),
+              "the open Compare catalogue offers the re-pinned replacement graph");
+        const bool repinnedInBenchmark = waitForUi(
+            [&] {
+                QTreeWidgetItem* row = benchmarkItem(benchmarkTree, externalPreset);
+                return row != nullptr && (row->flags() & Qt::ItemIsUserCheckable) &&
+                       row->checkState(0) == Qt::Checked;
+            },
+            15000);
+        check(repinnedInBenchmark,
+              "Benchmark restores the re-pinned model with its checked state");
+    } else {
+        check(false,
+              "the pin invalidation, explicit re-pin and restored-catalogue checks ran "
+              "against a graph that really changed on disk");
+    }
+
+    // ── rename and delete of an unregistered owned paste ────────────────────
+    check(QFile::rename(decoyPath, renamedDecoyPath),
+          "the unrelated owned paste was renamed on disk");
+    const bool decoyRenamed = waitForUi(
+        [&] {
+            return catalogueRowForPath(modelTable, renamedDecoyPath).row >= 0 &&
+                   catalogueRowForPath(modelTable, decoyPath).row < 0;
+        },
+        15000);
+    check(decoyRenamed,
+          "the open manager followed the rename without a manual refresh");
+    check(catalogueRowForPath(modelTable, renamedDecoyPath).id ==
+              QStringLiteral("owned_decoy_renamed") &&
+              !presetCatalogueHas(customPresetId(QStringLiteral("owned_decoy_renamed"))),
+          "the renamed raw paste is still an unregistered candidate, not a preset");
+    check(QFile::remove(renamedDecoyPath), "the renamed candidate was deleted on disk");
+    check(waitForUi(
+              [&] { return catalogueRowForPath(modelTable, renamedDecoyPath).row < 0; },
+              15000),
+          "the open manager dropped the deleted candidate without a manual refresh");
+
+    // ── deleting and recreating the external folder ─────────────────────────
+    check(QDir(externalDir.path()).removeRecursively(),
+          "the external model folder was removed while it was watched");
+    const bool externalDisappeared = waitForUi(
+        [&] {
+            return catalogueRowForPath(modelTable, externalPath).row < 0 &&
+                   !presetCatalogueHas(externalPreset);
+        },
+        15000);
+    check(externalDisappeared,
+          "removing the external folder removed its borrowed registration and preset");
+    check(waitForUi(
+              [&] {
+                  QTreeWidgetItem* missing = benchmarkItem(benchmarkTree, externalPreset);
+                  return missing != nullptr &&
+                         !(missing->flags() & Qt::ItemIsUserCheckable) &&
+                         missing->checkState(0) == Qt::Checked;
+              },
+              15000),
+          "Benchmark keeps the missing checked external model visible and unrunnable");
+    check(QDir().mkpath(externalDir.path()),
+          "the external model folder was recreated while it was watched");
+    {
+        QFile recreated(recreatedExternalPath);
+        check(recreated.open(QIODevice::WriteOnly) &&
+                  recreated.write(modelProto) == modelProto.size(),
+              "a graph was pasted into the recreated external folder");
+        recreated.close();
+    }
+    const bool recreatedCandidateVisible = waitForUi(
+        [&] {
+            const auto row = catalogueRowForPath(modelTable, recreatedExternalPath);
+            return row.row >= 0 && row.origin == QStringLiteral("external") &&
+                   row.state == QStringLiteral("unregistered");
+        },
+        15000);
+    check(recreatedCandidateVisible,
+          "the recreated external folder presents its new graph as a candidate");
+    check(!presetCatalogueHas(recreatedPreset),
+          "the recreated folder's graph is not silently promoted to a preset");
+
+    // ── explicit removal and a re-pasted raw graph ──────────────────────────
+    const auto registeredRow = catalogueRowForPath(modelTable, rawPath);
+    if (registeredRow.row >= 0) modelTable->setCurrentCell(registeredRow.row, 0);
+    QApplication::processEvents();
+    removeModel->click();
+    const bool removedFromManager = waitForUi(
+        [&] {
+            return catalogueRowForPath(modelTable, rawPath).row < 0 &&
+                   !presetCatalogueHas(rawPreset);
+        },
+        20000);
+    check(removedFromManager,
+          "Remove Selected deleted the registered owned graph and its preset");
+    check(!QFileInfo::exists(rawPath) &&
+              !QFileInfo::exists(rawPath + QStringLiteral(".source.json")),
+          "owned removal deletes the app-owned graph and integrity record");
+    // The retained selection is named in the AnimeJaNai level itself - the level
+    // that lists Off, the built-in models and the explicit "Unavailable · id"
+    // row. The ENHANCEMENTS root only holds the lead-in row that opens that
+    // level, so a lookup of an "ajipreset|" payload there can never find it.
+    // Every catalogue pass retires the level's rows with deleteLater(), so the
+    // level and the chip are reacquired live rather than trusting the handles
+    // recorded before the graph was deleted.
+    const bool playerMissingAfterRemoval = waitForUi(
+        [&] {
+            auto* liveAnimeJanaiLevel =
+                enhancementLevelMenu(player, QStringLiteral("animejanai"));
+            if (liveAnimeJanaiLevel == nullptr || !liveAnimeJanaiLevel->isVisible()) {
+                return false;
+            }
+            const auto missing = menuEntryForPayload(
+                liveAnimeJanaiLevel, QStringLiteral("ajipreset|") + rawPreset);
+            auto* liveChip =
+                player.findChild<QLabel*>(QStringLiteral("playerAnimeJanaiStatus"));
+            return missing.disabled && missing.current && liveChip != nullptr &&
+                   liveChip->isVisibleTo(&player) &&
+                   liveChip->accessibleName().contains(QStringLiteral("Unavailable"));
+        },
+        15000);
+    check(playerMissingAfterRemoval,
+          "removal leaves the player selection named unavailable, never silently replaced");
+    check(waitForUi(
+              [&] {
+                  QTreeWidgetItem* missing = benchmarkItem(benchmarkTree, rawPreset);
+                  return missing != nullptr &&
+                         !(missing->flags() & Qt::ItemIsUserCheckable) &&
+                         missing->checkState(0) == Qt::Checked;
+              },
+              15000),
+          "Benchmark keeps the removed checked model visible but unrunnable");
+    QPushButton* modelSelection = nullptr;
+    for (QPushButton* button : benchmarkDialog.findChildren<QPushButton*>()) {
+        if (button->objectName() == QLatin1String("textAction") &&
+            button->property("benchmarkSelectionControl").toString() ==
+                QLatin1String("models")) {
+            modelSelection = button;
+            break;
+        }
+    }
+    check(modelSelection != nullptr,
+          "Benchmark exposes its explicit model selection action");
+    if (modelSelection != nullptr) {
+        for (int attempt = 0; attempt < 3 &&
+                              modelSelection->text() == SettingsDialog::tr("Select all");
+             ++attempt) {
+            modelSelection->click();
+            QApplication::processEvents();
+        }
+        check(modelSelection->text() == SettingsDialog::tr("Clear selection"),
+              "the model selection action reaches an explicit Clear selection");
+        modelSelection->click();
+        QApplication::processEvents();
+        auto* benchmarkSummary =
+            benchmarkDialog.findChild<QLabel*>(QStringLiteral("benchmarkRunSummary"));
+        const bool releasedMissingModel = waitForUi(
+            [&] {
+                QTreeWidgetItem* missing = benchmarkItem(benchmarkTree, rawPreset);
+                return missing == nullptr ||
+                       missing->checkState(0) == Qt::Unchecked ||
+                       !missing->data(0, Qt::UserRole + 2).toBool();
+            },
+            5000);
+        check(releasedMissingModel && benchmarkSummary != nullptr &&
+                  !benchmarkSummary->text().contains(QStringLiteral("unavailable")),
+              "Clear selection releases a disappeared checked model instead of trapping it");
+    }
+    check(waitForUi([&] { return !comparison.candidateAvailable(rawPreset); }, 15000) &&
+              comparison.frozenFrame() == frozenBefore &&
+              comparison.selectedCandidateId(0) == selectedBefore,
+          "Compare drops the removed candidate without moving its frozen selection");
+    check(panel.currentConfig() == draftConfig && panel.isDirty() &&
+              profileName->text() == draftProfileName &&
+              slotSelector->currentData().toInt() == draftSlot &&
+              chainCombo != nullptr && chainCombo->currentIndex() == draftChainIndex,
+          "removal leaves the unsaved manager profile, chain and selection intact");
+    auto* retainedStepCombo = panel.findChild<QComboBox*>(QStringLiteral("animeJanaiStepId_2"));
+    check(retainedStepCombo != nullptr &&
+              retainedStepCombo->currentData().toString() == draftStepId,
+          "the manager chain retains the removed model id instead of substituting one");
+
+    {
+        QFile repasted(rawPath);
+        check(repasted.open(QIODevice::WriteOnly) &&
+                  repasted.write(modelProto) == modelProto.size(),
+              "the graph was pasted into the owned folder again after removal");
+        repasted.close();
+    }
+    check(waitForUi(
+              [&] {
+                  const auto row = catalogueRowForPath(modelTable, rawPath);
+                  return row.row >= 0 && row.origin == QStringLiteral("owned") &&
+                         row.state == QStringLiteral("unregistered");
+              },
+              15000),
+          "the re-pasted graph returns as an unregistered candidate");
+    check(!presetCatalogueHas(rawPreset),
+          "the re-pasted graph is not usable until it is registered again");
+    check(QFile::remove(rawPath), "the re-pasted candidate was deleted");
+    check(waitForUi(
+              [&] { return catalogueRowForPath(modelTable, rawPath).row < 0; }, 15000),
+          "the open manager dropped the deleted re-paste without a manual refresh");
+
+    check(managerDialog.grab().save(QStringLiteral("native-live-missing-model.png")),
+          "the manager's explicit missing-model state was captured");
+    check(player.grab().save(QStringLiteral("native-live-player-missing.png")),
+          "the player's explicit unavailable selection was captured");
+    managerDialog.resize(managerInitialSize);
+
+    comparison.close();
+    benchmarkDialog.reject();
+    managerDialog.reject();
+    QApplication::processEvents();
+}
+
 bool componentCardReachable(QWidget& componentTab, const QString& translatedTitle) {
     for (QLabel* label : componentTab.findChildren<QLabel*>()) {
         if (label->text() == translatedTitle && label->isVisibleTo(&componentTab))
@@ -1739,6 +2749,201 @@ int main(int argc, char** argv) {
 
             check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
                   "the probe leaves English installed");
+
+            // ── the selector previews, and every way out restores it ────────
+            // Preview is visible before Save: the tab captions and the footer
+            // action are the surfaces a user is looking at when they choose a
+            // language. Save is the only path that may write the preference.
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the preview section starts from the English translation");
+            {
+                QSettings settings;
+                settings.setValue(QStringLiteral("ui/language"), QStringLiteral("en"));
+                settings.sync();
+            }
+            const QString englishProcessing = QCoreApplication::translate(
+                "mikai::app::SettingsDialog", "Processing");
+            const QString englishSave = QCoreApplication::translate(
+                "mikai::app::SettingsDialog", "Save");
+            const auto languageSurface = [](SettingsDialog& dialog) {
+                auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
+                const QString processing =
+                    tabs != nullptr && tabs->count() > 2 ? tabs->tabText(2) : QString();
+                QPushButton* save = acceptButton(dialog.findChild<QDialogButtonBox*>());
+                return qMakePair(processing, save != nullptr ? save->text() : QString());
+            };
+            const auto storedLanguage = [] {
+                QSettings settings;
+                return settings.value(QStringLiteral("ui/language")).toString();
+            };
+
+            {
+                SettingsDialog dialog(client, runner);
+                dialog.resize(fitSettingsDialogSize(
+                    dialog, mikai::probes::windowSize(QSize(760, 780))));
+                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.show();
+                QApplication::processEvents();
+                const auto englishSurface = languageSurface(dialog);
+                check(englishSurface.first == englishProcessing &&
+                          englishSurface.second == englishSave,
+                      "the visible Settings surface starts in English");
+                auto* language =
+                    dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+                const int ukrainian =
+                    language != nullptr ? language->findData(QStringLiteral("uk")) : -1;
+                check(language != nullptr && ukrainian >= 0,
+                      "the visible language selector offers Ukrainian");
+                if (language != nullptr && ukrainian >= 0) {
+                    language->setCurrentIndex(ukrainian);
+                    QApplication::processEvents();
+                    const QString ukrainianProcessing = QCoreApplication::translate(
+                        "mikai::app::SettingsDialog", "Processing");
+                    const QString ukrainianSave = QCoreApplication::translate(
+                        "mikai::app::SettingsDialog", "Save");
+                    const auto previewSurface = languageSurface(dialog);
+                    check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                          "choosing Ukrainian previews the live translation without Save");
+                    check(previewSurface.first == ukrainianProcessing &&
+                              previewSurface.first != englishProcessing &&
+                              previewSurface.second == ukrainianSave &&
+                              previewSurface.second != englishSave,
+                          "the visible tab and Save captions follow the preview immediately");
+                    check(storedLanguage() == QStringLiteral("en"),
+                          "the preview alone never writes the stored language");
+                    const int english = language->findData(QStringLiteral("en"));
+                    if (english >= 0) {
+                        language->setCurrentIndex(english);
+                        QApplication::processEvents();
+                        check(mikai::app::activeInterfaceLanguage() == QStringLiteral("en") &&
+                                  languageSurface(dialog) == englishSurface,
+                              "selecting English previews back immediately as well");
+                        language->setCurrentIndex(ukrainian);
+                        QApplication::processEvents();
+                    }
+                    QPushButton* cancel =
+                        rejectButton(dialog.findChild<QDialogButtonBox*>());
+                    check(cancel != nullptr, "Cancel is visible for the preview round");
+                    if (cancel != nullptr) cancel->click();
+                    QApplication::processEvents();
+                    check(dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                              mikai::app::activeInterfaceLanguage() == QStringLiteral("en"),
+                          "Cancel restores the language the dialog opened with");
+                    check(languageSurface(dialog) == englishSurface &&
+                              storedLanguage() == QStringLiteral("en"),
+                          "Cancel restores the visible surface and leaves the preference alone");
+                }
+            }
+
+            {
+                SettingsDialog dialog(client, runner);
+                dialog.resize(fitSettingsDialogSize(
+                    dialog, mikai::probes::windowSize(QSize(760, 780))));
+                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.show();
+                QApplication::processEvents();
+                const auto englishSurface = languageSurface(dialog);
+                auto* language =
+                    dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+                const int ukrainian =
+                    language != nullptr ? language->findData(QStringLiteral("uk")) : -1;
+                if (language != nullptr && ukrainian >= 0) {
+                    language->setCurrentIndex(ukrainian);
+                    QApplication::processEvents();
+                }
+                check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                      "Escape is tested from the live Ukrainian preview");
+                dialog.activateWindow();
+                dialog.setFocus();
+                QTest::keyClick(&dialog, Qt::Key_Escape);
+                QApplication::processEvents();
+                check(dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                          mikai::app::activeInterfaceLanguage() == QStringLiteral("en"),
+                      "Escape restores the opening live language");
+                check(languageSurface(dialog) == englishSurface &&
+                          storedLanguage() == QStringLiteral("en"),
+                      "Escape restores the visible surface and leaves the preference alone");
+            }
+
+            {
+                SettingsDialog dialog(client, runner);
+                dialog.resize(fitSettingsDialogSize(
+                    dialog, mikai::probes::windowSize(QSize(760, 780))));
+                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.show();
+                QApplication::processEvents();
+                const auto englishSurface = languageSurface(dialog);
+                auto* language =
+                    dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+                const int ukrainian =
+                    language != nullptr ? language->findData(QStringLiteral("uk")) : -1;
+                if (language != nullptr && ukrainian >= 0) {
+                    language->setCurrentIndex(ukrainian);
+                    QApplication::processEvents();
+                }
+                check(mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                      "the window-close round starts from the live Ukrainian preview");
+                dialog.close();
+                QApplication::processEvents();
+                check(dialog.result() == static_cast<int>(QDialog::Rejected) &&
+                          mikai::app::activeInterfaceLanguage() == QStringLiteral("en"),
+                      "closing Settings restores the opening live language");
+                check(languageSurface(dialog) == englishSurface &&
+                          storedLanguage() == QStringLiteral("en"),
+                      "closing Settings restores the visible surface and leaves the preference alone");
+            }
+
+            {
+                SettingsDialog dialog(client, runner);
+                dialog.resize(fitSettingsDialogSize(
+                    dialog, mikai::probes::windowSize(QSize(760, 780))));
+                if (auto* tabs = dialog.findChild<QTabWidget*>()) tabs->setCurrentIndex(0);
+                dialog.show();
+                QApplication::processEvents();
+                auto* language =
+                    dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+                const int ukrainian =
+                    language != nullptr ? language->findData(QStringLiteral("uk")) : -1;
+                if (language != nullptr && ukrainian >= 0) {
+                    language->setCurrentIndex(ukrainian);
+                    QApplication::processEvents();
+                }
+                QPushButton* save =
+                    acceptButton(dialog.findChild<QDialogButtonBox*>());
+                check(save != nullptr, "Save is visible for the preview round");
+                if (save != nullptr) save->click();
+                QApplication::processEvents();
+                check(dialog.result() == static_cast<int>(QDialog::Accepted) &&
+                          mikai::app::activeInterfaceLanguage() == QStringLiteral("uk"),
+                      "Save commits the previewed language and accepts the dialog");
+                check(storedLanguage() == QStringLiteral("uk"),
+                      "Save is the path that writes the language preference");
+                SettingsDialog reopened(client, runner);
+                reopened.resize(fitSettingsDialogSize(
+                    reopened, mikai::probes::windowSize(QSize(760, 780))));
+                if (auto* tabs = reopened.findChild<QTabWidget*>())
+                    tabs->setCurrentIndex(0);
+                reopened.show();
+                QApplication::processEvents();
+                const QString ukrainianProcessing = QCoreApplication::translate(
+                    "mikai::app::SettingsDialog", "Processing");
+                const QString ukrainianSave = QCoreApplication::translate(
+                    "mikai::app::SettingsDialog", "Save");
+                const auto committedSurface = languageSurface(reopened);
+                check(committedSurface.first == ukrainianProcessing &&
+                          committedSurface.first != englishProcessing &&
+                          committedSurface.second == ukrainianSave,
+                      "a reopened Settings shows the committed Ukrainian surface");
+                reopened.reject();
+                QApplication::processEvents();
+            }
+            check(mikai::app::applyInterfaceLanguage(QStringLiteral("en")),
+                  "the preview section leaves English installed");
+            {
+                QSettings settings;
+                settings.setValue(QStringLiteral("ui/language"), QStringLiteral("en"));
+                settings.sync();
+            }
         }
     }
 
@@ -1820,6 +3025,7 @@ int main(int argc, char** argv) {
     }
 
     exerciseAnimeJanaiManager(client, runner);
+    exerciseLiveModelDiscovery(client, runner);
 
     QJsonObject evidence;
     evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
@@ -1841,6 +3047,12 @@ int main(int argc, char** argv) {
     screenshots.append(QStringLiteral("native-processing-uk-compact-trt.png"));
     screenshots.append(QStringLiteral("native-processing-uk-wide-trt.png"));
     screenshots.append(QStringLiteral("native-settings-uk-maximized.png"));
+    screenshots.append(QStringLiteral("native-live-model-discovery.png"));
+    screenshots.append(QStringLiteral("native-live-benchmark.png"));
+    screenshots.append(QStringLiteral("native-live-player-menu.png"));
+    screenshots.append(QStringLiteral("native-live-compare.png"));
+    screenshots.append(QStringLiteral("native-live-missing-model.png"));
+    screenshots.append(QStringLiteral("native-live-player-missing.png"));
     evidence.insert(QStringLiteral("screenshots"), screenshots);
     QFile evidenceFile(QStringLiteral("native-animejanai-smoke-evidence.json"));
     if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {

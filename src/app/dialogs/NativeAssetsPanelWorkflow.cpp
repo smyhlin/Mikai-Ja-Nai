@@ -477,6 +477,12 @@ struct NativeAssetsPanel::ImportResult {
 };
 
 struct NativeAssetsPanel::PrepareResult {
+    /// The panel's own wording for a GUI-side failure that carried no provider
+    /// reason of its own. Kept typed, never as rendered words, so the caption can
+    /// be restated in another language without rebuilding anything; the builder's
+    /// own verdicts leave it `None` and their reasons ride verbatim in `reason`.
+    enum class PanelReason { None, ContextUnobserved, CaptureUnavailable };
+    PanelReason panelReason = PanelReason::None;
     bool ok = false;
     bool cancelled = false;
     QString reasonKey;
@@ -528,6 +534,123 @@ void NativeAssetsPanel::updateImportControls() {
             : tr("Select a model this build offers (Ready) to register it as a recipe."));
 
     updatePrepareControls();
+}
+
+void NativeAssetsPanel::renderPrepareProgress() {
+    // The builder's own `phase` and `detail` are the worker's words and are shown
+    // verbatim in every language; only this panel's wrapper around them is
+    // restated. A state with nothing to say clears the label.
+    QString text;
+    switch (prepareProgressState_.kind) {
+        case PrepareProgress::Kind::None:
+            break;
+        case PrepareProgress::Kind::Probing:
+            text = tr("Probing the live source for its geometry and device…");
+            break;
+        case PrepareProgress::Kind::Capturing:
+            text = tr("Capturing the actual source frame %1 of %2…")
+                       .arg(prepareProgressState_.captureIndex + 1)
+                       .arg(prepareProgressState_.frameCount);
+            break;
+        case PrepareProgress::Kind::Stage:
+            text = tr("Preparing stage %1: %2")
+                       .arg(prepareProgressState_.stageIndex)
+                       .arg(prepareProgressState_.phase);
+            if (!prepareProgressState_.detail.isEmpty()) {
+                text += QStringLiteral(" — ") + prepareProgressState_.detail;
+            }
+            break;
+        case PrepareProgress::Kind::Published:
+            text = tr("Published %1 stage(s) into the owned artifact cache.")
+                       .arg(prepareProgressState_.publishedStages);
+            break;
+        case PrepareProgress::Kind::AlreadyPrepared:
+            text = tr("Every stage was already prepared and verified in the owned artifact cache.");
+            break;
+    }
+    if (prepareProgress_ != nullptr) prepareProgress_->setText(text);
+}
+
+QString NativeAssetsPanel::prepareStatusText() const {
+    switch (prepareStatusState_.kind) {
+        case PrepareStatus::Kind::None:
+            return {};
+        case PrepareStatus::Kind::InspectorMissing:
+            return tr("This build was made without the ONNX Runtime inspector.");
+        case PrepareStatus::Kind::Cancelling:
+            return tr("Cancelling the preparation; the builder decides at its next check.");
+        case PrepareStatus::Kind::CommitInProgress:
+            return tr("The preparation has already begun publishing, so it can no longer be "
+                      "cancelled; its committed outcome will be reported.");
+        case PrepareStatus::Kind::Cancelled:
+            return tr("The preparation was cancelled; nothing was published.");
+        case PrepareStatus::Kind::Failed: {
+            // The builder's reason and its tool output stay verbatim; the panel
+            // only supplies the fallback for a run that named no reason at all, and
+            // that fallback is typed so it is said in the active language.
+            QString text = prepareStatusState_.text;
+            if (text.isEmpty()) {
+                switch (prepareStatusState_.fallback) {
+                    case PrepareStatus::Fallback::ContextUnobserved:
+                        text = tr("The live source's geometry and device could not be observed.");
+                        break;
+                    case PrepareStatus::Fallback::CaptureUnavailable:
+                        text = tr("The actual decoded frame this reference needs could not be "
+                                  "captured.");
+                        break;
+                    case PrepareStatus::Fallback::None:
+                        text = tr("The preparation failed; nothing was published.");
+                        break;
+                }
+            }
+            if (!prepareStatusState_.toolError.isEmpty()) {
+                text += QStringLiteral("\n") + prepareStatusState_.toolError;
+            }
+            return text;
+        }
+        case PrepareStatus::Kind::Refusal: {
+            // Restated from the recorded template and its raw detail: no store is
+            // re-read and no provider is re-asked to say the same refusal again.
+            const QString text = prepareRefusalText(prepareStatusState_.refusal);
+            return text.isEmpty() ? prepareStatusState_.text : text;
+        }
+    }
+    return {};
+}
+
+void NativeAssetsPanel::renderPrepareStatus() {
+    prepareStatusKey_ = prepareStatusState_.key;
+    prepareStatusReason_ = prepareStatusText();
+    if (preparationReason_ != nullptr) preparationReason_->setText(prepareStatusReason_);
+}
+
+void NativeAssetsPanel::setPrepareStatus(PrepareStatus::Kind kind, const QString& key,
+                                         const QString& text, const QString& toolError,
+                                         PrepareStatus::Fallback fallback) {
+    prepareStatusState_.kind = kind;
+    prepareStatusState_.key = key;
+    // A status that is not a refusal owns no refusal identity.
+    prepareStatusState_.refusal = PrepareRefusalState();
+    prepareStatusState_.text = text;
+    prepareStatusState_.toolError = toolError;
+    prepareStatusState_.fallback = fallback;
+    renderPrepareStatus();
+}
+
+void NativeAssetsPanel::setPrepareRefusal(const PrepareRefusalState& refusal) {
+    prepareStatusState_.kind = PrepareStatus::Kind::Refusal;
+    prepareStatusState_.key = refusal.key;
+    prepareStatusState_.refusal = refusal;
+    prepareStatusState_.text.clear();
+    prepareStatusState_.toolError.clear();
+    prepareStatusState_.fallback = PrepareStatus::Fallback::None;
+    renderPrepareStatus();
+}
+
+void NativeAssetsPanel::clearPrepareStatus() {
+    prepareStatusState_ = PrepareStatus();
+    prepareStatusKey_.clear();
+    prepareStatusReason_.clear();
 }
 
 QString NativeAssetsPanel::inspectionRuntimeReason() const {
@@ -803,10 +926,10 @@ void NativeAssetsPanel::failPreparationContext(const QString& reasonKey, const Q
     contextPending_ = false;
     auto result = std::make_shared<PrepareResult>();
     result->reasonKey = reasonKey.isEmpty() ? QStringLiteral("native.prepare.context") : reasonKey;
-    result->reason =
-        reason.isEmpty()
-            ? tr("The live source's geometry and device could not be observed.")
-            : reason;
+    // The provider's own words ride verbatim; the panel's fallback stays typed and
+    // is worded when the caption is painted.
+    result->reason = reason;
+    result->panelReason = PrepareResult::PanelReason::ContextUnobserved;
     finishPrepare(result, prepareGeneration_);
 }
 
@@ -848,10 +971,10 @@ void NativeAssetsPanel::failPreparationFrame(int frameIndex, const QString& reas
     frameIndexRequested_ = -1;
     auto result = std::make_shared<PrepareResult>();
     result->reasonKey = reasonKey.isEmpty() ? QStringLiteral("native.prepare.capture") : reasonKey;
-    result->reason =
-        reason.isEmpty()
-            ? tr("The actual decoded frame this reference needs could not be captured.")
-            : reason;
+    // The provider's own words ride verbatim; the panel's fallback stays typed and
+    // is worded when the caption is painted.
+    result->reason = reason;
+    result->panelReason = PrepareResult::PanelReason::CaptureUnavailable;
     finishPrepare(result, prepareGeneration_);
 }
 
@@ -871,11 +994,12 @@ void NativeAssetsPanel::requestNextPreparationFrame() {
     }
     frameIndexRequested_ = capturedFrames_.size();
     capturePending_ = true;
-    if (prepareProgress_ != nullptr) {
-        prepareProgress_->setText(tr("Capturing the actual source frame %1 of %2…")
-                                      .arg(frameIndexRequested_ + 1)
-                                      .arg(framesNeeded_));
-    }
+    // The caption is typed state, not rendered text: the same frame of the same
+    // count is re-worded in place on a LanguageChange.
+    prepareProgressState_.kind = PrepareProgress::Kind::Capturing;
+    prepareProgressState_.captureIndex = frameIndexRequested_;
+    prepareProgressState_.frameCount = framesNeeded_;
+    renderPrepareProgress();
     frameRequest_(frameIndexRequested_, prepareGeneration_);
 }
 
@@ -884,9 +1008,9 @@ void NativeAssetsPanel::setRequestedRecipe(const QString& recipeId) {
     requestedRecipeId_ = recipeId;
     // A different selection is a different request: a previous job's verdict no
     // longer describes it.
-    prepareStatusKey_.clear();
-    prepareStatusReason_.clear();
-    prepareProgress_->clear();
+    clearPrepareStatus();
+    prepareProgressState_ = PrepareProgress();
+    renderPrepareProgress();
     updatePrepareControls();
 }
 
@@ -908,99 +1032,147 @@ QString NativeAssetsPanel::preparationReadinessReason() const {
     return reason;
 }
 
-void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason) const {
-    if (reasonKey != nullptr) reasonKey->clear();
-    if (reason != nullptr) reason->clear();
-    const auto refuse = [reasonKey, reason](const QString& key, const QString& text) {
-        if (reasonKey != nullptr) *reasonKey = key;
-        if (reason != nullptr) *reason = text;
-    };
+QString NativeAssetsPanel::prepareRefusalText(const PrepareRefusalState& refusal) const {
+    // The panel words its own refusals here, in whatever language is active; a
+    // store's or provider's own reason rides in `detail` and is shown verbatim.
+    switch (refusal.templateId) {
+        case PrepareRefusalState::Template::None:
+            return {};
+        case PrepareRefusalState::Template::Inspector:
+            return tr("This build was made without the ONNX Runtime inspector, so no plan can be "
+                      "resolved and no engine built.");
+        case PrepareRefusalState::Template::Runner:
+            return tr("No off-thread runner is available, so no preparation can be submitted.");
+        case PrepareRefusalState::Template::RecipeRequired:
+            return tr("Select a registered recipe in this page first; the untouched Original "
+                      "pipeline is never prepared.");
+        case PrepareRefusalState::Template::RecipeMissing:
+            return refusal.detail.isEmpty() ? tr("The owned recipe store does not hold that recipe.")
+                                            : refusal.detail;
+        case PrepareRefusalState::Template::ModelUnavailable:
+            return tr("The owned store holds no usable %1 for this recipe.").arg(refusal.detail);
+        case PrepareRefusalState::Template::SourceUnwired:
+            return tr(
+                "No source-presence path is wired, so there is no live video to prepare for.");
+        case PrepareRefusalState::Template::SourceAbsent:
+            return refusal.detail.isEmpty()
+                       ? tr("No playing or paused video is available to prepare for.")
+                       : refusal.detail;
+        case PrepareRefusalState::Template::ContextUnwired:
+            return tr("No native probe path is wired, so the live source's geometry and device "
+                      "cannot be observed.");
+        case PrepareRefusalState::Template::Toolchain: {
+            // The three reasons this panel words are restated from the key; a
+            // provider's own words are kept exactly as recorded.
+            const QString text = nativePreparationToolchainReason(refusal.key, refusal.detail);
+            return text.isEmpty() ? tr("The preparation toolchain has not been observed.") : text;
+        }
+        case PrepareRefusalState::Template::BackendUnavailable:
+            return tr("The observed toolchain does not carry the %1 backend this recipe asks for.")
+                .arg(refusal.detail);
+        case PrepareRefusalState::Template::Capture:
+            return tr("No raw-frame capture path is wired, so the actual decoded frame this "
+                      "reference needs cannot be requested.");
+    }
+    return {};
+}
 
-    if (!inspectorBuilds()) {
-        refuse(QStringLiteral("native.prepare.inspector"),
-               tr("This build was made without the ONNX Runtime inspector, so no plan can be "
-                  "resolved and no engine built."));
-        return;
-    }
-    if (runner_ == nullptr) {
-        refuse(QStringLiteral("native.prepare.runner"),
-               tr("No off-thread runner is available, so no preparation can be submitted."));
-        return;
-    }
-    if (requestedRecipeId_.isEmpty()) {
-        refuse(QStringLiteral("native.prepare.recipe"),
-               tr("Select a registered recipe in this page first; the untouched Original "
-                  "pipeline is never prepared."));
-        return;
-    }
-    UserRecipeStore recipes;
-    QString recipeKey;
-    QString recipeReason;
-    const std::optional<Recipe> recipe = recipes.find(requestedRecipeId_, &recipeKey, &recipeReason);
-    if (!recipe.has_value()) {
-        refuse(recipeKey.isEmpty() ? QStringLiteral("native.prepare.recipe") : recipeKey,
-               recipeReason.isEmpty()
-                   ? tr("The owned recipe store does not hold that recipe.") : recipeReason);
-        return;
-    }
-    for (const SpatialStage& stage : recipe->spatial) {
-        bool usable = false;
-        for (const StoredModel& row : storedModels_) {
-            if (row.record.id == stage.modelId && row.record.availability.isUsable()) {
-                usable = true;
-                break;
+void NativeAssetsPanel::prepareRefusal(QString* reasonKey, QString* reason,
+                                       PrepareRefusalState* refusal) const {
+    // One decision, recorded as a template plus its raw detail rather than as
+    // rendered words: a caller that shows this reason can restate it later without
+    // walking the store or asking a provider again.
+    PrepareRefusalState state;
+    const auto refuse = [&state](PrepareRefusalState::Template templateId, const QString& key,
+                                 const QString& detail = QString()) {
+        state.templateId = templateId;
+        state.key = key;
+        state.detail = detail;
+        return true;
+    };
+    const auto decide = [&]() -> bool {
+        if (!inspectorBuilds()) {
+            return refuse(PrepareRefusalState::Template::Inspector,
+                          QStringLiteral("native.prepare.inspector"));
+        }
+        if (runner_ == nullptr) {
+            return refuse(PrepareRefusalState::Template::Runner,
+                          QStringLiteral("native.prepare.runner"));
+        }
+        if (requestedRecipeId_.isEmpty()) {
+            return refuse(PrepareRefusalState::Template::RecipeRequired,
+                          QStringLiteral("native.prepare.recipe"));
+        }
+        UserRecipeStore recipes;
+        QString recipeKey;
+        QString recipeReason;
+        const std::optional<Recipe> recipe =
+            recipes.find(requestedRecipeId_, &recipeKey, &recipeReason);
+        if (!recipe.has_value()) {
+            return refuse(PrepareRefusalState::Template::RecipeMissing,
+                          recipeKey.isEmpty() ? QStringLiteral("native.prepare.recipe")
+                                              : recipeKey,
+                          recipeReason);
+        }
+        for (const SpatialStage& stage : recipe->spatial) {
+            bool usable = false;
+            for (const StoredModel& row : storedModels_) {
+                if (row.record.id == stage.modelId && row.record.availability.isUsable()) {
+                    usable = true;
+                    break;
+                }
+            }
+            if (!usable) {
+                return refuse(PrepareRefusalState::Template::ModelUnavailable,
+                              QStringLiteral("native.prepare.models"), stage.modelId);
             }
         }
-        if (!usable) {
-            refuse(QStringLiteral("native.prepare.models"),
-                   tr("The owned store holds no usable %1 for this recipe.").arg(stage.modelId));
-            return;
+        // An actual source a probe and a capture can run against, which is distinct
+        // from a fully observed context: the device facts come from the native probe,
+        // and this panel only arms that probe after the user clicks Prepare. Requiring
+        // the context here would make the successful path unreachable.
+        if (!sourcePresence_) {
+            return refuse(PrepareRefusalState::Template::SourceUnwired,
+                          QStringLiteral("native.prepare.source"));
         }
+        QString presenceKey;
+        QString presenceReason;
+        if (!sourcePresence_(&presenceKey, &presenceReason)) {
+            return refuse(PrepareRefusalState::Template::SourceAbsent,
+                          presenceKey.isEmpty() ? QStringLiteral("native.prepare.source")
+                                                : presenceKey,
+                          presenceReason);
+        }
+        if (!contextRequest_ && !currentContext().has_value()) {
+            return refuse(PrepareRefusalState::Template::ContextUnwired,
+                          QStringLiteral("native.prepare.context"));
+        }
+        if (!observedToolchain_.available) {
+            // The toolchain is not re-observed to say this: the key and the recorded
+            // reason are all the restatement needs.
+            return refuse(PrepareRefusalState::Template::Toolchain,
+                          observedToolchain_.reasonKey.isEmpty()
+                              ? QStringLiteral("native.prepare.toolchain")
+                              : observedToolchain_.reasonKey,
+                          observedToolchain_.reason);
+        }
+        if (!observedToolchain_.backends.has(recipe->backend)) {
+            return refuse(PrepareRefusalState::Template::BackendUnavailable,
+                          QStringLiteral("backend.unavailable"), stableName(recipe->backend));
+        }
+        if (!frameRequest_) {
+            return refuse(PrepareRefusalState::Template::Capture,
+                          QStringLiteral("native.prepare.capture"));
+        }
+        return false;
+    };
+    decide();
+    if (reasonKey != nullptr) *reasonKey = state.key;
+    if (reason != nullptr) {
+        *reason = state.templateId == PrepareRefusalState::Template::None ? QString()
+                                                                         : prepareRefusalText(state);
     }
-    // An actual source a probe and a capture can run against, which is distinct
-    // from a fully observed context: the device facts come from the native probe,
-    // and this panel only arms that probe after the user clicks Prepare. Requiring
-    // the context here would make the successful path unreachable.
-    if (!sourcePresence_) {
-        refuse(QStringLiteral("native.prepare.source"),
-               tr("No source-presence path is wired, so there is no live video to prepare for."));
-        return;
-    }
-    QString presenceKey;
-    QString presenceReason;
-    if (!sourcePresence_(&presenceKey, &presenceReason)) {
-        refuse(presenceKey.isEmpty() ? QStringLiteral("native.prepare.source") : presenceKey,
-               presenceReason.isEmpty()
-                   ? tr("No playing or paused video is available to prepare for.")
-                   : presenceReason);
-        return;
-    }
-    if (!contextRequest_ && !currentContext().has_value()) {
-        refuse(QStringLiteral("native.prepare.context"),
-               tr("No native probe path is wired, so the live source's geometry and device "
-                  "cannot be observed."));
-        return;
-    }
-    if (!observedToolchain_.available) {
-        refuse(observedToolchain_.reasonKey.isEmpty() ? QStringLiteral("native.prepare.toolchain")
-                                                      : observedToolchain_.reasonKey,
-               observedToolchain_.reason.isEmpty()
-                   ? tr("The preparation toolchain has not been observed.")
-                   : observedToolchain_.reason);
-        return;
-    }
-    if (!observedToolchain_.backends.has(recipe->backend)) {
-        refuse(QStringLiteral("backend.unavailable"),
-               tr("The observed toolchain does not carry the %1 backend this recipe asks for.")
-                   .arg(stableName(recipe->backend)));
-        return;
-    }
-    if (!frameRequest_) {
-        refuse(QStringLiteral("native.prepare.capture"),
-               tr("No raw-frame capture path is wired, so the actual decoded frame this "
-                  "reference needs cannot be requested."));
-        return;
-    }
+    if (refusal != nullptr) *refusal = state;
 }
 
 void NativeAssetsPanel::updatePrepareControls() {
@@ -1016,10 +1188,15 @@ void NativeAssetsPanel::updatePrepareControls() {
     prepareButton_->setToolTip(
         ready ? tr("Build every stage of the selected recipe into the owned artifact cache.")
               : reason);
-    if (prepareInFlight_) {
+    if (preparationReason_ == nullptr) return;
+    if (prepareStatusState_.kind != PrepareStatus::Kind::None) {
+        // A recorded verdict or in-progress notice is restated in the active
+        // language rather than replaced by the generic in-flight line: a cancel
+        // still landing and a publication that can no longer be stopped both say
+        // more than "preparing".
+        renderPrepareStatus();
+    } else if (prepareInFlight_) {
         preparationReason_->setText(tr("Preparing the selected recipe…"));
-    } else if (!prepareStatusReason_.isEmpty()) {
-        preparationReason_->setText(prepareStatusReason_);
     } else if (!ready) {
         preparationReason_->setText(reason);
     } else {
@@ -1030,14 +1207,13 @@ void NativeAssetsPanel::updatePrepareControls() {
 }
 
 bool NativeAssetsPanel::prepareArtifact() {
-    prepareStatusKey_.clear();
-    prepareStatusReason_.clear();
+    clearPrepareStatus();
     QString key;
-    QString reason;
-    prepareRefusal(&key, &reason);
+    // The typed identity is what gets recorded; its words are worded when painted.
+    PrepareRefusalState refusal;
+    prepareRefusal(&key, nullptr, &refusal);
     if (!key.isEmpty()) {
-        prepareStatusKey_ = key;
-        prepareStatusReason_ = reason;
+        setPrepareRefusal(refusal);
         updatePrepareControls();
         return false;
     }
@@ -1051,9 +1227,14 @@ bool NativeAssetsPanel::prepareArtifact() {
     const std::optional<Recipe> recipe =
         recipes.find(requestedRecipeId_, &recipeKey, &recipeReason);
     if (!recipe.has_value()) {
-        prepareStatusKey_ =
+        // Recorded as a typed refusal: the store's own words ride along verbatim in
+        // `detail`, and the panel's named fallback answers when it gave none.
+        PrepareRefusalState missingRecipe;
+        missingRecipe.templateId = PrepareRefusalState::Template::RecipeMissing;
+        missingRecipe.key =
             recipeKey.isEmpty() ? QStringLiteral("native.prepare.recipe") : recipeKey;
-        prepareStatusReason_ = recipeReason;
+        missingRecipe.detail = recipeReason;
+        setPrepareRefusal(missingRecipe);
         updatePrepareControls();
         return false;
     }
@@ -1067,7 +1248,8 @@ bool NativeAssetsPanel::prepareArtifact() {
     jobContext_.reset();
     prepareInFlight_ = true;
     ++prepareGeneration_;
-    if (prepareProgress_ != nullptr) prepareProgress_->clear();
+    prepareProgressState_ = PrepareProgress();
+    renderPrepareProgress();
     updatePrepareControls();
     // Announced the moment the request is accepted, not when the first stage
     // reports: resolving the plan and probing the core happen before any build
@@ -1084,10 +1266,8 @@ bool NativeAssetsPanel::prepareArtifact() {
         requestNextPreparationFrame();
     } else if (contextRequest_) {
         contextPending_ = true;
-        if (prepareProgress_ != nullptr) {
-            prepareProgress_->setText(
-                tr("Probing the live source for its geometry and device…"));
-        }
+        prepareProgressState_.kind = PrepareProgress::Kind::Probing;
+        renderPrepareProgress();
         contextRequest_(prepareGeneration_);
     } else {
         auto result = std::make_shared<PrepareResult>();
@@ -1098,8 +1278,8 @@ bool NativeAssetsPanel::prepareArtifact() {
     }
     return true;
 #else
-    prepareStatusKey_ = QStringLiteral("native.prepare.inspector");
-    prepareStatusReason_ = tr("This build was made without the ONNX Runtime inspector.");
+    setPrepareStatus(PrepareStatus::Kind::InspectorMissing,
+                     QStringLiteral("native.prepare.inspector"), QString());
     updatePrepareControls();
     return false;
 #endif
@@ -1358,26 +1538,26 @@ void NativeAssetsPanel::cancelPrepare() {
         // The worker already passed the publication gate. Nothing can stop the
         // write, so the job is not reported as cancelled and its committed
         // outcome is still delivered by the completion.
-        prepareStatusKey_ = QStringLiteral("native.prepare.commitInProgress");
-        prepareStatusReason_ =
-            tr("The preparation has already begun publishing, so it can no longer be cancelled; "
-               "its committed outcome will be reported.");
-        preparationReason_->setText(prepareStatusReason_);
+        setPrepareStatus(PrepareStatus::Kind::CommitInProgress,
+                         QStringLiteral("native.prepare.commitInProgress"), QString());
         return;
     }
-    prepareStatusKey_ = QStringLiteral("native.prepare.cancelling");
-    prepareStatusReason_ =
-        tr("Cancelling the preparation; the builder decides at its next check.");
-    preparationReason_->setText(prepareStatusReason_);
+    setPrepareStatus(PrepareStatus::Kind::Cancelling, QStringLiteral("native.prepare.cancelling"),
+                     QString());
     updatePrepareControls();
 }
 
 void NativeAssetsPanel::applyPrepareProgress(int stageIndex, int stageCount, const QString& phase,
                                              const QString& detail) {
-    if (!prepareInFlight_ || prepareProgress_ == nullptr) return;
-    QString text = tr("Preparing stage %1: %2").arg(stageIndex).arg(phase);
-    if (!detail.isEmpty()) text += QStringLiteral(" — ") + detail;
-    prepareProgress_->setText(text);
+    if (!prepareInFlight_) return;
+    // The stage stays typed so a LanguageChange re-announces this very stage - same
+    // index, count, phase and detail - and re-words only this panel's wrapper.
+    prepareProgressState_.kind = PrepareProgress::Kind::Stage;
+    prepareProgressState_.stageIndex = stageIndex;
+    prepareProgressState_.stageCount = stageCount;
+    prepareProgressState_.phase = phase;
+    prepareProgressState_.detail = detail;
+    renderPrepareProgress();
     emit preparationProgress(stageIndex, stageCount, phase, detail);
 }
 
@@ -1393,27 +1573,40 @@ void NativeAssetsPanel::finishPrepare(const std::shared_ptr<PrepareResult>& resu
     capturedFrames_.clear();
 
     if (result->ok) {
-        prepareStatusKey_.clear();
-        prepareStatusReason_.clear();
-        prepareProgress_->setText(
-            result->publishedBuildKeys.isEmpty()
-                ? tr("Every stage was already prepared and verified in the owned artifact cache.")
-                : tr("Published %1 stage(s) into the owned artifact cache.")
-                      .arg(result->publishedBuildKeys.size()));
+        clearPrepareStatus();
+        // The verdict is kept typed: a language switch restates the same outcome
+        // with the same published count, and the finished stage is dropped.
+        prepareProgressState_ = PrepareProgress();
+        prepareProgressState_.kind = result->publishedBuildKeys.isEmpty()
+                                         ? PrepareProgress::Kind::AlreadyPrepared
+                                         : PrepareProgress::Kind::Published;
+        prepareProgressState_.publishedStages = result->publishedBuildKeys.size();
+        renderPrepareProgress();
     } else if (result->cancelled) {
-        prepareStatusKey_ = QStringLiteral("native.prepare.cancelled");
-        prepareStatusReason_ = tr("The preparation was cancelled; nothing was published.");
-        prepareProgress_->clear();
+        setPrepareStatus(PrepareStatus::Kind::Cancelled, QStringLiteral("native.prepare.cancelled"),
+                         QString());
+        prepareProgressState_ = PrepareProgress();
+        renderPrepareProgress();
     } else {
-        prepareStatusKey_ = result->reasonKey.isEmpty() ? QStringLiteral("native.prepare.failed")
-                                                        : result->reasonKey;
-        prepareStatusReason_ =
-            result->reason.isEmpty() ? tr("The preparation failed; nothing was published.")
-                                     : result->reason;
-        if (!result->toolError.isEmpty()) {
-            prepareStatusReason_ += QStringLiteral("\n") + result->toolError;
-        }
-        prepareProgress_->clear();
+        // The builder's own reason and tool output are kept verbatim; the panel
+        // only names a typed fallback when the run gave no reason at all.
+        const auto fallbackFor = [](PrepareResult::PanelReason reason) {
+            switch (reason) {
+                case PrepareResult::PanelReason::ContextUnobserved:
+                    return PrepareStatus::Fallback::ContextUnobserved;
+                case PrepareResult::PanelReason::CaptureUnavailable:
+                    return PrepareStatus::Fallback::CaptureUnavailable;
+                case PrepareResult::PanelReason::None:
+                    break;
+            }
+            return PrepareStatus::Fallback::None;
+        };
+        setPrepareStatus(PrepareStatus::Kind::Failed,
+                         result->reasonKey.isEmpty() ? QStringLiteral("native.prepare.failed")
+                                                     : result->reasonKey,
+                         result->reason, result->toolError, fallbackFor(result->panelReason));
+        prepareProgressState_ = PrepareProgress();
+        renderPrepareProgress();
     }
 
     // A completed outcome is the only thing that refreshes the owned cache: a

@@ -39,6 +39,22 @@ class TestFeedRender : public QObject {
   // every canned episode must have a button, and the heading must be the title's.
   void theTitlePageRendersItsEpisodes();
 
+  /// A loaded search result set, switched en -> uk -> en from the real Settings
+  /// selector: the captions and the status line restate themselves, while the
+  /// query, the active format filter, the result rows, the selected row and the
+  /// scroll position stay where they were and the canned server is not asked
+  /// again. A filtered answer keeps its bar and its All escape on screen; only
+  /// pressing All issues the one new unfiltered search. Titles and formats are
+  /// API data and must read the same in both languages.
+  void loadedResultsRetranslateWithoutRefetchingOrLosingViewState();
+
+  /// A loaded title page, switched en -> uk -> en: the description and metadata
+  /// disclosures stay open, the release chip and the episode page keep their
+  /// selections, the overview and episode scrolls do not move, the API's own
+  /// description and title stay verbatim, and no request is issued merely to
+  /// translate.
+  void loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclosureState();
+
   // The other direction, and the reason this suite exists: a backend that fails
   // must produce a visible failure on both pages. A page that stays on its
   // loading text - which is what a dead API looked like - fails here.

@@ -1,8 +1,10 @@
 #include "widgets/FailureView.hpp"
 
+#include "support/I18n.hpp"
 #include "theme/Metrics.hpp"
 
 #include <QAccessible>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -36,13 +38,53 @@ FailureView::FailureView(QWidget* parent) : QWidget(parent) {
     clear();
 }
 
-void FailureView::showFailure(const backend::Failure& failure, const QString& context) {
-    const QString line = failure.message.isEmpty() ? failure.code : failure.message;
-    message_->setText(context.isEmpty() ? line : tr("%1: %2").arg(context, line));
+void FailureView::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
 
-    const QString code = backend::failureCodeLabel(failure);
+void FailureView::retranslateUi() {
+    retry_->setText(tr("Retry"));
+    if (!hasFailure_) {
+        return;
+    }
+    // Only a line the app itself worded from a known code is re-localized. A
+    // backend line that happened to arrive under a known code, and the
+    // caller's context clause, are not guessed at: they stay exactly as they
+    // arrived, so a 522's origin detail is never replaced by generic wording.
+    QString line;
+    if (failure_.message.isEmpty()) {
+        // Nothing to preserve, so the known code's wording is derived safely.
+        const QString localized = localizedApiError(failure_.code);
+        line = localized.isEmpty() ? failure_.code : localized;
+    } else if (messageIsCanonical_) {
+        const QString localized = localizedApiError(failure_.code);
+        line = localized.isEmpty() ? failure_.message : localized;
+    } else {
+        line = failure_.message;
+    }
+    message_->setText(context_.isEmpty() ? line : tr("%1: %2").arg(context_, line));
+
+    const QString code = backend::failureCodeLabel(failure_);
     code_->setText(code);
     code_->setVisible(!code.isEmpty());
+}
+
+void FailureView::showFailure(const backend::Failure& failure, const QString& context) {
+    failure_ = failure;
+    context_ = context;
+    // Decide here, while the language that produced `failure.message` is still
+    // active, whether the app owns that line. Runner fills the message from
+    // localizedApiError for every known code, but a caller may forward the
+    // server's own detail under the same code; only the former may be re-worded
+    // on a later language switch.
+    const QString canonical = localizedApiError(failure.code);
+    messageIsCanonical_ =
+        !failure.message.isEmpty() && !canonical.isEmpty() && failure.message == canonical;
+    hasFailure_ = true;
+    retranslateUi();
 
     show();
     // A failure the viewer may not be looking at still has to announce itself,
@@ -51,9 +93,17 @@ void FailureView::showFailure(const backend::Failure& failure, const QString& co
     QAccessible::updateAccessibility(&event);
 }
 
+void FailureView::setContext(const QString& context) {
+    context_ = context;
+    retranslateUi();
+}
 void FailureView::setRetryVisible(bool visible) { retry_->setVisible(visible); }
 
 void FailureView::clear() {
+    failure_ = {};
+    context_.clear();
+    hasFailure_ = false;
+    messageIsCanonical_ = false;
     message_->clear();
     code_->clear();
     code_->hide();

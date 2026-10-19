@@ -111,8 +111,6 @@ QWidget* SettingsDialog::buildProcessingTab() {
     animeJanaiManagerCard_ = makeSettingsCard(page, &ajiLayout);
     animeJanaiPanel_ = new AnimeJanaiManagerPanel(animeJanaiManagerCard_, &runner_);
     animeJanaiPanel_->setAccessibleName(tr("AnimeJaNai model and profile manager"));
-    connect(animeJanaiPanel_, &AnimeJanaiManagerPanel::modelsChanged, this,
-            &SettingsDialog::refreshBenchmarkCatalogue);
     ajiLayout->addWidget(animeJanaiPanel_);
     root->addWidget(animeJanaiManagerCard_);
 
@@ -481,6 +479,12 @@ void SettingsDialog::retranslateProcessingTab() {
         nativeRife_->setAccessibleName(tr("RIFE interpolation"));
     }
 
+    // The cached availability holds the app-owned refusal wording materialized
+    // when it was last sourced. Re-source it from the same typed context the
+    // dialog already holds so the fixed reasons are rendered in the language
+    // that is now active; an opaque factory/loader diagnostic is carried
+    // through verbatim because no language may re-word it.
+    nativeAvailability_ = currentSourceAvailability();
     refreshNativeStatus();
     refreshRuntimeStatus();
 }

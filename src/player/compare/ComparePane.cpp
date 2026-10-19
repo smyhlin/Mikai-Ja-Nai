@@ -69,6 +69,44 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     button->setText((elided.isEmpty() ? full : elided) + suffix);
 }
 
+/// True when two choice lists describe the same menu tree: same entries in the
+/// same order under the same paths, with the same availability. Only the words
+/// (label, tooltip) differ, which is exactly what a retranslation changes.
+bool sameChoiceShape(const QVector<ChoiceEntry>& a, const QVector<ChoiceEntry>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (qsizetype i = 0; i < a.size(); ++i) {
+        if (a.at(i).id != b.at(i).id || a.at(i).path != b.at(i).path ||
+            a.at(i).disabled != b.at(i).disabled) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Rewrites the leaves of an existing fill in place. No action is created or
+/// destroyed, so an open menu keeps its rows and a handler that triggered the
+/// refresh keeps running on a live action.
+void restateChoiceLeaves(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries) {
+    if (leaves.size() != entries.size()) {
+        return;
+    }
+    for (qsizetype i = 0; i < entries.size(); ++i) {
+        QAction* action = leaves.at(i);
+        if (action == nullptr) {
+            continue;
+        }
+        if (action->text() != entries.at(i).label) {
+            action->setText(entries.at(i).label);
+        }
+        action->setEnabled(!entries.at(i).disabled);
+        if (action->toolTip() != entries.at(i).tooltip) {
+            action->setToolTip(entries.at(i).tooltip);
+        }
+    }
+}
+
 }  // namespace
 
 ComparePane::ComparePane(QWidget* parent) : QGraphicsView(parent) {
@@ -370,11 +408,17 @@ void ComparePane::syncBadgeMenu() {
     badge_->setPopupMode(QToolButton::InstantPopup);
     badge_->setMenu(menu_);
     if (choices_ != builtChoices_ || leaves_.size() != choices_.size()) {
-        fillChoiceMenu(menu_, choices_, current_, &leaves_);
+        // A menu tree that keeps its entries only has new words: restating the
+        // leaves keeps every action (and an open menu) alive. Anything that
+        // changes the tree is built fresh.
+        if (leaves_.size() == choices_.size() && sameChoiceShape(choices_, builtChoices_)) {
+            restateChoiceLeaves(leaves_, choices_);
+        } else {
+            fillChoiceMenu(menu_, choices_, current_, &leaves_);
+        }
         builtChoices_ = choices_;
-    } else {
-        markChoice(leaves_, choices_, current_);
     }
+    markChoice(leaves_, choices_, current_);
 }
 
 QRect ComparePane::imageBarRect() const {
@@ -464,6 +508,23 @@ bool ComparePane::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
     return QGraphicsView::eventFilter(watched, event);
+}
+
+void ComparePane::changeEvent(QEvent* event) {
+    QGraphicsView::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void ComparePane::retranslateUi() {
+    // The selector's label glue, tooltip and spoken name are this pane's
+    // words. The shown candidate's name comes from the caller through
+    // setChoices, so the old string is never re-translated. refreshBadge()
+    // re-places the selector but leaves the picture, the fit, the shared
+    // zoom/centre and the selector's menu alone: no setContent, no fit, no
+    // refit of the view.
+    refreshBadge();
 }
 
 void ComparePane::resizeEvent(QResizeEvent* event) {

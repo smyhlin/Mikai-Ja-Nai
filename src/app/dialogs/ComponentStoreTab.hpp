@@ -7,6 +7,7 @@
 #include <QMap>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 #include <QWidget>
 #include <QVariant>
@@ -109,7 +110,11 @@ signals:
 
 public:
     QString statusKey() const { return statusKey_; }
-    QString statusReason() const { return statusReason_; }
+    /// The current status line in the live language. App-owned text is
+    /// rendered from its typed reason on every read, so a language switch
+    /// never has to guess a translation key back out of the previous string;
+    /// a raw tool, network or error cause is returned exactly as it arrived.
+    QString statusReason() const { return renderStatusReason(); }
     /// The generation every new off-GUI run carries. A delivery whose
     /// generation is no longer current is discarded rather than rendered, so an
     /// off-GUI publisher reads it on the GUI thread before it applies.
@@ -126,7 +131,56 @@ private:
     void renderCards();
     void updateControls();
     mplayer::native::Backend selectedBackend() const;
+    /// One app-owned status reason: an explicit kind plus the raw values that
+    /// kind needs. The wording is looked up in the live translation when the
+    /// line is read, so a language switch restates the same state, and no
+    /// per-status formatter is retained.
+    struct StatusReason {
+        enum class Kind {
+            None,
+            /// Opaque text supplied by a caller; returned verbatim.
+            Raw,
+            InventoryFailed,
+            VerifyNeedsRunner,
+            VerifiedCount,
+            VerifyDigest,
+            NotVerified,
+            CheckNeedsRunner,
+            NothingToInstall,
+            CheckFailed,
+            ClosureNeedsRunner,
+            RuntimeNeedsRunner,
+            ImportFailed,
+            RuntimeInstalled,
+            VerificationCancelled,
+            DownloadsCancelling,
+            InstallFailed,
+            MissingProvisioner,
+            AllVerified,
+        };
+
+        Kind kind = Kind::None;
+        /// A raw cause or imported refusal reason, preserved verbatim.
+        QString detail{};
+        /// Raw per-element cause lines for the digest form.
+        QStringList causes{};
+        int count = 0;
+        mplayer::native::Backend backend = mplayer::native::Backend::TensorRT;
+        int rifeFailures = 0;
+        int spatialFailures = 0;
+    };
+
+    /// Raw, opaque text (a tool/network cause or a joined failure list) that is
+    /// preserved verbatim, never retranslated.
     void applyStatus(const QString& key, const QString& reason);
+    /// App-owned text: rendered from `reason` in whatever language is live when
+    /// the line is read, so LanguageChange can restate it in place.
+    void applyStatus(const QString& key, const StatusReason& reason);
+    /// Renders the current typed reason in the live language.
+    QString renderStatusReason() const;
+    /// Re-derives the live status line and republishes the existing status
+    /// notification so an already-open bar restates it. Touches no run state.
+    void restateStatus();
     /// GUI-thread only: renders one off-GUI acquisition progress event.
     void applyProvisionProgress(const mplayer::native::ComponentProvisionProgress& progress);
     /// GUI-thread only: renders one off-GUI graph-archive download event.
@@ -212,7 +266,12 @@ private:
     QLabel* status_ = nullptr;
 
     QString statusKey_;
-    QString statusReason_;
+    /// The current status line's typed source. Holds only the raw values its
+    /// kind needs and is rendered on every read; the last rendered string is
+    /// remembered only to tell a status line still showing that reason from a
+    /// transient progress line.
+    StatusReason statusReason_;
+    QString statusRenderedReason_;
     /// Pack names whose bytes this session actually re-hashed. A status read
     /// only trusts the recorded size, so "Verified" is claimed for a component
     /// only after `verifyPack` proved it, never from a directory listing.

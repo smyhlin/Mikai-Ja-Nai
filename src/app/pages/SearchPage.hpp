@@ -13,6 +13,7 @@
 #include <QVector>
 #include <QWidget>
 
+class QAction;
 class QHBoxLayout;
 class QLabel;
 class QLineEdit;
@@ -90,28 +91,80 @@ Q_SIGNALS:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     /// One carousel block: heading, status line, retry button and the track.
     struct CarouselSection {
         QWidget* section = nullptr;
+        QLabel* heading = nullptr;
         QHBoxLayout* cards = nullptr;
         QScrollArea* scroll = nullptr;
         QLabel* state = nullptr;
         FailureView* failure = nullptr;
         QPushButton* previous = nullptr;
         QPushButton* next = nullptr;
+        /// What the block's own line currently says, kept as the state it
+        /// describes rather than as the words it was painted with, so a
+        /// language switch restates the line without re-reading the collection.
+        enum class Line { Unloaded, Loading, Empty, Count };
+        Line line = Line::Unloaded;
+        int lineCount = 0;
+        /// True while the surface owns a failure. The failure itself is the
+        /// surface's to keep: only the clause this page wrote is re-sent.
+        bool hasFailure = false;
+    };
+
+    /// One list row's meta line as the raw parts it was built from. The parts
+    /// are composed into a sentence at render time, so a language switch
+    /// re-words the row where it stands instead of re-fetching the feed.
+    struct FeedRowMeta {
+        /// The schedule names its weekday first, and an updates row leaves this
+        /// empty: that is also what decides the order of the parts.
+        QString dayKey;
+        /// The API's own episode label, empty when the release carries none.
+        QString episode;
+        /// Updates: the release is unnumbered, so it reads "New episode".
+        bool newEpisode = false;
+        /// API data, shown exactly as it arrived.
+        QString team;
+        /// Updates: the API's release kind, worded by the app.
+        QString kind;
+        /// API data, shown capitalised.
+        QString provider;
+        /// Clock text, formatted once: digits, never words.
+        QString when;
     };
 
     /// One list feed block (updates, schedule): heading, state line and rows.
     struct FeedSection {
         QWidget* section = nullptr;
+        QLabel* heading = nullptr;
         QLabel* state = nullptr;
         QPushButton* retry = nullptr;
         FailureView* failure = nullptr;
         QWidget* rowsHost = nullptr;
         QVBoxLayout* rows = nullptr;
+        /// The line currently shown, kept as state so a language switch restates
+        /// it instead of re-running the request that filled it.
+        enum class Line { Loading, Empty, Count };
+        Line line = Line::Loading;
+        int lineCount = 0;
+        /// True while the surface owns a failure. The failure itself is the
+        /// surface's to keep: only the clause this page wrote is re-sent.
+        bool hasFailure = false;
+        /// Every row's meta line and the label painting it, parallel to the row
+        /// widgets: enough to re-word the rows where they stand.
+        QVector<FeedRowMeta> rowMeta;
+        QVector<QPointer<QLabel>> rowMetaLabels;
     };
+
+    /// What the status line currently stands for, kept as state rather than as
+    /// the sentence it was rendered as.
+    enum class Status { BrowseHint, LoadingBrowse, LoadingSearch, Results, Failure, Notice };
+
+    /// The app-generated refusals a status line can name.
+    enum class Notice { CopyLink, CopyId, Browser };
 
     /// A feed poster waiting on one thumb URL, remembering which URL its label
     /// already shows so a repeated pass over the icon table is a no-op.
@@ -122,10 +175,45 @@ private:
     };
 
     void smoothScrollCarousel(QScrollBar* bar, int delta);
-    CarouselSection* buildCarousel(const QString& heading, const QString& key);
-    FeedSection* buildFeedSection(const QString& heading, const QString& key);
+    CarouselSection* buildCarousel(const QString& key);
+    FeedSection* buildFeedSection(const QString& key);
     CarouselSection* carouselSection(const QString& key) const;
     FeedSection* feedSection(const QString& key) const;
+
+    /// Restates every static caption in place after a LanguageChange: the
+    /// headings, the buttons and their accessible names, the query placeholder,
+    /// each block's own line and the meta line of every feed row. Nothing is
+    /// re-read and nothing is requested - the query, the result page, the
+    /// format filter, the cards and the loaded feeds stay exactly as they are.
+    void retranslateUi();
+    /// The heading of the block `key` names, in the active language. Both the
+    /// constructor and a retranslate pass take it from here, so the two can
+    /// never drift apart.
+    QString carouselHeading(const QString& key) const;
+    QString feedHeading(const QString& key) const;
+    /// The empty and counted wording of a feed's own line, by key.
+    QString feedEmptyLine(const QString& key) const;
+    QString feedCountLine(const QString& key, int count) const;
+    /// The leading clause a block's failure surface shows, by key.
+    QString blockFailureContext(const QString& key) const;
+    /// The three-letter weekday a schedule row starts with.
+    QString feedDayLabel(const QString& dayKey) const;
+    /// A block's own line, restated from the state it holds. Visibility is left
+    /// alone: the failure surface, not this pass, decides which of the two is
+    /// on screen.
+    void renderCarouselLine(CarouselSection& section);
+    void renderFeedLine(const QString& key, FeedSection& section);
+    /// The meta line of every row the block is showing, re-worded where it
+    /// stands from the parts each row was built from.
+    void renderFeedRows(FeedSection& section);
+    /// The status line, restated from what it currently stands for.
+    void renderStatus();
+    /// The notice a refused hand-off reports, in the active language.
+    QString noticeText(Notice notice) const;
+    /// One feed row's meta line, composed from its raw parts.
+    QString composeFeedMeta(const FeedRowMeta& meta) const;
+    /// One search row's text, composed from the summary it shows.
+    QString resultRowText(const backend::AnimeSummary& entry) const;
 
     QList<backend::AnimeSummary> readRecentTitles();
     void persistRecentTitles();
@@ -142,8 +230,7 @@ private:
     void loadUpdates();
     void loadSchedule();
     void showFeedRows(const QString& key,
-                      const QList<std::pair<backend::AnimeSummary, QString>>& entries,
-                      const QString& emptyText);
+                      const QList<std::pair<backend::AnimeSummary, FeedRowMeta>>& entries);
 
     void fetchPage(int page);
     void runResultsRequest(int page);
@@ -155,14 +242,19 @@ private:
     void reportFailure(const backend::Failure& failure);
     /// A refusal this page generated itself - a clipboard or browser hand-off
     /// that came back false. There is no backend code to name, so the line is
-    /// the whole message.
-    void reportFailure(const QString& message);
+    /// the whole message; the notice names which one, so the line can be
+    /// re-worded after a language switch.
+    void reportFailure(Notice notice);
 
     /// A block keeps its own line for progress and empty states; the failure
     /// surface takes over while there is a failure, and hands it back after.
     void showBlockFailure(FailureView* view, QLabel* state, const backend::Failure& failure,
                           const QString& context);
     void clearBlockFailure(FailureView* view, QLabel* state);
+    /// Rebuild the format tabs from the result set in hand, with the active
+    /// filter's tab selected and its signals blocked throughout. The bar stays
+    /// visible while a filter is active even when the filtered response carries
+    /// a single format, so the All escape never disappears.
     void rebuildFormatBar();
     /// Refresh the per-format counts from the whole result set. Each count is a
     /// one-row request, so this is only worth running for the formats the
@@ -236,8 +328,24 @@ private:
     QList<backend::AnimeSummary> recentItems_;
     QSet<QString> enabledFeeds_;
 
+    /// The status line as the state it stands for, so a language switch can
+    /// restate the sentence without re-running the request behind it. A failed
+    /// line keeps the failure itself: only the app's own wording for a code is
+    /// re-localized, a line the backend produced stays as it arrived.
+    Status statusLine_ = Status::BrowseHint;
+    backend::Failure statusFailure_;
+    Notice statusNotice_ = Notice::CopyLink;
+
     QTimer* healTimer_ = nullptr;
     QTimer* thumbTimer_ = nullptr;
+    /// Handles for the captions a language switch restates. The query holds the
+    /// viewer's text and the results list its rows; neither is rebuilt.
+    QPushButton* mediaButton_ = nullptr;
+    QAction* openFileAction_ = nullptr;
+    QAction* openUrlAction_ = nullptr;
+    QPushButton* keysButton_ = nullptr;
+    QPushButton* settingsButton_ = nullptr;
+    QPushButton* searchButton_ = nullptr;
     QLineEdit* query_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;

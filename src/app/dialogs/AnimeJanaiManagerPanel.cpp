@@ -1,6 +1,7 @@
 #include "dialogs/AnimeJanaiManagerPanel.hpp"
 
 #include "dialogs/settings/SettingsUi.hpp"
+#include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
@@ -8,6 +9,7 @@
 #include "player/shaders/Anime4K.hpp"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QCoreApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -27,6 +29,8 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QSet>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QUrl>
@@ -34,11 +38,46 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace mikai::app {
 namespace {
 
 constexpr int kMaxCustomSlots = 10;
+
+// Catalogue roles carried by the custom model table. Ids and the candidate
+// flag are the historical shape; origin and state make a raw paste, a borrowed
+// external graph, and a registered model distinguishable without parsing the
+// status caption.
+constexpr int kModelIdRole = Qt::UserRole;
+constexpr int kModelCandidateRole = Qt::UserRole + 1;
+constexpr int kModelOriginRole = Qt::UserRole + 2;
+constexpr int kModelStateRole = Qt::UserRole + 3;
+constexpr int kModelPathRole = Qt::UserRole + 4;
+/// True when an owned candidate still carries an integrity record. Such a graph
+/// is a changed or interrupted registration, not a plain raw paste, so the safe
+/// remove API may be offered and will report its real refusal.
+constexpr int kModelIntegrityRecordRole = Qt::UserRole + 5;
+
+bool isOwnedModelPath(const QString& filePath, const QString& ownedRoot) {
+    QString modelPath = QFileInfo(filePath).canonicalFilePath();
+    if (modelPath.isEmpty()) modelPath = QDir::cleanPath(filePath);
+    if (ownedRoot.isEmpty() || modelPath.isEmpty()) return false;
+    return modelPath.compare(ownedRoot, Qt::CaseInsensitive) == 0 ||
+           modelPath.startsWith(ownedRoot + QLatin1Char('/'), Qt::CaseInsensitive) ||
+           modelPath.startsWith(ownedRoot + QLatin1Char('\\'), Qt::CaseInsensitive);
+}
+
+/// The widget that should receive focus after a rebuild. A step combo's focus
+/// lives on its internal line edit, which has no object name of its own, so the
+/// nearest named ancestor is the stable anchor.
+QString focusAnchorName(QWidget* focus, const QWidget* panel) {
+    for (QWidget* widget = focus; widget != nullptr && widget != panel;
+         widget = widget->parentWidget()) {
+        if (!widget->objectName().isEmpty()) return widget->objectName();
+    }
+    return {};
+}
 
 QString formatByteSize(qint64 bytes) {
     if (bytes <= 0) return QStringLiteral("0 B");
@@ -64,6 +103,28 @@ AnimeJanaiManagerPanel::AnimeJanaiManagerPanel(QWidget* parent, Runner* runner)
     setObjectName(QStringLiteral("animeJanaiManagerPanel"));
     buildUi();
     reloadFromDisk();
+
+    catalogWatcher_ = new mplayer::native::AnimeJanaiCatalogWatcher(this);
+    connect(catalogWatcher_, &mplayer::native::AnimeJanaiCatalogWatcher::catalogChanged, this,
+            &AnimeJanaiManagerPanel::onCatalogChanged);
+    syncCatalogWatcherDirectory();
+}
+
+void AnimeJanaiManagerPanel::syncCatalogWatcherDirectory() {
+    if (catalogWatcher_ == nullptr) return;
+    catalogWatcher_->setExternalModelsDirectory(config_.externalModelsDir);
+    catalogWatcher_->refresh();
+}
+
+void AnimeJanaiManagerPanel::onCatalogChanged() {
+    if (updatingUi_) return;
+    // Commit the live editor first: the rebuild below re-creates the step rows
+    // from config_, so an uncommitted profile edit would vanish otherwise. The
+    // saved configuration is never re-read here: a pasted or renamed graph must
+    // not discard the dialog's draft.
+    commitCurrentChainFromEditor();
+    refreshCustomModels();
+    emit modelsChanged();
 }
 
 AnimeJanaiManagerPanel::~AnimeJanaiManagerPanel() {
@@ -87,6 +148,7 @@ void AnimeJanaiManagerPanel::reloadFromDisk() {
     refreshCustomModels();
     dirty_ = false;
     updatingUi_ = false;
+    syncCatalogWatcherDirectory();
 }
 
 bool AnimeJanaiManagerPanel::saveConfig(QString* error) {
@@ -583,7 +645,9 @@ void AnimeJanaiManagerPanel::buildUi() {
             [this](int row, int, int, int) {
                 const auto* item = row >= 0 ? customModelsTable_->item(row, 0) : nullptr;
                 removeModelButton_->setEnabled(
-                    item != nullptr && !item->data(Qt::UserRole + 1).toBool());
+                    item != nullptr &&
+                    (item->data(kModelStateRole).toString() == QLatin1String("registered") ||
+                     item->data(kModelIntegrityRecordRole).toBool()));
             });
     connect(openModelsDirButton_, &QPushButton::clicked, this,
             &AnimeJanaiManagerPanel::onOpenCustomModelsFolder);
@@ -597,6 +661,7 @@ void AnimeJanaiManagerPanel::buildUi() {
         if (config_.externalModelsDir != trimmed) {
             config_.externalModelsDir = trimmed;
             markDirty();
+            syncCatalogWatcherDirectory();
             refreshCustomModels();
         }
     });
@@ -819,50 +884,158 @@ void AnimeJanaiManagerPanel::syncTrtWidgetsFromText(const QString& settingsText)
 }
 
 void AnimeJanaiManagerPanel::refreshCustomModels() {
-    QVector<mplayer::native::CustomAnimeJanaiModel> models =
+    struct CatalogueRow {
+        mplayer::native::CustomAnimeJanaiModel model;
+        QString origin;
+        QString state;
+        bool candidate = false;
+    };
+
+    // A rebuild is also what a filesystem notification produces, so the
+    // selected stable model, the table's scroll offset, and the focused editor
+    // (with its caret) must survive the row and step-row replacement.
+    const int previousRow = customModelsTable_->currentRow();
+    QString previousPath;
+    QString previousId;
+    if (previousRow >= 0) {
+        if (const auto* item = customModelsTable_->item(previousRow, 0)) {
+            previousPath = item->data(kModelPathRole).toString();
+            previousId = item->data(kModelIdRole).toString();
+        }
+    }
+    const int previousScrollY = customModelsTable_->verticalScrollBar()->value();
+    const int previousScrollX = customModelsTable_->horizontalScrollBar()->value();
+    QWidget* const focused = QApplication::focusWidget();
+    const bool focusInside = focused != nullptr && isAncestorOf(focused);
+    const QString focusName = focusInside ? focusAnchorName(focused, this) : QString();
+    int focusCursor = -1;
+    if (focusInside) {
+        if (const auto* edit = qobject_cast<QLineEdit*>(focused)) {
+            focusCursor = edit->cursorPosition();
+        }
+    }
+
+    QVector<CatalogueRow> rows;
+    QSet<QString> seenPaths;
+    QString ownedRoot =
+        QFileInfo(mplayer::native::customAnimeJanaiModelsDir()).canonicalFilePath();
+    if (ownedRoot.isEmpty()) {
+        ownedRoot = QDir::cleanPath(mplayer::native::customAnimeJanaiModelsDir());
+    }
+    const auto appendRow = [&rows, &seenPaths, &ownedRoot](
+                               const mplayer::native::CustomAnimeJanaiModel& model,
+                               bool candidate) {
+        const QString pathKey = model.filePath.isEmpty() ? model.id : model.filePath;
+        if (seenPaths.contains(pathKey)) return;
+        seenPaths.insert(pathKey);
+        CatalogueRow row;
+        row.model = model;
+        row.origin = isOwnedModelPath(model.filePath, ownedRoot) ? QStringLiteral("owned")
+                                                                 : QStringLiteral("external");
+        row.state = candidate ? QStringLiteral("unregistered") : QStringLiteral("registered");
+        row.candidate = candidate;
+        rows.append(std::move(row));
+    };
+
+    const QVector<mplayer::native::CustomAnimeJanaiModel> registered =
         mplayer::native::listCustomAnimeJanaiModels();
+    for (const auto& model : registered) appendRow(model, false);
+
+    // A pasted graph in the app-owned folder and an unpinned graph in the
+    // external folder are both visible as candidates, but never executable and
+    // never silently promoted to a registered model.
+    const QVector<mplayer::native::CustomAnimeJanaiModel> unregisteredOwned =
+        mplayer::native::listUnregisteredOwnedAnimeJanaiModels();
+    for (const auto& model : unregisteredOwned) appendRow(model, true);
+
     QString inventoryError;
-    const QVector<mplayer::native::CustomAnimeJanaiModel> candidates =
+    const QVector<mplayer::native::CustomAnimeJanaiModel> externalCandidates =
         mplayer::native::listExternalCustomAnimeJanaiModelCandidates(
             config_.externalModelsDir, &inventoryError);
-    const int registeredCount = models.size();
-    for (const auto& candidate : candidates) {
-        if (std::none_of(models.cbegin(), models.cend(), [&candidate](const auto& item) {
-                return item.filePath == candidate.filePath;
-            }))
-            models.append(candidate);
-    }
-    customModelsTable_->setRowCount(static_cast<int>(models.size()));
-    for (int row = 0; row < models.size(); ++row) {
-        const auto& model = models.at(row);
-        const bool externalCandidate = row >= registeredCount;
+    for (const auto& model : externalCandidates) appendRow(model, true);
+
+    customModelsTable_->setRowCount(static_cast<int>(rows.size()));
+    for (int row = 0; row < rows.size(); ++row) {
+        const CatalogueRow& entry = rows.at(row);
+        const auto& model = entry.model;
         auto* nameItem = new QTableWidgetItem(model.displayName);
-        nameItem->setData(Qt::UserRole, model.id);
-        nameItem->setData(Qt::UserRole + 1, externalCandidate);
+        nameItem->setData(kModelIdRole, model.id);
+        nameItem->setData(kModelCandidateRole, entry.candidate);
+        nameItem->setData(kModelOriginRole, entry.origin);
+        nameItem->setData(kModelStateRole, entry.state);
+        nameItem->setData(kModelPathRole, model.filePath);
+        nameItem->setData(kModelIntegrityRecordRole,
+                          entry.origin == QLatin1String("owned") &&
+                              QFileInfo(model.filePath + QStringLiteral(".source.json"))
+                                  .exists());
         nameItem->setToolTip(model.filePath);
         customModelsTable_->setItem(row, 0, nameItem);
         customModelsTable_->setItem(row, 1, new QTableWidgetItem(model.architectureHint));
         customModelsTable_->setItem(
             row, 2, new QTableWidgetItem(QStringLiteral("%1x").arg(model.scaleFactor)));
         customModelsTable_->setItem(row, 3, new QTableWidgetItem(formatByteSize(model.bytes)));
-        customModelsTable_->setItem(
-            row, 4, new QTableWidgetItem(
-                        externalCandidate ? tr("External — select and Import to register")
-                                          : model.valid ? tr("Ready")
-                                                        : tr("Invalid: %1").arg(model.reason)));
+        QString status;
+        if (entry.candidate) {
+            status = tr("Not registered: %1")
+                         .arg(model.reason.isEmpty() ? tr("select and Import to register")
+                                                     : model.reason);
+        } else {
+            status = entry.origin == QLatin1String("external") ? tr("Ready (external pin)")
+                                                               : tr("Ready");
+        }
+        customModelsTable_->setItem(row, 4, new QTableWidgetItem(status));
         for (int column = 1; column < customModelsTable_->columnCount(); ++column) {
             auto* item = customModelsTable_->item(row, column);
             item->setToolTip(item->text());
         }
     }
     modelsCountBadge_->setText(
-        tr("%1 custom").arg(QLocale().toString(static_cast<qlonglong>(models.size()))));
+        tr("%1 custom").arg(QLocale().toString(static_cast<qlonglong>(rows.size()))));
     if (!inventoryError.isEmpty())
         updateStatusBanner(inventoryError, QStringLiteral("danger"));
-    const int row = customModelsTable_->currentRow();
-    removeModelButton_->setEnabled(row >= 0 && row < registeredCount);
+
+    int restoredRow = -1;
+    if (!previousPath.isEmpty()) {
+        for (int row = 0; row < rows.size() && restoredRow < 0; ++row) {
+            if (rows.at(row).model.filePath == previousPath) restoredRow = row;
+        }
+    }
+    if (restoredRow < 0 && !previousId.isEmpty()) {
+        for (int row = 0; row < rows.size() && restoredRow < 0; ++row) {
+            if (rows.at(row).model.id == previousId) restoredRow = row;
+        }
+    }
+    if (restoredRow >= 0) customModelsTable_->setCurrentCell(restoredRow, 0);
+    else customModelsTable_->setCurrentCell(-1, -1);
+    customModelsTable_->verticalScrollBar()->setValue(previousScrollY);
+    customModelsTable_->horizontalScrollBar()->setValue(previousScrollX);
 
     rebuildModelStepRows();
+
+    const auto* currentItem = customModelsTable_->currentRow() >= 0
+                                  ? customModelsTable_->item(customModelsTable_->currentRow(), 0)
+                                  : nullptr;
+    removeModelButton_->setEnabled(
+        currentItem != nullptr &&
+        (currentItem->data(kModelStateRole).toString() == QLatin1String("registered") ||
+         currentItem->data(kModelIntegrityRecordRole).toBool()));
+
+    if (!focusName.isEmpty()) {
+        QWidget* target = findChild<QWidget*>(focusName);
+        if (target != nullptr) {
+            target->setFocus(Qt::OtherFocusReason);
+            if (focusCursor >= 0) {
+                if (auto* edit = qobject_cast<QLineEdit*>(target)) {
+                    edit->setCursorPosition(
+                        std::min(focusCursor, static_cast<int>(edit->text().size())));
+                } else if (auto* combo = qobject_cast<QComboBox*>(target);
+                           combo != nullptr && combo->lineEdit() != nullptr) {
+                    combo->lineEdit()->setCursorPosition(std::min(
+                        focusCursor, static_cast<int>(combo->lineEdit()->text().size())));
+                }
+            }
+        }
+    }
 }
 
 int AnimeJanaiManagerPanel::currentSlotNumber() const {
@@ -1282,26 +1455,36 @@ void AnimeJanaiManagerPanel::onImportOnnxModels() {
     const int selectedRow = customModelsTable_->currentRow();
     const QTableWidgetItem* selectedItem =
         selectedRow >= 0 ? customModelsTable_->item(selectedRow, 0) : nullptr;
-    if (selectedItem != nullptr && selectedItem->data(Qt::UserRole + 1).toBool()) {
+    if (selectedItem != nullptr && selectedItem->data(kModelCandidateRole).toBool()) {
         if (runner_ == nullptr) {
-            updateStatusBanner(tr("External model registration is unavailable."),
+            updateStatusBanner(tr("Model registration is unavailable."),
                                QStringLiteral("danger"));
             return;
         }
-        const QString sourcePath = selectedItem->toolTip();
+        const QString sourcePath = selectedItem->data(kModelPathRole).toString();
+        const bool external =
+            selectedItem->data(kModelOriginRole).toString() == QLatin1String("external");
         const QString externalDirectory = config_.externalModelsDir;
         const auto alive = alive_;
-        updateStatusBanner(tr("Registering external ONNX model…"), QStringLiteral("info"));
+        updateStatusBanner(external ? tr("Registering external ONNX model…")
+                                    : tr("Registering owned ONNX model…"),
+                           QStringLiteral("info"));
         runner_->runTransfer(
-            [sourcePath, externalDirectory]() -> QVariant {
+            [sourcePath, externalDirectory, external, alive]() -> QVariant {
                 mplayer::native::CustomAnimeJanaiModel registered;
                 QString error;
-                const bool ok = mplayer::native::registerExternalCustomAnimeJanaiModel(
-                    sourcePath, &registered, &error, {}, externalDirectory);
+                const auto cancelled = [alive]() {
+                    return !alive->load(std::memory_order_acquire);
+                };
+                const bool ok =
+                    external ? mplayer::native::registerExternalCustomAnimeJanaiModel(
+                                   sourcePath, &registered, &error, cancelled, externalDirectory)
+                             : mplayer::native::registerOwnedCustomAnimeJanaiModel(
+                                   sourcePath, &registered, &error, cancelled);
                 return QVariantMap{{QStringLiteral("ok"), ok},
                                    {QStringLiteral("error"), error}};
             },
-            [this, alive](const QVariant& value) {
+            [this, alive, external](const QVariant& value) {
                 if (!alive->load(std::memory_order_acquire)) return;
                 const QVariantMap result = value.toMap();
                 if (!result.value(QStringLiteral("ok")).toBool()) {
@@ -1311,7 +1494,8 @@ void AnimeJanaiManagerPanel::onImportOnnxModels() {
                 }
                 refreshCustomModels();
                 emit modelsChanged();
-                updateStatusBanner(tr("External ONNX model registered."),
+                updateStatusBanner(external ? tr("External ONNX model registered.")
+                                            : tr("Owned ONNX model registered."),
                                    QStringLiteral("success"));
             },
             [this, alive](const backend::Failure& failure) {
@@ -1384,8 +1568,12 @@ void AnimeJanaiManagerPanel::onRemoveSelectedOnnxModel() {
     const int row = customModelsTable_->currentRow();
     if (row < 0 || runner_ == nullptr) return;
     const QTableWidgetItem* item = customModelsTable_->item(row, 0);
-    if (item == nullptr) return;
-    const QString id = item->data(Qt::UserRole).toString();
+    if (item == nullptr ||
+        (item->data(kModelStateRole).toString() != QLatin1String("registered") &&
+         !item->data(kModelIntegrityRecordRole).toBool())) {
+        return;
+    }
+    const QString id = item->data(kModelIdRole).toString();
     const auto alive = alive_;
     updateStatusBanner(tr("Removing custom ONNX model…"), QStringLiteral("info"));
     runner_->runTransfer(
@@ -1429,6 +1617,7 @@ void AnimeJanaiManagerPanel::onBrowseExternalModelsFolder() {
     externalDirEdit_->setText(QDir::cleanPath(dir));
     config_.externalModelsDir = externalDirEdit_->text();
     markDirty();
+    syncCatalogWatcherDirectory();
     refreshCustomModels();
 }
 
@@ -1437,6 +1626,7 @@ void AnimeJanaiManagerPanel::onClearExternalModelsFolder() {
     externalDirEdit_->clear();
     config_.externalModelsDir.clear();
     markDirty();
+    syncCatalogWatcherDirectory();
     refreshCustomModels();
 }
 
@@ -1455,6 +1645,8 @@ void AnimeJanaiManagerPanel::onImportFullConf() {
     config_ = imported;
     loadConfigIntoWidgets(config_);
     markDirty();
+    syncCatalogWatcherDirectory();
+    refreshCustomModels();
     updateStatusBanner(tr("Imported configuration from '%1'.").arg(QFileInfo(path).fileName()),
                        QStringLiteral("success"));
 }
@@ -1479,6 +1671,8 @@ void AnimeJanaiManagerPanel::onResetDefaults() {
     config_ = mplayer::native::AnimeJanaiConfig{};
     loadConfigIntoWidgets(config_);
     markDirty();
+    syncCatalogWatcherDirectory();
+    refreshCustomModels();
     updateStatusBanner(tr("Reset AnimeJaNai settings and custom slots to defaults."),
                        QStringLiteral("info"));
 }

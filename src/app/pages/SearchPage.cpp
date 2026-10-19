@@ -4,6 +4,7 @@
 #include "gui/Clipboard.hpp"
 #include "Labels.hpp"
 #include "state/Feeds.hpp"
+#include "support/I18n.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
 #include "widgets/RangePager.hpp"
@@ -138,62 +139,66 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
     topRow->addStretch();
-    auto* mediaButton = new QPushButton(tr("Open video"), this);
-    mediaButton->setObjectName(QStringLiteral("secondary"));
-    mediaButton->setAccessibleName(tr("Open video"));
-    auto* mediaMenu = new QMenu(mediaButton);
+    mediaButton_ = new QPushButton(tr("Open video"), this);
+    mediaButton_->setObjectName(QStringLiteral("secondary"));
+    mediaButton_->setAccessibleName(tr("Open video"));
+    // The menu and its actions are owned by the button; the actions are kept
+    // because their captions are this page's to restate.
+    auto* mediaMenu = new QMenu(mediaButton_);
     mediaMenu->setObjectName(QStringLiteral("openMediaMenu"));
-    auto* fileAction = mediaMenu->addAction(tr("Video file…"));
-    fileAction->setObjectName(QStringLiteral("openVideoFile"));
-    connect(fileAction, &QAction::triggered, this, &SearchPage::mediaFileRequested);
-    auto* urlAction = mediaMenu->addAction(tr("Video URL…"));
-    urlAction->setObjectName(QStringLiteral("openVideoUrl"));
-    connect(urlAction, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
-    mediaButton->setMenu(mediaMenu);
-    topRow->addWidget(mediaButton);
+    openFileAction_ = mediaMenu->addAction(tr("Video file…"));
+    openFileAction_->setObjectName(QStringLiteral("openVideoFile"));
+    connect(openFileAction_, &QAction::triggered, this, &SearchPage::mediaFileRequested);
+    openUrlAction_ = mediaMenu->addAction(tr("Video URL…"));
+    openUrlAction_->setObjectName(QStringLiteral("openVideoUrl"));
+    connect(openUrlAction_, &QAction::triggered, this, &SearchPage::mediaUrlRequested);
+    mediaButton_->setMenu(mediaMenu);
+    topRow->addWidget(mediaButton_);
     rateLabel_ = new RateLimitLabel(client_, this);
     topRow->addWidget(rateLabel_);
 
-    auto* keysButton = new QPushButton(this);
-    keysButton->setObjectName(QStringLiteral("settingsChip"));
-    keysButton->setIcon(theme::keyboardIcon());
-    keysButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    keysButton->setToolTip(tr("Keyboard shortcuts (?)"));
-    keysButton->setAccessibleName(tr("Keyboard shortcuts"));
-    connect(keysButton, &QPushButton::clicked, this, [this, keysButton] {
+    keysButton_ = new QPushButton(this);
+    keysButton_->setObjectName(QStringLiteral("settingsChip"));
+    keysButton_->setIcon(theme::keyboardIcon());
+    keysButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    keysButton_->setToolTip(tr("Keyboard shortcuts (?)"));
+    keysButton_->setAccessibleName(tr("Keyboard shortcuts"));
+    connect(keysButton_, &QPushButton::clicked, this, [this] {
         if (keyHints_ == nullptr) {
             keyHints_ = new mplayer::shell::KeyHints(this);
         }
-        keyHints_->popupNear(keysButton->mapToGlobal(QPoint(keysButton->width() / 2, keysButton->height())));
+        keyHints_->popupNear(keysButton_->mapToGlobal(
+            QPoint(keysButton_->width() / 2, keysButton_->height())));
     });
-    topRow->addWidget(keysButton);
+    topRow->addWidget(keysButton_);
 
-    auto* settingsButton = new QPushButton(this);
-    settingsButton->setObjectName(QStringLiteral("settingsChip"));
-    settingsButton->setIcon(theme::gearIcon());
-    settingsButton->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
-    settingsButton->setToolTip(tr("API token settings"));
-    settingsButton->setAccessibleName(tr("API token settings"));
-    connect(settingsButton, &QPushButton::clicked, this, &SearchPage::settingsRequested);
-    topRow->addWidget(settingsButton);
+    settingsButton_ = new QPushButton(this);
+    settingsButton_->setObjectName(QStringLiteral("settingsChip"));
+    settingsButton_->setIcon(theme::gearIcon());
+    settingsButton_->setIconSize(QSize(theme::kIconSize, theme::kIconSize));
+    settingsButton_->setToolTip(tr("API token settings"));
+    settingsButton_->setAccessibleName(tr("API token settings"));
+    connect(settingsButton_, &QPushButton::clicked, this, &SearchPage::settingsRequested);
+    topRow->addWidget(settingsButton_);
     root->addLayout(topRow);
 
     auto* searchRow = new QHBoxLayout();
     query_ = new QLineEdit(this);
+    query_->setObjectName(QStringLiteral("searchQuery"));
     query_->setPlaceholderText(tr("Search by title — Enter or the button"));
     query_->setClearButtonEnabled(true);
-    auto* searchButton = new QPushButton(tr("Search"), this);
-    searchButton->setObjectName(QStringLiteral("primary"));
+    searchButton_ = new QPushButton(tr("Search"), this);
+    searchButton_->setObjectName(QStringLiteral("primary"));
     query_->installEventFilter(this);
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
-    connect(searchButton, &QPushButton::clicked, this, &SearchPage::search);
+    connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);
     connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
         if (text.trimmed().isEmpty() && !browseMode_) {
             loadOngoing();
         }
     });
     searchRow->addWidget(query_);
-    searchRow->addWidget(searchButton);
+    searchRow->addWidget(searchButton_);
     root->addLayout(searchRow);
 
     resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
@@ -208,11 +213,11 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     auto* discoveryLayout = new QVBoxLayout(discovery);
     discoveryLayout->setContentsMargins(0, 0, 0, 0);
     discoveryLayout->setSpacing(theme::kSpacingMedium);
-    CarouselSection* recent = buildCarousel(tr("Recently opened"), kRecentKey);
-    CarouselSection* ongoing = buildCarousel(tr("Currently airing"), QStringLiteral("ongoing"));
-    CarouselSection* popular = buildCarousel(tr("Popular on Mikai"), QStringLiteral("popular"));
-    FeedSection* updates = buildFeedSection(tr("Latest updates"), QStringLiteral("updates"));
-    FeedSection* schedule = buildFeedSection(tr("Release schedule"), QStringLiteral("schedule"));
+    CarouselSection* recent = buildCarousel(kRecentKey);
+    CarouselSection* ongoing = buildCarousel(QStringLiteral("ongoing"));
+    CarouselSection* popular = buildCarousel(QStringLiteral("popular"));
+    FeedSection* updates = buildFeedSection(QStringLiteral("updates"));
+    FeedSection* schedule = buildFeedSection(QStringLiteral("schedule"));
     discoveryLayout->addWidget(recent->section);
     discoveryLayout->addWidget(ongoing->section);
     discoveryLayout->addWidget(popular->section);
@@ -247,6 +252,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     root->addWidget(formatBar_);
 
     results_ = new QListWidget(this);
+    results_->setObjectName(QStringLiteral("searchResults"));
     results_->setIconSize(QSize(theme::kSearchPosterWidth, theme::kSearchPosterHeight));
     results_->setTextElideMode(Qt::ElideRight);
     results_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -287,6 +293,271 @@ SearchPage::~SearchPage() {
     qDeleteAll(feeds_);
 }
 
+QString SearchPage::carouselHeading(const QString& key) const {
+    if (key == kRecentKey) return tr("Recently opened");
+    if (key == QLatin1String("ongoing")) return tr("Currently airing");
+    if (key == QLatin1String("popular")) return tr("Popular on Mikai");
+    return {};
+}
+
+QString SearchPage::feedHeading(const QString& key) const {
+    if (key == QLatin1String("updates")) return tr("Latest updates");
+    if (key == QLatin1String("schedule")) return tr("Release schedule");
+    return {};
+}
+
+QString SearchPage::feedEmptyLine(const QString& key) const {
+    return key == QLatin1String("updates") ? tr("No updates yet.")
+                                           : tr("No airings in the schedule yet.");
+}
+
+QString SearchPage::feedCountLine(const QString& key, int count) const {
+    return key == QLatin1String("updates") ? tr("%n recent update(s)", nullptr, count)
+                                           : tr("%n upcoming airing(s)", nullptr, count);
+}
+
+QString SearchPage::blockFailureContext(const QString& key) const {
+    if (key == QLatin1String("updates")) return tr("Failed to load updates");
+    if (key == QLatin1String("schedule")) return tr("Failed to load schedule");
+    return tr("Failed to load");
+}
+
+QString SearchPage::feedDayLabel(const QString& dayKey) const {
+    if (dayKey == QLatin1String("monday")) return tr("Mon");
+    if (dayKey == QLatin1String("tuesday")) return tr("Tue");
+    if (dayKey == QLatin1String("wednesday")) return tr("Wed");
+    if (dayKey == QLatin1String("thursday")) return tr("Thu");
+    if (dayKey == QLatin1String("friday")) return tr("Fri");
+    if (dayKey == QLatin1String("saturday")) return tr("Sat");
+    if (dayKey == QLatin1String("sunday")) return tr("Sun");
+    return {};
+}
+
+void SearchPage::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void SearchPage::retranslateUi() {
+    // Only words move. The query keeps its text and its focus, the result page
+    // its rows, the format bar its filter, the carousels their cards and the
+    // feeds the rows they already hold - and nothing below reaches the network.
+    if (query_ != nullptr) {
+        query_->setPlaceholderText(tr("Search by title — Enter or the button"));
+    }
+    if (mediaButton_ != nullptr) {
+        mediaButton_->setText(tr("Open video"));
+        mediaButton_->setAccessibleName(tr("Open video"));
+    }
+    if (openFileAction_ != nullptr) openFileAction_->setText(tr("Video file…"));
+    if (openUrlAction_ != nullptr) openUrlAction_->setText(tr("Video URL…"));
+    if (keysButton_ != nullptr) {
+        keysButton_->setToolTip(tr("Keyboard shortcuts (?)"));
+        keysButton_->setAccessibleName(tr("Keyboard shortcuts"));
+    }
+    if (settingsButton_ != nullptr) {
+        settingsButton_->setToolTip(tr("API token settings"));
+        settingsButton_->setAccessibleName(tr("API token settings"));
+    }
+    if (searchButton_ != nullptr) searchButton_->setText(tr("Search"));
+    if (resultsHeading_ != nullptr) {
+        // The heading names the mode the page is in, never the request that is
+        // running: browse shows a recommendation set, everything else a search.
+        resultsHeading_->setText(browseMode_ ? tr("Recommendations") : tr("Search results"));
+    }
+    // The bar's own "All (n)" caption is app wording; its counts, its tabs and
+    // the active filter are read back from the state they already hold.
+    if (formatBar_ != nullptr) rebuildFormatBar();
+    renderStatus();
+    if (results_ != nullptr && results_->count() == static_cast<int>(entries_.size())) {
+        // Re-worded where they stand. Rebuilding the list would drop the
+        // selection and the scroll position the viewer is reading, and would
+        // also re-ask for any thumb whose fetch had failed.
+        for (int row = 0; row < results_->count(); ++row) {
+            QListWidgetItem* item = results_->item(row);
+            const QString text = resultRowText(entries_.at(row));
+            item->setText(text);
+            item->setToolTip(text);
+        }
+    }
+    QStringList sectionKeys{kRecentKey};
+    sectionKeys += feeds::all();
+    for (const QString& key : sectionKeys) {
+        if (CarouselSection* section = carouselSection(key)) {
+            if (section->heading != nullptr) section->heading->setText(carouselHeading(key));
+            section->previous->setToolTip(tr("Previous page (or Alt + mouse wheel)"));
+            section->next->setToolTip(tr("Next page (or Alt + mouse wheel)"));
+            renderCarouselLine(*section);
+            if (section->hasFailure) {
+                // The failure itself belongs to the surface, which re-localizes
+                // what the app words and keeps what the backend produced. Only
+                // the clause this page wrote is re-sent.
+                section->failure->setContext(blockFailureContext(key));
+            }
+        }
+        if (FeedSection* section = feedSection(key)) {
+            if (section->heading != nullptr) section->heading->setText(feedHeading(key));
+            section->retry->setText(tr("Refresh"));
+            renderFeedLine(key, *section);
+            renderFeedRows(*section);
+            if (section->hasFailure) {
+                section->failure->setContext(blockFailureContext(key));
+            }
+        }
+    }
+}
+
+void SearchPage::renderCarouselLine(CarouselSection& section) {
+    if (section.state == nullptr) return;
+    switch (section.line) {
+        case CarouselSection::Line::Unloaded:
+            // The recently-opened block has no request behind it: it says so
+            // until a title is recorded.
+            section.state->setText(tr("Collection not loaded yet"));
+            break;
+        case CarouselSection::Line::Loading:
+            section.state->setText(tr("Loading collection…"));
+            break;
+        case CarouselSection::Line::Empty:
+            section.state->setText(tr("No titles in this collection yet."));
+            break;
+        case CarouselSection::Line::Count:
+            section.state->setText(tr("%n title(s)", nullptr, section.lineCount));
+            break;
+    }
+}
+
+void SearchPage::renderFeedLine(const QString& key, FeedSection& section) {
+    if (section.state == nullptr) return;
+    switch (section.line) {
+        case FeedSection::Line::Loading:
+            // Each feed words its own progress; a load has already installed
+            // the state this restates.
+            section.state->setText(key == QLatin1String("schedule") ? tr("Loading schedule…")
+                                                                    : tr("Loading new episodes…"));
+            break;
+        case FeedSection::Line::Empty:
+            section.state->setText(feedEmptyLine(key));
+            break;
+        case FeedSection::Line::Count:
+            section.state->setText(feedCountLine(key, section.lineCount));
+            break;
+    }
+}
+
+void SearchPage::renderFeedRows(FeedSection& section) {
+    // One pass over the labels the rows already hold: the row widgets, their
+    // order and the host's scroll stay exactly where they are.
+    const qsizetype count = qMin(section.rowMeta.size(), section.rowMetaLabels.size());
+    for (qsizetype index = 0; index < count; ++index) {
+        QLabel* label = section.rowMetaLabels.at(index).data();
+        if (label == nullptr) continue;
+        label->setText(composeFeedMeta(section.rowMeta.at(index)));
+    }
+}
+
+void SearchPage::renderStatus() {
+    if (status_ == nullptr) return;
+    switch (statusLine_) {
+        case Status::BrowseHint:
+            status_->setText(
+                tr("Click a card to open a title · search by title is available above"));
+            break;
+        case Status::LoadingBrowse:
+            status_->setText(tr("Loading collection…"));
+            break;
+        case Status::LoadingSearch:
+            status_->setText(tr("Searching…"));
+            break;
+        case Status::Results:
+            status_->setText(entries_.isEmpty() ? tr("Nothing found")
+                                                : tr("Found: %1").arg(total_));
+            break;
+        case Status::Failure: {
+            // The same rule the failure surface uses: only a code the app words
+            // itself is re-localized, a line the backend produced stays as it
+            // arrived.
+            backend::Failure failure = statusFailure_;
+            const QString localized = localizedApiError(failure.code);
+            if (!localized.isEmpty()) failure.message = localized;
+            status_->setText(backend::failureLine(failure));
+            break;
+        }
+        case Status::Notice:
+            status_->setText(noticeText(statusNotice_));
+            break;
+    }
+}
+
+QString SearchPage::noticeText(Notice notice) const {
+    switch (notice) {
+        case Notice::CopyLink:
+            return tr("Failed to copy link");
+        case Notice::CopyId:
+            return tr("Failed to copy ID");
+        case Notice::Browser:
+            return tr("Failed to open in browser");
+    }
+    return {};
+}
+
+QString SearchPage::composeFeedMeta(const FeedRowMeta& meta) const {
+    QStringList parts;
+    // A schedule row is the one that names its weekday first, and that is also
+    // what decides where the clock text goes: after the weekday there, last for
+    // an updates row.
+    const bool scheduleRow = !meta.dayKey.isEmpty();
+    const QString episode =
+        meta.episode.isEmpty() ? (meta.newEpisode ? tr("New episode") : QString())
+                               : tr("Episode %1").arg(meta.episode);
+    if (scheduleRow) {
+        parts << feedDayLabel(meta.dayKey);
+        if (!meta.when.isEmpty()) parts << meta.when;
+        if (!episode.isEmpty()) parts << episode;
+    } else if (!episode.isEmpty()) {
+        parts << episode;
+    }
+    if (!meta.team.isEmpty()) parts << meta.team;
+    if (!meta.kind.isEmpty()) {
+        parts << (meta.kind == QLatin1String("voice")
+                      ? tr("dub")
+                      : (meta.kind == QLatin1String("sub") ? tr("subs") : meta.kind));
+    }
+    if (!meta.provider.isEmpty()) {
+        QString capitalized = meta.provider;
+        capitalized[0] = capitalized.at(0).toUpper();
+        parts << capitalized;
+    }
+    if (!scheduleRow && !meta.when.isEmpty()) parts << meta.when;
+    // A weekday or episode label that did not resolve leaves an empty part
+    // rather than a stray separator.
+    parts.removeAll(QString());
+    return parts.join(QStringLiteral(" · "));
+}
+
+QString SearchPage::resultRowText(const backend::AnimeSummary& entry) const {
+    // List responses already carry the airing status and the planned episode
+    // count, so a search row reads like a home card without a detail call.
+    QStringList parts;
+    parts << backend::displayName(entry.titles);
+    if (entry.year.has_value()) {
+        parts << QString::number(*entry.year);
+    }
+    if (!entry.format.isEmpty()) {
+        parts << entry.format.toUpper();
+    }
+    const QString statusText = labels::status(entry.status);
+    if (!statusText.isEmpty()) {
+        parts << statusText;
+    }
+    if (entry.episodes.has_value() && *entry.episodes > 0) {
+        parts << tr("%n episode(s)", nullptr, *entry.episodes);
+    }
+    return parts.join(QStringLiteral(" · "));
+}
+
 void SearchPage::closeTransientOverlays() {
     if (keyHints_ != nullptr) keyHints_->close();
 }
@@ -310,8 +581,7 @@ bool SearchPage::escapeSearch() {
     return false;
 }
 
-SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
-                                                       const QString& key) {
+SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
     auto* section = new CarouselSection();
     section->section = new QWidget(this);
     auto* layout = new QVBoxLayout(section->section);
@@ -319,9 +589,9 @@ SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& heading,
     layout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
 
     auto* header = new QHBoxLayout();
-    auto* title = new QLabel(heading, section->section);
-    title->setObjectName(QStringLiteral("sectionHeading"));
-    header->addWidget(title);
+    section->heading = new QLabel(carouselHeading(key), section->section);
+    section->heading->setObjectName(QStringLiteral("sectionHeading"));
+    header->addWidget(section->heading);
     header->addStretch();
     section->previous = new QPushButton(section->section);
     section->previous->setIcon(theme::chevronLeftIcon(16));
@@ -464,8 +734,7 @@ void SearchPage::keyPressEvent(QKeyEvent* event) {
     QWidget::keyPressEvent(event);
 }
 
-SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
-                                                     const QString& key) {
+SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& key) {
     auto* section = new FeedSection();
     section->section = new QWidget(this);
     auto* layout = new QVBoxLayout(section->section);
@@ -473,9 +742,9 @@ SearchPage::FeedSection* SearchPage::buildFeedSection(const QString& heading,
     layout->setSpacing(theme::kSpacingSmall - theme::kSpacingXs);
 
     auto* header = new QHBoxLayout();
-    auto* title = new QLabel(heading, section->section);
-    title->setObjectName(QStringLiteral("sectionHeading"));
-    header->addWidget(title);
+    section->heading = new QLabel(feedHeading(key), section->section);
+    section->heading->setObjectName(QStringLiteral("sectionHeading"));
+    header->addWidget(section->heading);
     header->addStretch();
     section->retry = new QPushButton(tr("Refresh"), section->section);
     section->retry->setObjectName(QStringLiteral("textAction"));
@@ -604,17 +873,22 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
     }
     section->section->show();
     clearBlockFailure(section->failure, section->state);
+    section->hasFailure = false;
     QList<backend::AnimeSummary> shown = items;
     while (shown.size() > theme::kHomeCarouselMaxTitles) {
         shown.removeLast();
     }
     carouselEntries_.insert(key, shown);
     if (shown.isEmpty()) {
-        section->state->setText(tr("No titles in this collection yet."));
+        section->line = CarouselSection::Line::Empty;
+        section->lineCount = 0;
+        renderCarouselLine(*section);
         section->scroll->hide();
         return;
     }
-    section->state->setText(tr("%n title(s)", nullptr, static_cast<int>(shown.size())));
+    section->line = CarouselSection::Line::Count;
+    section->lineCount = static_cast<int>(shown.size());
+    renderCarouselLine(*section);
 
     while (section->cards->count() > 0) {
         QLayoutItem* item = section->cards->takeAt(0);
@@ -822,8 +1096,8 @@ void SearchPage::loadOngoing() {
     results_->clear();
     pager_->hide();
     resultsHeading_->setText(tr("Recommendations"));
-    status_->setText(
-        tr("Click a card to open a title · search by title is available above"));
+    statusLine_ = Status::BrowseHint;
+    renderStatus();
     for (const QString& key : feeds::all()) {
         loadFeed(key);
     }
@@ -839,8 +1113,11 @@ void SearchPage::requestRecommendation(const QString& key) {
     if (!enabledFeeds_.contains(key)) {
         return;
     }
-    section->state->setText(tr("Loading collection…"));
+    section->line = CarouselSection::Line::Loading;
+    section->lineCount = 0;
+    renderCarouselLine(*section);
     clearBlockFailure(section->failure, section->state);
+    section->hasFailure = false;
     if (carouselEntries_.value(key).isEmpty()) {
         section->scroll->hide();
     }
@@ -863,7 +1140,9 @@ void SearchPage::requestRecommendation(const QString& key) {
             }
             rateLabel_->refresh();
             CarouselSection* current = carouselSection(key);
-            showBlockFailure(current->failure, current->state, failure, tr("Failed to load"));
+            current->hasFailure = true;
+            showBlockFailure(current->failure, current->state, failure,
+                             blockFailureContext(key));
         });
 }
 
@@ -874,7 +1153,9 @@ void SearchPage::loadUpdates() {
     FeedSection* section = feedSection(QStringLiteral("updates"));
     feedSeq_[QStringLiteral("updates")] += 1;
     const int seq = feedSeq_[QStringLiteral("updates")];
-    section->state->setText(tr("Loading new episodes…"));
+    section->line = FeedSection::Line::Loading;
+    section->lineCount = 0;
+    renderFeedLine(QStringLiteral("updates"), *section);
     section->retry->setEnabled(false);
     runner_.run(
         [this] { return QVariant::fromValue(client_.getUpdates(1, 12)); },
@@ -885,7 +1166,9 @@ void SearchPage::loadUpdates() {
             rateLabel_->refresh();
             FeedSection* current = feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
-            QList<std::pair<backend::AnimeSummary, QString>> rows;
+            // The row line is kept as the parts it was built from, so a
+            // language switch re-words it without asking the backend again.
+            QList<std::pair<backend::AnimeSummary, FeedRowMeta>> rows;
             const backend::UpdatesResult updates = result.value<backend::UpdatesResult>();
             for (int index = 0; index < updates.items.size() && index < theme::kHomeFeedMaxRows;
                  ++index) {
@@ -893,45 +1176,25 @@ void SearchPage::loadUpdates() {
                 if (update.anime.ref.isEmpty()) {
                     continue;
                 }
-                QString team = update.team_name;
-                if (team.isEmpty()) {
+                FeedRowMeta meta;
+                meta.episode = labels::variant(update.episode);
+                meta.newEpisode = meta.episode.isEmpty();
+                meta.team = update.team_name;
+                if (meta.team.isEmpty()) {
                     QStringList names;
                     for (const backend::Team& entry : update.teams) {
                         if (!entry.name.isEmpty()) {
                             names << entry.name;
                         }
                     }
-                    team = names.join(QLatin1String(", "));
+                    meta.team = names.join(QLatin1String(", "));
                 }
-                const QString releaseKind =
-                    update.kind == QLatin1String("voice")
-                        ? tr("dub")
-                        : (update.kind == QLatin1String("sub") ? tr("subs") : update.kind);
-                const QString episode = labels::variant(update.episode);
-                QStringList parts;
-                parts << (episode.isEmpty() ? tr("New episode")
-                                           : tr("Episode %1").arg(episode));
-                if (!team.isEmpty()) {
-                    parts << team;
-                }
-                if (!releaseKind.isEmpty()) {
-                    parts << releaseKind;
-                }
-                if (!update.provider.isEmpty()) {
-                    QString capitalized = update.provider;
-                    capitalized[0] = capitalized.at(0).toUpper();
-                    parts << capitalized;
-                }
-                const QString when = formatFeedTime(update.published_at);
-                if (!when.isEmpty()) {
-                    parts << when;
-                }
-                rows.append({update.anime, parts.join(QStringLiteral(" · "))});
+                meta.kind = update.kind;
+                meta.provider = update.provider;
+                meta.when = formatFeedTime(update.published_at);
+                rows.append({update.anime, meta});
             }
-            showFeedRows(QStringLiteral("updates"), rows,
-                         rows.isEmpty()
-                             ? tr("No updates yet.")
-                             : tr("%n recent update(s)", nullptr, static_cast<int>(rows.size())));
+            showFeedRows(QStringLiteral("updates"), rows);
         },
         [this, seq](const backend::Failure& failure) {
             if (seq != feedSeq_[QStringLiteral("updates")]) {
@@ -941,8 +1204,9 @@ void SearchPage::loadUpdates() {
             FeedSection* current = feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
             current->rowsHost->hide();
+            current->hasFailure = true;
             showBlockFailure(current->failure, current->state, failure,
-                             tr("Failed to load updates"));
+                             blockFailureContext(QStringLiteral("updates")));
         });
 }
 
@@ -953,7 +1217,9 @@ void SearchPage::loadSchedule() {
     FeedSection* section = feedSection(QStringLiteral("schedule"));
     feedSeq_[QStringLiteral("schedule")] += 1;
     const int seq = feedSeq_[QStringLiteral("schedule")];
-    section->state->setText(tr("Loading schedule…"));
+    section->line = FeedSection::Line::Loading;
+    section->lineCount = 0;
+    renderFeedLine(QStringLiteral("schedule"), *section);
     section->retry->setEnabled(false);
     runner_.run(
         [this] { return QVariant::fromValue(client_.getSchedule()); },
@@ -968,11 +1234,11 @@ void SearchPage::loadSchedule() {
             // schedule is only useful if it starts with what airs next.
             static const char* kDayKeys[] = {"monday", "tuesday", "wednesday", "thursday",
                                              "friday",  "saturday", "sunday"};
-            const QStringList kDayLabels = {tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"),
-                                             tr("Fri"), tr("Sat"), tr("Sun")};
             const int today = QDate::currentDate().dayOfWeek() - 1;
             const backend::ScheduleResult schedule = result.value<backend::ScheduleResult>();
-            QList<std::pair<backend::AnimeSummary, QString>> rows;
+            // Every row keeps its weekday key rather than the label it was
+            // painted with, so a language switch re-words the whole list.
+            QList<std::pair<backend::AnimeSummary, FeedRowMeta>> rows;
             for (int offset = 0; offset < 7 && rows.size() < theme::kHomeFeedMaxRows; ++offset) {
                 const int day = (today + offset) % 7;
                 QVector<backend::AiringEntry> airing = schedule.days.value(QLatin1String(kDayKeys[day]));
@@ -984,27 +1250,17 @@ void SearchPage::loadSchedule() {
                     if (entry.finished || entry.anime.ref.isEmpty()) {
                         continue;
                     }
-                    QStringList parts;
-                    parts << kDayLabels.at(day);
-                    const QString when = formatFeedTime(entry.airing, true);
-                    if (!when.isEmpty()) {
-                        parts << when;
-                    }
-                    const QString episode = labels::variant(entry.episode);
-                    if (!episode.isEmpty()) {
-                        parts << tr("Episode %1").arg(episode);
-                    }
-                    rows.append({entry.anime, parts.join(QStringLiteral(" · "))});
+                    FeedRowMeta meta;
+                    meta.dayKey = QLatin1String(kDayKeys[day]);
+                    meta.when = formatFeedTime(entry.airing, true);
+                    meta.episode = labels::variant(entry.episode);
+                    rows.append({entry.anime, meta});
                     if (rows.size() >= theme::kHomeFeedMaxRows) {
                         break;
                     }
                 }
             }
-            showFeedRows(QStringLiteral("schedule"), rows,
-                         rows.isEmpty()
-                             ? tr("No airings in the schedule yet.")
-                             : tr("%n upcoming airing(s)", nullptr,
-                                  static_cast<int>(rows.size())));
+            showFeedRows(QStringLiteral("schedule"), rows);
         },
         [this, seq](const backend::Failure& failure) {
             if (seq != feedSeq_[QStringLiteral("schedule")]) {
@@ -1014,14 +1270,15 @@ void SearchPage::loadSchedule() {
             FeedSection* current = feedSection(QStringLiteral("schedule"));
             current->retry->setEnabled(true);
             current->rowsHost->hide();
+            current->hasFailure = true;
             showBlockFailure(current->failure, current->state, failure,
-                             tr("Failed to load schedule"));
+                             blockFailureContext(QStringLiteral("schedule")));
         });
 }
 
 void SearchPage::showFeedRows(
-    const QString& key, const QList<std::pair<backend::AnimeSummary, QString>>& entries,
-    const QString& emptyText) {
+    const QString& key,
+    const QList<std::pair<backend::AnimeSummary, FeedRowMeta>>& entries) {
     FeedSection* section = feedSection(key);
     while (section->rows->count() > 0) {
         QLayoutItem* item = section->rows->takeAt(0);
@@ -1031,14 +1288,18 @@ void SearchPage::showFeedRows(
         delete item;
     }
     feedPosterLabels_.insert(key, {});
+    section->rowMeta.clear();
+    section->rowMetaLabels.clear();
     section->failure->clear();
+    section->hasFailure = false;
+    section->line = entries.isEmpty() ? FeedSection::Line::Empty : FeedSection::Line::Count;
+    section->lineCount = static_cast<int>(entries.size());
+    renderFeedLine(key, *section);
     if (entries.isEmpty()) {
-        section->state->setText(emptyText);
         section->state->show();
         section->rowsHost->hide();
         return;
     }
-    section->state->setText(emptyText);
     section->state->hide();
 
     QVector<FeedPosterSlot> posters;
@@ -1073,12 +1334,16 @@ void SearchPage::showFeedRows(
                 [this, ref, row](const QPoint& position) {
                     animeCardMenu(ref, row->mapToGlobal(position));
                 });
-        auto* meta = new QLabel(entry.second, row);
+        auto* meta = new QLabel(composeFeedMeta(entry.second), row);
         meta->setObjectName(QStringLiteral("homeFeedMeta"));
         meta->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         rowLayout->addWidget(title, 1);
         rowLayout->addWidget(meta);
         section->rows->addWidget(row);
+        // Kept with the row so the line can be re-worded in place: the row
+        // widget itself, its poster and its order never change for a language.
+        section->rowMeta.append(entry.second);
+        section->rowMetaLabels.append(meta);
     }
     section->rowsHost->show();
     feedPosterLabels_.insert(key, posters);
@@ -1088,7 +1353,8 @@ void SearchPage::showFeedRows(
 }
 
 void SearchPage::fetchPage(int page) {
-    status_->setText(browseMode_ ? tr("Loading collection…") : tr("Searching…"));
+    statusLine_ = browseMode_ ? Status::LoadingBrowse : Status::LoadingSearch;
+    renderStatus();
     runResultsRequest(page);
 }
 
@@ -1174,8 +1440,8 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
         formatTotalsSeq_ += 1;
         formatTotalsQuery_ = currentQuery_;
     }
-    status_->setText(entries_.isEmpty() ? tr("Nothing found")
-                                        : tr("Found: %1").arg(total_));
+    statusLine_ = Status::Results;
+    renderStatus();
     rebuildFormatBar();
     populateRows();
     refreshFormatTotals();
@@ -1202,11 +1468,24 @@ void SearchPage::rebuildFormatBar() {
             present << format;
         }
     }
+    // A filtered answer carries the format that was asked for and nothing else.
+    // Hiding the bar on that single-format response would strand the reader in
+    // the filter: the control that asked for it, and the All escape that undoes
+    // it, would both leave the screen. The active format therefore keeps its tab
+    // (counting zero when the filtered page came back empty) and All sits beside
+    // it, so the bar stays on screen exactly while there is a filter to escape.
+    const bool filtering = !activeFormat_.isEmpty();
+    if (filtering && !present.contains(activeFormat_)) {
+        present << activeFormat_;
+    }
+    // Signals stay blocked for the whole rebuild: removing and re-adding tabs
+    // moves the current index, and an unblocked move would look like the reader
+    // picking a filter and start a new request over a language switch.
     formatBar_->blockSignals(true);
     while (formatBar_->count() > 0) {
         formatBar_->removeTab(0);
     }
-    if (present.size() >= 2) {
+    if (present.size() >= 2 || filtering) {
         formatBar_->addTab(tr("All (%1)").arg(total_));
         formatBar_->setTabData(0, QStringLiteral("all"));
         for (const QString& format : present) {
@@ -1219,19 +1498,19 @@ void SearchPage::rebuildFormatBar() {
         // The request that just landed may have carried the filter, so the tab
         // it belongs to has to be the one shown rather than "All".
         int restore = 0;
-        if (!activeFormat_.isEmpty()) {
+        if (filtering) {
             restore = formatBar_->count() - 1;
             while (restore > 0 && formatBar_->tabData(restore).toString() != activeFormat_) {
                 --restore;
             }
             if (formatBar_->tabData(restore).toString() != activeFormat_) {
+                // Unreachable while the active format is offered above, but the
+                // state must never claim a filter the bar cannot show.
                 restore = 0;
                 activeFormat_.clear();
             }
         }
-        formatBar_->blockSignals(true);
         formatBar_->setCurrentIndex(restore);
-        formatBar_->blockSignals(false);
         formatBar_->show();
     } else {
         formatBar_->hide();
@@ -1299,24 +1578,7 @@ void SearchPage::refreshFormatTotals() {
 void SearchPage::populateRows() {
     results_->clear();
     for (const backend::AnimeSummary& entry : entries_) {
-        // List responses already carry the airing status and the planned episode
-        // count, so a search row reads like a home card without a detail call.
-        QStringList parts;
-        parts << backend::displayName(entry.titles);
-        if (entry.year.has_value()) {
-            parts << QString::number(*entry.year);
-        }
-        if (!entry.format.isEmpty()) {
-            parts << entry.format.toUpper();
-        }
-        const QString statusText = labels::status(entry.status);
-        if (!statusText.isEmpty()) {
-            parts << statusText;
-        }
-        if (entry.episodes.has_value() && *entry.episodes > 0) {
-            parts << tr("%n episode(s)", nullptr, *entry.episodes);
-        }
-        const QString label = parts.join(QStringLiteral(" · "));
+        const QString label = resultRowText(entry);
         auto* item = new QListWidgetItem(label, results_);
         item->setToolTip(label);
         QVariantMap data;
@@ -1344,13 +1606,21 @@ void SearchPage::onError(const backend::Failure& failure) {
 }
 
 void SearchPage::reportFailure(const backend::Failure& failure) {
-    status_->setText(backend::failureLine(failure));
+    // The failure itself is kept, not just its line: a language switch restates
+    // the app's own wording for the code and leaves the backend's line alone.
+    statusLine_ = Status::Failure;
+    statusFailure_ = failure;
+    renderStatus();
     QAccessibleEvent event(status_, QAccessible::Alert);
     QAccessible::updateAccessibility(&event);
 }
 
-void SearchPage::reportFailure(const QString& message) {
-    reportFailure(backend::Failure{QString(), message, 0});
+void SearchPage::reportFailure(Notice notice) {
+    statusLine_ = Status::Notice;
+    statusNotice_ = notice;
+    renderStatus();
+    QAccessibleEvent event(status_, QAccessible::Alert);
+    QAccessible::updateAccessibility(&event);
 }
 
 void SearchPage::showBlockFailure(FailureView* view, QLabel* state, const backend::Failure& failure,
@@ -1403,12 +1673,12 @@ void SearchPage::resultsContextMenu(const QPoint& position) {
     QAction* copyLink = menu.addAction(tr("Copy link"));
     copyLink->setToolTip(tr("Copy the page address on mikai.me"));
     connect(copyLink, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(tr("Failed to copy link"));
+        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(Notice::CopyLink);
     });
     QAction* copyRef = menu.addAction(tr("Copy ID"));
     copyRef->setToolTip(tr("Copy the title identifier"));
     connect(copyRef, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(ref)) reportFailure(tr("Failed to copy ID"));
+        if (!mikai::gui::copyText(ref)) reportFailure(Notice::CopyId);
     });
     menu.exec(results_->mapToGlobal(position));
 }
@@ -1421,18 +1691,18 @@ void SearchPage::animeCardMenu(const QString& ref, const QPoint& globalPos) {
     QAction* copyLink = menu.addAction(tr("Copy link"));
     copyLink->setToolTip(tr("Copy the page address on mikai.me"));
     connect(copyLink, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(tr("Failed to copy link"));
+        if (!mikai::gui::copyText(pageUrlFor(ref))) reportFailure(Notice::CopyLink);
     });
     QAction* copyRef = menu.addAction(tr("Copy ID"));
     copyRef->setToolTip(tr("Copy the title identifier"));
     connect(copyRef, &QAction::triggered, this, [this, ref] {
-        if (!mikai::gui::copyText(ref)) reportFailure(tr("Failed to copy ID"));
+        if (!mikai::gui::copyText(ref)) reportFailure(Notice::CopyId);
     });
     QAction* browser = menu.addAction(tr("Open in browser"));
     browser->setToolTip(tr("Open the page on mikai.me"));
     connect(browser, &QAction::triggered, this, [this, ref] {
         if (!QDesktopServices::openUrl(QUrl(pageUrlFor(ref)))) {
-            reportFailure(tr("Failed to open in browser"));
+            reportFailure(Notice::Browser);
         }
     });
     menu.exec(globalPos);

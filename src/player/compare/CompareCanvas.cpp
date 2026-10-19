@@ -84,6 +84,44 @@ void fitSelectorLabel(QToolButton* button, const QString& full) {
     button->setText((elided.isEmpty() ? full : elided) + suffix);
 }
 
+/// True when two choice lists describe the same menu tree: same entries in the
+/// same order under the same paths, with the same availability. Only the words
+/// (label, tooltip) differ, which is exactly what a retranslation changes.
+bool sameChoiceShape(const QVector<ChoiceEntry>& a, const QVector<ChoiceEntry>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (qsizetype i = 0; i < a.size(); ++i) {
+        if (a.at(i).id != b.at(i).id || a.at(i).path != b.at(i).path ||
+            a.at(i).disabled != b.at(i).disabled) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Rewrites the leaves of an existing fill in place. No action is created or
+/// destroyed, so an open menu keeps its rows and a handler that triggered the
+/// refresh keeps running on a live action.
+void restateChoiceLeaves(const QVector<QAction*>& leaves, const QVector<ChoiceEntry>& entries) {
+    if (leaves.size() != entries.size()) {
+        return;
+    }
+    for (qsizetype i = 0; i < entries.size(); ++i) {
+        QAction* action = leaves.at(i);
+        if (action == nullptr) {
+            continue;
+        }
+        if (action->text() != entries.at(i).label) {
+            action->setText(entries.at(i).label);
+        }
+        action->setEnabled(!entries.at(i).disabled);
+        if (action->toolTip() != entries.at(i).tooltip) {
+            action->setToolTip(entries.at(i).tooltip);
+        }
+    }
+}
+
 }  // namespace
 
 /// A picture that can be clipped. Split is drawn by clipping each side of the
@@ -353,11 +391,17 @@ void CompareCanvas::updateBadge(QToolButton* badge, int side) {
     }
     menu->setEnabled(true);
     if (choices_ != builtChoices || leaves.size() != choices_.size()) {
-        fillChoiceMenu(menu, choices_, selected, &leaves);
+        // A menu tree that keeps its entries only has new words: restating the
+        // leaves keeps every action (and an open menu) alive. Anything that
+        // changes the tree is built fresh.
+        if (leaves.size() == choices_.size() && sameChoiceShape(choices_, builtChoices)) {
+            restateChoiceLeaves(leaves, choices_);
+        } else {
+            fillChoiceMenu(menu, choices_, selected, &leaves);
+        }
         builtChoices = choices_;
-    } else {
-        markChoice(leaves, choices_, selected);
     }
+    markChoice(leaves, choices_, selected);
 }
 
 QRect CompareCanvas::imageBarRect() const {
@@ -760,6 +804,28 @@ bool CompareCanvas::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
     return QGraphicsView::eventFilter(watched, event);
+}
+
+void CompareCanvas::changeEvent(QEvent* event) {
+    QGraphicsView::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void CompareCanvas::retranslateUi() {
+    // The badge label, its tooltip and its spoken name are this view's words,
+    // and the status pill is painted from tr() on the next repaint. The side
+    // names and candidate labels are the caller's and arrive through
+    // setSideNames/setChoices on the same event, so old text is never re-read.
+    // updateBadge() restates the menu tree only when the caller's choices
+    // changed, so an open menu keeps its actions and its handler.
+    updateBadge(badgeA_, 0);
+    updateBadge(badgeB_, 1);
+    placeBadges();
+    if (viewport() != nullptr) {
+        viewport()->update();
+    }
 }
 
 }  // namespace mplayer::shell

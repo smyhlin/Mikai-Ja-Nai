@@ -2,6 +2,7 @@
 
 #include "theme/Metrics.hpp"
 
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -87,6 +88,38 @@ RangePager::RangePager(int pageSize, QWidget* parent)
 
 RangePager::~RangePager() = default;
 
+void RangePager::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void RangePager::retranslateUi() {
+    // Every caption here describes state the pager already holds. The page, the
+    // range of chips and the enabled arrows are left exactly as they were, so a
+    // switch never moves the page nor reports one.
+    const auto restate = [](QPushButton* button, const QString& text) {
+        button->setToolTip(text);
+        button->setAccessibleName(text);
+    };
+    restate(firstButton_, tr("Go to first page"));
+    restate(prevButton_, tr("Previous page"));
+    restate(nextButton_, tr("Next page"));
+    restate(lastButton_, tr("Go to last page"));
+
+    jump_->setToolTip(tr("Jump to page"));
+    jump_->setAccessibleName(tr("Page number"));
+
+    if (!rendered_) {
+        return;
+    }
+    jumpLabel_->setText(tr("page of %1").arg(pages_));
+    // Re-labels the same chips, window and active role through the stored page
+    // state; chip labels themselves are entry numbers, not prose.
+    renderChips();
+}
+
 void RangePager::setState(int page, int pages, int entries) { setState(page, pages, entries, {}); }
 
 void RangePager::setState(int page, int pages, int entries, const QStringList& numbers) {
@@ -162,6 +195,7 @@ void RangePager::renderChips() {
         chip->setProperty(kChipPageProperty, target);
         chip->setText(chipLabel(target));
         chip->setToolTip(tr("Page %1").arg(target));
+        chip->setAccessibleName(tr("Page %1").arg(target));
         const bool active = target == page_;
         if (active != (chip->objectName() == QLatin1String("pagerChipActive"))) {
             chip->setObjectName(active ? QStringLiteral("pagerChipActive")

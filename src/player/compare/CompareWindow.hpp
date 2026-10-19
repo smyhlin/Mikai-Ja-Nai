@@ -17,6 +17,7 @@
 
 class QComboBox;
 class QDoubleSpinBox;
+class QEvent;
 class QFrame;
 class QKeyEvent;
 class QLabel;
@@ -25,6 +26,11 @@ class QSlider;
 class QSpinBox;
 class QStackedWidget;
 class QTimer;
+class QToolButton;
+
+namespace mplayer::native {
+class AnimeJanaiCatalogWatcher;
+}
 
 namespace mplayer::shell {
 
@@ -62,7 +68,19 @@ public:
     /// different fault from a refusal and must be named separately.
     bool playbackHeld() const { return playbackHoldActive_; }
     bool isPinned() const { return pinned_; }
-    QString candidateError(const QString& id) const { return ajiErrors_.value(id); }
+    /// The stable id a side shows, empty before the pair is chosen. A catalogue
+    /// refresh never moves it: an id the catalogue no longer offers stays here
+    /// and is reported as unavailable instead of being replaced by a fallback.
+    QString selectedCandidateId(int side) const;
+    /// Every id the current catalogue offers for selection. Ids that a side
+    /// still shows but the catalogue dropped are deliberately absent.
+    QStringList candidateIds() const { return candidates_; }
+    bool candidateAvailable(const QString& id) const { return candidates_.contains(id); }
+    /// The named reason a candidate cannot render: its engine failure, or why
+    /// the catalogue no longer offers it.
+    QString candidateError(const QString& id) const;
+    /// True while a catalogue change waits for an in-flight render to unwind.
+    bool catalogueRefreshPending() const { return catalogueRefreshPending_; }
     QString captureError() const { return captureError_; }
     QString lockError() const { return lockError_; }
     int queuedNativeChanges() const {
@@ -87,10 +105,28 @@ protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void hideEvent(QHideEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    /// The app-owned words of the last settled build. Kept typed, never as
+    /// display text, so a language switch can restate the summary in place.
+    enum class BuildSummaryKind { None, Ready, Failed, Cancelled };
+
     void buildUi();
     void populateCandidates();
+    void rebuildCandidates();
+    void chooseDefaultSelection();
+    void publishCandidateChoices();
+    void refreshCandidates();
+    void onCatalogChanged();
+    void applyCatalogueRefresh();
+    void scheduleCatalogueRefresh();
+    void invalidateAjiCatalogueCache();
+    QString unavailableReason(const QString& id) const;
+    void retranslateUi();
+    void refreshHoverText();
+    void finishIsolatedBuild(BuildSummaryKind kind, const QString& detail = QString());
+    QString buildSummaryText() const;
     void togglePin(bool pinned);
     void swapSides();
     void acquirePlaybackHold();
@@ -111,7 +147,6 @@ private:
     QImage renderIsolated(const QString& id);
     void abandonIsolatedRenderer();
     void finishIsolatedRetry();
-    void settleIsolatedBuild(bool ok, const QString& summary);
     void dismissCandidateMenus();
     void updateInfo();
     void updateFlickerTimer();
@@ -132,6 +167,9 @@ private:
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
     QFrame* modeDivider_ = nullptr;
+    QLabel* modeCaption_ = nullptr;
+    QLabel* filterCaption_ = nullptr;
+    QToolButton* fitButton_ = nullptr;
     QLabel* splitLabel_ = nullptr;
     QLabel* flickerLabel_ = nullptr;
     QLabel* gainLabel_ = nullptr;
@@ -149,6 +187,11 @@ private:
     QTimer* flickerTimer_ = nullptr;
     ProcessingOverlay* processingOverlay_ = nullptr;
     bool buildOperationActive_ = false;
+    BuildSummaryKind buildSummaryKind_ = BuildSummaryKind::None;
+    QString buildFailureDetail_;
+    native::AnimeJanaiCatalogWatcher* catalogWatcher_ = nullptr;
+    bool catalogueRefreshPending_ = false;
+    bool catalogueRefreshScheduled_ = false;
     bool pinned_ = false;
     bool togglingPin_ = false;
 
@@ -165,9 +208,18 @@ private:
     QString renderedBId_;
     native::Backend renderedBackend_ = native::Backend::TensorRT;
     QString captureError_;
+    int zoomPercent_ = 100;
+    int hoverX_ = 0;
+    int hoverY_ = 0;
+    QRgb hoverRgb_ = 0;
+    bool hoverValid_ = false;
     quint64 positionEpoch_ = 0;
     QStringList candidates_;
     QVector<ChoiceEntry> choices_;
+    /// Each offered id's catalogue label without the synthetic "unavailable"
+    /// suffix, so a side whose model is dropped keeps its real name across
+    /// refreshes instead of accumulating suffixes.
+    QHash<QString, QString> choiceBaseLabels_;
     QHash<QString, native::Backend> ajiBackends_;
     QHash<QString, QString> ajiErrors_;
     QStringList selection_;

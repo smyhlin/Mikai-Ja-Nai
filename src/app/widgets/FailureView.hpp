@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+class QEvent;
 class QLabel;
 class QPushButton;
 
@@ -30,6 +31,7 @@ public:
     /// Show `failure`, with `context` as the leading clause. An empty context
     /// shows the backend's own line alone.
     void showFailure(const backend::Failure& failure, const QString& context = {});
+    void setContext(const QString& context);
 
     /// Hide again and keep nothing.
     void clear();
@@ -51,10 +53,30 @@ Q_SIGNALS:
     /// this widget never knows what the operation was.
     void retryRequested();
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
+    /// Restates the retry caption and, while a failure is shown, the line and
+    /// the code chip from the retained failure. Only a line the app itself
+    /// produced from a known code is re-localized: a backend line it did not
+    /// produce and the caller's context clause are shown exactly as they
+    /// arrived, even when the code is one the app knows how to word.
+    void retranslateUi();
+
     QLabel* message_ = nullptr;
     QLabel* code_ = nullptr;
     QPushButton* retry_ = nullptr;
+    /// The failure is kept, not just painted, because its code is the only way
+    /// to render the app's wording again after a language switch.
+    backend::Failure failure_;
+    QString context_;
+    bool hasFailure_ = false;
+    /// Recorded when the failure is shown, while the language that produced the
+    /// message is still active: true only when `failure_.message` is exactly
+    /// the app's canonical wording for `failure_.code`. An opaque backend line
+    /// that merely carries a known code stays false and is never rewritten.
+    bool messageIsCanonical_ = false;
 };
 
 }  // namespace mikai::app

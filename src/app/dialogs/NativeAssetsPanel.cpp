@@ -172,12 +172,44 @@ bool deleteNativeCacheEntry(const ArtifactStore& store, const QVector<NativeCach
     return removeArtifact(store, buildKey, reasonKey, reason);
 }
 
+QString nativePreparationToolchainReason(const QString& reasonKey, const QString& reason) {
+    if (reasonKey == QLatin1String("native.prepare.provenance")) {
+        return QCoreApplication::translate(
+            "NativeAssetsPanel",
+            "The selected native bundle declares no preparation provenance, so its toolchain is "
+            "not a validated one this build will build against.");
+    }
+    if (reasonKey == QLatin1String("native.prepare.toolsUnavailable")) {
+        return QCoreApplication::translate(
+            "NativeAssetsPanel",
+            "The preparation toolchain is not installed: the inspect, prep and verify "
+            "executables and an ONNX Runtime directory must all be present before an engine can "
+            "be built.");
+    }
+    if (reasonKey == QLatin1String("native.prepare.backendUnavailable")) {
+        return QCoreApplication::translate(
+            "NativeAssetsPanel",
+            "The observed toolchain carries no provider runtime this build can prepare for.");
+    }
+    // A component store's or a provider's own reason is not this panel's to reword.
+    return reason;
+}
+
 NativePreparationToolchain observeNativePreparationToolchain() {
     NativePreparationToolchain toolchain;
     const auto refuse = [&toolchain](const QString& key, const QString& reason) {
         toolchain.available = false;
         toolchain.reasonKey = key;
         toolchain.reason = reason;
+        return toolchain;
+    };
+    // The reasons this panel words itself are recorded through the same helper a
+    // LanguageChange reads, so the observation and its later restatement can never
+    // drift; a provider's own reason still passes through `refuse` verbatim.
+    const auto refuseWithKey = [&toolchain](const QString& key) {
+        toolchain.available = false;
+        toolchain.reasonKey = key;
+        toolchain.reason = nativePreparationToolchainReason(key, QString());
         return toolchain;
     };
 
@@ -210,11 +242,7 @@ NativePreparationToolchain observeNativePreparationToolchain() {
     // block already states one - and nothing is searched for on PATH or beside the
     // binary: an SDK nobody validated is not this build's toolchain.
     if (!validated.has_value() || !validated->preparation.has_value()) {
-        return refuse(QStringLiteral("native.prepare.provenance"),
-                      QCoreApplication::translate(
-                          "NativeAssetsPanel",
-                          "The selected native bundle declares no preparation provenance, so its "
-                          "toolchain is not a validated one this build will build against."));
+        return refuseWithKey(QStringLiteral("native.prepare.provenance"));
     }
     const BundlePreparation& preparation = *validated->preparation;
     toolchain.tools.inspectExecutable = QDir(bundleRoot).filePath(preparation.tools.inspect);
@@ -271,23 +299,14 @@ NativePreparationToolchain observeNativePreparationToolchain() {
         toolchain.tools.prepExecutable.isEmpty() ||
         toolchain.tools.verifierExecutable.isEmpty() ||
         toolchain.tools.ortRuntimeDir.isEmpty()) {
-        return refuse(QStringLiteral("native.prepare.toolsUnavailable"),
-                      QCoreApplication::translate(
-                          "NativeAssetsPanel",
-                          "The preparation toolchain is not installed: the inspect, prep and "
-                          "verify executables and an ONNX Runtime directory must all be "
-                          "present before an engine can be built."));
+        return refuseWithKey(QStringLiteral("native.prepare.toolsUnavailable"));
     }
 
     // The provider runtimes the validated bundle declared. A backend it does not
     // name is not offered even if a DLL happens to be present: the block is the
     // statement of what this toolchain carries.
     if (toolchain.backends.available.isEmpty()) {
-        return refuse(QStringLiteral("native.prepare.backendUnavailable"),
-                      QCoreApplication::translate(
-                          "NativeAssetsPanel",
-                          "The observed toolchain carries no provider runtime this build can "
-                          "prepare for."));
+        return refuseWithKey(QStringLiteral("native.prepare.backendUnavailable"));
     }
 
     toolchain.available = true;
@@ -765,6 +784,20 @@ void NativeAssetsPanel::retranslateUi() {
     updateImportControls();
     updateSummaries();
     updatePrepareControls();
+
+    // The preparation captions are typed state, not chrome: the probe, capture,
+    // stage or settled verdict already on screen is re-worded from what the panel
+    // holds, and the builder's own phase, detail, reason and tool output stay
+    // verbatim. Nothing is re-observed, re-probed, re-captured, submitted,
+    // cancelled or refreshed here.
+    renderPrepareProgress();
+    if (prepareInFlight_ && prepareProgressState_.kind == PrepareProgress::Kind::Stage) {
+        // The stage on screen is re-announced with the same index, count, phase and
+        // detail, so a listener restates only its own wrapper around the same work.
+        emit preparationProgress(prepareProgressState_.stageIndex,
+                                 prepareProgressState_.stageCount, prepareProgressState_.phase,
+                                 prepareProgressState_.detail);
+    }
 }
 
 void NativeAssetsPanel::setRunner(mikai::app::Runner* runner) {

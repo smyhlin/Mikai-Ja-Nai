@@ -3,9 +3,12 @@
 #include "dialogs/settings/BenchmarkPlayback.hpp"
 #include "dialogs/settings/BenchmarkReport.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
+#include "workers/Runner.hpp"
+#include <backend/Cancellation.hpp>
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
 
+#include <native/components/AnimeJanaiCatalogWatcher.hpp>
 #include <native/components/AnimeJanaiRuntime.hpp>
 #include <native/components/NativeGpuProbe.hpp>
 #include <native/models/NativeRife.hpp>
@@ -22,29 +25,31 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QGridLayout>
+#include <QHash>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMetaObject>
 #include <QOffscreenSurface>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QSet>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QSysInfo>
 #include <QSurfaceFormat>
 #include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QThread>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <iterator>
 #include <memory>
@@ -60,6 +65,25 @@ namespace {
 /// "rife:<file>") for a filter model. A row's data is what the run resolves,
 /// never its label.
 constexpr auto kModelRole = Qt::UserRole + 1;
+/// A previously checked model that the live catalogue no longer offers. The
+/// row stays visible so the selection is not silently dropped, but it never
+/// becomes runnable and it is not user-checkable.
+constexpr auto kUnavailableRole = Qt::UserRole + 2;
+/// The label captured with a checked id, so a missing model can still be named.
+constexpr auto kModelLabelRole = Qt::UserRole + 3;
+
+/// An explicit deselection releases a disappeared model instead of leaving an
+/// unavailable row checked forever. Without this, Clear selection could not
+/// clear what the catalogue no longer backs, and the next refresh would
+/// resurrect the selection from checked ids.
+void releaseUnavailableBenchmarkRows(QTreeWidgetItem* group) {
+    std::vector<QTreeWidgetItem*> unavailable;
+    for (int index = 0; index < group->childCount(); ++index) {
+        QTreeWidgetItem* child = group->child(index);
+        if (child->data(0, kUnavailableRole).toBool()) unavailable.push_back(child);
+    }
+    for (QTreeWidgetItem* child : unavailable) delete child;
+}
 
 struct BenchmarkResultRow {
     QString model;
@@ -249,25 +273,32 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     connect(benchmarkModelTree_, &QTreeWidget::itemChanged, this,
             [this](QTreeWidgetItem* item, int) {
                 if (benchmarkSelectionUpdating_ || item == nullptr) return;
+                if (item->data(0, kUnavailableRole).toBool()) return;
                 benchmarkSelectionUpdating_ = true;
                 if (item->parent() == nullptr) {
                     const Qt::CheckState state =
                         item->checkState(0) == Qt::Checked ? Qt::Checked : Qt::Unchecked;
                     for (int index = 0; index < item->childCount(); ++index) {
-                        item->child(index)->setCheckState(0, state);
+                        QTreeWidgetItem* child = item->child(index);
+                        if (child->data(0, kUnavailableRole).toBool()) continue;
+                        child->setCheckState(0, state);
                     }
+                    if (state == Qt::Unchecked) releaseUnavailableBenchmarkRows(item);
                     item->setCheckState(0, state);
                 } else {
                     QTreeWidgetItem* group = item->parent();
                     int checked = 0;
+                    int available = 0;
                     for (int index = 0; index < group->childCount(); ++index) {
-                        checked += group->child(index)->checkState(0) == Qt::Checked ? 1 : 0;
+                        const QTreeWidgetItem* child = group->child(index);
+                        if (child->data(0, kUnavailableRole).toBool()) continue;
+                        ++available;
+                        checked += child->checkState(0) == Qt::Checked ? 1 : 0;
                     }
-                    group->setCheckState(0, checked == 0
+                    group->setCheckState(0, available == 0 || checked == 0
                                                 ? Qt::Unchecked
-                                                : checked == group->childCount()
-                                                      ? Qt::Checked
-                                                      : Qt::PartiallyChecked);
+                                                : checked == available ? Qt::Checked
+                                                                       : Qt::PartiallyChecked);
                 }
                 benchmarkSelectionUpdating_ = false;
                 updateBenchmarkSelectionSummary();
@@ -286,7 +317,9 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
              ++groupIndex) {
             const QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
             for (int index = 0; index < group->childCount(); ++index) {
-                anyUnchecked |= group->child(index)->checkState(0) != Qt::Checked;
+                const QTreeWidgetItem* child = group->child(index);
+                if (child->data(0, kUnavailableRole).toBool()) continue;
+                anyUnchecked |= child->checkState(0) != Qt::Checked;
             }
         }
         benchmarkSelectionUpdating_ = true;
@@ -294,10 +327,20 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
         for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount();
              ++groupIndex) {
             QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
+            int available = 0;
+            int checked = 0;
             for (int index = 0; index < group->childCount(); ++index) {
-                group->child(index)->setCheckState(0, state);
+                QTreeWidgetItem* child = group->child(index);
+                if (child->data(0, kUnavailableRole).toBool()) continue;
+                ++available;
+                child->setCheckState(0, state);
+                checked += state == Qt::Checked ? 1 : 0;
             }
-            group->setCheckState(0, state);
+            if (state == Qt::Unchecked) releaseUnavailableBenchmarkRows(group);
+            group->setCheckState(0, available == 0 || checked == 0
+                                        ? Qt::Unchecked
+                                        : checked == available ? Qt::Checked
+                                                               : Qt::PartiallyChecked);
         }
         benchmarkSelectionUpdating_ = false;
         updateBenchmarkSelectionSummary();
@@ -462,6 +505,16 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 
     connect(benchmarkRawBox_, &QCheckBox::toggled, this,
             [this] { updateBenchmarkSelectionSummary(); });
+
+    // The catalogue is a filesystem-backed inventory: a graph pasted, renamed,
+    // replaced or removed while this tab is open must appear without a tab
+    // switch or a dialog restart. The watcher only announces metadata changes;
+    // the rebuild below preserves what the user was doing.
+    auto* catalogueWatcher = new mplayer::native::AnimeJanaiCatalogWatcher(page);
+    connect(catalogueWatcher, &mplayer::native::AnimeJanaiCatalogWatcher::catalogChanged, this,
+            [this] { refreshBenchmarkCatalogue(); });
+    catalogueWatcher->refresh();
+
     refreshBenchmarkCatalogue();
     updateBenchmarkSelectionSummary();
     return page;
@@ -470,33 +523,53 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
 void SettingsDialog::refreshBenchmarkCatalogue() {
     if (benchmarkModelTree_ == nullptr) return;
 
-    QSet<QString> checkedIds;
+    // A filesystem refresh is not a fresh page: keep what the user checked,
+    // where they were looking, how the groups were expanded, and the filter.
+    QHash<QString, QString> checkedIds;
+    QHash<QString, bool> groupExpansion;
+    QString currentId;
     const bool hasPreviousCatalogue = benchmarkModelTree_->topLevelItemCount() > 0;
+    const int previousScrollY = benchmarkModelTree_->verticalScrollBar()->value();
+    const int previousScrollX = benchmarkModelTree_->horizontalScrollBar()->value();
     if (hasPreviousCatalogue) {
         for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount();
              ++groupIndex) {
             const QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
+            const QString groupKey = group->data(0, Qt::UserRole).toString();
+            groupExpansion.insert(groupKey.isEmpty() ? group->text(0) : groupKey,
+                                  group->isExpanded());
             for (int index = 0; index < group->childCount(); ++index) {
                 const QTreeWidgetItem* item = group->child(index);
-                if (item->checkState(0) == Qt::Checked) checkedIds.insert(benchmarkModelId(item));
+                if (item->checkState(0) == Qt::Checked) {
+                    const QString storedLabel = item->data(0, kModelLabelRole).toString();
+                    checkedIds.insert(benchmarkModelId(item),
+                                      storedLabel.isEmpty() ? item->text(0) : storedLabel);
+                }
             }
+        }
+        if (const QTreeWidgetItem* current = benchmarkModelTree_->currentItem();
+            current != nullptr && current->parent() != nullptr) {
+            currentId = benchmarkModelId(current);
         }
     }
 
     benchmarkSelectionUpdating_ = true;
     benchmarkModelTree_->clear();
 
-    const auto addGroup = [this](const QString& title) {
+    const auto addGroup = [this, &groupExpansion](const QString& key, const QString& title) {
         auto* group = new QTreeWidgetItem(benchmarkModelTree_);
         group->setText(0, title);
+        group->setData(0, Qt::UserRole, key);
         QFont heading = benchmarkModelTree_->font();
         heading.setWeight(QFont::DemiBold);
         group->setFont(0, heading);
         group->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-        group->setExpanded(title == tr("AnimeJaNai"));
+        group->setExpanded(
+            groupExpansion.value(key, key == QLatin1String("animejanai")));
         return group;
     };
-    const auto addModel = [this, &checkedIds, hasPreviousCatalogue](
+    QSet<QString> presentIds;
+    const auto addModel = [this, &checkedIds, &presentIds, hasPreviousCatalogue](
                               QTreeWidgetItem* group, const QString& key, const QString& label,
                               const QString& tooltip, bool defaultChecked) {
         auto* item = new QTreeWidgetItem(group);
@@ -506,10 +579,12 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
             hasPreviousCatalogue ? checkedIds.contains(key) : defaultChecked;
         item->setCheckState(0, checked ? Qt::Checked : Qt::Unchecked);
         item->setData(0, kModelRole, key);
+        item->setData(0, kModelLabelRole, label);
         item->setToolTip(0, tooltip);
+        presentIds.insert(key);
     };
 
-    QTreeWidgetItem* anime4kGroup = addGroup(tr("Anime4K"));
+    QTreeWidgetItem* anime4kGroup = addGroup(QStringLiteral("anime4k"), tr("Anime4K"));
     for (const mplayer::anime4k::ModeInfo& mode : mplayer::anime4k::availableModes()) {
         if (mode.mode == mplayer::anime4k::Mode::Off) continue;
         addModel(anime4kGroup, QStringLiteral("anime4k:") + mode.id,
@@ -518,7 +593,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
 
     const QVector<mplayer::native::AnimeJanaiPreset> presets =
         mplayer::native::animeJanaiPresets();
-    QTreeWidgetItem* animeJanaiGroup = addGroup(tr("AnimeJaNai"));
+    QTreeWidgetItem* animeJanaiGroup = addGroup(QStringLiteral("animejanai"), tr("AnimeJaNai"));
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
         if (!preset.id.startsWith(QLatin1String("builtin"))) continue;
         const QString tooltip =
@@ -530,7 +605,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         addModel(animeJanaiGroup, preset.id, preset.label, tooltip, true);
     }
 
-    QTreeWidgetItem* spatialGroup = addGroup(tr("Spatial"));
+    QTreeWidgetItem* spatialGroup = addGroup(QStringLiteral("spatial"), tr("Spatial"));
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
         if (!preset.id.startsWith(QLatin1String("spatial:"))) continue;
         const QString tooltip =
@@ -539,7 +614,7 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         addModel(spatialGroup, preset.id, preset.label, tooltip, false);
     }
 
-    QTreeWidgetItem* rifeGroup = addGroup(tr("RIFE"));
+    QTreeWidgetItem* rifeGroup = addGroup(QStringLiteral("rife"), tr("RIFE"));
     for (const mplayer::native::AnimeJanaiPreset& preset : presets) {
         if (!preset.id.startsWith(QLatin1String("rife:"))) continue;
         const QString tooltip =
@@ -548,20 +623,68 @@ void SettingsDialog::refreshBenchmarkCatalogue() {
         addModel(rifeGroup, preset.id, preset.label, tooltip, false);
     }
 
+    // A checked model that the live catalogue no longer offers stays visible
+    // and named, but cannot be run; it is never replaced by a similar model.
+    const auto groupForId = [anime4kGroup, animeJanaiGroup, spatialGroup,
+                             rifeGroup](const QString& key) {
+        if (key.startsWith(QLatin1String("anime4k:"))) return anime4kGroup;
+        if (key.startsWith(QLatin1String("spatial:"))) return spatialGroup;
+        if (key.startsWith(QLatin1String("rife:"))) return rifeGroup;
+        return animeJanaiGroup;
+    };
+    for (auto it = checkedIds.cbegin(); it != checkedIds.cend(); ++it) {
+        if (presentIds.contains(it.key())) continue;
+        auto* item = new QTreeWidgetItem(groupForId(it.key()));
+        item->setText(0, tr("%1 (unavailable)").arg(it.value()));
+        item->setFlags(Qt::ItemIsEnabled);
+        item->setCheckState(0, Qt::Checked);
+        item->setData(0, kModelRole, it.key());
+        item->setData(0, kModelLabelRole, it.value());
+        item->setData(0, kUnavailableRole, true);
+        item->setToolTip(0, tr("This model is no longer in the catalogue; it will not run."));
+    }
+
     const auto updateGroupState = [](QTreeWidgetItem* group) {
         int checked = 0;
+        int available = 0;
         for (int index = 0; index < group->childCount(); ++index) {
-            checked += group->child(index)->checkState(0) == Qt::Checked ? 1 : 0;
+            const QTreeWidgetItem* item = group->child(index);
+            if (item->data(0, kUnavailableRole).toBool()) continue;
+            ++available;
+            checked += item->checkState(0) == Qt::Checked ? 1 : 0;
         }
-        group->setCheckState(0, checked == 0 ? Qt::Unchecked
-                                             : checked == group->childCount() ? Qt::Checked
-                                                                              : Qt::PartiallyChecked);
+        group->setCheckState(0, available == 0 || checked == 0
+                                    ? Qt::Unchecked
+                                    : checked == available ? Qt::Checked
+                                                           : Qt::PartiallyChecked);
     };
     for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount(); ++groupIndex) {
         updateGroupState(benchmarkModelTree_->topLevelItem(groupIndex));
     }
     benchmarkSelectionUpdating_ = false;
     filterBenchmarkModels(benchmarkModelSearch_->text());
+    for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount(); ++groupIndex) {
+        QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
+        const QString groupKey = group->data(0, Qt::UserRole).toString();
+        const auto expanded = groupExpansion.constFind(
+            groupKey.isEmpty() ? group->text(0) : groupKey);
+        if (expanded != groupExpansion.cend()) group->setExpanded(*expanded);
+    }
+    if (!currentId.isEmpty()) {
+        for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount();
+             ++groupIndex) {
+            QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
+            for (int index = 0; index < group->childCount(); ++index) {
+                QTreeWidgetItem* item = group->child(index);
+                if (benchmarkModelId(item) == currentId) {
+                    benchmarkModelTree_->setCurrentItem(item);
+                    break;
+                }
+            }
+        }
+    }
+    benchmarkModelTree_->verticalScrollBar()->setValue(previousScrollY);
+    benchmarkModelTree_->horizontalScrollBar()->setValue(previousScrollX);
     updateBenchmarkSelectionSummary();
 }
 
@@ -606,13 +729,24 @@ void SettingsDialog::updateBenchmarkSelectionSummary() {
 
     int selectedModels = 0;
     int totalModels = 0;
+    int selectedAvailable = 0;
+    int totalAvailable = 0;
+    int selectedUnavailable = 0;
     if (benchmarkModelTree_ != nullptr) {
         for (int groupIndex = 0; groupIndex < benchmarkModelTree_->topLevelItemCount();
              ++groupIndex) {
             const QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
             totalModels += group->childCount();
             for (int index = 0; index < group->childCount(); ++index) {
-                selectedModels += group->child(index)->checkState(0) == Qt::Checked ? 1 : 0;
+                const QTreeWidgetItem* item = group->child(index);
+                const bool checked = item->checkState(0) == Qt::Checked;
+                selectedModels += checked ? 1 : 0;
+                if (item->data(0, kUnavailableRole).toBool()) {
+                    selectedUnavailable += checked ? 1 : 0;
+                } else {
+                    ++totalAvailable;
+                    selectedAvailable += checked ? 1 : 0;
+                }
             }
         }
     }
@@ -623,17 +757,23 @@ void SettingsDialog::updateBenchmarkSelectionSummary() {
                                                                   : tr("Select all"));
     benchmarkModelCount_->setText(
         tr("%1 / %2 selected").arg(selectedModels).arg(totalModels));
+    // A checked unavailable row is still a selection: Clear must stay reachable
+    // even when the catalogue currently offers nothing to select.
     benchmarkSelectAllModels_->setText(
-        selectedModels == totalModels && totalModels > 0 ? tr("Clear selection")
-                                                          : tr("Select all"));
-    const int runs = selectedClips * (selectedModels + (benchmarkRawBox_->isChecked() ? 1 : 0));
-    benchmarkRunSummary_->setText(
-        QStringList{tr("Clips: %1").arg(selectedClips),
-                    tr("Models: %1").arg(selectedModels),
-                    tr("Runs: %1").arg(runs)}
-            .join(QStringLiteral(" · ")));
+        selectedModels > 0 && selectedAvailable == totalAvailable ? tr("Clear selection")
+                                                                  : tr("Select all"));
+    // Unavailable rows keep their selection visible but are not run inputs;
+    // nothing is substituted for a model that left the catalogue.
+    const int runs = selectedClips * (selectedAvailable + (benchmarkRawBox_->isChecked() ? 1 : 0));
+    QStringList summary{tr("Clips: %1").arg(selectedClips),
+                        tr("Models: %1").arg(selectedModels),
+                        tr("Runs: %1").arg(runs)};
+    if (selectedUnavailable > 0) {
+        summary.append(tr("%1 unavailable").arg(selectedUnavailable));
+    }
+    benchmarkRunSummary_->setText(summary.join(QStringLiteral(" · ")));
     benchmarkRunButton_->setEnabled(!benchmarkRunning_ && selectedClips > 0 &&
-                                    (selectedModels > 0 || benchmarkRawBox_->isChecked()));
+                                    (selectedAvailable > 0 || benchmarkRawBox_->isChecked()));
 }
 
 void SettingsDialog::retranslateBenchmarkTab() {
@@ -696,8 +836,11 @@ void SettingsDialog::runBenchmark() {
         const QTreeWidgetItem* group = benchmarkModelTree_->topLevelItem(groupIndex);
         for (int index = 0; index < group->childCount(); ++index) {
             const QTreeWidgetItem* item = group->child(index);
-            if (item->checkState(0) == Qt::Checked) {
-                models.append({benchmarkModelId(item), item->text(0)});
+            if (item->checkState(0) == Qt::Checked &&
+                !item->data(0, kUnavailableRole).toBool()) {
+                const QString storedLabel = item->data(0, kModelLabelRole).toString();
+                models.append({benchmarkModelId(item),
+                               storedLabel.isEmpty() ? item->text(0) : storedLabel});
             }
         }
     }
@@ -751,13 +894,21 @@ void SettingsDialog::runBenchmark() {
     updateBenchmarkSelectionSummary();
 
     const auto dialog = std::make_shared<QPointer<SettingsDialog>>(this);
-    QCoreApplication* const application = QCoreApplication::instance();
-    QThread* worker =
-        QThread::create([dialog, application, clips, models, measureRaw, totalRuns, surface] {
+    const auto cancellation = std::make_shared<std::atomic<bool>>(false);
+    benchmarkCancellation_ = cancellation;
+    const Runner::GuiDispatch post = runner_.post();
+    const QString reportDirectory = QCoreApplication::applicationDirPath();
+    const QString applicationVersion = QCoreApplication::applicationVersion();
+    const mplayer::native::Backend backend =
+        mplayer::native::loadNativePreferences().backend;
+    QHash<QString, QString> clipPaths;
+    for (const QString& clip : clips) clipPaths.insert(clip, locateBenchmarkClip(clip));
+    runner_.run(
+        [dialog, cancellation, post, reportDirectory, applicationVersion, backend, clipPaths,
+         clips, models, measureRaw, totalRuns, surface]() -> QVariant {
+            const backend::WorkCancellationScope cancellationScope(cancellation.get());
             int completedRuns = 0;
             int failedRuns = 0;
-            const mplayer::native::Backend backend =
-                mplayer::native::loadNativePreferences().backend;
 
             // Settings can close before this worker finishes; report ownership cannot be a widget.
             mikai::app::BenchmarkReport report;
@@ -765,7 +916,7 @@ void SettingsDialog::runBenchmark() {
             const mplayer::native::GpuComputeCapability& gpu =
                 mplayer::native::observeComputeCapability();
             report.runtimeMetadata = {
-                {QStringLiteral("applicationVersion"), QCoreApplication::applicationVersion()},
+                {QStringLiteral("applicationVersion"), applicationVersion},
                 {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
                 {QStringLiteral("os"), QSysInfo::prettyProductName()},
                 {QStringLiteral("gpu"), gpu.name},
@@ -797,26 +948,21 @@ void SettingsDialog::runBenchmark() {
                 report.results.append(entry);
             };
 
-            const auto publishActivity = [dialog, application](const QString& text) {
-                QMetaObject::invokeMethod(
-                    application,
-                    [dialog, text] {
-                        if (dialog->isNull()) return;
+            const auto publishActivity = [dialog, post, cancellation](const QString& text) {
+                post([dialog, cancellation, text] {
+                        if (cancellation->load() || dialog->isNull()) return;
                         SettingsDialog* self = dialog->data();
                         if (self->benchmarkActivity_ != nullptr) {
                             self->benchmarkActivity_->setText(text);
                         }
-                    },
-                    Qt::QueuedConnection);
+                    });
             };
 
-            const auto publishEngineBuild = [dialog, application](
+            const auto publishEngineBuild = [dialog, post, cancellation](
                                                 BenchmarkEngineBuildUpdate update,
                                                 const QString& detail) {
-                QMetaObject::invokeMethod(
-                    application,
-                    [dialog, update, detail] {
-                        if (dialog->isNull()) return;
+                post([dialog, cancellation, update, detail] {
+                        if (cancellation->load() || dialog->isNull()) return;
                         SettingsDialog* self = dialog->data();
                         if (self->benchmarkActivity_ == nullptr ||
                             self->benchmarkEngineProgress_ == nullptr ||
@@ -857,20 +1003,17 @@ void SettingsDialog::runBenchmark() {
                                       .arg(detail)
                                 : SettingsDialog::tr("TensorRT engine build failed · %1")
                                       .arg(detail));
-                    },
-                    Qt::QueuedConnection);
+                    });
             };
 
-            const auto append = [dialog, application, totalRuns, &completedRuns, &failedRuns](
+            const auto append = [dialog, post, cancellation, totalRuns, &completedRuns, &failedRuns](
                                     const QString& model, const QString& clip,
                                     const QString& result, bool successful) {
                 const BenchmarkResultRow resultRow{model, clip, result, successful};
                 if (!successful) ++failedRuns;
                 const int completed = ++completedRuns;
-                QMetaObject::invokeMethod(
-                    application,
-                    [dialog, resultRow, completed, totalRuns] {
-                        if (dialog->isNull()) return;
+                post([dialog, cancellation, resultRow, completed, totalRuns] {
+                        if (cancellation->load() || dialog->isNull()) return;
                         SettingsDialog* self = dialog->data();
                         const int row = self->benchmarkResults_->rowCount();
                         self->benchmarkResults_->insertRow(row);
@@ -917,20 +1060,21 @@ void SettingsDialog::runBenchmark() {
                             SettingsDialog::tr("Benchmark running · %1 / %2")
                                 .arg(completed)
                                 .arg(totalRuns));
-                    },
-                    Qt::QueuedConnection);
+                    });
             };
 
             QHash<QString, mplayer::native::AnimeJanaiSourceContext> sourceContexts;
             QHash<QString, QString> sourceErrors;
             for (const QString& clip : clips) {
+                if (backend::WorkCancellationScope::cancellationRequested()) break;
                 QString error;
-                const QString path = SettingsDialog::locateBenchmarkClip(clip);
+                const QString path = clipPaths.value(clip);
                 sourceContexts.insert(clip, readBenchmarkSourceContext(path, &error));
                 if (!error.isEmpty()) sourceErrors.insert(clip, error);
             }
-            const auto measure = [&append, &publishActivity, &publishEngineBuild,
-                                  &recordResult, &sourceContexts, &surface, dialog](
+            const auto measure = [&append, &publishActivity, &publishEngineBuild, &recordResult,
+                                  &sourceContexts, &sourceErrors, &clipPaths, &surface, dialog,
+                                  cancellation, post](
                                      const QString& modelId, const QString& label,
                                      const QString& clipName,
                                      const std::vector<std::pair<std::string, std::string>>&
@@ -940,15 +1084,29 @@ void SettingsDialog::runBenchmark() {
                                          mplayer::native::Backend::DirectML,
                                      const QString& backendId = QString(),
                                      int ajiStageCount = 1) {
+                if (backend::WorkCancellationScope::cancellationRequested()) return;
                 const auto source = sourceContexts.value(clipName);
                 const QSize sourceSize(source.width, source.height);
                 const QSize targetSize = sourceSize * 2;
-                const QString path = SettingsDialog::locateBenchmarkClip(clipName);
+                const QString path = clipPaths.value(clipName);
                 if (path.isEmpty()) {
                     const QString reason = SettingsDialog::tr("clip not found");
                     append(label, clipName, reason, false);
                     recordResult(modelId, label, clipName, {}, sourceSize, targetSize, -1.0, reason,
                                  backendId, -1, QDateTime::currentDateTimeUtc(),
+                                 QDateTime::currentDateTimeUtc());
+                    return;
+                }
+                // Without source dimensions every target is 0x0 and the sample
+                // would report a generic size error instead of the real cause.
+                const QString sourceError = sourceErrors.value(clipName);
+                if (!sourceError.isEmpty() || sourceSize.isEmpty()) {
+                    const QString reason = sourceError.isEmpty()
+                        ? SettingsDialog::tr("could not read the clip's dimensions")
+                        : sourceError;
+                    append(label, clipName, reason, false);
+                    recordResult(modelId, label, clipName, path, sourceSize, targetSize, -1.0,
+                                 reason, backendId, -1, QDateTime::currentDateTimeUtc(),
                                  QDateTime::currentDateTimeUtc());
                     return;
                 }
@@ -958,13 +1116,10 @@ void SettingsDialog::runBenchmark() {
                 const QString runLabel = QStringLiteral("%1 · %2").arg(label, clipLabel);
                 publishActivity(SettingsDialog::tr("Loading clip · %1").arg(runLabel));
                 const QDateTime runStartedAt = QDateTime::currentDateTimeUtc();
-                QMetaObject::invokeMethod(
-                    QCoreApplication::instance(),
-                    [dialog] {
-                        if (dialog->isNull()) return;
+                post([dialog, cancellation] {
+                        if (cancellation->load() || dialog->isNull()) return;
                         dialog->data()->benchmarkEngineElapsedLabel_->hide();
-                    },
-                    Qt::QueuedConnection);
+                    });
                 const BenchmarkSampleResult result = runBenchmarkSample(
                     path, sourceSize * 2, options, engineBackend, slot, *surface,
                     [&publishActivity, &runLabel](const QString& phase) {
@@ -973,7 +1128,7 @@ void SettingsDialog::runBenchmark() {
                     [&publishEngineBuild, &runLabel](BenchmarkEngineBuildUpdate update,
                                                      const QString&) {
                         publishEngineBuild(update, runLabel);
-                    }, ajiStageCount);
+                    }, ajiStageCount, cancellation.get());
                 const bool successful = result.error.isEmpty() && result.fps > 0;
                 append(label, clipName,
                        successful ? SettingsDialog::tr("%1 fps").arg(result.fps, 0, 'f', 1)
@@ -987,12 +1142,14 @@ void SettingsDialog::runBenchmark() {
 
             if (measureRaw) {
                 for (const QString& clip : clips) {
+                    if (backend::WorkCancellationScope::cancellationRequested()) break;
                     measure(QStringLiteral("baseline"), SettingsDialog::tr("Baseline"), clip, {},
                             -1, mplayer::native::Backend::DirectML, QStringLiteral("none"));
                 }
             }
 
             for (const ModelRow& model : models) {
+                if (backend::WorkCancellationScope::cancellationRequested()) break;
                 if (model.key.startsWith(QLatin1String("anime4k:"))) {
                     const QString shader =
                         mplayer::anime4k::shaderStringForCandidate(model.key.mid(8));
@@ -1007,6 +1164,7 @@ void SettingsDialog::runBenchmark() {
                         continue;
                     }
                     for (const QString& clip : clips) {
+                        if (backend::WorkCancellationScope::cancellationRequested()) break;
                         measure(model.key, model.label, clip,
                                 {{"glsl-shaders", shader.toStdString()}}, -1,
                                 mplayer::native::Backend::DirectML, QStringLiteral("anime4k"));
@@ -1015,9 +1173,11 @@ void SettingsDialog::runBenchmark() {
                 }
 
                 for (const QString& clip : clips) {
+                    if (backend::WorkCancellationScope::cancellationRequested()) break;
                     const auto source = sourceContexts.value(clip);
                     const auto plan = mplayer::native::prepareAnimeJanaiPlan(
-                        model.key, backend, {}, source,
+                        model.key, backend,
+                        [] { return backend::WorkCancellationScope::cancellationRequested(); }, source,
                         [](const QString& preset, QString* reason) {
                             return mplayer::anime4k::filterShaderProgramForCandidate(
                                 preset, QString(), reason);
@@ -1030,7 +1190,7 @@ void SettingsDialog::runBenchmark() {
                         append(model.label, clip, reason, false);
                         const QDateTime now = QDateTime::currentDateTimeUtc();
                         recordResult(model.key, model.label, clip,
-                                     SettingsDialog::locateBenchmarkClip(clip),
+                                     clipPaths.value(clip),
                                      QSize(source.width, source.height),
                                      QSize(source.width, source.height) * 2,
                                      -1.0, reason, benchmarkBackendId(backend), -1, now, now);
@@ -1057,7 +1217,7 @@ void SettingsDialog::runBenchmark() {
 
             report.finishedAt = QDateTime::currentDateTimeUtc();
             const mikai::app::BenchmarkReportWriteResult written =
-                mikai::app::writeBenchmarkReport(QCoreApplication::applicationDirPath(), report);
+                mikai::app::writeBenchmarkReport(reportDirectory, report);
             if (!written.success) {
                 std::fprintf(stderr, "[benchmark] report was not written: %s\n",
                              qPrintable(written.error));
@@ -1067,11 +1227,11 @@ void SettingsDialog::runBenchmark() {
             const int failedCount = failedRuns;
             const QString reportPath = written.path;
             const QString reportError = written.error;
-            QMetaObject::invokeMethod(
-                application,
-                [dialog, resultCount, failedCount, reportPath, reportError] {
+            const bool stopped = backend::WorkCancellationScope::cancellationRequested();
+            post([dialog, cancellation, stopped, resultCount, failedCount, reportPath, reportError] {
                     if (dialog->isNull()) return;
                     SettingsDialog* self = dialog->data();
+                    if (self->benchmarkCancellation_ != cancellation) return;
                     self->benchmarkResultStack_->setCurrentWidget(self->benchmarkResults_);
                     self->benchmarkProgress_->setValue(resultCount);
                     self->benchmarkProgress_->hide();
@@ -1088,35 +1248,51 @@ void SettingsDialog::runBenchmark() {
                         self->benchmarkActivity_->show();
                     }
                     self->benchmarkProgress_->setProperty(
-                        "runState", failedCount > 0 ? QStringLiteral("failure")
-                                                    : QStringLiteral("success"));
+                        "runState", stopped ? QStringLiteral("idle") :
+                                    failedCount > 0 ? QStringLiteral("failure")
+                                                   : QStringLiteral("success"));
                     repolishWidget(self->benchmarkProgress_);
-                    self->benchmarkEngineElapsedLabel_->hide();
-                    self->benchmarkEngineTimer_->stop();
-                    self->benchmarkEngineProgress_->hide();
-                    self->benchmarkRunning_ = false;
-                    self->benchmarkRunButton_->setText(SettingsDialog::tr("Run benchmark"));
+                    self->resetBenchmarkControls();
                     styleStatusBanner(self->benchmarkRunStatus_,
+                                      stopped ? QStringLiteral("neutral") :
                                       failedCount == 0 ? QStringLiteral("success")
                                                        : QStringLiteral("warning"));
                     self->benchmarkRunStatus_->setText(
-                        failedCount == 0
+                        stopped ? SettingsDialog::tr("Benchmark cancelled.") : failedCount == 0
                             ? SettingsDialog::tr("Complete · %1 results").arg(resultCount)
                             : SettingsDialog::tr("Complete · %1 results · %2 failed")
                                   .arg(resultCount)
                                   .arg(failedCount));
-                    for (QCheckBox* check : self->benchmarkClipChecks_) check->setEnabled(true);
-                    self->benchmarkModelSearch_->setEnabled(true);
-                    self->benchmarkModelTree_->setEnabled(true);
-                    self->benchmarkRawBox_->setEnabled(true);
-                    self->benchmarkSelectAllClips_->setEnabled(true);
-                    self->benchmarkSelectAllModels_->setEnabled(true);
-                    self->updateBenchmarkSelectionSummary();
-                },
-                Qt::QueuedConnection);
+                });
+            return {};
+        },
+        {},
+        [dialog, cancellation](const backend::Failure& failure) {
+            if (dialog->isNull()) return;
+            SettingsDialog* self = dialog->data();
+            if (self->benchmarkCancellation_ != cancellation) return;
+            self->resetBenchmarkControls();
+            self->benchmarkActivity_->setText(failure.message);
+            self->benchmarkActivity_->show();
+            self->benchmarkRunStatus_->setText(SettingsDialog::tr("Failed"));
+            styleStatusBanner(self->benchmarkRunStatus_, QStringLiteral("warning"));
         });
-    connect(worker, &QThread::finished, worker, &QObject::deleteLater);
-    worker->start();
+}
+
+void SettingsDialog::resetBenchmarkControls() {
+    benchmarkRunning_ = false;
+    benchmarkRunButton_->setText(tr("Run benchmark"));
+    benchmarkEngineElapsedLabel_->hide();
+    benchmarkEngineTimer_->stop();
+    benchmarkEngineProgress_->hide();
+    benchmarkProgress_->hide();
+    for (QCheckBox* check : benchmarkClipChecks_) check->setEnabled(true);
+    benchmarkModelSearch_->setEnabled(true);
+    benchmarkModelTree_->setEnabled(true);
+    benchmarkRawBox_->setEnabled(true);
+    benchmarkSelectAllClips_->setEnabled(true);
+    benchmarkSelectAllModels_->setEnabled(true);
+    updateBenchmarkSelectionSummary();
 }
 
 }  // namespace mikai::app

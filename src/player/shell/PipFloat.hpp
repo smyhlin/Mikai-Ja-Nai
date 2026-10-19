@@ -90,6 +90,7 @@ protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -103,6 +104,14 @@ protected:
 private:
     void buildChrome();
     void updateVolumeChip();
+    /// The mute button's glyph, tooltip and accessible name, from the retained
+    /// mute state. Split out of setMuted() so a language change re-labels the
+    /// button without writing the float's core.
+    void updateMuteChrome();
+    /// Re-labels every control from state only - the title, the transport and
+    /// mute hints, the two clocks - and repaints the picture the chrome is
+    /// drawn into. It asks the core nothing and changes no playback state.
+    void retranslateUi();
     /// Draws the float's own chrome - the timeline, which is not a widget -
     /// into the picture's painter. Connected to VideoSurface::paintOverlay.
     void paintSurfaceOverlay(QPainter* painter);
@@ -154,6 +163,13 @@ private:
 
     QVariantAnimation* overlayFade_ = nullptr;
     QTimer* hideTimer_ = nullptr;
+
+    /// Retained display state: what the last setPlaying() reported and the last
+    /// clock setTime() rendered. A language change re-derives the labels and
+    /// the clocks from these rather than reading the float's core.
+    bool playing_ = false;
+    double lastPosition_ = 0.0;
+    double lastDuration_ = 0.0;
 
     double overlayOpacity_ = 1.0;
     double pendingSeek_ = -1.0;

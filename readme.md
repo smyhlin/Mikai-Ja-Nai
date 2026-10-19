@@ -6,7 +6,7 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
 
 - **Discovery, Search & Schedule:**
   - Home page with **Recently opened**, **Ongoing**, and **Popular** carousels, plus **Recent updates** and day-of-week **Release schedule** feeds.
-  - Multi-filter search (`format`, `genres`, `status`, `season`, `year`, `sort`) with keyboard-accessible pagination and instant Ukrainian (`uk_UA`) / English (`en_US`) runtime localization.
+  - Multi-filter search (`format`, `genres`, `status`, `season`, `year`, `sort`) with keyboard-accessible pagination and instant Ukrainian (`uk_UA`) / English (`en_US`) runtime localization. The interface-language selector previews across already-open pages, the player, and Compare windows; **Save** persists the choice, while **Cancel**, `Esc`, or closing Settings restores the language the dialog opened with. Switching does not restart the application, refetch API data, rebuild pages, or interrupt playback.
   - Detailed Title page with studio/genre/rating metadata, related series navigation, per-release dub/sub tabs sorted by playable episode count, and asynchronous HLS stream extraction (`ASHDI`, `MoonAnime`, `Tortuga`).
 - **Integrated `libmpv` OpenGL Player (`PlayerDialog`, `VideoSurface`, `PlayerShell`):**
   - Single-process OpenGL render surface (`QOpenGLWidget` + `mpv_render_context`) with dynamic `libmpv` symbol loading (`LoadLibraryExW` on Windows, `dlopen` on Linux).
@@ -93,6 +93,7 @@ The player uses **Qt Widgets + desktop OpenGL**, not Qt Quick's RHI. Rendering s
 - Render calls pass an **`int` zero** for `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME`; the interactive core also uses `video-timing-offset=0`. libmpv never sleeps the GUI thread waiting for a target presentation time.
 - TensorRT transitions retain one clean GPU video snapshot, not a copy on every normal frame. The held picture survives UI repaints and is released only after an actual new output frame, excluding mpv redraw/repeat requests. Build feedback is indeterminate, includes elapsed time, and can replay an already-active build when its UI owner changes.
 - The **+85** control beside Play seeks the active player forward 85 seconds, clamps to known media duration, and preserves pause intent.
+- PiP controls remain visible while the pointer is on the float and fade after it leaves. The existing hide timer checks the actual cursor boundary so a missed layered-window leave event cannot hide controls mid-hover or leave them permanently visible.
 - `frameSwapped()` reports a swap only when the surface rendered an unacknowledged frame. Hidden, minimized, and fully covered surfaces consume updates with `SKIP_RENDERING` outside `paintGL()` and acknowledge the discarded frame. Decoding and native inference can still consume GPU resources.
 - On-video controls paint through `QPainter(this)` in the surface's GL pass. Existing widgets retain input, focus, accessibility, and layout roles; popovers and off-video chrome remain normal widgets. The native block restores Qt's FBO, VAO, and pixel-unpack state before painter drawing resumes.
 - Renderer cleanup runs both on `aboutToBeDestroyed` and during destruction with the correct context current. A recreated context reloads the current source at its observed position and pause state. GUI playback commands are asynchronous.
@@ -112,7 +113,7 @@ $env:QT_OPENGL = "desktop"
 .\native_hud_probe.exe --framebuffer-capture
 ```
 
-Use a moving, non-black local clip. The lifecycle probe checks frame progression, pause/repaint stability, HUD-free exports, rapid pause toggles, hidden/covered recovery, DPR resizing, context recreation, teardown, and recovery after a real source error. It saves framebuffer evidence. A companion `.srt` exercises subtitle texture uploads.
+Use a moving, non-black local clip. The lifecycle probe checks frame progression, pause/repaint stability, HUD-free exports, rapid pause toggles, hidden/covered recovery, DPR resizing, context recreation, teardown, and recovery after a real source error. It saves framebuffer evidence. The transition-hold check requires observable motion, proves that the picture freezes while the media clock advances, and reports an explicit inconclusive result if motion is insufficient. A companion `.srt` exercises subtitle texture uploads.
 
 `--dpr` sets Qt's global scale multiplier, not an absolute monitor ratio. Check the reported device-pixel ratio; on a native 2× monitor, `--dpr 0.75` exercises a fractional 1.5× framebuffer.
 
@@ -144,9 +145,11 @@ In **Settings → Processing**, select the **Standard** runtime to use the Anime
 
 - Use **Import .onnx Model…** to select self-contained spatial graphs (up to 2 GiB each). The manager checks the ONNX protobuf structure, copies each graph atomically into `<nativeRoot>/animejanai/models/custom/`, and records its size and SHA-256 digest.
 - Imported models appear in the player's **ANIMEJANAI → Spatial models** menu, the Compare candidate menu, the Benchmark **Spatial** group, and profile-chain model choices.
-- An optional external models directory can be used without copying its graphs. Select an external candidate and use **Import** to record its digest in the app-owned registry; the external directory is not modified. After replacing a graph, remove its registration and register it again deliberately.
+- An optional external models directory can be used without copying its graphs. Select an unregistered external candidate and use **Import .onnx Model…** to validate it and record its digest in the app-owned registry; the external directory is not modified. After replacing a graph, remove its registration and register it again deliberately.
+- A graph pasted directly into the app-owned custom folder also appears as an unregistered candidate, with its validation reason shown. It is not an executable model or a usable preset until **Import .onnx Model…** registers it in place by checking the graph and publishing its integrity record; registration never renames, moves, or rewrites the pasted file.
 - Model import, external registration, and model hashing run off the GUI thread. Menu enumeration reads metadata rather than hashing every model. Preparation verifies the recorded digest before publishing a staged graph.
-- Removing an imported model removes its app-owned copy and matching staged artifacts. Removing an external registration does not delete the external graph.
+- Removing an imported model removes its app-owned copy and matching staged artifacts. Removing an external registration never copies, modifies, or deletes the borrowed external graph; the file returns to the unregistered candidate list. Unregistered candidates cannot be removed until they are registered.
+- The manager watches the app-owned custom folder and the configured external folder for direct-child model additions, renames, deletions, and replacements, including atomic replacements and in-place edits that preserve size and modification time. Registered pin paths are observed as well. Open model tables and catalogue lists update from re-enumeration after a short coalescing delay; observation is metadata-only and never runs inference, TensorRT compilation, or a benchmark. Nested subfolders and private Prepared Native bundle folders are not scanned.
 
 A model marked ready in the inventory has local metadata; it has not necessarily run on the GPU. Removing a model does not repair profiles that reference it. Select another graph or remove the affected step before using those profiles. Re-importing a replacement requires removing the old identifier first; modifying a pinned file in place is refused during preparation rather than silently accepted.
 
@@ -195,7 +198,7 @@ Custom profile IDs are `builtin_slot:<N>`; custom spatial IDs are `spatial:custo
 
 Use `.pconf` import/export for one profile, or `animejanai.conf` import/export for the complete manager configuration. Importing a profile replaces the selected slot in the editor. Export captures current edits without saving application settings. Neither format embeds model graphs, external registrations, runtime components, or compiled engines; install/register the required models separately on the receiving machine.
 
-**Save** persists settings and profiles; **Cancel** discards those edits but does not undo model imports, registrations, removals, or files already exported. Resetting manager defaults removes custom slot/settings edits, not the model files or external registrations.
+**Save** persists settings and profiles; **Cancel** discards those edits but does not undo model imports, registrations, removals, or files already exported. Model import, external registration, and removal take effect immediately; profile and manager-setting edits stay with the editor until **Save**. Resetting manager defaults removes custom slot/settings edits, not the model files or external registrations.
 
 Manager settings remain schema v3 in `<nativeRoot>/animejanai/animejanai_manager.conf`, with `mikai_chain_steps_version=1` for typed ordered steps. Legacy model-only configurations migrate on read; mixed profiles require an app version that understands the extension. Preparation retains provenance and digest checks, stages owned shaders, and emits separate configs/stats for each AJI segment. Stable content-addressed stage directories preserve existing GPU/shape-specific engine reuse. Concurrent preparations of the same owned cache are explicitly refused while its build lease is held. Missing, modified, or unsupported referenced models produce a preparation error rather than silently selecting another graph.
 
@@ -216,6 +219,8 @@ For a non-RIFE benchmark, leave the RIFE group unchecked **and** exclude custom 
 ### Windows Manager Smoke
 
 Build `native_settings_probe` and run it with Qt/MinGW DLLs on `PATH`. It uses an isolated executable-local store, exercises the real Settings/player/Compare/Benchmark surfaces, and writes `native-animejanai-smoke-evidence.json` plus screenshots to its working directory. The probe uses Qt widget file pickers for deterministic actions; it does not invoke AJI inference, TensorRT compilation, or a RIFE benchmark.
+
+The existing smoke command remains isolated: it runs from an owned executable copy with its own native store and never touches a user's deployed `native/` data. Extended live scenarios against disposable folders cover catalogue additions, renames, replacements, removals, unregistered candidates, and language preview/restore. The JSON and screenshots capture UI and file-discovery outcomes only; they are not inference, engine-build, playback-performance, or benchmark evidence.
 
 The smoke also checks compact/wide English and Ukrainian Processing captions, captures the preset/TensorRT form, and exercises Settings maximization/restoration and the fixed action dock. The log records the actual device-pixel ratio; `QT_SCALE_FACTOR` multiplies the operating system's existing display scale.
 
@@ -262,7 +267,7 @@ The [controlled RTX 5090 AnimeJaNai follow-up](bench_results.md#controlled-anime
 
 Settings → Benchmark compares selected clips and models, with an optional unfiltered baseline. Search and group selection keep their choices while filtering; the run action stays visible while the page scrolls.
 
-Every completed Settings run automatically writes one atomic `bench/benchmark-<UTC timestamp>-<UUID>.json` beside the executable, including failed rows. It records stable model IDs, numeric FPS or a null measurement with the failure reason, source/target geometry, engine preparation time, timestamps, backend, GPU/driver/SM, OS and Qt. The completion message names the report; write errors remain visible. Report creation runs on the benchmark worker and does not depend on the Settings window remaining open.
+Every completed Settings run automatically writes one atomic `bench/benchmark-<UTC timestamp>-<UUID>.json` beside the executable, including failed rows. It records stable model IDs, numeric FPS or a null measurement with the failure reason, source/target geometry, engine preparation time, timestamps, backend, GPU/driver/SM, OS and Qt. The completion message names the report; write errors remain visible. Report creation runs on a managed `Runner` worker. Save, Cancel, Escape, and window-close request cancellation even when the dialog is only hidden; the report retains completed rows and any active row interrupted by cancellation. Metadata reads, plan preparation, and sampling honor the cancellation scope. Application shutdown drains benchmark work before reporting completion, without blocking the GUI. A clip whose source metadata cannot be read reports that cause instead of a generic output-size error.
 
 Each run renders through the real mpv OpenGL pipeline at twice the clip's input dimensions. A three-second sample counts new video output frames, not media timestamps, redraws, or repeated frames. Anime4K shaders execute in this render path. The first eligible frame warms up the renderer and is excluded.
 
@@ -272,6 +277,8 @@ mpv error-level logs are diagnostic only, including while an engine is compiling
 
 `benchmark_probe --diagnostic-log-smoke C:\media\moving-video.mp4` checks this policy with real libmpv playback and controlled Lua log messages, without compiling or claiming inference. It verifies that benign build-time chatter reaches a completed sample, while a genuine missing-source error aborts with its bounded, deduplicated cause tail.
 
+From an owned scratch deployment with the bundled clips and runtime, `benchmark_probe --lifecycle-smoke` exercises cancellation without destroying Settings, reusing the dialog, and asynchronous application shutdown during real sampling. `benchmark_probe --source-error-smoke` verifies that a corrupt clip's actual libmpv error reaches both baseline/Anime4K rows and the automatic JSON report. Neither mode compiles engines or benchmarks inference.
+
 The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the baseline and Anime4K models. Run its executable from the deployed directory so the mpv runtime, models, shaders, and clips resolve. `--list-models` prints catalogue IDs; `--model <id,id,...>` and `--clip <filename>` select a subset. `--all-models --all-clips --output results.json` captures the complete matrix with stable model IDs, input clips, numeric fps or full failure reasons. A model failure does not prevent export; check `complete` before publishing the data. `--all-models` includes RIFE; the [published non-RIFE comparison](bench_results.md#reproducing-and-submitting-another-machine) includes a filtered invocation that excludes it. `--size WIDTHxHEIGHT` exercises another window size, and `--expect-failure` verifies an explicitly unsupported model's visible error.
 
 ---
@@ -280,6 +287,7 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 
 - **API Key (`.env` or Settings):** Optional `API_KEY=<token>` in `.env` (or configured in **Settings → General**) raises rate limits against `https://api.mikai.me/public/v1`.
 - **Settings (`QSettings`):** Platform-native settings under organization `Mikai`, application `Mikai Wrapper`. Recently opened titles are JSON in the `home/recentTitles` setting, not a `recent.json` file.
+- **Interface language (`ui/language`):** `system`, `en`, or `uk`. The selector previews immediately in the running process; only **Save** writes the preference. **Cancel**, `Esc`, and window close restore the language that was active when Settings opened, without refetching data or restarting playback.
 - **Runtime acquisition cache:** `<LOCALAPPDATA>/MPVBackend/runtime`, or `<home>/MPVBackend/runtime` when `LOCALAPPDATA` is unset.
 - **Native/model data:** `<applicationDir>/native`, independent of working directory or QSettings identity. AJI manager/model locations are described above; back up the manager configuration, owned models/provenance, and external registry together. Borrowed external graphs need their own backup and valid paths on the destination machine.
 - **Diagnostics:** Executable-adjacent `mikai.log`, rotated `mikai.log.1`, and timestamped `mikai-crash-*` reports. They are not named `crash.log`.
@@ -292,7 +300,7 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 - `src/gui/` — Shared GUI utilities (`Clipboard`).
 - `src/app/` — Subdivided into `support/` (`CrashLog`, `I18n`, `Labels`, `WindowRaisePolicy`), `pages/` (`MainWindow`, `SearchPage`, `TitlePage`, `TitlePagePlayerSession`, `EpisodeGrid`), `dialogs/` (`SettingsDialog`, `AnimeJanaiManagerPanel`, `ComponentStoreTab`, `NativeAssetsPanel`, `NativeRifeControls`, `CoverViewer`, and `settings/` tabs), `state/`, `widgets/`, `theme/`, and `workers/` (`Runner`).
 - `src/player/` — Subdivided into `core/` (`MpvApi`, `MpvHandle`, `MpvRenderContext`, `PlaybackDiagnostics`, `VideoSurface`), `shaders/` (`Anime4K`, `PresetShortcuts`), `shell/` (`PlayerDialog`, `PipFloat`, `PlayerShell`, `PlayerPopups`, `ShellWidgets`), `compare/` (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `ComparePane`, `CompareLayout`, `CompareRenderer`), and `native/` (`bundle/`, `components/`, `models/`, `prepare/`, `status/`).
-  - `native/components/AnimeJanaiConfig` owns GUI-free custom-model metadata, schema-v3 manager configuration and profile serialization; `AnimeJanaiRuntime` performs runtime planning/staging. They compile into `mikai_native_support`; the manager widget belongs to `mikai_app`.
+  - `native/components/AnimeJanaiConfig` owns GUI-free custom-model metadata, schema-v3 manager configuration and profile serialization; `AnimeJanaiCatalogWatcher` publishes metadata-only model-catalogue changes; `AnimeJanaiRuntime` performs runtime planning/staging. They compile into `mikai_native_support`; the manager widget belongs to `mikai_app`.
 - `src/probes/` — Standalone GUI and headless verification probes (`compare_probe`, `shell_probe`, `dialog_probe`, `native_component_probe`, `probe_runner`, etc.).
 - `cmake/` — Modular CMake build helpers (`MinGWRuntime.cmake`, `FindOrFetchMpv.cmake`, `MikaiProbes.cmake`, `MikaiTests.cmake`, `dist.cmake`, `MikaiTestLauncher.cpp`).
 - `native/` — Standalone MSVC + CUDA + TensorRT inference shim build (`native/CMakeLists.txt`), CLI tools (`mikai_bundle`, `mikai_manifest_check`, `native_inspect`), patches, and provenance manifests (`native/manifest/`).

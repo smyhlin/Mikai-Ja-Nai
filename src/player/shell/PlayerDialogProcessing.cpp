@@ -49,14 +49,18 @@ QString animeJanaiBackendName(native::Backend backend) {
     return backend == native::Backend::DirectML ? QStringLiteral("directml")
                                                  : QStringLiteral("tensorrt");
 }
-QString animeJanaiPresetLabel(const VideoSurface* owner) {
-    if (owner == nullptr) return {};
-    const QString presetId = owner->animeJanaiPlan().presetId;
-    if (presetId.isEmpty()) return {};
-    for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
-        if (preset.id.compare(presetId, Qt::CaseInsensitive) == 0) return preset.label;
+/// The catalogue's name for a preset identity in the language installed now, or
+/// `fallback` when the catalogue no longer offers that identity. Only the
+/// catalogue knows which names are app-owned words and which are user or model
+/// text: deriving from the stable id re-renders the former and returns the
+/// latter unchanged, instead of guessing from a previously rendered label.
+QString animeJanaiPresetLabel(const QString& presetId, const QString& fallback) {
+    if (!presetId.isEmpty()) {
+        for (const native::AnimeJanaiPreset& preset : native::animeJanaiPresets()) {
+            if (preset.id.compare(presetId, Qt::CaseInsensitive) == 0) return preset.label;
+        }
     }
-    return presetId;
+    return fallback;
 }
 
 }  // namespace
@@ -419,6 +423,48 @@ void PlayerDialog::syncAnimeJanaiEngineBuildState(VideoSurface* owner) {
     }
 }
 
+QString PlayerDialog::animeJanaiBuildDetailText() const {
+    // Only the wrapper around the filter's words is this dialog's to translate.
+    // The raw detail is re-emitted exactly as the build reported it, and the
+    // preset name is the catalogue's rendering of this operation's retained id,
+    // already re-derived in the installed language by a restatement.
+    QString text = animeJanaiBuildDetailRaw_;
+    QStringList facts;
+    if (!animeJanaiBuildPresetLabel_.isEmpty()) {
+        facts << tr("Preset: %1").arg(animeJanaiBuildPresetLabel_);
+    }
+    if (animeJanaiBuildWidth_ > 0 && animeJanaiBuildHeight_ > 0) {
+        facts << tr("Source: %1 × %2").arg(animeJanaiBuildWidth_).arg(animeJanaiBuildHeight_);
+    }
+    if (!facts.isEmpty()) {
+        if (!text.isEmpty()) text += QStringLiteral(" · ");
+        text += facts.join(QStringLiteral(" · "));
+    }
+    return text;
+}
+
+void PlayerDialog::restateAnimeJanaiBuildLanguage() {
+    if (closed_ || animeJanaiBuildingSurface_ == nullptr || processingOverlay_ == nullptr) {
+        return;
+    }
+    // A newer operation owns the window: its own caller words it, and restating
+    // this build's words would overwrite text that is no longer theirs to say.
+    if (animeJanaiBuildGeneration_ != enginePreparationGeneration_) return;
+    // The preset name is the catalogue's rendering of the identity this
+    // operation started with, so derive it again in the language now installed.
+    // App-owned builtin names follow it; user and model names are the
+    // catalogue's own stored text and come back unchanged. An identity the
+    // catalogue no longer lists keeps the name the operation began with.
+    animeJanaiBuildPresetLabel_ =
+        animeJanaiPresetLabel(animeJanaiBuildPresetId_, animeJanaiBuildPresetLabel_);
+    // Text only. The setters never begin or end a run, move the frame hold,
+    // issue a command, bump a generation, restart the elapsed timer or cancel
+    // anything, and the stage keeps the index and count the build supplied.
+    retitleEnginePreparation(tr("Building TensorRT engine"));
+    updateEnginePreparation(animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
+                            tr("TensorRT compilation"), animeJanaiBuildDetailText());
+}
+
 void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool active,
                                                        bool succeeded, const QString& detail) {
     if (closed_ || owner == nullptr) return;
@@ -429,26 +475,38 @@ void PlayerDialog::handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool 
             beginEnginePreparation(tr("Building TensorRT engine"));
             animeJanaiBuildGeneration_ = enginePreparationGeneration_;
             animeJanaiBuildingSurface_ = owner;
+            // The operation's preset is captured as its catalogue identity,
+            // once, when the operation starts. The label recorded beside it is
+            // only that identity's rendering under the current language and the
+            // fallback for a catalogue that no longer lists it; a restatement
+            // re-derives it from the id instead of trusting these words.
+            const native::AnimeJanaiPlan plan = owner->animeJanaiPlan();
+            animeJanaiBuildPresetId_ = plan.presetId;
+            animeJanaiBuildPresetLabel_ =
+                animeJanaiPresetLabel(plan.presetId, plan.presetId);
         }
-        QString ongoingDetail = detail;
-        QStringList facts;
-        const QString presetLabel = animeJanaiPresetLabel(owner);
-        if (!presetLabel.isEmpty()) facts << tr("Preset: %1").arg(presetLabel);
-        const int width = owner->videoWidth();
-        const int height = owner->videoHeight();
-        if (width > 0 && height > 0) {
-            facts << tr("Source: %1 × %2").arg(width).arg(height);
-        }
-        if (!facts.isEmpty()) {
-            if (!ongoingDetail.isEmpty()) ongoingDetail += QStringLiteral(" · ");
-            ongoingDetail += facts.join(QStringLiteral(" · "));
-        }
-        updateEnginePreparation(-1, 0, tr("TensorRT compilation"), ongoingDetail);
+        // The build's words are retained as typed state, not as the text the
+        // overlay happens to show: a language switch restates the app-owned
+        // wrapper from these facts and re-emits the filter's detail verbatim.
+        animeJanaiBuildDetailRaw_ = detail;
+        animeJanaiBuildWidth_ = owner->videoWidth();
+        animeJanaiBuildHeight_ = owner->videoHeight();
+        animeJanaiBuildStageIndex_ = -1;
+        animeJanaiBuildStageCount_ = 0;
+        updateEnginePreparation(animeJanaiBuildStageIndex_, animeJanaiBuildStageCount_,
+                                tr("TensorRT compilation"), animeJanaiBuildDetailText());
         return;
     }
     if (!owner->animeJanaiEngineBuildActive()) owner->setEngineFrameHold(false);
     if (animeJanaiBuildingSurface_ != owner) return;
     animeJanaiBuildingSurface_.clear();
+    animeJanaiBuildDetailRaw_.clear();
+    animeJanaiBuildPresetId_.clear();
+    animeJanaiBuildPresetLabel_.clear();
+    animeJanaiBuildWidth_ = 0;
+    animeJanaiBuildHeight_ = 0;
+    animeJanaiBuildStageIndex_ = -1;
+    animeJanaiBuildStageCount_ = 0;
     settleAnimeJanaiPlanOnSurface(owner, succeeded);
     // A superseded build reports itself but cannot end the operation owning the
     // window now: whatever superseded it already released the hold it held.
@@ -990,6 +1048,13 @@ void PlayerDialog::updateEnginePreparation(int stageIndex, int stageCount, const
     processingOverlay_->setStage(stageIndex, stageCount, phase, detail);
 }
 
+void PlayerDialog::retitleEnginePreparation(const QString& title) {
+    if (!closed_ && processingOverlay_ != nullptr) processingOverlay_->setOperationTitle(title);
+}
+
+void PlayerDialog::updateEnginePreparationSummary(const QString& summary) {
+    if (!closed_ && processingOverlay_ != nullptr) processingOverlay_->setSummary(summary);
+}
 void PlayerDialog::endEnginePreparation(bool ok, const QString& summary) {
     if (closed_ || animeJanaiBuildingSurface_ != nullptr) return;
     enginePreparationActive_ = false;

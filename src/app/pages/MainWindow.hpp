@@ -12,6 +12,7 @@
 
 class QLabel;
 class QProgressBar;
+class QPushButton;
 class QStackedWidget;
 
 namespace mikai::backend {
@@ -59,8 +60,24 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    /// Restates this window's own chrome in place after a LanguageChange: the
+    /// window title and the acquisition bar's two actions. The bar's status line
+    /// is the component catalogue's own wording and is left to its source.
+    void retranslateUi();
+    /// The app's own words on the engine-build window. Both the connects that
+    /// send them and a retranslate pass take them from here, so the two cannot
+    /// drift apart.
+    QString enginePreparationTitle() const;
+    QString enginePreparationSummary(bool ok) const;
+    /// Re-sends the app's own words to a build window that is already up. The
+    /// dialog's setters are state-guarded and restart nothing: a running build
+    /// keeps its elapsed clock, its stage and its progress, and a settled one
+    /// keeps its own dismiss timer.
+    void restateEnginePreparation();
+
     void openSettings();
     /// Opens Settings on the Components tab, landing on the element the startup
     /// prompt warned about. Plain dialog, no intent: nothing is armed.
@@ -152,6 +169,8 @@ private:
     QWidget* acquisitionBar_ = nullptr;
     QLabel* acquisitionStatus_ = nullptr;
     QProgressBar* acquisitionProgress_ = nullptr;
+    QPushButton* acquisitionDetails_ = nullptr;
+    QPushButton* acquisitionCancel_ = nullptr;
     QualityCache* qualityCache_ = nullptr;
     QStackedWidget* stack_ = nullptr;
     SearchPage* search_ = nullptr;
@@ -182,6 +201,13 @@ private:
     bool componentAskHeld_ = false;
     bool componentAskPausedPlayback_ = false;
     bool componentAskReleaseAnimeJanai_ = false;
+    /// The app-owned engine-build words currently on screen. The overlay
+    /// re-emits a caller's words verbatim, so a language switch has to re-send
+    /// them; the dialog it belongs to is the only surface they reach.
+    bool enginePreparationStarted_ = false;
+    bool enginePreparationSettled_ = false;
+    bool enginePreparationOk_ = false;
+    QPointer<mplayer::shell::PlayerDialog> enginePreparationCore_;
     QString titleRef_;
     QString titlePoster_;
     QList<std::pair<QString, QString>> titleHistory_;

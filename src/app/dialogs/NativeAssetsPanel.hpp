@@ -110,6 +110,13 @@ struct NativePreparationToolchain {
 /// with that named reason.
 NativePreparationToolchain observeNativePreparationToolchain();
 
+/// The observed toolchain's own refusal in the active language, from the stored
+/// reason key and the recorded reason. The three reasons this panel words itself
+/// are restated from the key, so a LanguageChange says the same thing in the new
+/// language without re-walking the bundle; any other key - a component store's or
+/// a provider's - keeps the recorded words verbatim. Nothing is observed here.
+QString nativePreparationToolchainReason(const QString& reasonKey, const QString& reason);
+
 /// The context provider the panel pulls at readiness and click time. It returns
 /// the active playback core's observed source geometry and device, or nothing
 /// when nothing has been observed; the panel never caches the answer.
@@ -386,6 +393,11 @@ protected:
 private:
   struct ImportResult;
   struct PrepareResult;
+  /// Declared here, defined with the caption state below: `prepareRefusal` takes
+  /// one by pointer and is declared before that definition.
+  struct PrepareProgress;
+  struct PrepareRefusalState;
+  struct PrepareStatus;
 
   /// The one panel a worker's bodies deliver to, or null once it is gone.
   ///
@@ -403,6 +415,13 @@ private:
   /// The model rows are not re-read to retranslate their visible label, role and
   /// status: doing so would move the user's selection and drop an in-flight job's
   /// visible state. What is restated is the panel's own chrome.
+  ///
+  /// The preparation progress and status captions are restated from the typed
+  /// state the panel holds - the probe, capture, stage or settled verdict, and the
+  /// refusal's own template - so the words change and nothing else: no store is
+  /// re-read, no provider re-asked, no probe, capture, build or cancellation
+  /// touched. A stage still on screen is re-announced with the same index, count,
+  /// phase and detail; the builder's own words stay verbatim.
   ///
   /// An import or preparation in flight is left running: its worker, its
   /// cancellation gate and its generation are untouched, and its completion
@@ -431,11 +450,105 @@ private:
   /// selection change and refresh; it never starts work.
   void updatePrepareControls();
   /// The named reason preparation cannot be submitted, or both empty when every
-  /// prerequisite is observed.
-  void prepareRefusal(QString* reasonKey, QString* reason) const;
+  /// prerequisite is observed. When `refusal` is non-null it also receives the
+  /// refusal's typed identity, so a caller that displays the reason can restate it
+  /// later without re-reading a store or re-asking a provider.
+  void prepareRefusal(QString* reasonKey, QString* reason,
+                      PrepareRefusalState* refusal = nullptr) const;
   /// Applies one builder progress report on the GUI thread.
   void applyPrepareProgress(int stageIndex, int stageCount, const QString& phase,
                             const QString& detail);
+
+  /// What the preparation progress caption reports, kept typed rather than as
+  /// rendered words: a LanguageChange re-words exactly the same work in place and
+  /// re-announces the same stage, so a listener restates its own wrapper without
+  /// anything being re-probed, re-captured or re-built. `phase` and `detail` are
+  /// the builder's own words and are never translated.
+  struct PrepareProgress {
+    enum class Kind { None, Probing, Capturing, Stage, Published, AlreadyPrepared };
+    Kind kind = Kind::None;
+    /// Zero-based index of the frame being captured, and how many the recipe needs.
+    int captureIndex = -1;
+    int frameCount = 0;
+    int stageIndex = -1;
+    int stageCount = 0;
+    QString phase;
+    QString detail;
+    int publishedStages = 0;
+  };
+
+  /// One refusal's typed identity. `key` is the refusal's stable name, `templateId`
+  /// is the wording this panel itself supplies for it, and `detail` carries the one
+  /// varying thing - a model id, a backend name, or a store's or provider's own
+  /// words, kept verbatim. A LanguageChange restates the template from this record:
+  /// no store is re-read and no provider is re-asked.
+  struct PrepareRefusalState {
+    enum class Template {
+      None,
+      Inspector,
+      Runner,
+      RecipeRequired,
+      RecipeMissing,
+      ModelUnavailable,
+      SourceUnwired,
+      SourceAbsent,
+      ContextUnwired,
+      Toolchain,
+      BackendUnavailable,
+      Capture,
+    };
+    Template templateId = Template::None;
+    QString key;
+    /// A model id, a backend name, or a store/provider's own words; empty when the
+    /// template needs none or the source named none.
+    QString detail;
+  };
+
+  /// What the preparation status caption reports. `Refusal` restates its own typed
+  /// template; `Failed` carries the builder's, store's or provider's own words and
+  /// is shown verbatim in every language.
+  struct PrepareStatus {
+    enum class Kind {
+      None, Refusal, InspectorMissing, Cancelling, CommitInProgress, Cancelled, Failed,
+    };
+    /// The panel's own fallback for a failure that named no reason of its own.
+    /// `None` with an empty `text` is the generic failure line; the other values
+    /// name a specific GUI-side path so it is restated in the active language.
+    enum class Fallback { None, ContextUnobserved, CaptureUnavailable };
+    Kind kind = Kind::None;
+    QString key;
+    /// The refusal's typed identity; meaningful only for `Refusal`.
+    PrepareRefusalState refusal;
+    /// The builder's, store's or provider's own words, shown verbatim.
+    QString text;
+    /// The builder's tool output, shown verbatim.
+    QString toolError;
+    /// Meaningful only for `Failed` with an empty `text`.
+    Fallback fallback = Fallback::None;
+  };
+
+  /// Repaints the progress caption from `prepareProgressState_` in the active
+  /// language; the builder's `phase`/`detail` stay verbatim.
+  void renderPrepareProgress();
+  /// Repaints the status caption from `prepareStatusState_` in the active language
+  /// and records the words it shows.
+  void renderPrepareStatus();
+  /// Records the preparation status and paints it in the active language. A
+  /// `Failed` status keeps its builder reason and tool output verbatim, with the
+  /// panel's own typed fallback only when the run named no reason at all.
+  void setPrepareStatus(PrepareStatus::Kind kind, const QString& key, const QString& text,
+                        const QString& toolError = QString(),
+                        PrepareStatus::Fallback fallback = PrepareStatus::Fallback::None);
+  /// Records a readiness refusal by its typed identity and paints it in the active
+  /// language. Nothing is re-read or re-asked.
+  void setPrepareRefusal(const PrepareRefusalState& refusal);
+  void clearPrepareStatus();
+  /// The words the current preparation status shows in the active language.
+  QString prepareStatusText() const;
+  /// The panel's own words for one refusal template in the active language; the
+  /// template's `detail` is appended verbatim.
+  QString prepareRefusalText(const PrepareRefusalState& refusal) const;
+
   QString inspectionRuntimeReason() const;
   /// True when this translation unit is compiled with the model inspector.
   bool inspectorBuilds() const;
@@ -496,6 +609,11 @@ private:
   std::shared_ptr<mplayer::native::NativeBuildCancellation> prepareCancel_;
   QString prepareStatusKey_;
   QString prepareStatusReason_;
+  /// The typed state behind the two preparation captions. The rendered strings
+  /// above are the store API's own view; these are what a LanguageChange re-words
+  /// in place, so no translated text is ever used as a key.
+  PrepareProgress prepareProgressState_;
+  PrepareStatus prepareStatusState_;
 
   QTableWidget* modelTable_ = nullptr;
   QTableWidget* cacheTable_ = nullptr;

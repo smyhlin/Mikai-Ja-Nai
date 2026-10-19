@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QWidget>
 
+class QEvent;
 class QHBoxLayout;
 class QLabel;
 class QPushButton;
@@ -52,7 +53,15 @@ Q_SIGNALS:
     /// pager is already showing.
     void pageRequested(int page);
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
+    /// Restates every static caption in place after a LanguageChange: the
+    /// arrows and the page box, and the current page-total label with the chip
+    /// tooltips. The page, the page count and the enabled arrows are read back
+    /// from their own state, so a switch never moves the page or asks for one.
+    void retranslateUi();
     void step(int delta);
     void jumpTo(int page);
     void renderChips();

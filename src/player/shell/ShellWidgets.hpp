@@ -230,6 +230,7 @@ signals:
     void qualitySelected(int height);
 
 private:
+    void retranslate();
     void pick(double speed);
     void onSlider(double fraction);
     void refresh();
@@ -308,12 +309,15 @@ signals:
     void clicked();
 
 protected:
+    void changeEvent(QEvent* event) override;
     void enterEvent(QEnterEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void retranslate();
+
     QString text_;
     QFont font_;
     bool hover_ = false;
@@ -354,6 +358,8 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
+    void retranslate();
+
     QLabel* caption_ = nullptr;
     QVector<QLabel*> descriptions_;
 };

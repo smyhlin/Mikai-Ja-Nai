@@ -40,13 +40,27 @@ Q_SIGNALS:
     void openRequested(const QString& ref, const QString& poster);
     void menuRequested(const QString& ref, const QPoint& globalPos);
 
+protected:
+    /// Restates the card's own captions in place after a LanguageChange: the
+    /// poster already painted and the data last applied are kept as they are.
+    void changeEvent(QEvent* event) override;
+
 private:
     QLabel* makeLabel(const QString& objectName, const QString& text);
+    /// Re-words the poster fallback, the status and the count from the last
+    /// data applied, without touching a landed pixmap.
+    void retranslateUi();
 
     QString ref_;
     QString imageKey_;
     QString posterUrl_;
+    /// The raw status last applied: the translated label is derived from it, so
+    /// a language switch re-derives instead of keeping the old language.
+    QString statusRaw_;
     int planned_ = 0;
+    /// The aired fraction last applied, kept beside `planned_` for the same
+    /// reason: the count line is rebuilt from both on a switch.
+    int aired_ = 0;
     /// Whether `status_` currently carries the live-status object name; the
     /// label starts out with the non-live name, matching statusLive_'s zero.
     bool statusLive_ = false;

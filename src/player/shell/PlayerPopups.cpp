@@ -2,6 +2,7 @@
 
 #include <QAction>
 #include <QCursor>
+#include <QEvent>
 #include <QHash>
 #include <QKeyEvent>
 #include <QLabel>
@@ -319,6 +320,22 @@ void MenuPopup::refresh() {
     fitToHint();
 }
 
+void MenuPopup::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void MenuPopup::retranslateUi() {
+    // The caption, the headings and every row are the caller's words; the shell
+    // and the dialog re-supply those from their own state on the same event.
+    // What this popover words itself is the hint below the rows - key names
+    // only, which this UI keeps literal, as the shortcut card does - so the
+    // sentence that reads them aloud is the tooltip, and that is restated.
+    setToolTip(tr("Controls: ↑ ↓ — select, Enter — confirm, Esc — close"));
+}
+
 void MenuPopup::popupNear(const QPoint& anchorGlobal, bool preferAbove) {
     show();
     fitToHint();
@@ -500,10 +517,10 @@ SeriesDrawer::SeriesDrawer(QWidget* parent) : QFrame(parent) {
     outer->setContentsMargins(kSpacingXs, kSpacingXs, kSpacingXs, kSpacingXs);
     outer->setSpacing(kSpacingXs);
 
-    auto* caption = new QLabel(tr("SERIES"), this);
-    caption->setObjectName(QStringLiteral("playerSeriesCaption"));
-    caption->setStyleSheet(captionQss(11));
-    outer->addWidget(caption);
+    caption_ = new QLabel(tr("SERIES"), this);
+    caption_->setObjectName(QStringLiteral("playerSeriesCaption"));
+    caption_->setStyleSheet(captionQss(11));
+    outer->addWidget(caption_);
 
     auto* scroll = new QScrollArea(this);
     scroll->setObjectName(QStringLiteral("playerSeriesScroll"));
@@ -554,6 +571,21 @@ int SeriesDrawer::contentHeight() const {
     return rows_.size() * (kRowHeight + 2) + 3 * kSpacingXs + 20;
 }
 
+void SeriesDrawer::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void SeriesDrawer::retranslateUi() {
+    // Only the drawer's own caption: the episodes are the playlist's labels and
+    // stay exactly as they arrived.
+    if (caption_ != nullptr) {
+        caption_->setText(tr("SERIES"));
+    }
+}
+
 ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     : QFrame(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
     setAttribute(Qt::WA_ShowWithoutActivating);
@@ -596,11 +628,10 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     elapsedTimer_ = new QTimer(this);
     elapsedTimer_->setInterval(1000);
     connect(elapsedTimer_, &QTimer::timeout, this, [this] {
-        const qint64 seconds = elapsed_.elapsed() / 1000;
-        elapsedLabel_->setText(tr("Elapsed: %1:%2:%3")
-                                  .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
-                                  .arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'))
-                                  .arg(seconds % 60, 2, 10, QLatin1Char('0')));
+        // The count is kept as state so a language switch can redraw the very
+        // same elapsed time rather than restarting or advancing the clock.
+        elapsedSeconds_ = elapsed_.elapsed() / 1000;
+        renderElapsed();
     });
     finishTimer_ = new QTimer(this);
     finishTimer_->setSingleShot(true);
@@ -614,10 +645,11 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
     // is showing: rewiring it per run is how a second build inherited the
     // previous failure's Dismiss handler and could no longer be cancelled.
     connect(cancel_, &QPushButton::clicked, this, [this] {
-        if (settled_) {
+        if (run_ == Run::Succeeded || run_ == Run::Failed) {
             hide();
             return;
         }
+        cancelPending_ = true;
         cancel_->setEnabled(false);
         cancel_->setText(QStringLiteral("…"));
         emit cancelRequested();
@@ -628,11 +660,17 @@ ProcessingOverlay::ProcessingOverlay(QWidget* parent)
 void ProcessingOverlay::begin(const QString& title) {
     finishTimer_->stop();
     elapsed_.restart();
-    elapsedLabel_->setText(tr("Elapsed: %1:%2:%3")
-                              .arg(QStringLiteral("00"), QStringLiteral("00"),
-                                   QStringLiteral("00")));
+    elapsedSeconds_ = 0;
+    renderElapsed();
     elapsedTimer_->start();
-    settled_ = false;
+    run_ = Run::Running;
+    cancelPending_ = false;
+    startedTitle_ = title;
+    stageKnown_ = false;
+    stagePhase_.clear();
+    stageDetail_.clear();
+    stageIndex_ = -1;
+    stageCount_ = 0;
     title_->setText(title);
     detail_->clear();
     progress_->setRange(0, 0);
@@ -645,25 +683,39 @@ void ProcessingOverlay::begin(const QString& title) {
 
 void ProcessingOverlay::setStage(int stageIndex, int stageCount, const QString& phase,
                                  const QString& detail) {
-    if (settled_) return;
+    if (run_ != Run::Idle && run_ != Run::Running) return;
+    // Kept typed, not as display text: a language switch rebuilds the wrapper
+    // around these words, and only the wrapper is this window's to translate.
+    stageKnown_ = true;
+    stageIndex_ = stageIndex;
+    stageCount_ = stageCount;
+    stagePhase_ = phase;
+    stageDetail_ = detail;
     if (stageCount > 0 && stageIndex >= 0) {
         progress_->setRange(0, stageCount);
         progress_->setValue(qBound(0, stageIndex, stageCount));
     } else {
         progress_->setRange(0, 0);
     }
-    QString text = phase;
-    if (stageIndex >= 0) {
-        text = stageCount > 0 ? tr("Stage %1 of %2: %3").arg(stageIndex).arg(stageCount).arg(phase)
-                              : tr("Stage %1: %2").arg(stageIndex).arg(phase);
-    }
-    if (!detail.isEmpty()) text += QStringLiteral(" — ") + detail;
-    detail_->setText(text);
+    renderStage();
+    adjustSize();
+}
+
+void ProcessingOverlay::setOperationTitle(const QString& title) {
+    if (run_ != Run::Running) return;
+    startedTitle_ = title;
+    title_->setText(title);
+    adjustSize();
+}
+
+void ProcessingOverlay::setSummary(const QString& summary) {
+    if (run_ != Run::Succeeded && run_ != Run::Failed) return;
+    detail_->setText(summary);
     adjustSize();
 }
 
 void ProcessingOverlay::finish(bool ok, const QString& summary) {
-    settled_ = true;
+    run_ = ok ? Run::Succeeded : Run::Failed;
     elapsedTimer_->stop();
     finishTimer_->stop();
     cancel_->setEnabled(false);
@@ -679,6 +731,76 @@ void ProcessingOverlay::finish(bool ok, const QString& summary) {
     } else {
         cancel_->setText(tr("Dismiss"));
         cancel_->setEnabled(true);
+    }
+    adjustSize();
+}
+
+void ProcessingOverlay::changeEvent(QEvent* event) {
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void ProcessingOverlay::renderElapsed() {
+    const qint64 seconds = elapsedSeconds_;
+    elapsedLabel_->setText(tr("Elapsed: %1:%2:%3")
+                              .arg(seconds / 3600, 2, 10, QLatin1Char('0'))
+                              .arg((seconds / 60) % 60, 2, 10, QLatin1Char('0'))
+                              .arg(seconds % 60, 2, 10, QLatin1Char('0')));
+}
+
+void ProcessingOverlay::renderStage() {
+    if (!stageKnown_) {
+        detail_->clear();
+        return;
+    }
+    QString text = stagePhase_;
+    if (stageIndex_ >= 0) {
+        text = stageCount_ > 0
+                   ? tr("Stage %1 of %2: %3").arg(stageIndex_).arg(stageCount_).arg(stagePhase_)
+                   : tr("Stage %1: %2").arg(stageIndex_).arg(stagePhase_);
+    }
+    if (!stageDetail_.isEmpty()) text += QStringLiteral(" — ") + stageDetail_;
+    detail_->setText(text);
+}
+
+void ProcessingOverlay::retranslateUi() {
+    progress_->setAccessibleName(tr("Preparation progress"));
+    cancel_->setAccessibleName(tr("Cancel preparation"));
+    if (run_ == Run::Idle) {
+        // Nothing has been worded yet; begin() supplies every line of the run.
+        return;
+    }
+    // The elapsed count and the bar are state, not words: they are redrawn from
+    // what the run already holds, so the timer, the stage and the progress stay
+    // exactly where they were.
+    renderElapsed();
+    if (run_ == Run::Running) {
+        // The title, the phase and the detail are the caller's words, re-emitted
+        // verbatim. A caller that words them itself restates them through
+        // setOperationTitle()/setStage(), which only replace text; this pass
+        // never translates them by guesswork, begins or restarts a run.
+        title_->setText(startedTitle_);
+        renderStage();
+    } else if (run_ == Run::Succeeded) {
+        title_->setText(tr("Engine ready"));
+        // detail_ holds the caller's summary verbatim.
+    } else {
+        title_->setText(tr("Engine build stopped"));
+    }
+    // The action follows the same state machine as the click handler: a settled
+    // failure offers Dismiss, a pending cancel keeps its mark and stays disabled,
+    // and a running build still offers Cancel.
+    if (run_ == Run::Failed) {
+        cancel_->setText(tr("Dismiss"));
+        cancel_->setEnabled(true);
+    } else if (cancelPending_) {
+        cancel_->setText(QStringLiteral("…"));
+        cancel_->setEnabled(false);
+    } else {
+        cancel_->setText(tr("Cancel"));
+        cancel_->setEnabled(run_ == Run::Running);
     }
     adjustSize();
 }

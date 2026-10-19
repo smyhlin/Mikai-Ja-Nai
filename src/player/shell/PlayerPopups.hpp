@@ -17,6 +17,7 @@
 
 QT_BEGIN_NAMESPACE
 class QAction;
+class QEvent;
 class QKeyEvent;
 class QLabel;
 class QMenu;
@@ -131,10 +132,12 @@ signals:
     void picked(const QVariant& payload);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
+    void retranslateUi();
     void fitToHint();
     void moveHighlight(int delta);
     void setHighlight(int spot);
@@ -161,9 +164,13 @@ signals:
     void picked(int index);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void retranslateUi();
+
+    QLabel* caption_ = nullptr;
     QVBoxLayout* rowsLayout_ = nullptr;
     QVector<QPushButton*> rows_;
 };
@@ -195,6 +202,8 @@ public:
     /// The build settled. `summary` is shown; a failure keeps the window up so a
     /// refusal cannot vanish unread.
     void finish(bool ok, const QString& summary);
+    void setOperationTitle(const QString& title);
+    void setSummary(const QString& summary);
 
     /// Centres the window near the top of `anchor`'s screen.
     void anchorTo(const QWidget* anchor);
@@ -202,7 +211,18 @@ public:
 signals:
     void cancelRequested();
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
+    /// What the window is showing, never a copy of the words showing it: a
+    /// language switch restates the chrome from this and leaves the run alone.
+    enum class Run { Idle, Running, Succeeded, Failed };
+
+    void retranslateUi();
+    void renderElapsed();
+    void renderStage();
+
     QLabel* title_ = nullptr;
     QLabel* detail_ = nullptr;
     QProgressBar* progress_ = nullptr;
@@ -211,7 +231,25 @@ private:
     QTimer* finishTimer_ = nullptr;
     QElapsedTimer elapsed_;
     QPushButton* cancel_ = nullptr;
-    bool settled_ = false;
+    Run run_ = Run::Idle;
+    /// A cancel click that has been sent but not answered yet. The button keeps
+    /// its pending mark and stays disabled until finish() settles the run, and a
+    /// language switch must not turn it back into a second click.
+    bool cancelPending_ = false;
+    /// The caller's own words, kept only so the app-owned wrapper around them -
+    /// "Stage n of m" - can be rebuilt. They are re-emitted verbatim; this window
+    /// never translates a caller's title, phase, detail or summary. A caller that
+    /// words them itself restates them through setOperationTitle()/setStage(),
+    /// which replace text without beginning, ending or restarting the run.
+    QString startedTitle_;
+    QString stagePhase_;
+    QString stageDetail_;
+    int stageIndex_ = -1;
+    int stageCount_ = 0;
+    bool stageKnown_ = false;
+    /// The last second count actually shown, so a switch redraws that same
+    /// elapsed time instead of restarting or advancing the clock.
+    qint64 elapsedSeconds_ = 0;
 };
 
 }  // namespace shell

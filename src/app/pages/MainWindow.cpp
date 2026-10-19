@@ -146,17 +146,19 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     acquisitionProgress_->setTextVisible(false);
     acquisitionProgress_->setFixedWidth(theme::kAcquisitionProgressWidth);
     acquisitionProgress_->setRange(0, 100);
-    auto* acquisitionDetails = new QPushButton(tr("Components"), acquisitionBar_);
-    auto* acquisitionCancel = new QPushButton(tr("Cancel"), acquisitionBar_);
-    acquisitionCancel->setObjectName(QStringLiteral("componentAcquisitionCancel"));
+    acquisitionDetails_ = new QPushButton(tr("Components"), acquisitionBar_);
+    acquisitionDetails_->setObjectName(QStringLiteral("componentAcquisitionDetails"));
+    acquisitionCancel_ = new QPushButton(tr("Cancel"), acquisitionBar_);
+    acquisitionCancel_->setObjectName(QStringLiteral("componentAcquisitionCancel"));
     acquisitionLayout->addWidget(acquisitionStatus_, 1);
     acquisitionLayout->addWidget(acquisitionProgress_);
-    acquisitionLayout->addWidget(acquisitionDetails);
-    acquisitionLayout->addWidget(acquisitionCancel);
+    acquisitionLayout->addWidget(acquisitionDetails_);
+    acquisitionLayout->addWidget(acquisitionCancel_);
     acquisitionBar_->hide();
     root->addWidget(acquisitionBar_);
-    connect(acquisitionDetails, &QPushButton::clicked, this, &MainWindow::openComponentSettings);
-    connect(acquisitionCancel, &QPushButton::clicked, this, [this] {
+    connect(acquisitionDetails_, &QPushButton::clicked, this,
+            &MainWindow::openComponentSettings);
+    connect(acquisitionCancel_, &QPushButton::clicked, this, [this] {
         componentsTab_->cancelAcquisition();
         // A failure left on the bar after the download stopped is dismissed
         // here. A download that is still winding down keeps the bar.
@@ -192,6 +194,52 @@ MainWindow::~MainWindow() {
 
 mplayer::shell::PlayerDialog* MainWindow::currentMediaPlayer() const {
     return mediaPlayer_.data();
+}
+
+void MainWindow::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void MainWindow::retranslateUi() {
+    setWindowTitle(tr("Mikai Wrapper"));
+    // The bar's actions are this window's own words; its status line is the
+    // component catalogue's and keeps being issued by the catalogue.
+    if (acquisitionDetails_ != nullptr) acquisitionDetails_->setText(tr("Components"));
+    if (acquisitionCancel_ != nullptr) acquisitionCancel_->setText(tr("Cancel"));
+    restateEnginePreparation();
+}
+
+QString MainWindow::enginePreparationTitle() const {
+    return tr("Preparing TensorRT engine");
+}
+
+QString MainWindow::enginePreparationSummary(bool ok) const {
+    return ok ? tr("The engine is ready.")
+              : tr("The build stopped; the Processing tab names the reason.");
+}
+
+void MainWindow::restateEnginePreparation() {
+    if (enginePreparationCore_.isNull()) return;
+    mplayer::shell::PlayerDialog* core = enginePreparationCore_.data();
+    if (!enginePreparationStarted_ || !core->enginePreparationVisible()) {
+        // Nothing is on screen any more: the build was dismissed, its dialog
+        // closed, or it settled and left on its own.
+        enginePreparationStarted_ = false;
+        enginePreparationSettled_ = false;
+        enginePreparationCore_.clear();
+        return;
+    }
+    // Setters, never begin()/end(): the run's elapsed clock, stage, progress and
+    // dismiss timer belong to whatever state it already reached. A settled run
+    // shows this summary; a running one shows the title.
+    if (enginePreparationSettled_) {
+        core->updateEnginePreparationSummary(enginePreparationSummary(enginePreparationOk_));
+        return;
+    }
+    core->retitleEnginePreparation(enginePreparationTitle());
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
@@ -973,10 +1021,15 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
     // The core is resolved at each event rather than captured once: the dialog is
     // modal, but PiP can hand the float the stream while it is open, and the
     // window must follow whichever surface owns playback.
-    connect(&dialog, &SettingsDialog::nativePreparationStarted, this, [owningCore] {
+    connect(&dialog, &SettingsDialog::nativePreparationStarted, this, [this, owningCore] {
         if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
-            core->beginEnginePreparation(
-                QCoreApplication::translate("MainWindow", "Preparing TensorRT engine"));
+            // Retained with the surface it reached, so a language switch re-words
+            // the window that is up instead of starting anything.
+            enginePreparationStarted_ = true;
+            enginePreparationSettled_ = false;
+            enginePreparationOk_ = false;
+            enginePreparationCore_ = core;
+            core->beginEnginePreparation(enginePreparationTitle());
         }
     });
     connect(&dialog, &SettingsDialog::nativePreparationProgress, this,
@@ -986,12 +1039,11 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
                     core->updateEnginePreparation(stageIndex, stageCount, phase, detail);
                 }
             });
-    connect(&dialog, &SettingsDialog::nativePreparationFinished, this, [owningCore](bool ok) {
+    connect(&dialog, &SettingsDialog::nativePreparationFinished, this, [this, owningCore](bool ok) {
         if (mplayer::shell::PlayerDialog* core = owningCore(); core != nullptr) {
-            core->endEnginePreparation(
-                ok, ok ? QCoreApplication::translate("MainWindow", "The engine is ready.")
-                       : QCoreApplication::translate(
-                             "MainWindow", "The build stopped; the Processing tab names the reason."));
+            enginePreparationSettled_ = true;
+            enginePreparationOk_ = ok;
+            core->endEnginePreparation(ok, enginePreparationSummary(ok));
         }
     });
 

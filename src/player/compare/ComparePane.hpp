@@ -79,8 +79,14 @@ protected:
     void scrollContentsBy(int dx, int dy) override;
     void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
+    /// Restates this pane's own words (the selector's label glue, tooltip and
+    /// spoken name) in place. The shown candidate's name is the caller's and
+    /// arrives through setChoices; the picture, fit, shared zoom/centre and an
+    /// open selector menu are untouched.
+    void retranslateUi();
     void refreshBadge();
     void syncBadgeMenu();
     void placeSelector();

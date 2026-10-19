@@ -71,6 +71,19 @@ bool selfPaintedChrome(const QWidget* widget) {
     return widget->property("playerOverlay").toBool();
 }
 
+/// Keeps a popover that re-measured itself inside its host without moving a
+/// popover that still fits.
+void clampInsideHost(QWidget* popover) {
+    QWidget* host = popover->parentWidget();
+    if (host == nullptr) {
+        return;
+    }
+    const QRect bounds = host->rect().adjusted(4, 4, -4, -4);
+    const QPoint at = popover->pos();
+    popover->move(qBound(bounds.left(), at.x(), bounds.right() - popover->width() + 1),
+                  qBound(bounds.top(), at.y(), bounds.bottom() - popover->height() + 1));
+}
+
 }  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -483,10 +496,31 @@ void SettingsFlyout::setQualityOptions(const QVector<QualityOption>& options) {
 void SettingsFlyout::changeEvent(QEvent* event) {
     QFrame::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
-        speedCaption_->setText(tr("SPEED"));
-        qualityCaption_->setText(tr("QUALITY"));
-        refresh();
+        retranslate();
     }
+}
+
+void SettingsFlyout::retranslate() {
+    speedCaption_->setText(tr("SPEED"));
+    qualityCaption_->setText(tr("QUALITY"));
+    // Spoken names never reach the painter, so only this handler refreshes them.
+    slider_->setAccessibleName(tr("Speed"));
+    qualitySection_->setAccessibleName(tr("Quality"));
+    // refresh() rewrites the translated preset rows from rate_ and the
+    // caller-held quality options: neither selection moves.
+    refresh();
+    if (!isVisible()) {
+        // popupNear() measures the new wording when it opens.
+        return;
+    }
+    // popupNear() froze the size for the previous wording, and a longer caption
+    // would be clipped by it. The anchor is gone by now, so the corner stays.
+    layout()->invalidate();
+    layout()->activate();
+    setFixedSize(layout()->sizeHint());
+    layout()->activate();
+    clampInsideHost(this);
+    update();
 }
 
 void SettingsFlyout::paintEvent(QPaintEvent*) {
@@ -696,10 +730,31 @@ void CenterGlyph::paintChrome(QPainter& painter) {
 //  PILL BUTTON
 // ═══════════════════════════════════════════════════════════════════════════
 
-PillButton::PillButton(QWidget* parent)
-    : QWidget(parent), text_(tr("Original File")), font_(uiFont(10)) {
+PillButton::PillButton(QWidget* parent) : QWidget(parent), font_(uiFont(10)) {
     setCursor(Qt::PointingHandCursor);
+    retranslate();
+}
+
+void PillButton::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslate();
+    }
+}
+
+void PillButton::retranslate() {
+    const QString text = tr("Original File");
+    if (text == text_) {
+        return;
+    }
+    text_ = text;
+    // The caption is painted, so the name is the only thing a screen reader
+    // has to go on.
+    setAccessibleName(text_);
+    // The fixed size is both the hit target and the clip the caption is drawn
+    // into, so a translated string re-measures both.
     setFixedSize(textWidth(font_, text_) + 26, 22);
+    chromeUpdate(this);
 }
 
 void PillButton::enterEvent(QEnterEvent* event) {
@@ -819,17 +874,30 @@ KeyHints::KeyHints(QWidget* parent) : QFrame(parent) {
 
 void KeyHints::changeEvent(QEvent* event) {
     QFrame::changeEvent(event);
-    if (event->type() != QEvent::LanguageChange) {
-        return;
+    if (event->type() == QEvent::LanguageChange) {
+        retranslate();
     }
+}
+
+void KeyHints::retranslate() {
     caption_->setText(tr("KEYBOARD SHORTCUTS"));
     const auto table = shortcutTable();
-    for (int row = 0; row < descriptions_.size(); ++row) {
+    const qsizetype rows = qMin(descriptions_.size(), table.size());
+    for (qsizetype row = 0; row < rows; ++row) {
         descriptions_.at(row)->setText(table.at(row).second);
     }
+    if (!isVisible()) {
+        // popupNear() measures the new wording when it opens.
+        return;
+    }
+    // The card was sized for the previous wording; a longer row must not be
+    // clipped by that frozen width.
     layout()->invalidate();
     layout()->activate();
     setFixedSize(layout()->sizeHint());
+    layout()->activate();
+    clampInsideHost(this);
+    update();
 }
 
 void KeyHints::paintEvent(QPaintEvent*) {

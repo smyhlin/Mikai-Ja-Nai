@@ -15,13 +15,23 @@
 // finds the window gone is skipped, and a font or size the probe cannot name is
 // never asserted: the checks state the behaviour, not the theme's numbers.
 
+#include <QAbstractButton>
 #include <QApplication>
+#include <QByteArray>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDoubleSpinBox>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QPointer>
 #include <QTest>
 #include <QGuiApplication>
@@ -32,6 +42,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTranslator>
 #include <QWidget>
 #include <algorithm>
 #include <cmath>
@@ -39,7 +50,9 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 
+#include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
 #include "PlayerPopups.hpp"
 #include "PlayerShell.hpp"
@@ -307,8 +320,10 @@ double floatExitPosition = 0.0;
 bool floatExitPlaying = false;
 
 int failures = 0;
+int checks = 0;
 
 void check(bool ok, const char* what) {
+    ++checks;
     std::fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) ++failures;
 }
@@ -439,6 +454,33 @@ PipFloat* awaitVisiblePipFloat(int timeoutMs = 6000) {
     return pip;
 }
 
+/// Reveals the float's chrome the way a viewer does.
+///
+/// The float keeps its own hold timer, and that timer reads the physical
+/// pointer when it expires. A synthetic move alone would reveal for an instant
+/// and then fade on the next tick while the real pointer is still elsewhere, so
+/// the pointer is really moved onto the float first. QTest::mouseMove only puts
+/// the pointer there (Qt 6.3+ asks the test to use QCursor::setPos for that when
+/// no button is held), so the move that reaches the float's own event filter is
+/// delivered explicitly afterwards. Returns whether the pointer really is
+/// inside the float.
+bool hoverPipControls(const QPointer<PipFloat>& pip) {
+    if (pip.isNull() || !pip->isVisible()) return false;
+    // The centre is inside the float whether the chrome is faded out - the
+    // whole rect is exposed picture then - or up, where a control under the
+    // pointer is still part of the float.
+    const QPoint local = pip->rect().center();
+    QTest::mouseMove(pip, local);
+    if (pip.isNull()) return false;
+    const QPoint global = pip->mapToGlobal(local);
+    QMouseEvent move(QEvent::MouseMove, pip->mapFromGlobal(global), global, Qt::NoButton,
+                     Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(pip.data(), &move);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    return !pip.isNull() && pip->isVisible() &&
+           pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
+}
+
 /// What the owning player actually did with one parentless float.
 ///
 /// A QPointer answers "is it alive" and stops there. It cannot answer the two
@@ -535,12 +577,1176 @@ private:
     int index_ = 0;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Live interface language
+//
+// This probe links mikai_player, not mikai_app, so it cannot call the app's
+// applyInterfaceLanguage. What it does here is that function's contract, not a
+// second language policy: an application catalog is loaded before anything
+// installed is removed, a failed load leaves the working translation intact,
+// and installing or removing a QTranslator posts QEvent::LanguageChange to
+// every open widget. That event is what the shell, the float, the popovers and
+// the Compare window answer - the live switch under test. The Settings
+// selector that writes the preference is covered by native_settings_probe;
+// this scenario applies the real catalog directly to an already-open player.
+//
+// The real manager switches QLocale::setDefault together with its
+// translators, so the default locale is part of the same contract: number,
+// date and measurement text drawn by Qt follows it. This helper does the same
+// and restores whatever locale the process had before the scenario, so the
+// focused smoke proves the pair (translators and locale) moves as one unit.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class ProbeLanguage {
+public:
+    ProbeLanguage() : priorLocale_(QLocale()) {}
+
+    ~ProbeLanguage() {
+        // The application holds the pointer, so a translator that goes out of
+        // scope while installed would leave a dangling entry. Removed the way
+        // it was installed; the locale is a process default and is put back
+        // even if the application is already gone.
+        auto* app = QCoreApplication::instance();
+        if (app != nullptr) {
+            if (application_) app->removeTranslator(application_.get());
+            if (platform_) app->removeTranslator(platform_.get());
+        }
+        QLocale::setDefault(priorLocale_);
+    }
+
+    bool apply(const QString& preference, const QString& catalog, QString* reason) {
+        if (preference == QLatin1String("uk")) {
+            return applyUkrainian(catalog, reason);
+        }
+        return applyEnglish();
+    }
+
+    QString active() const { return active_; }
+    QString catalog() const { return catalog_; }
+
+    // The pair under test: the translators carry the words, the default
+    // locale carries the Qt-drawn numbers and dates. The application changes
+    // both together, so a switch that moved only one of them is a regression
+    // this scenario has to see.
+    bool localeMatches(const QString& code) const {
+        const QLocale current = QLocale();
+        if (code == QLatin1String("uk")) {
+            return current.language() == QLocale::Ukrainian &&
+                   current.territory() == QLocale::Ukraine;
+        }
+        if (code == QLatin1String("en")) {
+            return current.language() == QLocale::English &&
+                   current.territory() == QLocale::UnitedStates;
+        }
+        return false;
+    }
+
+    // Number formatting is what makes the locale observable in a running
+    // player rather than a bookkeeping value: Ukrainian writes decimals with
+    // a comma, English with a point.
+    bool usesUkrainianNumbers() const {
+        return QLocale().decimalPoint() == QLatin1String(",");
+    }
+
+    QString localeTag() const { return QLocale().name(); }
+    QLocale priorLocale() const { return priorLocale_; }
+
+private:
+    bool applyEnglish() {
+        auto* app = QCoreApplication::instance();
+        if (app == nullptr) return false;
+        if (application_) {
+            app->removeTranslator(application_.get());
+            application_.reset();
+        }
+        if (platform_) {
+            app->removeTranslator(platform_.get());
+            platform_.reset();
+        }
+        active_ = QStringLiteral("en");
+        QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
+        return true;
+    }
+
+    bool applyUkrainian(const QString& suppliedCatalog, QString* reason) {
+        auto* app = QCoreApplication::instance();
+        if (app == nullptr) return false;
+        const QString path = suppliedCatalog.isEmpty() ? catalog_ : suppliedCatalog;
+        auto application = std::make_unique<QTranslator>();
+        if (path.isEmpty() || !application->load(path) || application->isEmpty()) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("the application catalog could not be loaded: %1").arg(path);
+            }
+            return false;
+        }
+
+        // The Qt platform catalog is optional; the application catalog decides
+        // success. The search follows the packaged layout first, then the
+        // installed Qt prefix, the same order the application uses.
+        const QLocale locale(QLocale::Ukrainian, QLocale::Ukraine);
+        std::unique_ptr<QTranslator> platform;
+        const QStringList searchPaths{
+            QCoreApplication::applicationDirPath() + QStringLiteral("/translations"),
+            QLibraryInfo::path(QLibraryInfo::TranslationsPath)};
+        for (const QString& directory : searchPaths) {
+            auto candidate = std::make_unique<QTranslator>();
+            if (candidate->load(locale, QStringLiteral("qtbase"), QStringLiteral("_"),
+                                directory) &&
+                !candidate->isEmpty()) {
+                platform = std::move(candidate);
+                break;
+            }
+        }
+
+        // Loaded before installed, and both installed before the working pair is
+        // removed, so no refusal can leave the application translator-less.
+        if (!app->installTranslator(application.get())) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("the application rejected the Ukrainian translator");
+            }
+            return false;
+        }
+        if (platform && !app->installTranslator(platform.get())) {
+            app->removeTranslator(application.get());
+            if (reason != nullptr) {
+                *reason = QStringLiteral("the application rejected the Qt platform translator");
+            }
+            return false;
+        }
+        if (application_) app->removeTranslator(application_.get());
+        if (platform_) app->removeTranslator(platform_.get());
+        application_ = std::move(application);
+        platform_ = std::move(platform);
+        catalog_ = path;
+        active_ = QStringLiteral("uk");
+        QLocale::setDefault(locale);
+        return true;
+    }
+
+    std::unique_ptr<QTranslator> application_;
+    std::unique_ptr<QTranslator> platform_;
+    QString active_ = QStringLiteral("en");
+    QString catalog_;
+    QLocale priorLocale_;
+};
+
+void checkText(bool ok, const QString& what) {
+    check(ok, what.toUtf8().constData());
+}
+
+QStringList widgetTexts(QWidget* widget) {
+    QStringList values;
+    if (widget == nullptr) return values;
+    values << widget->windowTitle() << widget->toolTip() << widget->accessibleName();
+    if (auto* button = qobject_cast<QAbstractButton*>(widget)) {
+        values << button->text();
+    }
+    if (auto* label = qobject_cast<QLabel*>(widget)) {
+        values << label->text();
+    }
+    return values;
+}
+
+QStringList textsForName(QWidget* root, const QString& name) {
+    return widgetTexts(root != nullptr ? root->findChild<QWidget*>(name) : nullptr);
+}
+
+QStringList namedTexts(QWidget* root, const QStringList& names) {
+    QStringList values;
+    for (const QString& name : names) {
+        values << name << textsForName(root, name);
+    }
+    return values;
+}
+
+QStringList labelsUnder(QWidget* root) {
+    QStringList values;
+    if (root == nullptr) return values;
+    for (QLabel* label : root->findChildren<QLabel*>()) {
+        values << label->text();
+    }
+    return values;
+}
+
+QStringList visibleButtonsUnder(QWidget* root) {
+    QStringList values;
+    if (root == nullptr) return values;
+    for (QAbstractButton* button : root->findChildren<QAbstractButton*>()) {
+        if (!button->isVisible()) continue;
+        values << button->text() << button->toolTip() << button->accessibleName();
+    }
+    return values;
+}
+
+QStringList menuTexts(MenuPopup* menu) {
+    QStringList values;
+    if (menu == nullptr) return values;
+    for (int spot = 0; spot < menu->rowCount(); ++spot) {
+        const MenuEntry entry = menu->entryAt(spot);
+        values << entry.heading << entry.text << entry.tooltip;
+    }
+    return values;
+}
+
+QStringList compareTexts(CompareWindow* compare) {
+    QStringList values;
+    if (compare == nullptr) return values;
+    values << QStringLiteral("windowTitle") << compare->windowTitle();
+    values << namedTexts(compare, {QStringLiteral("compareSwap"),
+                                   QStringLiteral("compareRecapture"),
+                                   QStringLiteral("comparePinBtn"),
+                                   QStringLiteral("compareFit"),
+                                   QStringLiteral("compareZoom")});
+    for (const char* name : {"compareMode", "compareFilter"}) {
+        if (auto* box = compare->findChild<QComboBox*>(QString::fromLatin1(name))) {
+            for (int index = 0; index < box->count(); ++index) {
+                values << box->itemText(index);
+            }
+        }
+    }
+    // The toolbar's fixed captions (Mode:, Filter:, Split:, Flicker/Gain) are
+    // unnamed labels; the pixel readout and the zoom badge are state, not
+    // captions, so they are left out of the corpus.
+    if (auto* card = compare->findChild<QWidget*>(QStringLiteral("compareToolbarCard"))) {
+        for (QLabel* label : card->findChildren<QLabel*>()) {
+            if (label->objectName() == QLatin1String("compareHover") ||
+                label->objectName() == QLatin1String("compareHoverSwatch")) {
+                continue;
+            }
+            values << label->text();
+        }
+    }
+    return values;
+}
+
+QStringList compareSelections(CompareWindow* compare) {
+    QStringList values;
+    if (compare == nullptr) return values;
+    for (QWidget* bar : compare->findChildren<QWidget*>(QStringLiteral("compareSelectorBar"))) {
+        for (QAbstractButton* button : bar->findChildren<QAbstractButton*>()) {
+            values << button->text() << button->toolTip() << button->accessibleName();
+        }
+    }
+    return values;
+}
+
+int compareSelectorCount(CompareWindow* compare) {
+    return compare != nullptr
+               ? compare->findChildren<QWidget*>(QStringLiteral("compareSelectorBar")).size()
+               : 0;
+}
+
+struct PlaybackFacts {
+    QString sourceUrl;
+    quint64 sourceEpoch = 0;
+    int height = 0;
+    int preset = -1;
+    double speed = 0.0;
+    bool playing = false;
+    quint64 pauseGeneration = 0;
+    double position = 0.0;
+    bool dialogVisible = false;
+    bool pipActive = false;
+};
+
+PlaybackFacts captureFacts(PlayerDialog* dialog, VideoSurface* surface, RangeSlider* speed) {
+    PlaybackFacts facts;
+    if (surface != nullptr) {
+        facts.sourceUrl = surface->sourceUrl();
+        facts.sourceEpoch = surface->sourceEpoch();
+        facts.preset = static_cast<int>(surface->anime4KMode());
+        facts.playing = surface->isPlaying();
+        facts.pauseGeneration = surface->pauseRequestGeneration();
+        facts.position = surface->position();
+    }
+    if (dialog != nullptr) {
+        facts.height = dialog->currentHeight();
+        facts.dialogVisible = dialog->isVisible();
+        facts.pipActive = dialog->isPipActive();
+    }
+    if (speed != nullptr) facts.speed = speed->value();
+    return facts;
+}
+
+void checkStableFacts(const PlaybackFacts& before, const PlaybackFacts& after,
+                      const QString& when) {
+    std::fprintf(stderr,
+                 "     facts %s: url=%s epoch=%llu height=%d preset=%d speed=%.3f "
+                 "pauseGen=%llu playing=%d\n",
+                 qPrintable(when), qPrintable(after.sourceUrl),
+                 static_cast<unsigned long long>(after.sourceEpoch), after.height,
+                 after.preset, after.speed,
+                 static_cast<unsigned long long>(after.pauseGeneration), int(after.playing));
+    checkText(after.sourceUrl == before.sourceUrl && !after.sourceUrl.isEmpty(),
+              when + QStringLiteral(": the source URL is untouched"));
+    checkText(after.sourceEpoch == before.sourceEpoch && after.sourceEpoch > 0,
+              when + QStringLiteral(": the source epoch shows no reopen"));
+    checkText(after.height == before.height && after.height > 0,
+              when + QStringLiteral(": the chosen quality is untouched"));
+    checkText(after.preset == before.preset && after.preset >= 0,
+              when + QStringLiteral(": the chosen preset is untouched"));
+    checkText(qFuzzyCompare(after.speed, before.speed),
+              when + QStringLiteral(": the chosen speed is untouched"));
+}
+
+bool waitPositionBeyond(VideoSurface* surface, double baseline, int timeoutMs = 5000) {
+    return waitFor(
+        [surface, baseline] { return surface != nullptr && surface->position() > baseline + 0.4; },
+        timeoutMs);
+}
+
+bool widgetInside(QWidget* parent, QWidget* child) {
+    if (parent == nullptr || child == nullptr || !child->isVisible()) return false;
+    const QRect geometry(child->mapTo(parent, QPoint(0, 0)), child->size());
+    return parent->rect().contains(geometry);
+}
+
+QJsonObject evidenceFromFacts(const PlaybackFacts& facts) {
+    QJsonObject object;
+    object.insert(QStringLiteral("sourceUrl"), facts.sourceUrl);
+    object.insert(QStringLiteral("sourceEpoch"), static_cast<double>(facts.sourceEpoch));
+    object.insert(QStringLiteral("height"), facts.height);
+    object.insert(QStringLiteral("preset"), facts.preset);
+    object.insert(QStringLiteral("speed"), facts.speed);
+    object.insert(QStringLiteral("pauseGeneration"), static_cast<double>(facts.pauseGeneration));
+    object.insert(QStringLiteral("playing"), facts.playing);
+    object.insert(QStringLiteral("position"), facts.position);
+    object.insert(QStringLiteral("dialogVisible"), facts.dialogVisible);
+    object.insert(QStringLiteral("pipActive"), facts.pipActive);
+    return object;
+}
+
+void saveEvidenceJson(const QJsonObject& evidence) {
+    QFile file(QStringLiteral("interaction-language-evidence.json"));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        std::fprintf(stderr, "FAIL the language evidence JSON was written\n");
+        ++failures;
+        return;
+    }
+    file.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+    file.close();
+}
+
+bool saveShot(QWidget* widget, const QString& name, QJsonArray* screenshots) {
+    if (widget == nullptr) return false;
+    const bool saved = widget->grab().save(name);
+    if (saved && screenshots != nullptr) screenshots->append(name);
+    return saved;
+}
+
+// The focused case is selected by `--language-smoke`, so a live-language run
+// does not have to pay for (or depend on) the interaction stages that drive
+// quality reloads, pixels, PiP ownership and the Esc ladder. It requires real
+// motion media: a language switch is proven against a picture that is still
+// being delivered.
+int runLanguageSmoke(const QString& url, PlayerHost* host) {
+    const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+    QJsonObject evidence;
+    QJsonArray screenshots;
+    evidence.insert(QStringLiteral("probe"), QStringLiteral("interaction_probe"));
+    evidence.insert(QStringLiteral("case"), QStringLiteral("language-smoke"));
+    evidence.insert(QStringLiteral("media"), url);
+    evidence.insert(QStringLiteral("catalog"), catalog);
+    QJsonArray languages;
+    languages.append(QStringLiteral("en"));
+    languages.append(QStringLiteral("uk"));
+    languages.append(QStringLiteral("en"));
+    evidence.insert(QStringLiteral("languages"), languages);
+
+    ProbeLanguage language;
+    if (catalog.isEmpty() || !QFileInfo(catalog).isFile()) {
+        check(false, "MIKAI_PROBE_TRANSLATION names the built application catalog");
+        evidence.insert(QStringLiteral("passed"), false);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+        std::fprintf(stderr, "RESULT: FAIL (%d)\n", failures);
+        return 1;
+    }
+    QString reason;
+    evidence.insert(QStringLiteral("localePrior"), language.priorLocale().name());
+    check(language.apply(QStringLiteral("en"), catalog, &reason),
+          "the focused scenario starts in English with the catalog available");
+    check(language.active() == QLatin1String("en"), "the probe knows its working language");
+    checkText(language.localeMatches(QStringLiteral("en")),
+              QStringLiteral("the English baseline also sets the default locale"));
+    checkText(!language.usesUkrainianNumbers(),
+              QStringLiteral("the English baseline formats numbers with the English decimal mark"));
+    evidence.insert(QStringLiteral("localeBaseline"), language.localeTag());
+    std::fprintf(stderr, "case: language-smoke catalog=%s media=%s\n", qPrintable(catalog),
+                 qPrintable(url));
+
+    const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
+    auto* dialog = new PlayerDialog(QStringLiteral("probe language smoke"), url, qualities, 720,
+                                    host);
+    QPointer<PlayerDialog> dialogGuard(dialog);
+    QVector<QVariantMap> playlist;
+    for (int episode = 1; episode <= 5; ++episode) {
+        playlist.append(QVariantMap{{"label", QStringLiteral("Серія %1").arg(episode)},
+                                    {"embed", QStringLiteral("e%1").arg(episode)}});
+    }
+    dialog->setPlaylist(playlist, 2);
+    dialog->setVariants({QVariantMap{{"label", QStringLiteral("Ashdi 720p")},
+                                     {"embed", QStringLiteral("e1")},
+                                     {"kind", QStringLiteral("voice")}},
+                         QVariantMap{{"label", QStringLiteral("Суб 1080p")},
+                                     {"embed", QStringLiteral("e4")},
+                                     {"kind", QStringLiteral("sub")}}},
+                        QStringLiteral("e1"));
+    dialog->startPlayer();
+    dialog->showFullScreen();
+
+    auto* shell = dialog->findChild<PlayerShell*>();
+    auto* surface = dialog->findChild<VideoSurface*>();
+    auto* flyout = dialog->findChild<SettingsFlyout*>();
+    auto* speed = dialog->findChild<RangeSlider*>(QStringLiteral("playerSpeedSlider"));
+    check(shell != nullptr && surface != nullptr,
+          "the focused case built a real player with its surface");
+    if (shell == nullptr || surface == nullptr) {
+        dialog->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        evidence.insert(QStringLiteral("passed"), false);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+        std::fprintf(stderr, "RESULT: FAIL (%d)\n", failures);
+        return 1;
+    }
+
+    check(waitFor([surface] { return surface->hasVideo() && surface->duration() > 0.0; }, 20000),
+          "the motion fixture loaded before the language switch");
+
+    // A real quality choice, then a real preset and a real speed. These are the
+    // viewer-owned values the language switch must not disturb, and each one is
+    // set through the same control a viewer uses.
+    shell->openSettings();
+    check(waitFor([flyout] { return flyout != nullptr && flyout->isVisible(); }, 4000),
+          "the quality-and-speed popover opened for the chosen state");
+    QPushButton* qualityRow = nullptr;
+    if (flyout != nullptr) {
+        for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
+            if (button->isVisible() && button->text().contains(QStringLiteral("1080p"))) {
+                qualityRow = button;
+                break;
+            }
+        }
+    }
+    check(qualityRow != nullptr, "the popover offers the 1080p stream");
+    const quint64 epochBeforeQuality = surface->sourceEpoch();
+    if (qualityRow != nullptr) qualityRow->click();
+    check(waitFor([dialog] { return dialog->currentHeight() == 1080; }, 10000),
+          "the chosen quality becomes the running stream");
+    check(waitFor([surface, epochBeforeQuality] {
+              return surface->sourceEpoch() != epochBeforeQuality;
+          }, 12000),
+          "the chosen quality reopened the stream before the language baseline");
+    check(waitFor([surface] { return surface->hasVideo() && surface->duration() > 0.0; }, 12000),
+          "the chosen stream is loaded before the language switch");
+    QTest::qWait(500);
+    shell->dismissOverlay();
+
+    shell->applyAnime4KPreset(anime4k::modeId(anime4k::Mode::FastA));
+    check(waitFor([surface] { return surface->anime4KMode() == anime4k::Mode::FastA; }, 5000),
+          "the chosen preset is applied");
+    shell->openSettings();
+    check(waitFor([flyout] { return flyout != nullptr && flyout->isVisible(); }, 4000),
+          "the popover reopened for the chosen speed");
+    if (speed == nullptr) {
+        speed = dialog->findChild<RangeSlider*>(QStringLiteral("playerSpeedSlider"));
+    }
+    check(speed != nullptr, "the speed selector exists");
+    if (speed != nullptr) speed->setValue(0.5);
+    QTest::qWait(200);
+    check(speed != nullptr && std::abs(speed->value() - 0.5) < 0.01,
+          "the speed selector holds the chosen rate");
+    shell->dismissOverlay();
+
+    surface->setPaused(false);
+    check(waitFor([surface] { return surface->isPlaying(); }, 8000),
+          "playback runs before the language scenario");
+    surface->seek(3.0);
+    check(waitFor([surface] { return surface->position() > 1.0; }, 6000),
+          "the player is past the start before the language switch");
+
+    const auto switchTo = [&](const QString& code, const QString& label) {
+        QString switchReason;
+        const bool applied = language.apply(code, catalog, &switchReason);
+        checkText(applied, label);
+        if (!applied) {
+            std::fprintf(stderr, "     %s\n", qPrintable(switchReason));
+        } else {
+            // The application moves the default locale in the same call that
+            // swaps the translators; the player has to keep running with
+            // Qt-drawn numbers under the Ukrainian locale, not just Ukrainian
+            // words.
+            checkText(language.localeMatches(code),
+                      QStringLiteral("%1: the default locale follows the translators").arg(code));
+            checkText(language.usesUkrainianNumbers() == (code == QLatin1String("uk")),
+                      QStringLiteral("%1: Qt number formatting follows the default locale").arg(code));
+        }
+        QTest::qWait(300);
+        QCoreApplication::processEvents();
+        return applied;
+    };
+
+    const QStringList shellNames{QStringLiteral("playerSettingsButton"),
+                                 QStringLiteral("playerEnhanceButton"),
+                                 QStringLiteral("playerPlayToggle"),
+                                 QStringLiteral("originalFileButton"),
+                                 QStringLiteral("playerSeriesToggle")};
+    const auto harvestShell = [&] {
+        QStringList values{shell->windowTitle()};
+        values += namedTexts(dialog, shellNames);
+        return values;
+    };
+
+    // ── shell chrome and the open settings popover ─────────────────────────
+    check(language.active() == QLatin1String("en"), "the shell baseline is English");
+    shell->openSettings();
+    check(waitFor([flyout] { return flyout != nullptr && flyout->isVisible(); }, 4000),
+          "the settings popover is open across the language switch");
+    const QStringList shellBefore = harvestShell();
+    const QStringList settingsButtonBefore =
+        textsForName(dialog, QStringLiteral("playerSettingsButton"));
+    const QStringList flyoutBefore =
+        namedTexts(flyout, {QStringLiteral("playerSettingsFlyout"),
+                            QStringLiteral("playerSpeedSlider"),
+                            QStringLiteral("playerQualityCaption"),
+                            QStringLiteral("playerQualitySection"),
+                            QStringLiteral("playerQualityLabel")}) +
+        visibleButtonsUnder(flyout);
+    const PlaybackFacts shellFacts = captureFacts(dialog, surface, speed);
+    const double shellPosition = surface->position();
+    if (switchTo(QStringLiteral("uk"), QStringLiteral("the real catalog switches the player to Ukrainian"))) {
+        evidence.insert(QStringLiteral("localeUkrainian"), language.localeTag());
+        const QStringList shellUkrainian = harvestShell();
+        const QStringList flyoutUkrainian =
+            namedTexts(flyout, {QStringLiteral("playerSettingsFlyout"),
+                                QStringLiteral("playerSpeedSlider"),
+                                QStringLiteral("playerQualityCaption"),
+                                QStringLiteral("playerQualitySection"),
+                                QStringLiteral("playerQualityLabel")}) +
+            visibleButtonsUnder(flyout);
+        checkText(shellUkrainian != shellBefore,
+                  QStringLiteral("uk: the open shell restates its chrome in place"));
+        checkText(textsForName(dialog, QStringLiteral("playerSettingsButton")) !=
+                      settingsButtonBefore,
+                  QStringLiteral("uk: the settings control's tooltip and spoken name are restated"));
+        bool chromeWordingComplete = true;
+        for (const char* name : {"playerSettingsButton", "playerEnhanceButton",
+                                 "playerPlayToggle"}) {
+            QWidget* widget = dialog->findChild<QWidget*>(QString::fromLatin1(name));
+            if (widget == nullptr || widget->toolTip().isEmpty() ||
+                widget->accessibleName().isEmpty()) {
+                chromeWordingComplete = false;
+            }
+        }
+        checkText(chromeWordingComplete,
+                  QStringLiteral("uk: the dock chrome keeps a tooltip and an accessible name"));
+        checkText(flyoutUkrainian != flyoutBefore,
+                  QStringLiteral("uk: the open settings popover restates its captions in place"));
+        checkText(flyout != nullptr && flyout->isVisible(),
+                  QStringLiteral("uk: the settings popover stays open across the switch"));
+        checkText(flyout == nullptr || buttonsFitWithoutOverlap(flyout),
+                  QStringLiteral("uk: the restated settings rows still fit without overlap"));
+        checkText(dialog->isVisible(),
+                  QStringLiteral("uk: the player window stays open across the switch"));
+
+        // A replacement catalog that cannot be loaded is refused before
+        // anything installed is touched: the working translators keep
+        // answering LanguageChange and the default locale keeps formatting
+        // numbers as Ukrainian. This is the branch a stale or missing catalog
+        // drives in Settings, and it is checked in both halves because the
+        // application switches both together.
+        const QStringList shellBeforeRefusal = harvestShell();
+        const QString missingCatalog = QCoreApplication::applicationDirPath() +
+                                       QStringLiteral("/probe-missing-uk-catalog.qm");
+        QString refusalReason;
+        const bool refused =
+            language.apply(QStringLiteral("uk"), missingCatalog, &refusalReason);
+        QTest::qWait(100);
+        QCoreApplication::processEvents();
+        checkText(!refused, QStringLiteral("uk: a catalog that does not load is refused"));
+        checkText(!refusalReason.isEmpty(),
+                  QStringLiteral("uk: the refusal explains why the catalog was not applied"));
+        checkText(language.active() == QLatin1String("uk") &&
+                      language.catalog() != missingCatalog,
+                  QStringLiteral("uk: the refused catalog does not replace the working one"));
+        checkText(language.localeMatches(QStringLiteral("uk")) &&
+                      language.usesUkrainianNumbers(),
+                  QStringLiteral("uk: the refused catalog keeps the Ukrainian locale and numbers"));
+        checkText(harvestShell() == shellBeforeRefusal,
+                  QStringLiteral("uk: the refused catalog keeps the installed translation"));
+        evidence.insert(QStringLiteral("refusedCatalog"), missingCatalog);
+        evidence.insert(QStringLiteral("localeAfterRefusal"), language.localeTag());
+
+        const PlaybackFacts after = captureFacts(dialog, surface, speed);
+        checkStableFacts(shellFacts, after, QStringLiteral("uk shell"));
+        checkText(shellFacts.playing && after.playing,
+                  QStringLiteral("uk: playback keeps running without a pause or restart"));
+        checkText(waitPositionBeyond(surface, shellPosition),
+                  QStringLiteral("uk: the playhead keeps moving while the language changes"));
+        saveShot(dialog, QStringLiteral("interaction-language-shell-flyout-uk.png"),
+                 &screenshots);
+
+        if (switchTo(QStringLiteral("en"), QStringLiteral("the catalog switches the player back to English"))) {
+            evidence.insert(QStringLiteral("localeEnglish"), language.localeTag());
+            const QStringList shellEnglish = harvestShell();
+            const QStringList flyoutEnglish =
+                namedTexts(flyout, {QStringLiteral("playerSettingsFlyout"),
+                                    QStringLiteral("playerSpeedSlider"),
+                                    QStringLiteral("playerQualityCaption"),
+                                    QStringLiteral("playerQualitySection"),
+                                    QStringLiteral("playerQualityLabel")}) +
+                visibleButtonsUnder(flyout);
+            checkText(shellEnglish == shellBefore,
+                      QStringLiteral("en: the shell's chrome returns to the opening words"));
+            checkText(flyoutEnglish == flyoutBefore,
+                      QStringLiteral("en: the settings captions return to the opening words"));
+            checkText(flyout != nullptr && flyout->isVisible(),
+                      QStringLiteral("en: the settings popover stayed open for the whole cycle"));
+            const PlaybackFacts after = captureFacts(dialog, surface, speed);
+            checkStableFacts(shellFacts, after, QStringLiteral("en shell"));
+            checkText(shellFacts.playing && after.playing,
+                      QStringLiteral("en: playback still runs after the round trip"));
+            checkText(waitPositionBeyond(surface, after.position),
+                      QStringLiteral("en: the playhead kept moving through the round trip"));
+        }
+    }
+    shell->dismissOverlay();
+
+    // ── key hints ──────────────────────────────────────────────────────────
+    QKeyEvent question(QEvent::KeyPress, Qt::Key_Question, Qt::NoModifier);
+    QCoreApplication::sendEvent(shell, &question);
+    auto* hints = dialog->findChild<KeyHints*>(QStringLiteral("playerKeyHints"));
+    check(waitFor([hints] { return hints != nullptr && hints->isVisible(); }, 3000),
+          "the keyboard hints are open across the language switch");
+    if (hints != nullptr) {
+        const QStringList hintsBefore = namedTexts(hints, {QStringLiteral("playerKeyHints")}) +
+                                        labelsUnder(hints);
+        const PlaybackFacts hintsFacts = captureFacts(dialog, surface, speed);
+        const double hintsPosition = surface->position();
+        if (switchTo(QStringLiteral("uk"), QStringLiteral("Ukrainian reaches the open keyboard hints"))) {
+            const QStringList hintsUkrainian = namedTexts(hints, {QStringLiteral("playerKeyHints")}) +
+                                               labelsUnder(hints);
+            checkText(hintsUkrainian != hintsBefore,
+                      QStringLiteral("uk: the open hints restate their rows in place"));
+            checkText(hints->isVisible(), QStringLiteral("uk: the hints stay open"));
+            checkText(widgetInside(dialog, hints),
+                      QStringLiteral("uk: the restated hints stay inside the player window"));
+            const PlaybackFacts after = captureFacts(dialog, surface, speed);
+            checkStableFacts(hintsFacts, after, QStringLiteral("uk hints"));
+            checkText(after.playing && waitPositionBeyond(surface, hintsPosition),
+                      QStringLiteral("uk: the picture keeps playing while the hints restate"));
+            saveShot(hints, QStringLiteral("interaction-language-hints-uk.png"), &screenshots);
+            if (switchTo(QStringLiteral("en"), QStringLiteral("English returns to the open keyboard hints"))) {
+                const QStringList hintsEnglish = namedTexts(hints, {QStringLiteral("playerKeyHints")}) +
+                                                 labelsUnder(hints);
+                checkText(hintsEnglish == hintsBefore,
+                          QStringLiteral("en: the hints return to their opening rows"));
+                checkText(hints->isVisible(), QStringLiteral("en: the hints stayed open"));
+                const PlaybackFacts after = captureFacts(dialog, surface, speed);
+                checkStableFacts(hintsFacts, after, QStringLiteral("en hints"));
+                checkText(after.playing && waitPositionBeyond(surface, after.position),
+                          QStringLiteral("en: playback continued through the hints cycle"));
+            }
+        }
+        shell->dismissOverlay();
+    }
+
+    // ── the picture menu ───────────────────────────────────────────────────
+    shell->openPictureMenu(QPoint(60, 60));
+    auto* menu = dialog->findChild<MenuPopup*>(QStringLiteral("playerPictureMenu"));
+    check(waitFor([menu] { return menu != nullptr && menu->isVisible(); }, 3000),
+          "the picture menu is open across the language switch");
+    if (menu != nullptr) {
+        const QStringList menuBefore = menuTexts(menu);
+        const int rowsBefore = menu->rowCount();
+        const PlaybackFacts menuFacts = captureFacts(dialog, surface, speed);
+        const double menuPosition = surface->position();
+        if (switchTo(QStringLiteral("uk"), QStringLiteral("Ukrainian reaches the open picture menu"))) {
+            const QStringList menuUkrainian = menuTexts(menu);
+            checkText(menuUkrainian != menuBefore,
+                      QStringLiteral("uk: the open picture menu restates its rows in place"));
+            checkText(menu->isVisible() && menu->rowCount() == rowsBefore,
+                      QStringLiteral("uk: the picture menu stays open with the same rows"));
+            checkText(buttonsFitWithoutOverlap(menu),
+                      QStringLiteral("uk: the restated menu rows still fit without overlap"));
+            checkText(widgetInside(dialog, menu),
+                      QStringLiteral("uk: the restated menu stays inside the player window"));
+            const PlaybackFacts after = captureFacts(dialog, surface, speed);
+            checkStableFacts(menuFacts, after, QStringLiteral("uk menu"));
+            checkText(after.playing && waitPositionBeyond(surface, menuPosition),
+                      QStringLiteral("uk: the picture keeps playing behind the restated menu"));
+            saveShot(menu, QStringLiteral("interaction-language-menu-uk.png"), &screenshots);
+            if (switchTo(QStringLiteral("en"), QStringLiteral("English returns to the open picture menu"))) {
+                checkText(menuTexts(menu) == menuBefore,
+                          QStringLiteral("en: the picture menu returns to its opening rows"));
+                checkText(menu->isVisible(), QStringLiteral("en: the picture menu stayed open"));
+                const PlaybackFacts after = captureFacts(dialog, surface, speed);
+                checkStableFacts(menuFacts, after, QStringLiteral("en menu"));
+                checkText(after.playing && waitPositionBeyond(surface, after.position),
+                          QStringLiteral("en: playback continued through the menu cycle"));
+            }
+        }
+        shell->dismissOverlay();
+    }
+
+    // ── Compare over a real frozen frame ───────────────────────────────────
+    // The candidates are Original and an Anime4K chain: CompareWindow opens
+    // side A on the id it is handed and side B on the first other candidate in
+    // the catalogue, so "off" pairs the original with Anime4K and nothing here
+    // asks an AnimeJaNai model to infer.
+    check(waitFor([surface] { return surface->isPlaying(); }, 5000),
+          "playback is running before Compare freezes it");
+    QPointer<CompareWindow> compare = new CompareWindow(surface, QStringLiteral("off"), nullptr);
+    compare->resize(1100, 700);
+    compare->show();
+    const bool frozen = waitFor(
+        [&compare, surface] {
+            if (compare.isNull()) return false;
+            const QImage frame = compare->frozenFrame();
+            // The freeze is taken from a stream reopened at the start, so the
+            // first frame's timestamp is legitimately 0.000: what this stage
+            // needs is a real captured picture with a real non-negative
+            // timestamp - `>= 0.0` also rejects a NaN - and it is the value
+            // staying *unchanged* across the language switches below that the
+            // frozen window is held to, never a non-zero one.
+            return !frame.isNull() && compare->frozenPlaybackTimestamp().has_value() &&
+                   *compare->frozenPlaybackTimestamp() >= 0.0 &&
+                   compare->frozenSourceEpoch() > 0 &&
+                   compare->frozenSourceEpoch() == surface->sourceEpoch() &&
+                   compare->playbackHeld() && !compare->comparisonPending();
+        },
+        30000);
+    check(frozen, "Compare froze a real frame from the motion fixture and holds playback");
+    // A refused freeze has to say which half of it is missing: the frame, the
+    // timestamp, the source epoch, the hold, a pending build or the plan lock -
+    // otherwise an empty capture error reads as "nothing happened" instead of the
+    // one state the window was actually left in.
+    const QByteArray frozenStamp =
+        compare.isNull() || !compare->frozenPlaybackTimestamp().has_value()
+            ? QByteArray("(none)")
+            : QByteArray::number(*compare->frozenPlaybackTimestamp(), 'f', 3);
+    const QByteArray candidateError =
+        compare.isNull() ? QByteArray("<gone>")
+                         : compare->candidateError(QStringLiteral("off")).toUtf8();
+    const QByteArray captureError =
+        compare.isNull() ? QByteArray("<gone>") : compare->captureError().toUtf8();
+    const QByteArray lockError =
+        compare.isNull() ? QByteArray("<gone>") : compare->lockError().toUtf8();
+    std::fprintf(stderr,
+                 "     compare: frozen=%d epoch=%llu sourceEpoch=%llu timestamp=%s held=%d "
+                 "pending=%d capturing=%d queued=%d frozenNull=%d error=%s capture=%s lock=%s\n",
+                 int(frozen),
+                 static_cast<unsigned long long>(compare.isNull() ? 0 : compare->frozenSourceEpoch()),
+                 static_cast<unsigned long long>(surface->sourceEpoch()),
+                 frozenStamp.constData(), compare.isNull() ? 0 : int(compare->playbackHeld()),
+                 compare.isNull() ? 0 : int(compare->comparisonPending()),
+                 compare.isNull() ? 1 : int(compare->captureInProgress()),
+                 compare.isNull() ? -1 : int(compare->queuedNativeChanges()),
+                 compare.isNull() ? 1 : int(compare->frozenFrame().isNull()),
+                 candidateError.constData(), captureError.constData(), lockError.constData());
+    if (!frozen) {
+        // The refusal belongs in the run's evidence, not only on stderr: a bare
+        // "capture=" with nothing in it cannot say which half of the freeze was
+        // missing, and this is the artifact the next reader gets.
+        QJsonObject refusal;
+        refusal.insert(QStringLiteral("frozen"), false);
+        refusal.insert(QStringLiteral("candidateId"), QStringLiteral("off"));
+        refusal.insert(QStringLiteral("candidateError"), QString::fromUtf8(candidateError));
+        refusal.insert(QStringLiteral("captureError"), QString::fromUtf8(captureError));
+        refusal.insert(QStringLiteral("lockError"), QString::fromUtf8(lockError));
+        refusal.insert(QStringLiteral("timestamp"), QString::fromUtf8(frozenStamp));
+        refusal.insert(QStringLiteral("sourceEpoch"),
+                       static_cast<double>(surface->sourceEpoch()));
+        refusal.insert(QStringLiteral("frozenSourceEpoch"),
+                       compare.isNull() ? 0.0
+                                        : static_cast<double>(compare->frozenSourceEpoch()));
+        refusal.insert(QStringLiteral("frozenFrameNull"),
+                       compare.isNull() ? true : compare->frozenFrame().isNull());
+        refusal.insert(QStringLiteral("playbackHeld"),
+                       compare.isNull() ? false : compare->playbackHeld());
+        refusal.insert(QStringLiteral("comparisonPending"),
+                       compare.isNull() ? false : compare->comparisonPending());
+        refusal.insert(QStringLiteral("captureInProgress"),
+                       compare.isNull() ? false : compare->captureInProgress());
+        refusal.insert(QStringLiteral("queuedNativeChanges"),
+                       compare.isNull() ? -1 : compare->queuedNativeChanges());
+        evidence.insert(QStringLiteral("compare"), refusal);
+    }
+    if (!frozen && !compare.isNull()) {
+        compare->close();
+        compare->deleteLater();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    if (!compare.isNull() && frozen) {
+        const QImage frozenBefore = compare->frozenFrame();
+        const std::optional<double> timestampBefore = compare->frozenPlaybackTimestamp();
+        const quint64 epochBefore = compare->frozenSourceEpoch();
+        const QString modeBefore =
+            compare->findChild<QComboBox*>(QStringLiteral("compareMode")) != nullptr
+                ? compare->findChild<QComboBox*>(QStringLiteral("compareMode"))
+                      ->currentData()
+                      .toString()
+                : QString();
+        auto* splitBox = compare->findChild<QDoubleSpinBox*>(QStringLiteral("compareSplit"));
+        const double splitBefore = splitBox != nullptr ? splitBox->value() : -1.0;
+        const QStringList selectionBefore = compareSelections(compare);
+        const int selectorCountBefore = compareSelectorCount(compare);
+        const QImage renderedABefore = compare->renderedSideA();
+        const QImage renderedBBefore = compare->renderedSideB();
+        const QStringList captionsBefore = compareTexts(compare);
+        const PlaybackFacts compareFacts = captureFacts(dialog, surface, speed);
+        const double comparePosition = surface->position();
+        check(!compare->renderedSideA().isNull() && !compare->renderedSideB().isNull(),
+              "Compare rendered both sides of the frozen frame");
+
+        if (switchTo(QStringLiteral("uk"), QStringLiteral("Ukrainian reaches the open Compare window"))) {
+            check(!compare.isNull() && compare->isVisible(),
+                  "uk: the Compare window stays open across the switch");
+            check(!compare.isNull() && compare->frozenFrame() == frozenBefore,
+                  "uk: the frozen frame is byte-identical after the switch");
+            check(!compare.isNull() && compare->frozenPlaybackTimestamp() == timestampBefore,
+                  "uk: the frozen timestamp is unchanged");
+            check(!compare.isNull() && compare->frozenSourceEpoch() == epochBefore,
+                  "uk: the frozen source epoch is unchanged");
+            check(!compare.isNull() && compare->playbackHeld(),
+                  "uk: Compare still owns its playback hold");
+            check(!compare.isNull() && !compare->comparisonPending(),
+                  "uk: restating captions starts no capture or rebuild");
+            auto* modeAfter = compare->findChild<QComboBox*>(QStringLiteral("compareMode"));
+            auto* splitAfter = compare->findChild<QDoubleSpinBox*>(QStringLiteral("compareSplit"));
+            checkText(modeAfter != nullptr && modeAfter->currentData().toString() == modeBefore,
+                      QStringLiteral("uk: the comparison mode is unchanged"));
+            checkText(splitAfter != nullptr && splitAfter->value() == splitBefore,
+                      QStringLiteral("uk: the split position is unchanged"));
+            checkText(compareSelectorCount(compare) == selectorCountBefore,
+                      QStringLiteral("uk: both side selectors are still on screen"));
+            checkText(compare->renderedSideA() == renderedABefore &&
+                          compare->renderedSideB() == renderedBBefore,
+                      QStringLiteral("uk: the selected sides still render the same pictures"));
+            const QStringList captionsUkrainian = compareTexts(compare);
+            checkText(captionsUkrainian != captionsBefore,
+                      QStringLiteral("uk: the Compare captions restate in place"));
+            checkText(compare->windowTitle() != captionsBefore.value(1),
+                      QStringLiteral("uk: the Compare window title is retranslated"));
+            const PlaybackFacts after = captureFacts(dialog, surface, speed);
+            checkStableFacts(compareFacts, after, QStringLiteral("uk compare"));
+            checkText(!after.playing && std::abs(after.position - comparePosition) < 0.2,
+                      QStringLiteral("uk: Compare's hold keeps the player frozen"));
+            saveShot(compare, QStringLiteral("interaction-language-compare-uk.png"), &screenshots);
+            QJsonObject compareEvidence;
+            compareEvidence.insert(QStringLiteral("frozenWidth"), frozenBefore.width());
+            compareEvidence.insert(QStringLiteral("frozenHeight"), frozenBefore.height());
+            compareEvidence.insert(QStringLiteral("timestamp"),
+                                   timestampBefore.has_value() ? *timestampBefore : -1.0);
+            compareEvidence.insert(QStringLiteral("sourceEpoch"),
+                                   static_cast<double>(epochBefore));
+            compareEvidence.insert(QStringLiteral("mode"), modeBefore);
+            compareEvidence.insert(QStringLiteral("split"), splitBefore);
+            compareEvidence.insert(QStringLiteral("selection"),
+                                   QJsonArray::fromStringList(selectionBefore));
+            compareEvidence.insert(QStringLiteral("selectionUkrainian"),
+                                   QJsonArray::fromStringList(compareSelections(compare)));
+            compareEvidence.insert(QStringLiteral("selectorCount"), selectorCountBefore);
+            compareEvidence.insert(QStringLiteral("held"), true);
+            compareEvidence.insert(QStringLiteral("renderedAWidth"),
+                                   compare->renderedSideA().width());
+            compareEvidence.insert(QStringLiteral("renderedAHeight"),
+                                   compare->renderedSideA().height());
+            compareEvidence.insert(QStringLiteral("renderedBWidth"),
+                                   compare->renderedSideB().width());
+            compareEvidence.insert(QStringLiteral("renderedBHeight"),
+                                   compare->renderedSideB().height());
+            compareEvidence.insert(QStringLiteral("captureError"), compare->captureError());
+            evidence.insert(QStringLiteral("compare"), compareEvidence);
+
+            if (switchTo(QStringLiteral("en"), QStringLiteral("English returns to the open Compare window"))) {
+                check(!compare.isNull() && compare->isVisible(),
+                      "en: the Compare window stayed open");
+                check(!compare.isNull() && compare->frozenFrame() == frozenBefore,
+                      "en: the frozen frame survived the round trip");
+                check(!compare.isNull() && compare->frozenPlaybackTimestamp() == timestampBefore,
+                      "en: the frozen timestamp survived the round trip");
+                check(!compare.isNull() && compare->frozenSourceEpoch() == epochBefore,
+                      "en: the frozen source epoch survived the round trip");
+                check(!compare.isNull() && compare->playbackHeld(),
+                      "en: the playback hold survived the round trip");
+                checkText(compareSelectorCount(compare) == selectorCountBefore &&
+                              compare->renderedSideA() == renderedABefore &&
+                              compare->renderedSideB() == renderedBBefore,
+                          QStringLiteral("en: the selected sides survive the round trip"));
+                checkText(compareTexts(compare) == captionsBefore,
+                          QStringLiteral("en: the Compare captions return to the opening words"));
+                const PlaybackFacts after = captureFacts(dialog, surface, speed);
+                checkStableFacts(compareFacts, after, QStringLiteral("en compare"));
+                checkText(!after.playing && std::abs(after.position - comparePosition) < 0.2,
+                          QStringLiteral("en: Compare still holds playback frozen"));
+                saveShot(compare, QStringLiteral("interaction-language-compare-en.png"),
+                         &screenshots);
+            }
+        }
+
+        // Closing Compare must release the hold it took. The player was
+        // playing when Compare opened, so the original pause intent was "run"
+        // and that is what the release has to restore.
+        if (!compare.isNull()) compare->close();
+        check(waitFor(
+                  [&compare, surface] {
+                      return compare.isNull() ||
+                             (!compare->isVisible() && !compare->playbackHeld() &&
+                              !compare->comparisonPending() && !surface->nativePlanLocked());
+                  },
+                  8000),
+              "closing Compare releases its hold and leaves no pending capture");
+        check(waitFor([surface] { return surface->isPlaying(); }, 5000),
+              "closing Compare restores the original pause intent (playing)");
+        check(waitPositionBeyond(surface, surface->position()),
+              "closing Compare resumes frame delivery without reopening the media");
+        if (!compare.isNull()) {
+            compare->deleteLater();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        }
+    }
+
+    // ── PiP over the same running player ───────────────────────────────────
+    // Back to a known early position: the language cycles above advance real
+    // motion, and the fixture is short enough that a slow Compare render could
+    // otherwise leave the float with nothing left to deliver.
+    surface->seek(2.0);
+    check(waitFor([surface] { return surface->position() < 4.0; }, 5000),
+          "the player returns to an early position for the PiP cycle");
+    if (surface != nullptr) {
+        for (const QPointF& at : {QPointF(40, 40), QPointF(60, 60)}) {
+            QMouseEvent move(QEvent::MouseMove, at, surface->mapToGlobal(at), Qt::NoButton,
+                             Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(surface, &move);
+        }
+    }
+    check(waitFor([surface] { return surface->isPlaying(); }, 5000),
+          "playback runs before PiP opens");
+    shell->wake();
+    QTest::qWait(150);
+    QPushButton* pipButton = buttonWithGlyph(dialog, IconPainter::pip);
+    check(pipButton != nullptr && pipButton->isVisible(), "the PiP control is on the dock");
+    if (pipButton != nullptr) pipButton->click();
+    PipFloat* pip = awaitVisiblePipFloat(8000);
+    check(pip != nullptr, "the float opened for the live-language PiP cycle");
+    if (pip != nullptr) {
+        QPointer<PipFloat> pipGuard(pip);
+        VideoSurface* floatSurface = pip->videoSurface();
+        check(waitFor(
+                  [floatSurface] {
+                      return floatSurface != nullptr && floatSurface->hasVideo();
+                  },
+                  15000),
+              "the float loaded the same motion fixture");
+        floatSurface->setPaused(false);
+        check(waitFor([floatSurface] { return floatSurface->isPlaying(); }, 6000),
+              "the float is playing before the language switch");
+        QTest::qWait(500);
+        // The float fades its chrome out on its own timer. A restatement is
+        // checked on visible controls, so the pointer is put back on the float
+        // for each reading rather than racing the fade.
+        hoverPipControls(pipGuard);
+        QTest::qWait(100);
+
+        const QStringList pipNames{QStringLiteral("playerPip"), QStringLiteral("pipRestore"),
+                                   QStringLiteral("pipClose"), QStringLiteral("pipPlay"),
+                                   QStringLiteral("pipMute"), QStringLiteral("pipVolume"),
+                                   QStringLiteral("pipVolumeChip")};
+        const QStringList pipBefore = [&] {
+            QStringList values{pip->windowTitle()};
+            values += namedTexts(pip, pipNames);
+            return values;
+        }();
+        QWidget* chipBefore = pip->findChild<QWidget*>(QStringLiteral("pipVolumeChip"));
+        const int chipWidthBefore = chipBefore != nullptr ? chipBefore->width() : -1;
+        const auto controlRect = [](QWidget* parent, const char* name) {
+            QWidget* control = parent != nullptr
+                                   ? parent->findChild<QWidget*>(QString::fromLatin1(name))
+                                   : nullptr;
+            if (control == nullptr) return QRect();
+            return QRect(control->mapTo(parent, QPoint(0, 0)), control->size());
+        };
+        const QRect restoreRectBefore = controlRect(pip, "pipRestore");
+        const QRect closeRectBefore = controlRect(pip, "pipClose");
+        const PlaybackFacts mainFacts = captureFacts(dialog, surface, speed);
+        const PlaybackFacts floatFacts = captureFacts(dialog, floatSurface, speed);
+        const double floatPosition = floatSurface->position();
+        auto boundsHold = [&]() {
+            if (pipGuard.isNull()) return false;
+            QWidget* restore = pipGuard->findChild<QWidget*>(QStringLiteral("pipRestore"));
+            QWidget* close = pipGuard->findChild<QWidget*>(QStringLiteral("pipClose"));
+            QWidget* mute = pipGuard->findChild<QWidget*>(QStringLiteral("pipMute"));
+            QWidget* volume = pipGuard->findChild<QWidget*>(QStringLiteral("pipVolume"));
+            QWidget* chip = pipGuard->findChild<QWidget*>(QStringLiteral("pipVolumeChip"));
+            QWidget* play = pipGuard->findChild<QWidget*>(QStringLiteral("pipPlay"));
+            if (restore == nullptr || close == nullptr || mute == nullptr || volume == nullptr ||
+                chip == nullptr || play == nullptr) {
+                return false;
+            }
+            const bool inside = widgetInside(pipGuard, restore) && widgetInside(pipGuard, close) &&
+                                widgetInside(pipGuard, mute) && widgetInside(pipGuard, volume) &&
+                                widgetInside(pipGuard, chip) && widgetInside(pipGuard, play);
+            const QRect restoreRect(restore->mapTo(pipGuard, QPoint(0, 0)), restore->size());
+            const QRect closeRect(close->mapTo(pipGuard, QPoint(0, 0)), close->size());
+            const QRect chipRect(chip->mapTo(pipGuard, QPoint(0, 0)), chip->size());
+            const bool pillWide = chipRect.width() >= mute->width() + volume->width();
+            return inside && !restoreRect.intersects(closeRect) && pillWide &&
+                   restore->isEnabled() && close->isEnabled();
+        };
+        check(boundsHold(), "the PiP restore and close bounds hold in English");
+
+        if (switchTo(QStringLiteral("uk"), QStringLiteral("Ukrainian reaches the open PiP float"))) {
+            const QStringList pipUkrainian = [&] {
+                QStringList values{pipGuard.isNull() ? QString() : pipGuard->windowTitle()};
+                values += namedTexts(pipGuard, pipNames);
+                return values;
+            }();
+            checkText(!pipGuard.isNull() && pipGuard->isVisible(),
+                      QStringLiteral("uk: the float stays open across the switch"));
+            checkText(dialog->isPipActive(),
+                      QStringLiteral("uk: the player still reports PiP active"));
+            checkText(pipUkrainian != pipBefore,
+                      QStringLiteral("uk: the float restates its window title, hints and names in place"));
+            bool wordingComplete = true;
+            for (const char* name : {"pipRestore", "pipClose", "pipMute", "pipPlay"}) {
+                QWidget* widget = pipGuard->findChild<QWidget*>(QString::fromLatin1(name));
+                if (widget == nullptr || widget->toolTip().isEmpty() ||
+                    widget->accessibleName().isEmpty()) {
+                    wordingComplete = false;
+                }
+            }
+            checkText(wordingComplete,
+                      QStringLiteral("uk: PiP controls keep a tooltip and an accessible name"));
+            hoverPipControls(pipGuard);
+            checkText(boundsHold(),
+                      QStringLiteral("uk: the longer pill wording leaves restore and close inside the float"));
+            checkText(controlRect(pipGuard, "pipRestore") == restoreRectBefore &&
+                          controlRect(pipGuard, "pipClose") == closeRectBefore,
+                      QStringLiteral("uk: the restated wording does not move restore or close"));
+            QWidget* chip = pipGuard->findChild<QWidget*>(QStringLiteral("pipVolumeChip"));
+            QWidget* mute = pipGuard->findChild<QWidget*>(QStringLiteral("pipMute"));
+            QWidget* volume = pipGuard->findChild<QWidget*>(QStringLiteral("pipVolume"));
+            if (chip != nullptr && mute != nullptr && volume != nullptr) {
+                checkText(chip->width() == chipWidthBefore &&
+                              chip->width() >= mute->width() + volume->width(),
+                          QStringLiteral("uk: the pill keeps one fixed width for both controls"));
+            }
+            const PlaybackFacts mainAfter = captureFacts(dialog, surface, speed);
+            const PlaybackFacts floatAfter = captureFacts(dialog, floatSurface, speed);
+            checkStableFacts(mainFacts, mainAfter, QStringLiteral("uk PiP player"));
+            checkStableFacts(floatFacts, floatAfter, QStringLiteral("uk PiP float"));
+            checkText(floatAfter.playing &&
+                          waitPositionBeyond(floatSurface, floatPosition, 5000),
+                      QStringLiteral("uk: the float keeps delivering frames while restating"));
+            saveShot(pipGuard, QStringLiteral("interaction-language-pip-uk.png"), &screenshots);
+            QJsonObject pipEvidence;
+            pipEvidence.insert(QStringLiteral("restoreInside"), boundsHold());
+            pipEvidence.insert(QStringLiteral("sourceEpoch"),
+                               static_cast<double>(floatAfter.sourceEpoch));
+            pipEvidence.insert(QStringLiteral("playing"), floatAfter.playing);
+            pipEvidence.insert(QStringLiteral("position"), floatAfter.position);
+            evidence.insert(QStringLiteral("pip"), pipEvidence);
+
+            if (switchTo(QStringLiteral("en"), QStringLiteral("English returns to the open PiP float"))) {
+                const QStringList pipEnglish = [&] {
+                    QStringList values{pipGuard.isNull() ? QString() : pipGuard->windowTitle()};
+                    values += namedTexts(pipGuard, pipNames);
+                    return values;
+                }();
+                checkText(pipEnglish == pipBefore,
+                          QStringLiteral("en: the float returns to its opening words"));
+                checkText(!pipGuard.isNull() && pipGuard->isVisible(),
+                          QStringLiteral("en: the float stayed open for the whole cycle"));
+                hoverPipControls(pipGuard);
+                checkText(boundsHold(),
+                          QStringLiteral("en: restore and close still sit inside the float"));
+                checkText(controlRect(pipGuard, "pipRestore") == restoreRectBefore &&
+                              controlRect(pipGuard, "pipClose") == closeRectBefore,
+                          QStringLiteral("en: restore and close return to their opening bounds"));
+                const PlaybackFacts floatAfter = captureFacts(dialog, floatSurface, speed);
+                checkText(floatAfter.playing &&
+                              waitPositionBeyond(floatSurface, floatPosition + 0.4, 6000),
+                          QStringLiteral("en: the float kept playing through the round trip"));
+                checkText(floatAfter.sourceEpoch == floatFacts.sourceEpoch &&
+                              floatAfter.sourceUrl == floatFacts.sourceUrl,
+                          QStringLiteral("en: no media reopen happened under the float"));
+            }
+        }
+
+        if (!pipGuard.isNull()) {
+            auto* restore = pipGuard->findChild<QPushButton*>(QStringLiteral("pipRestore"));
+            check(restore != nullptr, "the float still has a restore control after the language cycle");
+            if (restore != nullptr) {
+                hoverPipControls(pipGuard);
+                restore->click();
+            }
+        }
+        check(waitFor(
+                  [&pipGuard, &dialogGuard] {
+                      return pipGuard.isNull() ||
+                             (!pipGuard->isVisible() && !dialogGuard.isNull() &&
+                              dialogGuard->isVisible());
+                  },
+                  8000),
+              "the restore returns to the player window without a restart");
+        check(waitFor([surface] { return surface->isPlaying(); }, 5000),
+              "playback continues in the returned player");
+        checkText(!surface->sourceUrl().isEmpty() &&
+                      surface->sourceEpoch() == mainFacts.sourceEpoch,
+                  QStringLiteral("the PiP round trip did not reopen the media"));
+    }
+
+    if (!dialogGuard.isNull()) {
+        const PlaybackFacts finalFacts = captureFacts(dialog, surface, speed);
+        evidence.insert(QStringLiteral("final"), evidenceFromFacts(finalFacts));
+        evidence.insert(QStringLiteral("activeLanguage"), language.active());
+        checkText(language.localeMatches(language.active()),
+                  QStringLiteral("the closing default locale matches the working language"));
+        evidence.insert(QStringLiteral("localeFinal"), language.localeTag());
+        evidence.insert(QStringLiteral("screenshots"), screenshots);
+        evidence.insert(QStringLiteral("passed"), failures == 0);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+        dialogGuard->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    } else {
+        evidence.insert(QStringLiteral("passed"), failures == 0);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        saveEvidenceJson(evidence);
+    }
+    std::fprintf(stderr, failures == 0 ? "RESULT: PASS\n" : "RESULT: FAIL (%d)\n", failures);
+    return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    if (argc < 2 || !QFileInfo::exists(QString::fromLocal8Bit(argv[1]))) {
-        std::fprintf(stderr, "Usage: InteractionProbe <known-duration-video-file>\n");
+    // Two ways in: the full interaction walk (the historical argument), and a
+    // narrowly named live-language case. The second exists because proving the
+    // language contract does not need the quality reloads, pixel comparisons,
+    // PiP ownership ladder or Esc walk - and a smoke that spends a minute on
+    // them is a smoke nobody runs before touching a translation.
+    QString videoArgument;
+    bool languageSmoke = false;
+    for (int index = 1; index < argc; ++index) {
+        const QString argument = QString::fromLocal8Bit(argv[index]);
+        if (argument == QLatin1String("--language-smoke")) {
+            languageSmoke = true;
+        } else if (videoArgument.isEmpty()) {
+            videoArgument = argument;
+        }
+    }
+    if (videoArgument.isEmpty() || !QFileInfo::exists(videoArgument)) {
+        std::fprintf(stderr,
+                     "Usage: InteractionProbe <known-duration-video-file> "
+                     "[--language-smoke]\n");
         return 3;
     }
     // The last stage closes the last window, and Qt quits the loop when that
@@ -567,9 +1773,10 @@ int main(int argc, char** argv) {
     }
 
     static StubHost host;
-    const QString url = argc > 1
-        ? QFileInfo(QString::fromLocal8Bit(argv[1])).absoluteFilePath()
-        : QString();
+    const QString url = QFileInfo(videoArgument).absoluteFilePath();
+    if (languageSmoke) {
+        return runLanguageSmoke(url, &host);
+    }
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
@@ -709,12 +1916,12 @@ int main(int argc, char** argv) {
 
         mainSurface->setPaused(true);
         mainSurface->seek(2.0);
-        for (int i = 0; i < 40; ++i) {
-            QCoreApplication::processEvents();
-            QThread::msleep(50);
-            if (std::abs(mainSurface->position() - 2.0) < 2.0) break;
-        }
-        check(!mainSurface->isPlaying(), "the +85 test begins paused");
+        const bool parked = waitFor([&] {
+            return mainSurface->pauseObserved() && !mainSurface->isPlaying() &&
+                   std::abs(mainSurface->position() - 2.0) < 0.25;
+        }, 5000);
+        check(parked, "the +85 test begins paused at two seconds");
+        if (!parked) return;
         skip->click();
         for (int i = 0; i < 60; ++i) {
             QCoreApplication::processEvents();
@@ -1512,13 +2719,19 @@ int main(int argc, char** argv) {
                 if (surface == nullptr) return QImage();
                 const QImage frame = videoOnly ? surface->grabVideoFramebuffer()
                                                : surface->grabFramebuffer();
-                QRect logical(playGuard->mapTo(surface, QPoint()), playGuard->size());
+                QRect logical(surface->mapFromGlobal(playGuard->mapToGlobal(QPoint())),
+                              playGuard->size());
                 logical.adjust(-16, -16, 16, 16);
                 const qreal ratio = surface->devicePixelRatioF();
                 return frame.copy(QRect(logical.topLeft() * ratio, logical.size() * ratio)
                                       .intersected(frame.rect()));
             };
             pip->videoSurface()->setPaused(true);
+            check(waitFor([&] {
+                      return pip->videoSurface()->pauseObserved() &&
+                             !pip->videoSurface()->isPlaying();
+                  }, 3000),
+                  "PiP acknowledges pause before the visual hover check");
             QTest::qWait(600);
             const QImage videoOnly = controlFrame(true);
             QTest::mouseMove(pip, QPoint(pip->width() / 4, pip->height() / 3));
@@ -1532,7 +2745,15 @@ int main(int argc, char** argv) {
             check(visibleDifference > 5.0,
                   "the hovered PiP play control is visibly painted over the paused video");
             QTest::qWait(2400);
-            const double heldDifference = pictureDifference(hovered, controlFrame(false));
+            const QImage hoverHeld = controlFrame(false);
+            const double heldDifference = pictureDifference(hovered, hoverHeld);
+            std::fprintf(stderr, "     PiP held difference=%.3f paused=%d position=%.3f\n",
+                         heldDifference, int(pip->videoSurface()->pauseObserved()),
+                         pip->videoSurface()->position());
+            if (heldDifference >= 1.0) {
+                hovered.save(QStringLiteral("pip-hover-before.png"));
+                hoverHeld.save(QStringLiteral("pip-hover-after.png"));
+            }
             check(heldDifference >= 0.0 && heldDifference < 1.0,
                   "PiP controls stay visibly unchanged while the pointer is on the float");
 
@@ -1541,11 +2762,21 @@ int main(int argc, char** argv) {
                       return !pip->rect().contains(pip->mapFromGlobal(QCursor::pos()));
                   }, 1000),
                   "the actual pointer left the float");
-            check(waitFor([&] {
-                      const double difference = pictureDifference(videoOnly, controlFrame(false));
-                      return difference >= 0.0 && difference < 1.0;
-                  }, 4000),
+            const bool fadedOut = waitFor([&] {
+                const double difference = pictureDifference(videoOnly, controlFrame(false));
+                return difference >= 0.0 && difference < 1.0;
+            }, 4000);
+            check(fadedOut,
                   "PiP controls fade back to the unobstructed paused video after the pointer leaves");
+            if (!fadedOut) {
+                const QImage afterLeave = controlFrame(false);
+                std::fprintf(stderr, "     PiP leave difference=%.3f pointer=%d,%d\n",
+                             pictureDifference(videoOnly, afterLeave),
+                             pip->mapFromGlobal(QCursor::pos()).x(),
+                             pip->mapFromGlobal(QCursor::pos()).y());
+                videoOnly.save(QStringLiteral("pip-leave-baseline.png"));
+                afterLeave.save(QStringLiteral("pip-leave-after.png"));
+            }
         }
     });
 

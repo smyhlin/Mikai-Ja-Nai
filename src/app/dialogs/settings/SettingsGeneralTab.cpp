@@ -206,10 +206,16 @@ QWidget* SettingsDialog::buildGeneralTab() {
     language_->addItem(tr("English"), QStringLiteral("en"));
     language_->addItem(tr("Ukrainian"), QStringLiteral("uk"));
     language_->setAccessibleName(tr("Interface language"));
-    const int languageIndex = language_->findData(languagePreference());
+    const int languageIndex = language_->findData(previewLanguagePreference_);
     if (languageIndex >= 0) {
         language_->setCurrentIndex(languageIndex);
     }
+    // A different choice is installed immediately, on this thread, without
+    // rebuilding any page. The flag keeps the initial selection above and the
+    // item restatements in retranslateGeneralTab from applying anything.
+    connect(language_, &QComboBox::currentIndexChanged, this,
+            [this](int index) { previewInterfaceLanguage(index); });
+    languageSelectorReady_ = true;
     languageLayout->addWidget(language_);
 
     root->addWidget(languageCard);

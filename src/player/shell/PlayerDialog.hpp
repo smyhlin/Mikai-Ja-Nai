@@ -229,6 +229,8 @@ public:
     void updateEnginePreparation(int stageIndex, int stageCount, const QString& phase,
                                  const QString& detail);
     void endEnginePreparation(bool ok, const QString& summary);
+    void retitleEnginePreparation(const QString& title);
+    void updateEnginePreparationSummary(const QString& summary);
     /// True while the preparation window is up.
     bool enginePreparationVisible() const;
     /// Replays the owning surface's retained builder state after its signal has
@@ -369,6 +371,16 @@ private:
     void onAnimeJanaiEngineBuildChanged(bool active, bool succeeded, const QString& detail);
     void handleAnimeJanaiEngineBuildChanged(VideoSurface* owner, bool active, bool succeeded,
                                             const QString& detail);
+    /// Restates this dialog's own words for the running AnimeJaNai build - the
+    /// title, the phase and the facts wrapped around the filter's own detail -
+    /// in the language now installed. It only re-emits text through the overlay's
+    /// non-resetting setters: no build signal, frame hold, command, generation,
+    /// timer, cancel or playback is replayed or restarted.
+    void restateAnimeJanaiBuildLanguage();
+    /// The running build's detail line: the filter's raw diagnostic text kept
+    /// verbatim, followed by the facts this dialog names. Rebuilt on every call,
+    /// so only the wrapper follows the installed language.
+    QString animeJanaiBuildDetailText() const;
     /// The filter's own status changed. The held inputs, the HUD and the
     /// availability follow it, and nothing here re-arms a poll the surface has
     /// already stopped. A document from a core that no longer owns playback is
@@ -474,6 +486,24 @@ private:
     /// The generation the surface's own engine build was started under, so its
     /// completion is applied only while it is still the operation on screen.
     quint64 animeJanaiBuildGeneration_ = 0;
+    /// What the window is showing for this build, retained as typed state rather
+    /// than display text: a language switch restates the wrapper from it. The raw
+    /// detail is the filter's own, kept verbatim and never translated. The preset
+    /// is retained as its catalogue id - the semantic identity - and the label is
+    /// that id's catalogue rendering, first resolved when the operation started
+    /// and derived again on every restatement. App-owned builtin names follow the
+    /// installed language while user and model names come back unchanged. An
+    /// identity the catalogue no longer lists keeps the last rendering instead of
+    /// being guessed at.
+    QString animeJanaiBuildDetailRaw_;
+    QString animeJanaiBuildPresetId_;
+    QString animeJanaiBuildPresetLabel_;
+    int animeJanaiBuildWidth_ = 0;
+    int animeJanaiBuildHeight_ = 0;
+    /// The stage shape this build last supplied, so a restatement keeps the same
+    /// index and count instead of inventing progress.
+    int animeJanaiBuildStageIndex_ = -1;
+    int animeJanaiBuildStageCount_ = 0;
     /// Moves the pause hold to the core playing now, releasing the hold it
     /// leaves behind outright and carrying the viewer intent the hold kept to
     /// the incoming owner. `carriedIntent` overrides the read-back intent, which

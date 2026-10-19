@@ -8,12 +8,16 @@
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
 #include <state/QualityCache.hpp>
+#include <support/I18n.hpp>
+#include <widgets/FailureView.hpp>
+#include <widgets/RangePager.hpp>
 #include <widgets/TitleCard.hpp>
 #include <workers/Runner.hpp>
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QHash>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -21,7 +25,9 @@
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QPointer>
+#include <QtCore/QScopeGuard>
 #include <QtCore/QSet>
+#include <QtCore/QSettings>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTemporaryFile>
@@ -39,18 +45,26 @@
 #include <QtGui/QGuiApplication>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCheckBox>
+#include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
+#include <QtWidgets/QListWidget>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
+#include <QtWidgets/QTabBar>
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QTreeWidget>
 #include <QtWidgets/QWidget>
 
 using mikai::app::ComponentStoreTab;
+using mikai::app::FailureView;
 using mikai::app::MainWindow;
 using mikai::app::QualityCache;
+using mikai::app::RangePager;
 using mikai::app::Runner;
 using mikai::app::SettingsDialog;
 using mikai::app::SearchPage;
@@ -141,9 +155,23 @@ QStringList queryValue(const QString& target, const QString& key) {
   return {};
 }
 
+/// The title page's description, long enough to be truncated behind its
+/// "Read more" action. It is API data, so both language switches must show the
+/// same bytes: only the app's own caption next to it is translated.
+QString cannedDescription() {
+  return QStringLiteral(
+             "Опис для тесту. Ця сторінка перевіряє, що дані, які повернув сервер, "
+             "залишаються незмінними, коли мова інтерфейсу перемикається. "
+             "Текст опису не є підписом застосунку, тому його не можна перекладати "
+             "чи скорочувати без дії читача. ")
+      + QStringLiteral(
+             "Довгий опис також перевіряє, що кнопка розгортання не зникає під час "
+             "зміни мови, а вже відкритий текст не згортається назад у попередній стан.");
+}
+
 QJsonObject detail(int id, const QString& name, const QString& poster) {
   QJsonObject out = summary(id, name, poster, QStringLiteral("tv"));
-  out.insert(QStringLiteral("description"), QStringLiteral("Опис для тесту."));
+  out.insert(QStringLiteral("description"), cannedDescription());
   out.insert(QStringLiteral("startDate"), QStringLiteral("2026-01-04"));
   out.insert(QStringLiteral("source"), QStringLiteral("manga"));
   out.insert(QStringLiteral("studio"), QStringLiteral("Test Studio"));
@@ -162,7 +190,8 @@ QJsonObject detail(int id, const QString& name, const QString& poster) {
   return out;
 }
 
-QJsonObject release(const QString& kind, const QString& teamName, const QString& embedBase) {
+QJsonObject release(const QString& kind, const QString& teamName, const QString& embedBase,
+                    int episodeCount = kEpisodes) {
   QJsonObject team;
   team.insert(QStringLiteral("id"), 1);
   team.insert(QStringLiteral("slug"), QStringLiteral("test-team"));
@@ -172,7 +201,7 @@ QJsonObject release(const QString& kind, const QString& teamName, const QString&
   teams.append(team);
 
   QJsonArray episodes;
-  for (int number = 1; number <= kEpisodes; ++number) {
+  for (int number = 1; number <= episodeCount; ++number) {
     QJsonObject source;
     source.insert(QStringLiteral("provider"), QStringLiteral("ashdi"));
     source.insert(QStringLiteral("embedUrl"),
@@ -193,7 +222,7 @@ QJsonObject release(const QString& kind, const QString& teamName, const QString&
   out.insert(QStringLiteral("kind"), kind);
   out.insert(QStringLiteral("isCollab"), false);
   out.insert(QStringLiteral("teams"), teams);
-  out.insert(QStringLiteral("episodesCount"), kEpisodes);
+  out.insert(QStringLiteral("episodesCount"), episodeCount);
   out.insert(QStringLiteral("episodes"), episodes);
   return out;
 }
@@ -229,6 +258,10 @@ class CannedApi : public QObject {
   }
 
   void setMode(Mode mode) { mode_ = mode; }
+
+  /// How many episodes each canned release carries. The default is the twelve
+  /// the render tests count; a test that needs a second episode page raises it.
+  void setReleaseEpisodeCount(int count) { releaseEpisodeCount_ = qMax(1, count); }
 
   int requestCount() const {
     QMutexLocker locker(&mutex_);
@@ -309,11 +342,24 @@ class CannedApi : public QObject {
       // count that counts the filtered set rather than everything.
       const QStringList fmt = queryValue(target, QStringLiteral("formats"));
       const bool filtered = !fmt.isEmpty() && fmt.constFirst() == QLatin1String("movie");
-      const int served = filtered ? kCards / 2 : kCards;
+      // The page-state test asks for a set tall enough to have a real scroll
+      // range; the ordinary fixtures keep the six rows every other slot counts.
+      const int rows = queryValue(target, QStringLiteral("search"))
+                               .contains(QStringLiteral("canned-many"))
+                           ? 30
+                           : kCards;
+      const int served = filtered ? rows / 2 : rows;
       QJsonArray items;
       for (int index = 0; index < served; ++index) {
+        // The unfiltered set is half TV and half MOVIE, so the format bar has a
+        // second tab to offer; a filtered answer carries only the format asked
+        // for, the way the real endpoint does.
+        const QString format = filtered
+                                   ? QStringLiteral("movie")
+                                   : (index % 2 == 0 ? QStringLiteral("tv")
+                                                     : QStringLiteral("movie"));
         items.append(summary(kRef + index, QStringLiteral("Canned %1").arg(index + 1), imageUrl(),
-                             filtered ? QStringLiteral("movie") : QStringLiteral("tv")));
+                             format));
       }
       QJsonObject payload;
       payload.insert(QStringLiteral("ok"), true);
@@ -371,8 +417,10 @@ class CannedApi : public QObject {
     }
     if (rest.endsWith(QStringLiteral("/player"))) {
       QJsonArray releases;
-      releases.append(release(QStringLiteral("voice"), QStringLiteral("Test Dub"), embedBase()));
-      releases.append(release(QStringLiteral("sub"), QStringLiteral("Test Sub"), embedBase()));
+      releases.append(release(QStringLiteral("voice"), QStringLiteral("Test Dub"), embedBase(),
+                              releaseEpisodeCount_));
+      releases.append(release(QStringLiteral("sub"), QStringLiteral("Test Sub"), embedBase(),
+                              releaseEpisodeCount_));
 
       QJsonObject result;
       result.insert(QStringLiteral("licensed"), false);
@@ -419,24 +467,32 @@ class CannedApi : public QObject {
   QList<QTcpSocket*> sockets_;
   QHash<QTcpSocket*, QByteArray> buffers_;
   Mode mode_ = Mode::Answers;
+  int releaseEpisodeCount_ = kEpisodes;
   mutable QMutex mutex_;
   int requests_ = 0;
   QStringList paths_;
 };
 
-/// The carousel's own failure affordance: a "Retry" button it keeps hidden until
-/// a load fails.
+/// The carousel's own failure affordance: the "Retry" button a FailureView keeps
+/// hidden until a load fails.
 ///
-/// It is found by its label rather than its object name on purpose: the updates
-/// and schedule rows carry an always-visible "Refresh" action under the same
-/// `textAction` name, so an object-name query would count a button that is
-/// supposed to be on screen.
+/// It is found through the view that owns it, not through a caption: FailureView
+/// translates that caption under its own context, so a lookup built from this
+/// page's context reads "Retry" in English but "Retry" again in Ukrainian while
+/// the button itself reads "Повторити" - a visible affordance the slot would
+/// miss depending on the language a previous slot happened to leave active. The
+/// updates and schedule rows reuse FailureView with its retry suppressed, so a
+/// visible view with a visible `textAction` is exactly a carousel failure.
 int visibleCarouselRetries(const SearchPage& page) {
-  const QString retry = QCoreApplication::translate("mikai::app::SearchPage", "Retry");
   int visible = 0;
-  for (QPushButton* button : page.findChildren<QPushButton*>()) {
-    if (button->isVisible() && button->text() == retry) {
-      ++visible;
+  for (FailureView* view : page.findChildren<FailureView*>()) {
+    if (!view->isVisible()) {
+      continue;
+    }
+    for (QPushButton* button : view->findChildren<QPushButton*>()) {
+      if (button->isVisible() && button->objectName() == QLatin1String("textAction")) {
+        ++visible;
+      }
     }
   }
   return visible;
@@ -511,6 +567,86 @@ QStringList checkedBenchmarkModelIds(const QTreeWidget& tree) {
     }
   }
   return ids;
+}
+
+// The real lrelease output, never a stand-in: CMake defines its exact path and
+// the same file also lands beside the test executable. The page tests prime the
+// catalog independently so they pass alone and in any order.
+QString builtCatalogPath() {
+  QStringList candidates;
+#ifdef MIKAI_UK_CATALOG_PATH
+  candidates << QString::fromUtf8(MIKAI_UK_CATALOG_PATH);
+#endif
+  const QString applicationDirectory = QCoreApplication::applicationDirPath();
+  if (!applicationDirectory.isEmpty()) {
+    candidates << applicationDirectory + QStringLiteral("/mikai_uk.qm");
+  }
+  for (const QString& candidate : candidates) {
+    if (QFileInfo::exists(candidate)) {
+      return QFileInfo(candidate).absoluteFilePath();
+    }
+  }
+  return candidates.isEmpty() ? QString() : candidates.first();
+}
+
+/// Load the real Ukrainian catalog and return to English, so the manager retains
+/// an explicit replacement for the rest of the test.
+bool primeBuiltCatalogForSwitching() {
+  const QString catalog = builtCatalogPath();
+  if (!QFileInfo::exists(catalog)) {
+    return false;
+  }
+  return mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog) &&
+         mikai::app::applyInterfaceLanguage(QStringLiteral("en"));
+}
+
+/// How many requests the canned server has answered once its current burst has
+/// drained. A language switch must not move this number: the pages relabel what
+/// they hold instead of asking the backend again.
+int quietRequestCount(CannedApi& api) {
+  QTest::qWait(250);
+  int stable = api.requestCount();
+  int quietWindows = 0;
+  for (int poll = 0; poll < 60 && quietWindows < 3; ++poll) {
+    QTest::qWait(50);
+    const int current = api.requestCount();
+    if (current == stable) {
+      ++quietWindows;
+    } else {
+      stable = current;
+      quietWindows = 0;
+    }
+  }
+  return stable;
+}
+
+QPushButton* visibleButtonWithText(const QWidget& root, const QString& text) {
+  for (QPushButton* button : root.findChildren<QPushButton*>()) {
+    if (button->isVisible() && button->text() == text) {
+      return button;
+    }
+  }
+  return nullptr;
+}
+
+QPushButton* pagerArrow(const QWidget& pager, const QString& glyph) {
+  for (QPushButton* button : pager.findChildren<QPushButton*>()) {
+    if (button->text() == glyph) {
+      return button;
+    }
+  }
+  return nullptr;
+}
+
+/// The tab carrying the API's own filter value, or -1. Read from the public tab
+/// data so an assertion never depends on the caption the active language uses.
+int tabIndexWithData(const QTabBar& bar, const QString& data) {
+  for (int index = 0; index < bar.count(); ++index) {
+    if (bar.tabData(index).toString() == data) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 }  // namespace
@@ -1118,6 +1254,577 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
     labels.insert(push->text());
   }
   QCOMPARE(labels.size(), kEpisodes);
+}
+
+void TestFeedRender::loadedResultsRetranslateWithoutRefetchingOrLosingViewState() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QSettings settings;
+  const QString languageKey = QString::fromLatin1(mikai::app::kUiLanguageSettingKey);
+  settings.sync();
+  const bool storedLanguagePresent = settings.contains(languageKey);
+  const QVariant storedLanguage = settings.value(languageKey);
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
+
+  QVERIFY2(primeBuiltCatalogForSwitching(),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
+                      builtCatalogPath()));
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  SearchPage page(runner, client);
+  page.resize(1000, 560);
+  page.show();
+
+  // The home feed has to finish before the search replaces the discovery view,
+  // so the assertions below cover both an already-loaded feed and an already
+  // loaded result list.
+  QTRY_VERIFY_WITH_TIMEOUT(page.findChildren<TitleCard*>().size() >= kCards, 30000);
+
+  auto* query = page.findChild<QLineEdit*>(QStringLiteral("searchQuery"));
+  auto* results = page.findChild<QListWidget*>(QStringLiteral("searchResults"));
+  auto* searchButton = page.findChild<QPushButton*>(QStringLiteral("primary"));
+  auto* status = page.findChild<QLabel*>(QStringLiteral("status"));
+  QVERIFY2(query != nullptr && results != nullptr && searchButton != nullptr &&
+               status != nullptr,
+           "the search page does not expose its query, results, action and status");
+
+  QTest::keyClicks(query, QStringLiteral("canned-many"));
+  QTest::keyClick(query, Qt::Key_Return);
+  QTRY_COMPARE_WITH_TIMEOUT(results->count(), 30, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(results->isVisible(), 5000);
+
+  // The canned answer carries two formats, so the page offers a real filter.
+  auto* formatBar = page.findChild<QTabBar*>();
+  QVERIFY2(formatBar != nullptr, "the search page has no format bar");
+  QTRY_VERIFY_WITH_TIMEOUT(formatBar->isVisible(), 5000);
+
+  // The bar's own "All (n)" caption is app wording, while the counts and the
+  // selected filter are state. One switch here proves the visible filter tab
+  // survives; the filtered pass below proves its result set does.
+  QVERIFY(formatBar->count() >= 3);
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  const int formatTabsBefore = formatBar->count();
+  const QString allTabEnglish = formatBar->tabText(0);
+  const int requestsBeforeBarSwitch = quietRequestCount(api);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+  QCOMPARE(formatBar->count(), formatTabsBefore);
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  QVERIFY2(formatBar->tabText(0) != allTabEnglish,
+           "the format bar kept the language the result set was searched in");
+  QCOMPARE(formatBar->tabText(0),
+           QCoreApplication::translate("mikai::app::SearchPage", "All (%1)").arg(30));
+  QCOMPARE(results->count(), 30);
+  QCOMPARE(api.requestCount(), requestsBeforeBarSwitch);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+  QCOMPARE(formatBar->tabText(0), allTabEnglish);
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  QCOMPARE(results->count(), 30);
+  QCOMPARE(api.requestCount(), requestsBeforeBarSwitch);
+
+  int movieTab = -1;
+  for (int index = 0; index < formatBar->count(); ++index) {
+    if (formatBar->tabData(index).toString() == QLatin1String("movie")) {
+      movieTab = index;
+      break;
+    }
+  }
+  QVERIFY2(movieTab >= 0, "the format bar did not offer the canned movie rows");
+  formatBar->setCurrentIndex(movieTab);
+
+  // The filter is the server's: the filtered answer replaces the set, and its
+  // rows are the format that was asked for.
+  QTRY_COMPARE_WITH_TIMEOUT(results->count(), 15, 30000);
+  for (int row = 0; row < results->count(); ++row) {
+    QVERIFY2(results->item(row)->text().contains(QStringLiteral("MOVIE")),
+             qPrintable(QStringLiteral("row %1 is not from the filtered set: %2")
+                            .arg(row)
+                            .arg(results->item(row)->text())));
+  }
+
+  // A filtered answer carries one format, but the control that produced it must
+  // stay on screen: without its All tab the only way back to the whole set is a
+  // new search the reader cannot ask for. The active tab is the filter itself.
+  QTRY_VERIFY_WITH_TIMEOUT(formatBar->isVisible(), 5000);
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("movie"));
+  QVERIFY2(tabIndexWithData(*formatBar, QStringLiteral("all")) >= 0,
+           "the filtered format bar has no All escape");
+
+  results->setCurrentRow(6);
+  QCOMPARE(results->currentRow(), 6);
+  QScrollBar* resultsBar = results->verticalScrollBar();
+  // Fifteen filtered rows can fit the whole result viewport on a tall window,
+  // and a bar with no range would let a language switch reset the scroll
+  // invisibly. Cap the real list to a handful of its own rows - the rows keep
+  // the height the view gives them - and let the layout apply the cap, so the
+  // assertions below read a scrollbar with an actual range to preserve.
+  int resultRowHeight = results->sizeHintForRow(0);
+  if (resultRowHeight <= 0 && results->item(0) != nullptr) {
+    resultRowHeight = results->visualItemRect(results->item(0)).height();
+  }
+  QVERIFY2(resultRowHeight > 0, "the result rows have no measurable height");
+  results->setMaximumHeight(results->frameWidth() * 2 + resultRowHeight * 5);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(resultsBar->maximum() > 0, 5000);
+  QVERIFY2(resultsBar->maximum() > 0,
+           "the filtered result set does not fill the view, so a scroll reset would be invisible");
+  resultsBar->setValue(qMin(180, resultsBar->maximum()));
+  const int resultsScrollBefore = resultsBar->value();
+  QVERIFY(resultsScrollBefore > 0);
+
+  const QString englishSelected = results->item(6)->text();
+  const QString englishSearch = searchButton->text();
+  const QString englishPlaceholder = query->placeholderText();
+  QLabel* resultsHeading = nullptr;
+  for (QLabel* label : page.findChildren<QLabel*>(QStringLiteral("sectionHeading"))) {
+    if (label->text() == QStringLiteral("Search results")) {
+      resultsHeading = label;
+      break;
+    }
+  }
+  QVERIFY2(resultsHeading != nullptr, "the search page did not label the result mode");
+
+  // From here on only words may move. The settings dialog is the real surface:
+  // its selector installs the preview into the running page before Save.
+  SettingsDialog dialog(client, runner);
+  dialog.show();
+  QCoreApplication::processEvents();
+  auto* language = dialog.findChild<QComboBox*>(QStringLiteral("uiLanguageCombo"));
+  QVERIFY2(language != nullptr, "the settings surface has no language selector");
+  const int english = language->findData(QStringLiteral("en"));
+  const int ukrainian = language->findData(QStringLiteral("uk"));
+  QVERIFY(english >= 0 && ukrainian >= 0);
+  language->setCurrentIndex(english);
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+
+  const int requestsBeforeSwitch = quietRequestCount(api);
+  const int cardsBefore = page.findChildren<TitleCard*>().size();
+  QVERIFY(cardsBefore > 0);
+
+  language->setCurrentIndex(ukrainian);
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("uk"));
+
+  const QString ukrainianSearch =
+      QCoreApplication::translate("mikai::app::SearchPage", "Search");
+  QVERIFY2(ukrainianSearch != englishSearch,
+           "the catalog did not translate the search action, so this slot proves nothing");
+  QCOMPARE(searchButton->text(), ukrainianSearch);
+  QCOMPARE(query->placeholderText(),
+           QCoreApplication::translate("mikai::app::SearchPage",
+                                       "Search by title — Enter or the button"));
+  QCOMPARE(resultsHeading->text(),
+           QCoreApplication::translate("mikai::app::SearchPage", "Search results"));
+  QCOMPARE(status->text(),
+           QCoreApplication::translate("mikai::app::SearchPage", "Found: %1").arg(15));
+
+  // State, not wording: the query, the filtered set, the selected row and the
+  // scroll stay exactly where the reader left them.
+  QCOMPARE(query->text(), QStringLiteral("canned-many"));
+  QCOMPARE(results->count(), 15);
+  QCOMPARE(results->currentRow(), 6);
+  QCOMPARE(resultsBar->value(), resultsScrollBefore);
+  QCOMPARE(page.findChildren<TitleCard*>().size(), cardsBefore);
+  for (int row = 0; row < results->count(); ++row) {
+    QVERIFY2(results->item(row)->text().contains(QStringLiteral("MOVIE")),
+             qPrintable(QStringLiteral("the filter was lost on row %1: %2")
+                            .arg(row)
+                            .arg(results->item(row)->text())));
+  }
+  const QString ukrainianSelected = results->item(6)->text();
+  QVERIFY2(ukrainianSelected != englishSelected,
+           "the selected row still shows the language the page was searched in");
+  QVERIFY2(ukrainianSelected.startsWith(QStringLiteral("Canned 7")),
+           qPrintable(QStringLiteral("the API title was rewritten: %1").arg(ukrainianSelected)));
+  QVERIFY(ukrainianSelected.contains(QStringLiteral("MOVIE")));
+  QVERIFY2(ukrainianSelected.contains(QCoreApplication::translate(
+               "mikai::app::SearchPage", "%n episode(s)", nullptr, kEpisodes)),
+           qPrintable(QStringLiteral("the row's episode caption was not restated: %1")
+                          .arg(ukrainianSelected)));
+
+  // The visible control and the format it names survive the switch too.
+  QVERIFY(formatBar->isVisible());
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("movie"));
+  QVERIFY(tabIndexWithData(*formatBar, QStringLiteral("all")) >= 0);
+
+  // Nothing was fetched to translate: the filtered result set is still the one
+  // in hand.
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  language->setCurrentIndex(english);
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+  QCOMPARE(searchButton->text(), englishSearch);
+  QCOMPARE(query->placeholderText(), englishPlaceholder);
+  QCOMPARE(resultsHeading->text(), QStringLiteral("Search results"));
+  QCOMPARE(status->text(), QStringLiteral("Found: 15"));
+  QCOMPARE(results->item(6)->text(), englishSelected);
+  QCOMPARE(results->currentRow(), 6);
+  QCOMPARE(resultsBar->value(), resultsScrollBefore);
+  QVERIFY(formatBar->isVisible());
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("movie"));
+  QVERIFY(tabIndexWithData(*formatBar, QStringLiteral("all")) >= 0);
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  dialog.reject();
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+  settings.sync();
+  QCOMPARE(settings.contains(languageKey), storedLanguagePresent);
+  QCOMPARE(settings.value(languageKey), storedLanguage);
+
+  // The escape has to work, and it is the one place this slot expects a new
+  // query: the reader explicitly asked for the unfiltered set. Everything a
+  // language switch did before this point issued nothing.
+  QVERIFY2(formatBar->isVisible(),
+           "the filter control disappeared, so the All escape could not be pressed");
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("movie"));
+  const int requestsBeforeAll = quietRequestCount(api);
+  QCOMPARE(requestsBeforeAll, requestsBeforeSwitch);
+  const int pathsBeforeAll = api.requestedPaths().size();
+  const int allTab = tabIndexWithData(*formatBar, QStringLiteral("all"));
+  QVERIFY2(allTab >= 0, "the visible format bar offers no All tab");
+  formatBar->setCurrentIndex(allTab);
+
+  // The server's unfiltered answer is back, and the bar names it as active.
+  QTRY_COMPARE_WITH_TIMEOUT(results->count(), 30, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(formatBar->isVisible(), 5000);
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  int tvRows = 0;
+  int movieRows = 0;
+  for (int row = 0; row < results->count(); ++row) {
+    const QString text = results->item(row)->text();
+    if (text.contains(QStringLiteral(" · TV · "))) {
+      ++tvRows;
+    }
+    if (text.contains(QStringLiteral(" · MOVIE · "))) {
+      ++movieRows;
+    }
+  }
+  QVERIFY2(tvRows > 0, "All did not return the TV rows");
+  QVERIFY2(movieRows > 0, "All did not return the MOVIE rows");
+  QCOMPARE(query->text(), QStringLiteral("canned-many"));
+
+  // Exactly one unfiltered search was issued for that click; the page's own
+  // per-format counts and poster requests are not searches.
+  const int requestsAfterAll = quietRequestCount(api);
+  int newUnfilteredSearches = 0;
+  const QStringList newPaths = api.requestedPaths();
+  for (int index = pathsBeforeAll; index < newPaths.size(); ++index) {
+    const QString& path = newPaths.at(index);
+    if (path.contains(QStringLiteral("search=canned-many")) &&
+        !path.contains(QStringLiteral("formats="))) {
+      ++newUnfilteredSearches;
+    }
+  }
+  QCOMPARE(newUnfilteredSearches, 1);
+
+  // A switch after All is still only words: the unfiltered set and the All
+  // selection stay, and no request follows.
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+  QCOMPARE(api.requestCount(), requestsAfterAll);
+  QVERIFY(formatBar->isVisible());
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  QCOMPARE(results->count(), 30);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+  QCOMPARE(api.requestCount(), requestsAfterAll);
+  QVERIFY(formatBar->isVisible());
+  QCOMPARE(formatBar->tabData(formatBar->currentIndex()).toString(), QStringLiteral("all"));
+  QCOMPARE(results->count(), 30);
+  QCOMPARE(query->text(), QStringLiteral("canned-many"));
+}
+
+void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclosureState() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QSettings settings;
+  const QString languageKey = QString::fromLatin1(mikai::app::kUiLanguageSettingKey);
+  settings.sync();
+  const bool storedLanguagePresent = settings.contains(languageKey);
+  const QVariant storedLanguage = settings.value(languageKey);
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
+
+  QVERIFY2(primeBuiltCatalogForSwitching(),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
+                      builtCatalogPath()));
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  // Three pages of pills, so the episode pager has a selection to preserve.
+  api.setReleaseEpisodeCount(300);
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.resize(1100, 620);
+  page.show();
+
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("titleHeading"));
+  auto* description = page.findChild<QLabel*>(QStringLiteral("titleDescription"));
+  auto* details = page.findChild<QWidget*>(QStringLiteral("titleDetails"));
+  auto* episodesHeading = page.findChild<QLabel*>(QStringLiteral("episodeSectionHeading"));
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(heading != nullptr && description != nullptr && details != nullptr &&
+               episodesHeading != nullptr && overview != nullptr && tabs != nullptr,
+           "the title page does not expose its heading, description, details or episodes");
+
+  QTRY_COMPARE_WITH_TIMEOUT(heading->text(), QStringLiteral("Canned 1"), 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0,
+                           30000);
+
+  // The API's description is longer than its preview, so its disclosure starts
+  // collapsed and can be opened for real.
+  QTRY_VERIFY_WITH_TIMEOUT(visibleButtonWithText(page, QStringLiteral("Read more")) != nullptr,
+                           5000);
+  QPushButton* descriptionButton = visibleButtonWithText(page, QStringLiteral("Read more"));
+  QVERIFY(descriptionButton != nullptr);
+  QVERIFY2(description->text() != cannedDescription(),
+           "the canned description fits its preview, so expanding it would be invisible");
+  QVERIFY(description->text().endsWith(QStringLiteral("…")));
+  // The overview is scrollable; the action has to be inside its viewport before
+  // a real click can reach it.
+  overview->ensureWidgetVisible(descriptionButton, 0, 0);
+  QCoreApplication::processEvents();
+  QTest::mouseClick(descriptionButton, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QCOMPARE(description->text(), cannedDescription());
+  QCOMPARE(descriptionButton->text(), QStringLiteral("Collapse description"));
+
+  // The metadata disclosure, open, with its own caption.
+  QPushButton* metaButton = visibleButtonWithText(page, QStringLiteral("More details"));
+  QVERIFY(metaButton != nullptr);
+  overview->ensureWidgetVisible(metaButton, 0, 0);
+  QCoreApplication::processEvents();
+  QTest::mouseClick(metaButton, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(details->isVisible(), 5000);
+  QCOMPARE(metaButton->text(), QStringLiteral("Hide details"));
+
+  // A release other than the first is selected, and its chip is what the
+  // language switch has to keep checked.
+  const QList<QPushButton*> chips =
+      page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+  QCOMPARE(chips.size(), 2);
+  QPushButton* firstChip = chips.at(0);
+  QPushButton* secondChip = chips.at(1);
+  QVERIFY(firstChip->isChecked());
+  QTest::mouseClick(secondChip, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QVERIFY(secondChip->isChecked());
+  QVERIFY(!firstChip->isChecked());
+
+  QWidget* currentTab = tabs->currentWidget();
+  QVERIFY(currentTab != nullptr);
+  RangePager* pager = currentTab->findChild<RangePager*>();
+  QVERIFY2(pager != nullptr, "the episode tab has no pager");
+  // Three or more pages means the page after the first is a full one, so its
+  // pill count follows from the first page instead of a stride pinned here.
+  QTRY_VERIFY_WITH_TIMEOUT(pager->pages() >= 3, 5000);
+
+  // The visible pills are the only honest source for the page stride: the grid
+  // decides how many fit and the payload decides what they read. The fixture
+  // labels its episodes "Episode N", so the pill that follows the first page is
+  // derived from what is on screen instead of a page-size constant pinned here.
+  const auto pillTexts = [&page] {
+    QStringList texts;
+    for (QWidget* widget : page.findChildren<QWidget*>(QStringLiteral("episodeButton"))) {
+      auto* pill = qobject_cast<QPushButton*>(widget);
+      Q_ASSERT(pill != nullptr);
+      texts.append(pill->text());
+    }
+    texts.sort();
+    return texts;
+  };
+  // A render that follows a release switch leaves the previous pills queued for
+  // deletion, so the grid is read once its contents stop moving rather than at
+  // whatever count this slot happened to catch.
+  QStringList firstPagePills = pillTexts();
+  for (int stable = 0; stable < 3;) {
+    QTest::qWait(20);
+    const QStringList now = pillTexts();
+    stable = (now == firstPagePills) ? stable + 1 : 0;
+    firstPagePills = now;
+  }
+  QVERIFY2(!firstPagePills.isEmpty(), "the title page rendered no episode pills");
+  const int pageSize = firstPagePills.size();
+  QVERIFY2(pageSize > 0 && pageSize < 300,
+           qPrintable(QStringLiteral("the canned release no longer needs a second episode page "
+                                     "(%1 pills on the first)")
+                          .arg(pageSize)));
+  const QString secondPageStart = QStringLiteral("Episode %1").arg(pageSize + 1);
+
+  // The second episode page: a page selection, not just the first page.
+  QPushButton* nextPage = pagerArrow(*pager, QStringLiteral("→"));
+  QVERIFY(nextPage != nullptr);
+  QTest::mouseClick(nextPage, Qt::LeftButton);
+  QTRY_COMPARE_WITH_TIMEOUT(pager->page(), 2, 5000);
+  // The departing pills are deleted through the event loop, so wait for the
+  // grid to hold exactly one page again before reading it.
+  QTRY_COMPARE_WITH_TIMEOUT(pillTexts().size(), pageSize, 10000);
+  QTRY_VERIFY_WITH_TIMEOUT(pillTexts().contains(secondPageStart), 10000);
+  const QStringList pillTextsBefore = pillTexts();
+  QVERIFY2(!pillTextsBefore.contains(firstPagePills.constFirst()),
+           "the second page still shows the first page's pills");
+
+  QCoreApplication::processEvents();
+  QTest::qWait(100);
+  auto* episodeScroll = currentTab->findChild<QScrollArea*>(QStringLiteral("episodeScroll"));
+  QVERIFY(episodeScroll != nullptr);
+  QWidget* episodeGrid = episodeScroll->widget();
+  QVERIFY2(episodeGrid != nullptr, "the episode scroll holds no grid to measure");
+  // The section is clamped to a fixed maximum height and the grid is sized to
+  // its content, so a wide window can show a whole page of pills and leave the
+  // bar with no range for a language switch to reset. Constrain the real
+  // viewport to a few pill rows and keep the grid taller than any viewport the
+  // page can ask for, using the pills' own geometry and the layout's spacing.
+  const QList<QPushButton*> pagePills =
+      currentTab->findChildren<QPushButton*>(QStringLiteral("episodeButton"));
+  QVERIFY2(!pagePills.isEmpty(), "the episode grid holds no pill to measure");
+  int pillRowSpan = pagePills.constFirst()->sizeHint().height();
+  if (auto* gridLayout = qobject_cast<QGridLayout*>(episodeGrid->layout())) {
+    pillRowSpan += qMax(0, gridLayout->verticalSpacing());
+  }
+  QVERIFY2(pillRowSpan > 0, "the episode pills have no measurable row height");
+  const int episodeFrame = episodeScroll->frameWidth();
+  const int gridHeight = qMax(episodeGrid->height(), episodeGrid->sizeHint().height());
+  episodeScroll->setFixedHeight(episodeFrame * 2 + pillRowSpan * 3);
+  episodeGrid->setMinimumHeight(gridHeight + pillRowSpan * 4);
+  QCoreApplication::processEvents();
+  QScrollBar* episodeBar = episodeScroll->verticalScrollBar();
+  QTRY_VERIFY_WITH_TIMEOUT(episodeBar->maximum() > 0, 5000);
+  QVERIFY2(episodeBar->maximum() > 0,
+           "the episode grid does not fill its view, so a scroll reset would be invisible");
+  episodeBar->setValue(qMin(40, episodeBar->maximum()));
+  const int episodeScrollBefore = episodeBar->value();
+  QVERIFY(episodeScrollBefore > 0);
+
+  QScrollBar* overviewBar = overview->verticalScrollBar();
+  QVERIFY2(overviewBar->maximum() > 0,
+           "the title overview does not fill its view, so a scroll reset would be invisible");
+  overviewBar->setValue(qMin(60, overviewBar->maximum()));
+  const int overviewScrollBefore = overviewBar->value();
+  QVERIFY(overviewScrollBefore > 0);
+
+  // Everything the switch must leave alone, captured in the opening language
+  // after the release's quality probe has settled.
+  const int requestsBeforeSwitch = quietRequestCount(api);
+  const int episodePagesBeforeSwitch = pager->pages();
+  const QString chipLabelBefore = secondChip->text();
+  const QString chipTipBefore = secondChip->toolTip();
+  const QString descriptionBefore = description->text();
+  const QString descriptionActionBefore = descriptionButton->text();
+  const QString metaActionBefore = metaButton->text();
+  const QString episodesHeadingBefore = episodesHeading->text();
+  QCOMPARE(episodesHeadingBefore, QStringLiteral("Episodes"));
+  QCOMPARE(descriptionActionBefore, QStringLiteral("Collapse description"));
+  QCOMPARE(metaActionBefore, QStringLiteral("Hide details"));
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+
+  // The app's own captions are restated...
+  const QString ukrainianDescriptionAction =
+      QCoreApplication::translate("mikai::app::TitlePage", "Collapse description");
+  const QString ukrainianMetaAction =
+      QCoreApplication::translate("mikai::app::TitlePage", "Hide details");
+  const QString ukrainianEpisodes =
+      QCoreApplication::translate("mikai::app::TitlePage", "Episodes");
+  QVERIFY2(ukrainianDescriptionAction != descriptionActionBefore,
+           "the catalog did not translate the description action, so this slot proves nothing");
+  QCOMPARE(descriptionButton->text(), ukrainianDescriptionAction);
+  QCOMPARE(metaButton->text(), ukrainianMetaAction);
+  QCOMPARE(episodesHeading->text(), ukrainianEpisodes);
+
+  // ...while the title, the description and the release's team name are API
+  // data and read exactly as they arrived.
+  QCOMPARE(heading->text(), QStringLiteral("Canned 1"));
+  QCOMPARE(description->text(), descriptionBefore);
+  QVERIFY(details->isVisible());
+  QVERIFY(secondChip->isChecked());
+  QVERIFY(!firstChip->isChecked());
+  QCOMPARE(secondChip->text(), chipLabelBefore);
+  QVERIFY2(secondChip->toolTip() != chipTipBefore,
+           "the release chip's own kind caption was not restated");
+  QVERIFY2(secondChip->text().contains(QStringLiteral("Test Sub")),
+           "the release's team name was rewritten");
+  QVERIFY2(secondChip->toolTip().contains(QStringLiteral("Test Sub")),
+           "the release tooltip lost the team name");
+  QVERIFY2(secondChip->toolTip().contains(
+               QCoreApplication::translate("Labels", "Subtitled")),
+           qPrintable(QStringLiteral("the release tooltip kept its old kind: %1")
+                          .arg(secondChip->toolTip())));
+
+  // The episode page, its pills and both scrolls are where they were.
+  QCOMPARE(pager->page(), 2);
+  QCOMPARE(pager->pages(), episodePagesBeforeSwitch);
+  QStringList pillTextsAfter;
+  for (QWidget* widget : page.findChildren<QWidget*>(QStringLiteral("episodeButton"))) {
+    auto* pill = qobject_cast<QPushButton*>(widget);
+    QVERIFY(pill != nullptr);
+    pillTextsAfter.append(pill->text());
+  }
+  pillTextsAfter.sort();
+  QCOMPARE(pillTextsAfter, pillTextsBefore);
+  QCOMPARE(episodeBar->value(), episodeScrollBefore);
+  QCOMPARE(overviewBar->value(), overviewScrollBefore);
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+
+  QCOMPARE(descriptionButton->text(), descriptionActionBefore);
+  QCOMPARE(metaButton->text(), metaActionBefore);
+  QCOMPARE(episodesHeading->text(), episodesHeadingBefore);
+  QCOMPARE(heading->text(), QStringLiteral("Canned 1"));
+  QCOMPARE(description->text(), descriptionBefore);
+  QVERIFY(details->isVisible());
+  QVERIFY(secondChip->isChecked());
+  QCOMPARE(secondChip->text(), chipLabelBefore);
+  QCOMPARE(secondChip->toolTip(), chipTipBefore);
+  QCOMPARE(pager->page(), 2);
+  QCOMPARE(pager->pages(), episodePagesBeforeSwitch);
+  QCOMPARE(episodeBar->value(), episodeScrollBefore);
+  QCOMPARE(overviewBar->value(), overviewScrollBefore);
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  settings.sync();
+  QCOMPARE(settings.contains(languageKey), storedLanguagePresent);
+  QCOMPARE(settings.value(languageKey), storedLanguage);
 }
 
 void TestFeedRender::aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage() {

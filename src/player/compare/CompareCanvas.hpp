@@ -87,10 +87,17 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void drawForeground(QPainter* painter, const QRectF& rect) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     bool viewTouched_ = false;
     void applyLayout();
+    /// Restates this view's own words (selector labels, tooltips, spoken names
+    /// and the painted status pill) in place. The side names and choice labels
+    /// belong to the caller and arrive through setSideNames/setChoices; nothing
+    /// here touches the images, the camera or the menus, so zoom, pan, split,
+    /// the held side and an open selector menu all survive.
+    void retranslateUi();
     void placeBadges();
     void layoutSelectorRow();
     QRect imageBarRect() const;

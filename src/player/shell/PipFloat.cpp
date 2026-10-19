@@ -8,6 +8,7 @@
 #include "ShellWidgets.hpp"
 #include "VideoSurface.hpp"
 
+#include <QCursor>
 #include <QEasingCurve>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -96,6 +97,9 @@ QString pipFormatSeconds(double value) {
 PipFloat::PipFloat(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
     setObjectName(QStringLiteral("playerPip"));
+    // The float is frameless, so this title is never painted: it is the name a
+    // window list and assistive technology read, and it is retranslated live.
+    setWindowTitle(tr("Picture in picture"));
     setMinimumSize(kPipDefaultWidth / 2, kPipDefaultHeight / 2);
     setAttribute(Qt::WA_TranslucentBackground);
     setFocusPolicy(Qt::StrongFocus);
@@ -446,6 +450,7 @@ void PipFloat::closeStream() {
 }
 
 void PipFloat::setPlaying(bool playing) {
+    playing_ = playing;
     // The two transport triangles are painted by the button itself, so the
     // glyph function is the only handle on which one is up - a pixmap could not
     // tell them apart at dock scale, and there is none to ask.
@@ -457,6 +462,10 @@ void PipFloat::setPlaying(bool playing) {
 }
 
 void PipFloat::setTime(double position, double duration) {
+    // Retained: a language change re-renders the clocks from the last values
+    // the surface reported, instead of reading the float's core for them.
+    lastPosition_ = position;
+    lastDuration_ = duration;
     // Display only: nothing is emitted, so answering with a seek could loop.
     // The position is shown whenever it is known. Blanking it merely because
     // the length is not - a live stream, or a clip still reporting zero -
@@ -497,11 +506,17 @@ void PipFloat::setMuted(bool muted) {
     // a muted core at level 0 is a mute the slider cannot then undo.
     surface_->setMuted(muted);
     surface_->setVolume(volume_ * 100.0);
-    const QString hint = muted ? tr("Unmute audio") : tr("Mute audio");
-    muteButton_->setIcon(muted ? &IconPainter::mute : &IconPainter::volume);
+    updateMuteChrome();
+    updateVolumeChip();
+}
+
+/// The mute button's glyph and wording, from the retained flag. Only the
+/// strings are rebuilt here: setMuted() is the one that tells the core.
+void PipFloat::updateMuteChrome() {
+    const QString hint = muted_ ? tr("Unmute audio") : tr("Mute audio");
+    muteButton_->setIcon(muted_ ? &IconPainter::mute : &IconPainter::volume);
     muteButton_->setToolTip(hint);
     muteButton_->setAccessibleName(hint);
-    updateVolumeChip();
 }
 
 void PipFloat::setVolume(double volume) {
@@ -543,13 +558,10 @@ void PipFloat::setOverlayOpacity(double value) {
 }
 
 void PipFloat::revealControls() {
-    // Already fully revealed and nothing pending: every call below is a no-op,
-    // except that setOverlayOpacity() is not one - it redraws the picture to
-    // lay the chrome back over it. This runs on every mouse-move over the
-    // float, so without this the surface was repainted continuously under a
-    // pointer that was not going anywhere.
+    hovered_ = isVisible() && rect().contains(mapFromGlobal(QCursor::pos()));
+    // Mouse motion over revealed controls must not repaint the paused video.
     if (hovered_ && overlayOpacity_ >= 1.0 && overlayFade_->state() != QAbstractAnimation::Running
-        && !hideTimer_->isActive()) {
+        && hideTimer_->isActive()) {
         return;
     }
     // The reveal is instant on purpose: a fade in makes the controls feel late
@@ -557,20 +569,17 @@ void PipFloat::revealControls() {
     hideTimer_->stop();
     overlayFade_->stop();
     setOverlayOpacity(1.0);
-    // A hover can reach a float the user never activated, so the controls have
-    // to retire again on their own rather than wait for a focus event that may
-    // never arrive - but never while the pointer is still on them.
-    if (!hovered_) {
-        hideTimer_->start(kPipBarRevealHoldMs);
-    }
+    // Layered child windows can miss leave events; keep a bounded pointer check armed.
+    hideTimer_->start(kPipBarRevealHoldMs);
 }
 
 void PipFloat::hideControls() {
-    // Never fade out from under a pointer that is still on the float: the
-    // controls would vanish mid-reach.
-    if (hovered_ || overlayOpacity_ <= 0.01) {
+    hovered_ = isVisible() && rect().contains(mapFromGlobal(QCursor::pos()));
+    if (hovered_) {
+        hideTimer_->start(kPipBarRevealHoldMs);
         return;
     }
+    if (overlayOpacity_ <= 0.01) return;
     overlayFade_->stop();
     overlayFade_->setStartValue(overlayOpacity_);
     overlayFade_->setEndValue(0.0);
@@ -609,8 +618,6 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
             case QEvent::Leave:
             case QEvent::HoverLeave:
                 hovered_ = false;
-                // Linger a moment after the pointer goes, so a click that ends
-                // outside does not make the controls blink.
                 hideTimer_->start(kPipBarRevealHoldMs);
                 break;
             case QEvent::WindowActivate:
@@ -652,6 +659,41 @@ bool PipFloat::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void PipFloat::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange) {
+        retranslateUi();
+    }
+}
+
+void PipFloat::retranslateUi() {
+    // Every label is rebuilt from retained state: the transport and mute hints
+    // carry the state they describe, so they are rebuilt with it. Nothing here
+    // reaches the float's core - a wording change is not a pause, a seek or a
+    // volume change - and no control is shown, hidden or moved.
+    setWindowTitle(tr("Picture in picture"));
+    // An IconButton copies its tooltip into an accessible name when it is
+    // built, so both are restated from one string: an announced name is a label
+    // too, and a stale one reads out in the previous language.
+    const auto relabel = [](IconButton* button, const QString& text) {
+        button->setToolTip(text);
+        button->setAccessibleName(text);
+    };
+    relabel(playButton_, playing_ ? tr("Pause (Space)") : tr("Play (Space)"));
+    updateMuteChrome();
+    relabel(restoreButton_, tr("Return to the window"));
+    relabel(closeButton_, tr("Close (Esc)"));
+    // The clocks are digits rather than words, but they are re-rendered from
+    // the retained position and length so the row cannot keep a value from
+    // before the change. Left alone mid-drag: the pointer owns the timeline.
+    if (!scrubbing_) {
+        setTime(lastPosition_, lastDuration_);
+    }
+    // The chrome is drawn by the picture's painter, so the labels land through
+    // the same host path every other chrome change takes.
+    chromeDirtyAll();
 }
 
 void PipFloat::closeEvent(QCloseEvent* event) {

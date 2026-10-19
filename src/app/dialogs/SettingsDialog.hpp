@@ -10,7 +10,9 @@
 #include <QDialog>
 #include <QElapsedTimer>
 #include <QPointer>
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <QMap>
 #include <QSet>
 #include <QString>
@@ -27,6 +29,7 @@ class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
+class QShowEvent;
 class QStackedWidget;
 class QTabWidget;
 class QTableWidget;
@@ -64,6 +67,7 @@ public:
     SettingsDialog(backend::MikaiClient& client, Runner& runner, QWidget* parent = nullptr,
                    ComponentStoreTab* adoptedComponents = nullptr);
     ~SettingsDialog() override;
+    void done(int result) override;
 
     /// True when the feed selection now differs from what was stored when the
     /// dialog opened. The caller refreshes the home feeds only then, so a native
@@ -191,6 +195,7 @@ private:
     QWidget* buildComponentsTab();
     QWidget* buildBenchmarkTab();
     void runBenchmark();
+    void resetBenchmarkControls();
     void filterPresetRows(const QString& query);
     /// Resolves one benchmark clip name against the dist layout, the source tree
     /// beside the build directory, and the current working directory. Empty when
@@ -213,6 +218,18 @@ private:
     void refreshQuota();
 
     void changeEvent(QEvent* event) override;
+    /// Each showing starts from the language and stored preference that are
+    /// live at that moment. A dialog can be exec()d again after Save or Cancel,
+    /// so neither a committed choice nor a rolled-back preview may become the
+    /// baseline of the next round.
+    void showEvent(QShowEvent* event) override;
+    /// Installs the language the selector now names into every open window.
+    /// The preference is not written here: only Save commits it, so Escape, the
+    /// window button and destruction leave the stored choice untouched.
+    void previewInterfaceLanguage(int index);
+    /// Puts back the language that was active when this showing began when the
+    /// dialog closes without a committed Save. A no-op after a successful Save.
+    void restoreOpeningLanguage();
     /// Re-reads every static caption in place after a LanguageChange: window
     /// and tab titles, buttons, headings, hints, row labels, combo items (by
     /// stable data, never by index), placeholders, tooltips and accessible
@@ -336,6 +353,7 @@ private:
     QLabel* benchmarkResultDetail_ = nullptr;
     bool benchmarkSelectionUpdating_ = false;
     bool benchmarkRunning_ = false;
+    std::shared_ptr<std::atomic<bool>> benchmarkCancellation_;
     QScrollArea* generalScroll_ = nullptr;
     QScrollArea* presetsScroll_ = nullptr;
     QScrollArea* processingScroll_ = nullptr;
@@ -369,18 +387,28 @@ private:
     /// language switch changes words, and redrawing the same rows from the same
     /// facts would drop an in-flight job's visible state for nothing.
     bool retranslating_ = false;
-    /// Whether the store held an explicit language preference when this dialog
-    /// opened. A refused save has to put that back exactly: a preference the user
-    /// never chose must not be pinned by a refusal.
-    bool languagePreferenceWasStored_ = false;
-    /// The language preference the running application last installed, so Save
-    /// knows whether the choice it is about to write is one this process does
-    /// not already have. Never used to skip anything: it only decides whether
-    /// an already-active choice needs applying at all.
-    QString appliedLanguagePreference_;
-    /// The exact preference stored when the dialog opened, which may differ from
-    /// the language currently installed in-process. Restored verbatim on refusal.
-    QString storedLanguagePreference_;
+    /// The resolved language that was live when this showing began, separate
+    /// from the preference in the store: a preview must hand the user back the
+    /// language they arrived in, and the store was never touched to produce it.
+    QString openingLanguageCode_;
+    /// The preference the selector showed when this showing began. It is what a
+    /// rollback puts back, so a preference changed elsewhere meanwhile cannot
+    /// masquerade as the one the user arrived with.
+    QString openingLanguagePreference_;
+    /// The preference whose preview is currently installed. It is what the
+    /// selector falls back to when a replacement catalog is refused, and what
+    /// Save knows the live language already corresponds to.
+    QString previewLanguagePreference_;
+    /// True once Save has written the choice or a rollback has run. A second
+    /// done()/destruction must not repeat either.
+    bool languageCommitted_ = false;
+    /// True between done() and the next showing. A hide()/show() of the same
+    /// round leaves the preview and its baseline alone; only a dialog that was
+    /// finished and is being exec()d again starts a new baseline.
+    bool roundDone_ = false;
+    /// False while the selector's initial item is being chosen, so the preview
+    /// handler never fires for construction or a retranslation.
+    bool languageSelectorReady_ = false;
 
     // Native processing. The request is loaded once; backend and recipe widgets
     // start from it, and the availability snapshot is what the status explains.

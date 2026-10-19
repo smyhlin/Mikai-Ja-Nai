@@ -17,6 +17,10 @@ class QSpinBox;
 class QTableWidget;
 class QVBoxLayout;
 
+namespace mplayer::native {
+class AnimeJanaiCatalogWatcher;
+}
+
 namespace mikai::app {
 class Runner;
 
@@ -66,6 +70,8 @@ private:
     void loadSelectedChainIntoEditor();
     void rebuildModelStepRows();
     void commitCurrentChainFromEditor();
+    void onCatalogChanged();
+    void syncCatalogWatcherDirectory();
     void updateStatusBanner(const QString& message, const QString& tone = QStringLiteral("info"));
     void markDirty();
 
@@ -102,6 +108,7 @@ private:
     mplayer::native::AnimeJanaiConfig config_;
     bool updatingUi_ = false;
     bool dirty_ = false;
+    mplayer::native::AnimeJanaiCatalogWatcher* catalogWatcher_ = nullptr;
 
     QLabel* bannerLabel_ = nullptr;
     QLabel* modelsHeading_ = nullptr;

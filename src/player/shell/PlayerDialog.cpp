@@ -1741,6 +1741,20 @@ void PlayerDialog::changeEvent(QEvent* event) {
     processingOriginalButton_->setText(
         animeJanaiFailure ? tr("Turn off AnimeJaNai") : tr("Original"));
     processingOriginalButton_->setToolTip(tr("Stay on the Original picture"));
+    // The preparation window's chrome retranslates itself, but its title and
+    // stage are this dialog's words: a running AnimeJaNai build is restated
+    // through the non-resetting setters, from the typed facts it retained. No
+    // signal is replayed, so the frame hold, the build, its generation and the
+    // elapsed clock stay exactly where they were.
+    restateAnimeJanaiBuildLanguage();
+    // The HUD, the enhancement tree and the refusal wording are this dialog's
+    // words rendered by the shell from the inputs it already holds. Republish
+    // those inputs - the cached owner status, the runtime selection and the
+    // availability re-projected from the owner's published factory observation -
+    // so the shell redraws them in the language now active. This is a pure data
+    // publication: no request is announced, no command is issued and the
+    // selection, source, frame and prepared state stay exactly as they were.
+    pushNativeInputs();
     layoutPanels();
 }
 

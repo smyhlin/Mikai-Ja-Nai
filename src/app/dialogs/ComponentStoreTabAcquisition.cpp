@@ -138,7 +138,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     if (acquisitionChecking_ || acquisitionSequenceActive_ || downloadActive() || verifying_) return;
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noClient"),
-                    tr("Checking selected component state needs a runner."));
+                    StatusReason{.kind = StatusReason::Kind::CheckNeedsRunner});
         return;
     }
     if (inventoryScanning_) {
@@ -211,7 +211,7 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
                 acquisitionSequenceActive_ = false;
                 acquisitionCheckCancelFlag_.reset();
                 if (progress_ != nullptr) progress_->hide();
-                applyStatus(QString(), tr("No selected missing packs need installation."));
+                applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::NothingToInstall});
                 updateControls();
                 return;
             }
@@ -260,20 +260,19 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             acquisitionSequenceActive_ = false;
             acquisitionCheckCancelFlag_.reset();
             pendingModels_.clear();
+            const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),
-                        tr("Component check failed: %1").arg(backend::failureLine(failure)));
+                        StatusReason{.kind = StatusReason::Kind::CheckFailed, .detail = cause});
             updateControls();
         });
 }
 
 void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     if (runner_ == nullptr) {
-        const QString backend = selectedBackend() == Backend::TensorRT
-                                    ? tr("TensorRT / CUDA 13")
-                                    : tr("DirectML");
+        const Backend backend = selectedBackend();
         applyStatus(QStringLiteral("native.components.noRunner"),
-                    tr("Installing the selected AnimeJaNai %1 closure needs a runner.")
-                        .arg(backend));
+                    StatusReason{.kind = StatusReason::Kind::ClosureNeedsRunner,
+                                 .backend = backend});
         pendingModels_.clear();
         updateControls();
         return;
@@ -367,7 +366,7 @@ void ComponentStoreTab::chooseAnimeJanaiRuntimeDirectory() {
 void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) {
     if (runner_ == nullptr) {
         applyStatus(QStringLiteral("native.components.noRunner"),
-                    tr("Installing a local AnimeJaNai runtime needs a runner."));
+                    StatusReason{.kind = StatusReason::Kind::RuntimeNeedsRunner});
         return;
     }
 
@@ -410,20 +409,15 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
                 const QString reason = value.toMap().value(QStringLiteral("reason")).toString();
                 const QString reasonKey =
                     value.toMap().value(QStringLiteral("reasonKey")).toString();
-                const QString backendName = backend == Backend::TensorRT
-                                                ? tr("TensorRT / CUDA 13")
-                                                : tr("DirectML");
                 applyStatus(
                     reasonKey.isEmpty() ? QStringLiteral("native.components.fetch") : reasonKey,
-                    tr("%1 installation failed: %2")
-                        .arg(backendName,
-                             reason.isEmpty()
-                                 ? tr("Local AnimeJaNai runtime installation failed.")
-                                 : reason));
+                    StatusReason{.kind = StatusReason::Kind::ImportFailed,
+                                 .detail = reason,
+                                 .backend = backend});
             } else {
                 verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
                 animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
-                applyStatus(QString(), tr("Local AnimeJaNai runtime installed."));
+                applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::RuntimeInstalled});
             }
             refresh();
         },
@@ -434,12 +428,11 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
             if (cancelFlag->load()) {
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
             } else {
-                const QString backendName = backend == Backend::TensorRT
-                                                ? tr("TensorRT / CUDA 13")
-                                                : tr("DirectML");
+                const QString cause = backend::failureLine(failure);
                 applyStatus(QStringLiteral("native.components.fetch"),
-                            tr("%1 installation failed: %2")
-                                .arg(backendName, backend::failureLine(failure)));
+                            StatusReason{.kind = StatusReason::Kind::InstallFailed,
+                                         .detail = cause,
+                                         .backend = backend});
             }
             refresh();
         });
@@ -462,7 +455,7 @@ void ComponentStoreTab::downloadRemainingComponents() {
         pendingModels_.clear();
         acquisitionSequenceActive_ = false;
         applyStatus(QStringLiteral("native.components.missing"),
-                    tr("The compatible TensorRT component pack is missing, but no component provisioner is available."));
+                    StatusReason{.kind = StatusReason::Kind::MissingProvisioner});
         updateControls();
         return;
     }
@@ -684,7 +677,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
     if (runner_ == nullptr) {
         acquisitionSequenceActive_ = false;
         applyStatus(QStringLiteral("native.components.noRunner"),
-                    tr("Verifying the installed components needs a runner."));
+                    StatusReason{.kind = StatusReason::Kind::VerifyNeedsRunner});
         refresh();
         return;
     }
@@ -760,7 +753,7 @@ void ComponentStoreTab::startAcquisitionVerification() {
             acquisitionFailures_.clear();
             if (failures.isEmpty()) {
                 if (rifeSelected) rifeVerified_ = true;
-                applyStatus(QString(), tr("Every selected pack is installed and verified."));
+                applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::AllVerified});
             } else {
                 applyStatus(QStringLiteral("native.components.digest"),
                             failures.join(QStringLiteral("; ")));
@@ -884,7 +877,7 @@ void ComponentStoreTab::cancelAcquisition() {
         verifying_ = false;
         cancelProgress();
         applyStatus(QStringLiteral("native.components.cancelled"),
-                    tr("Verification was cancelled."));
+                    StatusReason{.kind = StatusReason::Kind::VerificationCancelled});
         updateControls();
         return;
     }
@@ -907,7 +900,7 @@ void ComponentStoreTab::cancelAcquisition() {
     pendingModels_.clear();
     if (anyArmed) {
         applyStatus(QStringLiteral("native.components.cancelled"),
-                    tr("Cancelling the running downloads..."));
+                    StatusReason{.kind = StatusReason::Kind::DownloadsCancelling});
         updateControls();
         return;
     }
@@ -944,16 +937,110 @@ void ComponentStoreTab::publishAcquisition() {
     emit acquisitionProgress(status, percent, started);
 }
 
+QString ComponentStoreTab::renderStatusReason() const {
+    const auto backendName = [this](Backend backend) {
+        return backend == Backend::TensorRT ? tr("TensorRT / CUDA 13") : tr("DirectML");
+    };
+    switch (statusReason_.kind) {
+        case StatusReason::Kind::None:
+            return QString();
+        case StatusReason::Kind::Raw:
+            return statusReason_.detail;
+        case StatusReason::Kind::InventoryFailed:
+            return tr("Component inventory failed: %1").arg(statusReason_.detail);
+        case StatusReason::Kind::VerifyNeedsRunner:
+            return tr("Verifying the installed components needs a runner.");
+        case StatusReason::Kind::VerifiedCount:
+            return tr("%1 elements verified, none changed.").arg(statusReason_.count);
+        case StatusReason::Kind::VerifyDigest: {
+            QStringList reported;
+            for (const QString& entry : statusReason_.causes) {
+                const int separator = entry.indexOf(QLatin1Char(':'));
+                const QString label = entry.left(separator);
+                const QString entryDetail = entry.mid(separator + 1);
+                if (label == QLatin1String("tensorrt"))
+                    reported.append(tr("TensorRT / CUDA 13 closure: %1")
+                                        .arg(entryDetail ==
+                                                     QLatin1String(
+                                                         "animejanai.installation.incomplete")
+                                                 ? tr("one or more required dependencies are "
+                                                      "missing or corrupt")
+                                                 : entryDetail));
+                else if (label == QLatin1String("directml"))
+                    reported.append(tr("DirectML closure: %1")
+                                        .arg(entryDetail ==
+                                                     QLatin1String(
+                                                         "animejanai.installation.incomplete")
+                                                 ? tr("one or more required dependencies are "
+                                                      "missing or corrupt")
+                                                 : entryDetail));
+                else
+                    reported.append(entry);
+            }
+            if (statusReason_.rifeFailures > 0)
+                reported.append(tr("%1 RIFE interpolation model(s) failed verification.")
+                                    .arg(statusReason_.rifeFailures));
+            if (statusReason_.spatialFailures > 0)
+                reported.append(tr("%1 spatial model(s) failed verification.")
+                                    .arg(statusReason_.spatialFailures));
+            return tr("%1 elements failed verification: %2")
+                .arg(statusReason_.count)
+                .arg(reported.join(QStringLiteral("; ")));
+        }
+        case StatusReason::Kind::NotVerified:
+            return tr("The components could not be verified: %1").arg(statusReason_.detail);
+        case StatusReason::Kind::CheckNeedsRunner:
+            return tr("Checking selected component state needs a runner.");
+        case StatusReason::Kind::NothingToInstall:
+            return tr("No selected missing packs need installation.");
+        case StatusReason::Kind::CheckFailed:
+            return tr("Component check failed: %1").arg(statusReason_.detail);
+        case StatusReason::Kind::ClosureNeedsRunner:
+            return tr("Installing the selected AnimeJaNai %1 closure needs a runner.")
+                .arg(backendName(statusReason_.backend));
+        case StatusReason::Kind::RuntimeNeedsRunner:
+            return tr("Installing a local AnimeJaNai runtime needs a runner.");
+        case StatusReason::Kind::ImportFailed:
+            return tr("%1 installation failed: %2")
+                .arg(backendName(statusReason_.backend),
+                     statusReason_.detail.isEmpty()
+                         ? tr("Local AnimeJaNai runtime installation failed.")
+                         : statusReason_.detail);
+        case StatusReason::Kind::RuntimeInstalled:
+            return tr("Local AnimeJaNai runtime installed.");
+        case StatusReason::Kind::VerificationCancelled:
+            return tr("Verification was cancelled.");
+        case StatusReason::Kind::DownloadsCancelling:
+            return tr("Cancelling the running downloads...");
+        case StatusReason::Kind::InstallFailed:
+            return tr("%1 installation failed: %2")
+                .arg(backendName(statusReason_.backend), statusReason_.detail);
+        case StatusReason::Kind::MissingProvisioner:
+            return tr("The compatible TensorRT component pack is missing, but no component "
+                      "provisioner is available.");
+        case StatusReason::Kind::AllVerified:
+            return tr("Every selected pack is installed and verified.");
+    }
+    return QString();
+}
+
 void ComponentStoreTab::applyStatus(const QString& key, const QString& reason) {
+    applyStatus(key, StatusReason{.kind = StatusReason::Kind::Raw, .detail = reason});
+}
+
+void ComponentStoreTab::applyStatus(const QString& key,
+                                    const StatusReason& reason) {
     statusKey_ = key;
     statusReason_ = reason;
+    const QString rendered = renderStatusReason();
+    statusRenderedReason_ = rendered;
     if (status_ != nullptr) {
-        status_->setText(reason);
+        status_->setText(rendered);
         const QString severity =
             key == QStringLiteral("native.components.cancelled")
                 ? QStringLiteral("cancelled")
-                : (key.isEmpty() ? (reason.isEmpty() ? QStringLiteral("neutral")
-                                                      : QStringLiteral("success"))
+                : (key.isEmpty() ? (rendered.isEmpty() ? QStringLiteral("neutral")
+                                                       : QStringLiteral("success"))
                                  : QStringLiteral("failure"));
         status_->setProperty("statusSeverity", severity);
         status_->setAccessibleDescription(severity);
@@ -961,7 +1048,29 @@ void ComponentStoreTab::applyStatus(const QString& key, const QString& reason) {
         status_->style()->polish(status_);
     }
     if (!key.isEmpty()) {
-        qWarning().noquote() << "native components:" << key << reason;
+        qWarning().noquote() << "native components:" << key << rendered;
+    }
+}
+
+void ComponentStoreTab::restateStatus() {
+    const QString reason = statusReason();
+    // A progress or stage line that took the label over is not this status:
+    // only a label still showing the last-rendered reason is restated, so a
+    // language switch never overwrites a live transfer readout.
+    if (status_ != nullptr && status_->text() == statusRenderedReason_) {
+        status_->setText(reason);
+        statusRenderedReason_ = reason;
+    }
+    // Reuse the existing notification: a run that was already announced gets
+    // its progress line restated, anything else is restated through the idle
+    // path, which redraws the retained failure reason. Neither starts, stops
+    // nor resets the run, its progress, or its timers.
+    if (acquisitionAnnounced_) {
+        publishAcquisition();
+    } else if (!acquisitionRunning()) {
+        // A run that never announced itself has no bar to restate; emitting
+        // idle here would show a stale retained failure over it.
+        emit acquisitionIdle();
     }
 }
 

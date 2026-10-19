@@ -22,8 +22,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QShowEvent>
+#include <QSignalBlocker>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -60,14 +63,13 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     setMinimumSize(minimumWidth, minimumHeight);
     resize(initialSize);
 
-    // What the running application is already speaking. Save compares the choice
-    // against this rather than against the stored preference, because the
-    // question is whether the translator has to be reloaded, not whether the key
-    // would change.
-    appliedLanguagePreference_ = activeInterfaceLanguage();
-    languagePreferenceWasStored_ =
-        QSettings().contains(QString::fromLatin1(kUiLanguageSettingKey));
-    storedLanguagePreference_ = languagePreference();
+    // What the running application is already speaking, kept apart from the
+    // preference that produced it. Preview installs a choice without writing the
+    // store, so closing the dialog has to restore this exact language while the
+    // stored preference stays exactly as it was.
+    openingLanguageCode_ = activeInterfaceLanguage();
+    openingLanguagePreference_ = languagePreference();
+    previewLanguagePreference_ = openingLanguagePreference_;
     nativePreferences_ = mplayer::native::loadNativePreferences();
     // Cold: no core and no observation exists while the dialog is being built, so
     // the availability starts from the no-factory default. The application's
@@ -135,9 +137,22 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 }
 
 SettingsDialog::~SettingsDialog() {
+    // A dialog destroyed without done() - a parent going away, a stack frame
+    // unwinding - still owes the user the language they opened it in.
+    restoreOpeningLanguage();
     // Before QObject deletes children. An adopted tab is the app's, so closing
     // Settings must not destroy it or cancel the download it is running.
     releaseAdoptedComponentsTab();
+    if (benchmarkCancellation_) benchmarkCancellation_->store(true);
+}
+
+void SettingsDialog::done(int result) {
+    if (benchmarkCancellation_) benchmarkCancellation_->store(true);
+    // An accepted result is only produced by save(), which has already written
+    // and committed the choice; every other close rolls the preview back.
+    if (result != QDialog::Accepted) restoreOpeningLanguage();
+    roundDone_ = true;
+    QDialog::done(result);
 }
 
 void SettingsDialog::releaseAdoptedComponentsTab() {
@@ -275,6 +290,75 @@ void SettingsDialog::changeEvent(QEvent* event) {
     }
 }
 
+void SettingsDialog::showEvent(QShowEvent* event) {
+    QDialog::showEvent(event);
+    // Only a finished dialog that is shown again needs a baseline: a plain
+    // hide()/show() of the same round must keep the preview it is showing. What
+    // a later Cancel restores is the language live now, and the selector goes
+    // back to the preference in the store, which the last round may have
+    // committed.
+    if (!roundDone_) return;
+    roundDone_ = false;
+    openingLanguageCode_ = activeInterfaceLanguage();
+    openingLanguagePreference_ = languagePreference();
+    previewLanguagePreference_ = openingLanguagePreference_;
+    languageCommitted_ = false;
+    if (language_ != nullptr) {
+        const int index = language_->findData(openingLanguagePreference_);
+        if (index >= 0 && index != language_->currentIndex()) {
+            QSignalBlocker blocker(language_);
+            language_->setCurrentIndex(index);
+        }
+    }
+}
+
+void SettingsDialog::previewInterfaceLanguage(int index) {
+    if (!languageSelectorReady_ || retranslating_ || language_ == nullptr || index < 0) {
+        return;
+    }
+    const QString preference = language_->itemData(index).toString();
+    if (preference == previewLanguagePreference_) return;
+    if (applyInterfaceLanguage(preference)) {
+        // Only the live translator changed; the preference reaches the store
+        // through Save and through nothing else.
+        previewLanguagePreference_ = preference;
+        return;
+    }
+    // The catalog was refused, so the working language is untouched. Leaving the
+    // selector on the refused choice would let Save claim a language this
+    // process never installed, so the field goes back to the installed one and
+    // names the failure where the control is.
+    const int previous = language_->findData(previewLanguagePreference_);
+    if (previous >= 0 && previous != language_->currentIndex()) {
+        QSignalBlocker blocker(language_);
+        language_->setCurrentIndex(previous);
+    }
+    showGeneralError(
+        tr("The %1 interface could not be applied, so the language was left unchanged.")
+            .arg(resolveLanguageCode(preference, QLocale::system().language())));
+}
+
+void SettingsDialog::restoreOpeningLanguage() {
+    if (languageCommitted_) return;
+    languageCommitted_ = true;
+    previewLanguagePreference_ = openingLanguagePreference_;
+    if (language_ != nullptr) {
+        const int index = language_->findData(openingLanguagePreference_);
+        if (index >= 0 && index != language_->currentIndex()) {
+            QSignalBlocker blocker(language_);
+            language_->setCurrentIndex(index);
+        }
+    }
+    // Shutdown has no windows left to retranslate, and no application to hold
+    // the translators the restore would install.
+    if (QCoreApplication::instance() == nullptr || QCoreApplication::closingDown()) return;
+    if (activeInterfaceLanguage() == openingLanguageCode_) return;
+    if (!applyInterfaceLanguage(openingLanguageCode_)) {
+        qWarning().noquote() << "mikai: could not restore the opening interface language"
+                             << openingLanguageCode_;
+    }
+}
+
 void SettingsDialog::retranslateUi() {
     retranslating_ = true;
     setWindowTitle(tr("Settings"));
@@ -387,19 +471,6 @@ void SettingsDialog::save() {
             chosen.insert(it.key());
         }
     }
-    QSettings settings;
-    const QString chosenLanguage = language_->currentData().toString();
-    settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
-    settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
-    settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
-    for (const PresetRow& row : presetRows_) {
-        if (presets.contains(row.id)) {
-            settings.setValue(row.id, presets.value(row.id));
-        } else {
-            settings.remove(row.id);
-        }
-    }
-    settings.endGroup();
 
     if (animeJanaiPanel_ != nullptr && animeJanaiPanel_->isDirty()) {
         QString ajiReason;
@@ -447,22 +518,47 @@ void SettingsDialog::save() {
         }
     }
 
-    if (chosenLanguage != appliedLanguagePreference_ &&
-        !applyInterfaceLanguage(chosenLanguage)) {
-        if (languagePreferenceWasStored_) {
-            settings.setValue(QString::fromLatin1(kUiLanguageSettingKey),
-                              storedLanguagePreference_);
-        } else {
-            settings.remove(QString::fromLatin1(kUiLanguageSettingKey));
+    const QString chosenLanguage = language_->currentData().toString();
+    const QString chosenCode = resolveLanguageCode(chosenLanguage, QLocale::system().language());
+    // A preview normally installed this very language already; loading the same
+    // catalog again would only churn translators. Comparing the resolved codes
+    // also keeps a process with no manager - a probe that never applied a
+    // language - from being forced to load a catalog merely to save an unrelated
+    // preference, which is what the dialog did before preview existed.
+    if (chosenCode != activeInterfaceLanguage() && !applyInterfaceLanguage(chosenLanguage)) {
+        // A preview has already installed the working choice, so a refusal here
+        // means the live language changed behind the dialog. Put the selector on
+        // the preference that is actually installed; nothing has been written.
+        const int previous = language_->findData(previewLanguagePreference_);
+        if (previous >= 0 && previous != language_->currentIndex()) {
+            QSignalBlocker blocker(language_);
+            language_->setCurrentIndex(previous);
         }
         showGeneralError(
             tr("The %1 interface could not be applied, so the language was left unchanged.")
-                .arg(resolveLanguageCode(chosenLanguage, QLocale::system().language())));
+                .arg(chosenCode));
         return;
     }
-    appliedLanguagePreference_ = chosenLanguage;
-    storedLanguagePreference_ = chosenLanguage;
+    previewLanguagePreference_ = chosenLanguage;
 
+    // Every fallible write has succeeded, so the preferences can now be
+    // committed. Until this point a refusal has left the store exactly as the
+    // dialog found it, which is what lets Cancel keep rolling back the preview.
+    QSettings settings;
+    settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
+    settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));
+    settings.beginGroup(QLatin1String(mplayer::shell::kPresetShortcutSettingsGroup));
+    for (const PresetRow& row : presetRows_) {
+        if (presets.contains(row.id)) {
+            settings.setValue(row.id, presets.value(row.id));
+        } else {
+            settings.remove(row.id);
+        }
+    }
+    settings.endGroup();
+
+    // From here the choice is the committed one: closing must not undo it.
+    languageCommitted_ = true;
     accept();
 }
 
