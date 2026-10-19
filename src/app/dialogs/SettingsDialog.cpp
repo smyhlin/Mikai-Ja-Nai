@@ -99,7 +99,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     componentsTab_ = buildComponentsTab();
     benchmarkTab_ = buildBenchmarkTab();
     tabs_->addTab(generalTab_, tr("General"));
-    tabs_->addTab(presetsTab_, tr("Presets"));
+    tabs_->addTab(presetsTab_, tr("Keyboard shortcuts"));
     tabs_->addTab(processingTab_, tr("Processing"));
     tabs_->addTab(componentsTab_, tr("Components"));
     tabs_->addTab(benchmarkTab_, tr("Benchmark"));
@@ -367,7 +367,7 @@ void SettingsDialog::retranslateUi() {
         if (page == generalTab_) {
             tabs_->setTabText(index, tr("General"));
         } else if (page == presetsTab_) {
-            tabs_->setTabText(index, tr("Presets"));
+            tabs_->setTabText(index, tr("Keyboard shortcuts"));
         } else if (page == processingTab_) {
             tabs_->setTabText(index, tr("Processing"));
         } else if (page == componentsTab_) {

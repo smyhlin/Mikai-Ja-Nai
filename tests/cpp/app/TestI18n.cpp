@@ -386,6 +386,42 @@ void TestI18n::appliedLanguageDrivesDefaultLocaleNumbers() {
            "the English default locale still accepted a comma decimal");
 }
 
+void TestI18n::shortcutSettingsTabMatchesItsContentsInBothLanguages() {
+  const QString catalog = builtCatalogPath();
+  QVERIFY2(QFileInfo::exists(catalog),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + catalog));
+  QVERIFY(primeBuiltCatalogForSwitching());
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.show();
+  QCoreApplication::processEvents();
+
+  auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
+  QVERIFY(tabs != nullptr);
+  int shortcutsIndex = -1;
+  for (int index = 0; index < tabs->count(); ++index) {
+    if (tabs->widget(index)->objectName() == QStringLiteral("presetsPage")) {
+      shortcutsIndex = index;
+      break;
+    }
+  }
+  QVERIFY(shortcutsIndex >= 0);
+  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Keyboard shortcuts"));
+  tabs->setCurrentIndex(shortcutsIndex);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
+  QCoreApplication::processEvents();
+  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Гарячі клавіші"));
+  QCOMPARE(tabs->currentIndex(), shortcutsIndex);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Keyboard shortcuts"));
+  QCOMPARE(tabs->currentIndex(), shortcutsIndex);
+}
+
 void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   const QString catalog = builtCatalogPath();
   QVERIFY2(QFileInfo::exists(catalog),

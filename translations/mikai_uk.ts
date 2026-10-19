@@ -5482,12 +5482,6 @@ Active: %1 · queued: %2</source>
         <translation>Немає (оригінальний конвеєр)</translation>
     </message>
     <message>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="102"/>
-        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="370"/>
-        <source>Presets</source>
-        <translation>Пресети</translation>
-    </message>
-    <message>
         <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="139"/>
         <location filename="../src/app/dialogs/settings/SettingsPresetsTab.cpp" line="314"/>
         <source>Press a key</source>
@@ -5559,6 +5553,12 @@ Active: %1 · queued: %2</source>
         <location filename="../src/app/dialogs/settings/SettingsGeneralTab.cpp" line="323"/>
         <source>Test</source>
         <translation>Перевірити</translation>
+    </message>
+    <message>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="102"/>
+        <location filename="../src/app/dialogs/SettingsDialog.cpp" line="370"/>
+        <source>Keyboard shortcuts</source>
+        <translation>Гарячі клавіші</translation>
     </message>
     <message>
         <location filename="../src/app/dialogs/SettingsDialog.cpp" line="337"/>
