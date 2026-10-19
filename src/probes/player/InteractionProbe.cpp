@@ -1297,7 +1297,11 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
     // side A on the id it is handed and side B on the first other candidate in
     // the catalogue, so "off" pairs the original with Anime4K and nothing here
     // asks an AnimeJaNai model to infer.
-    check(waitFor([surface] { return surface->isPlaying(); }, 5000),
+    // Compare takes its hold from what the core is observed to hold, not from
+    // the announced intent: a pause write still being confirmed can leave the
+    // two disagreeing for one pump, and a hold acquired in that window is
+    // reported as resumed before the freeze is taken.
+    check(waitFor([surface] { return surface->isPlaying() && !surface->pauseObserved(); }, 5000),
           "playback is running before Compare freezes it");
     QPointer<CompareWindow> compare = new CompareWindow(surface, QStringLiteral("off"), nullptr);
     compare->resize(1100, 700);
@@ -1337,7 +1341,8 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
         compare.isNull() ? QByteArray("<gone>") : compare->lockError().toUtf8();
     std::fprintf(stderr,
                  "     compare: frozen=%d epoch=%llu sourceEpoch=%llu timestamp=%s held=%d "
-                 "pending=%d capturing=%d queued=%d frozenNull=%d error=%s capture=%s lock=%s\n",
+                 "pending=%d capturing=%d queued=%d frozenNull=%d playing=%d pauseGen=%llu "
+                 "pauseObserved=%d error=%s capture=%s lock=%s\n",
                  int(frozen),
                  static_cast<unsigned long long>(compare.isNull() ? 0 : compare->frozenSourceEpoch()),
                  static_cast<unsigned long long>(surface->sourceEpoch()),
@@ -1346,6 +1351,9 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
                  compare.isNull() ? 1 : int(compare->captureInProgress()),
                  compare.isNull() ? -1 : int(compare->queuedNativeChanges()),
                  compare.isNull() ? 1 : int(compare->frozenFrame().isNull()),
+                 int(surface->isPlaying()),
+                 static_cast<unsigned long long>(surface->pauseRequestGeneration()),
+                 int(surface->pauseObserved()),
                  candidateError.constData(), captureError.constData(), lockError.constData());
     if (!frozen) {
         // The refusal belongs in the run's evidence, not only on stderr: a bare
@@ -1373,6 +1381,14 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
                        compare.isNull() ? false : compare->captureInProgress());
         refusal.insert(QStringLiteral("queuedNativeChanges"),
                        compare.isNull() ? -1 : compare->queuedNativeChanges());
+        // The hold is taken against what the core is observed to hold, so a
+        // refusal has to carry that observation and the pause request it was
+        // compared with; without them "resumed while holding" cannot be told
+        // apart from a hold that was never acquired.
+        refusal.insert(QStringLiteral("intentPlaying"), surface->isPlaying());
+        refusal.insert(QStringLiteral("pauseRequestGeneration"),
+                       static_cast<double>(surface->pauseRequestGeneration()));
+        refusal.insert(QStringLiteral("pauseObserved"), surface->pauseObserved());
         evidence.insert(QStringLiteral("compare"), refusal);
     }
     if (!frozen && !compare.isNull()) {

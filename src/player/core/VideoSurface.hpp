@@ -695,12 +695,17 @@ private:
         uint64_t epoch = 0;
         bool target = false;
     };
-    /// nullopt when nothing is in flight.
+    /// nullopt when nothing is in flight. A write mpv accepted is kept here
+    /// until its value is observed, because the command reply can be drained
+    /// before the property event that carries the value: retiring the write at
+    /// the reply would let that event's stale predecessor overwrite the
+    /// viewer's intent in between.
     std::optional<PauseWrite> pendingPauseWrite_;
     /// Advances for every pause write issued, including reassertions.
     quint64 pauseWriteGeneration_ = 0;
-    /// Submits one pause value and tracks it until mpv's own property event, or
-    /// the command's reply, confirms or retires it.
+    /// Submits one pause value and tracks it until mpv's own property event
+    /// confirms it. The command reply retires only a request for the value the
+    /// core was already observed to hold, since that request owes no event.
     void requestPausedWrite(bool paused);
     /// The pause state the viewer has asked for: the write still in flight, else
     /// mpv's observed value.

@@ -711,8 +711,11 @@ void VideoSurface::close() {
     resetDiagnostics();
     diagnosticsActive_ = false;
     // Same retirement as the load: what was outstanding belonged to the source
-    // that is ending, so it is dropped before the stop is issued.
+    // that is ending, so it is dropped before the stop is issued. An accepted
+    // pause write awaiting its observation belongs to this source too and will
+    // never be confirmed against the next one.
     mpv_->invalidateAsyncEpoch();
+    pendingPauseWrite_.reset();
     animeJanaiEpoch_ = mpv_->sourceEpoch();
     observedVideoWidth_ = 0.0;
     observedVideoHeight_ = 0.0;
@@ -788,10 +791,18 @@ void VideoSurface::requestPausedWrite(bool paused) {
     if (mpv_ == nullptr) return;
     const uint64_t epoch = mpv_->sourceEpoch();
     const quint64 generation = ++pauseWriteGeneration_;
+    // With no earlier write awaiting observation, `observedPaused_` is what the
+    // core holds: a request for that same value changes nothing and owes no
+    // event, so it is the only request the reply may retire. One that differs
+    // from the observation stays owed until the core is seen to hold it, because
+    // the command reply can be drained before the property event it causes, and
+    // the event's stale predecessor must not overwrite the viewer's intent in
+    // between.
+    const bool alreadyHeld = !pendingPauseWrite_.has_value() && observedPaused_ == paused;
     pendingPauseWrite_ = PauseWrite{generation, epoch, paused};
     const AsyncRequestId request = mpv_->commandAsync(
         {"set", "pause", paused ? "yes" : "no"},
-        [this, epoch, generation](const AsyncReply& reply) {
+        [this, epoch, generation, alreadyHeld](const AsyncReply& reply) {
             if (mpv_ == nullptr) return;
             // A superseded request, or one for a source that has since been
             // replaced, says nothing about what is playing now.
@@ -800,12 +811,16 @@ void VideoSurface::requestPausedWrite(bool paused) {
                 pendingPauseWrite_.reset();
                 return;
             }
-            // Applied or refused, the request is no longer in flight, so the
-            // property observation is authoritative again from here.
-            pendingPauseWrite_.reset();
-            if (reply.ok()) return;
-            emit errorOccurred(tr("pause: %1")
-                                   .arg(QString::fromStdString(mpv_->describeError(reply.error))));
+            if (!reply.ok()) {
+                // Refused: nothing will be observed to hold the request, so the
+                // property is authoritative again and the refusal is named.
+                pendingPauseWrite_.reset();
+                emit errorOccurred(
+                    tr("pause: %1")
+                        .arg(QString::fromStdString(mpv_->describeError(reply.error))));
+                return;
+            }
+            if (alreadyHeld) pendingPauseWrite_.reset();
         });
     if (!request.valid()) {
         // No reply will ever arrive for a command the transport would not take.
