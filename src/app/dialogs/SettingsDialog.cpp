@@ -35,6 +35,7 @@
 #include <QScrollArea>
 #include <QScreen>
 #include <QSettings>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -83,16 +84,51 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
 
     tabs_ = new QTabWidget(this);
     tabs_->setObjectName(QStringLiteral("settingsTabs"));
-    tabs_->setDocumentMode(true);
-    // Every tab must sit wholly inside the tab bar at the minimum supported
-    // width: a tab the bar cannot show is an unreachable action, and QTabBar
-    // answers an over-wide row with scroll arrows rather than by eliding the
-    // caption. The captions are translated, so the padding is the part that
-    // yields - the glyph and the whole caption stay. kSpacingSmall is the tab
-    // padding at this width rather than the wider kSpacingLarge the bar carries
-    // by default.
+    tabs_->setDocumentMode(false);
+    tabs_->tabBar()->setDrawBase(false);
+    // Compact padding keeps every translated tab reachable at the minimum width.
     tabs_->setStyleSheet(
-        QStringLiteral("QTabBar::tab { padding: 7px %1px; }").arg(theme::kSpacingSmall));
+        QStringLiteral(
+            "QTabWidget#settingsTabs { border: none; }"
+            "QTabWidget#settingsTabs::pane { border: none; background: transparent; }"
+            "QTabWidget#settingsTabs QTabBar::base {"
+            " border: none;"
+            " background: transparent;"
+            "}"
+            "QTabWidget#settingsTabs QTabBar {"
+            " border-bottom: 1px solid rgba(%1, 0.20);"
+            "}"
+            "QTabWidget#settingsTabs QTabBar::tab {"
+            " color: %2;"
+            " background: transparent;"
+            " border: none;"
+            " border-bottom: 2px solid transparent;"
+            " padding: %3px %4px;"
+            " margin-right: %5px;"
+            "}"
+            "QTabWidget#settingsTabs QTabBar::tab:selected {"
+            " color: %6;"
+            " border-bottom-color: %7;"
+            "}"
+            "QTabWidget#settingsTabs QTabBar::tab:hover {"
+            " color: %6;"
+            " background-color: rgba(%8, 0.08);"
+            " border-radius: %9px;"
+            "}"
+            "QTabWidget#settingsTabs QTabBar::tab:selected:hover {"
+            " background: transparent;"
+            "}"
+            "QTabWidget#settingsTabs QTabBar::tab:disabled { color: %10; }")
+            .arg(QLatin1String(theme::kHairlineRgb))
+            .arg(QLatin1String(theme::kTextMutedSoft))
+            .arg(theme::kSpacingSmall)
+            .arg(theme::kSpacingXs)
+            .arg(theme::kSpacingXs)
+            .arg(QLatin1String(theme::kTextStrong))
+            .arg(QLatin1String(theme::kAccentSoftBright))
+            .arg(QLatin1String(theme::kAccentRgb))
+            .arg(theme::kRadiusSmall)
+            .arg(QLatin1String(theme::kTextDisabled)));
     generalTab_ = buildGeneralTab();
     presetsTab_ = buildPresetsTab();
     processingTab_ = buildProcessingTab();

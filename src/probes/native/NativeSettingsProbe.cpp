@@ -184,7 +184,7 @@ QKeySequenceEdit* presetField(SettingsDialog& dialog) {
         SettingsDialog::tr("Shortcut for %1").split(QStringLiteral("%1"));
     if (parts.size() != 2) return nullptr;
     for (int index = 0; index < tabs->count(); ++index) {
-        if (tabs->tabText(index) != SettingsDialog::tr("Presets")) continue;
+        if (tabs->tabText(index) != SettingsDialog::tr("Keyboard shortcuts")) continue;
         for (QKeySequenceEdit* field : tabs->widget(index)->findChildren<QKeySequenceEdit*>()) {
             const QString name = field->accessibleName();
             if (name.startsWith(parts.at(0)) && name.endsWith(parts.at(1)) &&
