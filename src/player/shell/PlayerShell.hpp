@@ -256,6 +256,7 @@ private:
 
     void enterAutoHidden();
     void onPlayClicked();
+    void onSkipForward();
     void onScrub(double fraction);
     void onVolume(double volume);
     void toggleMute();
@@ -319,6 +320,7 @@ private:
     Panel* dock_ = nullptr;
     VolumeGroup* vol_ = nullptr;
     IconButton* btnPlay_ = nullptr;
+    IconButton* btnSkipForward_ = nullptr;
     ChromeLabel* lblElapsed_ = nullptr;
     ScrubBar* scrub_ = nullptr;
     ChromeLabel* lblRemaining_ = nullptr;

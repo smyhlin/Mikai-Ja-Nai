@@ -30,6 +30,17 @@ namespace shell {
 
 namespace {
 
+void skipForwardGlyph(QPainter& painter, qreal x, qreal y, qreal size, const QColor& color) {
+    painter.save();
+    painter.setPen(color);
+    QFont font = painter.font();
+    font.setBold(true);
+    font.setPixelSize(qMax(8, qRound(size * 0.48)));
+    painter.setFont(font);
+    painter.drawText(QRectF(x, y, size, size), Qt::AlignCenter, QStringLiteral("+85"));
+    painter.restore();
+}
+
 QString stateName(PlayerShell::State state) {
     switch (state) {
         case PlayerShell::State::DefaultFit: return QStringLiteral("DEFAULT_FIT");
@@ -471,6 +482,14 @@ void PlayerShell::buildDock() {
     btnPlay_->setAccessibleName(tr("Play"));
     connect(btnPlay_, &QPushButton::clicked, this, &PlayerShell::onPlayClicked);
     topRow->addWidget(btnPlay_);
+    btnSkipForward_ = new IconButton(skipForwardGlyph, tr("Skip forward 85 seconds"),
+                                     kDockActionSize, kDockActionSize - 8, dock_);
+    btnSkipForward_->setObjectName(QStringLiteral("playerSkipForward85"));
+    btnSkipForward_->setAccessibleName(tr("Skip forward 85 seconds"));
+    btnSkipForward_->setToolTip(tr("Skip forward 85 seconds"));
+    btnSkipForward_->setEnabled(false);
+    connect(btnSkipForward_, &QPushButton::clicked, this, &PlayerShell::onSkipForward);
+    topRow->addWidget(btnSkipForward_);
     topRow->addStretch();
 
     auto* actionHost = new QWidget(dock_);
@@ -973,6 +992,7 @@ void PlayerShell::layoutChrome() {
 void PlayerShell::setMedia(const QString& path, const QString& origin, const QString& quality) {
     path_ = path;
     hasMedia_ = !path.isEmpty();
+    btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
     if (!origin.isEmpty()) origin_ = origin;
     if (!quality.isEmpty()) setQuality(quality);
 
@@ -992,6 +1012,7 @@ void PlayerShell::setMedia(const QString& path, const QString& origin, const QSt
 
 void PlayerShell::setDuration(double seconds) {
     duration_ = std::max(0.0, seconds);
+    btnSkipForward_->setEnabled(hasMedia_ && duration_ > 0.0);
     scrub_->setDuration(duration_);
     updateTimeLabels();
 }
@@ -1113,6 +1134,19 @@ void PlayerShell::updateTimeLabels() {
         const double pixels = std::max(1.0, static_cast<double>(scrub_->width()));
         scrub_->setValueSilent(std::round(position_ / duration_ * pixels) / pixels);
     }
+}
+
+void PlayerShell::onSkipForward() {
+    if (!hasMedia_ || duration_ <= 0.0) {
+        return;
+    }
+    const double target = std::min(duration_, position_ + 85.0);
+    if (target <= position_) {
+        return;
+    }
+    position_ = target;
+    updateTimeLabels();
+    emit seekRequested(target);
 }
 
 void PlayerShell::onPlayClicked() {
@@ -1929,6 +1963,8 @@ void PlayerShell::retranslateUi() {
     btnNext_->setToolTip(tr("Next episode  (→)"));
     btnPlay_->setToolTip(tr("Play / pause  (Space)"));
     btnPlay_->setAccessibleName(tr("Play / pause  (Space)"));
+    btnSkipForward_->setToolTip(tr("Skip forward 85 seconds"));
+    btnSkipForward_->setAccessibleName(tr("Skip forward 85 seconds"));
     vol_->setAccessibleName(tr("Volume"));
     scrub_->setAccessibleName(tr("Timeline"));
     btnPip_->setToolTip(tr("Picture in picture"));

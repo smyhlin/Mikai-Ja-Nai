@@ -19,6 +19,7 @@
 #include <QCoreApplication>
 #include <QCursor>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QKeyEvent>
 #include <QPointer>
@@ -538,6 +539,10 @@ private:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (argc < 2 || !QFileInfo::exists(QString::fromLocal8Bit(argv[1]))) {
+        std::fprintf(stderr, "Usage: InteractionProbe <known-duration-video-file>\n");
+        return 3;
+    }
     // The last stage closes the last window, and Qt quits the loop when that
     // happens - which returned 0 from app.exec() before the runner could print
     // its verdict, so a run with failures exited as if it had passed.
@@ -562,7 +567,9 @@ int main(int argc, char** argv) {
     }
 
     static StubHost host;
-    const QString url = QStringLiteral("av://lavfi:testsrc2=size=1280x720:rate=25");
+    const QString url = argc > 1
+        ? QFileInfo(QString::fromLocal8Bit(argv[1])).absoluteFilePath()
+        : QString();
     const QList<QualityEntry> qualities = {{480, url}, {720, url}, {1080, url}};
 
     auto* dialog = new PlayerDialog(QStringLiteral("probe 720p"), url, qualities, 720, &host);
@@ -685,6 +692,54 @@ int main(int argc, char** argv) {
                   play->mapTo(shell, play->rect().center()).y() <
                       scrub->mapTo(shell, scrub->rect().center()).y(),
               "the playback controls sit above the timeline");
+    });
+
+    runner.add(6200, [&] {
+        auto* mainSurface = dialog->findChild<VideoSurface*>();
+        auto* shell = dialog->findChild<PlayerShell*>();
+        auto* skip = shell != nullptr
+            ? shell->findChild<IconButton*>(QStringLiteral("playerSkipForward85")) : nullptr;
+        check(skip != nullptr && skip->isVisible() && skip->isEnabled(),
+              "the +85 control is visible and enabled for seekable media");
+        if (mainSurface == nullptr || skip == nullptr || !mainSurface->hasVideo() ||
+            mainSurface->duration() <= 89.0) {
+            check(false, "the +85 transport scenario has a known duration over 89 seconds");
+            return;
+        }
+
+        mainSurface->setPaused(true);
+        mainSurface->seek(2.0);
+        for (int i = 0; i < 40; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (std::abs(mainSurface->position() - 2.0) < 2.0) break;
+        }
+        check(!mainSurface->isPlaying(), "the +85 test begins paused");
+        skip->click();
+        for (int i = 0; i < 60; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (mainSurface->position() >= 86.0) break;
+        }
+        check(mainSurface->position() >= 86.0 && mainSurface->position() <= 89.5,
+              "the +85 button seeks the active core from 2 to about 87 seconds");
+        check(!mainSurface->isPlaying(), "the +85 seek preserves the paused state");
+
+        mainSurface->seek(mainSurface->duration() - 2.0);
+        for (int i = 0; i < 40; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+            if (mainSurface->position() >= mainSurface->duration() - 12.0) break;
+        }
+        skip->click();
+        for (int i = 0; i < 40; ++i) {
+            QCoreApplication::processEvents();
+            QThread::msleep(50);
+        }
+        check(mainSurface->position() <= mainSurface->duration() + 1.0,
+              "the +85 seek is clamped to the known media end");
+        mainSurface->seek(5.0);
+        mainSurface->setPaused(false);
     });
 
     // The play control has to follow the engine, and it used to be frozen on
