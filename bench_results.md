@@ -13,7 +13,7 @@ The separately dated **retired model-graph experiments** at the end preserve
 historical measurements from tools removed by user decision. They are not an
 update to the historical stock matrix or a currently reproducible feature.
 
-Measured results from **Settings → Benchmark**, grouped by machine and model. Compare matching input resolutions, backends, and settings—not GPU names alone. Only observed RTX 5090 results are included; RTX 3080 and RTX 2070 reports will be added when supplied.
+Measured results from **Settings → Benchmark**, grouped by machine and model. Compare matching input resolutions, backends, and settings—not GPU names alone. Captures currently documented: RTX 5090 and RTX 2070 SUPER. These are independent captures with different/unrecorded settings; their rates are not a controlled GPU comparison.
 
 **Historical matrix scope:** all 31 non-RIFE models—23 Anime4K presets, 3 AnimeJaNai profiles, and 5 Spatial graphs—at all five bundled input resolutions, plus baseline. **RIFE was excluded from that matrix by request.** The later RIFE 4.25-only default/variant comparison is recorded separately below.
 
@@ -70,7 +70,7 @@ and model provenance when supplying another machine's results.
 - Output throughput must exceed the source frame rate to sustain playback without interpolation. The fixtures are 23.976 fps. Allow additional headroom for real footage, display presentation, other GPU workloads, and thermal limits; these short synthetic runs do not establish a sustained real-world limit.
 - A failed row retains its reason rather than being converted into zero fps. Missing components, unsupported models, startup errors, and inference failures are different from a measured low frame rate.
 - For the original full matrix, no peak-VRAM or power measurements were collected. Installed VRAM is a machine specification, **not** a per-model minimum requirement. GPU telemetry was collected during the separate controlled follow-up, but it does not establish peak-VRAM requirements.
-- Each model is tested independently. Interpolation and combined upscaling/interpolation pipelines are outside this report.
+- Each model is tested independently. The historical RTX 5090 full matrix and its follow-up excluded interpolation and combined upscaling/interpolation pipelines. The 2026-10-20 RTX 2070 SUPER capture below additionally contains two RIFE model rows; its export does not record the interpolation factor or all RIFE settings.
 
 ## Measurement method
 
@@ -109,7 +109,7 @@ The probe isolates QSettings, selecting the default TensorRT backend. It still u
 
 The real-player preflight reported NVIDIA OpenGL 4.6 and `hwdec-current=nvdec`. Desktop OpenGL was explicitly selected for the matrix; no software-renderer results are mixed into these tables.
 
-**Coverage:** 160 unique model/clip pairs: five baseline samples, 115 Anime4K samples, 15 AnimeJaNai samples, and 25 Spatial samples. The export reports `complete: true`; all 160 cells have positive finite fps and empty failure reasons. The probe exited successfully with zero failures. Numbers below are fps.
+**Coverage:** 160 unique model/clip pairs: five baseline samples, 115 Anime4K samples, 15 AnimeJaNai samples, and 25 Spatial samples. This historical `benchmark_probe` export reports `complete: true`; all 160 cells have positive finite fps and empty failure reasons. The probe exited successfully with zero failures. Numbers below are fps. This legacy CLI-export flag is distinct from the Settings schemaVersion 1 export documented below, which has no `complete` field.
 
 ### Baseline
 
@@ -180,7 +180,56 @@ The original full-matrix cells above remain single measurements and unchanged; t
 | 2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx | 1456.5 | 1133.9 | 874.4 | 581.0 | 259.4 |
 | 2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx | 690.2 | 456.3 | 327.1 | 167.2 | 76.0 |
 
+## 2026-10-20 — RTX 2070 SUPER Settings capture
+
+Source report: `benchmark-20261020T144703122Z-c5cf93e4-e728-472c-b6ee-8d60270cb393.json` (Settings export schemaVersion 1). The report is stored in the supplied ignored `dist-mikai/bench/` directory, not linked as a tracked/downloadable artifact here. It records start `2026-10-20T13:49:16.978Z`, finish `2026-10-20T14:47:03.122Z` (57 min 46.144 s elapsed), application 0.1.0, TensorRT backend, NVIDIA GeForce RTX 2070 SUPER, driver 595.71, SM 7.5, Windows 10 Version 22H2, and Qt 6.12.0. **CPU: AMD Ryzen 5 3600 (user-supplied; not present in the JSON).**
+
+**Coverage:** 170 unique model/clip pairs, five clips per each of 34 model IDs: baseline (5), 23 Anime4K presets (115), 3 built-in AnimeJaNai profiles (15), 5 Spatial graphs (25), and two RIFE models (10). Every row has positive finite FPS and an empty failure reason. This structural coverage is evidence of 170 successful exported rows; schemaVersion 1 has no `complete` field, and no such flag is inferred. FPS is rendered output throughput; columns are input resolution, with the same 2× output geometry described above. Each cell is one sample, rounded to one decimal. This independent capture is not a controlled comparison to the RTX 5090: matching settings, profiles, model revisions, drivers, and test environments are not established.
+
+| Model (stable ID / label) | 480 × 360 | 640 × 480 | 768 × 576 | 1280 × 720 | 1920 × 1080 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline (no model) | 1296.3 | 1184.3 | 1066.4 | 831.3 | 474.3 |
+| `anime4k:fast_a` — A (Fast) | 391.5 | 380.4 | 348.9 | 280.3 | 165.8 |
+| `anime4k:fast_b` — B (Fast) | 394.8 | 354.1 | 340.0 | 273.7 | 169.1 |
+| `anime4k:fast_c` — C (Fast) | 496.7 | 493.7 | 452.9 | 378.5 | 222.5 |
+| `anime4k:hq_a` — A (High Quality) | 216.2 | 153.6 | 157.6 | 111.4 | 59.6 |
+| `anime4k:hq_b` — B (High Quality) | 221.4 | 210.4 | 180.2 | 119.3 | 59.0 |
+| `anime4k:hq_c` — C (High Quality) | 311.0 | 311.8 | 306.0 | 196.8 | 106.3 |
+| `anime4k:hq_aa` — A+A (Maximum) | 225.5 | 179.0 | 153.6 | 94.0 | 45.7 |
+| `anime4k:hq_bb` — B+B (Maximum) | 236.3 | 184.0 | 152.1 | 94.3 | 46.8 |
+| `anime4k:hq_ca` — C+A (Maximum) | 309.3 | 262.1 | 221.2 | 135.3 | 65.5 |
+| `anime4k:exp_3d_graphics` — 3D Graphics | 903.9 | 866.4 | 786.1 | 616.8 | 342.7 |
+| `anime4k:exp_old_film` — Old Film Restoration | 447.4 | 411.2 | 373.1 | 270.7 | 152.1 |
+| `anime4k:exp_deblur_strong` — Deblur | 494.0 | 457.3 | 413.6 | 296.0 | 170.7 |
+| `anime4k:exp_noise_bilateral_mean` — Denoise · Bilateral Mean | 1336.6 | 1265.8 | 1132.0 | 832.7 | 478.1 |
+| `anime4k:exp_noise_bilateral_median` — Denoise · Bilateral Median | 1173.2 | 1170.9 | 1091.0 | 812.2 | 479.8 |
+| `anime4k:exp_noise_bilateral_mode` — Denoise · Bilateral Mode | 1209.8 | 1117.4 | 1095.4 | 832.6 | 480.7 |
+| `anime4k:exp_thin_veryfast` — Thin Lines · Very Fast | 918.8 | 867.3 | 823.9 | 717.2 | 460.0 |
+| `anime4k:exp_thin_fast` — Thin Lines · Fast | 904.9 | 869.4 | 834.6 | 713.7 | 446.2 |
+| `anime4k:exp_thin_hq` — Thin Lines · High Quality | 914.2 | 837.3 | 810.8 | 652.5 | 382.0 |
+| `anime4k:exp_texture_dtd_x2` — Texture Enhancement · DTD x2 | 609.2 | 575.9 | 526.1 | 425.9 | 263.5 |
+| `anime4k:exp_texture_dog_x2` — Texture Enhancement · DoG x2 | 1063.1 | 1038.4 | 954.3 | 770.0 | 468.2 |
+| `anime4k:exp_darken_veryfast` — Darken · Very Fast | 901.2 | 860.6 | 799.0 | 672.5 | 428.3 |
+| `anime4k:exp_darken_fast` — Darken · Fast | 890.3 | 869.5 | 778.7 | 721.8 | 454.9 |
+| `anime4k:exp_darken_hq` — Darken · High Quality | 1009.5 | 948.3 | 827.3 | 640.4 | 422.2 |
+| `builtin1001` — Quality | 102.4 | 42.6 | 42.2 | 44.1 | 20.8 |
+| `builtin1002` — Balanced | 100.9 | 43.7 | 42.2 | 43.3 | 20.4 |
+| `builtin1003` — Performance | 101.8 | 44.5 | 42.1 | 53.3 | 35.2 |
+| `2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx`<br>`spatial:sha256:b308e93c3dda3c4f9f968295b2b7b8d1c0583a711bca53a08d51134d9d1cbd5c` | 191.8 | 119.0 | 110.3 | 45.8 | 21.7 |
+| `2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx`<br>`spatial:sha256:7b804d87320f37b7269d6e27796046fbd975e95e2aa1f65d5557f52a36282716` | 258.3 | 176.7 | 152.6 | 54.2 | 32.9 |
+| `2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx`<br>`spatial:sha256:dde763c8202cfebac5ec030ea6644f3ee339ea35bbda8a76e257405399552f0f` | 179.1 | 122.9 | 109.6 | 51.7 | 23.8 |
+| `2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx`<br>`spatial:sha256:72246eded3aab52f8d1a71613c0a1d900734b358d1820b62eb36f1ed376e1cf4` | 262.9 | 149.6 | 133.2 | 76.5 | 37.3 |
+| `2x_AnimeJaNai_SD_V1beta34_Compact_1x3xHxW_dyn-HW_strong_fp16_op21_dynamo.onnx`<br>`spatial:sha256:ded46591ddfaeb22b3daaf84ad7b36838335aa3efca66acfa36177ce4ab21eb5` | 109.1 | 46.9 | 44.8 | 17.9 | 10.4 |
+| `rife:rife_v4.25.onnx` | 343.6 | 255.9 | 215.8 | 117.1 | 59.5 |
+| `rife:rife_v4.26.onnx` | 334.0 | 223.9 | 203.4 | 108.6 | 59.3 |
+
+All five bundled inputs appear in the source paths as `D:/mikai-portable/benchmarks/<clip>`; the report does not include content hashes, so fixture identity is not independently proven by this export. The five names/resolutions are shown in the table columns. `enginePreparationMs: -1` means preparation time was absent/unrecorded for that row—not a measured zero and not proof that an engine was cached. Recorded nonnegative preparation values are separately distinct from FPS and excluded from throughput. RIFE output rates include original and interpolated frames; the export contains model IDs for 4.25 and 4.26 but does not record interpolation factor, scene threshold, or other full RIFE profile settings.
+
+The capture does **not** record source commit, RAM/VRAM, full profile/compiler settings, RIFE factor/settings, clip/session/focus provenance, or content digests. Do not infer these from another benchmark, current checkout, model IDs, or hardware specifications. The JSON gives application version but no source revision. The supplied machine shorthand was Ryzen 5 3600; CPU identification above is explicitly user-provided, not JSON evidence. This fixture workload also inherits the black-frame/synthetic-footage limitation stated above.
+
 ## Reproducing and submitting another machine
+
+The `complete: true` check below describes the legacy `benchmark_probe` CLI export, not the Settings schemaVersion 1 JSON export. For the latter, report row-level coverage and failures; do not expect or invent a `complete` flag.
 
 1. Use the same application revision, bundled clips, and model names. In **Settings → Components**, install and verify the runtime, matching GPU builder resource, and spatial models before measuring.
 2. Run **Settings → Benchmark** with all clips, Anime4K, AnimeJaNai, Spatial, and baseline selected. Leave the **RIFE group unchecked**. Keep unrelated GPU workloads stopped. Record each failure's full detail as well as successful fps values.

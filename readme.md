@@ -263,7 +263,7 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 ## Playback Benchmark
 
-See [benchmark results by machine](bench_results.md) for measured per-model throughput, test conditions, and interpretation limits. Compare matching input resolutions and settings; a failed runtime check is not a GPU performance measurement.
+See [benchmark results by machine](bench_results.md) for measured per-model throughput, test conditions, and interpretation limits, including the [170-cell RTX 2070 SUPER capture](bench_results.md#2026-10-20--rtx-2070-super-settings-capture) (23 Anime4K presets, three AJI profiles, five Spatial graphs, baseline, and two RIFE models). Compare matching input resolutions and settings; that independent capture is not a controlled RTX 5090 comparison, and a failed runtime check is not a GPU performance measurement.
 
 The [controlled RTX 5090 AnimeJaNai follow-up](bench_results.md#controlled-animejanai-follow-up) documents a separate old/new comparison and its measurement controls. For repeat comparisons, keep the app foreground on a connected, non-minimized desktop, interleave old/new runs, and record session/focus and cached-engine versus first-use conditions. These controls do not imply stutter-free playback or zero GPU cost.
 
