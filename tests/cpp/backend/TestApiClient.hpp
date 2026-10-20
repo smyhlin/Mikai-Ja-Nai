@@ -32,6 +32,7 @@ class TestApiClient : public QObject {
   void aMissingResourceFailureKeepsItsStatus();
   void aMalformedSuccessEnvelopeFailsRatherThanParsingGarbage();
   void aPlainEnvelopeSuccessParsesIntoTheResult();
+  void fetchBytesReportsLoopbackDownloadProgress();
 
   // A transport failure is still reported as one, and is not confused with the
   // server answering an error.

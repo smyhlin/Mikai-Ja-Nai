@@ -33,6 +33,7 @@
 #include <QJsonObject>
 #include <QPair>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSaveFile>
@@ -74,6 +75,8 @@
 #include "native/models/NativeRife.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
+#include "native/components/NativeComponentProvisioning.hpp"
+#include "state/NativeComponentProvisioner.hpp"
 #include "workers/Runner.hpp"
 
 using mikai::app::Runner;
@@ -2398,6 +2401,120 @@ void exerciseComponents(SettingsDialog& dialog, QSize requestedSize, const QStri
           "the Components surface screenshot was saved");
 }
 
+void exerciseComponentProgress(SettingsDialog& dialog, QSize requestedSize,
+                               const QString& language,
+                               mikai::app::NativeComponentProvisioner& provisioner) {
+    using mplayer::native::ComponentProvisionProgress;
+    using mplayer::native::ComponentProvisionStage;
+
+    requestedSize = fitSettingsDialogSize(dialog, requestedSize);
+    dialog.resize(requestedSize);
+    dialog.showComponentsTab();
+    dialog.show();
+    QApplication::processEvents();
+
+    auto* componentTab = dialog.findChild<mikai::app::ComponentStoreTab*>();
+    check(componentTab != nullptr && componentTab->isVisibleTo(&dialog),
+          "the real Components page is visible for synthetic progress presentation");
+    if (componentTab == nullptr) return;
+    componentTab->setComponentProvisioner(&provisioner);
+    componentTab->refresh();
+    check(waitForUi([componentTab] {
+              return componentTab->inventoryReady() && !componentTab->acquisitionRunning();
+          }, 30000),
+          "Components inventory is idle before synthetic progress presentation");
+
+    const auto spatialAssets = mplayer::native::spatialAssetCatalog();
+    check(!spatialAssets.isEmpty(),
+          "the synthetic spatial card identity is available from the pinned catalogue");
+    const QString spatialId = spatialAssets.isEmpty() ? QString() : spatialAssets.first().id;
+
+    struct Presentation {
+        QString pack;
+        QString cardId;
+        qint64 received;
+        qint64 total;
+        int expectedPercent;
+        ComponentProvisionStage stage;
+    };
+    QVector<Presentation> presentations{
+        {QStringLiteral("trt-runtime"), QStringLiteral("tensorRtRuntimeCard"), 32, 128, 25,
+         ComponentProvisionStage::Verifying},
+        {QStringLiteral("trt-sm75"), QStringLiteral("tensorRtKernelsCard"), 18, 90, 20,
+         ComponentProvisionStage::Extracting},
+        {QStringLiteral("rife-3.7.0"), QStringLiteral("rifeModelsCard"), 210, 700, 30,
+         ComponentProvisionStage::Verifying}};
+    if (!spatialId.isEmpty()) {
+        presentations.append({spatialId, QStringLiteral("animeJanaiModelsCard"), 60, 200, 30,
+                              ComponentProvisionStage::Extracting});
+    }
+
+    // Interleave card events as independent active acquisitions. These are
+    // deliberately synthetic UI-only events; no acquisition API is invoked.
+    for (const Presentation& item : presentations) {
+        const ComponentProvisionProgress event{
+            item.pack, item.received, item.total, ComponentProvisionStage::Downloading};
+        Q_EMIT provisioner.progress(event);
+    }
+    for (const Presentation& item : presentations) {
+        const qint64 total = item.pack == QLatin1String("trt-runtime") ? 0 : item.total;
+        const ComponentProvisionProgress event{item.pack, item.received, total, item.stage};
+        Q_EMIT provisioner.progress(event);
+    }
+    QApplication::processEvents();
+
+    for (const Presentation& item : presentations) {
+        QProgressBar* bar = componentTab->findChild<QProgressBar*>(
+            item.cardId + QStringLiteral("Progress"));
+        QLabel* status = componentTab->findChild<QLabel*>(
+            item.cardId + QStringLiteral("ProgressStatus"));
+        check(bar != nullptr && bar->isVisibleTo(componentTab),
+              "each independently active card exposes its progress bar");
+        check(status != nullptr && status->isVisibleTo(componentTab) && !status->text().isEmpty(),
+              "each independently active card exposes its phase status");
+        check(bar != nullptr && bar->minimum() == 0 && bar->maximum() == 100 &&
+                  bar->value() == item.expectedPercent,
+              "phase transitions preserve each card's own transferred-byte fraction");
+        if (status != nullptr) {
+            const QString stageLabel =
+                item.stage == ComponentProvisionStage::Verifying
+                    ? QCoreApplication::translate("mikai::app::ComponentStoreTab", "Verifying")
+                    : QCoreApplication::translate("mikai::app::ComponentStoreTab", "Extracting");
+            check(status->text().contains(stageLabel),
+                  "phase status replaces the downloaded-byte display");
+        }
+        QWidget* card = componentTab->findChild<QWidget*>(
+            item.cardId + QStringLiteral("Progress"));
+        if (card != nullptr) mikai::probes::revealWidget(card);
+        check(mikai::probes::dialogActionsFit(dialog, requestedSize),
+              "Save and Cancel remain visible in the Components layout");
+    }
+
+    dialog.hide();
+    QApplication::processEvents();
+    dialog.show();
+    dialog.showComponentsTab();
+    check(waitForUi([&dialog] { return dialog.isVisible(); }, 2000),
+          "Settings can hide and reopen with active synthetic presentation");
+    for (const Presentation& item : presentations) {
+        QProgressBar* bar = componentTab->findChild<QProgressBar*>(
+            item.cardId + QStringLiteral("Progress"));
+        check(bar != nullptr && bar->value() == item.expectedPercent,
+              "per-card synthetic presentation is retained after hide and reopen");
+    }
+
+    const QString suffix =
+        requestedSize.width() <= mikai::app::theme::kSettingsDialogMinWidth
+            ? QStringLiteral("compact")
+            : QStringLiteral("wide");
+    const QString screenshot =
+        QStringLiteral("native-component-progress-%1-%2.png").arg(language, suffix);
+    check(dialog.grab().save(screenshot),
+          "synthetic component-progress presentation screenshot was saved");
+    dialog.reject();
+    QApplication::processEvents();
+}
+
 void exerciseVerifyBackendIsolation(SettingsDialog& dialog,
                                     mplayer::native::Backend selected,
                                     mplayer::native::Backend inactive,
@@ -2561,8 +2678,13 @@ int main(int argc, char** argv) {
         QStringLiteral("install-runtime"),
         QStringLiteral("Opt in to a real reviewed DirectML runtime installation smoke."));
     parser.addOption(installRuntimeOption);
+    QCommandLineOption componentProgressOnlyOption(
+        QStringLiteral("component-progress-only"),
+        QStringLiteral("Run only the isolated synthetic Components progress presentation scenario."));
+    parser.addOption(componentProgressOnlyOption);
     parser.process(app);
     const bool installRuntime = parser.isSet(installRuntimeOption);
+    const bool componentProgressOnly = parser.isSet(componentProgressOnlyOption);
     QCoreApplication::setOrganizationName(QStringLiteral("MikaiNativeSettingsProbe"));
     QCoreApplication::setApplicationName(QStringLiteral("NativeSettingsProbe"));
 
@@ -2621,6 +2743,49 @@ int main(int argc, char** argv) {
 
     mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
     Runner runner;
+
+    if (componentProgressOnly) {
+        mikai::app::NativeComponentProvisioner provisioner(runner);
+        const QString catalog = qEnvironmentVariable("MIKAI_PROBE_TRANSLATION");
+        const QSize compact(mikai::app::theme::kSettingsDialogMinWidth,
+                            mikai::app::theme::kSettingsDialogDefaultHeight);
+        const QSize wide(mikai::app::theme::kSettingsDialogDefaultWidth,
+                         mikai::app::theme::kSettingsDialogDefaultHeight);
+        for (const QString& language : {QStringLiteral("en"), QStringLiteral("uk")}) {
+            check(mikai::app::applyInterfaceLanguage(language, catalog),
+                  "the requested Components presentation language was installed");
+            for (const QSize size : {compact, wide}) {
+                SettingsDialog dialog(client, runner);
+                exerciseComponentProgress(dialog, size, language, provisioner);
+            }
+        }
+
+        QJsonObject evidence;
+        evidence.insert(QStringLiteral("probe"), QStringLiteral("native_settings_probe"));
+        evidence.insert(QStringLiteral("scenario"),
+                        QStringLiteral("component_progress_presentation_only"));
+        evidence.insert(QStringLiteral("syntheticProgressPresentation"), true);
+        evidence.insert(QStringLiteral("acquisitionProof"), false);
+        evidence.insert(QStringLiteral("inferenceProof"), false);
+        evidence.insert(QStringLiteral("passed"), failures == 0);
+        evidence.insert(QStringLiteral("checks"), checks);
+        evidence.insert(QStringLiteral("failures"), failures);
+        QJsonArray screenshots;
+        screenshots.append(QStringLiteral("native-component-progress-en-compact.png"));
+        screenshots.append(QStringLiteral("native-component-progress-en-wide.png"));
+        screenshots.append(QStringLiteral("native-component-progress-uk-compact.png"));
+        screenshots.append(QStringLiteral("native-component-progress-uk-wide.png"));
+        evidence.insert(QStringLiteral("screenshots"), screenshots);
+        QFile evidenceFile(QStringLiteral("native-component-progress-evidence.json"));
+        if (evidenceFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            evidenceFile.write(QJsonDocument(evidence).toJson(QJsonDocument::Indented));
+        } else {
+            check(false, "synthetic progress presentation evidence was written");
+        }
+        std::fprintf(stderr, "[native_settings_probe component-progress-only] %s (%d failures)\\n",
+                     failures == 0 ? "PASS" : "FAIL", failures);
+        return failures == 0 ? 0 : 1;
+    }
 
     {
         SettingsDialog dialog(client, runner);

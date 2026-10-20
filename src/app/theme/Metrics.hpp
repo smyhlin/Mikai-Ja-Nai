@@ -20,7 +20,6 @@ inline constexpr int kSettingsControlSize = 36;
 // A settings form's label column: wide enough for the longest translated label
 // the tabs ship, so the fields to its right line up down the page.
 inline constexpr int kSettingsFormLabelMinWidth = 132;
-inline constexpr int kAcquisitionProgressWidth = 168;
 inline constexpr int kSettingsDialogMinWidth = 560;
 inline constexpr int kSettingsDialogMinHeight = 600;
 inline constexpr int kSettingsDialogDefaultWidth = 760;

@@ -44,11 +44,14 @@ class TestNativeComponents : public QObject {
   void verifyPackCatchesReplacedBytes();
   void verifyPackAcceptsTheRecordedBytes();
   void installedPackNamesFollowTheRecord();
+  void cancelledTensorRtProvisioningDoesNotTouchItsFixtures();
+  void cancelledRifeProvisioningDoesNotTouchItsFixtures();
 
   void upscalingPackReviewsAndQueuesMissingGraphs_data();
   void upscalingPackReviewsAndQueuesMissingGraphs();
   void upscalingSelectionSurvivesRefreshAndMissingGraphsFailVerification();
   void concurrentUnitsSettleOnceEachAndCancelArmsEveryUnit();
+  void componentProgressSeparatesCardsAndAggregatesSpatialGraphs();
 
   // RIFE status trusts only the app-owned record for the exact compiled release
   // and graph inventory; manual verification still hashes the selected graph.

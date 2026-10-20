@@ -151,9 +151,13 @@ QLabel[badgeRole="optional"], QGroupBox#nativeComponentPackCard QLabel[badgeRole
 QLabel#nativeComponentStatus[statusSeverity="failure"] { color: %22; font-weight: 600; }
 QLabel#nativeComponentStatus[statusSeverity="success"] { color: %11; font-weight: 600; }
 QLabel#nativeComponentStatus[statusSeverity="cancelled"] { color: %4; }
-QProgressBar#nativeComponentTabProgress { background: %1; border: 1px solid %10;
-    border-radius: %6px; min-height: 8px; max-height: 8px; }
-QProgressBar#nativeComponentTabProgress::chunk { background: %11; border-radius: %6px; }
+QGroupBox#nativeComponentPackCard QProgressBar {
+    background: %1; border: 1px solid %10;
+    border-radius: %6px; min-height: 8px; max-height: 8px;
+}
+QGroupBox#nativeComponentPackCard QProgressBar::chunk {
+    background: %11; border-radius: %6px;
+}
 QScrollArea#titleOverview { background: transparent; border: none; }
 QLabel#titleCover { background: %8; color: %4; border: 1px solid %10; border-radius: %6px; }
 QLabel#titleFacts { color: %4; font-size: 13px; background: transparent; }

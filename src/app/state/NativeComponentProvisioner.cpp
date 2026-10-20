@@ -268,7 +268,7 @@ bool NativeComponentProvisioner::startProvisioning(const ComponentStore& store,
                     post([update]() {
                         NativeComponentProvisioner* target = currentRun();
                         if (target == nullptr) return;
-                        emit target->progress(update.pack, update.received, update.total);
+                        emit target->progress(update);
                     });
                 },
                 [flag] { return flag->load(); });

@@ -1163,7 +1163,7 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
     if (acquisitionStarted) {
       QMetaObject::invokeMethod(components, "acquisitionProgress", Qt::DirectConnection,
                                 Q_ARG(QString, QStringLiteral("Downloading test pack")),
-                                Q_ARG(int, 42), Q_ARG(bool, true));
+                                Q_ARG(bool, true));
     }
   });
   QTest::mouseClick(settingsButton, Qt::LeftButton);
@@ -1174,6 +1174,14 @@ void TestFeedRender::settingsClosingDuringAcquisitionRestoresMainWindowInput() {
   QVERIFY(acquisitionBar != nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(acquisitionBar->isVisible(), 5000);
   QTRY_VERIFY_WITH_TIMEOUT(QApplication::activeModalWidget() == nullptr, 5000);
+  QVERIFY(acquisitionBar->findChild<QProgressBar*>() == nullptr);
+  auto* acquisitionStatus = acquisitionBar->findChild<QLabel*>(QStringLiteral("status"));
+  QVERIFY(acquisitionStatus != nullptr);
+  QVERIFY(acquisitionStatus->wordWrap());
+  QVERIFY(acquisitionBar->findChild<QPushButton*>(
+              QStringLiteral("componentAcquisitionDetails")) != nullptr);
+  QVERIFY(acquisitionBar->findChild<QPushButton*>(
+              QStringLiteral("componentAcquisitionCancel")) != nullptr);
   QTRY_VERIFY_WITH_TIMEOUT(window.findChild<SettingsDialog*>() == nullptr, 5000);
   if (QWidget* hints = window.findChild<QWidget*>(QStringLiteral("playerKeyHints"))) {
     QVERIFY(!hints->isVisible());

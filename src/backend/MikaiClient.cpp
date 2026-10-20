@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QJsonValue>
+#include <QMetaObject>
 #include <QMutexLocker>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -148,11 +149,17 @@ struct HttpResult {
     bool cancelled = false;
 };
 
-HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request, int timeoutMs) {
+HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request, int timeoutMs,
+                      const std::function<void(qint64, qint64)>& progress = {}) {
     HttpResult result;
     QNetworkReply* reply = manager->get(request);
     QEventLoop loop;
     QTimer timer;
+    QMetaObject::Connection progressConnection;
+    if (progress) {
+        progressConnection = QObject::connect(reply, &QNetworkReply::downloadProgress, &loop,
+            [&progress](qint64 received, qint64 total) { progress(received, total); });
+    }
     timer.setSingleShot(true);
     QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
@@ -187,6 +194,7 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     }
     stopWatchers();
     timer.stop();
+    QObject::disconnect(progressConnection);
     // Only a cancel that actually stopped this reply counts: a caller whose
     // scope happens to be installed while an ordinary reply completes has not
     // cancelled anything, and reporting it as cancelled would discard a result
@@ -707,11 +715,13 @@ PlayerResult MikaiClient::getPlayer(const QString& ref) const {
                            .toObject());
 }
 
-QByteArray MikaiClient::fetchBytes(const QString& url, int timeoutMs) const {
+QByteArray MikaiClient::fetchBytes(
+    const QString& url, int timeoutMs,
+    const std::function<void(qint64, qint64)>& progress) const {
     QNetworkRequest request{QUrl(url)};
     request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
     const int timeout = timeoutMs > 0 ? timeoutMs : kArtworkTimeoutMs;
-    const HttpResult result = runBlocking(managerForThread(), request, timeout);
+    const HttpResult result = runBlocking(managerForThread(), request, timeout, progress);
     if (result.cancelled) {
         throw MikaiApiError(QStringLiteral("cancelled"), QStringLiteral("the request was cancelled"),
                             0);

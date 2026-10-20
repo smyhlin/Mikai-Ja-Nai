@@ -1,6 +1,7 @@
 #pragma once
 
 #include <native/components/AnimeJanaiRuntime.hpp>
+#include <native/components/NativeComponentProvisioning.hpp>
 #include <native/models/NativeSpatialAssets.hpp>
 #include <state/NativeComponentProvisioner.hpp>
 
@@ -100,11 +101,10 @@ public:
 
 signals:
     void inventoryUpdated();
-    /// A component download is in progress. `percent` is -1 when the worker has
-    /// not reported a fraction. `started` is true only on the transition into
-    /// the download, so a later progress tick does not look like a new run.
-    void acquisitionProgress(const QString& status, int percent, bool started);
-    /// The download that `acquisitionProgress` announced has left the running
+    /// Aggregate acquisition activity for the window-level text hint.
+    /// `started` is true only on the transition into a new acquisition.
+    void acquisitionProgress(const QString& status, bool started);
+    /// The acquisition that `acquisitionProgress` announced has left the running
     /// state. Verification alone does not emit this.
     void acquisitionIdle();
 
@@ -179,12 +179,28 @@ private:
     /// Renders the current typed reason in the live language.
     QString renderStatusReason() const;
     /// Re-derives the live status line and republishes the existing status
-    /// notification so an already-open bar restates it. Touches no run state.
+    /// notification so the window-level hint restates it. Touches no run state.
     void restateStatus();
     /// GUI-thread only: renders one off-GUI acquisition progress event.
     void applyProvisionProgress(const mplayer::native::ComponentProvisionProgress& progress);
     /// GUI-thread only: renders one off-GUI graph-archive download event.
     void applyDownloadProgress(const mplayer::native::ComponentProvisionProgress& progress);
+    QString progressCardForPack(const QString& pack) const;
+    QString progressDisplayName(const QString& pack) const;
+    void applyProgressEvent(const mplayer::native::ComponentProvisionProgress& progress);
+    void setProgressItem(const QString& identity, const QString& cardId,
+                         const QString& displayName,
+                         mplayer::native::ComponentProvisionStage stage,
+                         qint64 received, qint64 total, bool queued = false);
+    void settleProgressItem(const QString& identity, bool installed, bool cancelled,
+                            const QString& detail = {});
+    void clearProgressItem(const QString& identity);
+    void settleProgressCard(const QString& cardId, bool installed, bool cancelled,
+                            const QString& detail = {});
+    void clearProgressCard(const QString& cardId);
+    void renderCardProgress(const QString& cardId);
+    void renderAllCardProgress();
+    int activeProgressItemCount() const;
     /// Publishes one completed off-GUI verification. `verifiedPacks`,
     /// `verifiedRifeGraphs` and `verifiedBackend` are exactly what the hashing
     /// proved; a stale run never reaches this.
@@ -236,8 +252,6 @@ private:
     VerifyRequest captureVerifyRequest() const;
     void startVerify(const VerifyRequest& request);
 
-    /// Hides the progress readout without touching any run state.
-    void cancelProgress();
     /// Tells the window-level readout whether a download is running. Idle is
     /// emitted once, on the way out, and only after a download was announced.
     void publishAcquisition();
@@ -245,6 +259,12 @@ private:
     Runner* runner_ = nullptr;
     backend::MikaiClient* client_ = nullptr;
     NativeComponentProvisioner* provisioner_ = nullptr;
+    /// A standalone provisioner run starts with its first event; each affected
+    /// old pack row is retired once while unrelated card rows remain intact.
+    bool provisionerProgressSessionActive_ = false;
+    QSet<QString> provisionerProgressItemsSeen_;
+    /// Drops already-queued events from a provisioner replaced by setComponentProvisioner.
+    quint64 provisionerBindingGeneration_ = 0;
 
     QLabel* heading_ = nullptr;
     QLabel* hint_ = nullptr;
@@ -262,8 +282,24 @@ private:
     QPushButton* downloadButton_ = nullptr;
     QPushButton* importAnimeJanaiButton_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
-    QProgressBar* progress_ = nullptr;
     QLabel* status_ = nullptr;
+    struct ProgressItem {
+        enum class Outcome { Active, Installed, Failed, Cancelled };
+
+        QString cardId;
+        QString displayName;
+        QString detail;
+        mplayer::native::ComponentProvisionStage stage =
+            mplayer::native::ComponentProvisionStage::Downloading;
+        qint64 received = 0;
+        qint64 total = 0;
+        bool queued = false;
+        Outcome outcome = Outcome::Active;
+    };
+    QMap<QString, QProgressBar*> cardProgressBars_;
+    QMap<QString, QLabel*> cardProgressStatusLabels_;
+    QMap<QString, ProgressItem> progressItems_;
+    QSet<QString> currentProgressItems_;
 
     QString statusKey_;
     /// The current status line's typed source. Holds only the raw values its
@@ -357,8 +393,8 @@ private:
     /// dereferences one. A plain atomic copy, never a widget QPointer.
     std::shared_ptr<std::atomic<bool>> alive_;
     /// Set while any off-GUI run may still publish. While true no second run may
-    /// start and no result may be rendered: the controls stay disabled and the
-    /// progress bar reports indeterminate activity.
+    /// start and no result may be rendered: the controls stay disabled and each
+    /// active card reports indeterminate activity.
     bool verifying_ = false;
     /// Bumped by every new run and by every backend/client/provisioner change.
     /// A delivery carrying an older generation is discarded rather than rendered.

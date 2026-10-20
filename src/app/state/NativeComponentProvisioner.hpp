@@ -8,6 +8,8 @@
 #include <atomic>
 #include <memory>
 
+#include "native/components/NativeComponentProvisioning.hpp"
+
 namespace mplayer::native {
 struct ComponentPack;
 struct ComponentStore;
@@ -50,7 +52,7 @@ public:
     void cancel();
 
 signals:
-    void progress(const QString& pack, qint64 received, qint64 total);
+    void progress(const mplayer::native::ComponentProvisionProgress& progress);
     void finished(bool ok, bool cancelled, const QString& summary);
 
 private:

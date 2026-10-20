@@ -141,6 +141,7 @@ ComponentProvisionResult provisionTensorRtComponents(
     ComponentProvisionResult result;
     auto fail = [&result](const QString& key, const QString& text) {
         result.ok = false;
+        result.cancelled = key == QStringLiteral("native.components.cancelled");
         result.reasonKey = key;
         result.reason = text;
         return result;
@@ -168,6 +169,10 @@ ComponentProvisionResult provisionTensorRtComponents(
         return fail(QStringLiteral("native.components.install"),
                     QStringLiteral("no component packs were named"));
     }
+    if (cancelled && cancelled()) {
+        return fail(QStringLiteral("native.components.cancelled"),
+                    translated("The component installation was cancelled."));
+    }
 
     const QString sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     if (sevenZip.isEmpty()) {
@@ -182,9 +187,15 @@ ComponentProvisionResult provisionTensorRtComponents(
     }
 
     for (const ComponentPack& pack : packs) {
+        if (cancelled && cancelled()) {
+            return fail(QStringLiteral("native.components.cancelled"),
+                        translated("The component installation was cancelled."));
+        }
         const bool reuseThisPack = reusedArchive != nullptr &&
             !reusedArchive->packName.isEmpty() && reusedArchive->packName == pack.name;
         const QString archive = reuseThisPack ? reusedArchive->path : scratch.filePath(pack.asset);
+        qint64 receivedBytes = 0;
+        qint64 totalBytes = 0;
         if (reuseThisPack) {
             const QFileInfo reused(archive);
             if (!reused.isFile() || !reused.isReadable()) {
@@ -192,12 +203,16 @@ ComponentProvisionResult provisionTensorRtComponents(
                             QStringLiteral("the verified component archive is not readable: %1")
                                 .arg(archive));
             }
+            receivedBytes = reused.size();
+            totalBytes = receivedBytes;
         } else {
             QString downloadReason;
             const bool downloaded = mikai::backend::downloadToFile(
                 QUrl(pack.url), archive, pack.exactAssetBytes ? pack.assetBytes : 0, pack.assetSha256,
                 [&](qint64 received, qint64 total) {
-                    if (progress) progress({pack.name, received, total});
+                    receivedBytes = received;
+                    totalBytes = total;
+                    if (progress) progress({pack.name, received, total, ComponentProvisionStage::Downloading});
                 },
                 cancelled, &downloadReason);
             if (!downloaded) {
@@ -208,6 +223,7 @@ ComponentProvisionResult provisionTensorRtComponents(
             }
         }
 
+        if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Extracting});
         const QString extractDir = scratch.filePath(QStringLiteral("extract"));
         QDir(extractDir).removeRecursively();
         QDir().mkpath(extractDir);
@@ -216,11 +232,17 @@ ComponentProvisionResult provisionTensorRtComponents(
             return fail(QStringLiteral("native.components.extract"), extractReason);
         }
 
+        if (cancelled && cancelled()) {
+            return fail(QStringLiteral("native.components.cancelled"),
+                        translated("The component installation was cancelled."));
+        }
+        if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Installing});
         QString installKey;
         QString installReason;
         if (!installPack(store, pack, extractDir, &installKey, &installReason)) {
             return fail(installKey, installReason);
         }
+        if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Installed});
         result.installedPacks.append(pack.name);
 
         if (!reuseThisPack) QFile::remove(archive);
@@ -238,6 +260,7 @@ ComponentProvisionResult provisionRifeArchive(
     ComponentProvisionResult result;
     auto fail = [&result](const QString& key, const QString& text) {
         result.ok = false;
+        result.cancelled = key == QStringLiteral("native.components.cancelled");
         result.reasonKey = key;
         result.reason = text;
         return result;
@@ -261,6 +284,10 @@ ComponentProvisionResult provisionRifeArchive(
         return fail(QStringLiteral("native.components.install"),
                     translated("The pinned RIFE archive inventory is unavailable."));
     }
+    if (cancelled && cancelled()) {
+        return fail(QStringLiteral("native.components.cancelled"),
+                    translated("The RIFE archive download was cancelled."));
+    }
     const QString sevenZip = mikai::backend::ensureSevenZip(nativeToolsDirectory());
     if (sevenZip.isEmpty()) {
         return fail(QStringLiteral("native.components.extract"),
@@ -279,11 +306,15 @@ ComponentProvisionResult provisionRifeArchive(
 
     const RifeArchivePack& pack = rifeArchivePack();
     const QString archive = scratch.filePath(pack.asset);
+    qint64 receivedBytes = 0;
+    qint64 totalBytes = 0;
     QString downloadReason;
     const bool downloaded = mikai::backend::downloadToFile(
         QUrl(pack.url), archive, pack.exactAssetBytes ? pack.assetBytes : 0, pack.assetSha256,
         [&](qint64 received, qint64 total) {
-            if (progress) progress({pack.name, received, total});
+            receivedBytes = received;
+            totalBytes = total;
+            if (progress) progress({pack.name, received, total, ComponentProvisionStage::Downloading});
         },
         cancelled, &downloadReason);
     if (!downloaded) {
@@ -297,6 +328,7 @@ ComponentProvisionResult provisionRifeArchive(
                     translated("The RIFE archive download was cancelled."));
     }
 
+    if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Extracting});
     QString listingReason;
     if (!validateRifeArchiveListing(sevenZip, archive, pins, &listingReason)) {
         return fail(QStringLiteral("native.components.extract"), listingReason);
@@ -316,6 +348,7 @@ ComponentProvisionResult provisionRifeArchive(
                     translated("The RIFE archive installation was cancelled."));
     }
 
+    if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Installing});
     QString installReason;
     if (!installRifeGraphs(store, pins, extraction, cancelled, &installReason)) {
         const bool wasCancelled = cancelled && cancelled();
@@ -325,6 +358,7 @@ ComponentProvisionResult provisionRifeArchive(
     }
     result.ok = true;
     result.installedPacks.append(pack.name);
+    if (progress) progress({pack.name, receivedBytes, totalBytes, ComponentProvisionStage::Installed});
     return result;
 }
 

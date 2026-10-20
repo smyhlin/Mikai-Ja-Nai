@@ -10,10 +10,19 @@
 
 namespace mplayer::native {
 
+enum class ComponentProvisionStage {
+    Downloading,
+    Extracting,
+    Installing,
+    Verifying,
+    Installed
+};
+
 struct ComponentProvisionProgress {
     QString pack;
     qint64 received = 0;
     qint64 total = 0;
+    ComponentProvisionStage stage = ComponentProvisionStage::Downloading;
 };
 
 struct ComponentProvisionResult {

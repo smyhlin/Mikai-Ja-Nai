@@ -11,7 +11,6 @@
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
 class QLabel;
-class QProgressBar;
 class QPushButton;
 class QStackedWidget;
 
@@ -101,9 +100,9 @@ private:
     /// that is already playing is left playing. Safe to call when no prompt held
     /// anything.
     void resumePlaybackAfterComponentAsk();
-    /// Shows the download on the main window; the first tick also closes
-    /// Settings so its catalogue stays clickable while the packs download.
-    void noteComponentAcquisition(const QString& status, int percent, bool started);
+    /// Shows aggregate acquisition activity on the main window; the first tick
+    /// also closes Settings so its catalogue stays clickable while packs download.
+    void noteComponentAcquisition(const QString& status, bool started);
     /// Hides Settings without cancelling its download. Queued so a download
     /// that begins before `exec()` still closes the dialog on the first turn
     /// of that loop, instead of being shown again by it.
@@ -168,7 +167,6 @@ private:
     QPointer<SettingsDialog> settingsDialog_;
     QWidget* acquisitionBar_ = nullptr;
     QLabel* acquisitionStatus_ = nullptr;
-    QProgressBar* acquisitionProgress_ = nullptr;
     QPushButton* acquisitionDetails_ = nullptr;
     QPushButton* acquisitionCancel_ = nullptr;
     QualityCache* qualityCache_ = nullptr;

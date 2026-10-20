@@ -42,7 +42,6 @@
 #include <QPushButton>
 #include <QSizePolicy>
 #include <QHBoxLayout>
-#include <QProgressBar>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
@@ -141,17 +140,12 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     acquisitionLayout->setSpacing(theme::kSpacingSmall);
     acquisitionStatus_ = new QLabel(acquisitionBar_);
     acquisitionStatus_->setObjectName(QStringLiteral("status"));
-    acquisitionProgress_ = new QProgressBar(acquisitionBar_);
-    acquisitionProgress_->setObjectName(QStringLiteral("nativeComponentTabProgress"));
-    acquisitionProgress_->setTextVisible(false);
-    acquisitionProgress_->setFixedWidth(theme::kAcquisitionProgressWidth);
-    acquisitionProgress_->setRange(0, 100);
+    acquisitionStatus_->setWordWrap(true);
     acquisitionDetails_ = new QPushButton(tr("Components"), acquisitionBar_);
     acquisitionDetails_->setObjectName(QStringLiteral("componentAcquisitionDetails"));
     acquisitionCancel_ = new QPushButton(tr("Cancel"), acquisitionBar_);
     acquisitionCancel_->setObjectName(QStringLiteral("componentAcquisitionCancel"));
     acquisitionLayout->addWidget(acquisitionStatus_, 1);
-    acquisitionLayout->addWidget(acquisitionProgress_);
     acquisitionLayout->addWidget(acquisitionDetails_);
     acquisitionLayout->addWidget(acquisitionCancel_);
     acquisitionBar_->hide();
@@ -727,20 +721,13 @@ void MainWindow::resumePlaybackAfterComponentAsk() {
     if (paused) player->resumePlayback();
 }
 
-void MainWindow::noteComponentAcquisition(const QString& status, int percent, bool started) {
+void MainWindow::noteComponentAcquisition(const QString& status, bool started) {
     if (started) releaseSettingsForAcquisition();
     if (acquisitionBar_ == nullptr) return;
     acquisitionStatus_->setText(status);
-    acquisitionProgress_->show();
     if (auto* cancel = acquisitionBar_->findChild<QPushButton*>(
             QStringLiteral("componentAcquisitionCancel"))) {
         cancel->show();
-    }
-    if (percent < 0) {
-        acquisitionProgress_->setRange(0, 0);
-    } else {
-        acquisitionProgress_->setRange(0, 100);
-        acquisitionProgress_->setValue(percent);
     }
     acquisitionBar_->show();
 }
@@ -766,7 +753,6 @@ void MainWindow::noteComponentAcquisitionIdle() {
         return;
     }
     acquisitionStatus_->setText(componentsTab_->statusReason());
-    acquisitionProgress_->hide();
     acquisitionBar_->show();
 }
 

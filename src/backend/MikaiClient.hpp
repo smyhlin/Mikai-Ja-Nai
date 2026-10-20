@@ -8,6 +8,7 @@
 #include <QWaitCondition>
 
 #include <optional>
+#include <functional>
 
 #include "Cancellation.hpp"
 #include "Errors.hpp"
@@ -131,7 +132,9 @@ public:
     // is the one transport callers use for large non-artwork payloads (a model
     // graph, for instance, needs far more than the artwork budget); a negative
     // timeout keeps the artwork default.
-    QByteArray fetchBytes(const QString& url, int timeoutMs = -1) const;
+    QByteArray fetchBytes(
+        const QString& url, int timeoutMs = -1,
+        const std::function<void(qint64 received, qint64 total)>& progress = {}) const;
 
     QString baseUrl() const { return baseUrl_; }
 

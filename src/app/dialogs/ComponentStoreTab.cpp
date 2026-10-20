@@ -412,6 +412,23 @@ void ComponentStoreTab::buildUi() {
         description->setWordWrap(true);
         description->installEventFilter(this);
         detailsLayout->addWidget(description);
+        auto* cardProgress = new QProgressBar(details);
+        cardProgress->setObjectName(objectName + QStringLiteral("Progress"));
+        cardProgress->setRange(0, 100);
+        cardProgress->setTextVisible(false);
+        cardProgress->setMinimumWidth(0);
+        cardProgress->hide();
+        detailsLayout->addWidget(cardProgress);
+        auto* cardProgressStatus = new QLabel(details);
+        cardProgressStatus->setObjectName(objectName + QStringLiteral("ProgressStatus"));
+        cardProgressStatus->setProperty("textRole", QStringLiteral("muted"));
+        cardProgressStatus->setWordWrap(true);
+        cardProgressStatus->setMinimumWidth(0);
+        cardProgressStatus->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        cardProgressStatus->hide();
+        detailsLayout->addWidget(cardProgressStatus);
+        cardProgressBars_.insert(objectName, cardProgress);
+        cardProgressStatusLabels_.insert(objectName, cardProgressStatus);
         cardLayout->addWidget(details, 1);
         auto* size = new QLabel(card);
         size->setObjectName(objectName + QStringLiteral("Size"));
@@ -514,13 +531,6 @@ void ComponentStoreTab::buildUi() {
     utilityActions->addWidget(cancelButton_);
     actions->addLayout(utilityActions);
 
-    progress_ = new QProgressBar(actionsCard);
-    progress_->setObjectName(QStringLiteral("nativeComponentTabProgress"));
-    progress_->setRange(0, 100);
-    progress_->setTextVisible(false);
-    progress_->hide();
-    actions->addWidget(progress_);
-
     status_ = new QLabel(actionsCard);
     status_->setObjectName(QStringLiteral("nativeComponentStatus"));
     status_->setAccessibleName(tr("Components status"));
@@ -541,8 +551,8 @@ void ComponentStoreTab::buildUi() {
                 const int backend = data.toInt();
                 // Closing Settings reparents this tab, and showing it again can
                 // emit this for the row that is already selected. That is not a
-                // backend change: retiring the generation here hid the bar and
-                // dropped every later progress update while the download ran on.
+                // backend change: retiring the generation here would drop later
+                // progress updates while the download ran on.
                 if (backend == trackedBackend_) return;
                 trackedBackend_ = backend;
                 // A different backend answers a different question: any run still
@@ -560,7 +570,6 @@ void ComponentStoreTab::buildUi() {
                 animeJanaiRuntimeDownloading_ = false;
                 ++runGeneration_;
                 verifying_ = false;
-                cancelProgress();
                 refresh();
             });
     connect(verifyButton_, &QPushButton::clicked, this, &ComponentStoreTab::verifyAll);
@@ -600,6 +609,7 @@ void ComponentStoreTab::retranslateUi() {
         refreshBtn->setText(tr("Refresh"));
         refreshBtn->setAccessibleName(tr("Refresh"));
     }
+    renderAllCardProgress();
     importAnimeJanaiButton_->setText(tr("Install local runtime..."));
     importAnimeJanaiButton_->setAccessibleName(
         tr("Choose a local AnimeJaNai runtime directory and install its selected backend closure"));
@@ -663,7 +673,6 @@ void ComponentStoreTab::setRunner(Runner* runner) {
     if (runner_ != runner) {
         ++runGeneration_;
         verifying_ = false;
-        cancelProgress();
     }
     runner_ = runner;
     updateControls();
@@ -674,7 +683,6 @@ void ComponentStoreTab::setClient(backend::MikaiClient* client) {
     if (client_ != client) {
         ++runGeneration_;
         verifying_ = false;
-        cancelProgress();
     }
     client_ = client;
     updateControls();
@@ -687,22 +695,36 @@ void ComponentStoreTab::setComponentProvisioner(NativeComponentProvisioner* prov
     }
     ++runGeneration_;
     verifying_ = false;
+    ++provisionerBindingGeneration_;
+    provisionerProgressSessionActive_ = false;
+    provisionerProgressItemsSeen_.clear();
     if (provisioner_ != nullptr) disconnect(provisioner_, nullptr, this, nullptr);
     provisioner_ = provisioner;
     if (provisioner_ != nullptr) {
+        const quint64 bindingGeneration = provisionerBindingGeneration_;
         connect(provisioner_, &NativeComponentProvisioner::progress, this,
-                [this](const QString& pack, qint64 received, qint64 total) {
-                    progress_->show();
-                    progress_->setRange(0, 100);
-                    progress_->setValue(total > 0 ? static_cast<int>(received * 100 / total) : 0);
-                    status_->setText(tr("Downloading %1: %2 of %3")
-                                         .arg(pack, QLocale().formattedDataSize(received),
-                                              QLocale().formattedDataSize(total)));
-                    publishAcquisition();
+                [this, bindingGeneration](const ComponentProvisionProgress& progress) {
+                    if (bindingGeneration != provisionerBindingGeneration_) return;
+                    if (!provisionerProgressSessionActive_) {
+                        provisionerProgressSessionActive_ = true;
+                        provisionerProgressItemsSeen_.clear();
+                    }
+                    if (!acquisitionSequenceActive_ &&
+                        !provisionerProgressItemsSeen_.contains(progress.pack)) {
+                        clearProgressItem(progress.pack);
+                        provisionerProgressItemsSeen_.insert(progress.pack);
+                    }
+                    applyProvisionProgress(progress);
                 });
         connect(provisioner_, &NativeComponentProvisioner::finished, this,
-                [this](bool ok, bool cancelled, const QString& summary) {
-                    if (progress_ != nullptr) progress_->hide();
+                [this, bindingGeneration](bool ok, bool cancelled, const QString& summary) {
+                    if (bindingGeneration != provisionerBindingGeneration_) return;
+                    provisionerProgressSessionActive_ = false;
+                    provisionerProgressItemsSeen_.clear();
+                    settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), ok, cancelled,
+                                       summary);
+                    settleProgressCard(QStringLiteral("tensorRtKernelsCard"), ok, cancelled,
+                                       summary);
                     if (cancelled) {
                         pendingModels_.clear();
                         finishAcquisitionUnit(QString(), true);
@@ -983,29 +1005,334 @@ void ComponentStoreTab::verifyAll() {
 
 void ComponentStoreTab::applyProvisionProgress(
     const ComponentProvisionProgress& progress) {
-    progress_->show();
-    progress_->setRange(0, 100);
-    progress_->setValue(progress.total > 0
-                            ? static_cast<int>(progress.received * 100 / progress.total)
-                            : 0);
-    status_->setText(tr("Installing %1: %2 of %3")
-                         .arg(progress.pack,
-                              QLocale().formattedDataSize(progress.received),
-                              QLocale().formattedDataSize(progress.total)));
+    applyProgressEvent(progress);
+}
+
+QString ComponentStoreTab::progressCardForPack(const QString& pack) const {
+    if (findSpatialAsset(pack) != nullptr) return QStringLiteral("animeJanaiModelsCard");
+
+    for (const ComponentPack& component : tensorRtComponentCatalog()) {
+        if (pack == component.name || pack == component.asset ||
+            component.files.contains(pack)) {
+            return component.name == QLatin1String("trt-runtime")
+                       ? QStringLiteral("tensorRtRuntimeCard")
+                       : QStringLiteral("tensorRtKernelsCard");
+        }
+    }
+
+    const RifeArchivePack& rife = rifeArchivePack();
+    if (pack == rife.name || pack == rife.asset)
+        return QStringLiteral("rifeModelsCard");
+
+    if (pack == QLatin1String("aji-v0.9.0") ||
+        pack == QLatin1String("onnxruntime-directml-1.24.4") ||
+        pack == QLatin1String("directml-1.15.4") ||
+        pack == QLatin1String("trt-runtime-trtexec") ||
+        pack == QLatin1String("animejanai-local-runtime")) {
+        return QStringLiteral("tensorRtRuntimeCard");
+    }
+    return {};
+}
+
+QString ComponentStoreTab::progressDisplayName(const QString& pack) const {
+    if (const SpatialAsset* asset = findSpatialAsset(pack)) return asset->name;
+
+    for (const ComponentPack& component : tensorRtComponentCatalog()) {
+        if (pack == component.name)
+            return QStringLiteral("%1 (%2)").arg(component.name, component.asset);
+        if (pack == component.asset) return component.asset;
+        if (component.files.contains(pack)) return pack;
+    }
+
+    if (pack == QLatin1String("aji-v0.9.0")) {
+#ifdef Q_OS_WIN
+        return QStringLiteral("aji-v0.9.0 (aji-windows-x64.zip)");
+#else
+        return QStringLiteral("aji-v0.9.0 (aji-linux-x64.tar.zst)");
+#endif
+    }
+    if (pack == QLatin1String("onnxruntime-directml-1.24.4"))
+        return QStringLiteral("Microsoft.ML.OnnxRuntime.DirectML/1.24.4 "
+                              "(microsoft.ml.onnxruntime.directml.1.24.4.nupkg)");
+    if (pack == QLatin1String("directml-1.15.4"))
+        return QStringLiteral("Microsoft.AI.DirectML/1.15.4 "
+                              "(microsoft.ai.directml.1.15.4.nupkg)");
+    if (pack == QLatin1String("trt-runtime-trtexec"))
+        return progressDisplayName(QStringLiteral("trt-runtime")) +
+               QStringLiteral(" (trtexec)");
+    if (pack == QLatin1String("animejanai-local-runtime"))
+        return tr("Local AnimeJaNai runtime files");
+
+    const RifeArchivePack& rife = rifeArchivePack();
+    if (pack == rife.name)
+        return QStringLiteral("%1 (%2)").arg(rife.name, rife.asset);
+    if (pack == rife.asset) return rife.asset;
+    return pack;
+}
+
+void ComponentStoreTab::applyProgressEvent(const ComponentProvisionProgress& progress) {
+    const QString cardId = progressCardForPack(progress.pack);
+    if (cardId.isEmpty()) return;
+
+    for (const QString& pendingIdentity :
+         {QStringLiteral("pending:") + cardId,
+          QStringLiteral("pending:") + progress.pack}) {
+        progressItems_.remove(pendingIdentity);
+        currentProgressItems_.remove(pendingIdentity);
+    }
+    setProgressItem(progress.pack, cardId, progressDisplayName(progress.pack), progress.stage,
+                    progress.received, progress.total);
     publishAcquisition();
 }
 
-void ComponentStoreTab::applyDownloadProgress(const ComponentProvisionProgress& progress) {
-    progress_->show();
-    progress_->setRange(0, 100);
-    progress_->setValue(progress.total > 0
-                            ? static_cast<int>(progress.received * 100 / progress.total)
-                            : 0);
-    status_->setText(tr("Downloading %1: %2 of %3")
-                         .arg(progress.pack,
-                              QLocale().formattedDataSize(progress.received),
-                              QLocale().formattedDataSize(progress.total)));
+void ComponentStoreTab::setProgressItem(
+    const QString& identity, const QString& cardId, const QString& displayName,
+    ComponentProvisionStage stage, qint64 received, qint64 total, bool queued) {
+    auto existing = progressItems_.find(identity);
+    if (existing != progressItems_.end() &&
+        existing->outcome != ProgressItem::Outcome::Active) {
+        return;
+    }
+
+    ProgressItem item;
+    if (existing != progressItems_.end()) item = existing.value();
+    item.cardId = cardId;
+    item.displayName = displayName;
+    item.stage = stage;
+    const bool phaseOnly = existing != progressItems_.end() &&
+                           stage != ComponentProvisionStage::Downloading &&
+                           received == 0 && total == 0;
+    if (!phaseOnly) item.received = qMax<qint64>(0, received);
+    if (total > 0 || existing == progressItems_.end() || existing->total <= 0)
+        item.total = qMax<qint64>(0, total);
+    item.queued = queued;
+    item.detail.clear();
+    item.outcome = stage == ComponentProvisionStage::Installed
+                       ? ProgressItem::Outcome::Installed
+                       : ProgressItem::Outcome::Active;
+    if (item.outcome == ProgressItem::Outcome::Installed && item.total > 0)
+        item.received = item.total;
+    progressItems_.insert(identity, item);
+    currentProgressItems_.insert(identity);
+    renderCardProgress(cardId);
+}
+
+void ComponentStoreTab::settleProgressItem(const QString& identity, bool installed,
+                                           bool cancelled, const QString& detail) {
+    auto item = progressItems_.find(identity);
+    if (item == progressItems_.end() ||
+        item->outcome != ProgressItem::Outcome::Active) {
+        return;
+    }
+    if (installed) {
+        item->outcome = ProgressItem::Outcome::Installed;
+        item->stage = ComponentProvisionStage::Installed;
+        if (item->total > 0) item->received = item->total;
+    } else if (cancelled) {
+        item->outcome = ProgressItem::Outcome::Cancelled;
+    } else {
+        item->outcome = ProgressItem::Outcome::Failed;
+        item->detail = detail;
+    }
+    renderCardProgress(item->cardId);
     publishAcquisition();
+}
+
+void ComponentStoreTab::settleProgressCard(const QString& cardId, bool installed,
+                                           bool cancelled, const QString& detail) {
+    bool changed = false;
+    for (const QString& identity : currentProgressItems_) {
+        auto item = progressItems_.find(identity);
+        if (item == progressItems_.end() || item->cardId != cardId ||
+            item->outcome != ProgressItem::Outcome::Active) {
+            continue;
+        }
+        if (installed) {
+            item->outcome = ProgressItem::Outcome::Installed;
+            item->stage = ComponentProvisionStage::Installed;
+            if (item->total > 0) item->received = item->total;
+        } else if (cancelled) {
+            item->outcome = ProgressItem::Outcome::Cancelled;
+        } else {
+            item->outcome = ProgressItem::Outcome::Failed;
+            item->detail = detail;
+        }
+        changed = true;
+    }
+    if (changed) renderCardProgress(cardId);
+    publishAcquisition();
+}
+
+void ComponentStoreTab::clearProgressItem(const QString& identity) {
+    auto item = progressItems_.find(identity);
+    if (item == progressItems_.end()) return;
+    const QString cardId = item->cardId;
+    currentProgressItems_.remove(identity);
+    progressItems_.erase(item);
+    renderCardProgress(cardId);
+}
+
+void ComponentStoreTab::clearProgressCard(const QString& cardId) {
+    for (auto item = progressItems_.begin(); item != progressItems_.end();) {
+        if (item->cardId == cardId) {
+            currentProgressItems_.remove(item.key());
+            item = progressItems_.erase(item);
+        } else {
+            ++item;
+        }
+    }
+    renderCardProgress(cardId);
+}
+
+void ComponentStoreTab::renderCardProgress(const QString& cardId) {
+    QProgressBar* const bar = cardProgressBars_.value(cardId, nullptr);
+    QLabel* const label = cardProgressStatusLabels_.value(cardId, nullptr);
+    if (bar == nullptr || label == nullptr) return;
+
+    QStringList activeLines;
+    QStringList failedLines;
+    QStringList cancelledLines;
+    QStringList installedNames;
+    qint64 received = 0;
+    qint64 total = 0;
+    bool unknownTotal = false;
+    bool hasItems = false;
+    for (auto item = progressItems_.cbegin(); item != progressItems_.cend(); ++item) {
+        if (item->cardId != cardId) continue;
+        hasItems = true;
+        QString displayName = item->displayName;
+        if (item.key() == QLatin1String("pending:tensorRtRuntimeCard")) {
+            displayName = tr("AnimeJaNai runtime and backend dependencies");
+        } else if (item.key() == QLatin1String("pending:animejanai-local-runtime")) {
+            displayName = tr("Local AnimeJaNai runtime and backend dependencies");
+        } else if (item.key() == QLatin1String("animejanai-local-runtime")) {
+            displayName = tr("Local AnimeJaNai runtime files");
+        }
+        if (item->total > 0) {
+            total += item->total;
+            received += qMin(item->received, item->total);
+        } else if (item->outcome == ProgressItem::Outcome::Active) {
+            unknownTotal = true;
+        }
+
+        switch (item->outcome) {
+            case ProgressItem::Outcome::Active:
+                if (item->queued) {
+                    activeLines.append(tr("Queued: %1").arg(displayName));
+                } else {
+                    const QString byteVerb =
+                        item.key() == QLatin1String("animejanai-local-runtime")
+                            ? tr("copied")
+                            : tr("downloaded");
+                    switch (item->stage) {
+                        case ComponentProvisionStage::Downloading:
+                            activeLines.append(
+                                item->total > 0
+                                    ? tr("Downloading %1: %2 of %3")
+                                          .arg(displayName,
+                                               QLocale().formattedDataSize(item->received),
+                                               QLocale().formattedDataSize(item->total))
+                                    : tr("Downloading %1...").arg(displayName));
+                            break;
+                        case ComponentProvisionStage::Extracting:
+                            activeLines.append(
+                                item->total > 0
+                                    ? tr("Extracting %1 (%2 of %3 %4)...")
+                                          .arg(displayName,
+                                               QLocale().formattedDataSize(item->received),
+                                               QLocale().formattedDataSize(item->total),
+                                               byteVerb)
+                                    : tr("Extracting %1...").arg(displayName));
+                            break;
+                        case ComponentProvisionStage::Installing:
+                            activeLines.append(
+                                item->total > 0
+                                    ? tr("Installing %1 (%2 of %3 %4)...")
+                                          .arg(displayName,
+                                               QLocale().formattedDataSize(item->received),
+                                               QLocale().formattedDataSize(item->total),
+                                               byteVerb)
+                                    : tr("Installing %1...").arg(displayName));
+                            break;
+                        case ComponentProvisionStage::Verifying:
+                            activeLines.append(
+                                item->total > 0
+                                    ? tr("Verifying %1 (%2 of %3 %4)...")
+                                          .arg(displayName,
+                                               QLocale().formattedDataSize(item->received),
+                                               QLocale().formattedDataSize(item->total),
+                                               byteVerb)
+                                    : tr("Verifying %1...").arg(displayName));
+                            break;
+                        case ComponentProvisionStage::Installed:
+                            activeLines.append(tr("Finishing %1...").arg(displayName));
+                            break;
+                    }
+                }
+                break;
+            case ProgressItem::Outcome::Installed:
+                installedNames.append(displayName);
+                break;
+            case ProgressItem::Outcome::Failed:
+                failedLines.append(item->detail.isEmpty()
+                                       ? tr("Failed %1").arg(displayName)
+                                       : tr("Failed %1: %2").arg(displayName, item->detail));
+                break;
+            case ProgressItem::Outcome::Cancelled:
+                cancelledLines.append(tr("Cancelled %1").arg(displayName));
+                break;
+        }
+    }
+
+    if (!hasItems) {
+        bar->hide();
+        label->clear();
+        label->hide();
+        return;
+    }
+    if (activeLines.isEmpty() && failedLines.isEmpty() && cancelledLines.isEmpty()) {
+        label->setText(tr("Installed: %1").arg(installedNames.join(QStringLiteral(", "))));
+    } else {
+        QStringList lines = activeLines;
+        lines.append(failedLines);
+        lines.append(cancelledLines);
+        if (!installedNames.isEmpty())
+            lines.append(tr("Installed: %1").arg(installedNames.join(QStringLiteral(", "))));
+        label->setText(lines.join(QStringLiteral("; ")));
+    }
+
+    if (total > 0 && !unknownTotal) {
+        bar->setRange(0, 100);
+        bar->setValue(static_cast<int>(qMin<qint64>(100, received * 100 / total)));
+    } else if (!activeLines.isEmpty()) {
+        bar->setRange(0, 0);
+    } else {
+        bar->setRange(0, 100);
+        bar->setValue(failedLines.isEmpty() && cancelledLines.isEmpty() ? 100 : 0);
+    }
+    bar->setVisible(true);
+    label->setVisible(true);
+}
+
+void ComponentStoreTab::renderAllCardProgress() {
+    for (auto bar = cardProgressBars_.cbegin(); bar != cardProgressBars_.cend(); ++bar)
+        renderCardProgress(bar.key());
+}
+
+int ComponentStoreTab::activeProgressItemCount() const {
+    int active = 0;
+    for (const QString& identity : currentProgressItems_) {
+        const auto item = progressItems_.constFind(identity);
+        if (item != progressItems_.cend() &&
+            item->outcome == ProgressItem::Outcome::Active) {
+            ++active;
+        }
+    }
+    return active;
+}
+
+void ComponentStoreTab::applyDownloadProgress(const ComponentProvisionProgress& progress) {
+    applyProgressEvent(progress);
 }
 void ComponentStoreTab::applyVerifyResult(int verified, int failed, int failedRife,
                                           int failedSpatial, const QStringList& failures,
@@ -1024,7 +1351,6 @@ void ComponentStoreTab::applyVerifyResult(int verified, int failed, int failedRi
     // copy: a verification that ran while a pack was still arriving must not
     // render a state that is already gone.
     renderCards();
-    if (progress_ != nullptr) progress_->hide();
     if (failed == 0) {
         applyStatus(QString(),
                     StatusReason{.kind = StatusReason::Kind::VerifiedCount, .count = verified});
@@ -1045,10 +1371,6 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
     verifying_ = true;
     ++runGeneration_;
     const quint64 generation = runGeneration_;
-    // The progress bar reports an unbounded activity rather than a percentage
-    // nobody measured, so the GUI stays honest while the worker hashes.
-    progress_->show();
-    progress_->setRange(0, 0);
     status_->setText(tr("Verifying the installed components..."));
     updateControls();
 
@@ -1163,7 +1485,6 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
             if (!alive->load() || runGeneration_ != generation) return;
             verifying_ = false;
             ++runGeneration_;
-            if (progress_ != nullptr) progress_->hide();
             const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),
                         StatusReason{.kind = StatusReason::Kind::NotVerified,

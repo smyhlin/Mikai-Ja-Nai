@@ -42,7 +42,6 @@
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMessageBox>
-#include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include "widgets/FlowLayout.hpp"
@@ -153,8 +152,6 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
     const Backend backend = selectedBackend();
     const GpuComputeCapability gpu = observeComputeCapability();
     const QSet<QString> selected = selectedPacks_;
-    progress_->show();
-    progress_->setRange(0, 0);
     status_->setText(tr("Checking selected components..."));
     updateControls();
     acquisitionSequenceActive_ = true;
@@ -210,7 +207,6 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
                 acquisitionChecking_ = false;
                 acquisitionSequenceActive_ = false;
                 acquisitionCheckCancelFlag_.reset();
-                if (progress_ != nullptr) progress_->hide();
                 applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::NothingToInstall});
                 updateControls();
                 return;
@@ -220,7 +216,6 @@ void ComponentStoreTab::downloadMissing(bool showReview) {
             if (selectedRifeMissing) bytes += rifeArchivePack().assetBytes;
             acquisitionChecking_ = false;
             acquisitionCheckCancelFlag_.reset();
-            if (progress_ != nullptr) progress_->hide();
             updateControls();
             if (showReview) {
                 const QString prompt = tr("The following selected packs are missing or need repair:\n%1\n\nEstimated download size: %2\n\nContinue?")
@@ -284,9 +279,6 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
     const Backend backend = selectedBackend();
     const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
                                                            : acquisitionGeneration_;
-    progress_->show();
-    progress_->setRange(0, 100);
-    progress_->setValue(0);
     status_->setText(tr("Installing AnimeJaNai runtime and selected backend dependencies..."));
     updateControls();
 
@@ -318,6 +310,8 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
             if (cancelFlag->load() || value.toMap().value(QStringLiteral("cancelled")).toBool()) {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
                 finishAcquisitionUnit(QString(), true);
             } else if (!value.toMap().value(QStringLiteral("ok")).toBool()) {
                 const QString reason = value.toMap().value(QStringLiteral("reason")).toString();
@@ -326,14 +320,16 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
                 const QString backendName = backend == Backend::TensorRT
                                                 ? tr("TensorRT / CUDA 13")
                                                 : tr("DirectML");
+                const QString detail =
+                    reason.isEmpty() ? tr("AnimeJaNai runtime installation failed.") : reason;
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, detail);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, detail);
                 finishAcquisitionUnit(
-                    tr("%1 installation failed: %2")
-                        .arg(backendName,
-                             reason.isEmpty()
-                                 ? tr("AnimeJaNai runtime installation failed.")
-                                 : reason),
+                    tr("%1 installation failed: %2").arg(backendName, detail),
                     false, reasonKey);
             } else {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), true, false);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), true, false);
                 verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
                 animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
                 finishAcquisitionUnit(QString(), false);
@@ -344,13 +340,17 @@ void ComponentStoreTab::downloadAnimeJanaiRuntime() {
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
             if (cancelFlag->load()) {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
                 finishAcquisitionUnit(QString(), true);
                 return;
             }
             const QString backendName =
                 backend == Backend::TensorRT ? tr("TensorRT / CUDA 13") : tr("DirectML");
-            finishAcquisitionUnit(tr("%1 installation failed: %2")
-                                      .arg(backendName, backend::failureLine(failure)),
+            const QString detail = backend::failureLine(failure);
+            settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, detail);
+            settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, detail);
+            finishAcquisitionUnit(tr("%1 installation failed: %2").arg(backendName, detail),
                                   false);
         });
 }
@@ -376,9 +376,13 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
     const Backend backend = selectedBackend();
     ++runGeneration_;
     const quint64 generation = runGeneration_;
-    progress_->show();
-    progress_->setRange(0, 100);
-    progress_->setValue(0);
+    currentProgressItems_.clear();
+    clearProgressCard(QStringLiteral("tensorRtRuntimeCard"));
+    clearProgressCard(QStringLiteral("tensorRtKernelsCard"));
+    setProgressItem(QStringLiteral("pending:animejanai-local-runtime"),
+                    QStringLiteral("tensorRtRuntimeCard"),
+                    tr("Local AnimeJaNai runtime and backend dependencies"),
+                    ComponentProvisionStage::Downloading, 0, 0, true);
     status_->setText(tr("Installing local AnimeJaNai runtime and selected backend dependencies..."));
     updateControls();
 
@@ -404,17 +408,26 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
             if (cancelFlag->load() || value.toMap().value(QStringLiteral("cancelled")).toBool()) {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
             } else if (!value.toMap().value(QStringLiteral("ok")).toBool()) {
                 const QString reason = value.toMap().value(QStringLiteral("reason")).toString();
                 const QString reasonKey =
                     value.toMap().value(QStringLiteral("reasonKey")).toString();
+                const QString detail = reason.isEmpty()
+                                           ? tr("AnimeJaNai runtime installation failed.")
+                                           : reason;
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, detail);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, detail);
                 applyStatus(
                     reasonKey.isEmpty() ? QStringLiteral("native.components.fetch") : reasonKey,
                     StatusReason{.kind = StatusReason::Kind::ImportFailed,
                                  .detail = reason,
                                  .backend = backend});
             } else {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), true, false);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), true, false);
                 verifiedAnimeJanaiBackends_.remove(static_cast<int>(backend));
                 animeJanaiVerificationErrors_.remove(static_cast<int>(backend));
                 applyStatus(QString(), StatusReason{.kind = StatusReason::Kind::RuntimeInstalled});
@@ -426,9 +439,13 @@ void ComponentStoreTab::importAnimeJanaiRuntime(const QString& sourceDirectory) 
             animeJanaiRuntimeDownloading_ = false;
             animeJanaiCancelFlag_.reset();
             if (cancelFlag->load()) {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, true);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, true);
                 applyStatus(QStringLiteral("native.components.cancelled"), QString());
             } else {
                 const QString cause = backend::failureLine(failure);
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, cause);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, cause);
                 applyStatus(QStringLiteral("native.components.fetch"),
                             StatusReason{.kind = StatusReason::Kind::InstallFailed,
                                          .detail = cause,
@@ -459,11 +476,52 @@ void ComponentStoreTab::downloadRemainingComponents() {
         updateControls();
         return;
     }
+    currentProgressItems_.clear();
+    if (pendingBackendWork_) {
+        clearProgressCard(QStringLiteral("tensorRtRuntimeCard"));
+        clearProgressCard(QStringLiteral("tensorRtKernelsCard"));
+        if (pendingRuntimeClosure_) {
+            setProgressItem(QStringLiteral("pending:tensorRtRuntimeCard"),
+                            QStringLiteral("tensorRtRuntimeCard"),
+                            tr("AnimeJaNai runtime and backend dependencies"),
+                            ComponentProvisionStage::Downloading, 0, 0, true);
+        } else {
+            const QVector<const ComponentPack*> packs = compatiblePacksFor(
+                observeComputeCapability().smMajor, observeComputeCapability().smMinor);
+            for (const ComponentPack* pack : packs) {
+                if (pack == nullptr || storedPack(componentStore(), *pack).installed) continue;
+                const QString cardId = pack->name == QLatin1String("trt-runtime")
+                                           ? QStringLiteral("tensorRtRuntimeCard")
+                                           : QStringLiteral("tensorRtKernelsCard");
+                const QString identity = QStringLiteral("pending:") + pack->name;
+                setProgressItem(identity, cardId,
+                                QStringLiteral("%1 (%2)").arg(pack->name, pack->asset),
+                                ComponentProvisionStage::Downloading, 0, pack->assetBytes, true);
+            }
+        }
+    }
+    if (pendingRifeArchive_) {
+        clearProgressCard(QStringLiteral("rifeModelsCard"));
+        const RifeArchivePack& pack = rifeArchivePack();
+        setProgressItem(pack.name, QStringLiteral("rifeModelsCard"),
+                        QStringLiteral("%1 (%2)").arg(pack.name, pack.asset),
+                        ComponentProvisionStage::Downloading, 0, pack.assetBytes, true);
+    }
+    if (!pendingModels_.isEmpty()) {
+        clearProgressCard(QStringLiteral("animeJanaiModelsCard"));
+        const QVector<SpatialAsset> catalog = spatialAssetCatalog();
+        for (const int index : pendingModels_) {
+            const SpatialAsset& asset = catalog.at(index);
+            setProgressItem(asset.id, QStringLiteral("animeJanaiModelsCard"), asset.name,
+                            ComponentProvisionStage::Downloading, 0, asset.bytes, true);
+        }
+    }
     // The independent units run at the same time: the backend closure, the RIFE
     // archive and the spatial graphs share no scratch, no destination and no
     // record, so serialising them only made the whole acquisition as slow as the
     // sum of its parts. The run is over when the last unit settles, which is
-    // what lets the window bar stay honest while several transfers run at once.
+    // what keeps the window's aggregate activity hint honest while several
+    // transfers run at once.
     //
     // The backend closure is a single unit, not two: the AnimeJaNai runtime
     // installer and the component provisioner both drive
@@ -486,10 +544,10 @@ void ComponentStoreTab::downloadRemainingComponents() {
         } else {
             QString reason;
             if (!provisioner_->ensureStore(&reason)) {
+                settleProgressCard(QStringLiteral("tensorRtRuntimeCard"), false, false, reason);
+                settleProgressCard(QStringLiteral("tensorRtKernelsCard"), false, false, reason);
                 finishAcquisitionUnit(reason, false);
             } else {
-                progress_->show();
-                progress_->setValue(0);
                 updateControls();
             }
         }
@@ -521,9 +579,6 @@ void ComponentStoreTab::downloadRifeArchive() {
     const auto cancelFlag = rifeCancelFlag_;
     const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
                                                            : acquisitionGeneration_;
-    progress_->show();
-    progress_->setRange(0, 100);
-    progress_->setValue(0);
     status_->setText(tr("Downloading the RIFE 3.7.0 graph archive..."));
     updateControls();
 
@@ -550,6 +605,7 @@ void ComponentStoreTab::downloadRifeArchive() {
             if (!alive->load() || runGeneration_ != generation) return;
             rifeDownloading_ = false;
             rifeCancelFlag_.reset();
+            settleProgressCard(QStringLiteral("rifeModelsCard"), true, false);
             for (const RifeModelPin& pin : pins) {
                 verifiedRifeGraphs_.insert(pin.fileName);
                 rifeVerificationErrors_.remove(pin.fileName);
@@ -562,10 +618,12 @@ void ComponentStoreTab::downloadRifeArchive() {
             rifeDownloading_ = false;
             rifeCancelFlag_.reset();
             if (cancelFlag->load()) {
+                settleProgressCard(QStringLiteral("rifeModelsCard"), false, true);
                 finishAcquisitionUnit(QString(), true);
                 return;
             }
             rifeFailure_ = backend::failureLine(failure);
+            settleProgressCard(QStringLiteral("rifeModelsCard"), false, false, rifeFailure_);
             finishAcquisitionUnit(rifeFailure_, false);
         });
 }
@@ -596,30 +654,39 @@ void ComponentStoreTab::downloadNextModel() {
     const quint64 generation = acquisitionGeneration_ == 0 ? ++runGeneration_
                                                            : acquisitionGeneration_;
     const auto cancelFlag = modelCancelFlag_;
-    progress_->show();
-    progress_->setRange(0, modelDownloadsTotal_);
-    progress_->setValue(modelDownloadsCompleted_);
+    status_->setText(tr("Downloading %1 upscaling models...")
+                         .arg(modelDownloadsTotal_));
     updateControls();
     backend::MikaiClient* client = client_;
     const QVector<int> batch = std::exchange(pendingModels_, {});
     modelDownloadsInFlight_ += batch.size();
+    const ProgressPublisher publish{runner_->post(), this, alive_, generation};
     for (int index : batch) {
         const SpatialAsset asset = catalog.at(index);
-        status_->setText(tr("Downloading %1 (%2 of %3)...")
-                             .arg(asset.name)
-                             .arg(modelDownloadsCompleted_ + modelDownloadsInFlight_)
-                             .arg(modelDownloadsTotal_));
         runner_->runTransfer(
-            [client, asset, cancelFlag]() -> QVariant {
+            [client, asset, cancelFlag, publish]() -> QVariant {
                 if (cancelFlag->load()) return QVariant{};
                 // The fetch's blocking wait observes a nested scope over the
                 // tab's own gate, so Cancel pierces the transfer on the same
                 // clock the runtime/RIFE downloads use instead of waiting for
                 // the whole file or the artwork timeout.
                 const backend::WorkCancellationScope tabCancel(cancelFlag.get());
-                const QByteArray bytes =
-                    client->fetchBytes(asset.url, kModelDownloadTimeoutMs);
+                const QByteArray bytes = client->fetchBytes(
+                    asset.url, kModelDownloadTimeoutMs,
+                    [publish, asset](qint64 received, qint64 total) {
+                        const ComponentProvisionProgress progress{
+                            asset.id, received, total, ComponentProvisionStage::Downloading};
+                        publish([progress](ComponentStoreTab& tab) {
+                            tab.applyDownloadProgress(progress);
+                        });
+                    });
                 if (cancelFlag->load()) return QVariant{};
+                const ComponentProvisionProgress installing{
+                    asset.id, static_cast<qint64>(bytes.size()), asset.bytes,
+                    ComponentProvisionStage::Installing};
+                publish([installing](ComponentStoreTab& tab) {
+                    tab.applyDownloadProgress(installing);
+                });
                 const SpatialAssetPublication published =
                     publishSpatialAssetBytes(asset, bytes, QString());
                 if (!published.ok) {
@@ -627,29 +694,37 @@ void ComponentStoreTab::downloadNextModel() {
                         QStringLiteral("%1: %2").arg(published.reasonKey, published.reason)
                             .toStdString());
                 }
+                const ComponentProvisionProgress installed{
+                    asset.id, asset.bytes, asset.bytes, ComponentProvisionStage::Installed};
+                publish([installed](ComponentStoreTab& tab) {
+                    tab.applyDownloadProgress(installed);
+                });
                 return QVariant{};
             },
             [this, alive = alive_, generation, cancelFlag, asset](const QVariant&) {
                 if (!alive->load() || runGeneration_ != generation) return;
                 --modelDownloadsInFlight_;
                 if (cancelFlag->load()) {
+                    settleProgressItem(asset.id, false, true);
                     modelCancelled_ = true;
                 } else {
+                    settleProgressItem(asset.id, true, false);
                     ++modelDownloadsCompleted_;
-                    status_->setText(tr("Installed %1 (%2 of %3)")
-                                         .arg(asset.name)
-                                         .arg(modelDownloadsCompleted_)
-                                         .arg(modelDownloadsTotal_));
-                    progress_->setValue(modelDownloadsCompleted_);
                 }
                 if (modelDownloadsInFlight_ == 0) finishModelDownloads();
                 else publishAcquisition();
             },
-            [this, alive = alive_, generation, cancelFlag](const backend::Failure& failure) {
+            [this, alive = alive_, generation, cancelFlag, asset](const backend::Failure& failure) {
                 if (!alive->load() || runGeneration_ != generation) return;
                 --modelDownloadsInFlight_;
-                if (cancelFlag->load()) modelCancelled_ = true;
-                else if (modelFailure_.isEmpty()) modelFailure_ = backend::failureLine(failure);
+                if (cancelFlag->load()) {
+                    settleProgressItem(asset.id, false, true);
+                    modelCancelled_ = true;
+                } else {
+                    const QString detail = backend::failureLine(failure);
+                    settleProgressItem(asset.id, false, false, detail);
+                    if (modelFailure_.isEmpty()) modelFailure_ = detail;
+                }
                 if (modelDownloadsInFlight_ == 0) finishModelDownloads();
             });
     }
@@ -686,8 +761,6 @@ void ComponentStoreTab::startAcquisitionVerification() {
     const quint64 generation = ++runGeneration_;
     const auto cancelled = modelCancelFlag_;
     const GpuComputeCapability gpu = observeComputeCapability();
-    progress_->show();
-    progress_->setRange(0, 0);
     status_->setText(tr("Verifying installed components..."));
     updateControls();
     const std::shared_ptr<std::atomic<bool>> live = alive_;
@@ -813,13 +886,6 @@ void ComponentStoreTab::finishAcquisitionUnit(const QString& failure, bool cance
     if (acquisitionUnitsPending_ == 0 && acquisitionSequenceActive_) finalizeAcquisition();
 }
 
-void ComponentStoreTab::cancelProgress() {
-    if (progress_ != nullptr) {
-        progress_->setRange(0, 100);
-        progress_->setValue(0);
-        progress_->hide();
-    }
-}
 void ComponentStoreTab::updateControls() {
     if (downloadButton_ == nullptr) return;
     const bool provisioning = provisioner_ != nullptr && provisioner_->running();
@@ -840,11 +906,6 @@ void ComponentStoreTab::updateControls() {
         refreshButton->setEnabled(!busy);
     if (animeJanaiBackendCombo_ != nullptr) animeJanaiBackendCombo_->setEnabled(!busy);
     if (importAnimeJanaiButton_ != nullptr) importAnimeJanaiButton_->setEnabled(!busy);
-    if (progress_ == nullptr) return;
-    // Reopening Settings shows this same tab. A download that outlived the
-    // dialog must put its bar back; idle is the only state that hides it.
-    if (busy) progress_->show();
-    else progress_->hide();
     publishAcquisition();
 }
 
@@ -875,7 +936,6 @@ void ComponentStoreTab::cancelAcquisition() {
         // and no partial result may be mistaken for the answer.
         ++runGeneration_;
         verifying_ = false;
-        cancelProgress();
         applyStatus(QStringLiteral("native.components.cancelled"),
                     StatusReason{.kind = StatusReason::Kind::VerificationCancelled});
         updateControls();
@@ -883,7 +943,8 @@ void ComponentStoreTab::cancelAcquisition() {
     }
     // The units run at the same time, so one Cancel arms every unit's gate: the
     // run stays in flight until each worker observes it and settles, which is
-    // what keeps the bar honest while several transfers unwind.
+    // what keeps the aggregate activity hint honest while several transfers
+    // unwind.
     bool anyArmed = false;
     if (animeJanaiCancelFlag_) {
         animeJanaiCancelFlag_->store(true);
@@ -907,7 +968,12 @@ void ComponentStoreTab::cancelAcquisition() {
     modelsDownloading_ = false;
     acquisitionUnitsPending_ = 0;
     pendingModels_.clear();
-    if (progress_ != nullptr) progress_->hide();
+    for (const QString& cardId : {QStringLiteral("tensorRtRuntimeCard"),
+                                  QStringLiteral("tensorRtKernelsCard"),
+                                  QStringLiteral("rifeModelsCard"),
+                                  QStringLiteral("animeJanaiModelsCard")}) {
+        settleProgressCard(cardId, false, true);
+    }
     applyStatus(QStringLiteral("native.components.cancelled"), QString());
     updateControls();
 }
@@ -928,13 +994,18 @@ void ComponentStoreTab::publishAcquisition() {
     }
     const bool started = !acquisitionAnnounced_;
     acquisitionAnnounced_ = true;
-    int percent = -1;
-    if (progress_ != nullptr && progress_->maximum() > progress_->minimum()) {
-        percent = progress_->value();
+    const int activeItems = activeProgressItemCount();
+    QString status;
+    if (activeItems > 0) {
+        status = tr("%1 component items active").arg(activeItems);
+    } else if (acquisitionChecking_) {
+        status = tr("Checking selected components...");
+    } else if (verifying_) {
+        status = tr("Verifying installed components...");
+    } else {
+        status = tr("Installing selected components...");
     }
-    QString status = status_ != nullptr ? status_->text() : QString();
-    if (status.isEmpty()) status = tr("Downloading components…");
-    emit acquisitionProgress(status, percent, started);
+    emit acquisitionProgress(status, started);
 }
 
 QString ComponentStoreTab::renderStatusReason() const {
@@ -1068,7 +1139,7 @@ void ComponentStoreTab::restateStatus() {
     if (acquisitionAnnounced_) {
         publishAcquisition();
     } else if (!acquisitionRunning()) {
-        // A run that never announced itself has no bar to restate; emitting
+        // A run that never announced itself has no activity hint to restate;
         // idle here would show a stale retained failure over it.
         emit acquisitionIdle();
     }

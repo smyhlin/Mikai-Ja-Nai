@@ -361,6 +361,30 @@ void TestApiClient::aMalformedSuccessEnvelopeFailsRatherThanParsingGarbage() {
   }
 }
 
+void TestApiClient::fetchBytesReportsLoopbackDownloadProgress() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  const QByteArray body(4 * 1024 * 1024, 'x');
+  api.enqueue(200, body);
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  QVector<QPair<qint64, qint64>> updates;
+  const QByteArray received = client.fetchBytes(
+      api.baseUrl() + QStringLiteral("/large"), -1,
+      [&updates](qint64 bytesReceived, qint64 bytesTotal) {
+        updates.append(qMakePair(bytesReceived, bytesTotal));
+      });
+  QCOMPARE(received, body);
+  QVERIFY2(!updates.isEmpty(), "fetchBytes did not forward QNetworkReply download progress");
+  qint64 previous = 0;
+  for (const auto& update : updates) {
+    QVERIFY(update.first >= previous);
+    QVERIFY(update.first <= body.size());
+    QCOMPARE(update.second, qint64(body.size()));
+    previous = update.first;
+  }
+  QCOMPARE(previous, qint64(body.size()));
+}
 void TestApiClient::aPlainEnvelopeSuccessParsesIntoTheResult() {
   LoopbackApi api;
   QString error;

@@ -135,6 +135,8 @@ Large GPU-specific runtimes and neural network graphs are never bundled into the
 | **RIFE 3.7.0 Interpolation Pack** | `component-rife.7z` (47 ONNX graphs, `462,444,035` bytes) | `component-rife-linux-x64.7z` (47 ONNX graphs, `~441 MB`) | `<nativeRoot>/components/rife/3.7.0` |
 | **7-Zip 26.03 Extractor Bootstrap** | `7zr.exe` + `7z2603-x64.exe` (when system `7z.exe` is absent) | `7z2603-linux-x64.tar.xz` (when system `7zz`/`7z` is absent) | `<nativeRoot>/tools/7zip-26.03` |
 
+Each downloadable item shows its own progress bar and status on its card, so parallel downloads remain independent. The status names the item and reports bytes when the transfer provides a known total; extraction, installation, and verification are shown as separate stages. A download reaching 100% does not mean installation is complete: a card reports **Installed** only after the selected component has been installed and verified. The main window shows a shared activity hint with **Components** and **Cancel** actions while acquisition runs, but does not combine items into a global percentage. Closing Settings does not cancel work; reopening Settings → Components resumes viewing the same in-flight progress. Use **Cancel** to request cancellation; failures and cancellation are reported on the affected item.
+
 ---
 
 ## AnimeJaNai Custom Models & Profiles

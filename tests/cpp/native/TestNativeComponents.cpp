@@ -5,6 +5,7 @@
 
 #include "native/components/NativeComponentCatalog.hpp"
 #include "native/components/NativeComponentStore.hpp"
+#include "native/components/NativeComponentProvisioning.hpp"
 #include "native/components/NativeComponentToolchain.hpp"
 #include "native/models/NativeSpatialAssets.hpp"
 
@@ -32,6 +33,7 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMessageBox>
+#include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 
 using namespace mplayer::native;
@@ -155,6 +157,135 @@ QString resourceNameOf(const ComponentPack* pack) {
 }
 
 }  // namespace
+
+void TestNativeComponents::componentProgressSeparatesCardsAndAggregatesSpatialGraphs() {
+    mikai::app::Runner runner;
+    mikai::app::NativeComponentProvisioner provisioner(runner);
+    QWidget reparentedHost;
+    mikai::app::ComponentStoreTab tab;
+    tab.setComponentProvisioner(&provisioner);
+
+    auto* runtimeBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("tensorRtRuntimeCardProgress"));
+    auto* runtimeStatus =
+        tab.findChild<QLabel*>(QStringLiteral("tensorRtRuntimeCardProgressStatus"));
+    auto* kernelsBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("tensorRtKernelsCardProgress"));
+    auto* kernelsStatus =
+        tab.findChild<QLabel*>(QStringLiteral("tensorRtKernelsCardProgressStatus"));
+    auto* spatialBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("animeJanaiModelsCardProgress"));
+    auto* spatialStatus =
+        tab.findChild<QLabel*>(QStringLiteral("animeJanaiModelsCardProgressStatus"));
+    auto* rifeBar =
+        tab.findChild<QProgressBar*>(QStringLiteral("rifeModelsCardProgress"));
+    auto* rifeStatus =
+        tab.findChild<QLabel*>(QStringLiteral("rifeModelsCardProgressStatus"));
+    QVERIFY(runtimeBar != nullptr);
+    QVERIFY(runtimeStatus != nullptr);
+    QVERIFY(kernelsBar != nullptr);
+    QVERIFY(kernelsStatus != nullptr);
+    QVERIFY(spatialBar != nullptr);
+    QVERIFY(spatialStatus != nullptr);
+    QVERIFY(rifeBar != nullptr);
+    QVERIFY(rifeStatus != nullptr);
+    QVERIFY(tab.findChild<QProgressBar*>(QStringLiteral("nativeComponentTabProgress")) == nullptr);
+
+    const auto publish = [&provisioner](const QString& pack, qint64 received, qint64 total,
+                                        ComponentProvisionStage stage) {
+        emit provisioner.progress(ComponentProvisionProgress{pack, received, total, stage});
+    };
+    publish(QStringLiteral("trt-runtime"), 25, 100, ComponentProvisionStage::Downloading);
+    publish(QStringLiteral("trt-sm120"), 80, 100, ComponentProvisionStage::Verifying);
+    QCOMPARE(runtimeBar->value(), 25);
+    QCOMPARE(kernelsBar->value(), 80);
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("trt-runtime")));
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("Verifying")));
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("trt-sm120")));
+
+    publish(QStringLiteral("trt-sm120"), 100, 100, ComponentProvisionStage::Installed);
+    QCOMPARE(kernelsBar->value(), 100);
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("Installed")));
+    QCOMPARE(runtimeBar->value(), 25);
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
+
+    publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading);
+    QCOMPARE(runtimeBar->value(), 100);
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Downloading")));
+    QVERIFY(!runtimeStatus->text().contains(QStringLiteral("Installed")));
+    publish(QStringLiteral("trt-runtime"), 0, 0, ComponentProvisionStage::Verifying);
+    QCOMPARE(runtimeBar->value(), 100);
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Verifying")));
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("100")));
+    QVERIFY(!runtimeStatus->text().contains(QStringLiteral("Installed")));
+    publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Installed);
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Installed")));
+
+    const RifeArchivePack& rifePack = rifeArchivePack();
+    publish(rifePack.name, 40, 100, ComponentProvisionStage::Downloading);
+    QCOMPARE(rifeBar->value(), 40);
+    QCOMPARE(runtimeBar->value(), 100);
+    QCOMPARE(kernelsBar->value(), 100);
+    QVERIFY(rifeStatus->text().contains(rifePack.asset));
+    publish(rifePack.name, 40, 100, ComponentProvisionStage::Extracting);
+    QVERIFY(rifeStatus->text().contains(QStringLiteral("Extracting")));
+    publish(rifePack.name, 100, 100, ComponentProvisionStage::Installed);
+    QCOMPARE(rifeBar->value(), 100);
+    QVERIFY(rifeStatus->text().contains(QStringLiteral("Installed")));
+
+    const QVector<SpatialAsset> assets = spatialAssetCatalog();
+    QCOMPARE(assets.size(), 5);
+    qint64 aggregateReceived = 0;
+    qint64 aggregateTotal = 0;
+    for (int index = 0; index < assets.size(); ++index) {
+        const SpatialAsset& asset = assets.at(index);
+        const qint64 received = asset.bytes * (index + 1) / 10;
+        aggregateReceived += received;
+        aggregateTotal += asset.bytes;
+        publish(asset.id, received, asset.bytes, ComponentProvisionStage::Downloading);
+    }
+    QCOMPARE(spatialBar->value(),
+             static_cast<int>(aggregateReceived * 100 / aggregateTotal));
+    for (const SpatialAsset& asset : assets)
+        QVERIFY(spatialStatus->text().contains(asset.name));
+
+    tab.setParent(&reparentedHost);
+    QApplication::processEvents();
+    QCOMPARE(runtimeBar->value(), 100);
+    QCOMPARE(kernelsBar->value(), 100);
+    QCOMPARE(spatialBar->value(),
+             static_cast<int>(aggregateReceived * 100 / aggregateTotal));
+
+    const SpatialAsset& completedAsset = assets.first();
+    publish(completedAsset.id, completedAsset.bytes, completedAsset.bytes,
+            ComponentProvisionStage::Installed);
+    const qint64 afterOneInstalled =
+        aggregateReceived - completedAsset.bytes / 10 + completedAsset.bytes;
+    QCOMPARE(spatialBar->value(),
+             static_cast<int>(afterOneInstalled * 100 / aggregateTotal));
+    QVERIFY(spatialStatus->text().contains(
+        QStringLiteral("Installed: ") + completedAsset.name));
+
+    tab.cancelAcquisition();
+    QVERIFY(spatialStatus->text().contains(QStringLiteral("Cancelled")));
+    QVERIFY(spatialStatus->text().contains(
+        QStringLiteral("Installed: ") + completedAsset.name));
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Installed")));
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("Installed")));
+
+    emit provisioner.finished(false, true, QString());
+    publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Downloading);
+    publish(QStringLiteral("trt-sm120"), 80, 100, ComponentProvisionStage::Installing);
+    publish(QStringLiteral("trt-runtime"), 100, 100, ComponentProvisionStage::Installed);
+    emit provisioner.finished(false, false, QStringLiteral("kernel digest failed"));
+    QVERIFY(runtimeStatus->text().contains(QStringLiteral("Installed")));
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("Failed")));
+    QVERIFY(kernelsStatus->text().contains(QStringLiteral("kernel digest failed")));
+    QVERIFY(rifeStatus->text().contains(QStringLiteral("Installed")));
+    QVERIFY(spatialStatus->text().contains(QStringLiteral("Cancelled")));
+    QVERIFY(spatialStatus->text().contains(
+        QStringLiteral("Installed: ") + completedAsset.name));
+}
 
 void TestNativeComponents::upscalingPackReviewsAndQueuesMissingGraphs_data() {
     QTest::addColumn<bool>("corruptRow");
@@ -462,6 +593,33 @@ void TestNativeComponents::upscalingSelectionSurvivesRefreshAndMissingGraphsFail
     QVERIFY(!status->text().isEmpty());
 }
 
+void TestNativeComponents::cancelledTensorRtProvisioningDoesNotTouchItsFixtures() {
+    QTemporaryDir storeRoot;
+    QTemporaryDir scratch;
+    QVERIFY(storeRoot.isValid());
+    QVERIFY(scratch.isValid());
+    const QStringList scratchBefore = QDir(scratch.path()).entryList(QDir::NoDotAndDotDot);
+    const QVector<ComponentPack> packs{*tensorRtRuntimePack()};
+    const auto result = provisionTensorRtComponents(
+        ComponentStore{storeRoot.path()}, packs, scratch.path(), {},
+        [] { return true; });
+    QVERIFY(result.cancelled);
+    QVERIFY(!result.ok);
+    QCOMPARE(result.reasonKey, QStringLiteral("native.components.cancelled"));
+    QCOMPARE(QDir(storeRoot.path()).entryList(QDir::NoDotAndDotDot), QStringList{});
+    QCOMPARE(QDir(scratch.path()).entryList(QDir::NoDotAndDotDot), scratchBefore);
+}
+
+void TestNativeComponents::cancelledRifeProvisioningDoesNotTouchItsFixtures() {
+    QTemporaryDir storeRoot;
+    QVERIFY(storeRoot.isValid());
+    const auto result = provisionRifeArchive(
+        RifeArchiveStore{storeRoot.path()}, rifeModelPins(), {}, [] { return true; });
+    QVERIFY(result.cancelled);
+    QVERIFY(!result.ok);
+    QCOMPARE(result.reasonKey, QStringLiteral("native.components.cancelled"));
+    QCOMPARE(QDir(storeRoot.path()).entryList(QDir::NoDotAndDotDot), QStringList{});
+}
 void TestNativeComponents::selectionUsesTheExactPack() {
     struct Generation {
         int smMajor;
