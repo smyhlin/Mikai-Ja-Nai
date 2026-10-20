@@ -851,6 +851,78 @@ int main(int argc, char** argv) {
                   playbackTimestampMatches(surface, comparisonSourceEpoch, frozenTimestamp),
               "Compare freezes the current stable playback timestamp and source epoch");
         const QString comparisonPng = QStringLiteral(".probe-out/compare-window.png");
+        const QImage fullscreenFrozenFrame = compare->frozenFrame();
+        const QString fullscreenSelectionA = compare->selectedCandidateId(0);
+        const QString fullscreenSelectionB = compare->selectedCandidateId(1);
+        auto* fullscreenButton =
+            compare->findChild<QToolButton*>(QStringLiteral("compareFullscreen"));
+        auto* pinControl = compare->findChild<QPushButton*>(QStringLiteral("comparePinBtn"));
+        const auto fullscreenStatePreserved = [&] {
+            return compare->frozenFrame() == fullscreenFrozenFrame &&
+                   compare->frozenSourceEpoch() == comparisonSourceEpoch &&
+                   compare->frozenPlaybackTimestamp() == frozenTimestamp &&
+                   compare->selectedCandidateId(0) == fullscreenSelectionA &&
+                   compare->selectedCandidateId(1) == fullscreenSelectionB &&
+                   compare->playbackHeld() && !surface->isPlaying();
+        };
+        const QRect initialNormalGeometry = compare->geometry();
+        check(fullscreenButton != nullptr && pinControl != nullptr &&
+                  fullscreenStatePreserved(),
+              "fullscreen regression starts from a frozen held comparison");
+        if (fullscreenButton != nullptr && pinControl != nullptr) {
+            QTest::mouseClick(fullscreenButton, Qt::LeftButton);
+            QCoreApplication::processEvents();
+            check(compare->isFullScreen() && fullscreenButton->isChecked() &&
+                      fullscreenStatePreserved(),
+                  "toolbar fullscreen entry preserves frozen frame and playback hold");
+            const Qt::FocusPolicy originalPinFocusPolicy = pinControl->focusPolicy();
+            pinControl->setFocusPolicy(Qt::StrongFocus);
+            pinControl->setFocus();
+            QCoreApplication::processEvents();
+            const bool childHasFocus = QApplication::focusWidget() == pinControl;
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            check(childHasFocus && !compare->isFullScreen() && !fullscreenButton->isChecked() &&
+                      fullscreenStatePreserved(),
+                  "F11 exits fullscreen with a child control focused");
+            pinControl->setFocus();
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            QTest::keyClick(compare, Qt::Key_Escape);
+            QCoreApplication::processEvents();
+            check(!compare->isFullScreen() && compare->isVisible() &&
+                      fullscreenStatePreserved(),
+                  "Escape exits fullscreen without closing or releasing the comparison");
+            compare->showMaximized();
+            QCoreApplication::processEvents();
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            check(compare->isMaximized() && fullscreenStatePreserved(),
+                  "fullscreen restores the prior maximized state");
+            compare->showNormal();
+            compare->setGeometry(initialNormalGeometry);
+            QCoreApplication::processEvents();
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            QTest::mouseClick(pinControl, Qt::LeftButton);
+            QCoreApplication::processEvents();
+            check(compare->isFullScreen() && compare->isPinned() &&
+                      fullscreenStatePreserved(),
+                  "pinning in fullscreen preserves fullscreen and playback state");
+            QTest::mouseClick(pinControl, Qt::LeftButton);
+            QCoreApplication::processEvents();
+            check(compare->isFullScreen() && !compare->isPinned() &&
+                      fullscreenStatePreserved(),
+                  "unpinning in fullscreen preserves fullscreen and playback state");
+            QTest::keyClick(pinControl, Qt::Key_F11);
+            QCoreApplication::processEvents();
+            check(!compare->isFullScreen() && compare->geometry() == initialNormalGeometry &&
+                      fullscreenStatePreserved(),
+                  "fullscreen restores normal geometry and keeps the original hold");
+            pinControl->setFocusPolicy(originalPinFocusPolicy);
+        }
         check(QDir().mkpath(QStringLiteral(".probe-out")) &&
                   compare->grab().save(comparisonPng),
               "the visible comparison window is captured as a PNG");

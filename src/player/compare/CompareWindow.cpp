@@ -10,6 +10,7 @@
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/status/NativePlaybackController.hpp"
 
+#include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QColor>
@@ -23,9 +24,13 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QIcon>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
+#include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
 #include <QRunnable>
 #include <QShowEvent>
@@ -97,6 +102,17 @@ QString unavailableChoiceCaption(const QString& label) {
 QString missingCatalogueReason() {
     return QCoreApplication::translate("AnimeJanaiRuntime",
                                        "The selected AnimeJaNai preset is not recognised.");
+}
+QIcon compareFullscreenIcon(bool fullscreen) {
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    if (fullscreen) {
+        IconPainter::contract(painter, 0, 0, 24);
+    } else {
+        IconPainter::expand(painter, 0, 0, 24);
+    }
+    return QIcon(pixmap);
 }
 
 QFrame* createVerticalDivider(QWidget* parent) {
@@ -294,7 +310,7 @@ CompareWindow::~CompareWindow() {
 
 void CompareWindow::showEvent(QShowEvent* event) {
     QDialog::showEvent(event);
-    if (togglingPin_) {
+    if (togglingPin_ || presentationTransition_) {
         return;
     }
     // Reusing the window always captures the current position again.
@@ -319,10 +335,21 @@ void CompareWindow::togglePin(bool pinned) {
         pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
     const bool wasVisible = isVisible();
+    const bool wasFullscreen = isFullScreen();
+    const bool wasMaximized = isMaximized();
+    const QRect normalGeometry = geometry();
     togglingPin_ = true;
+    presentationTransition_ = true;
     setWindowFlag(Qt::WindowStaysOnTopHint, pinned_);
     if (wasVisible) {
-        show();
+        if (wasFullscreen) {
+            showFullScreen();
+        } else if (wasMaximized) {
+            showMaximized();
+        } else {
+            setGeometry(normalGeometry);
+            showNormal();
+        }
         raise();
         activateWindow();
     }
@@ -332,7 +359,50 @@ void CompareWindow::togglePin(bool pinned) {
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 #endif
+    presentationTransition_ = false;
     togglingPin_ = false;
+    syncFullscreenButton();
+}
+
+void CompareWindow::toggleFullscreen() {
+    if (!isVisible()) {
+        return;
+    }
+
+    presentationTransition_ = true;
+    if (isFullScreen()) {
+        if (fullscreenRestoreMaximized_) {
+            showMaximized();
+        } else {
+            showNormal();
+            setGeometry(fullscreenRestoreGeometry_);
+        }
+    } else {
+        fullscreenRestoreMaximized_ = isMaximized();
+        if (!fullscreenRestoreMaximized_) {
+            fullscreenRestoreGeometry_ = geometry();
+        }
+        showFullScreen();
+    }
+    presentationTransition_ = false;
+    syncFullscreenButton();
+    raise();
+    activateWindow();
+}
+
+void CompareWindow::syncFullscreenButton() {
+    if (fullscreenButton_ == nullptr) {
+        return;
+    }
+    const bool fullscreen = isFullScreen();
+    const QSignalBlocker blocker(fullscreenButton_);
+    fullscreenButton_->setChecked(fullscreen);
+    fullscreenButton_->setIcon(compareFullscreenIcon(fullscreen));
+    const QString hint = fullscreen ? tr("Exit fullscreen mode (F11)")
+                                   : tr("Enter fullscreen mode (F11)");
+    fullscreenButton_->setToolTip(hint);
+    fullscreenButton_->setAccessibleName(hint);
+    fullscreenButton_->setAccessibleDescription(hint);
 }
 
 void CompareWindow::swapSides() {
@@ -348,8 +418,12 @@ void CompareWindow::swapSides() {
 }
 
 void CompareWindow::keyPressEvent(QKeyEvent* event) {
-    if (event->key() == Qt::Key_Escape) {
-        close();
+    if (event->key() == Qt::Key_Escape && !event->isAutoRepeat()) {
+        if (isFullScreen()) {
+            toggleFullscreen();
+        } else {
+            close();
+        }
         event->accept();
         return;
     }
@@ -403,7 +477,7 @@ void CompareWindow::closeEvent(QCloseEvent* event) {
 }
 
 void CompareWindow::hideEvent(QHideEvent* event) {
-    if (togglingPin_) {
+    if (togglingPin_ || presentationTransition_) {
         QDialog::hideEvent(event);
         return;
     }
@@ -420,6 +494,8 @@ void CompareWindow::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
+    } else if (event->type() == QEvent::WindowStateChange) {
+        syncFullscreenButton();
     }
 }
 
@@ -476,6 +552,7 @@ void CompareWindow::retranslateUi() {
         pinButton_->setToolTip(tr("Keep Compare window always on top (P)"));
         pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
+    syncFullscreenButton();
     if (splitLabel_ != nullptr) splitLabel_->setText(tr("Split:"));
     if (flickerLabel_ != nullptr) flickerLabel_->setText(tr("Flicker, Hz:"));
     if (gainLabel_ != nullptr) gainLabel_->setText(tr("Gain:"));
@@ -712,6 +789,24 @@ void CompareWindow::buildUi() {
     pinButton_->setAccessibleName(tr("Pin"));
     connect(pinButton_, &QPushButton::toggled, this, &CompareWindow::togglePin);
     header->addWidget(pinButton_);
+
+    fullscreenButton_ = new QToolButton(toolbarCard);
+    fullscreenButton_->setObjectName(QStringLiteral("compareFullscreen"));
+    fullscreenButton_->setCheckable(true);
+    fullscreenButton_->setFocusPolicy(Qt::NoFocus);
+    fullscreenButton_->setCursor(Qt::PointingHandCursor);
+    connect(fullscreenButton_, &QToolButton::clicked, this,
+            &CompareWindow::toggleFullscreen);
+    header->addWidget(fullscreenButton_);
+
+    fullscreenAction_ = new QAction(this);
+    fullscreenAction_->setShortcut(QKeySequence(Qt::Key_F11));
+    fullscreenAction_->setShortcutContext(Qt::WindowShortcut);
+    fullscreenAction_->setAutoRepeat(false);
+    connect(fullscreenAction_, &QAction::triggered, this,
+            &CompareWindow::toggleFullscreen);
+    addAction(fullscreenAction_);
+    syncFullscreenButton();
 
     // Inline contextual mode controls inside the single top toolbar so switching
     // modes never shifts the video viewport up or down.

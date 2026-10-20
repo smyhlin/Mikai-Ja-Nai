@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QImage>
 #include <QPointer>
+#include <QRect>
 #include <QString>
 #include <QStringList>
 
@@ -15,6 +16,7 @@
 #include "PlayerPopups.hpp"
 #include "VideoSurface.hpp"
 
+class QAction;
 class QComboBox;
 class QDoubleSpinBox;
 class QEvent;
@@ -128,6 +130,8 @@ private:
     void finishIsolatedBuild(BuildSummaryKind kind, const QString& detail = QString());
     QString buildSummaryText() const;
     void togglePin(bool pinned);
+    void toggleFullscreen();
+    void syncFullscreenButton();
     void swapSides();
     void acquirePlaybackHold();
     bool playbackHoldOwned() const;
@@ -166,6 +170,8 @@ private:
     QPushButton* swapButton_ = nullptr;
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
+    QToolButton* fullscreenButton_ = nullptr;
+    QAction* fullscreenAction_ = nullptr;
     QFrame* modeDivider_ = nullptr;
     QLabel* modeCaption_ = nullptr;
     QLabel* filterCaption_ = nullptr;
@@ -194,6 +200,9 @@ private:
     bool catalogueRefreshScheduled_ = false;
     bool pinned_ = false;
     bool togglingPin_ = false;
+    bool presentationTransition_ = false;
+    bool fullscreenRestoreMaximized_ = false;
+    QRect fullscreenRestoreGeometry_;
 
     // Exact live pixels are retained only to guard main playback preservation;
     // canonical comparison input comes from the isolated unprocessed core.

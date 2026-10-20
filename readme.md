@@ -20,7 +20,7 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
 - **Workstation Compare Window (`CompareWindow`, `CompareCanvas`, `CompareGrid`, `CompareRenderer`):**
   - Side-by-side and split-screen visual inspection of **Original** vs **Anime4K** vs **AnimeJaNai** vs **Native** models on the exact paused video frame.
   - Five comparison modes: **Split H**, **Split V**, **Side-by-side** (2-pane canvas or 3–4 candidate synchronized grid), **Flicker**, and **Difference** (`1x`–`16x` gain).
-  - Unified top workstation toolbar with Mode, Filter, Fit (`F`), live Zoom percentage pill, Swap A ⇄ B (`S`), Recapture (`R`), Always-on-Top Pin (`P`), inline Split/Flicker/Gain sliders + spinboxes, and live cursor `(X, Y) RGB + #HEX` pixel readout.
+  - Unified top workstation toolbar with Mode, Filter, Fit (`F`), live Zoom percentage pill, Swap A ⇄ B (`S`), Recapture (`R`), Always-on-Top Pin (`P`), and an accessible fullscreen toggle; inline Split/Flicker/Gain sliders + spinboxes and live cursor `(X, Y) RGB + #HEX` pixel readout remain available in fullscreen.
   - Full-width 50/50 bottom model selector bar with Steel Blue (`#3b82f6`, Side A) and Amber (`#f59e0b`, Side B) accents and automatic `2x` FBO rendering for `Anime4K_Upscale_*` shaders.
 
 ---
@@ -249,15 +249,15 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 
 | Key / Action | Function |
 |---|---|
-| `1` – `5` | Switch comparison mode (`1` Split H, `2` Split V, `3` Side-by-side, `4` Flicker, `5` Difference) |
+| Mode selector | Choose the comparison mode |
 | `S` | Swap Side A and Side B candidate selections |
 | `R` | Recapture the current video frame from the player |
 | `F` | Reset zoom and pan to Fit-to-Window |
 | `P` | Toggle Always-on-Top window pin (`Qt::WindowStaysOnTopHint` + Win32 `HWND_TOPMOST`) |
+| `F11` or toolbar fullscreen button | Enter or leave fullscreen; the previous normal size or maximized state is restored on exit |
+| `Esc` | Leave fullscreen; when windowed, close Compare and release the player pause hold |
 | `Space` | Hold to peek Side A (original or reference) across all modes |
-| `+` / `-` / `0` | Zoom in, zoom out, or reset zoom to Fit |
 | Mouse Wheel / Drag | Synchronized cursor-anchored zoom (up to `32x`) and direct left-drag pan across all panes |
-| `Esc` | Close the Compare Window and release the player pause hold |
 
 ---
 
