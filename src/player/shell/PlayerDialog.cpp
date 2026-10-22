@@ -641,6 +641,11 @@ void PlayerDialog::openMediaFolder() {
 
 void PlayerDialog::connectEngine() {
     connect(surface_, &VideoSurface::errorOccurred, this, &PlayerDialog::onEngineError);
+    // Ignore queued lifecycle events from a surface that no longer owns playback.
+    connect(surface_, &VideoSurface::mediaLoaded, this,
+            [this, sender = surface_](quint64 mediaToken) { onMediaLoaded(sender, mediaToken); });
+    connect(surface_, &VideoSurface::mediaEnded, this,
+            [this, sender = surface_](quint64 mediaToken) { onMediaEnded(sender, mediaToken); });
     connect(surface_, &VideoSurface::durationChanged, this, &PlayerDialog::onEngineDuration);
     connect(surface_, &VideoSurface::positionChanged, this, &PlayerDialog::onEnginePosition);
     connect(surface_, &VideoSurface::playingChanged, this, &PlayerDialog::onEnginePlaying);
@@ -685,6 +690,48 @@ QList<QualityEntry> PlayerDialog::usableQualities(const QList<QualityEntry>& qua
 // ═══════════════════════════════════════════════════════════════════════════
 //  engine → shell
 // ═══════════════════════════════════════════════════════════════════════════
+
+quint64 PlayerDialog::episodeMediaToken() const {
+    if (directMedia_ || playlist_.isEmpty()) {
+        return 0;
+    }
+    if (episodeIndex_ < 0 || episodeIndex_ >= playlist_.size()) {
+        return 0;
+    }
+    return static_cast<quint64>(episodeIndex_) + 1;
+}
+
+int PlayerDialog::episodeIndexFromToken(quint64 mediaToken) {
+    if (mediaToken == 0) {
+        return -1;
+    }
+    return static_cast<int>(mediaToken - 1);
+}
+
+void PlayerDialog::onMediaLoaded(VideoSurface* source, quint64 mediaToken) {
+    if (closed_ || source == nullptr || source != playbackSurface()) {
+        return;
+    }
+    const int index = episodeIndexFromToken(mediaToken);
+    if (index < 0) {
+        return;
+    }
+    lastFinishedEpisodeIndex_ = -1;
+    emit episodePlaybackStarted(index);
+}
+
+void PlayerDialog::onMediaEnded(VideoSurface* source, quint64 mediaToken) {
+    // Ignore completions queued by a parked core after PiP ownership changed.
+    if (closed_ || source == nullptr || source != playbackSurface()) {
+        return;
+    }
+    const int index = episodeIndexFromToken(mediaToken);
+    if (index < 0 || index == lastFinishedEpisodeIndex_) {
+        return;
+    }
+    lastFinishedEpisodeIndex_ = index;
+    emit episodePlaybackFinished(index);
+}
 
 void PlayerDialog::onEngineError(const QString& message) {
     if (closed_) {
@@ -833,7 +880,9 @@ bool PlayerDialog::openStream(const QString& url, int height, bool resume) {
     // this is the one place that knows whether a retry is worth offering.
     // The real MpvError reason was already emitted synchronously through
     // onEngineError before this returns, so the failure chip names the cause.
-    engineReady_ = surface_->open(url);
+    // The load carries the episode it was requested for, so the core's own load
+    // and end events can name it even after the playlist has moved on.
+    engineReady_ = surface_->open(url, episodeMediaToken());
     if (rearmPreparationAfterOpen && engineReady_) {
         // Same operation, so its terminal still ends this hold; the hold is
         // re-established with the intent saved before the load.

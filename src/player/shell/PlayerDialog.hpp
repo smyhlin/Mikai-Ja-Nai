@@ -238,6 +238,18 @@ public:
     void syncAnimeJanaiEngineBuildState(VideoSurface* owner = nullptr);
 
 signals:
+    /// A real file loaded for `playlistIndex` on the core that owns playback:
+    /// the core reported the file loaded, and the index is the playlist entry
+    /// that load was requested for. A click, a startPlayer() call, a playlist
+    /// update or a start-file alone is not a start. A retry or a track/quality
+    /// swap of the same entry can report the same index again.
+    void episodePlaybackStarted(int playlistIndex);
+    /// The file loaded for `playlistIndex` played to its natural end. Emitted
+    /// while that file is still the one the core has loaded, so the index is
+    /// the OUTGOING episode, before anything steps to the next one. A stop, a
+    /// close, an error, a redirect, a replaced source, a quality or track swap
+    /// or a PiP hand-off never emits it.
+    void episodePlaybackFinished(int playlistIndex);
     /// The viewer pressed Cancel on the preparation window. The host owns the
     /// build, so it is the host that decides whether the cancellation reaches it.
     void enginePreparationCancelRequested();
@@ -425,6 +437,13 @@ private:
     /// one outstanding request and halts itself after a terminal state or an
     /// absent filter.
     void syncNativeStatusPolling(bool requested);
+    /// Captures the requested playlist index; zero means no episode.
+    quint64 episodeMediaToken() const;
+    /// Decodes a captured load token; -1 means it did not name an episode.
+    static int episodeIndexFromToken(quint64 mediaToken);
+    /// Accepts lifecycle events only from the current playback owner.
+    void onMediaLoaded(VideoSurface* source, quint64 mediaToken);
+    void onMediaEnded(VideoSurface* source, quint64 mediaToken);
     void onEngineError(const QString& message);
     void onEngineDuration(double seconds);
     void onEnginePosition(double seconds);
@@ -534,6 +553,8 @@ private:
     QString currentEmbed_;
     int currentHeight_ = 0;
     int episodeIndex_ = 0;
+    /// Prevents duplicate main/PiP completions; an actual load rearms it.
+    int lastFinishedEpisodeIndex_ = -1;
     double aspect_ = 16.0 / 9.0;
     double volume_ = 0.7;      // 0..1, what the shell shows
     double speed_ = 1.0;

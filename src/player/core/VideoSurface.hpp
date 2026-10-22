@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -121,7 +122,10 @@ public:
 
     // Loads url. Returns false only if the engine itself could not be created;
     // a stream that fails to open reports through errorOccurred instead.
-    bool open(const QString& url);
+    // `mediaToken` is an opaque identity the caller owns: it is echoed with the
+    // load and end notifications for exactly this load, never for a load the
+    // caller asked for later. 0 says the caller named none.
+    bool open(const QString& url, quint64 mediaToken = 0);
     void close();
 
     void togglePause();
@@ -358,6 +362,16 @@ public:
 
 signals:
     void playingChanged(bool playing);
+    /// A source actually opened on this core: mpv reported the file loaded -
+    /// headers were read - for the entry this surface's own load created.
+    /// `mediaToken` is the identity that load was requested with. A click, a
+    /// loadfile command or a start-file alone does not emit it.
+    void mediaLoaded(quint64 mediaToken);
+    /// The file loaded under `mediaToken` reached its natural end. A stop, an
+    /// error, a redirect, a replacement load, a renderer teardown or a core
+    /// hand-off never emits it, and it is emitted while the ending file is
+    /// still the one this core has loaded.
+    void mediaEnded(quint64 mediaToken);
     /// The loaded source changed, invalidating any frame captured under the old epoch.
     void sourceEpochChanged(uint64_t epoch);
     void positionChanged(double seconds);
@@ -735,7 +749,11 @@ private:
     /// until the core takes them, which this surface must never do while native
     /// work can hold that core. `reportRefusal` names a refusal through
     /// errorOccurred; false only where the caller documented it as normal.
-    void issueCoreCommand(std::vector<std::string> args, const char* what, bool reportRefusal);
+    /// `mediaToken` marks the command as a media load that identity belongs to,
+    /// so a load the core refuses is retired from the pairing queue instead of
+    /// claiming the next entry mpv starts.
+    void issueCoreCommand(std::vector<std::string> args, const char* what, bool reportRefusal,
+                          std::optional<quint64> mediaToken = std::nullopt);
     /// Submits one path list to glsl-shaders asynchronously. What the surface
     /// reports as the chain stays mpv's observed value, never the submission.
     void applyShaderChainRequest(const QString& shaders);
@@ -864,12 +882,19 @@ private:
     /// next START_FILE or the first successful render closes the window, so a
     /// video output that really fails to initialize is still reported.
     bool rendererTeardownErrorPending_ = false;
-    /// The playlist entry mpv is playing now, from the last START_FILE. An
-    /// END_FILE error naming any other entry describes a source that has already
-    /// been replaced - by a reload or a switch - and is not a failure of what is
-    /// playing. Unset until the first START_FILE, when nothing is known yet.
+    /// Playlist entry from the last START_FILE, used to reject stale END_FILE events.
     int64_t currentPlaylistEntryId_ = 0;
     bool havePlaylistEntryId_ = false;
+    /// Reply userdata → token until each loadfile result identifies its entry.
+    std::map<uint64_t, quint64> pendingLoadTokens_;
+    /// Playlist entry id → token from its own command result; consumed at START_FILE.
+    std::map<int64_t, quint64> entryTokensById_;
+    /// Identity of the load named by the last START_FILE: the file playing now.
+    quint64 entryMediaToken_ = 0;
+    /// Suppresses duplicate FILE_LOADED events for one entry.
+    bool entryLoadReported_ = false;
+    /// Token for the current request, retained until a deferred open runs.
+    quint64 mediaToken_ = 0;
     /// Forces the next paint to render even with no freshly decoded frame:
     /// set when Qt hands the widget a new framebuffer (resize, re-show) and
     /// the previous picture is no longer there to composite.

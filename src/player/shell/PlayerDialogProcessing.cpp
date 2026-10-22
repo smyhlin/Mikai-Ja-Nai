@@ -1129,6 +1129,17 @@ void PlayerDialog::enterPip() {
         // pauses the float, and it reads pip_, not the local `window`, so a
         // pooled float is still the one that gets put away.
         connect(window, &PipFloat::closeRequested, this, &PlayerDialog::close);
+        // The float is its own core, so the episode lifecycle while it plays -
+        // its load and its natural end - comes from its own surface too. A
+        // stopped or replaced parked core reports neither.
+        connect(window->videoSurface(), &VideoSurface::mediaLoaded, this,
+                [this, source = window->videoSurface()](quint64 mediaToken) {
+                    onMediaLoaded(source, mediaToken);
+                });
+        connect(window->videoSurface(), &VideoSurface::mediaEnded, this,
+                [this, source = window->videoSurface()](quint64 mediaToken) {
+                    onMediaEnded(source, mediaToken);
+                });
         // The float is its own core, so its native transaction observations and
         // failures come from its own surface, not the main one.
         connect(window->videoSurface(), &VideoSurface::nativePlaybackStatusChanged, this,
@@ -1181,7 +1192,7 @@ void PlayerDialog::enterPip() {
     window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
     window->setMuted(muted_);
-    window->openStream(url_, surface_->position(), enteringPaused);
+    window->openStream(url_, surface_->position(), enteringPaused, episodeMediaToken());
     // Volume lives on the core and the float has its own. Without this it
     // opens at mpv's default 100% while the player sits wherever the viewer
     // set it, so the volume jumps on entering PiP.

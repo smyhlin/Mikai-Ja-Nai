@@ -57,8 +57,10 @@ public:
     explicit PipFloat(QWidget* parent = nullptr);
 
     VideoSurface* videoSurface() const { return surface_; }
-    /// Opens `url` and seeks to `position` once the stream is up.
-    void openStream(const QString& url, double position, bool paused);
+    /// Opens `url` and seeks to `position` once the stream is up. `mediaToken`
+    /// is the player's opaque identity for the source, passed through so the
+    /// float's own core reports the load and end of THIS source.
+    void openStream(const QString& url, double position, bool paused, quint64 mediaToken = 0);
     /// Places a brand-new float against a screen work area, bottom-right by
     /// default. Used only for the float's first-ever placement: a pooled float
     /// keeps the exact position and size the viewer last left it, so this is

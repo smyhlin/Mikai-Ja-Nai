@@ -431,12 +431,12 @@ void PipFloat::paintTimeline(QPainter& painter) {
                                kPipTimelineHandle));
 }
 
-void PipFloat::openStream(const QString& url, double position, bool paused) {
+void PipFloat::openStream(const QString& url, double position, bool paused, quint64 mediaToken) {
     if (url.isEmpty()) {
         return;
     }
     pendingSeek_ = position;
-    surface_->open(url);
+    surface_->open(url, mediaToken);
     surface_->setPaused(paused);
     pendingLoadPause_ = paused;
     pendingLoadPauseGeneration_ = surface_->pauseRequestGeneration();

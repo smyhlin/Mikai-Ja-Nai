@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "MpvApi.hpp"
 #include "MpvHandle.hpp"
@@ -134,11 +135,28 @@ QVector<native::NativeFilterOption> provedNativeAttachOptions() {
     return {};
 }
 
+std::optional<int64_t> playlistEntryIdFromCommand(const mpv_event_command& command) {
+    const mpv_node& result = command.result;
+    if (result.format != MPV_FORMAT_NODE_MAP || result.u.list == nullptr) return std::nullopt;
+    for (int index = 0; index < result.u.list->num; ++index) {
+        const char* key = result.u.list->keys[index];
+        const mpv_node& value = result.u.list->values[index];
+        if (key != nullptr && std::strcmp(key, "playlist_entry_id") == 0 &&
+            value.format == MPV_FORMAT_INT64) {
+            return value.u.int64;
+        }
+    }
+    return std::nullopt;
+}
 
 }  // namespace
 
 void VideoSurface::ensureEngine() {
     if (mpv_) return;
+    // Entry ids belong to one core's playlist; a core created here has never
+    // reported one, so nothing a previous core named can be matched against it.
+    pendingLoadTokens_.clear();
+    entryTokensById_.clear();
     // These are the options the Python player passed through python-mpv, which
     // spelled them with underscores; mpv itself takes dashes.
     const std::vector<std::pair<std::string, std::string>> options{
@@ -232,19 +250,68 @@ void VideoSurface::ensureEngine() {
             }
             return;
         }
+        if (event->event_id == MPV_EVENT_COMMAND_REPLY) {
+            // Keep the raw reply: superseded callbacks are dropped, but this
+            // result still identifies the entry created by this loadfile.
+            const auto pending = pendingLoadTokens_.find(event->reply_userdata);
+            if (pending != pendingLoadTokens_.end()) {
+                const quint64 token = pending->second;
+                pendingLoadTokens_.erase(pending);
+                if (event->error >= 0 && event->data != nullptr) {
+                    if (const auto entryId = playlistEntryIdFromCommand(
+                            *static_cast<const mpv_event_command*>(event->data))) {
+                        // Replacements retire older entries; playlist ids only increase.
+                        if (entryTokensById_.size() >= 64) {
+                            entryTokensById_.erase(entryTokensById_.begin());
+                        }
+                        entryTokensById_[*entryId] = token;
+                    }
+                }
+            }
+            return;
+        }
         if (event->event_id == MPV_EVENT_START_FILE) {
-            // A source is starting: whatever the renderer teardown ended is
-            // behind us, so errors from here on belong to this entry.
+            // Errors after START_FILE belong to this entry, not renderer teardown.
             rendererTeardownErrorPending_ = false;
             if (event->data != nullptr) {
                 currentPlaylistEntryId_ =
                     static_cast<const mpv_event_start_file*>(event->data)->playlist_entry_id;
                 havePlaylistEntryId_ = true;
             }
+            // Unknown entries stay unnamed; never pair by command issue order.
+            entryMediaToken_ = 0;
+            if (havePlaylistEntryId_) {
+                const auto known = entryTokensById_.find(currentPlaylistEntryId_);
+                if (known != entryTokensById_.end()) {
+                    entryMediaToken_ = known->second;
+                    entryTokensById_.erase(known);
+                }
+            }
+            entryLoadReported_ = false;
+            return;
+        }
+        if (event->event_id == MPV_EVENT_FILE_LOADED) {
+            // A command or START_FILE is only an attempt; report once when mpv
+            // says the file is loaded.
+            if (!entryLoadReported_) {
+                entryLoadReported_ = true;
+                emit mediaLoaded(entryMediaToken_);
+            }
             return;
         }
         if (event->event_id != MPV_EVENT_END_FILE || event->data == nullptr) return;
         const auto* ended = static_cast<const mpv_event_end_file*>(event->data);
+        if (ended->reason == MPV_END_FILE_REASON_EOF) {
+            // EOF completes only the loaded entry; a stale end must not alter
+            // the tracking for the current one.
+            if (havePlaylistEntryId_ && ended->playlist_entry_id != currentPlaylistEntryId_) {
+                return;
+            }
+            if (entryLoadReported_) emit mediaEnded(entryMediaToken_);
+            entryMediaToken_ = 0;
+            entryLoadReported_ = false;
+            return;
+        }
         if (ended->reason != MPV_END_FILE_REASON_ERROR) return;
         if (rendererTeardownErrorPending_ && ended->error == MPV_ERROR_VO_INIT_FAILED) {
             // Releasing the render context is what killed the old video output -
@@ -562,12 +629,15 @@ VideoSurface::~VideoSurface() {
     nativePlayback_.endSource();
 }
 
-bool VideoSurface::open(const QString& url) {
+bool VideoSurface::open(const QString& url, quint64 mediaToken) {
     invalidateEngineFrameHold();
     discardEnginePause();
     finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
     animeJanaiSourceRequested_ = !url.isEmpty();
     pendingOpen_ = false;
+    // The identity belongs to THIS request: a deferred load picks it up when it
+    // runs, and a loadfile refused below never leaves it on the queue.
+    mediaToken_ = mediaToken;
     cancelAnimeJanaiOperation();
     animeJanaiEpoch_ = 0;
     if (animeJanaiPlan_.enabled) {
@@ -661,7 +731,7 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
         load.push_back("-1");
         load.push_back("start=" + mpvNumber(resumeAt));
     }
-    issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true);
+    issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
     // mpv also comes up paused when a render context is its only consumer: it
     // has no window of its own to drive playback. Without this the core decodes
     // one frame, hands it over and stops, which reads as a black surface and a
@@ -694,6 +764,14 @@ void VideoSurface::close() {
     pendingOpen_ = false;
     cancelAnimeJanaiOperation();
     animeJanaiEpoch_ = 0;
+    // Nothing this surface already asked to play can start now: the stop below
+    // retires those requests, so their identities must not pair with an entry a
+    // later load starts. A reply already drained cannot pair either.
+    pendingLoadTokens_.clear();
+    entryTokensById_.clear();
+    entryMediaToken_ = 0;
+    entryLoadReported_ = false;
+    mediaToken_ = 0;
     setAnimeJanaiStatus(animeJanaiPlan_.enabled
                             ? QStringLiteral("Configured; waiting for a loaded source")
                             : QStringLiteral("Off"));
@@ -872,7 +950,7 @@ void VideoSurface::setSpeed(double speed) {
 }
 
 void VideoSurface::issueCoreCommand(std::vector<std::string> args, const char* what,
-                                    bool reportRefusal) {
+                                    bool reportRefusal, std::optional<quint64> mediaToken) {
     if (mpv_ == nullptr || args.empty()) return;
     // The reply is only ever an error report, so a request against a superseded
     // source - whose refusal says nothing about what is playing now - is dropped
@@ -892,6 +970,13 @@ void VideoSurface::issueCoreCommand(std::vector<std::string> args, const char* w
             // diagnostic a refusal of a seek before load or a stop has.
             qWarning("VideoSurface: %s refused (%s)", label.c_str(), qUtf8Printable(reason));
         });
+    if (request.valid() && mediaToken.has_value()) {
+        // Keyed by the reply's own userdata, so the sink can read the entry this
+        // exact command created even when the transport drops the callback
+        // above: a source superseded before the reply lands still names its
+        // entry, and that entry's start is real if mpv gets to it.
+        pendingLoadTokens_.emplace(request.value, *mediaToken);
+    }
     if (!request.valid()) {
         // No reply will ever arrive for a command mpv would not take, so the
         // refusal is named here instead of waited for. The transport reports only
