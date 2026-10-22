@@ -98,6 +98,7 @@ private slots:
     void onFlickerChanged(int value);
     void onGainChanged(int value);
     void onFlickerTimeout();
+    void saveGif();
     void onCandidateChosen(int side, const QString& id);
     void onHoverPixel(int x, int y, bool valid, QRgb rgb);
 
@@ -171,6 +172,7 @@ private:
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
     QToolButton* closeButton_ = nullptr;
+    QPushButton* saveGifButton_ = nullptr;
     QToolButton* fullscreenButton_ = nullptr;
     QAction* fullscreenAction_ = nullptr;
     QFrame* modeDivider_ = nullptr;

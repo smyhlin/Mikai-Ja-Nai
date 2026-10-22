@@ -21,6 +21,8 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QFontMetrics>
+#include <QFileDialog>
+#include <QtGui/QImageWriter>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
@@ -804,6 +806,15 @@ void CompareWindow::buildUi() {
     connect(fullscreenButton_, &QToolButton::clicked, this,
             &CompareWindow::toggleFullscreen);
     header->addWidget(fullscreenButton_);
+
+    saveGifButton_ = new QPushButton(tr("Save GIF"), toolbarCard);
+    saveGifButton_->setObjectName(QStringLiteral("compareSaveGif"));
+    saveGifButton_->setFocusPolicy(Qt::NoFocus);
+    saveGifButton_->setCursor(Qt::PointingHandCursor);
+    saveGifButton_->setToolTip(tr("Save the two images as a blinking GIF"));
+    saveGifButton_->setAccessibleName(tr("Save as GIF"));
+    connect(saveGifButton_, &QPushButton::clicked, this, &CompareWindow::saveGif);
+    header->addWidget(saveGifButton_);
 
     closeButton_ = new QToolButton(toolbarCard);
     closeButton_->setObjectName(QStringLiteral("compareClose"));
@@ -1968,6 +1979,24 @@ void CompareWindow::updateFlickerTimer() {
 void CompareWindow::onFlickerTimeout() {
     flickerShowA_ = !flickerShowA_;
     canvas_->setFlickerShowA(flickerShowA_);
+}
+
+void CompareWindow::saveGif() {
+    if (renderedA_.isNull() || renderedB_.isNull()) {
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(this, tr("Save GIF"), QString(), tr("GIF images (*.gif)"));
+    if (path.isEmpty()) return;
+    QImageWriter writer(path, "gif");
+    if (!writer.canWrite()) {
+        return;
+    }
+    writer.setQuality(100);
+    for (int i = 0; i < 2; ++i) {
+        QImage frame = (i == 0 ? renderedA_ : renderedB_).scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        writer.write(frame);
+    }
+    writer.write(renderedA_);
 }
 
 void CompareWindow::onModeChanged(int index) {
