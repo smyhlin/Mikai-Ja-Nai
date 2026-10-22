@@ -1,9 +1,15 @@
 #pragma once
 
+#include <backend/Models.hpp>
+
 #include <QString>
 #include <QStringList>
 
 namespace mikai::app::labels {
+
+/// A title in the language the viewer chose for content titles. Falls back to
+/// the other forms, and to "?" only when the payload carried no title at all.
+QString titleName(const backend::Titles& titles);
 
 /// Translated label for the API's raw status enum, empty when unknown.
 QString status(const QString& raw);

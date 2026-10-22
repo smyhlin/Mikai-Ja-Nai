@@ -20,10 +20,17 @@ inline constexpr int kSettingsControlSize = 36;
 // A settings form's label column: wide enough for the longest translated label
 // the tabs ship, so the fields to its right line up down the page.
 inline constexpr int kSettingsFormLabelMinWidth = 132;
-inline constexpr int kSettingsDialogMinWidth = 560;
+inline constexpr int kSettingsDialogMinWidth = 580;
 inline constexpr int kSettingsDialogMinHeight = 600;
-inline constexpr int kSettingsDialogDefaultWidth = 760;
-inline constexpr int kSettingsDialogDefaultHeight = 780;
+inline constexpr int kSettingsDialogDefaultWidth = 940;
+inline constexpr int kSettingsDialogDefaultHeight = 820;
+inline constexpr int kSettingsNavWidth = 200;
+inline constexpr int kCatalogueFiltersWidth = 760;
+inline constexpr int kCatalogueFiltersHeight = 780;
+inline constexpr int kSettingsSwatchSize = 34;
+inline constexpr int kSettingsSwitchWidth = 40;
+inline constexpr int kSettingsSwitchHeight = 22;
+inline constexpr int kSettingsSliderValueWidth = 52;
 inline constexpr int kCatalogueChoiceRowHeight = 28;
 inline constexpr int kCatalogueYearFieldWidth = 120;
 inline constexpr int kTeamPickerMinHeight = 420;

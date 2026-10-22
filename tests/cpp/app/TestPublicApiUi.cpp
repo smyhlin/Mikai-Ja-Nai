@@ -1,6 +1,9 @@
 #include "TestPublicApiUi.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <dialogs/SettingsDialog.hpp>
+#include <widgets/PageGlow.hpp>
+#include <state/AppearanceStore.hpp>
 #include <pages/MainWindow.hpp>
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
@@ -28,6 +31,7 @@
 #include <QtCore/QUrl>
 #include <QtCore/QUrlQuery>
 #include <QtGui/QDesktopServices>
+#include <QtGui/QImage>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextDocument>
 #include <QtGui/QTextFragment>
@@ -36,15 +40,20 @@
 #include <QtNetwork/QTcpSocket>
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QAbstractButton>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QSpinBox>
+#include <QtWidgets/QSlider>
 #include <cstdio>
 #include <functional>
 
@@ -286,6 +295,9 @@ class ApiFixture final : public QObject {
         result.insert(QStringLiteral("titles"), QJsonObject{
             {QStringLiteral("ua"), QStringLiteral("Related Probe")},
             {QStringLiteral("english"), QStringLiteral("Related Probe")}});
+      } else if (path == QLatin1String("/anime/7431")) {
+        // The only fixture title rated 18+, used by the explicit-content gate.
+        result.insert(QStringLiteral("ageRating"), QStringLiteral("r18"));
       } else if (path == QLatin1String("/anime/7428")) {
         result.insert(QStringLiteral("relations"), QJsonArray{QJsonObject{
             {QStringLiteral("kind"), QStringLiteral("sequel")},
@@ -660,6 +672,198 @@ void TestPublicApiUi::anUnlicensedTitleShowsNoLegalInformation() {
   QVERIFY2(labelText(page, "licenseInfoLabel").isEmpty(),
            qPrintable(QStringLiteral("an unlicensed title claims a licence: %1")
                           .arg(labelText(page, "licenseInfoLabel"))));
+}
+
+void TestPublicApiUi::explicitTitleAsksBeforePlaybackUnlessAllowed() {
+  IsolatedSettings settings;
+  ApiFixture api;
+  QVERIFY(api.start());
+  const mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  mikai::app::theme::Appearance appearance = saved;
+  appearance.showAdult = false;
+  mikai::app::setCurrentAppearance(appearance);
+
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7431"));
+  page.resize(1120, 800);
+  page.show();
+
+  QPushButton* episode = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT((episode = page.findChild<QPushButton*>(
+                                QStringLiteral("episodeButton"))) != nullptr,
+                           20000);
+
+  QStringList warnings;
+  QTimer driver;
+  driver.setInterval(20);
+  QObject::connect(&driver, &QTimer::timeout, [&warnings] {
+    auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+    if (box == nullptr) return;
+    warnings.append(box->text());
+    box->reject();
+  });
+  driver.start();
+  QTest::mouseClick(episode, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(!warnings.isEmpty(), 5000);
+  QVERIFY2(warnings.first().contains(QStringLiteral("18+")), qPrintable(warnings.first()));
+
+  // The preference means "without a warning": the second attempt must not ask.
+  appearance.showAdult = true;
+  mikai::app::setCurrentAppearance(appearance);
+  QTest::mouseClick(episode, Qt::LeftButton);
+  QTest::qWait(600);
+  QCOMPARE(warnings.size(), 1);
+  driver.stop();
+}
+
+void TestPublicApiUi::liveCoverShadingChangesWithoutResizing() {
+  IsolatedSettings settings;
+  const auto saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  auto appearance = saved;
+  appearance.coverGradient = false;
+  mikai::app::setCurrentAppearance(appearance);
+  ApiFixture api;
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  mikai::app::QualityCache cache;
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"));
+  page.resize(1000, 740);
+  page.show();
+  auto* cover = page.findChild<QLabel*>(QStringLiteral("titleCover"));
+  QVERIFY(cover != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(!cover->pixmap().isNull(), 10000);
+  const QImage original = cover->pixmap().toImage();
+  const QPoint sample(original.width() / 2, original.height() * 9 / 10);
+  const QSize size = cover->size();
+
+  mikai::app::SettingsDialog dialog(client, runner, &page);
+  dialog.show();
+  auto* shade = dialog.findChild<QAbstractButton*>(QStringLiteral("coverGradientSwitch"));
+  QVERIFY(shade != nullptr);
+  shade->click();
+  QCOMPARE(cover->size(), size);
+  const QImage shaded = cover->pixmap().toImage();
+  QVERIFY(shaded.pixelColor(sample).value() + 20 < original.pixelColor(sample).value());
+  dialog.reject();
+  QCOMPARE(cover->pixmap().toImage().pixelColor(sample), original.pixelColor(sample));
+}
+
+void TestPublicApiUi::titleSectionHeadersLetTheGradientThrough() {
+  IsolatedSettings settings;
+  const auto saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  auto appearance = saved;
+  appearance.backgroundGradient = false;
+  mikai::app::setCurrentAppearance(appearance);
+
+  QWidget page;
+  page.setObjectName(QStringLiteral("titlePage"));
+  page.setAttribute(Qt::WA_StyledBackground, true);
+  page.setStyleSheet(mikai::app::theme::buildStylesheet(appearance));
+  auto* pageLayout = new QVBoxLayout(&page);
+  pageLayout->setContentsMargins(0, 0, 0, 0);
+  pageLayout->setSpacing(0);
+
+  const auto addHeader = [&page, pageLayout](const QString& objectName,
+                                             const QString& headingObjectName,
+                                             const QString& text) {
+    auto* header = new QWidget(&page);
+    header->setObjectName(objectName);
+    header->setAttribute(Qt::WA_StyledBackground, true);
+    header->setFixedHeight(72);
+    auto* headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(16, 0, 16, 0);
+    auto* heading = new QLabel(text, header);
+    heading->setObjectName(headingObjectName);
+    headerLayout->addWidget(heading);
+    pageLayout->addWidget(header);
+    return header;
+  };
+  QWidget* sectionHeader = addHeader(QStringLiteral("titleSectionHeader"),
+                                     QStringLiteral("titleSectionHeading"),
+                                     QStringLiteral("Related titles"));
+  QWidget* episodeHeader = addHeader(QStringLiteral("titleEpisodeHeader"),
+                                     QStringLiteral("episodeSectionHeading"),
+                                     QStringLiteral("Episodes"));
+  auto* glow = new mikai::app::PageGlow(&page);
+  Q_UNUSED(glow);
+
+  page.resize(500, 160);
+  page.show();
+  QCoreApplication::processEvents();
+
+  const auto headerPixel = [&page](QWidget* header) {
+    const QPoint local(header->width() / 2, header->height() / 2);
+    return page.grab().toImage().pixelColor(header->mapTo(&page, local));
+  };
+  const QColor sectionWithoutGradient = headerPixel(sectionHeader);
+  const QColor episodeWithoutGradient = headerPixel(episodeHeader);
+
+  appearance.backgroundGradient = true;
+  appearance.gradientColor = QStringLiteral("#ff3058");
+  appearance.gradientIntensity = 100;
+  appearance.gradientHeight = 100;
+  mikai::app::setCurrentAppearance(appearance);
+  QCoreApplication::processEvents();
+
+  const QColor sectionWithGradient = headerPixel(sectionHeader);
+  QVERIFY2(sectionWithGradient != sectionWithoutGradient,
+           qPrintable(QStringLiteral("section header stayed %1")
+                          .arg(sectionWithoutGradient.name())));
+  const QColor episodeWithGradient = headerPixel(episodeHeader);
+  QVERIFY2(episodeWithGradient != episodeWithoutGradient,
+           qPrintable(QStringLiteral("episode header stayed %1")
+                          .arg(episodeWithoutGradient.name())));
+}
+void TestPublicApiUi::gradientPreviewKeepsItsLatestColorAndCancelRestoresIt() {
+  IsolatedSettings settings;
+  const auto saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  auto opening = saved;
+  opening.backgroundGradient = true;
+  opening.gradientColor = QStringLiteral("#ef6b78");
+  opening.gradientIntensity = 30;
+  opening.gradientHeight = 80;
+  mikai::app::setCurrentAppearance(opening);
+  QWidget host;
+  host.resize(400, 300);
+  host.setAutoFillBackground(true);
+  QPalette palette = host.palette();
+  palette.setColor(QPalette::Window, QColor(QStringLiteral("#181818")));
+  host.setPalette(palette);
+  auto* glow = new mikai::app::PageGlow(&host);
+  host.show();
+  QCoreApplication::processEvents();
+  const QPoint sample(200, 5);
+  const QColor original = host.grab().toImage().pixelColor(sample);
+  const QRect originalGeometry = glow->geometry();
+
+  ApiFixture api;
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  const auto sliders = dialog.findChildren<QSlider*>(QStringLiteral("appearanceSlider"));
+  const auto colors = dialog.findChildren<QPushButton*>(QStringLiteral("gradientSwatch"));
+  QVERIFY(sliders.size() == 2 && colors.size() > 2);
+  for (int intensity : {40, 60, 80}) sliders.at(0)->setValue(intensity);
+  colors.at(2)->click();
+  QCOMPARE(glow->geometry(), originalGeometry);
+  const QColor green = host.grab().toImage().pixelColor(sample);
+  QVERIFY(green.green() > green.red());
+  QVERIFY(green.green() > original.green());
+  sliders.at(1)->setValue(60);
+  QCOMPARE(glow->height(), 180);
+  dialog.reject();
+  QCOMPARE(glow->geometry(), originalGeometry);
+  QCOMPARE(host.grab().toImage().pixelColor(sample), original);
 }
 
 void TestPublicApiUi::catalogueFiltersRetainCanonicalSelectionsAndReset() {

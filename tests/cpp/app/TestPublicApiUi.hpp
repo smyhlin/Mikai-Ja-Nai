@@ -17,6 +17,10 @@ class TestPublicApiUi : public QObject {
   void homeAndEscapeReturnFromTeamAndSearch();
   void escapeCancelsPendingTeamNavigationAtHome();
   void titleHomeSkipsHistoryAndEscapeUnwindsDetailsAndHistory();
+  void explicitTitleAsksBeforePlaybackUnlessAllowed();
+  void liveCoverShadingChangesWithoutResizing();
+  void titleSectionHeadersLetTheGradientThrough();
+  void gradientPreviewKeepsItsLatestColorAndCancelRestoresIt();
 };
 
 int runTestPublicApiUi(int argc, char** argv);

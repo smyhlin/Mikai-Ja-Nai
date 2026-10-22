@@ -7,10 +7,13 @@
 #include "support/I18n.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
+#include "state/AppearanceStore.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/RateLimitLabel.hpp"
 #include "widgets/FailureView.hpp"
+#include "widgets/PageGlow.hpp"
 #include "widgets/TitleCard.hpp"
 #include "workers/Runner.hpp"
 #include "ShellWidgets.hpp"
@@ -160,6 +163,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     homeButton_->setObjectName(QStringLiteral("homeButton"));
     connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
     topRow->addWidget(homeButton_);
+    homeButton_->hide();
     topRow->addStretch();
     mediaButton_ = new QPushButton(tr("Open video"), this);
     mediaButton_->setObjectName(QStringLiteral("secondary"));
@@ -284,6 +288,7 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     discoveryScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     discoveryScroll_->setFrameShape(QFrame::NoFrame);
     discoveryScroll_->setWidget(discovery);
+    pageGlow_ = new PageGlow(this);
     root->addWidget(discoveryScroll_, 1);
 
     formatBar_ = new QTabBar(this);
@@ -323,6 +328,15 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     thumbTimer_->setSingleShot(true);
     thumbTimer_->setInterval(0);
     connect(thumbTimer_, &QTimer::timeout, this, &SearchPage::flushThumbs);
+
+    connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
+            [this](const theme::Appearance& previous) {
+                const auto& appearance = currentAppearance();
+                if (previous.radiusStep != appearance.radiusStep ||
+                    previous.coverGradient != appearance.coverGradient) {
+                    refreshCardFrames();
+                }
+            });
 
     QTimer::singleShot(0, this, &SearchPage::loadOngoing);
     if (!recentItems_.isEmpty()) {
@@ -593,7 +607,7 @@ QString SearchPage::resultRowText(const backend::AnimeSummary& entry) const {
     // List responses already carry the airing status and the planned episode
     // count, so a search row reads like a home card without a detail call.
     QStringList parts;
-    parts << backend::displayName(entry.titles);
+    parts << labels::titleName(entry.titles);
     if (entry.year.has_value()) {
         parts << QString::number(*entry.year);
     }
@@ -885,7 +899,7 @@ void SearchPage::persistRecentTitles() {
     for (const backend::AnimeSummary& recent : recentItems_) {
         QJsonObject record;
         record.insert(QStringLiteral("ref"), recent.ref);
-        record.insert(QStringLiteral("title"), backend::displayName(recent.titles));
+        record.insert(QStringLiteral("title"), labels::titleName(recent.titles));
         const QString poster = backend::posterUrl(recent);
         record.insert(QStringLiteral("poster"), isRemoteUrl(poster) ? poster : QString());
         const QString thumb = backend::thumbUrl(recent);
@@ -1409,7 +1423,7 @@ void SearchPage::showFeedRows(
             posters.append({thumb, poster, {}});
             rowLayout->addWidget(poster, 0, Qt::AlignVCenter);
         }
-        const QString name = backend::displayName(anime.titles);
+        const QString name = labels::titleName(anime.titles);
         auto* title = new QPushButton(name, row);
         title->setObjectName(QStringLiteral("homeFeedTitle"));
         title->setToolTip(name);
@@ -1480,7 +1494,7 @@ void SearchPage::showCatalogueFilters() {
     dialog.setWindowTitle(tr("Catalogue filters"));
     dialog.setObjectName(QStringLiteral("catalogueFiltersDialog"));
     dialog.setMinimumSize(theme::kSettingsDialogMinWidth, theme::kSettingsDialogMinHeight);
-    dialog.resize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
+    dialog.resize(theme::kCatalogueFiltersWidth, theme::kCatalogueFiltersHeight);
     auto* layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
                                theme::kSpacingLarge, theme::kSpacingMedium);
@@ -1747,13 +1761,14 @@ void SearchPage::showCatalogueFilters() {
     if (auto* apply = buttons->button(QDialogButtonBox::Apply)) {
         apply->setObjectName(QStringLiteral("catalogueApplyButton"));
         apply->setProperty("accentAction", true);
+        const theme::Palette palette = theme::paletteFor(currentAppearance());
         apply->setStyleSheet(QStringLiteral(
             "QPushButton { background: %1; color: %2; border: none; font-weight: 600; "
             "border-radius: %3px; padding: 6px 16px; }"
             "QPushButton:hover { background: %4; }")
-            .arg(QLatin1String(theme::kAccent), QLatin1String(theme::kBackground))
-            .arg(theme::kRadiusSmall)
-            .arg(QLatin1String(theme::kAccentHover)));
+            .arg(palette.accent, palette.accentOnFill)
+            .arg(theme::radiusSmall(currentAppearance()))
+            .arg(palette.accentHover));
     }
     if (auto* reset = buttons->button(QDialogButtonBox::Reset))
         reset->setObjectName(QStringLiteral("catalogueResetButton"));
@@ -2083,7 +2098,8 @@ QStringList SearchPage::renderTeamLinks() const {
             continue;
         }
         rows << QStringLiteral("<a style=\"color: %1; text-decoration: none;\" href=\"%2\">%3</a>")
-                    .arg(QLatin1String(theme::kAccent), it.value().toHtmlEscaped(), service);
+                    .arg(theme::paletteFor(currentAppearance()).accent,
+                         it.value().toHtmlEscaped(), service);
     }
     return rows;
 }
@@ -2184,6 +2200,7 @@ void SearchPage::showDiscovery() {
     results_->hide();
     formatBar_->hide();
     resultsHeading_->show();
+    if (homeButton_ != nullptr) homeButton_->hide();
     // Thumbs that landed while the feeds were hidden were left unpainted, so
     // the switch back is the moment to catch them up.
     applyFeedPosters();
@@ -2193,6 +2210,7 @@ void SearchPage::showSearchResults() {
     discoveryScroll_->hide();
     results_->show();
     resultsHeading_->show();
+    if (homeButton_ != nullptr) homeButton_->show();
     applyThumbs();
 }
 
@@ -2635,6 +2653,24 @@ void SearchPage::flushThumbs() {
     if (!pendingThumbs_.isEmpty()) {
         thumbTimer_->start();
     }
+}
+
+void SearchPage::refreshCardFrames() {
+    // Rounded frames bake the corner radius and the cover shade, so a change to
+    // either invalidates every cached one; the decoded icons stay reusable.
+    rounded_.clear();
+    for (auto it = cardsByImageKey_.cbegin(); it != cardsByImageKey_.cend(); ++it) {
+        const auto icon = icons_.constFind(it.key());
+        if (icon == icons_.constEnd()) continue;
+        const QPixmap ready = TitleCard::rounded(
+            icon.value(), QSize(theme::kHomePosterWidth, theme::kHomePosterHeight));
+        rounded_.insert(it.key(), ready);
+        for (TitleCard* card : it.value()) {
+            card->applyPixmap(ready);
+        }
+    }
+    applyThumbs();
+    applyFeedPosters();
 }
 
 void SearchPage::applyThumbs() {

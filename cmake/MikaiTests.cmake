@@ -186,6 +186,11 @@ if(MIKAI_BUILD_PROBES)
 
   if(TARGET release_translations)
     add_dependencies(mikai_tests release_translations)
+    qt_add_resources(mikai_tests "test_translations"
+      PREFIX "/i18n"
+      BASE "${CMAKE_BINARY_DIR}"
+      FILES "${CMAKE_BINARY_DIR}/mikai_uk.qm"
+    )
     target_compile_definitions(mikai_tests PRIVATE
       MIKAI_UK_CATALOG_PATH="${CMAKE_BINARY_DIR}/mikai_uk.qm"
     )

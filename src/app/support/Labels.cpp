@@ -1,7 +1,10 @@
 #include "Labels.hpp"
 
+#include "state/AppearanceStore.hpp"
+
 #include <QCoreApplication>
 #include <QStringList>
+#include <QTranslator>
 #include <QVariant>
 
 // These are free functions rather than a QObject subclass, so every string is
@@ -11,35 +14,91 @@
 // helper a key/value pair would ship an empty catalog. The comparisons stay
 // case-sensitive on the raw token, which is how the API spells them.
 namespace mikai::app::labels {
+namespace {
+
+/// The embedded Ukrainian catalogue, used only to *look up* a content name in
+/// a language other than the interface's. It is never installed, so switching
+/// the names language cannot change any interface text.
+QTranslator* ukCatalog() {
+    static QTranslator* translator = []() -> QTranslator* {
+        auto* candidate = new QTranslator();
+        if (candidate->load(QStringLiteral(":/i18n/mikai_uk.qm"))) return candidate;
+        delete candidate;
+        return nullptr;
+    }();
+    return translator;
+}
+
+/// The language a content name should be shown in. "Interface" keeps the
+/// historical behaviour: the same translator the rest of the window uses.
+QString content(const char* source, const QString& interfaceText) {
+    switch (currentAppearance().nameLanguage) {
+        case theme::NameLanguage::English:
+        case theme::NameLanguage::Original:
+            return QString::fromUtf8(source);
+        case theme::NameLanguage::Ukrainian:
+            if (QTranslator* catalog = ukCatalog()) {
+                const QString text = catalog->translate("Labels", source);
+                if (!text.isEmpty()) return text;
+            }
+            break;
+        case theme::NameLanguage::Interface:
+            break;
+    }
+    return interfaceText;
+}
+
+}  // namespace
+
+QString titleName(const backend::Titles& titles) {
+    const QString ua = titles.ua.trimmed();
+    const QString english = titles.english.trimmed();
+    const QString original = titles.original.trimmed();
+    const auto firstNonEmpty = [](std::initializer_list<QString> values) {
+        for (const QString& value : values) {
+            if (!value.isEmpty()) return value;
+        }
+        return QStringLiteral("?");
+    };
+    switch (currentAppearance().titleLanguage) {
+        case theme::TitleLanguage::English:
+            return firstNonEmpty({english, ua, original});
+        case theme::TitleLanguage::Original:
+            return firstNonEmpty({original, english, ua});
+        case theme::TitleLanguage::Ukrainian:
+            break;
+    }
+    return firstNonEmpty({ua, english, original});
+}
 
 QString status(const QString& raw) {
     if (raw == QLatin1String("finished")) {
-        return QCoreApplication::translate("Labels", "Finished");
+        return content("Finished", QCoreApplication::translate("Labels", "Finished"));
     }
     if (raw == QLatin1String("ongoing")) {
-        return QCoreApplication::translate("Labels", "Airing");
+        return content("Airing", QCoreApplication::translate("Labels", "Airing"));
     }
     if (raw == QLatin1String("announce")) {
-        return QCoreApplication::translate("Labels", "Announced");
+        return content("Announced", QCoreApplication::translate("Labels", "Announced"));
     }
     if (raw == QLatin1String("cancelled")) {
-        return QCoreApplication::translate("Labels", "Cancelled");
+        return content("Cancelled", QCoreApplication::translate("Labels", "Cancelled"));
     }
     if (raw == QLatin1String("break")) {
-        return QCoreApplication::translate("Labels", "On hiatus");
+        return content("On hiatus", QCoreApplication::translate("Labels", "On hiatus"));
     }
     if (raw == QLatin1String("unknown")) {
-        return QCoreApplication::translate("Labels", "Unknown");
+        return content("Unknown", QCoreApplication::translate("Labels", "Unknown"));
     }
     return raw;
 }
 
 QString kind(const QString& raw) {
     if (raw == QLatin1String("voice")) {
-        return QCoreApplication::translate("Labels", "Dubbed");
+        return content("Dubbed", QCoreApplication::translate("Labels", "Dubbed"));
     }
     if (raw == QLatin1String("sub")) {
-        return QCoreApplication::translate("Labels", "Subtitled");
+        return content("Subtitled", QCoreApplication::translate("Labels", "Subtitled"));
     }
     return raw;
 }
@@ -61,65 +120,65 @@ QString provider(const QString& raw) {
 
 QString format(const QString& raw) {
     if (raw == QLatin1String("tv")) {
-        return QCoreApplication::translate("Labels", "TV series");
+        return content("TV series", QCoreApplication::translate("Labels", "TV series"));
     }
     if (raw == QLatin1String("movie")) {
-        return QCoreApplication::translate("Labels", "Movie");
+        return content("Movie", QCoreApplication::translate("Labels", "Movie"));
     }
     if (raw == QLatin1String("ova")) {
         return QStringLiteral("OVA");
     }
     if (raw == QLatin1String("ona")) {
-        return QCoreApplication::translate("Labels", "Web series");
+        return content("Web series", QCoreApplication::translate("Labels", "Web series"));
     }
     if (raw == QLatin1String("special")) {
-        return QCoreApplication::translate("Labels", "Special");
+        return content("Special", QCoreApplication::translate("Labels", "Special"));
     }
     if (raw == QLatin1String("music")) {
-        return QCoreApplication::translate("Labels", "Music video");
+        return content("Music video", QCoreApplication::translate("Labels", "Music video"));
     }
     if (raw == QLatin1String("other")) {
-        return QCoreApplication::translate("Labels", "Other");
+        return content("Other", QCoreApplication::translate("Labels", "Other"));
     }
     return raw;
 }
 
 QString relation(const QString& raw) {
     if (raw == QLatin1String("prequel")) {
-        return QCoreApplication::translate("Labels", "Prequel");
+        return content("Prequel", QCoreApplication::translate("Labels", "Prequel"));
     }
     if (raw == QLatin1String("sequel")) {
-        return QCoreApplication::translate("Labels", "Sequel");
+        return content("Sequel", QCoreApplication::translate("Labels", "Sequel"));
     }
     if (raw == QLatin1String("sideStory")) {
-        return QCoreApplication::translate("Labels", "Side story");
+        return content("Side story", QCoreApplication::translate("Labels", "Side story"));
     }
     if (raw == QLatin1String("parentStory")) {
-        return QCoreApplication::translate("Labels", "Main story");
+        return content("Main story", QCoreApplication::translate("Labels", "Main story"));
     }
     if (raw == QLatin1String("spinOff")) {
-        return QCoreApplication::translate("Labels", "Spin-off");
+        return content("Spin-off", QCoreApplication::translate("Labels", "Spin-off"));
     }
     if (raw == QLatin1String("alternativeVersion")) {
-        return QCoreApplication::translate("Labels", "Alternative version");
+        return content("Alternative version", QCoreApplication::translate("Labels", "Alternative version"));
     }
     if (raw == QLatin1String("alternativeSetting")) {
-        return QCoreApplication::translate("Labels", "Alternative setting");
+        return content("Alternative setting", QCoreApplication::translate("Labels", "Alternative setting"));
     }
     if (raw == QLatin1String("summary")) {
-        return QCoreApplication::translate("Labels", "Summary");
+        return content("Summary", QCoreApplication::translate("Labels", "Summary"));
     }
     if (raw == QLatin1String("fullStory")) {
-        return QCoreApplication::translate("Labels", "Full story");
+        return content("Full story", QCoreApplication::translate("Labels", "Full story"));
     }
     if (raw == QLatin1String("adaptation")) {
-        return QCoreApplication::translate("Labels", "Adaptation");
+        return content("Adaptation", QCoreApplication::translate("Labels", "Adaptation"));
     }
     if (raw == QLatin1String("other")) {
-        return QCoreApplication::translate("Labels", "Other");
+        return content("Other", QCoreApplication::translate("Labels", "Other"));
     }
     if (raw == QLatin1String("similar")) {
-        return QCoreApplication::translate("Labels", "Similar");
+        return content("Similar", QCoreApplication::translate("Labels", "Similar"));
     }
     // The API mixes camelCase and snake_case for the same concept, so retry the
     // keys against a case-folded token before giving up on the raw spelling.
@@ -127,22 +186,22 @@ QString relation(const QString& raw) {
     // camelCase keys keep their own exact branch above.
     const QString folded = raw.toLower();
     if (folded == QLatin1String("prequel")) {
-        return QCoreApplication::translate("Labels", "Prequel");
+        return content("Prequel", QCoreApplication::translate("Labels", "Prequel"));
     }
     if (folded == QLatin1String("sequel")) {
-        return QCoreApplication::translate("Labels", "Sequel");
+        return content("Sequel", QCoreApplication::translate("Labels", "Sequel"));
     }
     if (folded == QLatin1String("summary")) {
-        return QCoreApplication::translate("Labels", "Summary");
+        return content("Summary", QCoreApplication::translate("Labels", "Summary"));
     }
     if (folded == QLatin1String("adaptation")) {
-        return QCoreApplication::translate("Labels", "Adaptation");
+        return content("Adaptation", QCoreApplication::translate("Labels", "Adaptation"));
     }
     if (folded == QLatin1String("other")) {
-        return QCoreApplication::translate("Labels", "Other");
+        return content("Other", QCoreApplication::translate("Labels", "Other"));
     }
     if (folded == QLatin1String("similar")) {
-        return QCoreApplication::translate("Labels", "Similar");
+        return content("Similar", QCoreApplication::translate("Labels", "Similar"));
     }
     // Unknown token: prettify it the way the raw API spelling reads.
     QString spaced = raw;
@@ -156,35 +215,35 @@ QString relation(const QString& raw) {
 
 QString source(const QString& raw) {
     if (raw == QLatin1String("manga")) {
-        return QCoreApplication::translate("Labels", "Manga");
+        return content("Manga", QCoreApplication::translate("Labels", "Manga"));
     }
     if (raw == QLatin1String("novel")) {
-        return QCoreApplication::translate("Labels", "Novel");
+        return content("Novel", QCoreApplication::translate("Labels", "Novel"));
     }
     if (raw == QLatin1String("light_novel")) {
-        return QCoreApplication::translate("Labels", "Light novel");
+        return content("Light novel", QCoreApplication::translate("Labels", "Light novel"));
     }
     if (raw == QLatin1String("web_comic")) {
-        return QCoreApplication::translate("Labels", "Web comic");
+        return content("Web comic", QCoreApplication::translate("Labels", "Web comic"));
     }
     if (raw == QLatin1String("visual_novel")) {
-        return QCoreApplication::translate("Labels", "Visual novel");
+        return content("Visual novel", QCoreApplication::translate("Labels", "Visual novel"));
     }
     if (raw == QLatin1String("other")) {
-        return QCoreApplication::translate("Labels", "Other");
+        return content("Other", QCoreApplication::translate("Labels", "Other"));
     }
     return raw;
 }
 
 QString country(const QString& raw) {
     if (raw == QLatin1String("JP")) {
-        return QCoreApplication::translate("Labels", "Japan");
+        return content("Japan", QCoreApplication::translate("Labels", "Japan"));
     }
     if (raw == QLatin1String("KR")) {
-        return QCoreApplication::translate("Labels", "South Korea");
+        return content("South Korea", QCoreApplication::translate("Labels", "South Korea"));
     }
     if (raw == QLatin1String("CN")) {
-        return QCoreApplication::translate("Labels", "China");
+        return content("China", QCoreApplication::translate("Labels", "China"));
     }
     return raw;
 }
@@ -193,7 +252,7 @@ QString ageRating(const QString& raw) {
     // Four spellings of the same rating share one translated phrase.
     if (raw == QLatin1String("all") || raw == QLatin1String("any") ||
         raw == QLatin1String("g") || raw == QLatin1String("pg")) {
-        return QCoreApplication::translate("Labels", "All ages");
+        return content("All ages", QCoreApplication::translate("Labels", "All ages"));
     }
     // The remaining ratings are numbers: only the two-letter rating prefix is
     // dropped, and the digits read the same in every language.
@@ -233,13 +292,13 @@ QString season(const QString& startDate) {
     }
     QString name;
     if (month == 2) {
-        name = QCoreApplication::translate("Labels", "Winter");
+        name = content("Winter", QCoreApplication::translate("Labels", "Winter"));
     } else if (month <= 5) {
-        name = QCoreApplication::translate("Labels", "Spring");
+        name = content("Spring", QCoreApplication::translate("Labels", "Spring"));
     } else if (month <= 9) {
-        name = QCoreApplication::translate("Labels", "Summer");
+        name = content("Summer", QCoreApplication::translate("Labels", "Summer"));
     } else {
-        name = QCoreApplication::translate("Labels", "Autumn");
+        name = content("Autumn", QCoreApplication::translate("Labels", "Autumn"));
     }
     return QStringLiteral("%1 %2").arg(name).arg(year);
 }

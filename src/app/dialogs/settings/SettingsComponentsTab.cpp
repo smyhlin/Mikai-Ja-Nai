@@ -14,8 +14,7 @@ QWidget* SettingsDialog::buildComponentsTab() {
     scroll->setObjectName(QStringLiteral("componentsScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    applySettingsTheme(scroll);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* page = new QWidget(scroll);
     page->setObjectName(QStringLiteral("componentsPage"));

@@ -30,8 +30,7 @@ QWidget* SettingsDialog::buildProcessingTab() {
     scroll->setObjectName(QStringLiteral("nativeProcessingScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    applySettingsTheme(scroll);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* page = new QWidget(scroll);
     page->setObjectName(QStringLiteral("processingPage"));

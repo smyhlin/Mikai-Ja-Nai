@@ -286,8 +286,11 @@ set(APP_SOURCES
   src/app/support/I18n.cpp
   src/app/support/Labels.cpp
   src/app/support/WindowRaisePolicy.cpp
+  src/app/theme/Appearance.cpp
   src/app/theme/Icons.cpp
+  src/app/theme/Palette.cpp
   src/app/theme/Theme.cpp
+  src/app/state/AppearanceStore.cpp
   src/app/state/Feeds.cpp
   src/app/state/NativeComponentProvisioner.cpp
   src/app/state/NativePlaybackAssembly.cpp
@@ -297,7 +300,10 @@ set(APP_SOURCES
   src/app/widgets/FailureView.cpp
   src/app/widgets/RangePager.cpp
   src/app/widgets/RateLimitLabel.cpp
+  src/app/widgets/PageGlow.cpp
+  src/app/widgets/SwatchButton.cpp
   src/app/widgets/TitleCard.cpp
+  src/app/widgets/ToggleSwitch.cpp
   src/app/dialogs/ComponentStoreTab.cpp
   src/app/dialogs/ComponentStoreTabAcquisition.cpp
   src/app/dialogs/CoverViewer.cpp
@@ -310,6 +316,7 @@ set(APP_SOURCES
   src/app/dialogs/settings/BenchmarkReport.cpp
   src/app/dialogs/settings/SettingsBenchmarkTab.cpp
   src/app/dialogs/settings/SettingsComponentsTab.cpp
+  src/app/dialogs/settings/SettingsCustomizationTab.cpp
   src/app/dialogs/settings/SettingsGeneralTab.cpp
   src/app/dialogs/settings/SettingsHelpers.cpp
   src/app/dialogs/settings/SettingsPresetsTab.cpp
@@ -326,10 +333,13 @@ set(APP_HEADERS
   src/app/support/I18n.hpp
   src/app/support/Labels.hpp
   src/app/support/WindowRaisePolicy.hpp
+  src/app/theme/Appearance.hpp
   src/app/theme/Colors.hpp
   src/app/theme/Icons.hpp
+  src/app/theme/Palette.hpp
   src/app/theme/Metrics.hpp
   src/app/theme/Theme.hpp
+  src/app/state/AppearanceStore.hpp
   src/app/state/Feeds.hpp
   src/app/state/NativeComponentProvisioner.hpp
   src/app/state/NativePlaybackAssembly.hpp
@@ -340,7 +350,10 @@ set(APP_HEADERS
   src/app/widgets/FlowLayout.hpp
   src/app/widgets/RangePager.hpp
   src/app/widgets/RateLimitLabel.hpp
+  src/app/widgets/PageGlow.hpp
+  src/app/widgets/SwatchButton.hpp
   src/app/widgets/TitleCard.hpp
+  src/app/widgets/ToggleSwitch.hpp
   src/app/dialogs/ComponentStoreTab.hpp
   src/app/dialogs/ComponentStoreTabInternal.hpp
   src/app/dialogs/CoverViewer.hpp
@@ -359,6 +372,12 @@ set(APP_HEADERS
 )
 
 add_library(mikai_app STATIC ${APP_SOURCES} ${APP_HEADERS})
+qt_add_resources(mikai_app "mikai_assets"
+  PREFIX "/icons"
+  BASE resources
+  FILES
+    resources/chevron-down.svg
+)
 set_target_properties(mikai_app PROPERTIES AUTOMOC ON POSITION_INDEPENDENT_CODE ON)
 target_include_directories(mikai_app PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/app

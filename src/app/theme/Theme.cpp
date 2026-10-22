@@ -1,7 +1,24 @@
 #include "theme/Theme.hpp"
 
+#include "theme/Appearance.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
+
+#include <QApplication>
+#include <QPalette>
+
+/// The arrow asset lives in the app's resource bundle; a static library keeps
+/// that object only when something references its initialiser. Q_INIT_RESOURCE
+/// declares its symbol in the enclosing namespace, so this must stay at global
+/// scope - not in an anonymous one.
+void mikaiInitAssetResources() {
+    static const bool loaded = [] {
+        Q_INIT_RESOURCE(mikai_assets);
+        return true;
+    }();
+    Q_UNUSED(loaded);
+}
 
 namespace mikai::app::theme {
 namespace {
@@ -61,8 +78,8 @@ QFrame#settingsCard QPushButton:hover, QWidget#settingsCard QPushButton:hover {
 }
 QFrame#settingsCard QPushButton:disabled, QWidget#settingsCard QPushButton:disabled {
     color: %4;
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.06);
+    background: rgba(%23, 0.03);
+    border-color: rgba(%23, 0.06);
 }
 QFrame#settingsCard QPushButton#primary, QWidget#settingsCard QPushButton#primary {
     background: %11;
@@ -140,7 +157,7 @@ QLabel[badgeRole="installed"], QGroupBox#nativeComponentPackCard QLabel[badgeRol
 }
 QLabel[badgeRole="optional"], QGroupBox#nativeComponentPackCard QLabel[badgeRole="optional"] {
     color: %4;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(%23, 0.05);
     border: 1px solid %10;
     border-radius: %21px;
     padding: 2px %3px;
@@ -163,7 +180,9 @@ QLineEdit, QComboBox, QSpinBox {
     selection-background-color: %11; selection-color: %1;
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border-color: %11; background: %8; }
-QComboBox::drop-down { border: none; width: 24px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
+    width: 26px; border: none; background: transparent; }
+QComboBox::down-arrow { image: url(:/icons/chevron-down.svg); width: 10px; height: 10px; }
 QComboBox QAbstractItemView { background: %5; border: 1px solid %10;
     selection-background-color: %8; }
 QCheckBox { spacing: %3px; }
@@ -211,7 +230,7 @@ QPushButton#carouselControl { background: %5; color: %2; border: 1px solid %10;
     min-height: 30px; max-height: 30px; }
 QPushButton#carouselControl:hover { background: %8; border-color: rgba(189, 172, 255, 0.45); color: %11; }
 QPushButton#carouselControl:pressed { background: %9; }
-QPushButton#carouselControl:disabled { color: rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.06); }
+QPushButton#carouselControl:disabled { color: rgba(%23, 0.22); background: rgba(%23, 0.03); border-color: rgba(%23, 0.06); }
 QWidget#homeFeedRow { background: %5; border: 1px solid %10; border-radius: %6px; }
 QWidget#homeFeedRow:hover { background: %8; border-color: rgba(189, 172, 255, 0.30); }
 QPushButton#homeFeedTitle { text-align: left; background: transparent; border: none;
@@ -224,7 +243,7 @@ QWidget#animeCarouselTrack { background: transparent; }
 QLabel#carouselPoster { background: %1; color: %4; border-radius: %6px; font-size: 12px; }
 QLabel#carouselKind { background: transparent; color: %11; font-size: 11px; font-weight: 600; }
 QLabel#carouselTitle { background: transparent; color: %2; font-weight: 600; font-size: 13px; }
-QLabel#carouselStatus { background: rgba(255, 255, 255, 0.06); color: %4;
+QLabel#carouselStatus { background: rgba(%23, 0.06); color: %4;
     font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 6px; }
 QLabel#carouselStatusLive { background: rgba(189, 172, 255, 0.16); color: %11;
     font-size: 11px; font-weight: 700; border-radius: 4px; padding: 2px 6px; }
@@ -254,7 +273,7 @@ QTabBar::tab { background: transparent; color: %4; border: none;
 QTabBar::tab:selected { color: %2; border-bottom: 2px solid %11;
     background: rgba(189, 172, 255, 0.08); border-top-left-radius: %21px;
     border-top-right-radius: %21px; }
-QTabBar::tab:hover:!selected { color: %2; background: rgba(255, 255, 255, 0.03);
+QTabBar::tab:hover:!selected { color: %2; background: rgba(%23, 0.03);
     border-top-left-radius: %21px; border-top-right-radius: %21px; }
 QTableWidget {
     background: %1;
@@ -414,7 +433,14 @@ QWidget#coverViewerView { background: transparent; border: none; }
 // is deliberately generous with whitespace; spacing and column widths are
 // owned by TitlePage's layout, while this sheet owns colour, type scale,
 // radii and control states.
-QString titlePage() {
+QString titlePage(const Palette& p, const Appearance& a) {
+    // A radius step scales every rounded corner on the page by the ratio the
+    // viewer chose against the sheet's own MD default, so one control moves
+    // chips, cards, posters and the details panel together.
+    const double scale = radiusSmall(a) / 8.0;
+    const auto scaled = [scale](int value) {
+        return qMax(0, qRound(value * scale));
+    };
     return QStringLiteral(R"QSS(
 QWidget#titlePage {
     background: %1;
@@ -612,7 +638,7 @@ QWidget#titlePage QLabel#episodeSectionHeading {
 }
 QWidget#titlePage QWidget#titleSectionHeader,
 QWidget#titlePage QWidget#titleEpisodeHeader {
-    background: %1;
+    background: transparent;
     border-bottom: 1px solid %8;
 }
 QWidget#titlePage QLabel#titleEpisodeCount { color: %7; font-size: %27px; }
@@ -827,25 +853,25 @@ QWidget#titlePage QPushButton#titleDetailsClose:hover { border-color: %4; }
 QWidget#titlePage QPushButton#titleDetailsClose:pressed { background: %3; }
 QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
 )QSS")
-        .arg(QLatin1String(kTitleBackground))
-        .arg(QLatin1String(kTitleSurface))
-        .arg(QLatin1String(kTitleSurfaceHover))
-        .arg(QLatin1String(kTitleAccent))
-        .arg(QLatin1String(kTitleAccentHover))
-        .arg(QLatin1String(kTitleText))
-        .arg(QLatin1String(kTitleMuted))
-        .arg(QLatin1String(kTitleBorder))
-        .arg(QLatin1String(kTitleAccentRgb))
-        .arg(QLatin1String(kTitleMutedRgb))
-        .arg(QLatin1String(kTitleBackgroundRgb))
+        .arg(p.titleBackground)
+        .arg(p.titleSurface)
+        .arg(p.titleSurfaceHover)
+        .arg(p.titleAccent)
+        .arg(p.titleAccentHover)
+        .arg(p.titleText)
+        .arg(p.titleMuted)
+        .arg(p.titleBorder)
+        .arg(p.titleAccentRgb)
+        .arg(p.titleMutedRgb)
+        .arg(p.titleBackgroundRgb)
         .arg(kTitleControlHeight)
-        .arg(kTitlePillRadiusRound)
-        .arg(kTitleCardRadius)
-        .arg(kTitlePosterRadius)
-        .arg(kTitleEpisodeRadius)
+        .arg(scaled(kTitlePillRadiusRound))
+        .arg(scaled(kTitleCardRadius))
+        .arg(scaled(kTitlePosterRadius))
+        .arg(scaled(kTitleEpisodeRadius))
         .arg(kTitleEpisodeButtonHeight)
         .arg(kTitleCircleControlSize)
-        .arg(kTitleCircleRadius)
+        .arg(scaled(kTitleCircleRadius))
         .arg(kTitleChipPaddingH)
         .arg(kTitleAccentRuleHeight)
         .arg(kTitleHeroTitlePixelSize)
@@ -862,39 +888,70 @@ QWidget#titlePage QPushButton#titleDetailsClose:focus { border-color: %4; }
         .arg(kTitleTabPaddingV)
         .arg(kTitleTabPaddingH)
         .arg(kTitleTabSpacing)
-        .arg(kTitleDetailsThumbRadius)
+        .arg(scaled(kTitleDetailsThumbRadius))
         .arg(kTitleDetailsCloseSize)
         .arg(kTitleButtonPaddingH)
-        .arg(kTitleLegendSwatchRadius);
+        .arg(scaled(kTitleLegendSwatchRadius));
 }
 
 }  // namespace
 
-QString buildStylesheet() {
+QString buildStylesheet(const Appearance& appearance) {
+    mikaiInitAssetResources();
+    const Palette p = paletteFor(appearance);
     const QString application = base()
-            .arg(QLatin1String(kBackground), 1)
-            .arg(QLatin1String(kText), 2)
+            .arg(p.background, 1)
+            .arg(p.text, 2)
             .arg(kSpacingSmall, 3)
-            .arg(QLatin1String(kMuted), 4)
-            .arg(QLatin1String(kSurface), 5)
-            .arg(kRadiusSmall, 6)
+            .arg(p.muted, 4)
+            .arg(p.surface, 5)
+            .arg(radiusSmall(appearance), 6)
             .arg(kSpacingMedium, 7)
-            .arg(QLatin1String(kSurfaceHover), 8)
-            .arg(QLatin1String(kSurfaceActive), 9)
-            .arg(QLatin1String(kBorder), 10)
-            .arg(QLatin1String(kAccent), 11)
-            .arg(QLatin1String(kAccentHover), 12)
+            .arg(p.surfaceHover, 8)
+            .arg(p.surfaceActive, 9)
+            .arg(p.border, 10)
+            .arg(p.accent, 11)
+            .arg(p.accentHover, 12)
             .arg(kSettingsControlSize, 13)
             .arg(kSecondaryControlSize, 14)
             .arg(kSpacingXs, 15)
             .arg(kMenuItemMinHeight, 16)
-            .arg(kRadius, 17)
+            .arg(radiusMedium(appearance), 17)
             .arg(kSpacingLarge, 18)
             .arg(kSearchRowMinHeight, 19)
-            .arg(QLatin1String(kVideoBackground), 20)
-            .arg(kTitlePillRadius, 21)
-            .arg(QLatin1String(kDanger), 22);
-    return application + titlePage();
+            .arg(p.videoBackground, 20)
+            .arg(radiusPill(appearance), 21)
+            .arg(p.danger, 22)
+            .arg(p.wash, 23);
+    return application + titlePage(p, appearance);
+}
+
+QString buildStylesheet() { return buildStylesheet(Appearance{}); }
+
+void applyPalette(const Appearance& appearance) {
+    const Palette p = paletteFor(appearance);
+    // Qt draws its own sub-controls - combo arrows, menu indicators, checkbox
+    // ticks, scrollbar arrows - from the palette, not from the sheet. Without
+    // this the arrows stay the platform default black on a near-black field.
+    QPalette pal;
+    pal.setColor(QPalette::Window, QColor(p.background));
+    pal.setColor(QPalette::WindowText, QColor(p.text));
+    pal.setColor(QPalette::Base, QColor(p.surfaceInput));
+    pal.setColor(QPalette::AlternateBase, QColor(p.tableAlternateRow));
+    pal.setColor(QPalette::Text, QColor(p.text));
+    pal.setColor(QPalette::Button, QColor(p.surface));
+    pal.setColor(QPalette::ButtonText, QColor(p.text));
+    pal.setColor(QPalette::BrightText, QColor(p.accentSoftBright));
+    pal.setColor(QPalette::Highlight, QColor(p.accentValue));
+    pal.setColor(QPalette::HighlightedText, QColor(p.accentOnFill));
+    pal.setColor(QPalette::ToolTipBase, QColor(p.surfaceHover));
+    pal.setColor(QPalette::ToolTipText, QColor(p.text));
+    pal.setColor(QPalette::PlaceholderText, QColor(p.muted));
+    pal.setColor(QPalette::Link, QColor(p.accent));
+    pal.setColor(QPalette::Disabled, QPalette::Text, QColor(p.textDisabled));
+    pal.setColor(QPalette::Disabled, QPalette::WindowText, QColor(p.textDisabled));
+    pal.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(p.textDisabled));
+    QApplication::setPalette(pal);
 }
 
 }  // namespace mikai::app::theme

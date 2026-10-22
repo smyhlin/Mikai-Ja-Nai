@@ -6,6 +6,7 @@
 #include "dialogs/settings/SettingsUi.hpp"
 #include "state/Feeds.hpp"
 #include "theme/Colors.hpp"
+#include "theme/Theme.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
 #include "workers/Runner.hpp"
@@ -15,10 +16,12 @@
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
 #include <native/status/NativeStatus.hpp>
+#include <player/shell/ShellTheme.hpp>
 #include <player/shaders/Anime4K.hpp>
 #include <player/shaders/PresetShortcuts.hpp>
 
 #include <QAccessible>
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -82,73 +85,25 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
                              theme::kSpacingMedium);
     root->setSpacing(theme::kSpacingMedium);
 
-    tabs_ = new QTabWidget(this);
-    tabs_->setObjectName(QStringLiteral("settingsTabs"));
-    tabs_->setDocumentMode(false);
-    tabs_->tabBar()->setDrawBase(false);
-    // Compact padding keeps every translated tab reachable at the minimum width.
-    tabs_->setStyleSheet(
-        QStringLiteral(
-            "QTabWidget#settingsTabs { border: none; }"
-            "QTabWidget#settingsTabs::pane { border: none; background: transparent; }"
-            "QTabWidget#settingsTabs QTabBar::base {"
-            " border: none;"
-            " background: transparent;"
-            "}"
-            "QTabWidget#settingsTabs QTabBar {"
-            " border-bottom: 1px solid rgba(%1, 0.20);"
-            "}"
-            "QTabWidget#settingsTabs QTabBar::tab {"
-            " color: %2;"
-            " background: transparent;"
-            " border: none;"
-            " border-bottom: 2px solid transparent;"
-            " padding: %3px %4px;"
-            " margin-right: %5px;"
-            "}"
-            "QTabWidget#settingsTabs QTabBar::tab:selected {"
-            " color: %6;"
-            " border-bottom-color: %7;"
-            "}"
-            "QTabWidget#settingsTabs QTabBar::tab:hover {"
-            " color: %6;"
-            " background-color: rgba(%8, 0.08);"
-            " border-radius: %9px;"
-            "}"
-            "QTabWidget#settingsTabs QTabBar::tab:selected:hover {"
-            " background: transparent;"
-            "}"
-            "QTabWidget#settingsTabs QTabBar::tab:disabled { color: %10; }")
-            .arg(QLatin1String(theme::kHairlineRgb))
-            .arg(QLatin1String(theme::kTextMutedSoft))
-            .arg(theme::kSpacingSmall)
-            .arg(theme::kSpacingXs)
-            .arg(theme::kSpacingXs)
-            .arg(QLatin1String(theme::kTextStrong))
-            .arg(QLatin1String(theme::kAccentSoftBright))
-            .arg(QLatin1String(theme::kAccentRgb))
-            .arg(theme::kRadiusSmall)
-            .arg(QLatin1String(theme::kTextDisabled)));
+    openingAppearance_ = currentAppearance();
+    appearanceDraft_ = openingAppearance_;
+    styledAppearance_ = openingAppearance_;
+    appearanceStyleTimer_ = new QTimer(this);
+    appearanceStyleTimer_->setSingleShot(true);
+    appearanceStyleTimer_->setInterval(60);
+    connect(appearanceStyleTimer_, &QTimer::timeout, this,
+            &SettingsDialog::applyAppearanceStyles);
     generalTab_ = buildGeneralTab();
     presetsTab_ = buildPresetsTab();
     processingTab_ = buildProcessingTab();
     componentsTab_ = buildComponentsTab();
     benchmarkTab_ = buildBenchmarkTab();
-    tabs_->addTab(generalTab_, tr("General"));
-    tabs_->addTab(presetsTab_, tr("Keyboard shortcuts"));
-    tabs_->addTab(processingTab_, tr("Processing"));
-    tabs_->addTab(componentsTab_, tr("Components"));
-    tabs_->addTab(benchmarkTab_, tr("Benchmark"));
+    customizationGeneralPage_ = buildCustomizationGeneralTab();
+    appearancePage_ = buildAppearanceTab();
+    buildNavigation();
     if (!presetError_->isHidden()) {
-        tabs_->setCurrentWidget(presetsTab_);
+        showPage(QStringLiteral("shortcuts"));
     }
-    connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) {
-        QWidget* current = tabs_->widget(index);
-        if (current == componentsTab_) emit componentsTabOpened(this);
-        if (current == benchmarkTab_) refreshBenchmarkCatalogue();
-    });
-    root->addWidget(tabs_, 1);
-
     auto* footer = new QWidget(this);
     footer->setObjectName(QStringLiteral("settingsFooter"));
     auto* footerLayout = new QHBoxLayout(footer);
@@ -159,6 +114,7 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     cancelButton_->setMinimumHeight(theme::kSettingsControlSize);
     saveButton_ = buttonBox_->addButton(tr("Save"), QDialogButtonBox::AcceptRole);
     saveButton_->setObjectName(QStringLiteral("primary"));
+    saveButton_->setProperty("primaryAction", true);
     saveButton_->setMinimumHeight(theme::kSettingsControlSize);
     connect(cancelButton_, &QPushButton::clicked, this, &QDialog::reject);
     connect(saveButton_, &QPushButton::clicked, this, &SettingsDialog::save);
@@ -170,12 +126,18 @@ SettingsDialog::SettingsDialog(backend::MikaiClient& client, Runner& runner, QWi
     connect(quotaTimer_, &QTimer::timeout, this, &SettingsDialog::refreshQuota);
     quotaTimer_->start();
     refreshQuota();
+
+    // The dialog paints the settings sheet itself, so a preview of a new theme,
+    // accent or radius re-styles every page from one place. Applied once the
+    // whole tree exists, footer included.
+    setStyleSheet(settingsStylesheet(appearanceDraft_));
 }
 
 SettingsDialog::~SettingsDialog() {
     // A dialog destroyed without done() - a parent going away, a stack frame
-    // unwinding - still owes the user the language they opened it in.
+    // unwinding - still owes the user the language and the look they opened in.
     restoreOpeningLanguage();
+    restoreOpeningAppearance();
     // Before QObject deletes children. An adopted tab is the app's, so closing
     // Settings must not destroy it or cancel the download it is running.
     releaseAdoptedComponentsTab();
@@ -186,7 +148,10 @@ void SettingsDialog::done(int result) {
     if (benchmarkCancellation_) benchmarkCancellation_->store(true);
     // An accepted result is only produced by save(), which has already written
     // and committed the choice; every other close rolls the preview back.
-    if (result != QDialog::Accepted) restoreOpeningLanguage();
+    if (result != QDialog::Accepted) {
+        restoreOpeningLanguage();
+        restoreOpeningAppearance();
+    }
     roundDone_ = true;
     QDialog::done(result);
 }
@@ -219,9 +184,7 @@ void SettingsDialog::setComponentProvisioner(NativeComponentProvisioner* provisi
     if (componentStoreTab_ != nullptr) componentStoreTab_->setComponentProvisioner(provisioner);
 }
 
-void SettingsDialog::showComponentsTab() {
-    if (tabs_ != nullptr && componentsTab_ != nullptr) tabs_->setCurrentWidget(componentsTab_);
-}
+void SettingsDialog::showComponentsTab() { showPage(QStringLiteral("components")); }
 
 void SettingsDialog::installRecommended() {
     if (componentStoreTab_ != nullptr) componentStoreTab_->installRecommended();
@@ -335,6 +298,10 @@ void SettingsDialog::showEvent(QShowEvent* event) {
     // committed.
     if (!roundDone_) return;
     roundDone_ = false;
+    openingAppearance_ = currentAppearance();
+    appearanceDraft_ = openingAppearance_;
+    appearanceCommitted_ = false;
+    refreshAppearanceControls();
     openingLanguageCode_ = activeInterfaceLanguage();
     openingLanguagePreference_ = languagePreference();
     previewLanguagePreference_ = openingLanguagePreference_;
@@ -398,24 +365,12 @@ void SettingsDialog::restoreOpeningLanguage() {
 void SettingsDialog::retranslateUi() {
     retranslating_ = true;
     setWindowTitle(tr("Settings"));
-    for (int index = 0; index < tabs_->count(); ++index) {
-        QWidget* page = tabs_->widget(index);
-        if (page == generalTab_) {
-            tabs_->setTabText(index, tr("General"));
-        } else if (page == presetsTab_) {
-            tabs_->setTabText(index, tr("Keyboard shortcuts"));
-        } else if (page == processingTab_) {
-            tabs_->setTabText(index, tr("Processing"));
-        } else if (page == componentsTab_) {
-            tabs_->setTabText(index, tr("Components"));
-        } else if (page == benchmarkTab_) {
-            tabs_->setTabText(index, tr("Benchmark"));
-        }
-    }
+    retranslateNavigation();
     cancelButton_->setText(tr("Cancel"));
     saveButton_->setText(tr("Save"));
 
     retranslateGeneralTab();
+    retranslateCustomizationTabs();
     retranslatePresetsTab();
     retranslateProcessingTab();
     retranslateBenchmarkTab();
@@ -425,22 +380,18 @@ void SettingsDialog::retranslateUi() {
 void SettingsDialog::showPresetError(const QString& message) {
     presetError_->setText(message);
     presetError_->show();
-    tabs_->setCurrentIndex(1);
+    showPage(QStringLiteral("shortcuts"));
 }
 
 void SettingsDialog::showGeneralError(const QString& message) {
     status_->setText(message);
     status_->show();
-    tabs_->setCurrentIndex(0);
+    showPage(QStringLiteral("access"));
     QAccessibleEvent alert(status_, QAccessible::Alert);
     QAccessible::updateAccessibility(&alert);
 }
 
-void SettingsDialog::showProcessingTab() {
-    if (tabs_ != nullptr) {
-        tabs_->setCurrentWidget(processingTab_);
-    }
-}
+void SettingsDialog::showProcessingTab() { showPage(QStringLiteral("processing")); }
 
 void SettingsDialog::focusNativeProviderChoice() {
     showProcessingTab();
@@ -475,7 +426,7 @@ void SettingsDialog::applyProcessingIntent(mplayer::shell::ProcessingSettingsInt
 void SettingsDialog::showNativeError(const QString& message) {
     nativeError_->setText(message);
     nativeError_->show();
-    tabs_->setCurrentIndex(2);
+    showPage(QStringLiteral("processing"));
 }
 
 void SettingsDialog::save() {
@@ -580,6 +531,12 @@ void SettingsDialog::save() {
     // Every fallible write has succeeded, so the preferences can now be
     // committed. Until this point a refusal has left the store exactly as the
     // dialog found it, which is what lets Cancel keep rolling back the preview.
+    applyAppearancePreview();
+    appearanceStyleTimer_->stop();
+    applyAppearanceStyles();
+    saveAppearance(appearanceDraft_);
+    mplayer::shell::setAccent(theme::accentColor(appearanceDraft_));
+    appearanceCommitted_ = true;
     QSettings settings;
     settings.setValue(QString::fromLatin1(kUiLanguageSettingKey), chosenLanguage);
     settings.setValue(feeds::settingsKey(), feeds::serialize(chosen));

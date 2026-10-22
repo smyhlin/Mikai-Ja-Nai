@@ -54,7 +54,11 @@ inline QColor dock() { return QColor(24, 25, 28, 230); }
 inline QColor pill() { return QColor(32, 34, 37, 217); }
 inline QColor flyout() { return QColor(35, 39, 45, 246); }
 inline QColor blackSoft() { return QColor(0, 0, 0, 150); }
-inline QColor accent() { return QColor(QStringLiteral("#5865F2")); }
+/// The player's accent. The application owns the preference and pushes it in
+/// before a player window is built; the player library cannot reach the app's
+/// appearance store, so the last pushed value is what the overlay paints.
+QColor accent();
+void setAccent(const QColor& color);
 /// The played part of a timeline. It is not the accent: a progress bar reads as
 /// a quantity, not as a call to action.
 inline QColor timelinePlayed() { return QColor(QStringLiteral("#7289ff")); }

@@ -1013,12 +1013,9 @@ void TestFeedRender::benchmarkTabKeepsGroupedModelAndClipSelectionsConsistent() 
   Runner runner;
   SettingsDialog dialog(client, runner);
 
-  auto* tabs = dialog.findChild<QTabWidget*>();
+  QVERIFY(dialog.showPage(QStringLiteral("benchmark")));
   auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
-  QVERIFY(tabs != nullptr);
   QVERIFY(tree != nullptr);
-  QCOMPARE(tabs->count(), 5);
-  tabs->setCurrentIndex(4);
 
   QCheckBox* firstClip = nullptr;
   for (QCheckBox* check :
@@ -1118,13 +1115,11 @@ void TestFeedRender::benchmarkModelSearchFiltersRowsAndRestoresSelections() {
   Runner runner;
   SettingsDialog dialog(client, runner);
 
-  auto* tabs = dialog.findChild<QTabWidget*>();
+  QVERIFY(dialog.showPage(QStringLiteral("benchmark")));
   auto* tree = dialog.findChild<QTreeWidget*>(QStringLiteral("benchmarkModelTree"));
   auto* search = dialog.findChild<QLineEdit*>(QStringLiteral("benchmarkModelSearch"));
-  QVERIFY(tabs != nullptr);
   QVERIFY(tree != nullptr);
   QVERIFY2(search != nullptr, "the benchmark models card carries no search box to filter by");
-  tabs->setCurrentIndex(4);
 
   QTRY_COMPARE(tree->topLevelItemCount(), 4);
 

@@ -7,6 +7,7 @@
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
 #include "workers/Runner.hpp"
 
 #include <backend/MikaiClient.hpp>
@@ -17,7 +18,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QGridLayout>
+#include "widgets/FlowLayout.hpp"
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -36,8 +37,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     scroll->setObjectName(QStringLiteral("nativeGeneralScroll"));
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    applySettingsTheme(scroll);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* page = new QWidget(scroll);
     page->setObjectName(QStringLiteral("generalPage"));
@@ -63,7 +63,9 @@ QWidget* SettingsDialog::buildGeneralTab() {
     auto* iconLabel = new QLabel(iconBadge);
     iconLabel->setObjectName(QStringLiteral("muted"));
     iconLabel->setAlignment(Qt::AlignCenter);
-    iconLabel->setPixmap(theme::gearIcon(18, QLatin1String(theme::kAccent)).pixmap(18, 18));
+    iconLabel->setPixmap(theme::gearIcon(
+                              18, theme::paletteFor(currentAppearance()).accent)
+                              .pixmap(18, 18));
     iconBadgeLayout->addWidget(iconLabel);
 
     tokenHeading_ = new QLabel(tr("Mikai API access token"), apiCard);
@@ -85,7 +87,7 @@ QWidget* SettingsDialog::buildGeneralTab() {
     tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
                            "href=\"https://mikai.me/user/developers\">"
                            "Get a key from the developer dashboard on mikai.me ↗</a>")
-                            .arg(QLatin1String(theme::kAccent)));
+                            .arg(theme::paletteFor(currentAppearance()).accent));
     tokenLink_->setOpenExternalLinks(true);
     tokenLink_->setWordWrap(true);
     tokenLink_->setCursor(Qt::PointingHandCursor);
@@ -163,23 +165,20 @@ QWidget* SettingsDialog::buildGeneralTab() {
     QSettings settings;
     const QSet<QString> enabled = feeds::enabled(settings.value(feeds::settingsKey()).toString());
     initialFeeds_ = enabled;
-    auto* feedsGrid = new QGridLayout();
+    // Wrapping rather than a fixed two-column grid: a long translation would
+    // otherwise set a page minimum wider than a narrow dialog can show.
+    auto* feedsGrid = new FlowLayout(theme::kSpacingSmall, theme::kSpacingSmall);
     feedsGrid->setContentsMargins(0, theme::kSpacingXs, 0, 0);
-    feedsGrid->setHorizontalSpacing(theme::kSpacingSmall);
-    feedsGrid->setVerticalSpacing(theme::kSpacingSmall);
     const QStringList allFeeds = feeds::all();
-    for (int i = 0; i < allFeeds.size(); ++i) {
-        const QString& key = allFeeds.at(i);
+    for (const QString& key : allFeeds) {
         auto* box = new QCheckBox(feeds::label(key), feedsCard);
         box->setProperty("tileCheck", true);
         box->setAccessibleName(feeds::label(key));
         polishInteractiveControl(box, theme::kSettingsControlSize);
         box->setChecked(enabled.contains(key));
-        feedsGrid->addWidget(box, i / 2, i % 2);
+        feedsGrid->addWidget(box);
         feedBoxes_.insert(key, box);
     }
-    feedsGrid->setColumnStretch(0, 1);
-    feedsGrid->setColumnStretch(1, 1);
     feedsLayout->addLayout(feedsGrid);
 
     root->addWidget(feedsCard);
@@ -317,7 +316,7 @@ void SettingsDialog::retranslateGeneralTab() {
     tokenLink_->setText(tr("<a style=\"color: %1; text-decoration: none; font-weight: 500;\" "
                            "href=\"https://mikai.me/user/developers\">"
                            "Get a key from the developer dashboard on mikai.me ↗</a>")
-                            .arg(QLatin1String(theme::kAccent)));
+                            .arg(theme::paletteFor(currentAppearance()).accent));
     token_->setPlaceholderText(tr("mk_... (leave blank for anonymous access)"));
     token_->setAccessibleName(tr("Mikai API access token"));
     testButton_->setText(tr("Test"));

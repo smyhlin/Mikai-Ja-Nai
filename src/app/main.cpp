@@ -2,8 +2,11 @@
 #include "I18n.hpp"
 #include "WindowRaisePolicy.hpp"
 #include "pages/MainWindow.hpp"
+#include "state/AppearanceStore.hpp"
 #include "theme/Theme.hpp"
 #include "workers/Runner.hpp"
+
+#include <ShellTheme.hpp>
 
 #include <backend/MikaiClient.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -98,7 +101,10 @@ int main(int argc, char** argv) {
     }
 
     app.setStyle(QStringLiteral("Fusion"));
-    app.setStyleSheet(mikai::app::theme::buildStylesheet());
+    mikai::app::theme::applyPalette(mikai::app::currentAppearance());
+    mplayer::shell::setAccent(mikai::app::theme::accentColor(mikai::app::currentAppearance()));
+    app.setStyleSheet(
+        mikai::app::theme::buildStylesheet(mikai::app::currentAppearance()));
 
     // After the application object exists (the policy installs an event filter
     // on it) and before any window is shown, so the first window - the shell -

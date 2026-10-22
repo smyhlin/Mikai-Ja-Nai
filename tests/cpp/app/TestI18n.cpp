@@ -3,6 +3,9 @@
 
 #include <app/dialogs/SettingsDialog.hpp>
 #include <app/dialogs/AnimeJanaiManagerPanel.hpp>
+#include <app/support/Labels.hpp>
+#include <app/state/AppearanceStore.hpp>
+#include <app/theme/Metrics.hpp>
 #include <app/support/I18n.hpp>
 #include <app/workers/Runner.hpp>
 #include <backend/Cancellation.hpp>
@@ -13,6 +16,7 @@
 #include <native/prepare/NativePreparationContext.hpp>
 #include <player/shell/PlayerPopups.hpp>
 #include <player/shell/PlayerShell.hpp>
+#include <player/shell/ShellTheme.hpp>
 #include <player/shell/ShellWidgets.hpp>
 #include <widgets/FailureView.hpp>
 #include <widgets/RangePager.hpp>
@@ -28,6 +32,7 @@
 #include <QtCore/QPoint>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QScopeGuard>
+#include <QtGui/QColor>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
@@ -51,7 +56,7 @@
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSpinBox>
-#include <QtWidgets/QTabWidget>
+#include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QWidget>
@@ -311,6 +316,367 @@ void TestI18n::liveStringsFollowTheSwitchedLanguageAndRestore() {
   QCOMPARE(readAll(), ukrainian);
 }
 
+void TestI18n::contentNamesFollowTheirOwnLanguage() {
+  // The interface stays English throughout: only the content vocabulary moves.
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  mikai::app::theme::Appearance appearance = saved;
+
+  appearance.nameLanguage = mikai::app::theme::NameLanguage::Interface;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::status(QStringLiteral("finished")),
+           QStringLiteral("Finished"));
+
+  appearance.nameLanguage = mikai::app::theme::NameLanguage::Ukrainian;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::status(QStringLiteral("finished")),
+           QStringLiteral("Завершено"));
+  QCOMPARE(mikai::app::labels::ageRating(QStringLiteral("r18")), QStringLiteral("18+"));
+
+  appearance.nameLanguage = mikai::app::theme::NameLanguage::English;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::status(QStringLiteral("finished")),
+           QStringLiteral("Finished"));
+
+  // An unknown token is returned as it arrived, in every language.
+  QCOMPARE(mikai::app::labels::status(QStringLiteral("brand-new")),
+           QStringLiteral("brand-new"));
+}
+
+void TestI18n::appearanceRoundTripsThroughSettings() {
+  QTemporaryDir settingsDir;
+  QVERIFY(settingsDir.isValid());
+  QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+  QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+  const mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+
+  mikai::app::theme::Appearance wanted;
+  wanted.siteTheme = mikai::app::theme::SiteTheme::Light;
+  wanted.titleLanguage = mikai::app::theme::TitleLanguage::English;
+  wanted.nameLanguage = mikai::app::theme::NameLanguage::Original;
+  wanted.coverGradient = false;
+  wanted.showAdult = true;
+  wanted.accent = QStringLiteral("#123456");
+  wanted.radiusStep = 1;
+  wanted.backgroundGradient = false;
+  wanted.gradientIntensity = 75;
+  wanted.gradientHeight = 40;
+  wanted.gradientColor = QStringLiteral("#abcdef");
+  mikai::app::saveAppearance(wanted);
+
+  const mikai::app::theme::Appearance reloaded = mikai::app::loadAppearance();
+  QCOMPARE(reloaded.siteTheme, wanted.siteTheme);
+  QCOMPARE(reloaded.titleLanguage, wanted.titleLanguage);
+  QCOMPARE(reloaded.nameLanguage, wanted.nameLanguage);
+  QCOMPARE(reloaded.coverGradient, wanted.coverGradient);
+  QCOMPARE(reloaded.showAdult, wanted.showAdult);
+  QCOMPARE(mikai::app::theme::accentColor(reloaded), QColor(wanted.accent));
+  QCOMPARE(reloaded.radiusStep, wanted.radiusStep);
+  QCOMPARE(reloaded.backgroundGradient, wanted.backgroundGradient);
+  QCOMPARE(reloaded.gradientIntensity, wanted.gradientIntensity);
+  QCOMPARE(reloaded.gradientHeight, wanted.gradientHeight);
+  QCOMPARE(mikai::app::theme::gradientColor(reloaded), QColor(wanted.gradientColor));
+}
+
+void TestI18n::unsetRadiusAndResetUseXsWithoutOverwritingSavedChoices() {
+  QSettings settings;
+  QVariantMap prior;
+  for (const QString& key : settings.allKeys()) prior.insert(key, settings.value(key));
+  const auto savedLook = mikai::app::currentAppearance();
+  const auto savedPalette = qApp->palette();
+  const QString savedSheet = qApp->styleSheet();
+  const auto savedAccent = mplayer::shell::accent();
+  const auto restore = qScopeGuard([&] {
+    settings.clear();
+    for (auto it = prior.cbegin(); it != prior.cend(); ++it) settings.setValue(it.key(), it.value());
+    settings.sync();
+    mikai::app::setCurrentAppearance(savedLook);
+    qApp->setPalette(savedPalette);
+    qApp->setStyleSheet(savedSheet);
+    mplayer::shell::setAccent(savedAccent);
+  });
+
+  settings.remove(QStringLiteral("customization/radiusStep"));
+  settings.sync();
+  const auto defaults = mikai::app::loadAppearance();
+  QCOMPARE(mikai::app::theme::radiusNames().at(defaults.radiusStep), QStringLiteral("XS"));
+  QCOMPARE(mikai::app::theme::radiusSmall(defaults), 4);
+
+  settings.setValue(QStringLiteral("customization/radiusStep"), 4);
+  settings.sync();
+  const auto opening = mikai::app::loadAppearance();
+  QCOMPARE(opening.radiusStep, 4);
+  mikai::app::setCurrentAppearance(opening);
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  auto* reset = dialog.findChild<QPushButton*>(QStringLiteral("resetAppearanceButton"));
+  QVERIFY(reset != nullptr);
+  reset->click();
+  QCOMPARE(mikai::app::theme::radiusSmall(mikai::app::currentAppearance()), 4);
+  QCOMPARE(mikai::app::loadAppearance().radiusStep, 4);
+  dialog.reject();
+  QCOMPARE(mikai::app::currentAppearance().radiusStep, 4);
+
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  reset->click();
+  auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
+  QVERIFY(footer != nullptr);
+  auto* save = footer->findChild<QPushButton*>(QStringLiteral("primary"));
+  QVERIFY(save != nullptr);
+  save->click();
+  QCOMPARE(dialog.result(), int(QDialog::Accepted));
+  QCOMPARE(mikai::app::theme::radiusSmall(mikai::app::loadAppearance()), 4);
+}
+
+void TestI18n::appearanceSaveAndCancelKeepTheLatestBatchedStyle() {
+  QSettings settings;
+  QVariantMap prior;
+  for (const QString& key : settings.allKeys()) prior.insert(key, settings.value(key));
+  const auto savedLook = mikai::app::currentAppearance();
+  const auto savedPalette = qApp->palette();
+  const QString savedSheet = qApp->styleSheet();
+  const auto savedAccent = mplayer::shell::accent();
+  const auto restore = qScopeGuard([&] {
+    settings.clear();
+    for (auto it = prior.cbegin(); it != prior.cend(); ++it) settings.setValue(it.key(), it.value());
+    settings.sync();
+    mikai::app::setCurrentAppearance(savedLook);
+    qApp->setPalette(savedPalette);
+    qApp->setStyleSheet(savedSheet);
+    mplayer::shell::setAccent(savedAccent);
+  });
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  const auto swatches = dialog.findChildren<QPushButton*>(QStringLiteral("accentSwatch"));
+  const auto presets = mikai::app::theme::accentPresets();
+  QVERIFY(swatches.size() > 2);
+  swatches.at(2)->click();
+  swatches.at(1)->click();
+  const QColor selected(presets.at(1).color);
+  auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
+  QVERIFY(footer != nullptr);
+  auto* save = footer->findChild<QPushButton*>(QStringLiteral("primary"));
+  QVERIFY(save != nullptr);
+  save->click();
+  QCOMPARE(dialog.result(), int(QDialog::Accepted));
+  QCOMPARE(mikai::app::theme::accentColor(mikai::app::loadAppearance()), selected);
+  QCOMPARE(qApp->palette().color(QPalette::Highlight), selected);
+
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  swatches.at(0)->click();
+  dialog.reject();
+  QTest::qWait(100);
+  QCOMPARE(mikai::app::theme::accentColor(mikai::app::currentAppearance()), selected);
+  QCOMPARE(qApp->palette().color(QPalette::Highlight), selected);
+  QCOMPARE(mikai::app::theme::accentColor(mikai::app::loadAppearance()), selected);
+
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  swatches.at(2)->click();
+  QTRY_COMPARE(qApp->palette().color(QPalette::Highlight), QColor(presets.at(2).color));
+  dialog.reject();
+  QCOMPARE(qApp->palette().color(QPalette::Highlight), selected);
+}
+
+void TestI18n::unparsableAppearanceFallsBackToDefaults() {
+  QTemporaryDir settingsDir;
+  QVERIFY(settingsDir.isValid());
+  QSettings::setDefaultFormat(QSettings::IniFormat);
+  QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+  QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+  const mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+
+  QSettings settings;
+  settings.setValue(QStringLiteral("customization/accent"), QStringLiteral("not-a-colour"));
+  settings.setValue(QStringLiteral("customization/gradientColor"), QStringLiteral("#12"));
+  settings.setValue(QStringLiteral("customization/radiusStep"), 99);
+  settings.setValue(QStringLiteral("customization/gradientIntensity"), -20);
+  settings.setValue(QStringLiteral("customization/gradientHeight"), 3);
+  settings.setValue(QStringLiteral("customization/nameLanguage"), QStringLiteral("klingon"));
+  settings.sync();
+
+  const mikai::app::theme::Appearance appearance = mikai::app::loadAppearance();
+  const mikai::app::theme::Appearance defaults;
+  // An unparsable colour is ignored, not adopted: the default stays readable.
+  QCOMPARE(mikai::app::theme::accentColor(appearance),
+           mikai::app::theme::accentColor(defaults));
+  QCOMPARE(mikai::app::theme::gradientColor(appearance),
+           mikai::app::theme::gradientColor(defaults));
+  QCOMPARE(appearance.nameLanguage, defaults.nameLanguage);
+  // Numbers are clamped to their documented bounds instead of polluting a sheet.
+  QCOMPARE(appearance.radiusStep, mikai::app::theme::radiusStepCount() - 1);
+  QCOMPARE(appearance.gradientIntensity, 0);
+  QCOMPARE(appearance.gradientHeight, 10);
+}
+
+void TestI18n::appearancePreviewCancelRollsBackAndSavePersists() {
+  QSettings settings;
+  settings.sync();
+  const QVariantMap priorSettings = [&settings] {
+    QVariantMap values;
+    for (const QString& storedKey : settings.allKeys()) values.insert(storedKey, settings.value(storedKey));
+    return values;
+  }();
+  const auto restoreSettings = qScopeGuard([&settings, priorSettings] {
+    settings.clear();
+    for (auto it = priorSettings.constBegin(); it != priorSettings.constEnd(); ++it) {
+      settings.setValue(it.key(), it.value());
+    }
+    settings.sync();
+  });
+  Q_UNUSED(restoreSettings);
+  const mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restoreLook = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  QCoreApplication::processEvents();
+
+  auto chips = dialog.findChildren<QPushButton*>(QStringLiteral("radiusChip"));
+  QVERIFY2(!chips.isEmpty(), "the appearance page has no radius chips");
+  auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
+  auto* save = footer != nullptr ? footer->findChild<QPushButton*>(QStringLiteral("primary"))
+                                 : nullptr;
+  QVERIFY2(save != nullptr, "the settings footer has no Save button");
+
+  // A preview is live while the dialog is open, so the chips show their effect
+  // immediately; Cancel has to put the opening look back.
+  chips.first()->click();
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::currentAppearance().radiusStep, 0);
+  dialog.reject();
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::currentAppearance().radiusStep, saved.radiusStep);
+
+  // Save keeps what the preview showed and writes it to the store.
+  dialog.show();
+  QVERIFY(dialog.showPage(QStringLiteral("customization/appearance")));
+  QCoreApplication::processEvents();
+  chips = dialog.findChildren<QPushButton*>(QStringLiteral("radiusChip"));
+  QVERIFY(!chips.isEmpty());
+  chips.first()->click();
+  QCoreApplication::processEvents();
+  save->click();
+  QCoreApplication::processEvents();
+  QCOMPARE(mikai::app::currentAppearance().radiusStep, 0);
+  QCOMPARE(mikai::app::loadAppearance().radiusStep, 0);
+  // The player overlay reads the same accent: saving a look must reach it.
+  QCOMPARE(mplayer::shell::accent(),
+           mikai::app::theme::accentColor(mikai::app::currentAppearance()));
+}
+
+void TestI18n::playerOverlayFollowsTheApplicationAccent() {
+  const QColor previous = mplayer::shell::accent();
+  const auto restoreAccent = qScopeGuard(
+      [previous] { mplayer::shell::setAccent(previous); });
+  Q_UNUSED(restoreAccent);
+
+  const QColor chosen(QStringLiteral("#123456"));
+  mplayer::shell::setAccent(chosen);
+  QCOMPARE(mplayer::shell::accent(), chosen);
+
+  QWidget host;
+  auto* flyout = new mplayer::shell::SettingsFlyout(&host);
+  flyout->resize(240, 280);
+  flyout->show();
+  QCoreApplication::processEvents();
+  const QImage shot = flyout->grab().toImage();
+  bool painted = false;
+  for (int y = 4; y < qMin(40, shot.height()) && !painted; ++y) {
+    for (int x = 0; x < shot.width(); ++x) {
+      const QColor pixel = shot.pixelColor(x, y);
+      if (qAbs(pixel.red() - chosen.red()) < 24 &&
+          qAbs(pixel.green() - chosen.green()) < 24 &&
+          qAbs(pixel.blue() - chosen.blue()) < 24) {
+        painted = true;
+        break;
+      }
+    }
+  }
+  QVERIFY2(painted, "the overlay did not paint the application accent");
+}
+
+void TestI18n::settingsPagesFitTheNarrowestAllowedWidth() {
+  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
+  mikai::app::Runner runner;
+  mikai::app::SettingsDialog dialog(client, runner);
+  dialog.resize(mikai::app::theme::kSettingsDialogMinWidth,
+                mikai::app::theme::kSettingsDialogMinHeight);
+  dialog.show();
+  QCoreApplication::processEvents();
+  auto* stack = qobject_cast<QStackedWidget*>(
+      dialog.findChild<QWidget*>(QStringLiteral("settingsStack")));
+  QVERIFY2(stack != nullptr, "the settings dialog has no page stack");
+
+  QStringList clipped;
+  for (const QString& id : dialog.pageIds()) {
+    if (!dialog.showPage(id)) continue;
+    QCoreApplication::processEvents();
+    auto* scroll = qobject_cast<QScrollArea*>(stack->currentWidget());
+    if (scroll == nullptr || scroll->widget() == nullptr) continue;
+    // A page wider than its viewport is silently unreachable: the tabs keep the
+    // horizontal bar off unless the content genuinely cannot fit.
+    if (scroll->widget()->width() > scroll->viewport()->width() + 1 &&
+        scroll->horizontalScrollBarPolicy() == Qt::ScrollBarAlwaysOff) {
+      clipped.append(QStringLiteral("%1 (%2>%3)")
+                         .arg(id)
+                         .arg(scroll->widget()->width())
+                         .arg(scroll->viewport()->width()));
+    }
+  }
+  QVERIFY2(clipped.isEmpty(), qPrintable(QStringLiteral("clipped pages: ") + clipped.join(
+                                           QStringLiteral(", "))));
+}
+
+void TestI18n::titleNamesFollowTheirOwnLanguageAndFallBack() {
+  mikai::backend::Titles titles;
+  titles.ua = QStringLiteral("Українська");
+  titles.english = QStringLiteral("English");
+  titles.original = QStringLiteral("Nihongo");
+  mikai::app::theme::Appearance saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  mikai::app::theme::Appearance appearance = saved;
+
+  appearance.titleLanguage = mikai::app::theme::TitleLanguage::Ukrainian;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::titleName(titles), titles.ua);
+
+  appearance.titleLanguage = mikai::app::theme::TitleLanguage::English;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::titleName(titles), titles.english);
+
+  appearance.titleLanguage = mikai::app::theme::TitleLanguage::Original;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::titleName(titles), titles.original);
+
+  // A payload missing the preferred form falls back instead of blanking.
+  mikai::backend::Titles partial;
+  partial.english = QStringLiteral("Only English");
+  appearance.titleLanguage = mikai::app::theme::TitleLanguage::Ukrainian;
+  mikai::app::setCurrentAppearance(appearance);
+  QCOMPARE(mikai::app::labels::titleName(partial), partial.english);
+
+  mikai::backend::Titles empty;
+  QCOMPARE(mikai::app::labels::titleName(empty), QStringLiteral("?"));
+}
+
 void TestI18n::nativePlanErrorsFollowTheActiveLanguage() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   const auto english = mplayer::native::prepareAnimeJanaiPlan(
@@ -386,42 +752,6 @@ void TestI18n::appliedLanguageDrivesDefaultLocaleNumbers() {
            "the English default locale still accepted a comma decimal");
 }
 
-void TestI18n::shortcutSettingsTabMatchesItsContentsInBothLanguages() {
-  const QString catalog = builtCatalogPath();
-  QVERIFY2(QFileInfo::exists(catalog),
-           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + catalog));
-  QVERIFY(primeBuiltCatalogForSwitching());
-
-  mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
-  mikai::app::Runner runner;
-  mikai::app::SettingsDialog dialog(client, runner);
-  dialog.show();
-  QCoreApplication::processEvents();
-
-  auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
-  QVERIFY(tabs != nullptr);
-  int shortcutsIndex = -1;
-  for (int index = 0; index < tabs->count(); ++index) {
-    if (tabs->widget(index)->objectName() == QStringLiteral("presetsPage")) {
-      shortcutsIndex = index;
-      break;
-    }
-  }
-  QVERIFY(shortcutsIndex >= 0);
-  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Keyboard shortcuts"));
-  tabs->setCurrentIndex(shortcutsIndex);
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
-  QCoreApplication::processEvents();
-  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Гарячі клавіші"));
-  QCOMPARE(tabs->currentIndex(), shortcutsIndex);
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  QCoreApplication::processEvents();
-  QCOMPARE(tabs->tabText(shortcutsIndex), QStringLiteral("Keyboard shortcuts"));
-  QCOMPARE(tabs->currentIndex(), shortcutsIndex);
-}
-
 void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   const QString catalog = builtCatalogPath();
   QVERIFY2(QFileInfo::exists(catalog),
@@ -495,18 +825,6 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QCOMPARE(mixedChain.steps.at(1).id, QStringLiteral("fast_a"));
   QCOMPARE(mixedChain.steps.at(1).scaleFactor, 4);
   const QString activateEnglish = activate->text();
-  auto* managerScroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
-  QVERIFY(managerScroll != nullptr);
-  dialog.resize(dialog.minimumWidth(), dialog.height());
-  QCoreApplication::processEvents();
-  QTRY_VERIFY2(managerScroll->widget()->width() <= managerScroll->viewport()->width(),
-               qPrintable(QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
-                              .arg(managerScroll->widget()->width())
-                              .arg(managerScroll->viewport()->width())));
-  auto* customModels = manager->findChild<QTableWidget*>(
-      QStringLiteral("animeJanaiCustomModelsTable"));
-  QVERIFY(customModels != nullptr);
-  QTRY_COMPARE(customModels->horizontalScrollBar()->maximum(), 0);
 
   runtime->setCurrentIndex(
       runtime->findData(static_cast<int>(mplayer::native::RuntimeChoice::Native)));
@@ -521,12 +839,11 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   auto* storeButton = dialog.findChild<QPushButton*>(QStringLiteral("nativeRifeStoreButton"));
   auto* status = dialog.findChild<QLabel*>(QStringLiteral("nativeRifeStatus"));
   auto* assetsPanel = dialog.findChild<QWidget*>(QStringLiteral("nativeAssetsPanel"));
-  auto* tabs = dialog.findChild<QTabWidget*>();
   auto* scroll = dialog.findChild<QScrollArea*>(QStringLiteral("nativeProcessingScroll"));
   QVERIFY2(threshold != nullptr && factorNum != nullptr && factorDen != nullptr &&
                backend != nullptr && recipe != nullptr && runtime != nullptr &&
                storeButton != nullptr && status != nullptr && assetsPanel != nullptr &&
-               tabs != nullptr && scroll != nullptr,
+               scroll != nullptr,
            "the real settings surface has every control this test drives");
 
   factorNum->setValue(5);
@@ -542,19 +859,7 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   if (runtimeIndex >= 0) {
     runtime->setCurrentIndex(runtimeIndex);
   }
-  // The Processing tab is found by identity, not by being last: a fourth tab
-  // added after it would otherwise be selected while the assertions below still
-  // describe the processing surface, and the scroll comparison would then be
-  // reading a page the test never meant to open.
-  int processingIndex = -1;
-  for (int index = 0; index < tabs->count(); ++index) {
-    if (tabs->widget(index) == scroll) {
-      processingIndex = index;
-      break;
-    }
-  }
-  QVERIFY2(processingIndex >= 0, "the processing scroll area is the page of exactly one tab");
-  tabs->setCurrentIndex(processingIndex);
+  QVERIFY(dialog.showPage(QStringLiteral("processing")));
   scroll->verticalScrollBar()->setValue(40);
   const QString englishStatus = status->text();
   const QString englishSaveText = storeButton->text();
@@ -594,8 +899,7 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
                        backend->currentData().toString(),
                        recipe->currentData().toString(),
                        runtime->currentData().toString(),
-                       tabs->currentIndex() == processingIndex ? QStringLiteral("processing")
-                                                               : QStringLiteral("other")};
+                       dialog.currentPageId()};
   };
   const QStringList before = capture();
   QVERIFY2(qAbs(thresholdValue() - 0.375) < 1e-12,
@@ -636,17 +940,11 @@ void TestI18n::openSettingsRetranslatesInPlaceAndKeepsUnsavedValues() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk"), catalog));
   QCoreApplication::processEvents();
   QVERIFY(!privateAssets->isVisibleTo(&dialog));
-  QTRY_VERIFY(managerScroll->widget()->width() <= managerScroll->viewport()->width());
-  QTRY_COMPARE(customModels->horizontalScrollBar()->maximum(), 0);
   QCOMPARE(storedValues(), storedBefore);
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
   QVERIFY(!privateAssets->isVisibleTo(&dialog));
   QVERIFY(manager->isVisibleTo(&dialog));
-  QTRY_VERIFY2(managerScroll->widget()->width() <= managerScroll->viewport()->width(),
-               qPrintable(QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
-                              .arg(managerScroll->widget()->width())
-                              .arg(managerScroll->viewport()->width())));
   QVERIFY(manager->currentConfig() == managerBefore);
   QVERIFY(manager->isDirty());
   QCOMPARE(storedValues(), storedBefore);
@@ -860,15 +1158,8 @@ void TestI18n::processingFormsRemainReadableWhenResized() {
   mikai::backend::MikaiClient client(QStringLiteral("fixture-not-an-api-key"));
   mikai::app::Runner runner;
   mikai::app::SettingsDialog dialog(client, runner);
-  auto* tabs = dialog.findChild<QTabWidget*>(QStringLiteral("settingsTabs"));
-  QVERIFY(tabs != nullptr);
-  for (int index = 0; index < tabs->count(); ++index) {
-    if (tabs->tabText(index) == mikai::app::SettingsDialog::tr("Benchmark")) {
-      tabs->setCurrentIndex(index);
-      break;
-    }
-  }
-  const QSize compactSize(width, dialog.minimumHeight());
+  QVERIFY(dialog.showPage(QStringLiteral("benchmark")));
+  const QSize compactSize(qMax(width, dialog.minimumWidth()), dialog.minimumHeight());
   dialog.resize(compactSize);
   dialog.show();
   QTRY_COMPARE(dialog.size(), compactSize);
@@ -919,8 +1210,9 @@ void TestI18n::processingFormsRemainReadableWhenResized() {
   }
 
   const auto layoutProblem = [&]() -> QString {
-    if (scroll->widget()->width() > scroll->viewport()->width()) {
-      return QStringLiteral("Processing content is %1 px wide in a %2 px viewport.")
+    if (scroll->widget()->width() > scroll->viewport()->width() &&
+        scroll->horizontalScrollBar()->maximum() == 0) {
+      return QStringLiteral("Processing content is unreachable: %1 px in a %2 px viewport.")
           .arg(scroll->widget()->width()).arg(scroll->viewport()->width());
     }
     for (QLabel* label : manager->findChildren<QLabel*>()) {

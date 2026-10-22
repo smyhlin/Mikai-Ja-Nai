@@ -1,7 +1,10 @@
 #pragma once
 
+#include "state/AppearanceStore.hpp"
+#include "theme/Appearance.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
 
 #include <QAbstractButton>
 #include <QComboBox>
@@ -192,8 +195,9 @@ inline QFrame* makeSettingsPageHeader(QWidget* parent, QLabel** headingOut,
 /// Designed so nested surfaces follow concentric radii (`16px` card -> `12px`
 /// sub-card -> `8px` control -> `6px` badge) and slight-purple accents highlight
 /// interactive focus, checked states, and active telemetry without visual noise.
-inline QString settingsPurpleStyleSheet() {
-    static const QString sheet = QStringLiteral(R"QSS(
+inline QString settingsStylesheet(const theme::Appearance& appearance) {
+    const theme::Palette p = theme::paletteFor(appearance);
+    const QString sheet = QStringLiteral(R"QSS(
         /* ── Page & Scroll Surfaces ────────────────────────────────────────── */
         QScrollArea#nativeGeneralScroll,
         QScrollArea#nativeProcessingScroll,
@@ -207,10 +211,92 @@ inline QString settingsPurpleStyleSheet() {
         QWidget#presetsPage,
         QWidget#generalPage,
         QWidget#processingPage,
-        QWidget#componentsPage {
+        QWidget#componentsPage,
+        QWidget#customizationGeneralPage,
+        QWidget#appearancePage {
             background-color: %1;
             color: %2;
         }
+
+        /* ── Navigation ───────────────────────────────────────────────────── */
+        QWidget#settingsNav { background: transparent; }
+        QLabel#settingsNavGroup {
+            color: %8;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 14px 10px 4px 10px;
+            background: transparent;
+        }
+        QPushButton#settingsNavItem {
+            background: transparent;
+            color: %9;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            padding: 0 12px;
+            text-align: left;
+            font-weight: 500;
+        }
+        QPushButton#settingsNavItem:hover {
+            background-color: %21;
+            color: %6;
+        }
+        QPushButton#settingsNavItem:checked {
+            background-color: %28;
+            color: %6;
+            font-weight: 600;
+            border-color: rgba(%4, 0.16);
+        }
+        QPushButton#settingsNavItem:focus { border-color: %24; }
+
+        /* ── Appearance controls ──────────────────────────────────────────── */
+        QPushButton#radiusChip {
+            background-color: %20;
+            color: %9;
+            border: 1px solid rgba(%4, 0.14);
+            border-radius: 8px;
+            padding: 0 14px;
+            font-weight: 500;
+        }
+        QPushButton#radiusChip:hover { background-color: %30; color: %6; }
+        QPushButton#radiusChip:checked {
+            background-color: %33;
+            color: %22;
+            border-color: %33;
+            font-weight: 600;
+        }
+        QLabel#accentValueLabel, QLabel#gradientValueLabel {
+            color: %9;
+            font-size: 12px;
+            font-weight: 600;
+            background: transparent;
+        }
+        QLabel#appearanceValue {
+            color: %6;
+            font-size: 12px;
+            font-weight: 600;
+            background: transparent;
+        }
+        QSlider#appearanceSlider { background: transparent; min-height: 22px; }
+        QSlider#appearanceSlider::groove:horizontal {
+            height: 4px;
+            background: %5;
+            border-radius: 2px;
+        }
+        QSlider#appearanceSlider::sub-page:horizontal {
+            background: %33;
+            border-radius: 2px;
+        }
+        QSlider#appearanceSlider::handle:horizontal {
+            background: %33;
+            border: 2px solid %3;
+            width: 12px;
+            height: 12px;
+            margin: -5px 0;
+            border-radius: 7px;
+        }
+        QSlider#appearanceSlider::handle:horizontal:hover { background: %33; }
+        QSlider#appearanceSlider::handle:horizontal:disabled { background: %5; border-color: %1; }
+        QSlider#appearanceSlider::sub-page:horizontal:disabled { background: %26; }
 
         /* ── Elevated Cards & Concentric Sub-Panels ────────────────────────── */
         QFrame#settingsCard {
@@ -373,6 +459,11 @@ inline QString settingsPurpleStyleSheet() {
             border-bottom-right-radius: 8px;
             background: transparent;
         }
+        QComboBox::down-arrow {
+            image: url(:/icons/chevron-down.svg);
+            width: 10px;
+            height: 10px;
+        }
         QComboBox QAbstractItemView {
             background-color: %28;
             color: %2;
@@ -408,8 +499,9 @@ inline QString settingsPurpleStyleSheet() {
             border-color: rgba(%4, 0.07);
         }
         QPushButton#benchmarkRunButton,
+        QPushButton#primary,
         QPushButton[primaryAction="true"] {
-            background-color: %21;
+            background-color: %33;
             color: %22;
             border: 1px solid %33;
             border-radius: 8px;
@@ -417,16 +509,19 @@ inline QString settingsPurpleStyleSheet() {
             font-weight: 600;
         }
         QPushButton#benchmarkRunButton:hover,
+        QPushButton#primary:hover,
         QPushButton[primaryAction="true"]:hover {
-            background-color: %33;
+            background-color: %21;
             border-color: %24;
         }
         QPushButton#benchmarkRunButton:pressed,
+        QPushButton#primary:pressed,
         QPushButton[primaryAction="true"]:pressed {
             background-color: %34;
             border-color: %21;
         }
         QPushButton#benchmarkRunButton:disabled,
+        QPushButton#primary:disabled,
         QPushButton[primaryAction="true"]:disabled {
             background-color: rgba(%35, 0.28);
             color: rgba(%36, 0.42);
@@ -617,58 +712,52 @@ inline QString settingsPurpleStyleSheet() {
             height: 0px;
         }
     )QSS")
-        .arg(QLatin1String(theme::kSurfacePage))
-        .arg(QLatin1String(theme::kTextPrimary))
-        .arg(QLatin1String(theme::kSurfaceRaised))
-        .arg(QLatin1String(theme::kHairlineRgb))
-        .arg(QLatin1String(theme::kSurfaceInset))
-        .arg(QLatin1String(theme::kTextStrong))
-        .arg(QLatin1String(theme::kTextBright))
-        .arg(QLatin1String(theme::kTextMutedSoft))
-        .arg(QLatin1String(theme::kTextLabel))
-        .arg(QLatin1String(theme::kAccentRgb))
-        .arg(QLatin1String(theme::kAccentSoftBright))
-        .arg(QLatin1String(theme::kSuccessRgb))
-        .arg(QLatin1String(theme::kSuccessText))
-        .arg(QLatin1String(theme::kWarningRgb))
-        .arg(QLatin1String(theme::kWarningText))
-        .arg(QLatin1String(theme::kDangerRgb))
-        .arg(QLatin1String(theme::kDangerText))
-        .arg(QLatin1String(theme::kAccentSoft))
-        .arg(QLatin1String(theme::kAccentSolidRgb))
-        .arg(QLatin1String(theme::kSurfaceInput))
-        .arg(QLatin1String(theme::kAccentDeep))
-        .arg(QLatin1String(theme::kTextOnAccent))
-        .arg(QLatin1String(theme::kSurfaceInputHover))
-        .arg(QLatin1String(theme::kAccentFocus))
-        .arg(QLatin1String(theme::kSurfaceInputFocus))
-        .arg(QLatin1String(theme::kTextDisabled))
-        .arg(QLatin1String(theme::kSurfaceDeepRgb))
-        .arg(QLatin1String(theme::kSurfaceRow))
-        .arg(QLatin1String(theme::kSurfaceControl))
-        .arg(QLatin1String(theme::kSurfaceControlHover))
-        .arg(QLatin1String(theme::kSurfaceControlPressed))
-        .arg(QLatin1String(theme::kSurfaceControlRgb))
-        .arg(QLatin1String(theme::kAccentSolid))
-        .arg(QLatin1String(theme::kAccentDeepest))
-        .arg(QLatin1String(theme::kAccentDeepRgb))
-        .arg(QLatin1String(theme::kTextPrimaryRgb))
-        .arg(QLatin1String(theme::kDangerTextSoft))
-        .arg(QLatin1String(theme::kTextCheckLabel))
-        .arg(QLatin1String(theme::kSurfaceTag))
-        .arg(QLatin1String(theme::kSurfaceTileHover))
-        .arg(QLatin1String(theme::kSurfaceShortcutRow))
-        .arg(QLatin1String(theme::kTableAlternateRow))
-        .arg(QLatin1String(theme::kSuccessFill))
-        .arg(QLatin1String(theme::kDangerFill));
-    return sheet;
-}
-
-/// Applies the Slight Purple Refined UI stylesheet to a settings tab container
-/// if it has not already been applied.
-inline void applySettingsTheme(QWidget* root) {
-    if (root == nullptr) return;
-    root->setStyleSheet(settingsPurpleStyleSheet());
+        .arg(p.surfacePage)
+        .arg(p.textPrimary)
+        .arg(p.surfaceRaised)
+        .arg(p.hairlineRgb)
+        .arg(p.surfaceInset)
+        .arg(p.textStrong)
+        .arg(p.textBright)
+        .arg(p.textMutedSoft)
+        .arg(p.textLabel)
+        .arg(p.accentRgb)
+        .arg(p.accentSoftBright)
+        .arg(p.successRgb)
+        .arg(p.successText)
+        .arg(p.warningRgb)
+        .arg(p.warningText)
+        .arg(p.dangerRgb)
+        .arg(p.dangerText)
+        .arg(p.accentSoft)
+        .arg(p.accentSolidRgb)
+        .arg(p.surfaceInput)
+        .arg(p.accentDeep)
+        .arg(p.textOnAccent)
+        .arg(p.surfaceInputHover)
+        .arg(p.accentFocus)
+        .arg(p.surfaceInputFocus)
+        .arg(p.textDisabled)
+        .arg(p.surfaceDeepRgb)
+        .arg(p.surfaceRow)
+        .arg(p.surfaceControl)
+        .arg(p.surfaceControlHover)
+        .arg(p.surfaceControlPressed)
+        .arg(p.surfaceControlRgb)
+        .arg(p.accentSolid)
+        .arg(p.accentDeepest)
+        .arg(p.accentDeepRgb)
+        .arg(p.textPrimaryRgb)
+        .arg(p.dangerTextSoft)
+        .arg(p.textCheckLabel)
+        .arg(p.surfaceTag)
+        .arg(p.surfaceTileHover)
+        .arg(p.surfaceShortcutRow)
+        .arg(p.tableAlternateRow)
+        .arg(p.successFill)
+        .arg(p.dangerFill);
+    // Literal corners use the 8 px design baseline, not the saved default.
+    return theme::scaleRadii(sheet, theme::radiusSmall(appearance) / 8.0);
 }
 
 }  // namespace mikai::app

@@ -6,6 +6,8 @@
 #include "workers/Runner.hpp"
 #include <backend/Cancellation.hpp>
 #include "theme/Colors.hpp"
+#include "state/AppearanceStore.hpp"
+#include "theme/Palette.hpp"
 #include "theme/Metrics.hpp"
 
 #include <native/components/AnimeJanaiCatalogWatcher.hpp>
@@ -111,7 +113,6 @@ QString benchmarkElapsedText(qint64 milliseconds) {
 QWidget* SettingsDialog::buildBenchmarkTab() {
     auto* page = new QWidget(this);
     page->setObjectName(QStringLiteral("benchmarkPage"));
-    applySettingsTheme(page);
 
     auto* rootLayout = new QVBoxLayout(page);
     rootLayout->setContentsMargins(0, 0, 0, 0);
@@ -122,7 +123,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     scroll->setWidgetResizable(true);
     scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* body = new QWidget(scroll);
     body->setObjectName(QStringLiteral("benchmarkPage"));
@@ -259,7 +260,7 @@ QWidget* SettingsDialog::buildBenchmarkTab() {
     benchmarkModelTree_->setColumnCount(1);
     benchmarkModelTree_->setIndentation(theme::kSpacingSmall);
     benchmarkModelTree_->setFixedHeight(theme::kBenchmarkSelectorHeight);
-    benchmarkModelTree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    benchmarkModelTree_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     benchmarkModelTree_->setTextElideMode(Qt::ElideMiddle);
     benchmarkModelTree_->setUniformRowHeights(true);
     benchmarkModelTree_->setSelectionMode(QAbstractItemView::NoSelection);
@@ -1043,8 +1044,11 @@ void SettingsDialog::runBenchmark() {
                         numFont.setFeature(QFont::Tag("tnum"), 1);
                         numFont.setWeight(QFont::DemiBold);
                         resultItem->setFont(numFont);
-                        resultItem->setForeground(QColor(QLatin1String(
-                            resultRow.successful ? theme::kText : theme::kDanger)));
+                        const theme::Palette resultPalette =
+                            theme::paletteFor(currentAppearance());
+                        resultItem->setForeground(QColor(resultRow.successful
+                                                             ? resultPalette.textPrimary
+                                                             : resultPalette.dangerText));
                         self->benchmarkResults_->setItem(row, 2, resultItem);
                         const int resultHeight =
                             self->benchmarkResults_->horizontalHeader()->height() +

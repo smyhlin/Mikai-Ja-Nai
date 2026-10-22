@@ -14,6 +14,19 @@ namespace mplayer {
 namespace shell {
 
 namespace {
+QColor& accentStorage() {
+    static QColor current(QStringLiteral("#5865F2"));
+    return current;
+}
+}  // namespace
+
+QColor accent() { return accentStorage(); }
+
+void setAccent(const QColor& color) {
+    if (color.isValid()) accentStorage() = color;
+}
+
+namespace {
 
 /// Glyphs take an optional override colour; an invalid QColor means "use the
 /// token this glyph was designed with", so callers can pass W_90() blindly.

@@ -6,13 +6,16 @@
 #include "gui/Clipboard.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
+#include "state/AppearanceStore.hpp"
 #include "state/NativePlaybackAssembly.hpp"
 #include "state/QualityCache.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
+#include "theme/Palette.hpp"
 #include "widgets/FailureView.hpp"
 #include "widgets/FlowLayout.hpp"
+#include "widgets/PageGlow.hpp"
 #include "widgets/RangePager.hpp"
 #include "widgets/TitleCard.hpp"
 #include "widgets/RateLimitLabel.hpp"
@@ -116,6 +119,11 @@ public:
         rebuild();
     }
 
+    void refreshPalette() {
+        rebuild();
+        update();
+    }
+
 protected:
     void resizeEvent(QResizeEvent* event) override {
         QWidget::resizeEvent(event);
@@ -126,7 +134,8 @@ protected:
         QPainter painter(this);
         if (art_.isNull()) {
             // Opaque paint is promised: an empty backdrop still covers its rect.
-            painter.fillRect(rect(), QColor(QString::fromLatin1(theme::kTitleBackground)));
+            painter.fillRect(rect(), theme::paletteFor(mikai::app::currentAppearance())
+                                        .titleBackgroundValue);
             return;
         }
         painter.drawPixmap(0, 0, art_);
@@ -138,7 +147,8 @@ private:
         if (image_.isNull() || width() <= 0 || height() <= 0) {
             return;
         }
-        const QColor background = QColor(QString::fromLatin1(theme::kTitleBackground));
+        const QColor background =
+            theme::paletteFor(mikai::app::currentAppearance()).titleBackgroundValue;
         const QSize region(theme::kTitleBackdropWidth, theme::kTitleBackdropHeight);
         QPixmap art(size());
         art.fill(background);
@@ -374,6 +384,20 @@ void TitlePage::buildUi() {
     backdrop_->lower();
 
     buildBody();
+
+    pageGlow_ = new PageGlow(this);
+    connect(&appearanceNotifier(), &AppearanceNotifier::changed, this,
+            [this](const theme::Appearance& previous) {
+                const auto& appearance = currentAppearance();
+                if (previous.siteTheme != appearance.siteTheme && backdrop_ != nullptr) {
+                    backdrop_->refreshPalette();
+                }
+                if (previous.radiusStep != appearance.radiusStep ||
+                    previous.coverGradient != appearance.coverGradient) {
+                    coverAppliedSize_ = {};
+                    applyCoverPixmap();
+                }
+            });
 
     overviewScroll_->setWidget(body_);
     root->addWidget(overviewScroll_, 1);
@@ -1047,10 +1071,11 @@ void TitlePage::joinLoad(const std::shared_ptr<LoadState>& state) {
 }
 
 void TitlePage::onLoaded(const backend::AnimeDetail& detail, const backend::PlayerResult& player) {
+    adultConfirmed_ = false;
     rateLabel_->refresh();
     failure_->clear();
     hasFailure_ = false;
-    const QString name = backend::displayName(detail.titles);
+    const QString name = labels::titleName(detail.titles);
     heading_->setText(name == QLatin1String("?") ? ref_ : name);
     subtitle_->setText(detail.titles.english.isEmpty() ? detail.titles.original
                                                        : detail.titles.english);
@@ -1127,7 +1152,7 @@ void TitlePage::refreshDetailTexts() {
     // The hero caption and the sheet read one model; both hide what it lacks.
     studio_->setText(detail_.studio);
     studio_->setVisible(!detail_.studio.isEmpty());
-    const QString detailName = backend::displayName(detail_.titles);
+    const QString detailName = labels::titleName(detail_.titles);
     detailsTitle_->setText(detailName == QLatin1String("?") ? ref_ : detailName);
     const QString originalTitle =
         detail_.titles.original.isEmpty() ? detail_.titles.english : detail_.titles.original;
@@ -1433,7 +1458,7 @@ QWidget* TitlePage::buildRelatedCarousel(
         auto* card = new QPushButton(section);
         card->setObjectName(QStringLiteral("animeCard"));
         card->setFixedSize(theme::kCarouselCardWidth, theme::kCarouselCardHeight);
-        const QString name = backend::displayName(anime.titles);
+        const QString name = labels::titleName(anime.titles);
         card->setToolTip(name);
         const QString ref = anime.ref;
         const QString poster = backend::posterUrl(anime);
@@ -2491,7 +2516,21 @@ void TitlePage::fitEpisodeSection() {
     updateBackdrop();
 }
 
+bool TitlePage::confirmExplicitPlayback() {
+    const QMessageBox::StandardButton answer = QMessageBox::warning(
+        this, tr("Explicit content"), tr("This title is rated 18+. Start playback?"),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+    return answer == QMessageBox::Yes;
+}
+
 void TitlePage::playEpisode(EpisodeEntry* entry) {
+    // The warning is per title, not per episode: accepting it once is the point
+    // of the preference, and the preference itself skips it entirely.
+    if (!adultConfirmed_ && !currentAppearance().showAdult &&
+        labels::ageRating(detail_.age_rating) == QLatin1String("18+")) {
+        if (!confirmExplicitPlayback()) return;
+        adultConfirmed_ = true;
+    }
     // The quality fan-out is gone: one episode fetches when it is opened.
     ensureQualities(entry, [this](EpisodeEntry* loaded, const QMap<int, QString>& qualities) {
         openPlayer(loaded, qualities);

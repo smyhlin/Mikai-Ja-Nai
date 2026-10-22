@@ -25,7 +25,6 @@ namespace mikai::app {
 QWidget* SettingsDialog::buildPresetsTab() {
     auto* page = new QWidget(this);
     page->setObjectName(QStringLiteral("presetsPage"));
-    applySettingsTheme(page);
 
     auto* root = new QVBoxLayout(page);
     root->setContentsMargins(theme::kSpacingSmall, theme::kSpacingMedium, theme::kSpacingSmall,
@@ -88,7 +87,7 @@ QWidget* SettingsDialog::buildPresetsTab() {
     scroll->setWidgetResizable(true);
     scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     auto* content = new QWidget(scroll);
     content->setObjectName(QStringLiteral("presetsPage"));

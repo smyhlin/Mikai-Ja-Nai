@@ -39,6 +39,9 @@ class MikaiClient;
 
 namespace mikai::app {
 
+class PageGlow;
+
+
 class FailureView;
 class RangePager;
 class RateLimitLabel;
@@ -205,6 +208,10 @@ private:
     /// alone: the failure surface, not this pass, decides which of the two is
     /// on screen.
     void renderCarouselLine(CarouselSection& section);
+
+    /// Rebuilds cached poster frames after the appearance changed its radius
+    /// or its cover shade.
+    void refreshCardFrames();
     void renderFeedLine(const QString& key, FeedSection& section);
     /// The meta line of every row the block is showing, re-worded where it
     /// stands from the parts each row was built from.
@@ -340,6 +347,8 @@ private:
     /// Rounded card pixmaps per poster URL. Several cards share one feed
     /// poster and one box, so the scale-crop-clip runs once per URL.
     QHash<QString, QPixmap> rounded_;
+    PageGlow* pageGlow_ = nullptr;
+
     QHash<QString, QList<TitleCard*>> carouselWidgets_;
     /// Every carousel card keyed by its image url, so a landing thumb is a
     /// lookup rather than a scan over every card on the page.

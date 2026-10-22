@@ -1,5 +1,7 @@
 #pragma once
 
+#include "theme/Appearance.hpp"
+
 #include <dialogs/NativeAssetsPanel.hpp>
 #include <dialogs/NativeRifeControls.hpp>
 #include <native/bundle/NativePrefs.hpp>
@@ -26,12 +28,15 @@ class QFrame;
 class QKeySequenceEdit;
 class QLabel;
 class QLineEdit;
+class QAbstractButton;
 class QProgressBar;
 class QPushButton;
 class QScrollArea;
 class QShowEvent;
+class QSlider;
 class QStackedWidget;
 class QTabWidget;
+class QVBoxLayout;
 class QTableWidget;
 class QTimer;
 class QTreeWidget;
@@ -42,6 +47,8 @@ class MikaiClient;
 }
 
 namespace mikai::app {
+
+class SwatchButton;
 
 class Runner;
 class AnimeJanaiManagerPanel;
@@ -73,6 +80,14 @@ public:
     /// dialog opened. The caller refreshes the home feeds only then, so a native
     /// or language preference change never resets the feed state or the cache.
     bool feedsChanged() const;
+
+    /// Brings one navigation entry into view by its stable id
+    /// (`customization/general`, `customization/appearance`, `access`,
+    /// `shortcuts`, `processing`, `components`, `benchmark`). False when no such
+    /// entry exists.
+    bool showPage(const QString& id);
+    QString currentPageId() const;
+    QStringList pageIds() const;
 
     /// The Processing tab, brought into view. A remedy that only wants the
     /// existing surface seen reaches this and nothing else: no preparation is
@@ -194,6 +209,38 @@ private:
     QWidget* buildProcessingTab();
     QWidget* buildComponentsTab();
     QWidget* buildBenchmarkTab();
+    QWidget* buildCustomizationGeneralTab();
+    QWidget* buildAppearanceTab();
+
+    /// One navigation entry: the stable id, the group it belongs under, the page
+    /// it shows and the button that selects it.
+    struct NavEntry {
+        QString id;
+        QString group;
+        QWidget* page = nullptr;
+        QPushButton* button = nullptr;
+    };
+    /// Adds one entry to the sidebar under `group`, creating the group caption on
+    /// first use. Returns the button so the caller can keep it for retranslation.
+    QPushButton* addNavigationEntry(const QString& id, const QString& group, QWidget* page);
+    void buildNavigation();
+    void selectPage(QWidget* page);
+    void retranslateNavigation();
+
+    /// Re-reads the appearance page's controls from `appearanceDraft_` without
+    /// feeding their change handlers, so a reset or a retranslation cannot
+    /// recursively edit the draft.
+    void refreshAppearanceControls();
+    /// Paint-only edits never repolish the widget tree. Only theme, accent and
+    /// radius changes replace the application and dialog stylesheets.
+    void applyAppearancePreview();
+    void applyAppearanceStyles();
+    /// Restores the appearance the dialog opened with when it closes without a
+    /// committed Save.
+    void restoreOpeningAppearance();
+    /// The accent and gradient captions beside the swatch rows.
+    void refreshAppearanceCaptions();
+    void retranslateCustomizationTabs();
     void runBenchmark();
     void resetBenchmarkControls();
     void filterPresetRows(const QString& query);
@@ -304,7 +351,65 @@ private:
     QPushButton* testButton_ = nullptr;
     QMap<QString, QCheckBox*> feedBoxes_;
     QTimer* quotaTimer_ = nullptr;
-    QTabWidget* tabs_ = nullptr;
+    QStackedWidget* navStack_ = nullptr;
+    QWidget* navPanel_ = nullptr;
+    QVBoxLayout* navLayout_ = nullptr;
+    QVector<NavEntry> navEntries_;
+    /// Group captions keyed by their stable group id, re-worded in place.
+    QMap<QString, QLabel*> navGroupLabels_;
+
+    // Customization: content display and appearance.
+    QWidget* customizationGeneralPage_ = nullptr;
+    QWidget* appearancePage_ = nullptr;
+    QScrollArea* customizationGeneralScroll_ = nullptr;
+    QScrollArea* appearanceScroll_ = nullptr;
+    QLabel* customizationHeading_ = nullptr;
+    QLabel* customizationDescription_ = nullptr;
+    QLabel* siteThemeLabel_ = nullptr;
+    QComboBox* siteTheme_ = nullptr;
+    QLabel* titleLanguageLabel_ = nullptr;
+    QComboBox* titleLanguage_ = nullptr;
+    QLabel* nameLanguageLabel_ = nullptr;
+    QComboBox* nameLanguage_ = nullptr;
+    QAbstractButton* coverGradientSwitch_ = nullptr;
+    QLabel* coverGradientLabel_ = nullptr;
+    QLabel* coverGradientHint_ = nullptr;
+    QAbstractButton* adultContentSwitch_ = nullptr;
+    QLabel* adultContentLabel_ = nullptr;
+    QLabel* adultContentHint_ = nullptr;
+
+    QLabel* appearanceHeading_ = nullptr;
+    QLabel* appearanceDescription_ = nullptr;
+    QPushButton* resetAppearanceButton_ = nullptr;
+    QLabel* accentSectionLabel_ = nullptr;
+    QLabel* accentSectionHint_ = nullptr;
+    QVector<QPair<QString, SwatchButton*>> accentSwatches_;
+    SwatchButton* customAccentButton_ = nullptr;
+    QLabel* accentValueLabel_ = nullptr;
+    QLabel* radiusSectionLabel_ = nullptr;
+    QLabel* radiusSectionHint_ = nullptr;
+    QVector<QPushButton*> radiusButtons_;
+    QLabel* backgroundGradientLabel_ = nullptr;
+    QLabel* backgroundGradientHint_ = nullptr;
+    QLabel* intensityLabel_ = nullptr;
+    QSlider* intensitySlider_ = nullptr;
+    QLabel* intensityValueLabel_ = nullptr;
+    QLabel* heightLabel_ = nullptr;
+    QSlider* heightSlider_ = nullptr;
+    QLabel* heightValueLabel_ = nullptr;
+    QLabel* gradientColorLabel_ = nullptr;
+    QVector<QPair<QString, SwatchButton*>> gradientSwatches_;
+    SwatchButton* customGradientButton_ = nullptr;
+    QLabel* gradientValueLabel_ = nullptr;
+
+    /// The appearance the dialog is editing, and the one it opened with. The
+    /// draft reaches the live application as a preview; only Save writes it, so
+    /// Cancel restores the opening look exactly as it restores the language.
+    theme::Appearance appearanceDraft_;
+    theme::Appearance openingAppearance_;
+    theme::Appearance styledAppearance_;
+    QTimer* appearanceStyleTimer_ = nullptr;
+    bool appearanceCommitted_ = false;
     QLineEdit* presetFilterEdit_ = nullptr;
     QPushButton* clearAllPresetsButton_ = nullptr;
     QLabel* presetError_ = nullptr;

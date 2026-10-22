@@ -54,6 +54,7 @@ namespace mikai::app {
 class CoverLabel;
 class CoverViewer;
 class FailureView;
+class PageGlow;
 class PosterBackdrop;
 class QualityCache;
 class RangePager;
@@ -259,6 +260,7 @@ private:
     void reflowGrid(int stateIndex);
 
     void playEpisode(EpisodeEntry* entry);
+    bool confirmExplicitPlayback();
     void ensureQualities(EpisodeEntry* entry,
                          const std::function<void(EpisodeEntry*, const QMap<int, QString>&)>&
                              callback);
@@ -377,6 +379,8 @@ protected:
     /// width and centred by the scroll area; `column_` fills it.
     QWidget* body_ = nullptr;
     QWidget* column_ = nullptr;
+    PageGlow* pageGlow_ = nullptr;
+    bool adultConfirmed_ = false;
     QVBoxLayout* columnLayout_ = nullptr;
     QWidget* hero_ = nullptr;
     QBoxLayout* heroLayout_ = nullptr;

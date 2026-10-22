@@ -22,6 +22,8 @@
 #include <native/models/NativeRife.hpp>
 #include <native/models/NativeUserRecipes.hpp>
 #include "theme/Colors.hpp"
+#include "state/AppearanceStore.hpp"
+#include "theme/Palette.hpp"
 #include "theme/Metrics.hpp"
 
 namespace mikai::app {
@@ -273,8 +275,8 @@ NativeRifeControls::NativeRifeControls(QWidget* parent) : QWidget(parent) {
     status_->setSizePolicy(statusPolicy);
     status_->setText(tr("Configuring a request does not run anything. The picture keeps using the "
                         "original pipeline until a prepared native pipeline exists."));
-    status_->setStyleSheet(
-        QStringLiteral("color: %1;").arg(QLatin1String(theme::kMuted)));
+    status_->setStyleSheet(QStringLiteral("color: %1;")
+                               .arg(theme::paletteFor(currentAppearance()).muted));
     root->addWidget(status_);
 
     connect(storeButton_, &QPushButton::clicked, this, &NativeRifeControls::storeRequest);
@@ -565,8 +567,9 @@ QString NativeRifeControls::recipeLabel(const TemporalStage& stage, bool combine
 
 void NativeRifeControls::showStatus(bool ok, const QString& text) {
     status_->setText(text);
+    const theme::Palette palette = theme::paletteFor(currentAppearance());
     status_->setStyleSheet(QStringLiteral("color: %1;")
-                               .arg(QLatin1String(ok ? theme::kMuted : theme::kDanger)));
+                               .arg(ok ? palette.muted : palette.dangerText));
     status_->show();
 }
 

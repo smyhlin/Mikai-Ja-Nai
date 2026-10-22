@@ -1,6 +1,9 @@
 #include "widgets/TitleCard.hpp"
 
 #include "Labels.hpp"
+
+#include "state/AppearanceStore.hpp"
+#include "theme/Appearance.hpp"
 #include "theme/Metrics.hpp"
 
 #include <QCoreApplication>
@@ -13,6 +16,7 @@
 #include <QTextOption>
 #include <QPainter>
 #include <QPainterPath>
+#include <QLinearGradient>
 #include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
@@ -55,7 +59,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
 
     setObjectName(QStringLiteral("animeCard"));
     setFixedSize(theme::kHomeCardWidth, theme::kHomeCardHeight);
-    setToolTip(backend::displayName(summary.titles));
+    setToolTip(labels::titleName(summary.titles));
     setContextMenuPolicy(Qt::CustomContextMenu);
 
     auto* row = new QHBoxLayout(this);
@@ -76,7 +80,7 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     text->setContentsMargins(0, 0, 0, 0);
     text->setSpacing(theme::kSpacingXs);
 
-    const QString fullTitle = backend::displayName(summary.titles);
+    const QString fullTitle = labels::titleName(summary.titles);
     title_ = makeLabel(QStringLiteral("carouselTitle"), QString());
     title_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     title_->setWordWrap(false);
@@ -198,18 +202,29 @@ QPixmap TitleCard::rounded(const QPixmap& pixmap, const QSize& target) {
 
     // Clip to rounded corners matching the card's inner radius so artwork
     // sits seamlessly inside the container without square corners overflowing.
+    const theme::Appearance& appearance = currentAppearance();
+    const int radius = theme::radiusSmall(appearance);
     QPixmap out(target);
     out.fill(Qt::transparent);
     QPainter painter(&out);
     painter.setRenderHint(QPainter::Antialiasing);
     QPainterPath path;
-    path.addRoundedRect(QRectF(0, 0, target.width(), target.height()), theme::kRadiusSmall,
-                        theme::kRadiusSmall);
+    path.addRoundedRect(QRectF(0, 0, target.width(), target.height()), radius, radius);
     painter.setClipPath(path);
     // Draw the centred region directly at its negative offset: the clip is
     // exactly the target box, so the parts outside it are discarded and the
     // second allocation of scaled.copy() is pure cost.
     painter.drawPixmap(-cropX, -cropY, scaled);
+    if (appearance.coverGradient) {
+        // A bottom shade keeps a bright poster from swallowing the card's own
+        // controls; the top stays untouched.
+        QLinearGradient shade(0, target.height() * 0.45, 0, target.height());
+        shade.setColorAt(0.0, QColor(0, 0, 0, 0));
+        shade.setColorAt(1.0, QColor(0, 0, 0, 120));
+        painter.fillRect(QRectF(0, target.height() * 0.45, target.width(),
+                                target.height() * 0.55),
+                         shade);
+    }
     return out;
 }
 

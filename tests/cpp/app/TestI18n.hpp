@@ -12,6 +12,15 @@ class TestI18n : public QObject {
 
   void realCatalogSwitchesLanguageRepeatedly();
   void liveStringsFollowTheSwitchedLanguageAndRestore();
+  void contentNamesFollowTheirOwnLanguage();
+  void appearanceRoundTripsThroughSettings();
+  void unsetRadiusAndResetUseXsWithoutOverwritingSavedChoices();
+  void appearanceSaveAndCancelKeepTheLatestBatchedStyle();
+  void unparsableAppearanceFallsBackToDefaults();
+  void appearancePreviewCancelRollsBackAndSavePersists();
+  void playerOverlayFollowsTheApplicationAccent();
+  void settingsPagesFitTheNarrowestAllowedWidth();
+  void titleNamesFollowTheirOwnLanguageAndFallBack();
   void nativePlanErrorsFollowTheActiveLanguage();
   void failedReplacementPreservesWorkingLanguage();
   void appliedLanguageDrivesDefaultLocaleNumbers();
@@ -21,7 +30,6 @@ class TestI18n : public QObject {
   /// unsaved value, the selection and the scroll position survive, en -> uk ->
   /// en, and an unavailable choice is refused by name rather than downgraded.
   void openSettingsRetranslatesInPlaceAndKeepsUnsavedValues();
-  void shortcutSettingsTabMatchesItsContentsInBothLanguages();
   /// The Processing tab's own refusal names an app-owned reason: with the
   /// private Native runtime unselected in this process the reason is the
   /// producer's wording, not the runtime's. An open Settings dialog must restate

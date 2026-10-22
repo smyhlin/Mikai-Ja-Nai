@@ -303,8 +303,19 @@ The opt-in `benchmark_probe` drives the real Settings tab, defaulting to the bas
 
 ---
 
+## Appearance & Content Language (`Settings → Customization`)
+
+- **Content titles language** (`ua` → `english` → `original`) and **Names language** are separate from the interface language. Names language defaults to **As the interface**; choosing Ukrainian or English relabels statuses, kinds, formats, ratings and relations in place, without restarting the app or refetching data. A payload missing the preferred title falls back to the next form rather than showing a blank.
+- **Site theme, accent colour, corner radius** preview live while the dialog is open; rapid changes share one restyle after a 60 ms input pause. **Save** commits the final choice; **Cancel** restores the opening look, including any pending preview. The default corner radius is **XS (4 px)**; an explicitly saved radius stays selected. A light site theme re-derives sheets and painted surfaces from the same palette.
+- **Background gradient** paints an accent wash behind the top of the discovery page and the title-page bed. Intensity, height and colour changes repaint only that glow: they do not rebuild stylesheets or cached posters. Related-carousel and episode header bands stay transparent over the glow, with divider lines and controls preserved; content cards remain opaque.
+- **Gradient overlay** shades the bottom of poster and cover artwork so the card's own captions stay legible on bright images.
+- **18+ content:** with the toggle off, opening an episode of a title rated `18+` asks for confirmation once per title; with it on, playback starts without the prompt.
+
+---
+
 ## Configuration & Data Locations
 
+- **Appearance (`customization/*`):** `customization/theme`, `customization/accent`, `customization/radiusStep`, `customization/titleLanguage`, `customization/nameLanguage`, `customization/coverGradient`, `customization/backgroundGradient`, `customization/gradientColor`, `customization/gradientIntensity`, `customization/gradientHeight`, and `customization/adultContent`. Missing values use the defaults (`dark`, `#bdacff`, XS radius, Ukrainian titles, names as the interface, cover overlay on, background gradient on, colour `#67e4e4`, 30 %, 100 %, no explicit content). Invalid colours and language IDs use their defaults; numeric ranges are clamped.
 - **API Key (`.env` or Settings):** Optional `API_KEY=<token>` in `.env` (or configured in **Settings → General**) raises rate limits against `https://api.mikai.me/public/v1`.
 - **Settings (`QSettings`):** Platform-native settings under organization `Mikai`, application `Mikai Wrapper`. Recently opened titles are JSON in the `home/recentTitles` setting, not a `recent.json` file.
 - **Interface language (`ui/language`):** `system`, `en`, or `uk`. The selector previews immediately in the running process; only **Save** writes the preference. **Cancel**, `Esc`, and window close restore the language that was active when Settings opened, without refetching data or restarting playback.
