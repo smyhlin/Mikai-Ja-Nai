@@ -2,24 +2,34 @@
 
 #include "TestSupport.hpp"
 
+#include <backend/Cancellation.hpp>
 #include <backend/Errors.hpp>
 #include <backend/MikaiClient.hpp>
 #include <backend/Models.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <functional>
+#include <utility>
 
 #include <QtCore/QByteArray>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDeadlineTimer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QMap>
 #include <QtCore/QMutex>
 #include <QtCore/QStringList>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QThread>
 #include <QtCore/QVariant>
+#include <QtCore/QUrl>
+#include <QtCore/QUrlQuery>
 #include <QtCore/QtGlobal>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QTcpServer>
@@ -32,22 +42,28 @@ using mikai::backend::MikaiApiError;
 using mikai::backend::MikaiClient;
 using mikai::backend::parseApiErrorEnvelope;
 using mikai::backend::SearchResult;
+using mikai::backend::AnimeQuery;
+using mikai::backend::ApiMeta;
+using mikai::backend::GenreTag;
+using mikai::backend::TeamProfile;
+using mikai::backend::TeamsResult;
+using mikai::backend::UpdatesResult;
 using mikai::backend::setEnvFilePathOverride;
 using mikai_test::asText;
 
 namespace {
 
-// One request the server has seen, read as it arrived. The header spellings
-// matter to a credential assertion, so the test reads the request header-by-
-// header rather than a normalised copy of it.
 struct CapturedRequest {
+  QString target;
   QMap<QString, QString> headers;
 };
 
-// A loopback endpoint that answers one request at a time with a queued reply.
-// The queue is what makes the ordering questions testable: a caller can be left
-// in flight while the test changes a key underneath it, without any guess about
-// how long the server takes.
+struct WireReply {
+  int status = 200;
+  QByteArray body;
+  QMap<QString, QString> headers;
+};
+
 class LoopbackApi : public QObject {
  public:
   LoopbackApi(QObject* parent = nullptr) : QObject(parent) {}
@@ -73,9 +89,8 @@ class LoopbackApi : public QObject {
     return QStringLiteral("http://127.0.0.1:%1/public/v1").arg(server_.serverPort());
   }
 
-  // The quota headers a reply carries: they are how the limiter is told the
-  // window is closed, which is what parks a caller without holding a socket
-  // open.
+  // Remaining = 0 closes the limiter window: the next caller parks before it
+  // sends, without a socket held open.
   static QMap<QString, QString> quota(int limit, int remaining, int reset) {
     QMap<QString, QString> headers;
     headers.insert(QStringLiteral("X-RateLimit-Limit"), QString::number(limit));
@@ -87,6 +102,11 @@ class LoopbackApi : public QObject {
   void enqueue(int status, const QByteArray& body, const QMap<QString, QString>& headers = {}) {
     QMutexLocker locker(&mutex_);
     pending_.push_back(Reply{status, body, headers});
+  }
+
+  void setRoute(std::function<WireReply(const CapturedRequest&)> route) {
+    QMutexLocker locker(&mutex_);
+    route_ = std::move(route);
   }
 
   int requestCount() const {
@@ -103,6 +123,18 @@ class LoopbackApi : public QObject {
     }
     return {};
   }
+  // QNetworkAccessManager normalises the canonical header case ("X-Api-Key"), so
+  // a raw lookup by the documented spelling misses the credential that was sent.
+  static QString valueOf(const CapturedRequest& request, const QString& name) {
+    for (auto it = request.headers.cbegin(); it != request.headers.cend(); ++it) {
+      if (it.key().compare(name, Qt::CaseInsensitive) == 0) return it.value();
+    }
+    return {};
+  }
+  QString targetOf(int index) const {
+    QMutexLocker locker(&mutex_);
+    return index >= 0 && index < captured_.size() ? captured_.at(index).target : QString();
+  }
 
  private:
   struct Reply {
@@ -111,11 +143,8 @@ class LoopbackApi : public QObject {
     QMap<QString, QString> headers;
   };
 
-  // Everything that belongs to one TCP connection, keyed by its socket only
-  // while that socket is alive. The record is dropped the moment the connection
-  // ends: the allocator can hand a later connection the address of a socket
-  // that has already been destroyed, and state left under that address would
-  // read the new request as one already served, so it would never be answered.
+  // Keyed by socket only while it lives: a destroyed socket's address can be
+  // reused, and leftover state would read the new request as already served.
   struct Connection {
     QByteArray buffer;
     bool served = false;
@@ -145,6 +174,10 @@ class LoopbackApi : public QObject {
 
     CapturedRequest request;
     const QList<QByteArray> lines = connection.buffer.left(headerEnd).split('\n');
+    if (!lines.isEmpty()) {
+      const QList<QByteArray> first = lines.first().split(' ');
+      if (first.size() >= 2) request.target = QString::fromLatin1(first.at(1));
+    }
     for (const QByteArray& line : lines.mid(1)) {
       const int colon = line.indexOf(':');
       if (colon <= 0) continue;
@@ -157,7 +190,10 @@ class LoopbackApi : public QObject {
     {
       QMutexLocker locker(&mutex_);
       captured_.append(request);
-      if (pending_.isEmpty()) {
+      if (route_) {
+        const WireReply routed = route_(request);
+        reply = Reply{routed.status, routed.body, routed.headers};
+      } else if (pending_.isEmpty()) {
         reply = Reply{404,
                       "{\"ok\":false,\"error\":{\"code\":\"not_found\","
                       "\"message\":\"no reply queued\"}}",
@@ -198,13 +234,12 @@ class LoopbackApi : public QObject {
   QTcpServer server_;
   mutable QMutex mutex_;
   QList<Reply> pending_;
+  std::function<WireReply(const CapturedRequest&)> route_;
   QVector<CapturedRequest> captured_;
   QHash<QTcpSocket*, Connection> connections_;
   QList<QTcpSocket*> sockets_;
 };
 
-// The envelope the API answers a normal list request with, shaped the way the
-// parser reads it: an "ok" window around a "result" array.
 QByteArray okListPayload() {
   return QByteArrayLiteral(R"({"ok":true,"page":1,"pages":1,"total":1,"result":[
       {"ids":{"mikai":"7428"},
@@ -217,6 +252,137 @@ QByteArray failurePayload(const QString& code, const QString& message) {
   return QByteArrayLiteral(R"({"ok":false,"error":{"code":")") +
          code.toUtf8() + QByteArrayLiteral(R"(","message":")") + message.toUtf8() +
          QByteArrayLiteral("\"}}");
+}
+
+struct CatalogueRow {
+  QString title;
+  int year = 0;
+  QString format;
+  QString status;
+  QString season;
+  QString studio;
+  QStringList genres;
+  QStringList tags;
+  qint64 team = 0;
+  int views = 0;
+};
+
+const QVector<CatalogueRow>& catalogueRows() {
+  static const QVector<CatalogueRow> rows = {
+      {QStringLiteral("Action School"), 2020, QStringLiteral("tv"), QStringLiteral("ongoing"),
+       QStringLiteral("winter"), QStringLiteral("Alpha"), {QStringLiteral("Action")},
+       {QStringLiteral("school")}, 1, 30},
+      {QStringLiteral("Comedy Spoiler"), 2024, QStringLiteral("movie"), QStringLiteral("finished"),
+       QStringLiteral("summer"), QStringLiteral("Beta"), {QStringLiteral("Comedy")},
+       {QStringLiteral("spoiler")}, 2, 10},
+      {QStringLiteral("Action Comedy School"), 2022, QStringLiteral("tv"),
+       QStringLiteral("ongoing"), QStringLiteral("winter"), QStringLiteral("Alpha"),
+       {QStringLiteral("Action"), QStringLiteral("Comedy")},
+       {QStringLiteral("school"), QStringLiteral("spoiler")}, 1, 20},
+  };
+  return rows;
+}
+
+QStringList csvValues(const QString& value) {
+  QStringList values;
+  for (const QString& part : value.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+    const QString trimmed = part.trimmed();
+    if (!trimmed.isEmpty()) values << trimmed;
+  }
+  return values;
+}
+
+bool anyOf(const QStringList& values, const QStringList& wanted) {
+  for (const QString& value : wanted) {
+    if (values.contains(value)) return true;
+  }
+  return false;
+}
+
+bool allOf(const QStringList& values, const QStringList& wanted) {
+  for (const QString& value : wanted) {
+    if (!values.contains(value)) return false;
+  }
+  return true;
+}
+
+WireReply catalogueRoute(const CapturedRequest& request) {
+  const QUrlQuery query(QUrl(request.target).query());
+  const QString search = query.queryItemValue(QStringLiteral("search")).trimmed();
+  const QStringList genres = csvValues(query.queryItemValue(QStringLiteral("genres")));
+  const QStringList genresExclude = csvValues(query.queryItemValue(QStringLiteral("genresExclude")));
+  const QString genresMatch = query.queryItemValue(QStringLiteral("genresMatch"));
+  const QStringList tags = csvValues(query.queryItemValue(QStringLiteral("tags")));
+  const QStringList tagsExclude = csvValues(query.queryItemValue(QStringLiteral("tagsExclude")));
+  const QString tagsMatch = query.queryItemValue(QStringLiteral("tagsMatch"));
+  const QStringList years = csvValues(query.queryItemValue(QStringLiteral("years")));
+  const int yearFrom = query.queryItemValue(QStringLiteral("yearFrom")).toInt();
+  const int yearTo = query.queryItemValue(QStringLiteral("yearTo")).toInt();
+  const QStringList seasons = csvValues(query.queryItemValue(QStringLiteral("seasons")));
+  const QStringList formats = csvValues(query.queryItemValue(QStringLiteral("formats")));
+  const QStringList statuses = csvValues(query.queryItemValue(QStringLiteral("statuses")));
+  const QStringList studios = csvValues(query.queryItemValue(QStringLiteral("studios")));
+  const QStringList teams = csvValues(query.queryItemValue(QStringLiteral("teams")));
+
+  QVector<const CatalogueRow*> matched;
+  for (const CatalogueRow& row : catalogueRows()) {
+    if (!search.isEmpty() && !row.title.contains(search, Qt::CaseInsensitive)) continue;
+    if (!genres.isEmpty()) {
+      const bool keep = genresMatch == QLatin1String("any") ? anyOf(row.genres, genres)
+                                                             : allOf(row.genres, genres);
+      if (!keep) continue;
+    }
+    if (anyOf(row.genres, genresExclude)) continue;
+    if (!tags.isEmpty()) {
+      const bool keep = tagsMatch == QLatin1String("any") ? anyOf(row.tags, tags) : allOf(row.tags, tags);
+      if (!keep) continue;
+    }
+    if (anyOf(row.tags, tagsExclude)) continue;
+    if (!years.isEmpty() && !years.contains(QString::number(row.year))) continue;
+    if (yearFrom > 0 && row.year < yearFrom) continue;
+    if (yearTo > 0 && row.year > yearTo) continue;
+    if (!seasons.isEmpty() && !seasons.contains(row.season)) continue;
+    if (!formats.isEmpty() && !formats.contains(row.format)) continue;
+    if (!statuses.isEmpty() && !statuses.contains(row.status)) continue;
+    if (!studios.isEmpty() && !studios.contains(row.studio)) continue;
+    if (!teams.isEmpty() && !teams.contains(QString::number(row.team))) continue;
+    matched.append(&row);
+  }
+
+  const QString sort = query.queryItemValue(QStringLiteral("sort"), QUrl::PrettyDecoded);
+  const bool descending = query.queryItemValue(QStringLiteral("order")) == QLatin1String("desc");
+  std::stable_sort(matched.begin(), matched.end(), [&](const CatalogueRow* left, const CatalogueRow* right) {
+    int order = 0;
+    if (sort == QLatin1String("year")) {
+      order = left->year - right->year;
+    } else if (sort == QLatin1String("views")) {
+      order = left->views - right->views;
+    } else {
+      order = left->title.compare(right->title);
+    }
+    return descending ? order > 0 : order < 0;
+  });
+
+  const int page = qMax(1, query.queryItemValue(QStringLiteral("page")).toInt());
+  const int limit = qMax(1, query.queryItemValue(QStringLiteral("limit")).toInt());
+  const int total = matched.size();
+  const int pages = (total + limit - 1) / limit;
+  QJsonArray items;
+  for (int index = (page - 1) * limit; index < qMin(page * limit, total); ++index) {
+    const CatalogueRow& row = *matched.at(index);
+    items.append(QJsonObject{
+        {QStringLiteral("ids"), QJsonObject{{QStringLiteral("mikai"), index + 1}}},
+        {QStringLiteral("titles"), QJsonObject{{QStringLiteral("english"), row.title}}},
+        {QStringLiteral("year"), row.year},
+        {QStringLiteral("format"), row.format},
+        {QStringLiteral("status"), row.status}});
+  }
+  QJsonObject payload{{QStringLiteral("ok"), true},
+                      {QStringLiteral("result"), items},
+                      {QStringLiteral("total"), total},
+                      {QStringLiteral("page"), page},
+                      {QStringLiteral("pages"), pages}};
+  return WireReply{200, QJsonDocument(payload).toJson(QJsonDocument::Compact), {}};
 }
 
 bool writeFile(const QString& path, const QByteArray& bytes) {
@@ -235,8 +401,6 @@ QByteArray readFile(const QString& path) {
 constexpr auto kOldKey = "mk_old_key_synthetic";
 constexpr auto kNewKey = "mk_new_key_synthetic";
 
-// Runs a client call on its own thread and reports how it ended, so a parked
-// caller can be observed while the test thread keeps its event loop running.
 class CallOutcome {
  public:
   explicit CallOutcome(MikaiClient* client, const QString& query)
@@ -246,11 +410,8 @@ class CallOutcome {
   CallOutcome& operator=(const CallOutcome&) = delete;
 
   ~CallOutcome() {
-    // The worker points at a client that lives on the test's stack, so it must
-    // not outlive the test function. A failing assertion returns early, while
-    // the call may still be parked or in flight; joining here ends that call
-    // (the client bounds each request with its own deadline) instead of leaving
-    // a thread behind with a dangling client.
+    // The worker points at a client on the test's stack, so it must not outlive
+    // the test: joining here ends the call instead of leaving a dangling client.
     if (thread_ != nullptr) {
       thread_->wait();
       delete thread_;
@@ -262,8 +423,6 @@ class CallOutcome {
     thread_->start();
   }
 
-  // Waits for the call to end. Used to prove the first request completed before
-  // the second one parks, without guessing how long the server takes.
   void waitForFinished(int timeoutMs = 15000) {
     QDeadlineTimer deadline(timeoutMs);
     while (!finished_ && deadline.remainingTime() > 0) {
@@ -278,7 +437,9 @@ class CallOutcome {
  private:
   void run() {
     try {
-      client_->search(query_);
+      mikai::backend::AnimeQuery namedQuery;
+      namedQuery.search = query_;
+      client_->search(namedQuery);
     } catch (const MikaiApiError& error) {
       threw_ = true;
       code_ = error.code;
@@ -300,9 +461,8 @@ class CallOutcome {
 }  // namespace
 
 void TestApiClient::initTestCase() {
-  // The suite writes a .env; the client walks up from the executable directory
-  // to find one, which would find the repository's. Point it at a scratch file
-  // for the whole suite so nothing real is read or written.
+  // The client walks up from the executable directory to find a .env, which
+  // would find the repository's: point it at a scratch file for the suite.
   QVERIFY2(envDirectory_.isValid(), "cannot create the isolated .env directory");
   setEnvFilePathOverride(QDir(envDirectory_.path()).filePath(QStringLiteral(".env")));
 }
@@ -317,7 +477,9 @@ void TestApiClient::aDisabledKeyFailureKeepsItsOwnCodeAndMessage() {
 
   MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
   try {
-    client.search(QStringLiteral("torch"));
+    mikai::backend::AnimeQuery query;
+    query.search = QStringLiteral("torch");
+    client.search(query);
     QFAIL("a disabled-key reply must not report success");
   } catch (const MikaiApiError& caught) {
     QCOMPARE(caught.code, QStringLiteral("api_key_disabled"));
@@ -347,17 +509,536 @@ void TestApiClient::aMalformedSuccessEnvelopeFailsRatherThanParsingGarbage() {
   LoopbackApi api;
   QString error;
   QVERIFY2(api.start(&error), qPrintable(error));
-  // The server answered 200 with something that is not the envelope. The client
-  // has to refuse, not invent an empty result that reads as "nothing found".
   api.enqueue(200, QByteArrayLiteral("<html>503 service unavailable</html>"));
 
   MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
   try {
-    client.search(QStringLiteral("torch"));
+    mikai::backend::AnimeQuery query;
+    query.search = QStringLiteral("torch");
+    client.search(query);
     QFAIL("a non-envelope body must not report success");
   } catch (const MikaiApiError& caught) {
     QVERIFY2(!caught.code.isEmpty(), "a malformed reply must still name a reason");
     QVERIFY2(!caught.message.isEmpty(), "a malformed reply must still carry a message");
+  }
+}
+
+void TestApiClient::catalogueFiltersNarrowTheReturnedRows() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setRoute([](const CapturedRequest& request) { return catalogueRoute(request); });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  const auto titles = [&client](const AnimeQuery& query) {
+    QStringList found;
+    for (const mikai::backend::AnimeSummary& entry : client.search(query).items) {
+      found << entry.titles.english;
+    }
+    return found;
+  };
+  AnimeQuery query;
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School"),
+                                      QStringLiteral("Comedy Spoiler")}));
+  query.search = QStringLiteral("Spoiler");
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.genres = {QStringLiteral("Action")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.genres = {QStringLiteral("Action"), QStringLiteral("Comedy")};
+  query.genres_match = QStringLiteral("all");
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School")}));
+  query = AnimeQuery();
+  query.genres = {QStringLiteral("Action"), QStringLiteral("Comedy")};
+  query.genres_match = QStringLiteral("any");
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School"),
+                                      QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.genres_exclude = {QStringLiteral("Comedy")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.tags = {QStringLiteral("school")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.tags_exclude = {QStringLiteral("spoiler")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.years = {2020, 2024};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action School"),
+                                      QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.year_from = 2021;
+  query.year_to = 2023;
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School")}));
+  query = AnimeQuery();
+  query.seasons = {QStringLiteral("summer")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.formats = {QStringLiteral("movie")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.statuses = {QStringLiteral("ongoing")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.studios = {QStringLiteral("Alpha")};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.teams = {2};
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.sort = QStringLiteral("year");
+  query.order = QStringLiteral("desc");
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Comedy Spoiler"),
+                                      QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Action School")}));
+  query = AnimeQuery();
+  query.sort = QStringLiteral("views");
+  query.order = QStringLiteral("desc");
+  QCOMPARE(titles(query), QStringList({QStringLiteral("Action School"),
+                                      QStringLiteral("Action Comedy School"),
+                                      QStringLiteral("Comedy Spoiler")}));
+  query = AnimeQuery();
+  query.page = 2;
+  query.limit = 1;
+  const SearchResult paged = client.search(query);
+  QCOMPARE(paged.items.size(), 1);
+  QCOMPARE(paged.items.first().titles.english, QStringLiteral("Action School"));
+  QCOMPARE(paged.page.value_or(0), 2);
+}
+
+void TestApiClient::dictionariesAndMetaKeepEveryValueTheServerOffers() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setRoute([](const CapturedRequest& request) {
+    const QString path = QUrl(request.target).path();
+    QJsonValue result;
+    if (path.endsWith(QStringLiteral("/meta"))) {
+      result = QJsonObject{
+          {QStringLiteral("version"), QStringLiteral("v1")},
+          {QStringLiteral("formats"), QJsonArray{QStringLiteral("TV"), QStringLiteral("ONA"),
+                                                  QStringLiteral("future-format")}},
+          {QStringLiteral("statuses"), QJsonArray{QStringLiteral("ongoing")}},
+          {QStringLiteral("seasons"), QJsonArray{QStringLiteral("winter")}},
+          {QStringLiteral("animeSortFields"), QJsonArray{QStringLiteral("name"),
+                                                         QStringLiteral("views"),
+                                                         QStringLiteral("future-sort")}},
+          {QStringLiteral("sortOrders"), QJsonArray{QStringLiteral("asc"), QStringLiteral("desc")}},
+          {QStringLiteral("matchModes"), QJsonArray{QStringLiteral("all"), QStringLiteral("any"),
+                                                    QStringLiteral("future-mode")}}};
+    } else if (path.endsWith(QStringLiteral("/genres"))) {
+      const QJsonObject translated{{QStringLiteral("name"), QStringLiteral("Action")},
+                                  {QStringLiteral("ua"), QStringLiteral("Бойовик")}};
+      const QJsonObject untranslated{{QStringLiteral("name"), QStringLiteral("Slice of Life")}};
+      result = QJsonArray{translated, untranslated};
+    } else if (path.endsWith(QStringLiteral("/tags"))) {
+      const QJsonObject tag{{QStringLiteral("name"), QStringLiteral("school")},
+                            {QStringLiteral("ua"), QStringLiteral("Школа")}};
+      result = QJsonArray{tag};
+    } else if (path.endsWith(QStringLiteral("/studios"))) {
+      result = QJsonArray{QStringLiteral("Studio A"), QStringLiteral("Studio B")};
+    } else {
+      return WireReply{404, failurePayload(QStringLiteral("not_found"), QStringLiteral("no route")), {}};
+    }
+    const QJsonObject payload{{QStringLiteral("ok"), true}, {QStringLiteral("result"), result}};
+    return WireReply{200, QJsonDocument(payload).toJson(QJsonDocument::Compact), {}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  const ApiMeta meta = client.getMeta();
+  QCOMPARE(meta.version, QStringLiteral("v1"));
+  // Unknown enum members stay selectable: the server may add them at any time.
+  QCOMPARE(meta.formats, QStringList({QStringLiteral("TV"), QStringLiteral("ONA"),
+                                      QStringLiteral("future-format")}));
+  QCOMPARE(meta.anime_sort_fields, QStringList({QStringLiteral("name"), QStringLiteral("views"),
+                                                QStringLiteral("future-sort")}));
+  QCOMPARE(meta.match_modes, QStringList({QStringLiteral("all"), QStringLiteral("any"),
+                                          QStringLiteral("future-mode")}));
+  const QVector<GenreTag> genres = client.getGenres();
+  QCOMPARE(genres.size(), 2);
+  QCOMPARE(genres.first().name, QStringLiteral("Action"));
+  QCOMPARE(genres.first().ua, QStringLiteral("Бойовик"));
+  QCOMPARE(genres.at(1).name, QStringLiteral("Slice of Life"));
+  QVERIFY(genres.at(1).ua.isEmpty());
+  const QVector<GenreTag> tags = client.getTags();
+  QCOMPARE(tags.size(), 1);
+  QCOMPARE(tags.first().name, QStringLiteral("school"));
+  QCOMPARE(tags.first().ua, QStringLiteral("Школа"));
+  QCOMPARE(client.getStudios(), QStringList({QStringLiteral("Studio A"), QStringLiteral("Studio B")}));
+}
+
+void TestApiClient::teamCatalogueAndProfileCarryTheirOwnData() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setRoute([](const CapturedRequest& request) {
+    const QString path = QUrl(request.target).path();
+    const QJsonObject team{{QStringLiteral("id"), 17},
+                           {QStringLiteral("slug"), QStringLiteral("team-a")},
+                           {QStringLiteral("name"), QStringLiteral("Team A")}};
+    QJsonObject payload;
+    if (path.endsWith(QStringLiteral("/teams/team-a/anime"))) {
+      const QJsonObject row{{QStringLiteral("ids"), QJsonObject{{QStringLiteral("mikai"), 7428}}},
+                            {QStringLiteral("titles"),
+                             QJsonObject{{QStringLiteral("english"), QStringLiteral("Team Show")}}}};
+      payload = QJsonObject{{QStringLiteral("ok"), true},
+                            {QStringLiteral("result"), QJsonArray{row}},
+                            {QStringLiteral("total"), 1},
+                            {QStringLiteral("page"), 1},
+                            {QStringLiteral("pages"), 1}};
+    } else if (path.endsWith(QStringLiteral("/teams/team-a"))) {
+      const QJsonObject links{{QStringLiteral("site"), QStringLiteral("https://team.example")}};
+      QJsonObject profile = team;
+      profile.insert(QStringLiteral("description"), QStringLiteral("profile description"));
+      profile.insert(QStringLiteral("animeCount"), 9);
+      profile.insert(QStringLiteral("hasVoice"), true);
+      profile.insert(QStringLiteral("links"), links);
+      payload = QJsonObject{{QStringLiteral("ok"), true}, {QStringLiteral("result"), profile}};
+    } else if (path.endsWith(QStringLiteral("/teams"))) {
+      const QJsonObject avatar{{QStringLiteral("big"),
+                               QJsonObject{{QStringLiteral("webp"), QStringLiteral("avatar.webp")}}}};
+      const QJsonObject views{{QStringLiteral("total"), 1200},
+                              {QStringLiteral("last30Days"), 42}};
+      QJsonObject profile = team;
+      profile.insert(QStringLiteral("description"), QStringLiteral("details"));
+      profile.insert(QStringLiteral("birthday"), QStringLiteral("2001-01-01"));
+      profile.insert(QStringLiteral("avatar"), avatar);
+      profile.insert(QStringLiteral("hasVoice"), true);
+      profile.insert(QStringLiteral("hasSubs"), false);
+      profile.insert(QStringLiteral("animeCount"), 9);
+      profile.insert(QStringLiteral("views"), views);
+      payload = QJsonObject{{QStringLiteral("ok"), true},
+                            {QStringLiteral("result"), QJsonArray{profile}},
+                            {QStringLiteral("total"), 120},
+                            {QStringLiteral("page"), 2},
+                            {QStringLiteral("pages"), 6}};
+
+    } else {
+      return WireReply{404, failurePayload(QStringLiteral("not_found"), QStringLiteral("no route")), {}};
+    }
+    return WireReply{200, QJsonDocument(payload).toJson(QJsonDocument::Compact), {}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  const TeamsResult teams = client.getTeams(QString(), 2, 50);
+  QCOMPARE(teams.total.value_or(0), 120);
+  QCOMPARE(teams.page.value_or(0), 2);
+  QCOMPARE(teams.pages.value_or(0), 6);
+  QCOMPARE(teams.items.size(), 1);
+  QCOMPARE(teams.items.first().team.slug, QStringLiteral("team-a"));
+  QCOMPARE(teams.items.first().team.name, QStringLiteral("Team A"));
+  QCOMPARE(teams.items.first().description, QStringLiteral("details"));
+  QCOMPARE(teams.items.first().birthday, QStringLiteral("2001-01-01"));
+  QCOMPARE(teams.items.first().avatar.big.webp, QStringLiteral("avatar.webp"));
+  QCOMPARE(teams.items.first().anime_count, 9);
+  QVERIFY(teams.items.first().has_voice);
+  QVERIFY(!teams.items.first().has_subs);
+  QCOMPARE(teams.items.first().views_total, qint64(1200));
+  QCOMPARE(teams.items.first().views_last_30_days, qint64(42));
+
+  const TeamProfile profile = client.getTeam(QStringLiteral("team-a"));
+  QCOMPARE(profile.team.name, QStringLiteral("Team A"));
+  QCOMPARE(profile.description, QStringLiteral("profile description"));
+  QCOMPARE(profile.links.value(QStringLiteral("site")), QStringLiteral("https://team.example"));
+
+  const SearchResult teamAnime = client.getTeamAnime(QStringLiteral("team-a"), 1, 20);
+  QCOMPARE(teamAnime.items.size(), 1);
+  QCOMPARE(teamAnime.items.first().titles.english, QStringLiteral("Team Show"));
+  QCOMPARE(teamAnime.items.first().ref, QStringLiteral("7428"));
+}
+
+void TestApiClient::updatesCarryTheFeedIdentityAndPagingTheServerReported() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  const QString watermark = QStringLiteral("2026-10-20T11:59:59Z");
+  api.setRoute([watermark](const CapturedRequest& request) {
+    const QUrlQuery query(QUrl(request.target).query());
+    // The server validates the watermark, so the answer depends on the client's own forwarding.
+    if (query.queryItemValue(QStringLiteral("since")) != watermark) {
+      return WireReply{422, failurePayload(QStringLiteral("invalid_parameter"),
+                                           QStringLiteral("since is not a known watermark")),
+                       {}};
+    }
+    const QJsonObject anime{{QStringLiteral("ids"), QJsonObject{{QStringLiteral("mikai"), 1523}}},
+                            {QStringLiteral("titles"),
+                             QJsonObject{{QStringLiteral("english"), QStringLiteral("Feed Show")}}}};
+    const QJsonObject row{{QStringLiteral("anime"), anime},
+                          {QStringLiteral("provider"), QStringLiteral("provider-a")},
+                          {QStringLiteral("embedUrl"), QStringLiteral("https://video.example/embed/1")},
+                          {QStringLiteral("publishedAt"), QStringLiteral("2026-10-20T12:00:00Z")},
+                          {QStringLiteral("episode"), 2.5},
+                          {QStringLiteral("teamName"), QStringLiteral("Feed Team")}};
+    const QJsonObject payload{{QStringLiteral("ok"), true},
+                              {QStringLiteral("result"), QJsonArray{row}},
+                              {QStringLiteral("total"), 29},
+                              {QStringLiteral("page"), 4},
+                              {QStringLiteral("pages"), 3}};
+    return WireReply{200, QJsonDocument(payload).toJson(QJsonDocument::Compact), {}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  const UpdatesResult updates = client.getUpdates(4, 12, watermark);
+  QCOMPARE(updates.total.value_or(0), 29);
+  QCOMPARE(updates.page.value_or(0), 4);
+  QCOMPARE(updates.pages.value_or(0), 3);
+  QCOMPARE(updates.items.size(), 1);
+  const mikai::backend::AnimeUpdate& item = updates.items.first();
+  QCOMPARE(item.anime.ref, QStringLiteral("1523"));
+  QCOMPARE(item.anime.titles.english, QStringLiteral("Feed Show"));
+  QCOMPARE(item.provider, QStringLiteral("provider-a"));
+  QCOMPARE(item.team_name, QStringLiteral("Feed Team"));
+  QCOMPARE(item.published_at, QStringLiteral("2026-10-20T12:00:00Z"));
+  // The watch address belongs to the event: the same series on another provider is another event.
+  QCOMPARE(item.embed_url, QStringLiteral("https://video.example/embed/1"));
+  QCOMPARE(item.episode.toDouble(), 2.5);
+
+  try {
+    client.getUpdates(1, 12, QStringLiteral("2020-01-01T00:00:00Z"));
+    QFAIL("a watermark the server refused must not become an empty feed");
+  } catch (const MikaiApiError& caught) {
+    QCOMPARE(caught.code, QStringLiteral("invalid_parameter"));
+    QCOMPARE(caught.status, 422);
+  }
+}
+
+void TestApiClient::everyApiRequestNamesTheApplicationAndItsVersion() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setRoute([](const CapturedRequest&) {
+    return WireReply{200, okListPayload(), {}};
+  });
+
+  const QString name = QCoreApplication::applicationName().simplified()
+                           .replace(QLatin1Char(' '), QLatin1Char('-'));
+  const QString version = QCoreApplication::applicationVersion();
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery uaQuery;
+  uaQuery.search = QStringLiteral("ua-check");
+  client.search(uaQuery);
+  const QString agent = api.headerOf(0, QStringLiteral("User-Agent"));
+  QVERIFY2(!agent.isEmpty(), "the request carried no User-Agent at all");
+  QVERIFY2(agent.startsWith(name + QLatin1Char('/')),
+           qPrintable(QStringLiteral("the User-Agent does not name the application: %1").arg(agent)));
+
+  const QString sentinel = QStringLiteral("9.9.7-ua-probe");
+  QCoreApplication::setApplicationVersion(sentinel);
+  MikaiClient second(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery versionQuery;
+  versionQuery.search = QStringLiteral("ua-version");
+  second.search(versionQuery);
+  const QString versioned = api.headerOf(1, QStringLiteral("User-Agent"));
+  QVERIFY2(versioned.contains(sentinel),
+           qPrintable(QStringLiteral("the User-Agent did not follow the version the application "
+                                     "declared: %1")
+                          .arg(versioned)));
+  QVERIFY2(versioned.startsWith(name + QLatin1Char('/')),
+           qPrintable(QStringLiteral("the User-Agent lost the application name: %1").arg(versioned)));
+  QCoreApplication::setApplicationVersion(version);
+}
+
+void TestApiClient::anInvalidCatalogueFilterSurfacesTheApiValidationResponse() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.enqueue(422, failurePayload(QStringLiteral("invalid_parameter"),
+                                  QStringLiteral("sort is not a supported catalogue field")));
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.sort = QStringLiteral("future-sort");
+  try {
+    client.search(query);
+    QFAIL("an invalid server-side filter must not become an empty success result");
+  } catch (const MikaiApiError& caught) {
+    QCOMPARE(caught.code, QStringLiteral("invalid_parameter"));
+    QCOMPARE(caught.status, 422);
+    QVERIFY(caught.message.contains(QStringLiteral("sort")));
+  }
+}
+
+QByteArray catalogueBody(const QString& title) {
+  const QJsonObject row{{QStringLiteral("ids"), QJsonObject{{QStringLiteral("mikai"), 7428}}},
+                        {QStringLiteral("titles"), QJsonObject{{QStringLiteral("english"), title}}}};
+  const QJsonObject payload{{QStringLiteral("ok"), true},
+                            {QStringLiteral("total"), 1},
+                            {QStringLiteral("page"), 1},
+                            {QStringLiteral("pages"), 1},
+                            {QStringLiteral("result"), QJsonArray{row}}};
+  return QJsonDocument(payload).toJson(QJsonDocument::Compact);
+}
+
+void TestApiClient::aFreshResponseIsServedWithoutAnotherRoundTrip() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  int revision = 0;
+  api.setRoute([&revision](const CapturedRequest&) {
+    const QString title = ++revision == 1 ? QStringLiteral("Fresh title")
+                                          : QStringLiteral("Changed title");
+    return WireReply{200, catalogueBody(title),
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("public, max-age=60")}}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-fresh");
+  const SearchResult first = client.search(query);
+  const SearchResult second = client.search(query);
+  QCOMPARE(first.items.first().titles.english, QStringLiteral("Fresh title"));
+  QCOMPARE(second.items.first().titles.english, QStringLiteral("Fresh title"));
+}
+
+void TestApiClient::aStaleResponseIsRevalidatedAndTheNewBodyIsServed() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  int call = 0;
+  api.setRoute([&call](const CapturedRequest& request) {
+    ++call;
+    if (call == 1) {
+      return WireReply{200, catalogueBody(QStringLiteral("Old title")),
+                       {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=0")},
+                        {QStringLiteral("ETag"), QStringLiteral("\"rev-1\"")}}};
+    }
+    const QString validator = LoopbackApi::valueOf(request, QStringLiteral("If-None-Match"));
+    if (validator == QLatin1String("\"rev-1\"")) {
+      return WireReply{200, catalogueBody(QStringLiteral("New title")),
+                       {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")},
+                        {QStringLiteral("ETag"), QStringLiteral("\"rev-2\"")}}};
+    }
+    return WireReply{500, failurePayload(QStringLiteral("temporary"), QStringLiteral("retry")), {}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-etag");
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Old title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("New title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("New title"));
+}
+
+void TestApiClient::aStaleResponseTheServerStillHoldsIsReusedUnchanged() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  int call = 0;
+  api.setRoute([&call](const CapturedRequest& request) {
+    ++call;
+    if (call == 1) {
+      return WireReply{200, catalogueBody(QStringLiteral("Held title")),
+                       {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=0")},
+                        {QStringLiteral("ETag"), QStringLiteral("\"held\"")}}};
+    }
+    if (call == 2 &&
+        LoopbackApi::valueOf(request, QStringLiteral("If-None-Match")) == QLatin1String("\"held\"")) {
+      return WireReply{304, {},
+                       {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")},
+                        {QStringLiteral("ETag"), QStringLiteral("\"held\"")}}};
+    }
+    return WireReply{200, catalogueBody(QStringLiteral("Changed title")),
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")}}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-304");
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Held title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Held title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Held title"));
+}
+
+void TestApiClient::aNoCacheResponseIsRevalidatedEveryTime() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  int call = 0;
+  api.setRoute([&call](const CapturedRequest&) {
+    ++call;
+    // A distinct title per answer, so a replayed cache entry would be visible.
+    const QString title = QStringLiteral("Revision %1").arg(call);
+    return WireReply{200, catalogueBody(title),
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("no-cache")},
+                      {QStringLiteral("ETag"), QStringLiteral("\"must-revalidate\"")}}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-no-cache");
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Revision 1"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Revision 2"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Revision 3"));
+}
+
+void TestApiClient::aNoStoreResponseIsNeverKeptAndTheCredentialDecidesWhatIsKept() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  // The body names the credential and its serve count, so a replayed body and
+  // another credential's body are both visible in the data.
+  QMap<QString, int> served;
+  api.setRoute([&served](const CapturedRequest& request) {
+    const QString key = LoopbackApi::valueOf(request, QStringLiteral("X-API-Key"));
+    const int count = ++served[key];
+    const bool store = key != QLatin1String("mk_third_key_synthetic");
+    return WireReply{200, catalogueBody(QStringLiteral("%1|%2").arg(key).arg(count)),
+                     {{QStringLiteral("Cache-Control"),
+                       store ? QStringLiteral("max-age=60") : QStringLiteral("no-store")}}};
+  });
+  MikaiClient cached(QString::fromLatin1(kOldKey), api.baseUrl());
+  MikaiClient other(QString::fromLatin1(kNewKey), api.baseUrl());
+  MikaiClient unstorable(QStringLiteral("mk_third_key_synthetic"), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-isolation");
+
+  QCOMPARE(cached.search(query).items.first().titles.english,
+           QStringLiteral("mk_old_key_synthetic|1"));
+  QCOMPARE(cached.search(query).items.first().titles.english,
+           QStringLiteral("mk_old_key_synthetic|1"));
+  QCOMPARE(other.search(query).items.first().titles.english,
+           QStringLiteral("mk_new_key_synthetic|1"));
+  QCOMPARE(other.search(query).items.first().titles.english,
+           QStringLiteral("mk_new_key_synthetic|1"));
+  QCOMPARE(unstorable.search(query).items.first().titles.english,
+           QStringLiteral("mk_third_key_synthetic|1"));
+  QCOMPARE(unstorable.search(query).items.first().titles.english,
+           QStringLiteral("mk_third_key_synthetic|2"));
+}
+
+void TestApiClient::aFailureIsNotCachedAndACancelledCallReadsNothing() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  int call = 0;
+  api.setRoute([&call](const CapturedRequest&) {
+    ++call;
+    if (call == 1) {
+      return WireReply{500, failurePayload(QStringLiteral("temporary"), QStringLiteral("retry")), {}};
+    }
+    return WireReply{200, catalogueBody(QStringLiteral("Recovered title")),
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")}}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-failure");
+  try {
+    client.search(query);
+    QFAIL("an HTTP failure must not be cached as a result");
+  } catch (const MikaiApiError& caught) {
+    QCOMPARE(caught.code, QStringLiteral("temporary"));
+  }
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Recovered title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Recovered title"));
+
+  std::atomic_bool cancelled{true};
+  mikai::backend::WorkCancellationScope scope(&cancelled);
+  try {
+    client.search(query);
+    QFAIL("a cancelled operation must not read even a fresh cache entry");
+  } catch (const MikaiApiError& caught) {
+    QCOMPARE(caught.code, QStringLiteral("cancelled"));
   }
 }
 
@@ -392,7 +1073,9 @@ void TestApiClient::aPlainEnvelopeSuccessParsesIntoTheResult() {
   api.enqueue(200, okListPayload());
 
   MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
-  const SearchResult result = client.search(QStringLiteral("torch"));
+  mikai::backend::AnimeQuery query;
+  query.search = QStringLiteral("torch");
+  const SearchResult result = client.search(query);
   QCOMPARE(result.items.size(), 1);
   QCOMPARE(asText(result.items.first().titles.english), QStringLiteral("Black Torch"));
 }
@@ -403,9 +1086,6 @@ void TestApiClient::aValidateCallKeepsTheEnvelopeItWasGiven() {
   QVERIFY2(api.start(&error), qPrintable(error));
   api.enqueue(403, failurePayload(QStringLiteral("api_key_disabled"), QString::fromUtf8("\xD0\xBA\xD0\xBB\xD1\x8E\xD1\x87 \xD0\xB2\xD0\xB8\xD0\xBC\xD0\xBA\xD0\xBD\xD0\xB5\xD0\xBD\xD0\xBE")));
 
-  // A candidate key is validated against the server; the reply is an envelope
-  // failure, so the reported reason is the API's own rather than a transport
-  // failure the settings dialog cannot act on.
   MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
   const QMap<QString, QVariant> verdict = client.validateApiKey(QStringLiteral("mk_candidate_synthetic"));
   QCOMPARE(verdict.value(QStringLiteral("valid")).toBool(), false);
@@ -415,11 +1095,11 @@ void TestApiClient::aValidateCallKeepsTheEnvelopeItWasGiven() {
 }
 
 void TestApiClient::aTransportFailureIsNotAnApiFailure() {
-  // A port with nothing listening is the transport failure shape the client has
-  // to keep distinct from "the API answered no".
   MikaiClient client(QString::fromLatin1(kOldKey), QStringLiteral("http://127.0.0.1:1/public/v1"));
   try {
-    client.search(QStringLiteral("torch"));
+    mikai::backend::AnimeQuery query;
+    query.search = QStringLiteral("torch");
+    client.search(query);
     QFAIL("an unreachable server must not report success");
   } catch (const MikaiApiError& caught) {
     QCOMPARE(caught.code, QStringLiteral("network_error"));
@@ -433,9 +1113,8 @@ void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   QString error;
   QVERIFY2(api.start(&error), qPrintable(error));
 
-  // The first answer closes the quota window for a second, which parks the next
-  // caller inside the limiter - before it has built or sent anything. That is
-  // the moment the key is changed underneath it.
+  // The first answer closes the quota window, so the next caller parks in the
+  // limiter before it sends anything: that is when the key changes underneath it.
   api.enqueue(200, okListPayload(), LoopbackApi::quota(300, 0, 1));
   api.enqueue(200, okListPayload(), LoopbackApi::quota(300, 299, 60));
 
@@ -446,10 +1125,8 @@ void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   QTRY_VERIFY_WITH_TIMEOUT(api.requestCount() >= 1, 15000);
   QCOMPARE(api.headerOf(0, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
 
-  // The window is now closed for a second, so the next caller parks before it
-  // builds or sends anything. That is the moment the key is changed underneath
-  // it, and the parking is observed through the limiter rather than a socket
-  // held open, so the ordering does not depend on any sleep.
+  // The parking is observed through the limiter, not a socket held open, so
+  // the ordering does not depend on any sleep.
   first.waitForFinished();
   QVERIFY2(!first.threw(), qPrintable(first.code()));
   CallOutcome parked(&client, QStringLiteral("torch"));
@@ -461,8 +1138,8 @@ void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   QVERIFY2(saved.ok, qPrintable(saved.reason));
   QCOMPARE(client.apiKey(), QString::fromLatin1(kNewKey));
 
-  // The parked call resumes in the new epoch. It sends with the credential that
-  // is current when the request goes out, and not with the one it arrived with.
+  // The parked call resumes in the new epoch and sends with the credential that
+  // is current when the request goes out.
   QTRY_VERIFY_WITH_TIMEOUT(api.requestCount() >= 2, 15000);
   QCOMPARE(api.headerOf(1, QStringLiteral("X-API-Key")), QString::fromLatin1(kNewKey));
   parked.waitForFinished();
@@ -487,8 +1164,6 @@ void TestApiClient::aSavedKeyIsReportedAsSaved() {
   QVERIFY2(result.reason.isEmpty(), qPrintable(result.reason));
   QCOMPARE(client.apiKey(), QString::fromLatin1(kNewKey));
 
-  // The point of the whole exercise: the key is on disk, so it survives the
-  // restart a dialog user assumed it survived.
   QVERIFY2(QFileInfo::exists(path), "the save reported success but wrote no file");
   const QByteArray contents = readFile(path);
   QVERIFY2(contents.contains(QByteArrayLiteral("mk_new_key_synthetic")),
@@ -505,8 +1180,7 @@ void TestApiClient::aKeyThatCouldNotBeSavedNamesTheReasonAndKeepsTheOldOne() {
   QTemporaryDir directory;
   QVERIFY(directory.isValid());
   // A path whose parent is a file: the atomic write can neither create its
-  // temporary sibling nor commit, which is the shape of a full or unavailable
-  // disk.
+  // temporary sibling nor commit, the shape of an unavailable disk.
   const QString blocker = QDir(directory.path()).filePath(QStringLiteral("blocker"));
   QVERIFY(writeFile(blocker, QByteArrayLiteral("not a directory\n")));
   const QString unreachable = QDir(blocker).filePath(QStringLiteral(".env"));
@@ -518,7 +1192,6 @@ void TestApiClient::aKeyThatCouldNotBeSavedNamesTheReasonAndKeepsTheOldOne() {
   QVERIFY2(!result.reason.isEmpty(), "a failed save carries no reason");
   QVERIFY2(result.reason.contains(QStringLiteral(".env")),
            qPrintable(QStringLiteral("the reason does not name the file: %1").arg(result.reason)));
-  // The credential in force is the old one: a failed save is not a save.
   QCOMPARE(client.apiKey(), QString::fromLatin1(kOldKey));
   QVERIFY2(readFile(blocker) == QByteArrayLiteral("not a directory\n"),
            "a failed save damaged the file that blocked it");

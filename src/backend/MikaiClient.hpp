@@ -44,12 +44,10 @@ struct ApiKeySaveResult {
     QString reason;
 };
 
-// The API sits behind a bot filter that challenges requests without a
-// User-Agent. Qt sends none by default, so every request has to carry one;
-// the Python client got this from requests' own default.
-inline const QString kApiUserAgent = QStringLiteral(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/142.0.0.0 Safari/537.36");
+inline const QString kApiApplicationName = QStringLiteral("Mikai Wrapper");
+inline const QString kApiApplicationVersion = QStringLiteral("0.1.0");
+
+QString apiUserAgent();
 
 struct RateLimitState {
     int limit = 0;
@@ -116,14 +114,17 @@ public:
     MikaiClient(const MikaiClient&) = delete;
     MikaiClient& operator=(const MikaiClient&) = delete;
 
-    /// `formats` is a comma-joined list of the API's own format values; the
-    /// server filters on it, so a filtered result keeps its true total and page
-    /// count instead of the one-page subset a client filter would leave.
-    SearchResult search(const QString& query, int page = 1, int limit = 20,
-                        const QString& formats = QString()) const;
+    SearchResult search(const AnimeQuery& query) const;
+    ApiMeta getMeta() const;
+    QVector<GenreTag> getGenres() const;
+    QVector<GenreTag> getTags() const;
+    QStringList getStudios() const;
+    TeamsResult getTeams(const QString& search = {}, int page = 1, int limit = 50) const;
+    TeamProfile getTeam(const QString& ref) const;
+    SearchResult getTeamAnime(const QString& ref, int page = 1, int limit = 20) const;
     SearchResult browseOngoing(int page = 1, int limit = 24) const;
     SearchResult browsePopular(int page = 1, int limit = 18) const;
-    UpdatesResult getUpdates(int page = 1, int limit = 12) const;
+    UpdatesResult getUpdates(int page = 1, int limit = 12, const QString& since = {}) const;
     ScheduleResult getSchedule() const;
     AnimeDetail getAnime(const QString& ref) const;
     PlayerResult getPlayer(const QString& ref) const;

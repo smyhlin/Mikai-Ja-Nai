@@ -32,6 +32,18 @@ class TestApiClient : public QObject {
   void aMissingResourceFailureKeepsItsStatus();
   void aMalformedSuccessEnvelopeFailsRatherThanParsingGarbage();
   void aPlainEnvelopeSuccessParsesIntoTheResult();
+  void catalogueFiltersNarrowTheReturnedRows();
+  void dictionariesAndMetaKeepEveryValueTheServerOffers();
+  void teamCatalogueAndProfileCarryTheirOwnData();
+  void updatesCarryTheFeedIdentityAndPagingTheServerReported();
+  void everyApiRequestNamesTheApplicationAndItsVersion();
+  void anInvalidCatalogueFilterSurfacesTheApiValidationResponse();
+  void aFreshResponseIsServedWithoutAnotherRoundTrip();
+  void aStaleResponseIsRevalidatedAndTheNewBodyIsServed();
+  void aStaleResponseTheServerStillHoldsIsReusedUnchanged();
+  void aNoCacheResponseIsRevalidatedEveryTime();
+  void aNoStoreResponseIsNeverKeptAndTheCredentialDecidesWhatIsKept();
+  void aFailureIsNotCachedAndACancelledCallReadsNothing();
   void fetchBytesReportsLoopbackDownloadProgress();
 
   // A transport failure is still reported as one, and is not confused with the

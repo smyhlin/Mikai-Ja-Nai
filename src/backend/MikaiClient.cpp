@@ -1,6 +1,7 @@
 #include "MikaiClient.hpp"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QElapsedTimer>
@@ -14,6 +15,7 @@
 #include <QMetaObject>
 #include <QMutexLocker>
 #include <QNetworkAccessManager>
+#include <QHash>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSaveFile>
@@ -50,6 +52,72 @@ constexpr int kMaxRateLimitRetries = 3;
 // exhausted limiter window may be minutes long, and this costs one wakeup per
 // second at most.
 constexpr int kCancelSliceMs = 200;
+constexpr qsizetype kMaxCacheEntries = 128;
+constexpr qsizetype kMaxCacheBytes = 4 * 1024 * 1024;
+
+struct CachedJson {
+    QJsonObject body;
+    QByteArray etag;
+    double freshUntil = 0.0;
+    qsizetype bytes = 0;
+    quint64 touched = 0;
+};
+
+struct JsonCache {
+    QMutex mutex;
+    QHash<QByteArray, CachedJson> entries;
+    qsizetype bytes = 0;
+    quint64 clock = 0;
+};
+
+JsonCache& jsonCache() {
+    static JsonCache cache;
+    return cache;
+}
+
+QByteArray cacheKey(const QUrl& url, const CredentialSlot& slot) {
+    QByteArray identity = url.toEncoded(QUrl::FullyEncoded);
+    identity += '\n';
+    identity += QByteArray::number(slot.generation);
+    identity += '\n';
+    identity += QCryptographicHash::hash(slot.key.toUtf8(), QCryptographicHash::Sha256).toHex();
+    return QCryptographicHash::hash(identity, QCryptographicHash::Sha256);
+}
+
+bool cacheableEndpoint(const QUrl& url, const QString& overrideKey) {
+    if (!overrideKey.isEmpty()) return false;
+    const QString path = url.path();
+    return !path.endsWith(QStringLiteral("/health")) && !path.endsWith(QStringLiteral("/me")) &&
+           !path.endsWith(QStringLiteral("/anime/random"));
+}
+
+int cacheMaxAge(const QString& control) {
+    if (control.contains(QStringLiteral("no-store"), Qt::CaseInsensitive) ||
+        control.contains(QStringLiteral("no-cache"), Qt::CaseInsensitive)) return 0;
+    const QStringList directives = control.split(QLatin1Char(','));
+    for (const QString& directive : directives) {
+        const QString item = directive.trimmed();
+        const qsizetype equals = item.indexOf(QLatin1Char('='));
+        if (equals >= 0 && item.left(equals).trimmed().compare(QStringLiteral("max-age"), Qt::CaseInsensitive) == 0) {
+            bool ok = false;
+            const int seconds = item.mid(equals + 1).trimmed().remove(QLatin1Char('"')).toInt(&ok);
+            return ok ? std::max(0, seconds) : 0;
+        }
+    }
+    return 0;
+}
+
+void pruneCache(JsonCache& cache) {
+    while (cache.entries.size() > kMaxCacheEntries || cache.bytes > kMaxCacheBytes) {
+        auto oldest = cache.entries.end();
+        for (auto it = cache.entries.begin(); it != cache.entries.end(); ++it) {
+            if (oldest == cache.entries.end() || it->touched < oldest->touched) oldest = it;
+        }
+        if (oldest == cache.entries.end()) break;
+        cache.bytes -= oldest->bytes;
+        cache.entries.erase(oldest);
+    }
+}
 
 double monotonicSeconds() {
     static const QElapsedTimer timer = [] {
@@ -146,6 +214,8 @@ struct HttpResult {
     QByteArray body;
     QuotaHeaders quota;
     QString error;
+    QString cacheControl;
+    QByteArray etag;
     bool cancelled = false;
 };
 
@@ -204,6 +274,11 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const auto pairs = reply->rawHeaderPairs();
     for (const auto& pair : pairs) {
+        if (pair.first.compare("Cache-Control", Qt::CaseInsensitive) == 0) {
+            result.cacheControl = QString::fromLatin1(pair.second);
+        } else if (pair.first.compare("ETag", Qt::CaseInsensitive) == 0) {
+            result.etag = pair.second;
+        }
         switch (classifyHeader(pair.first)) {
             case QuotaHeader::kLimit:
                 result.quota.limit = quotaInt(QString::fromUtf8(pair.second));
@@ -263,6 +338,26 @@ SearchResult searchFromPayload(const QJsonObject& payload, int fallbackPage) {
     return result;
 }
 
+TeamProfile parseTeamProfile(const QJsonObject& data) {
+    TeamProfile profile;
+    profile.team = parseTeam(data);
+    profile.description = data.value(QStringLiteral("description")).toString();
+    profile.birthday = data.value(QStringLiteral("birthday")).toString();
+    profile.avatar = parsePosterSet(data.value(QStringLiteral("avatar")).toObject());
+    const QJsonObject links = data.value(QStringLiteral("links")).toObject();
+    for (auto it = links.begin(); it != links.end(); ++it) {
+        if (it.value().isString()) profile.links.insert(it.key(), it.value().toString());
+    }
+    profile.has_voice = data.value(QStringLiteral("hasVoice")).toBool();
+    profile.has_subs = data.value(QStringLiteral("hasSubs")).toBool();
+    profile.anime_count = data.value(QStringLiteral("animeCount")).toInt();
+    const QJsonObject views = data.value(QStringLiteral("views")).toObject();
+    profile.views_total = static_cast<qint64>(views.value(QStringLiteral("total")).toDouble());
+    profile.views_last_30_days =
+        static_cast<qint64>(views.value(QStringLiteral("last30Days")).toDouble());
+    return profile;
+}
+
 const QStringList& weekdayOrder() {
     static const QStringList days{QStringLiteral("monday"),   QStringLiteral("tuesday"),
                                   QStringLiteral("wednesday"), QStringLiteral("thursday"),
@@ -295,6 +390,15 @@ QString envFilePath() {
 }
 
 void setEnvFilePathOverride(const QString& path) { envOverride() = path; }
+
+QString apiUserAgent() {
+    QString name = QCoreApplication::applicationName().simplified();
+    if (name.isEmpty()) name = kApiApplicationName;
+    name.replace(QLatin1Char(' '), QLatin1Char('-'));
+    const QString declaredVersion = QCoreApplication::applicationVersion();
+    const QString version = declaredVersion.isEmpty() ? kApiApplicationVersion : declaredVersion;
+    return QStringLiteral("%1/%2").arg(name, version);
+}
 
 namespace {
 
@@ -572,6 +676,26 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         target.setQuery(query);
     }
 
+    if (WorkCancellationScope::cancellationRequested()) {
+        throw MikaiApiError(QStringLiteral("cancelled"),
+                            QStringLiteral("the request was cancelled"), 0);
+    }
+    const bool cacheable = cacheableEndpoint(target, overrideKey);
+    QByteArray key;
+    QByteArray validator;
+    if (cacheable) {
+        const CredentialSlot slot = credentialSlot();
+        key = cacheKey(target, slot);
+        JsonCache& cache = jsonCache();
+        QMutexLocker lock(&cache.mutex);
+        auto it = cache.entries.find(key);
+        if (it != cache.entries.end()) {
+            it->touched = ++cache.clock;
+            if (it->freshUntil > monotonicSeconds()) return it->body;
+            validator = it->etag;
+        }
+    }
+
     for (int attempt = 0;; ++attempt) {
         // The limiter grants the slot first and the credentials are read after
         // it: a caller released by a key change resumes with the key that is
@@ -579,7 +703,7 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         limiter_.acquireSlot();
         QNetworkRequest request(target);
         request.setRawHeader("Accept", "application/json");
-        request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
+        request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
         // The credential snapshot carries the generation it was read at, and
         // this is the generation the reply is charged to. A caller released by a
         // key change reads the new key and the new epoch together here; a reply
@@ -590,6 +714,14 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
             overrideKey.isEmpty()
                 ? credentialSlot()
                 : CredentialSlot{overrideKey, limiter_.generation()};
+        if (cacheable) {
+            const QByteArray actualKey = cacheKey(target, slot);
+            if (actualKey != key) {
+                key = actualKey;
+                validator.clear();
+            }
+        }
+        if (!validator.isEmpty()) request.setRawHeader("If-None-Match", validator);
         if (!slot.key.isEmpty()) {
             request.setRawHeader(kApiHeader, slot.key.toUtf8());
         }
@@ -605,6 +737,23 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         if (status == 429 && attempt < kMaxRateLimitRetries) {
             continue;  // the limiter parked us; the same request may now succeed
         }
+        if (status == 304 && cacheable && !key.isEmpty() && !validator.isEmpty()) {
+            JsonCache& cache = jsonCache();
+            QMutexLocker lock(&cache.mutex);
+            auto it = cache.entries.find(key);
+            if (it != cache.entries.end()) {
+                const QJsonObject body = it->body;
+                if (result.cacheControl.contains(QStringLiteral("no-store"), Qt::CaseInsensitive)) {
+                    cache.bytes -= it->bytes;
+                    cache.entries.erase(it);
+                } else {
+                    if (!result.etag.isEmpty()) it->etag = result.etag;
+                    it->freshUntil = monotonicSeconds() + cacheMaxAge(result.cacheControl);
+                    it->touched = ++cache.clock;
+                }
+                return body;
+            }
+        }
         if (!result.error.isEmpty() && !isHttpStatusError(status)) {
             throw MikaiApiError(QStringLiteral("network_error"), result.error, 0);
         }
@@ -618,7 +767,36 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
             throw MikaiApiError(QStringLiteral("http_error"), reasonFor(status), status);
         }
-        return document.object();
+        const QJsonObject object = document.object();
+        if (cacheable && !key.isEmpty()) {
+            JsonCache& cache = jsonCache();
+            QMutexLocker lock(&cache.mutex);
+            const QString control = result.cacheControl;
+            auto old = cache.entries.find(key);
+            const bool noStore = control.contains(QStringLiteral("no-store"), Qt::CaseInsensitive);
+            const bool success = object.value(QStringLiteral("ok")).toBool();
+            if (success && noStore) {
+                if (old != cache.entries.end()) {
+                    cache.bytes -= old->bytes;
+                    cache.entries.erase(old);
+                }
+            } else if (success) {
+                const qsizetype bytes = document.toJson(QJsonDocument::Compact).size();
+                if (bytes <= kMaxCacheBytes) {
+                    if (old != cache.entries.end()) cache.bytes -= old->bytes;
+                    CachedJson entry;
+                    entry.body = object;
+                    entry.etag = result.etag;
+                    entry.bytes = bytes;
+                    entry.freshUntil = monotonicSeconds() + cacheMaxAge(control);
+                    entry.touched = ++cache.clock;
+                    cache.entries.insert(key, entry);
+                    cache.bytes += bytes;
+                    pruneCache(cache);
+                }
+            }
+        }
+        return object;
     }
 }
 
@@ -637,50 +815,155 @@ QJsonObject MikaiClient::get(const QString& path, const QMap<QString, QString>& 
     return payload;
 }
 
-SearchResult MikaiClient::search(const QString& query, int page, int limit,
-                                 const QString& formats) const {
+SearchResult MikaiClient::search(const AnimeQuery& query) const {
     QMap<QString, QString> params;
-    params.insert(QStringLiteral("page"), QString::number(page));
-    params.insert(QStringLiteral("limit"), QString::number(limit));
-    const QString trimmed = query.trimmed();
-    if (!trimmed.isEmpty()) {
-        params.insert(QStringLiteral("search"), trimmed);
+    params.insert(QStringLiteral("page"), QString::number(query.page));
+    params.insert(QStringLiteral("limit"), QString::number(query.limit));
+    const auto csv = [](const auto& values) {
+        QStringList items;
+        items.reserve(values.size());
+        for (const auto& value : values) items.append(QString::number(value));
+        return items.join(QLatin1Char(','));
+    };
+    const auto addList = [&params](const QString& name, const QStringList& values) {
+        if (!values.isEmpty()) params.insert(name, values.join(QLatin1Char(',')));
+    };
+    if (!query.search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), query.search.trimmed());
+    addList(QStringLiteral("genres"), query.genres);
+    addList(QStringLiteral("genresExclude"), query.genres_exclude);
+    addList(QStringLiteral("tags"), query.tags);
+    addList(QStringLiteral("tagsExclude"), query.tags_exclude);
+    addList(QStringLiteral("seasons"), query.seasons);
+    addList(QStringLiteral("formats"), query.formats);
+    addList(QStringLiteral("statuses"), query.statuses);
+    addList(QStringLiteral("studios"), query.studios);
+    if (!query.years.isEmpty()) params.insert(QStringLiteral("years"), csv(query.years));
+    if (query.year_from) params.insert(QStringLiteral("yearFrom"), QString::number(*query.year_from));
+    if (query.year_to) params.insert(QStringLiteral("yearTo"), QString::number(*query.year_to));
+    if (!query.teams.isEmpty()) params.insert(QStringLiteral("teams"), csv(query.teams));
+    params.insert(QStringLiteral("genresMatch"), query.genres_match);
+    params.insert(QStringLiteral("tagsMatch"), query.tags_match);
+    params.insert(QStringLiteral("sort"), query.sort);
+    if (!query.order.isEmpty()) params.insert(QStringLiteral("order"), query.order);
+    return searchFromPayload(get(QStringLiteral("/anime"), params), query.page);
+}
+
+ApiMeta MikaiClient::getMeta() const {
+    const QJsonObject payload = get(QStringLiteral("/meta"));
+    const QJsonObject result = payload.value(QStringLiteral("result")).toObject();
+    const auto strings = [](const QJsonValue& value) {
+        QStringList values;
+        if (value.isArray()) {
+            for (const QJsonValue& item : value.toArray()) {
+                if (item.isString()) values.append(item.toString());
+            }
+        }
+        return values;
+    };
+    ApiMeta meta;
+    meta.version = result.value(QStringLiteral("version")).toString();
+    meta.formats = strings(result.value(QStringLiteral("formats")));
+    meta.statuses = strings(result.value(QStringLiteral("statuses")));
+    meta.seasons = strings(result.value(QStringLiteral("seasons")));
+    meta.anime_sort_fields = strings(result.value(QStringLiteral("animeSortFields")));
+    meta.sort_orders = strings(result.value(QStringLiteral("sortOrders")));
+    meta.match_modes = strings(result.value(QStringLiteral("matchModes")));
+    return meta;
+}
+
+QVector<GenreTag> MikaiClient::getGenres() const {
+    QVector<GenreTag> values;
+    const QJsonArray array = get(QStringLiteral("/genres")).value(QStringLiteral("result")).toArray();
+    values.reserve(array.size());
+    for (const QJsonValue& raw : array) {
+        const QJsonObject object = raw.toObject();
+        values.append(GenreTag{object.value(QStringLiteral("name")).toString(),
+                               object.value(QStringLiteral("ua")).toString()});
     }
-    if (!formats.isEmpty()) {
-        params.insert(QStringLiteral("formats"), formats);
+    return values;
+}
+
+QVector<GenreTag> MikaiClient::getTags() const {
+    QVector<GenreTag> values;
+    const QJsonArray array = get(QStringLiteral("/tags")).value(QStringLiteral("result")).toArray();
+    values.reserve(array.size());
+    for (const QJsonValue& raw : array) {
+        const QJsonObject object = raw.toObject();
+        values.append(GenreTag{object.value(QStringLiteral("name")).toString(),
+                               object.value(QStringLiteral("ua")).toString()});
     }
-    return searchFromPayload(get(QStringLiteral("/anime"), params), page);
+    return values;
+}
+
+QStringList MikaiClient::getStudios() const {
+    QStringList values;
+    const QJsonArray array = get(QStringLiteral("/studios")).value(QStringLiteral("result")).toArray();
+    values.reserve(array.size());
+    for (const QJsonValue& raw : array) {
+        if (raw.isString()) values.append(raw.toString());
+        else if (raw.isObject()) values.append(raw.toObject().value(QStringLiteral("name")).toString());
+    }
+    return values;
+}
+
+TeamsResult MikaiClient::getTeams(const QString& search, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    if (!search.trimmed().isEmpty()) params.insert(QStringLiteral("search"), search.trimmed());
+    const QJsonObject payload = get(QStringLiteral("/teams"), params);
+    TeamsResult result;
+    if (payload.value(QStringLiteral("total")).isDouble()) result.total = payload.value(QStringLiteral("total")).toInt();
+    if (payload.value(QStringLiteral("page")).isDouble()) result.page = payload.value(QStringLiteral("page")).toInt();
+    if (payload.value(QStringLiteral("pages")).isDouble()) result.pages = payload.value(QStringLiteral("pages")).toInt();
+    const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
+    result.items.reserve(items.size());
+    for (const QJsonValue& raw : items) result.items.append(parseTeamProfile(raw.toObject()));
+    return result;
+}
+
+TeamProfile MikaiClient::getTeam(const QString& ref) const {
+    return parseTeamProfile(get(QStringLiteral("/teams/") + ref)
+                                .value(QStringLiteral("result")).toObject());
+}
+
+SearchResult MikaiClient::getTeamAnime(const QString& ref, int page, int limit) const {
+    QMap<QString, QString> params{{QStringLiteral("page"), QString::number(page)},
+                                  {QStringLiteral("limit"), QString::number(limit)}};
+    return searchFromPayload(get(QStringLiteral("/teams/") + ref + QStringLiteral("/anime"), params), page);
 }
 
 SearchResult MikaiClient::browseOngoing(int page, int limit) const {
-    QMap<QString, QString> params;
-    params.insert(QStringLiteral("statuses"), QStringLiteral("ongoing"));
-    params.insert(QStringLiteral("sort"), QStringLiteral("updated"));
-    params.insert(QStringLiteral("order"), QStringLiteral("desc"));
-    params.insert(QStringLiteral("page"), QString::number(page));
-    params.insert(QStringLiteral("limit"), QString::number(limit));
-    return searchFromPayload(get(QStringLiteral("/anime"), params), page);
+    AnimeQuery query;
+    query.statuses = {QStringLiteral("ongoing")};
+    query.sort = QStringLiteral("updated");
+    query.order = QStringLiteral("desc");
+    query.page = page;
+    query.limit = limit;
+    return search(query);
 }
 
 SearchResult MikaiClient::browsePopular(int page, int limit) const {
-    QMap<QString, QString> params;
-    params.insert(QStringLiteral("sort"), QStringLiteral("views"));
-    params.insert(QStringLiteral("order"), QStringLiteral("desc"));
-    params.insert(QStringLiteral("page"), QString::number(page));
-    params.insert(QStringLiteral("limit"), QString::number(limit));
-    return searchFromPayload(get(QStringLiteral("/anime"), params), page);
+    AnimeQuery query;
+    query.sort = QStringLiteral("views");
+    query.order = QStringLiteral("desc");
+    query.page = page;
+    query.limit = limit;
+    return search(query);
 }
 
-UpdatesResult MikaiClient::getUpdates(int page, int limit) const {
+UpdatesResult MikaiClient::getUpdates(int page, int limit, const QString& since) const {
     QMap<QString, QString> params;
     params.insert(QStringLiteral("page"), QString::number(page));
     params.insert(QStringLiteral("limit"), QString::number(limit));
+    if (!since.isEmpty()) params.insert(QStringLiteral("since"), since);
     const QJsonObject payload = get(QStringLiteral("/updates"), params);
     UpdatesResult result;
     const QJsonValue total = payload.value(QStringLiteral("total"));
     if (total.isDouble()) {
         result.total = static_cast<int>(total.toDouble());
     }
+    if (payload.value(QStringLiteral("page")).isDouble()) result.page = payload.value(QStringLiteral("page")).toInt();
+    if (payload.value(QStringLiteral("pages")).isDouble()) result.pages = payload.value(QStringLiteral("pages")).toInt();
     const QJsonArray items = payload.value(QStringLiteral("result")).toArray();
     result.items.reserve(items.size());
     for (const QJsonValue& value : items) {
@@ -719,7 +1002,7 @@ QByteArray MikaiClient::fetchBytes(
     const QString& url, int timeoutMs,
     const std::function<void(qint64, qint64)>& progress) const {
     QNetworkRequest request{QUrl(url)};
-    request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
+    request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
     const int timeout = timeoutMs > 0 ? timeoutMs : kArtworkTimeoutMs;
     const HttpResult result = runBlocking(managerForThread(), request, timeout, progress);
     if (result.cancelled) {
@@ -769,7 +1052,7 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& candidateKey)
     const QString key = candidateKey.trimmed();
     QNetworkRequest request{QUrl(baseUrl_ + QStringLiteral("/me"))};
     request.setRawHeader("Accept", "application/json");
-    request.setRawHeader("User-Agent", kApiUserAgent.toUtf8());
+    request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
     if (!key.isEmpty()) {
         request.setRawHeader(kApiHeader, key.toUtf8());
     }
