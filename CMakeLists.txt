@@ -58,6 +58,8 @@ add_library(mikai_backend STATIC
   src/backend/Models.hpp
   src/backend/Releases.cpp
   src/backend/Releases.hpp
+  src/backend/UpdateFeed.cpp
+  src/backend/UpdateFeed.hpp
   src/backend/Runtime.cpp
   src/backend/Runtime.hpp
   src/backend/Streams.cpp
@@ -290,6 +292,7 @@ set(APP_SOURCES
   src/app/state/NativeComponentProvisioner.cpp
   src/app/state/NativePlaybackAssembly.cpp
   src/app/state/QualityCache.cpp
+  src/app/state/WatchHistory.cpp
   src/app/workers/Runner.cpp
   src/app/widgets/FailureView.cpp
   src/app/widgets/RangePager.cpp
@@ -331,6 +334,7 @@ set(APP_HEADERS
   src/app/state/NativeComponentProvisioner.hpp
   src/app/state/NativePlaybackAssembly.hpp
   src/app/state/QualityCache.hpp
+  src/app/state/WatchHistory.hpp
   src/app/workers/Runner.hpp
   src/app/widgets/FailureView.hpp
   src/app/widgets/FlowLayout.hpp
@@ -391,7 +395,7 @@ if(WIN32)
                               PROPERTIES GENERATED TRUE)
 endif()
 
-set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_player mikai_native_support)
+set(MIKAI_TRANSLATION_TARGETS mikai mikai_app mikai_backend mikai_player mikai_native_support)
 if(TARGET mikai_model_inspection)
   list(APPEND MIKAI_TRANSLATION_TARGETS mikai_model_inspection)
 endif()

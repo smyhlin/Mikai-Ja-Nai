@@ -81,6 +81,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/backend/TestRateLimiter.cpp
     tests/cpp/backend/TestReleases.hpp
     tests/cpp/backend/TestReleases.cpp
+    tests/cpp/backend/TestUpdateFeed.hpp
+    tests/cpp/backend/TestUpdateFeed.cpp
     tests/cpp/backend/TestStreams.hpp
     tests/cpp/backend/TestStreams.cpp
     # Player & shader suites
@@ -136,6 +138,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestBenchmarkReport.cpp
     tests/cpp/app/TestFeedRender.hpp
     tests/cpp/app/TestFeedRender.cpp
+    tests/cpp/app/TestPublicApiUi.hpp
+    tests/cpp/app/TestPublicApiUi.cpp
     tests/cpp/app/TestI18n.hpp
     tests/cpp/app/TestI18n.cpp
     tests/cpp/app/TestLayering.hpp
@@ -146,6 +150,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestQualityCache.cpp
     tests/cpp/app/TestRunner.hpp
     tests/cpp/app/TestRunner.cpp
+    tests/cpp/app/TestWatchHistory.hpp
+    tests/cpp/app/TestWatchHistory.cpp
     tests/cpp/app/TestWindowRaise.hpp
     tests/cpp/app/TestWindowRaise.cpp
   )

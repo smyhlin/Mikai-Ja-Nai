@@ -186,6 +186,18 @@ endforeach()
 set(app_catalog "${DIST_DIR}/mikai_uk.qm")
 if(EXISTS "${app_catalog}")
   file(RENAME "${app_catalog}" "${DIST_DIR}/translations/mikai_uk.qm")
+else()
+  get_filename_component(exe_dir "${EXE}" DIRECTORY)
+  set(built_catalog "${exe_dir}/mikai_uk.qm")
+  if(EXISTS "${built_catalog}")
+    file(COPY "${built_catalog}" DESTINATION "${DIST_DIR}/translations")
+  else()
+    # The catalog is embedded in the executable; a missing side-car only removes
+    # the ability to override it with an external file.
+    message(WARNING
+      "dist: no application catalogue next to ${exe_name}; the package relies on "
+      "the embedded catalog at :/i18n/mikai_uk.qm")
+  endif()
 endif()
 
 file(WRITE "${DIST_DIR}/run.bat" "@echo off\r\nstart \"\" \"%~dp0${exe_name}\" %*\r\n")

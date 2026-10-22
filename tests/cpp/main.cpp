@@ -9,9 +9,12 @@
 #include "TestBenchmarkReport.hpp"
 #include "TestI18n.hpp"
 #include "TestLayering.hpp"
+#include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
 #include "TestLiveOracle.hpp"
 #include "TestModels.hpp"
+#include "TestUpdateFeed.hpp"
+#include "TestPublicApiUi.hpp"
 #include "TestPagers.hpp"
 #include "TestQualityCache.hpp"
 #include "TestRateLimiter.hpp"
@@ -90,8 +93,8 @@ constexpr const char* kSuites[] = {
 #endif
     "TestModels", "TestReleases", "TestAnime4K", "TestBenchmarkReport", "TestI18n",
     "TestStreams", "TestPagers",
-    "TestQualityCache", "TestRateLimiter", "TestDownloads", "TestDiagnostics", "TestApiClient",
-    "TestFeedRender", "TestRunner",
+    "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
+    "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi", "TestRunner",
     "TestLayering", "TestWindowRaise", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
@@ -244,6 +247,7 @@ int main(int argc, char** argv) {
   TestStreams streams;
   TestPagers pagers;
   TestQualityCache qualityCache;
+  TestWatchHistory watchHistory;
   TestRateLimiter rateLimiter;
   TestLayering layering;
   TestWindowRaise windowRaise;
@@ -346,6 +350,8 @@ int main(int argc, char** argv) {
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);
   runWrapper("TestFeedRender", runTestFeedRender);
+  runWrapper("TestUpdateFeed", runTestUpdateFeed);
+  runWrapper("TestPublicApiUi", runTestPublicApiUi);
   runWrapper("TestRunner", runTestRunner);
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   run("TestNativeCatalog", &nativeCatalog, true);
@@ -358,6 +364,7 @@ int main(int argc, char** argv) {
   run("TestStreams", &streams, true);
   run("TestPagers", &pagers, true);
   run("TestQualityCache", &qualityCache, true);
+  run("TestWatchHistory", &watchHistory, true);
   run("TestRateLimiter", &rateLimiter, true);
   run("TestLayering", &layering, true);
   run("TestWindowRaise", &windowRaise, true);
