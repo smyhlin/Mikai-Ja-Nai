@@ -5,6 +5,7 @@
 #include "Labels.hpp"
 #include "state/Feeds.hpp"
 #include "support/I18n.hpp"
+#include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
 #include "widgets/RangePager.hpp"
@@ -15,12 +16,18 @@
 #include "ShellWidgets.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <backend/UpdateFeed.hpp>
 
 #include <QAccessible>
 #include <QAccessibilityHints>
 #include <QBuffer>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QGroupBox>
+#include <QSpinBox>
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QHBoxLayout>
@@ -45,6 +52,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
+#include <memory>
 #include <algorithm>
 
 namespace mikai::app {
@@ -117,6 +125,16 @@ void syncArrows(QScrollBar* bar, QPushButton* previous, QPushButton* next) {
     next->setEnabled(bar->value() < bar->maximum());
 }
 
+bool hasExplicitCatalogueCriteria(const backend::AnimeQuery& query) {
+    if (!query.genres.isEmpty() || !query.genres_exclude.isEmpty()) return true;
+    if (!query.tags.isEmpty() || !query.tags_exclude.isEmpty()) return true;
+    if (!query.years.isEmpty() || query.year_from || query.year_to) return true;
+    if (!query.seasons.isEmpty() || !query.formats.isEmpty() || !query.statuses.isEmpty()) return true;
+    if (!query.studios.isEmpty() || !query.teams.isEmpty()) return true;
+    if (query.genres_match != QLatin1String("all") || query.tags_match != QLatin1String("all")) return true;
+    return query.sort != QStringLiteral("name") || !query.order.isEmpty();
+}
+
 }  // namespace
 
 SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* parent)
@@ -138,6 +156,10 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     auto* heading = new QLabel(tr("Mikai"), this);
     heading->setObjectName(QStringLiteral("heading"));
     topRow->addWidget(heading);
+    homeButton_ = new QPushButton(tr("Home"), this);
+    homeButton_->setObjectName(QStringLiteral("homeButton"));
+    connect(homeButton_, &QPushButton::clicked, this, &SearchPage::returnHome);
+    topRow->addWidget(homeButton_);
     topRow->addStretch();
     mediaButton_ = new QPushButton(tr("Open video"), this);
     mediaButton_->setObjectName(QStringLiteral("secondary"));
@@ -187,18 +209,38 @@ SearchPage::SearchPage(Runner& runner, backend::MikaiClient& client, QWidget* pa
     query_->setObjectName(QStringLiteral("searchQuery"));
     query_->setPlaceholderText(tr("Search by title — Enter or the button"));
     query_->setClearButtonEnabled(true);
+    filtersButton_ = new QPushButton(tr("Filters"), this);
+    filtersButton_->setObjectName(QStringLiteral("catalogueFiltersButton"));
+    teamsButton_ = new QPushButton(tr("Teams…"), this);
+    teamsButton_->setObjectName(QStringLiteral("catalogueTeamsButton"));
     searchButton_ = new QPushButton(tr("Search"), this);
     searchButton_->setObjectName(QStringLiteral("primary"));
     query_->installEventFilter(this);
     connect(query_, &QLineEdit::returnPressed, this, &SearchPage::search);
     connect(searchButton_, &QPushButton::clicked, this, &SearchPage::search);
     connect(query_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        if (text.trimmed().isEmpty() && !browseMode_) {
+        if (!text.trimmed().isEmpty() || browseMode_) {
+            return;
+        }
+        // Clearing the text returns to the home collection only when no other
+        // criterion survives: a sort the viewer chose is one of them, and
+        // dropping it here would answer a different question than the one the
+        // filters hold. A criterion that does survive is asked for again, so
+        // the results on screen are the ones the surviving criteria name.
+        if (hasExplicitCatalogueCriteria(catalogueQuery_)) {
+            applyCatalogueFilters();
+        } else {
             loadOngoing();
         }
     });
     searchRow->addWidget(query_);
+    searchRow->addWidget(filtersButton_);
+    searchRow->addWidget(teamsButton_);
     searchRow->addWidget(searchButton_);
+    connect(filtersButton_, &QPushButton::clicked, this, &SearchPage::showCatalogueFilters);
+    connect(teamsButton_, &QPushButton::clicked, this, &SearchPage::openTeamPicker);
+    loadDictionaries();
+
     root->addLayout(searchRow);
 
     resultsHeading_ = new QLabel(tr("Currently airing · sorted by newest episode"), this);
@@ -347,6 +389,7 @@ void SearchPage::retranslateUi() {
     if (query_ != nullptr) {
         query_->setPlaceholderText(tr("Search by title — Enter or the button"));
     }
+    if (homeButton_ != nullptr) homeButton_->setText(tr("Home"));
     if (mediaButton_ != nullptr) {
         mediaButton_->setText(tr("Open video"));
         mediaButton_->setAccessibleName(tr("Open video"));
@@ -362,14 +405,23 @@ void SearchPage::retranslateUi() {
         settingsButton_->setAccessibleName(tr("API token settings"));
     }
     if (searchButton_ != nullptr) searchButton_->setText(tr("Search"));
+    if (filtersButton_ != nullptr) filtersButton_->setText(tr("Filters"));
+    if (teamsButton_ != nullptr) teamsButton_->setText(tr("Teams…"));
     if (resultsHeading_ != nullptr) {
         // The heading names the mode the page is in, never the request that is
         // running: browse shows a recommendation set, everything else a search.
-        resultsHeading_->setText(browseMode_ ? tr("Recommendations") : tr("Search results"));
+        resultsHeading_->setText(teamBrowseMode_
+                                     ? tr("Anime from %1").arg(activeTeam_.name)
+                                     : browseMode_ ? tr("Recommendations") : tr("Search results"));
     }
+    if (teamBackButton_ != nullptr) teamBackButton_->setText(tr("All catalogue"));
+    if (teamBrowseMode_) renderTeamProfile();
     // The bar's own "All (n)" caption is app wording; its counts, its tabs and
     // the active filter are read back from the state they already hold.
-    if (formatBar_ != nullptr) rebuildFormatBar();
+    if (formatBar_ != nullptr) {
+        rebuildFormatBar();
+        if (teamBrowseMode_) formatBar_->hide();
+    }
     renderStatus();
     if (results_ != nullptr && results_->count() == static_cast<int>(entries_.size())) {
         // Re-worded where they stand. Rebuilding the list would drop the
@@ -562,23 +614,27 @@ void SearchPage::closeTransientOverlays() {
     if (keyHints_ != nullptr) keyHints_->close();
 }
 
+void SearchPage::returnHome() {
+    closeTransientOverlays();
+    if (browseMode_ && !teamBrowseMode_ && !discoveryScroll_->isHidden() &&
+        query_->text().isEmpty()) {
+        ++requestSeq_;
+        ++catalogueRequestSeq_;
+        ++teamRequestSeq_;
+        ++formatTotalsSeq_;
+    } else {
+        loadOngoing();
+    }
+    query_->clearFocus();
+}
+
 bool SearchPage::escapeSearch() {
     if (keyHints_ != nullptr && keyHints_->isVisible()) {
         keyHints_->close();
         return true;
     }
-    if (!browseMode_ || (query_ != nullptr && !query_->text().isEmpty())) {
-        loadOngoing();
-        if (query_ != nullptr) {
-            query_->clearFocus();
-        }
-        return true;
-    }
-    if (query_ != nullptr && query_->hasFocus()) {
-        query_->clearFocus();
-        return true;
-    }
-    return false;
+    returnHome();
+    return true;
 }
 
 SearchPage::CarouselSection* SearchPage::buildCarousel(const QString& key) {
@@ -932,8 +988,6 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
         cardsByImageKey_[card->imageKey()].append(card);
         cardsByRef_[card->ref()].append(card);
     }
-    // One task per card: the image pool paints a whole feed at once instead
-    // of waiting for the slowest poster in it.
     for (TitleCard* card : cards) {
         requestThumb(card->imageKey());
     }
@@ -946,7 +1000,6 @@ void SearchPage::showCarousel(const QString& key, const QList<backend::AnimeSumm
                       qMax(0, shown.size() - 1) * section->cards->spacing();
     track->setFixedSize(width, theme::kHomeCardHeight + theme::kSpacingXs);
     section->scroll->show();
-
     for (const backend::AnimeSummary& anime : shown) {
         requestCardDetail(anime.ref);
     }
@@ -969,10 +1022,19 @@ void SearchPage::requestCardDetail(const QString& ref) {
         return;
     }
     detailLookups_.insert(ref);
+    // The client is taken on the GUI thread and carried by value into the
+    // worker: a worker that reached through `this` would read a page that may
+    // already be gone. The completion is guarded the same way, so a result
+    // that lands after the page was closed is dropped instead of touching it.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.runBulk(
-        [this, ref] { return QVariant::fromValue(client_.getAnime(ref)); },
-        [this, ref](const QVariant& result) {
-            applyCardDetail(ref, result.value<backend::AnimeDetail>());
+        [client, ref] { return QVariant::fromValue(client->getAnime(ref)); },
+        [self, ref](const QVariant& result) {
+            if (self.isNull()) {
+                return;
+            }
+            self->applyCardDetail(ref, result.value<backend::AnimeDetail>());
         },
         [](const backend::Failure&) {});
 }
@@ -1083,8 +1145,15 @@ void SearchPage::loadFeed(const QString& key) {
 }
 
 void SearchPage::loadOngoing() {
-    query_->clear();
     browseMode_ = true;
+    teamBrowseMode_ = false;
+    ++requestSeq_;
+    ++catalogueRequestSeq_;
+    ++teamRequestSeq_;
+    ++formatTotalsSeq_;
+    if (teamBackButton_ != nullptr) teamBackButton_->hide();
+    if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
+    query_->clear();
     showDiscovery();
     currentQuery_.clear();
     activeFormat_.clear();
@@ -1122,27 +1191,31 @@ void SearchPage::requestRecommendation(const QString& key) {
         section->scroll->hide();
     }
     const bool popular = key == QLatin1String("popular");
+    // The client travels by value into the worker and the page is reached only
+    // through a guard, so neither outlives the page that asked for the work.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.run(
-        [this, popular] {
-            return QVariant::fromValue(popular ? client_.browsePopular(1, theme::kHomeCarouselMaxTitles)
-                                               : client_.browseOngoing(1, theme::kHomeCarouselMaxTitles));
+        [client, popular] {
+            return QVariant::fromValue(popular ? client->browsePopular(1, theme::kHomeCarouselMaxTitles)
+                                               : client->browseOngoing(1, theme::kHomeCarouselMaxTitles));
         },
-        [this, key, seq](const QVariant& result) {
-            if (seq != feedSeq_[key]) {
+        [self, key, seq](const QVariant& result) {
+            if (self.isNull() || seq != self->feedSeq_[key]) {
                 return;
             }
-            rateLabel_->refresh();
-            showCarousel(key, result.value<backend::SearchResult>().items);
+            self->rateLabel_->refresh();
+            self->showCarousel(key, result.value<backend::SearchResult>().items);
         },
-        [this, key, seq](const backend::Failure& failure) {
-            if (seq != feedSeq_[key]) {
+        [self, key, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->feedSeq_[key]) {
                 return;
             }
-            rateLabel_->refresh();
-            CarouselSection* current = carouselSection(key);
+            self->rateLabel_->refresh();
+            CarouselSection* current = self->carouselSection(key);
             current->hasFailure = true;
-            showBlockFailure(current->failure, current->state, failure,
-                             blockFailureContext(key));
+            self->showBlockFailure(current->failure, current->state, failure,
+                                   self->blockFailureContext(key));
         });
 }
 
@@ -1157,22 +1230,32 @@ void SearchPage::loadUpdates() {
     section->lineCount = 0;
     renderFeedLine(QStringLiteral("updates"), *section);
     section->retry->setEnabled(false);
+    const backend::UpdateFeedState previousState = updateFeedState_;
+    // The incremental feed refresh runs against the client the page was given,
+    // carried into the worker by value: the page itself is not read from the
+    // worker thread, and the completion only touches the page through a guard.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.run(
-        [this] { return QVariant::fromValue(client_.getUpdates(1, 12)); },
-        [this, seq](const QVariant& result) {
-            if (seq != feedSeq_[QStringLiteral("updates")]) {
+        [client, previousState] {
+            backend::UpdateFeedState updated = backend::refreshUpdateFeed(*client, previousState, 12);
+            return QVariant::fromValue(updated);
+        },
+        [self, seq](const QVariant& result) {
+            if (self.isNull() || seq != self->feedSeq_[QStringLiteral("updates")]) {
                 return;
             }
-            rateLabel_->refresh();
-            FeedSection* current = feedSection(QStringLiteral("updates"));
+            self->rateLabel_->refresh();
+            FeedSection* current = self->feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
             // The row line is kept as the parts it was built from, so a
             // language switch re-words it without asking the backend again.
             QList<std::pair<backend::AnimeSummary, FeedRowMeta>> rows;
-            const backend::UpdatesResult updates = result.value<backend::UpdatesResult>();
-            for (int index = 0; index < updates.items.size() && index < theme::kHomeFeedMaxRows;
+            self->updateFeedState_ = result.value<backend::UpdateFeedState>();
+            for (int index = 0; index < self->updateFeedState_.items.size() &&
+                                 index < theme::kHomeFeedMaxRows;
                  ++index) {
-                const backend::AnimeUpdate& update = updates.items.at(index);
+                const backend::AnimeUpdate& update = self->updateFeedState_.items.at(index);
                 if (update.anime.ref.isEmpty()) {
                     continue;
                 }
@@ -1194,19 +1277,19 @@ void SearchPage::loadUpdates() {
                 meta.when = formatFeedTime(update.published_at);
                 rows.append({update.anime, meta});
             }
-            showFeedRows(QStringLiteral("updates"), rows);
+            self->showFeedRows(QStringLiteral("updates"), rows);
         },
-        [this, seq](const backend::Failure& failure) {
-            if (seq != feedSeq_[QStringLiteral("updates")]) {
+        [self, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->feedSeq_[QStringLiteral("updates")]) {
                 return;
             }
-            rateLabel_->refresh();
-            FeedSection* current = feedSection(QStringLiteral("updates"));
+            self->rateLabel_->refresh();
+            FeedSection* current = self->feedSection(QStringLiteral("updates"));
             current->retry->setEnabled(true);
-            current->rowsHost->hide();
+            current->rowsHost->setVisible(!current->rowMeta.isEmpty());
             current->hasFailure = true;
-            showBlockFailure(current->failure, current->state, failure,
-                             blockFailureContext(QStringLiteral("updates")));
+            self->showBlockFailure(current->failure, current->state, failure,
+                                   self->blockFailureContext(QStringLiteral("updates")));
         });
 }
 
@@ -1221,14 +1304,18 @@ void SearchPage::loadSchedule() {
     section->lineCount = 0;
     renderFeedLine(QStringLiteral("schedule"), *section);
     section->retry->setEnabled(false);
+    // The client is carried into the worker by value; the completion reaches
+    // the page only through a guard.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.run(
-        [this] { return QVariant::fromValue(client_.getSchedule()); },
-        [this, seq](const QVariant& result) {
-            if (seq != feedSeq_[QStringLiteral("schedule")]) {
+        [client] { return QVariant::fromValue(client->getSchedule()); },
+        [self, seq](const QVariant& result) {
+            if (self.isNull() || seq != self->feedSeq_[QStringLiteral("schedule")]) {
                 return;
             }
-            rateLabel_->refresh();
-            FeedSection* current = feedSection(QStringLiteral("schedule"));
+            self->rateLabel_->refresh();
+            FeedSection* current = self->feedSection(QStringLiteral("schedule"));
             current->retry->setEnabled(true);
             // Today first, then the rest of the week in order: the top of a
             // schedule is only useful if it starts with what airs next.
@@ -1260,19 +1347,19 @@ void SearchPage::loadSchedule() {
                     }
                 }
             }
-            showFeedRows(QStringLiteral("schedule"), rows);
+            self->showFeedRows(QStringLiteral("schedule"), rows);
         },
-        [this, seq](const backend::Failure& failure) {
-            if (seq != feedSeq_[QStringLiteral("schedule")]) {
+        [self, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->feedSeq_[QStringLiteral("schedule")]) {
                 return;
             }
-            rateLabel_->refresh();
-            FeedSection* current = feedSection(QStringLiteral("schedule"));
+            self->rateLabel_->refresh();
+            FeedSection* current = self->feedSection(QStringLiteral("schedule"));
             current->retry->setEnabled(true);
             current->rowsHost->hide();
             current->hasFailure = true;
-            showBlockFailure(current->failure, current->state, failure,
-                             blockFailureContext(QStringLiteral("schedule")));
+            self->showBlockFailure(current->failure, current->state, failure,
+                                   self->blockFailureContext(QStringLiteral("schedule")));
         });
 }
 
@@ -1352,6 +1439,674 @@ void SearchPage::showFeedRows(
     }
 }
 
+void SearchPage::loadDictionaries() {
+    const int seq = ++dictionarySeq_;
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
+    runner_.run(
+        [client] {
+            QVariantMap data;
+            data.insert(QStringLiteral("meta"), QVariant::fromValue(client->getMeta()));
+            data.insert(QStringLiteral("genres"), QVariant::fromValue(client->getGenres()));
+            data.insert(QStringLiteral("tags"), QVariant::fromValue(client->getTags()));
+            data.insert(QStringLiteral("studios"), QVariant::fromValue(client->getStudios()));
+            return data;
+        },
+        [self, seq](const QVariant& value) {
+            if (self.isNull() || seq != self->dictionarySeq_) return;
+            const QVariantMap data = value.toMap();
+            self->apiMeta_ = data.value(QStringLiteral("meta")).value<backend::ApiMeta>();
+            self->dictionaryError_.clear();
+            self->genres_ = data.value(QStringLiteral("genres")).value<QVector<backend::GenreTag>>();
+            self->tags_ = data.value(QStringLiteral("tags")).value<QVector<backend::GenreTag>>();
+            self->studios_ = data.value(QStringLiteral("studios")).toStringList();
+            self->filtersButton_->setToolTip(tr("Catalogue dictionaries loaded"));
+            self->filtersButton_->setEnabled(true);
+        },
+        [self, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->dictionarySeq_) return;
+            self->dictionaryError_ = failure.message;
+            self->filtersButton_->setToolTip(failure.message);
+            self->filtersButton_->setEnabled(true);
+            self->statusLine_ = Status::Failure;
+            self->statusFailure_ = failure;
+            self->renderStatus();
+        });
+    filtersButton_->setEnabled(false);
+}
+
+void SearchPage::showCatalogueFilters() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Catalogue filters"));
+    dialog.setObjectName(QStringLiteral("catalogueFiltersDialog"));
+    dialog.setMinimumSize(theme::kSettingsDialogMinWidth, theme::kSettingsDialogMinHeight);
+    dialog.resize(theme::kSettingsDialogDefaultWidth, theme::kSettingsDialogDefaultHeight);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
+                               theme::kSpacingLarge, theme::kSpacingMedium);
+    layout->setSpacing(theme::kSpacingMedium);
+    auto* filterScroll = new QScrollArea(&dialog);
+    if (!dictionaryError_.isEmpty()) {
+        auto* dictionaryFailure = new QLabel(tr("Catalogue dictionaries failed: %1").arg(dictionaryError_), &dialog);
+        dictionaryFailure->setObjectName(QStringLiteral("catalogueDictionaryFailure"));
+        dictionaryFailure->setWordWrap(true);
+        auto* retry = new QPushButton(tr("Retry dictionaries"), &dialog);
+        retry->setObjectName(QStringLiteral("catalogueDictionaryRetryButton"));
+        connect(retry, &QPushButton::clicked, this, [this, &dialog] {
+            loadDictionaries();
+            dialog.reject();
+        });
+        layout->addWidget(dictionaryFailure);
+        layout->addWidget(retry);
+    }
+    filterScroll->setWidgetResizable(true);
+    filterScroll->setFrameShape(QFrame::NoFrame);
+    filterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    filterScroll->setObjectName(QStringLiteral("catalogueFilterScroll"));
+    auto* filterContent = new QWidget(filterScroll);
+    auto* sections = new QVBoxLayout(filterContent);
+    sections->setContentsMargins(0, theme::kSpacingSmall, theme::kSpacingSmall, 0);
+    sections->setSpacing(theme::kSpacingMedium);
+    filterScroll->setWidget(filterContent);
+    const auto addSection = [&](const QString& title) {
+        auto* box = new QGroupBox(title, filterContent);
+        box->setObjectName(QStringLiteral("catalogueFilterSection"));
+        auto* inner = new QVBoxLayout(box);
+        inner->setContentsMargins(theme::kSpacingMedium, theme::kSpacingLarge,
+                                  theme::kSpacingMedium, theme::kSpacingMedium);
+        inner->setSpacing(theme::kSpacingSmall);
+        sections->addWidget(box);
+        return inner;
+    };
+    const auto addField = [](QVBoxLayout* section, const QString& caption, QWidget* field) {
+        QWidget* owner = section->parentWidget();
+        auto* block = new QWidget(owner);
+        auto* column = new QVBoxLayout(block);
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(theme::kSpacingXs);
+        auto* label = new QLabel(caption, block);
+        label->setObjectName(QStringLiteral("muted"));
+        column->addWidget(label);
+        column->addWidget(field);
+        section->addWidget(block);
+    };
+    // A filtered list keeps only the height its visible rows need, so narrowing
+    // a long dictionary never leaves a scroll box of blank space behind.
+    const auto fitChoiceList = [](QListWidget* list) {
+        int shown = 0;
+        for (int row = 0; row < list->count(); ++row) {
+            if (!list->item(row)->isHidden()) ++shown;
+        }
+        list->setFixedHeight(theme::kCatalogueChoiceRowHeight * qBound(1, shown, 6) +
+                             theme::kSpacingLarge);
+    };
+    const auto filterChoices = [fitChoiceList](QListWidget* list, const QString& term) {
+        const QString needle = term.trimmed();
+        for (int row = 0; row < list->count(); ++row) {
+            QListWidgetItem* item = list->item(row);
+            const bool matches =
+                needle.isEmpty() ||
+                item->text().contains(needle, Qt::CaseInsensitive) ||
+                item->data(Qt::UserRole).toString().contains(needle, Qt::CaseInsensitive);
+            item->setHidden(!matches);
+        }
+        fitChoiceList(list);
+    };
+    const auto addSectionSearch = [&](QVBoxLayout* section, const QString& objectName,
+                                      const QString& placeholder,
+                                      const QList<QListWidget*>& lists) {
+        QWidget* owner = section->parentWidget();
+        auto* search = new QLineEdit(owner);
+        search->setObjectName(objectName);
+        search->setPlaceholderText(placeholder);
+        search->setClearButtonEnabled(true);
+        section->addWidget(search);
+        connect(search, &QLineEdit::textChanged, owner, [filterChoices, lists](const QString& term) {
+            for (QListWidget* list : lists) filterChoices(list, term);
+        });
+        return search;
+    };
+    layout->addWidget(filterScroll, 1);
+    const auto optionLabel = [](const QString& value) {
+        if (value == QLatin1String("all")) return tr("Match all");
+        if (value == QLatin1String("any")) return tr("Match any");
+        if (value == QLatin1String("name")) return tr("Name");
+        if (value == QLatin1String("year")) return tr("Year");
+        if (value == QLatin1String("updated")) return tr("Recently updated");
+        if (value == QLatin1String("views")) return tr("Views");
+        if (value == QLatin1String("mal_rating")) return tr("MAL rating");
+        if (value == QLatin1String("asc")) return tr("Ascending");
+        if (value == QLatin1String("desc")) return tr("Descending");
+        if (value == QLatin1String("winter")) return QCoreApplication::translate("Labels", "Winter");
+        if (value == QLatin1String("spring")) return QCoreApplication::translate("Labels", "Spring");
+        if (value == QLatin1String("summer")) return QCoreApplication::translate("Labels", "Summer");
+        if (value == QLatin1String("autumn")) return QCoreApplication::translate("Labels", "Autumn");
+        if (value == QLatin1String("unknown")) return labels::status(value);
+        return value;
+    };
+    auto selectionMode = [&dialog, &optionLabel](const QString& objectName, const QStringList& options,
+                                                const QString& current) {
+        auto* box = new QComboBox(&dialog);
+        box->setObjectName(objectName);
+        QStringList values = options;
+        if (!current.isEmpty() && !values.contains(current)) values << current;
+        for (const QString& option : values) box->addItem(optionLabel(option), option);
+        const int index = box->findData(current);
+        if (index >= 0) box->setCurrentIndex(index);
+        return box;
+    };
+    auto checkedList = [&dialog, fitChoiceList](const QString& objectName,
+                                        const QStringList& labels,
+                                        const QStringList& canonical,
+                                        const QStringList& selected) {
+        auto* list = new QListWidget(&dialog);
+        list->setObjectName(objectName);
+        list->setUniformItemSizes(true);
+        QStringList seen;
+        for (int i = 0; i < canonical.size(); ++i) {
+            const QString value = canonical.at(i);
+            auto* item = new QListWidgetItem(labels.value(i, value), list);
+            item->setData(Qt::UserRole, value);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(selected.contains(value) ? Qt::Checked : Qt::Unchecked);
+            seen << value;
+        }
+        for (const QString& value : selected) {
+            if (seen.contains(value)) continue;
+            auto* item = new QListWidgetItem(value, list);
+            item->setData(Qt::UserRole, value);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Checked);
+        }
+        fitChoiceList(list);
+        return list;
+    };
+    const auto namesFor = [](const QVector<backend::GenreTag>& values) {
+        QStringList labels, canonical;
+        for (const backend::GenreTag& value : values) {
+            labels << (value.ua.isEmpty() ? value.name : value.ua);
+            canonical << value.name;
+        }
+        return qMakePair(labels, canonical);
+    };
+    const auto genreNames = namesFor(genres_);
+    const auto tagNames = namesFor(tags_);
+    auto* genreInclude = checkedList(QStringLiteral("genreIncludeList"), genreNames.first,
+                                      genreNames.second, catalogueQuery_.genres);
+    auto* genreExclude = checkedList(QStringLiteral("genreExcludeList"), genreNames.first,
+                                      genreNames.second, catalogueQuery_.genres_exclude);
+    auto* tagInclude = checkedList(QStringLiteral("tagIncludeList"), tagNames.first,
+                                    tagNames.second, catalogueQuery_.tags);
+    auto* tagExclude = checkedList(QStringLiteral("tagExcludeList"), tagNames.first,
+                                    tagNames.second, catalogueQuery_.tags_exclude);
+    QStringList matchModes = apiMeta_.match_modes;
+    if (matchModes.isEmpty()) matchModes << QStringLiteral("all") << QStringLiteral("any");
+    auto* genreMatch = selectionMode(QStringLiteral("genreMatchMode"), matchModes,
+                                     catalogueQuery_.genres_match);
+    auto* tagMatch = selectionMode(QStringLiteral("tagMatchMode"), matchModes,
+                                   catalogueQuery_.tags_match);
+    auto* genres = addSection(tr("Genres"));
+    addSectionSearch(genres, QStringLiteral("genreFilterSearch"), tr("Search genres"),
+                     {genreInclude, genreExclude});
+    addField(genres, tr("Genres include"), genreInclude);
+    addField(genres, tr("Genres exclude"), genreExclude);
+    addField(genres, tr("Genre matching"), genreMatch);
+    auto* tagsSection = addSection(tr("Tags"));
+    addSectionSearch(tagsSection, QStringLiteral("tagFilterSearch"), tr("Search tags"),
+                     {tagInclude, tagExclude});
+    addField(tagsSection, tr("Tags include"), tagInclude);
+    addField(tagsSection, tr("Tags exclude"), tagExclude);
+    addField(tagsSection, tr("Tag matching"), tagMatch);
+
+    auto* yearFrom = new QSpinBox(&dialog);
+    yearFrom->setObjectName(QStringLiteral("yearFromSpin"));
+    yearFrom->setRange(0, 9999);
+    yearFrom->setSpecialValueText(tr("Any"));
+    yearFrom->setValue(catalogueQuery_.year_from.value_or(0));
+    auto* yearTo = new QSpinBox(&dialog);
+    yearTo->setObjectName(QStringLiteral("yearToSpin"));
+    yearTo->setRange(0, 9999);
+    yearTo->setSpecialValueText(tr("Any"));
+    yearTo->setValue(catalogueQuery_.year_to.value_or(0));
+    auto* years = new QLineEdit(&dialog);
+    years->setObjectName(QStringLiteral("yearsEdit"));
+    years->setPlaceholderText(QStringLiteral("2020, 2021"));
+    QStringList yearStrings;
+    for (int year : catalogueQuery_.years) yearStrings << QString::number(year);
+    years->setText(yearStrings.join(QLatin1Char(',')));
+    auto* release = addSection(tr("Release"));
+    auto* yearSpan = new QWidget(filterContent);
+    auto* yearRow = new QHBoxLayout(yearSpan);
+    yearRow->setContentsMargins(0, 0, 0, 0);
+    yearRow->setSpacing(theme::kSpacingMedium);
+    const auto addYear = [&](const QString& caption, QSpinBox* box) {
+        box->setFixedWidth(theme::kCatalogueYearFieldWidth);
+        auto* column = new QVBoxLayout();
+        column->setSpacing(theme::kSpacingXs);
+        auto* label = new QLabel(caption, yearSpan);
+        label->setObjectName(QStringLiteral("muted"));
+        column->addWidget(label);
+        column->addWidget(box);
+        yearRow->addLayout(column);
+    };
+    addYear(tr("Year from"), yearFrom);
+    addYear(tr("Year to"), yearTo);
+    yearRow->addStretch();
+    release->addWidget(yearSpan);
+    addField(release, tr("Years (comma separated)"), years);
+
+    const auto translatedValues = [](const QStringList& values, const auto& label) {
+        QStringList names;
+        names.reserve(values.size());
+        for (const QString& value : values) names.append(label(value));
+        return names;
+    };
+    auto* formatList = checkedList(QStringLiteral("formatFilterList"),
+                                    translatedValues(apiMeta_.formats, labels::format),
+                                    apiMeta_.formats, catalogueQuery_.formats);
+    auto* statusList = checkedList(QStringLiteral("statusFilterList"),
+                                    translatedValues(apiMeta_.statuses, labels::status),
+                                    apiMeta_.statuses, catalogueQuery_.statuses);
+    auto* seasonList = checkedList(QStringLiteral("seasonFilterList"),
+                                    translatedValues(apiMeta_.seasons, optionLabel),
+                                    apiMeta_.seasons, catalogueQuery_.seasons);
+    auto* studioList = checkedList(QStringLiteral("studioFilterList"), studios_, studios_,
+                                    catalogueQuery_.studios);
+    addField(release, tr("Formats"), formatList);
+    addField(release, tr("Statuses"), statusList);
+    addField(release, tr("Seasons"), seasonList);
+    addField(release, tr("Studios"), studioList);
+    // The lists this field narrows are built after the year range, so the field
+    // is moved above them instead of being laid out where it was created.
+    QLineEdit* releaseSearch =
+        addSectionSearch(release, QStringLiteral("releaseFilterSearch"), tr("Search release options"),
+                         {formatList, statusList, seasonList, studioList});
+    release->insertWidget(0, releaseSearch);
+    // Preserve selections when a newer API value is absent from the cached dictionary.
+    QStringList sortFields = apiMeta_.anime_sort_fields;
+    QStringList sortOrders = apiMeta_.sort_orders;
+    if (sortFields.isEmpty()) sortFields << catalogueQuery_.sort;
+    if (sortOrders.isEmpty()) sortOrders << QStringLiteral("asc") << QStringLiteral("desc");
+    auto* sort = selectionMode(QStringLiteral("catalogueSortField"), sortFields,
+                               catalogueQuery_.sort);
+    auto* order = selectionMode(QStringLiteral("catalogueSortOrder"), sortOrders,
+                                catalogueQuery_.order);
+    auto* ordering = addSection(tr("Sorting"));
+    addField(ordering, tr("Sort by"), sort);
+    addField(ordering, tr("Order"), order);
+    auto* relevance = new QLabel(tr("Text search uses relevance ranking; sort selection is retained but may be overridden."), &dialog);
+    relevance->setObjectName(QStringLiteral("catalogueRelevanceHint"));
+    relevance->setWordWrap(true);
+    layout->addWidget(relevance);
+    const auto* currentSearch = query_;
+    relevance->setVisible(!currentSearch->text().trimmed().isEmpty());
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Reset |
+                                          QDialogButtonBox::Cancel, &dialog);
+    buttons->setObjectName(QStringLiteral("catalogueFilterButtons"));
+    if (auto* apply = buttons->button(QDialogButtonBox::Apply)) {
+        apply->setObjectName(QStringLiteral("catalogueApplyButton"));
+        apply->setProperty("accentAction", true);
+        apply->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: %2; border: none; font-weight: 600; "
+            "border-radius: %3px; padding: 6px 16px; }"
+            "QPushButton:hover { background: %4; }")
+            .arg(QLatin1String(theme::kAccent), QLatin1String(theme::kBackground))
+            .arg(theme::kRadiusSmall)
+            .arg(QLatin1String(theme::kAccentHover)));
+    }
+    if (auto* reset = buttons->button(QDialogButtonBox::Reset))
+        reset->setObjectName(QStringLiteral("catalogueResetButton"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::clicked, &dialog, [&dialog, buttons](QAbstractButton* button) {
+        if (buttons->standardButton(button) == QDialogButtonBox::Reset) {
+            dialog.setProperty("resetRequested", true);
+            dialog.accept();
+        } else if (buttons->standardButton(button) == QDialogButtonBox::Apply) {
+            dialog.setProperty("applyRequested", true);
+            dialog.accept();
+        }
+    });
+    if (dialog.exec() == QDialog::Accepted) {
+        if (dialog.property("resetRequested").toBool()) resetCatalogueFilters();
+        else if (dialog.property("applyRequested").toBool()) {
+            auto selected = [](QListWidget* list) {
+                QStringList values;
+                for (int row = 0; row < list->count(); ++row) {
+                    auto* item = list->item(row);
+                    if (item->checkState() == Qt::Checked) values << item->data(Qt::UserRole).toString();
+                }
+                return values;
+            };
+            catalogueQuery_.genres = selected(genreInclude);
+            catalogueQuery_.genres_exclude = selected(genreExclude);
+            catalogueQuery_.genres_match = genreMatch->currentData().toString();
+            catalogueQuery_.tags = selected(tagInclude);
+            catalogueQuery_.tags_exclude = selected(tagExclude);
+            catalogueQuery_.tags_match = tagMatch->currentData().toString();
+            catalogueQuery_.year_from = yearFrom->value() ? std::optional<int>(yearFrom->value()) : std::nullopt;
+            catalogueQuery_.year_to = yearTo->value() ? std::optional<int>(yearTo->value()) : std::nullopt;
+            catalogueQuery_.years.clear();
+            for (const QString& part : years->text().split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+                bool ok = false; const int year = part.trimmed().toInt(&ok);
+                if (ok) catalogueQuery_.years.append(year);
+            }
+            catalogueQuery_.formats = selected(formatList);
+            catalogueQuery_.statuses = selected(statusList);
+            catalogueQuery_.seasons = selected(seasonList);
+            catalogueQuery_.studios = selected(studioList);
+            catalogueQuery_.sort = sort->currentData().toString();
+            catalogueQuery_.order = order->currentData().toString();
+            applyCatalogueFilters();
+        }
+    }
+}
+
+void SearchPage::resetCatalogueFilters() {
+    catalogueQuery_ = backend::AnimeQuery{};
+    activeFormat_.clear();
+    applyCatalogueFilters();
+}
+
+void SearchPage::applyCatalogueFilters() {
+    ++requestSeq_;
+    ++catalogueRequestSeq_;
+    ++teamRequestSeq_;
+    catalogueQuery_.search = query_->text().trimmed();
+    catalogueQuery_.page = 1;
+    catalogueQuery_.limit = pageSize_;
+    currentQuery_ = catalogueQuery_.search;
+    teamBrowseMode_ = false;
+    if (teamBackButton_ != nullptr) teamBackButton_->hide();
+    if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
+    browseMode_ = currentQuery_.isEmpty() && !hasExplicitCatalogueCriteria(catalogueQuery_);
+    page_ = 1;
+    fetchPage(1);
+    showSearchResults();
+}
+
+void SearchPage::openTeamPicker() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Select a team"));
+    dialog.setObjectName(QStringLiteral("teamPickerDialog"));
+    dialog.setMinimumSize(theme::kSettingsDialogMinWidth, theme::kTeamPickerMinHeight);
+    dialog.resize(theme::kSettingsDialogMinWidth, theme::kTeamPickerDefaultHeight);
+    auto* layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(theme::kSpacingLarge, theme::kSpacingMedium,
+                               theme::kSpacingLarge, theme::kSpacingMedium);
+    layout->setSpacing(theme::kSpacingSmall);
+    auto* search = new QLineEdit(&dialog);
+    search->setObjectName(QStringLiteral("teamSearchEdit"));
+    search->setPlaceholderText(tr("Search teams"));
+    search->setClearButtonEnabled(true);
+    auto* rows = new QListWidget(&dialog);
+    rows->setObjectName(QStringLiteral("teamResultsList"));
+    rows->setUniformItemSizes(true);
+    auto* more = new QPushButton(tr("Load more"), &dialog);
+    more->setObjectName(QStringLiteral("teamLoadMoreButton"));
+    auto* browse = new QPushButton(tr("Browse anime"), &dialog);
+    browse->setObjectName(QStringLiteral("teamBrowseButton"));
+    browse->setEnabled(false);
+    auto* filterTeam = new QPushButton(tr("Filter catalogue"), &dialog);
+    filterTeam->setObjectName(QStringLiteral("teamFilterButton"));
+    auto* state = new QLabel(&dialog);
+    state->setObjectName(QStringLiteral("muted"));
+    layout->addWidget(search);
+    layout->addWidget(state);
+    layout->addWidget(rows, 1);
+    auto* buttons = new QHBoxLayout();
+    buttons->setSpacing(theme::kSpacingSmall);
+    buttons->addWidget(more);
+    buttons->addStretch();
+    buttons->addWidget(browse);
+    buttons->addWidget(filterTeam);
+    layout->addLayout(buttons);
+    auto paging = std::make_shared<int>(1);
+    auto totalPages = std::make_shared<int>(1);
+    auto currentTerm = std::make_shared<QString>();
+    auto request = std::make_shared<int>(0);
+    auto selected = std::make_shared<backend::Team>();
+    auto pickedTeamIds = std::make_shared<QSet<qint64>>();
+    for (qint64 id : catalogueQuery_.teams) pickedTeamIds->insert(id);
+    const QPointer<QListWidget> guardedRows(rows);
+    const QPointer<QPushButton> guardedMore(more);
+    const QPointer<QLabel> guardedState(state);
+    backend::MikaiClient* client = &client_;
+    auto fetch = [this, client, guardedRows, guardedMore, guardedState, paging, totalPages,
+                  currentTerm, request, pickedTeamIds]
+                 (const QString& term, int page) {
+        *currentTerm = term;
+        if (page == 1) {
+            if (guardedRows) guardedRows->clear();
+            *paging = 0;
+            *totalPages = 1;
+        }
+        const int seq = ++*request;
+        if (guardedState) guardedState->setText(tr("Loading…"));
+        if (guardedMore) guardedMore->setEnabled(false);
+        runner_.run([client, term, page] {
+            return QVariant::fromValue(client->getTeams(term, page, 50));
+        }, [guardedRows, guardedMore, guardedState, paging, totalPages, request, seq, page,
+            pickedTeamIds]
+             (const QVariant& v) {
+            if (seq != *request || !guardedRows) return;
+            const backend::TeamsResult result = v.value<backend::TeamsResult>();
+            for (const auto& profile : result.items) {
+                // Populate off-list: itemChanged would erase seeded checks during initialization.
+                auto* item = new QListWidgetItem(profile.team.name);
+                item->setData(Qt::UserRole, QVariantMap{
+                    {QStringLiteral("id"), profile.team.id},
+                    {QStringLiteral("slug"), profile.team.slug},
+                    {QStringLiteral("name"), profile.team.name}});
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(pickedTeamIds->contains(profile.team.id)
+                                        ? Qt::Checked : Qt::Unchecked);
+                guardedRows->addItem(item);
+            }
+            *paging = page;
+            const int total = result.total.value_or(guardedRows->count());
+            *totalPages = result.pages.value_or(
+                result.total.has_value() ? qMax(1, (total + 49) / 50)
+                                         : page + (result.items.size() == 50 ? 1 : 0));
+            if (guardedState)
+                guardedState->setText(QObject::tr("%1 teams · page %2 of %3")
+                                          .arg(total).arg(page).arg(*totalPages));
+            if (guardedMore) guardedMore->setEnabled(page < *totalPages);
+        }, [guardedState, guardedMore, request, seq](const backend::Failure& failure) {
+            if (seq != *request) return;
+            if (guardedState) guardedState->setText(failure.message);
+            if (guardedMore) guardedMore->setEnabled(true);
+        });
+    };
+    connect(search, &QLineEdit::textChanged, &dialog,
+            [fetch](const QString& term) { fetch(term, 1); });
+    connect(more, &QPushButton::clicked, &dialog, [fetch, paging, totalPages, currentTerm] {
+        if (*paging < *totalPages) fetch(*currentTerm, *paging + 1);
+    });
+    connect(rows, &QListWidget::itemChanged, &dialog, [pickedTeamIds](QListWidgetItem* item) {
+        const qint64 id = item->data(Qt::UserRole).toMap().value(QStringLiteral("id")).toLongLong();
+        if (item->checkState() == Qt::Checked) pickedTeamIds->insert(id);
+        else pickedTeamIds->remove(id);
+    });
+    connect(rows, &QListWidget::currentItemChanged, &dialog, [selected, browse](QListWidgetItem* item) {
+        *selected = backend::Team{};
+        browse->setEnabled(item != nullptr);
+        if (item == nullptr) return;
+        const QVariantMap data = item->data(Qt::UserRole).toMap();
+        selected->id = data.value(QStringLiteral("id")).toLongLong();
+        selected->slug = data.value(QStringLiteral("slug")).toString();
+        selected->name = data.value(QStringLiteral("name")).toString();
+    });
+    bool filterSelected = false;
+    connect(browse, &QPushButton::clicked, &dialog, [&dialog, selected] {
+        if (!selected->name.isEmpty()) dialog.accept();
+    });
+    fetch(QString(), 1);
+    connect(filterTeam, &QPushButton::clicked, &dialog, [&dialog, &filterSelected] {
+        filterSelected = true;
+        dialog.accept();
+    });
+    if (dialog.exec() == QDialog::Accepted && (filterSelected || !selected->name.isEmpty())) {
+        if (filterSelected) {
+            catalogueQuery_.teams.clear();
+            for (qint64 id : *pickedTeamIds) catalogueQuery_.teams.append(id);
+            applyCatalogueFilters();
+        } else {
+            browseSelectedTeam(*selected);
+        }
+    }
+}
+
+void SearchPage::browseTeam(const QString& ref) {
+    if (ref.trimmed().isEmpty()) return;
+    const int seq = ++teamRequestSeq_;
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
+    runner_.run([client, ref] { return QVariant::fromValue(client->getTeam(ref)); },
+        [self, seq](const QVariant& value) {
+            if (self.isNull() || seq != self->teamRequestSeq_) return;
+            const backend::TeamProfile profile = value.value<backend::TeamProfile>();
+            self->activeTeamProfile_ = profile;
+            self->browseSelectedTeam(profile.team);
+        }, [self, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->teamRequestSeq_) return;
+            self->statusLine_ = Status::Failure;
+            self->statusFailure_ = failure;
+            self->renderStatus();
+        });
+}
+
+void SearchPage::browseSelectedTeam(const backend::Team& team) {
+    ++requestSeq_;
+    ++catalogueRequestSeq_;
+    const bool hasCachedProfile = activeTeamProfile_.team.id == team.id &&
+                                  !activeTeamProfile_.team.name.isEmpty();
+    if (!hasCachedProfile) activeTeamProfile_ = backend::TeamProfile{};
+    activeTeam_ = team;
+    teamBrowseMode_ = true;
+    resultsHeading_->setText(tr("Anime from %1").arg(team.name));
+    showSearchResults();
+    if (teamBackButton_ == nullptr) {
+        teamBackButton_ = new QPushButton(tr("All catalogue"), this);
+        teamBackButton_->setObjectName(QStringLiteral("teamBackButton"));
+        teamDetailLabel_ = new QLabel(this);
+        teamDetailLabel_->setObjectName(QStringLiteral("teamDetailLabel"));
+        teamDetailLabel_->setWordWrap(true);
+        teamDetailLabel_->setTextFormat(Qt::RichText);
+        teamDetailLabel_->setOpenExternalLinks(false);
+        teamDetailLabel_->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        connect(teamDetailLabel_, &QLabel::linkActivated, this, [this](const QString& target) {
+            const QUrl url(target);
+            if (!url.isValid() || url.host().isEmpty() ||
+                (url.scheme() != QLatin1String("http") && url.scheme() != QLatin1String("https"))) {
+                return;
+            }
+            if (!QDesktopServices::openUrl(url)) {
+                reportFailure(Notice::Browser);
+            }
+        });
+        if (auto* root = qobject_cast<QVBoxLayout*>(layout())) {
+            root->insertWidget(2, teamBackButton_);
+            root->insertWidget(3, teamDetailLabel_);
+        }
+        connect(teamBackButton_, &QPushButton::clicked, this, [this] {
+            teamBrowseMode_ = false;
+            ++requestSeq_;
+            ++catalogueRequestSeq_;
+            teamBackButton_->hide();
+            teamDetailLabel_->hide();
+            applyCatalogueFilters();
+        });
+    }
+    teamBackButton_->setText(tr("All catalogue"));
+    teamBackButton_->show();
+    teamDetailLabel_->show();
+    if (hasCachedProfile) {
+        renderTeamProfile();
+    } else {
+        teamDetailLabel_->setText(tr("Loading team…").toHtmlEscaped());
+        const int seq = ++teamRequestSeq_;
+        const QString ref = team.slug.isEmpty() ? QString::number(team.id) : team.slug;
+        // The client travels into the worker by value; the page is reached only
+        // through a guard.
+        backend::MikaiClient* client = &client_;
+        const QPointer<SearchPage> self(this);
+        runner_.run([client, ref] { return QVariant::fromValue(client->getTeam(ref)); },
+            [self, seq](const QVariant& value) {
+                if (self.isNull() || seq != self->teamRequestSeq_ || !self->teamBrowseMode_) return;
+                self->activeTeamProfile_ = value.value<backend::TeamProfile>();
+                self->renderTeamProfile();
+            }, [self, seq](const backend::Failure& failure) {
+                if (self.isNull() || seq != self->teamRequestSeq_) return;
+                self->teamDetailLabel_->setText(failure.message.toHtmlEscaped());
+            });
+    }
+    loadTeamAnime(1);
+}
+
+void SearchPage::renderTeamProfile() {
+    if (teamDetailLabel_ == nullptr || activeTeamProfile_.team.name.isEmpty()) return;
+    const backend::TeamProfile& profile = activeTeamProfile_;
+    QStringList details{profile.team.name.toHtmlEscaped()};
+    if (!profile.description.isEmpty()) {
+        details << profile.description.toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+    }
+    if (!profile.birthday.isEmpty()) details << tr("Birthday: %1").arg(profile.birthday).toHtmlEscaped();
+    details << tr("%1 anime · %2 total views · %3 views this month")
+                   .arg(profile.anime_count).arg(profile.views_total).arg(profile.views_last_30_days)
+                   .toHtmlEscaped();
+    if (profile.has_voice) details << tr("Voice").toHtmlEscaped();
+    if (profile.has_subs) details << tr("Subtitles").toHtmlEscaped();
+    details << renderTeamLinks();
+    teamDetailLabel_->setText(details.join(QStringLiteral("<br>")));
+}
+
+QStringList SearchPage::renderTeamLinks() const {
+    QStringList rows;
+    for (auto it = activeTeamProfile_.links.cbegin(); it != activeTeamProfile_.links.cend(); ++it) {
+        QString service;
+        if (it.key() == QLatin1String("site") || it.key() == QLatin1String("website")) {
+            service = tr("Website");
+        } else if (it.key() == QLatin1String("donate")) {
+            service = tr("Donate");
+        } else {
+            service = backend::teamLinkServiceName(it.key());
+        }
+        service = service.toHtmlEscaped();
+        const QUrl url(it.value());
+        const bool openable = url.isValid() && !url.host().isEmpty() &&
+                              (url.scheme() == QLatin1String("http") ||
+                               url.scheme() == QLatin1String("https"));
+        if (!openable) {
+            rows << QStringLiteral("%1: %2").arg(service, it.value().toHtmlEscaped());
+            continue;
+        }
+        rows << QStringLiteral("<a style=\"color: %1; text-decoration: none;\" href=\"%2\">%3</a>")
+                    .arg(QLatin1String(theme::kAccent), it.value().toHtmlEscaped(), service);
+    }
+    return rows;
+}
+
+void SearchPage::loadTeamAnime(int page) {
+    const int seq = ++catalogueRequestSeq_;
+    const backend::Team team = activeTeam_;
+    const int limit = pageSize_;
+    statusLine_ = Status::LoadingSearch;
+    renderStatus();
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
+    runner_.run([client, team, page, limit] {
+        return QVariant::fromValue(client->getTeamAnime(team.slug.isEmpty() ? QString::number(team.id) : team.slug,
+                                                        page, limit));
+    }, [self, seq, page](const QVariant& value) {
+        if (self.isNull() || seq != self->catalogueRequestSeq_ || !self->teamBrowseMode_) return;
+        self->onResults(value.value<backend::SearchResult>(), page);
+    }, [self, seq](const backend::Failure& failure) {
+        if (self.isNull()) return;
+        if (seq == self->catalogueRequestSeq_) self->onError(failure);
+    });
+}
 void SearchPage::fetchPage(int page) {
     statusLine_ = browseMode_ ? Status::LoadingBrowse : Status::LoadingSearch;
     renderStatus();
@@ -1359,38 +2114,58 @@ void SearchPage::fetchPage(int page) {
 }
 
 void SearchPage::runResultsRequest(int page) {
+    if (teamBrowseMode_) { loadTeamAnime(page); return; }
     requestSeq_ += 1;
     const int seq = requestSeq_;
-    const int pageSize = pageSize_;
-    const QString query = currentQuery_;
-    const QString format = activeFormat_;
-    const bool browse = browseMode_;
+    // The request is put together on the GUI thread, so the worker carries the
+    // finished query instead of rebuilding it from the page.
+    backend::AnimeQuery request = catalogueQuery_;
+    request.search = currentQuery_;
+    request.page = page;
+    request.limit = pageSize_;
+    if (!activeFormat_.isEmpty() && !request.formats.contains(activeFormat_)) {
+        request.formats << activeFormat_;
+    }
+    // Every catalogue request names its own criteria. The browse calls carry
+    // the home carousels' fixed criteria - currently airing, newest episode
+    // first - as values of their own, so a catalogue request routed through
+    // one of them answered with the home ordering and the criterion the
+    // viewer chose (a sort, an order, a filter) never applied. The home
+    // carousel blocks keep their own browse calls; the catalogue does not use
+    // them.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.run(
-        [this, query, page, pageSize, format, browse] {
-            const backend::SearchResult result =
-                browse ? client_.browseOngoing(page, pageSize)
-                       : client_.search(query, page, pageSize, format);
-            return QVariant::fromValue(result);
-        },
-        [this, seq, page](const QVariant& result) {
-            if (seq == requestSeq_) {
-                onResults(result.value<backend::SearchResult>(), page);
+        [client, request] { return QVariant::fromValue(client->search(request)); },
+        [self, seq, page](const QVariant& result) {
+            if (self.isNull() || seq != self->requestSeq_) {
+                return;
             }
+            self->onResults(result.value<backend::SearchResult>(), page);
         },
-        [this, seq](const backend::Failure& failure) {
-            if (seq == requestSeq_) {
-                onError(failure);
+        [self, seq](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->requestSeq_) {
+                return;
             }
+            self->onError(failure);
         });
 }
 
 void SearchPage::search() {
     const QString query = query_->text().trimmed();
     if (query.isEmpty()) {
-        loadOngoing();
+        // An empty text with a criterion still chosen is a catalogue query, not
+        // a return to the home collection: the sort or the order the filters
+        // hold would be dropped otherwise.
+        if (hasExplicitCatalogueCriteria(catalogueQuery_)) applyCatalogueFilters();
+        else loadOngoing();
         return;
     }
     browseMode_ = false;
+    ++teamRequestSeq_;
+    teamBrowseMode_ = false;
+    if (teamBackButton_ != nullptr) teamBackButton_->hide();
+    if (teamDetailLabel_ != nullptr) teamDetailLabel_->hide();
     currentQuery_ = query;
     activeFormat_.clear();
     page_ = 1;
@@ -1442,9 +2217,13 @@ void SearchPage::onResults(const backend::SearchResult& result, int requestedPag
     }
     statusLine_ = Status::Results;
     renderStatus();
-    rebuildFormatBar();
+    if (teamBrowseMode_) {
+        formatBar_->hide();
+    } else {
+        rebuildFormatBar();
+        refreshFormatTotals();
+    }
     populateRows();
-    refreshFormatTotals();
     updatePager();
 }
 
@@ -1549,25 +2328,33 @@ void SearchPage::refreshFormatTotals() {
         return;
     }
     const QString query = currentQuery_;
+    const backend::AnimeQuery baseQuery = catalogueQuery_;
     const int seq = ++formatTotalsSeq_;
     formatTotalsQuery_ = query;
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.run(
-        [this, query, formats] {
+        [client, query, formats, baseQuery] {
             QHash<QString, int> totals;
             for (const QString& format : formats) {
-                const backend::SearchResult one = client_.search(query, 1, 1, format);
+                backend::AnimeQuery request = baseQuery;
+                request.search = query;
+                request.page = 1;
+                request.limit = 1;
+                request.formats = {format};
+                const backend::SearchResult one = client->search(request);
                 if (one.total.has_value()) {
                     totals.insert(format, *one.total);
                 }
             }
             return QVariant::fromValue(totals);
         },
-        [this, seq, query](const QVariant& result) {
-            if (seq != formatTotalsSeq_ || query != formatTotalsQuery_) {
+        [self, seq, query](const QVariant& result) {
+            if (self.isNull() || seq != self->formatTotalsSeq_ || query != self->formatTotalsQuery_) {
                 return;
             }
-            formatTotals_ = result.value<QHash<QString, int>>();
-            rebuildFormatBar();
+            self->formatTotals_ = result.value<QHash<QString, int>>();
+            self->rebuildFormatBar();
         },
         [](const backend::Failure&) {
             // A count is a label, not a result: leaving the page-local figure in
@@ -1777,14 +2564,27 @@ void SearchPage::requestThumb(const QString& url) {
         return;
     }
     thumbsInFlight_.insert(url);
+    // The client travels into the worker by value; the page is reached only
+    // through a guard, so a poster that lands after the page was closed is
+    // dropped rather than painted into a page that is gone.
+    backend::MikaiClient* client = &client_;
+    const QPointer<SearchPage> self(this);
     runner_.runImage(
-        [this, url] { return client_.fetchBytes(url); },
-        [this, url](const QVariant& result) {
-            thumbsInFlight_.remove(url);
-            thumbCache_.insert(url, result.toByteArray());
-            applyThumb(url, result.toByteArray());
+        [client, url] { return client->fetchBytes(url); },
+        [self, url](const QVariant& result) {
+            if (self.isNull()) {
+                return;
+            }
+            self->thumbsInFlight_.remove(url);
+            self->thumbCache_.insert(url, result.toByteArray());
+            self->applyThumb(url, result.toByteArray());
         },
-        [this, url](const backend::Failure&) { thumbsInFlight_.remove(url); });
+        [self, url](const backend::Failure&) {
+            if (self.isNull()) {
+                return;
+            }
+            self->thumbsInFlight_.remove(url);
+        });
 }
 
 void SearchPage::applyThumb(const QString& url, const QByteArray& data) {

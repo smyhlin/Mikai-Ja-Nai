@@ -3,6 +3,7 @@
 
 #include <backend/Errors.hpp>
 #include <backend/Models.hpp>
+#include <backend/UpdateFeed.hpp>
 
 #include <QHash>
 #include <QList>
@@ -62,6 +63,9 @@ public:
     /// hides, one switched on loads. Results still in flight for a hidden feed
     /// are dropped.
     void refreshFeedSettings();
+    /// Open a team's profile and paged anime catalogue.
+    void browseTeam(const QString& ref);
+    void returnHome();
 
     /// Put a title at the head of the "recently opened" carousel and persist it.
     void recordRecentTitle(const QString& ref, const QString& title, const QString& poster);
@@ -78,8 +82,7 @@ public:
     /// overlay left open under modal Settings keeps keyboard focus while the
     /// dialog owns the window.
     void closeTransientOverlays();
-    /// Handles Escape on the search page: closes transient hints, exits search
-    /// results back to home discovery, or clears focus from the search input.
+    /// Closes transient hints before returning to home discovery.
     bool escapeSearch();
 
 Q_SIGNALS:
@@ -234,6 +237,15 @@ private:
 
     void fetchPage(int page);
     void runResultsRequest(int page);
+    void loadDictionaries();
+    void showCatalogueFilters();
+    void applyCatalogueFilters();
+    void resetCatalogueFilters();
+    void openTeamPicker();
+    void browseSelectedTeam(const backend::Team& team);
+    void renderTeamProfile();
+    QStringList renderTeamLinks() const;
+    void loadTeamAnime(int page);
     void search();
     void showDiscovery();
     void showSearchResults();
@@ -289,6 +301,25 @@ private:
     int pages_ = 1;
     int total_ = 0;
     int pageSize_ = 0;
+    /// The criteria the catalogue request carries. Every catalogue search names
+    /// them itself - the sort, the order, the filters - so the server applies
+    /// the criterion the viewer chose. The home carousels keep their own
+    /// browse calls, whose fixed criteria the catalogue never inherits.
+    backend::AnimeQuery catalogueQuery_;
+    backend::ApiMeta apiMeta_;
+    QString dictionaryError_;
+    QVector<backend::GenreTag> genres_;
+    QVector<backend::GenreTag> tags_;
+    QStringList studios_;
+    backend::Team activeTeam_;
+    backend::TeamProfile activeTeamProfile_;
+    int teamPage_ = 1;
+    int teamPages_ = 1;
+    int teamRequestSeq_ = 0;
+    int dictionarySeq_ = 0;
+    int catalogueRequestSeq_ = 0;
+    backend::UpdateFeedState updateFeedState_;
+    bool teamBrowseMode_ = false;
     /// The format tab the last request was made with, as the API's own value.
     /// Empty means no filtering; the server applies it, so a result set's total
     /// and page count are the filtered ones.
@@ -340,6 +371,7 @@ private:
     QTimer* thumbTimer_ = nullptr;
     /// Handles for the captions a language switch restates. The query holds the
     /// viewer's text and the results list its rows; neither is rebuilt.
+    QPushButton* homeButton_ = nullptr;
     QPushButton* mediaButton_ = nullptr;
     QAction* openFileAction_ = nullptr;
     QAction* openUrlAction_ = nullptr;
@@ -347,6 +379,10 @@ private:
     QPushButton* settingsButton_ = nullptr;
     QPushButton* searchButton_ = nullptr;
     QLineEdit* query_ = nullptr;
+    QPushButton* filtersButton_ = nullptr;
+    QPushButton* teamsButton_ = nullptr;
+    QPushButton* teamBackButton_ = nullptr;
+    QLabel* teamDetailLabel_ = nullptr;
     QLabel* resultsHeading_ = nullptr;
     QLabel* status_ = nullptr;
     QScrollArea* discoveryScroll_ = nullptr;
@@ -358,3 +394,4 @@ private:
 };
 
 }  // namespace mikai::app
+Q_DECLARE_METATYPE(mikai::backend::UpdateFeedState)

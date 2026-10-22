@@ -24,6 +24,10 @@ inline constexpr int kSettingsDialogMinWidth = 560;
 inline constexpr int kSettingsDialogMinHeight = 600;
 inline constexpr int kSettingsDialogDefaultWidth = 760;
 inline constexpr int kSettingsDialogDefaultHeight = 780;
+inline constexpr int kCatalogueChoiceRowHeight = 28;
+inline constexpr int kCatalogueYearFieldWidth = 120;
+inline constexpr int kTeamPickerMinHeight = 420;
+inline constexpr int kTeamPickerDefaultHeight = 560;
 inline constexpr int kSettingsPresetListMaxHeight = 440;
 // Characters a settings combo reserves for its widest entry, so a long stored
 // identifier cannot widen the page; the popup still shows the entry in full.

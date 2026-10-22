@@ -95,7 +95,8 @@ TitleCard::TitleCard(const backend::AnimeSummary& summary, QWidget* parent)
     status_ = makeLabel(QStringLiteral("carouselStatus"), QString());
     status_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     episodes_ = makeLabel(QStringLiteral("carouselEpisodes"), QString());
-    episodes_->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+    episodes_->setWordWrap(true);
+    episodes_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     // The title box is always two lines tall, so a one-line title would leave
     // the status and the count floating halfway down the card against a
@@ -133,7 +134,13 @@ void TitleCard::retranslateUi() {
     }
     const QString status = labels::status(statusRaw_);
     status_->setText(status.isEmpty() ? QString::fromLatin1(kPending) : status);
-    const QString count = episodeCountText(aired_, planned_);
+    const QString count =
+        hasDetailStats_
+            ? tr("Aired: %1 · Localized: %2 · Total: %3")
+                  .arg(aired_)
+                  .arg(localized_)
+                  .arg(planned_ > 0 ? QString::number(planned_) : tr("unknown"))
+            : episodeCountText(aired_, planned_);
     episodes_->setText(count.isEmpty() ? QString::fromLatin1(kPending) : count);
 }
 
@@ -244,7 +251,11 @@ void TitleCard::applyEpisodes(int aired, int planned) {
 
 void TitleCard::applyDetail(const backend::AnimeDetail& detail) {
     applyStatus(detail.status);
-    applyEpisodes(detail.episodes.aired, detail.episodes.total.value_or(0));
+    aired_ = detail.episodes.aired;
+    localized_ = detail.episodes.localized;
+    planned_ = detail.episodes.total.value_or(0);
+    hasDetailStats_ = true;
+    retranslateUi();
 }
 
 }  // namespace mikai::app

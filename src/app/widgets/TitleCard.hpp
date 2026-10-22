@@ -61,6 +61,8 @@ private:
     /// The aired fraction last applied, kept beside `planned_` for the same
     /// reason: the count line is rebuilt from both on a switch.
     int aired_ = 0;
+    int localized_ = 0;
+    bool hasDetailStats_ = false;
     /// Whether `status_` currently carries the live-status object name; the
     /// label starts out with the non-live name, matching statusLive_'s zero.
     bool statusLive_ = false;

@@ -277,11 +277,39 @@ QHeaderView::section {
     font-size: 12px;
     font-weight: 600;
 }
-QListWidget { background: %1; border: 1px solid %10; border-radius: %6px; padding: 6px; outline: none; }
-QListWidget::item { min-height: %19px; padding: %3px %7px; border-radius: %6px;
+QListWidget { background: %1; border: 1px solid %10; border-radius: %6px; padding: 4px; outline: none; }
+QListWidget::item { min-height: 28px; padding: 2px %3px; border-radius: %6px;
     border-left: 2px solid transparent; }
+QListWidget#searchResults::item { min-height: %19px; padding: %3px %7px; }
 QListWidget::item:hover { background: %8; }
 QListWidget::item:selected { background: %9; color: %2; border-left: 2px solid %11; }
+QDialog#catalogueFiltersDialog, QDialog#teamPickerDialog { background: %1; }
+QDialog#catalogueFiltersDialog QListWidget::indicator,
+QDialog#teamPickerDialog QListWidget::indicator {
+    width: 16px; height: 16px; border: 1px solid %10; border-radius: 4px; background: %1;
+}
+QDialog#catalogueFiltersDialog QListWidget::indicator:checked,
+QDialog#teamPickerDialog QListWidget::indicator:checked {
+    background: %11; border-color: %11;
+}
+QGroupBox#catalogueFilterSection {
+    background: %5; border: 1px solid %10; border-radius: %6px;
+    padding: 10px %7px %7px %7px; font-weight: 600;
+}
+QGroupBox#catalogueFilterSection::title {
+    subcontrol-origin: padding; subcontrol-position: top left; left: %7px;
+    padding: 0 0 %3px 0; color: %2; background: transparent; font-size: 15px;
+}
+QDialog#catalogueFiltersDialog QSpinBox::up-button,
+QDialog#catalogueFiltersDialog QSpinBox::down-button { width: 0; border: none; }
+QPushButton#catalogueApplyButton, QPushButton#teamFilterButton,
+QPushButton[accentAction="true"] {
+    background: %11; color: %1; border: none; font-weight: 600;
+}
+QPushButton#catalogueApplyButton:hover, QPushButton#teamFilterButton:hover,
+QPushButton[accentAction="true"]:hover { background: %12; }
+QPushButton#catalogueApplyButton:disabled, QPushButton#teamFilterButton:disabled,
+QPushButton[accentAction="true"]:disabled { background: %8; color: %4; }
 QTreeWidget#benchmarkModelTree {
     background: %1;
     color: %2;
