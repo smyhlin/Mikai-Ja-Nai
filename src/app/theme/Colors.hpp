@@ -89,4 +89,30 @@ inline constexpr const char* kSurfaceControlRgb = "29, 25, 43";
 inline constexpr const char* kSurfaceDeepRgb = "15, 13, 23";
 inline constexpr const char* kTextPrimaryRgb = "243, 241, 248";
 
+// ── Title page surfaces ─────────────────────────────────────────────────────
+// The media detail page keeps the reference's neutral near-black bed and a
+// desaturated steel-blue accent, distinct from the violet settings ramp. These
+// aliases are scoped to the title page stylesheet; the application palette
+// above is unchanged, so search, settings and the player keep their colours.
+inline constexpr const char* kTitleBackground = "#0b0b0e";
+inline constexpr const char* kTitleSurface = "#16161d";
+inline constexpr const char* kTitleSurfaceHover = "#1e1e26";
+inline constexpr const char* kTitleAccent = "#7b8ab8";
+inline constexpr const char* kTitleAccentHover = "#98a6d2";
+inline constexpr const char* kTitleText = "#ffffff";
+inline constexpr const char* kTitleMuted = "#8a8a98";
+// The border and the raised hover fill are the same value in the reference;
+// the two names keep the roles legible at the call site.
+inline constexpr const char* kTitleBorder = "#1e1e26";
+
+// The backdrop is an alpha, like the cover viewer's dim: the poster reads as
+// atmosphere behind the text. The fade midpoint veils it a little further before
+// the page bed takes over at the bottom edge.
+inline constexpr int kTitleBackdropAlpha = 77;
+inline constexpr int kTitleBackdropFadeAlpha = 60;
+
+inline constexpr const char* kTitleAccentRgb = "123, 138, 184";
+inline constexpr const char* kTitleBackgroundRgb = "11, 11, 14";
+inline constexpr const char* kTitleMutedRgb = "138, 138, 152";
+
 }  // namespace mikai::app::theme

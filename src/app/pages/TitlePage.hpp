@@ -5,12 +5,14 @@
 #include <backend/Models.hpp>
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
+#include <state/WatchHistory.hpp>
 
 #include <QMap>
 #include <QPair>
 #include <QPoint>
 #include <QPointer>
 #include <QSet>
+#include <QSize>
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
@@ -21,13 +23,16 @@
 #include <functional>
 #include <memory>
 
+class QBoxLayout;
 class QButtonGroup;
 class QGridLayout;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QMenu;
 class QPixmap;
 class QPushButton;
+class QResizeEvent;
 class QScrollArea;
 class QTabWidget;
 class QTimer;
@@ -49,13 +54,17 @@ namespace mikai::app {
 class CoverLabel;
 class CoverViewer;
 class FailureView;
+class PosterBackdrop;
 class QualityCache;
 class RangePager;
 class RateLimitLabel;
 class Runner;
 
-/// One title: cover, facts, description, related carousels, and one tab per
-/// release holding that release's episodes as a grid of number pills.
+/// One title, laid out as the editorial detail page: a sticky header, one
+/// scrolling body with the responsive poster/title hero, the related and
+/// recommended carousels full-width beneath it, and the release selector,
+/// watch panel and provider episode grids last. The metadata sheet is a
+/// dismissible layer over the page, not a second window.
 ///
 /// Quality extraction happens once per episode, only when that episode is
 /// opened. The result is cached per embed URL and persisted, so replaying an
@@ -80,9 +89,11 @@ public:
     /// refused; it still takes every player through its own close first, so each
     /// core dies before its widget releases what it held.
     bool shutdown(bool forced = false);
+    void escapePage();
 
 Q_SIGNALS:
     void backRequested();
+    void homeRequested();
     void settingsRequested();
     /// One of this page's open players raised a processing-failure remedy that needs the
     /// application's Settings surface. `player` is the dialog that raised it, and the
@@ -95,15 +106,22 @@ Q_SIGNALS:
     void playerComponentSetupRequested();
     void relatedOpenRequested(const QString& ref, const QString& poster);
     void recentTitleLoaded(const QString& ref, const QString& title, const QString& poster);
+    void teamRequested(const QString& ref);
 
 private:
-    /// One episode pill: the number, its embed URL and the button showing it.
     struct EpisodeEntry {
         QString number;
+        QVariant sourceNumber;
         QString embedUrl;
         QString label;
+        QString kind;
         QPushButton* button = nullptr;
+        QWidget* watchedMark = nullptr;
+        QPointer<QLabel> typeBadge;
         int stateIndex = -1;
+        bool unavailable = false;
+        bool paintedCurrent = false;
+        bool paintedWatched = false;
     };
 
     /// One release tab: its episodes, the page of them on screen, and the pager.
@@ -117,7 +135,6 @@ private:
         int page = 0;
         int pageSize = 0;
         QWidget* grid = nullptr;
-        QScrollArea* scroll = nullptr;
         QGridLayout* gridLayout = nullptr;
         RangePager* pager = nullptr;
         int columns = 0;
@@ -146,13 +163,27 @@ private:
     /// What the page's own status line currently stands for. The line is
     /// restated from this after a language switch instead of keeping translated
     /// text that would then be stale.
-    enum class BaseStatus { Empty, Loading, NoReleases, NoSources, Raw };
+    enum class BaseStatus { Empty, Loading, Licensed, NoReleases, NoSources, Raw };
 
     /// What the cover is showing, so a switch can re-word the fallback without
     /// touching a pixmap that has already landed.
     enum class CoverState { Loading, Missing, Ready };
 
     void buildUi();
+    void buildHeader();
+    void buildBody();
+    void buildDetailsSheet();
+    /// Applies the one responsive decision the page has: the compact hero below
+    /// `kTitleCompactBreakpoint`, and with it the poster size, the hero axis and
+    /// the page inset. Nothing here rebuilds content or refetches anything.
+    void applyResponsiveLayout();
+    /// Places the fixed details layer and its right-hand sheet over the page.
+    void updateDetailsGeometry();
+    /// Re-crops the cached cover for the poster-derived backdrop.
+    void updateBackdrop();
+    /// Re-resolves the title page's scoped QSS after the `compact` property
+    /// changed. Only property selectors need this; no widget is rebuilt.
+    void repolishTitleSubtree();
     void load();
     /// Hand the page its title once both halves of a two-task load have landed.
     void joinLoad(const std::shared_ptr<LoadState>& state);
@@ -176,11 +207,44 @@ private:
     void toggleDescription();
     QString descriptionPreview() const;
     void toggleMetadata(bool expanded);
+    /// Opens or dismisses the metadata sheet without touching data. The
+    /// disclosure button is kept in step when the sheet is dismissed from
+    /// anywhere else (scrim, close, Escape).
+    void setDetailsOpen(bool open);
+    void selectWatchEntry(EpisodeEntry* entry);
+    EpisodeEntry* firstUsableEntry(int stateIndex) const;
+    EpisodeEntry* entryForNumber(int stateIndex, const QString& number) const;
+    bool entryIsPlayable(const EpisodeEntry* entry) const;
+    EpisodeEntry* preferredEntry(int stateIndex) const;
+    void applyEpisodeState(EpisodeEntry* entry);
+    void refreshEpisodeStates();
+    void noteEpisodeStarted(const QString& number);
+    void setEpisodeWatched(const QString& number, bool watched);
+    void updateWatchPanel();
+    void updateEpisodeLegend();
+    /// Real episode count of the active release, restated after a language
+    /// switch and after a release change.
+    void updateEpisodeSummary();
+    /// The credit line under the cover, restated after a language switch. The
+    /// poster it names is the one the cover shows, so a UA poster that cannot
+    /// be displayed is credited to nobody.
+    void updatePosterCredit();
+    QString episodeType(const EpisodeEntry* entry) const;
+    QString episodeTypeCaption(const QString& type) const;
+    QString episodeTypeBadgeText(const QString& type) const;
+    void updateLicenseInfo(const backend::PlayerResult& player);
 
     static QString scoresText(const backend::AnimeDetail& detail);
+    /// The caption of one episode from its identifier: a bare number is worded
+    /// by the app ("Episode 3", re-worded on a language switch), while an
+    /// identifier that already names the episode ("OVA 2") stands as it is.
+    static QString episodeCaption(const QString& number);
     QString releaseChipLabel(const backend::Release& release) const;
     QString releaseChipToolTip(const backend::Release& release) const;
     void rebuildReleaseChips();
+    /// Release chips carry no inline team links; the row stays one chip per
+    /// release and each team's browse command lives on this menu.
+    void releaseContextMenu(QPushButton* chip, const QPoint& globalPos);
     /// Track-picker label: the team only, no kind and no episode count.
     QString releaseTrackLabel(const backend::Release& release) const;
 
@@ -248,6 +312,9 @@ private:
     void probeTrackQuality(PlayerSession* session, const QString& embed);
     void playEpisodeFrom(PlayerSession* session, const QVariantMap& item, int index);
 
+    /// Paints the cover and its details thumbnail from `coverPixmap_`. The
+    /// rounded copies are produced once per size, never per paint.
+    void applyCoverPixmap();
     void loadCover(const QString& url, bool allowHint);
     void coverContextMenu(const QPoint& globalPos);
     void copyCoverUrl();
@@ -285,6 +352,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
     Runner& runner_;
     backend::MikaiClient& client_;
@@ -294,9 +362,77 @@ protected:
     bool closed_ = false;
 
     QVector<backend::Release> releases_;
+    WatchHistory watchHistory_;
     QVector<TabState> tabStates_;
     /// Owns every episode record ever built for this page; freed on shutdown.
     QVector<EpisodeEntry*> ownedEntries_;
+
+    QWidget* header_ = nullptr;
+    QWidget* headerRow_ = nullptr;
+    /// The header's outer row and its inset controls: the outer side margins are
+    /// what centre the capped row, so they are re-applied on a width change.
+    QHBoxLayout* headerOuterLayout_ = nullptr;
+    QHBoxLayout* headerRowLayout_ = nullptr;
+    /// The scroll content and its one column. `body_` is capped at the content
+    /// width and centred by the scroll area; `column_` fills it.
+    QWidget* body_ = nullptr;
+    QWidget* column_ = nullptr;
+    QVBoxLayout* columnLayout_ = nullptr;
+    QWidget* hero_ = nullptr;
+    QBoxLayout* heroLayout_ = nullptr;
+    QWidget* heroPosterHost_ = nullptr;
+    QLabel* studio_ = nullptr;
+    /// Poster-derived atmosphere behind the hero. Custom-painted from a cached
+    /// downscale, so no paint path blurs or rescales the real cover.
+    PosterBackdrop* backdrop_ = nullptr;
+    QLabel* accentRule_ = nullptr;
+    QWidget* disclosureRow_ = nullptr;
+    /// Metadata sheet: the full-page layer, its dimming scrim, the right-hand
+    /// panel and the scrolling content widget the facts grid is built into.
+    QWidget* detailsOverlay_ = nullptr;
+    QPushButton* detailsScrim_ = nullptr;
+    QWidget* detailsPanel_ = nullptr;
+    QWidget* detailsHeaderHost_ = nullptr;
+    QLabel* detailsHeading_ = nullptr;
+    QPushButton* detailsClose_ = nullptr;
+    QScrollArea* detailsScroll_ = nullptr;
+    QLabel* detailsThumb_ = nullptr;
+    QLabel* detailsTitle_ = nullptr;
+    QLabel* detailsOriginal_ = nullptr;
+    QLabel* detailsScore_ = nullptr;
+    QWidget* detailsFactsHost_ = nullptr;
+    QVBoxLayout* detailsFactsLayout_ = nullptr;
+    bool detailsOpen_ = false;
+
+    /// Episode section: its full-width header, the real watch panel for the
+    /// active provider, and the provider tabs holding the pill grids.
+    QWidget* episodesHost_ = nullptr;
+    QWidget* episodeHeaderHost_ = nullptr;
+    QLabel* episodeCount_ = nullptr;
+    QLabel* episodeAvailability_ = nullptr;
+    QLabel* nextAiring_ = nullptr;
+    QLabel* licenseInfo_ = nullptr;
+    QLabel* posterCredit_ = nullptr;
+    QPushButton* posterTeamButton_ = nullptr;
+    backend::PlayerResult player_;
+    QWidget* watchPanel_ = nullptr;
+    QLabel* watchEpisode_ = nullptr;
+    QLabel* watchMeta_ = nullptr;
+    QPushButton* watchButton_ = nullptr;
+    /// The manual mark: checked while the selected episode is watched.
+    QPushButton* watchWatchedButton_ = nullptr;
+    EpisodeEntry* watchEntry_ = nullptr;
+    /// The three-item legend under the provider tabs, and its captions.
+    QWidget* episodeLegend_ = nullptr;
+    QLabel* legendCurrent_ = nullptr;
+    QLabel* legendWatched_ = nullptr;
+    QLabel* legendUnavailable_ = nullptr;
+
+    bool compact_ = false;
+    /// Guards `applyResponsiveLayout` against re-entering itself through the
+    /// layout invalidation its own margin/axis changes post.
+    bool applyingLayout_ = false;
+    QSize coverAppliedSize_;
 
     CoverLabel* cover_ = nullptr;
     QLabel* heading_ = nullptr;
@@ -311,8 +447,8 @@ protected:
     QPushButton* descriptionButton_ = nullptr;
     QPushButton* metaButton_ = nullptr;
     QPushButton* relatedButton_ = nullptr;
+    /// The scrolling sheet content widget; `titleDetails` carries its name.
     QWidget* metaHost_ = nullptr;
-    QGridLayout* metaGrid_ = nullptr;
     QLabel* links_ = nullptr;
     QWidget* relatedHost_ = nullptr;
     QVBoxLayout* relatedLayout_ = nullptr;
@@ -325,6 +461,7 @@ protected:
     /// them without rebuilding the rows.
     QVector<QPair<QString, QPointer<QLabel>>> releaseKindLabels_;
     QPushButton* backButton_ = nullptr;
+    QPushButton* homeButton_ = nullptr;
     QPushButton* settingsButton_ = nullptr;
     QLabel* episodesHeading_ = nullptr;
     QLabel* status_ = nullptr;

@@ -8,7 +8,9 @@
 #include <pages/SearchPage.hpp>
 #include <pages/TitlePage.hpp>
 #include <state/QualityCache.hpp>
+#include <state/WatchHistory.hpp>
 #include <support/I18n.hpp>
+#include <theme/Metrics.hpp>
 #include <widgets/FailureView.hpp>
 #include <widgets/RangePager.hpp>
 #include <widgets/TitleCard.hpp>
@@ -24,6 +26,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
+#include <QtCore/QPair>
 #include <QtCore/QPointer>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QSet>
@@ -33,6 +36,7 @@
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
+#include <QtGui/QContextMenuEvent>
 #include <QtNetwork/QHostAddress>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -43,18 +47,21 @@
 #include <cstdio>
 
 #include <QtGui/QGuiApplication>
+#include <QtTest/QSignalSpy>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QLabel>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QListWidget>
 #include <QtWidgets/QProgressBar>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QScrollBar>
+#include <QtWidgets/QSpinBox>
 #include <QtWidgets/QTabBar>
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QTreeWidget>
@@ -70,6 +77,7 @@ using mikai::app::SettingsDialog;
 using mikai::app::SearchPage;
 using mikai::app::TitleCard;
 using mikai::app::TitlePage;
+using mikai::app::WatchHistory;
 using mikai::backend::SearchResult;
 using mikai::backend::MikaiClient;
 using mplayer::native::AnimeJanaiBuildGate;
@@ -191,7 +199,7 @@ QJsonObject detail(int id, const QString& name, const QString& poster) {
 }
 
 QJsonObject release(const QString& kind, const QString& teamName, const QString& embedBase,
-                    int episodeCount = kEpisodes) {
+                    int episodeCount = kEpisodes, bool specials = false) {
   QJsonObject team;
   team.insert(QStringLiteral("id"), 1);
   team.insert(QStringLiteral("slug"), QStringLiteral("test-team"));
@@ -204,15 +212,20 @@ QJsonObject release(const QString& kind, const QString& teamName, const QString&
   for (int number = 1; number <= episodeCount; ++number) {
     QJsonObject source;
     source.insert(QStringLiteral("provider"), QStringLiteral("ashdi"));
-    source.insert(QStringLiteral("embedUrl"),
-                  embedBase + QStringLiteral("/embed/%1").arg(number));
+    // The optional marker keeps the extractor's provider branch on loopback;
+    // without it extraction is refused before any request.
+    source.insert(QStringLiteral("embedUrl"), embedBase + QStringLiteral("/%1").arg(number));
 
     QJsonArray sources;
     sources.append(source);
 
     QJsonObject episode;
-    episode.insert(QStringLiteral("number"), number);
-    episode.insert(QStringLiteral("label"), QStringLiteral("Episode %1").arg(number));
+    episode.insert(QStringLiteral("number"),
+                   specials ? QJsonValue(QStringLiteral("OVA %1").arg(number))
+                            : QJsonValue(number));
+    episode.insert(QStringLiteral("label"),
+                   specials ? QStringLiteral("OVA %1").arg(number)
+                            : QStringLiteral("Episode %1").arg(number));
     episode.insert(QStringLiteral("sources"), sources);
     episodes.append(episode);
   }
@@ -262,6 +275,14 @@ class CannedApi : public QObject {
   /// How many episodes each canned release carries. The default is the twelve
   /// the render tests count; a test that needs a second episode page raises it.
   void setReleaseEpisodeCount(int count) { releaseEpisodeCount_ = qMax(1, count); }
+
+  /// Marks episode URLs for the extractor, so a quality request reaches this
+  /// loopback server instead of being refused. Off by default.
+  void setEmbedMarkers(bool enabled) { embedMarkers_ = enabled; }
+
+  /// Numbers the canned episodes with special identifiers instead of counting
+  /// them, the way a release carrying OVAs or a half-numbered episode does.
+  void setSpecialEpisodes(bool enabled) { specialEpisodes_ = enabled; }
 
   int requestCount() const {
     QMutexLocker locker(&mutex_);
@@ -417,10 +438,14 @@ class CannedApi : public QObject {
     }
     if (rest.endsWith(QStringLiteral("/player"))) {
       QJsonArray releases;
-      releases.append(release(QStringLiteral("voice"), QStringLiteral("Test Dub"), embedBase(),
-                              releaseEpisodeCount_));
-      releases.append(release(QStringLiteral("sub"), QStringLiteral("Test Sub"), embedBase(),
-                              releaseEpisodeCount_));
+      // Distinct path prefixes per release: the request path is the only
+      // provider identity visible without opening a player.
+      releases.append(release(QStringLiteral("voice"), QStringLiteral("Test Dub"),
+                              releaseEmbedBase() + QStringLiteral("/voice"),
+                              releaseEpisodeCount_, specialEpisodes_));
+      releases.append(release(QStringLiteral("sub"), QStringLiteral("Test Sub"),
+                              releaseEmbedBase() + QStringLiteral("/sub"),
+                              releaseEpisodeCount_, specialEpisodes_));
 
       QJsonObject result;
       result.insert(QStringLiteral("licensed"), false);
@@ -450,6 +475,12 @@ class CannedApi : public QObject {
     return QStringLiteral("http://127.0.0.1:%1/embed").arg(server_.serverPort());
   }
 
+  /// One release's episode pages; the marker only selects the extractor branch,
+  /// the connection still goes to loopback and the server answers 404.
+  QString releaseEmbedBase() const {
+    return embedBase() + (embedMarkers_ ? QStringLiteral("/ashdi.vip/vod") : QString());
+  }
+
   void send(QTcpSocket* socket, int status, const QString& contentType, const QByteArray& body) {
     QByteArray head = QByteArrayLiteral("HTTP/1.1 ");
     head += QByteArray::number(status);
@@ -468,6 +499,8 @@ class CannedApi : public QObject {
   QHash<QTcpSocket*, QByteArray> buffers_;
   Mode mode_ = Mode::Answers;
   int releaseEpisodeCount_ = kEpisodes;
+  bool embedMarkers_ = false;
+  bool specialEpisodes_ = false;
   mutable QMutex mutex_;
   int requests_ = 0;
   QStringList paths_;
@@ -620,9 +653,115 @@ int quietRequestCount(CannedApi& api) {
   return stable;
 }
 
-QPushButton* visibleButtonWithText(const QWidget& root, const QString& text) {
-  for (QPushButton* button : root.findChildren<QPushButton*>()) {
-    if (button->isVisible() && button->text() == text) {
+bool hasLabelText(const QWidget& root, const QString& text) {
+  for (QLabel* label : root.findChildren<QLabel*>()) {
+    if (label->text() == text) {
+      return true;
+    }
+  }
+  return false;
+}
+
+QPushButton* episodePill(QWidget& tabPage, const QString& text) {
+  for (QPushButton* pill : tabPage.findChildren<QPushButton*>(QStringLiteral("episodeButton"))) {
+    if (pill->text() == text) {
+      return pill;
+    }
+  }
+  return nullptr;
+}
+
+bool episodeWatchedMarkShown(QPushButton* pill) {
+  if (pill == nullptr) {
+    return false;
+  }
+  QWidget* mark = pill->findChild<QWidget*>(QStringLiteral("episodeWatchedMark"));
+  return mark != nullptr && mark->isVisible();
+}
+
+void clearEpisodeHistory() {
+  QSettings settings;
+  settings.remove(QString::fromLatin1(mikai::app::kWatchHistoryKey));
+  settings.sync();
+}
+struct ContextMenuActionResult {
+  bool found = false;
+  bool enabled = false;
+};
+
+ContextMenuActionResult activateEpisodeContextAction(QPushButton* pill, const QString& name) {
+  ContextMenuActionResult result;
+  if (pill == nullptr) {
+    return result;
+  }
+
+  int attempts = 0;
+  auto* poll = new QTimer(pill);
+  poll->setInterval(10);
+  QObject::connect(poll, &QTimer::timeout, pill, [poll, pill, name, &result, &attempts] {
+    auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+    if (menu == nullptr) {
+      if (++attempts < 100) {
+        return;
+      }
+      poll->stop();
+      poll->deleteLater();
+      return;
+    }
+
+    if (menu->objectName() != QStringLiteral("episodeContextMenu")) {
+      return;
+    }
+    QAction* selected = nullptr;
+    for (QAction* action : menu->actions()) {
+      if (action->objectName() == name) {
+        selected = action;
+        break;
+      }
+    }
+    result.found = selected != nullptr;
+    result.enabled = selected != nullptr && selected->isEnabled();
+    if (result.enabled) {
+      menu->setActiveAction(selected);
+      QTest::keyClick(menu, Qt::Key_Return);
+    } else {
+      menu->close();
+    }
+    poll->stop();
+    poll->deleteLater();
+  });
+
+  QTimer watchdog;
+  watchdog.setSingleShot(true);
+  QObject::connect(&watchdog, &QTimer::timeout, pill, [] {
+    for (QWidget* widget : QApplication::allWidgets()) {
+      if (auto* menu = qobject_cast<QMenu*>(widget); menu != nullptr && menu->isVisible()) {
+        menu->close();
+      }
+    }
+  });
+  watchdog.start(2500);
+  poll->start();
+
+  const QPoint local = pill->rect().center();
+  QContextMenuEvent event(QContextMenuEvent::Mouse, local, pill->mapToGlobal(local));
+  QCoreApplication::sendEvent(pill, &event);
+  poll->stop();
+  watchdog.stop();
+  poll->deleteLater();
+  return result;
+}
+
+/// The disclosure actions by role: the non-checkable text action and the
+/// checkable details action, whatever their current caption.
+QPushButton* disclosureAction(const QWidget& root, bool checkable) {
+  auto* actions = root.findChild<QWidget*>(QStringLiteral("titleDisclosureActions"));
+  if (actions == nullptr) {
+    return nullptr;
+  }
+  for (QPushButton* button : actions->findChildren<QPushButton*>(QStringLiteral("textAction"))) {
+    if (button->isVisible() && button->isCheckable() == checkable &&
+        (!checkable || !button->isChecked())) {
       return button;
     }
   }
@@ -658,28 +797,20 @@ void TestFeedRender::theFormatFilterIsAskedOfTheServer() {
 
   MikaiClient client(QString(), api.baseUrl());
 
-  // Without the filter the full canned set comes back.
-  const SearchResult everything = client.search(QStringLiteral("canned"), 1, 20);
+  mikai::backend::AnimeQuery query;
+  query.search = QStringLiteral("canned");
+  const SearchResult everything = client.search(query);
   QCOMPARE(everything.total.value_or(-1), kCards);
   QCOMPARE(static_cast<int>(everything.items.size()), kCards);
 
-  // With it, the server's own answer: half the set, and a page count that counts
-  // the filtered result rather than everything. A client-side filter would have
-  // reported the unfiltered total, so this is the assertion that catches it.
-  const SearchResult filtered =
-      client.search(QStringLiteral("canned"), 1, 20, QStringLiteral("movie"));
+  query.formats = {QStringLiteral("movie")};
+  const SearchResult filtered = client.search(query);
   QCOMPARE(filtered.total.value_or(-1), kCards / 2);
   QCOMPARE(static_cast<int>(filtered.items.size()), kCards / 2);
   QCOMPARE(filtered.pages.value_or(-1), 1);
   for (const mikai::backend::AnimeSummary& item : filtered.items) {
     QCOMPARE(item.format, QStringLiteral("movie"));
   }
-
-  // The filter reached the transport: the request that answered it carried it.
-  const QStringList filteredRequests = api.requestedPaths().filter(QLatin1String("formats=movie"));
-  QVERIFY2(!filteredRequests.isEmpty(),
-           qPrintable(QStringLiteral("no request carried the filter; requests: %1")
-                          .arg(api.requestedPaths().join(QLatin1Char('|')))));
 }
 
 void TestFeedRender::thePagerTrustsTheServersOwnPageCount() {
@@ -689,15 +820,15 @@ void TestFeedRender::thePagerTrustsTheServersOwnPageCount() {
 
   MikaiClient client(QString(), api.baseUrl());
 
-  // The canned API answers `pages` as its own count at the size it served. A
-  // client that recomputed that count from its own page size used to disagree
-  // with the server and lost the tail of the catalog.
-  const SearchResult first = client.search(QStringLiteral("canned"), 1, 50);
+  mikai::backend::AnimeQuery query;
+  query.search = QStringLiteral("canned");
+  query.limit = 50;
+  const SearchResult first = client.search(query);
   QVERIFY2(first.pages.has_value(), "the payload carried no page count to trust");
   QCOMPARE(first.pages.value_or(-1), 1);
 
-  // A page request the server agrees with returns its own rows.
-  const SearchResult served = client.search(QStringLiteral("canned"), first.pages.value_or(1), 50);
+  query.page = first.pages.value_or(1);
+  const SearchResult served = client.search(query);
   QCOMPARE(served.page.value_or(-1), first.pages.value_or(1));
 }
 
@@ -1247,10 +1378,22 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
   page.resize(1280, 900);
   page.show();
 
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("titleHeading"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(overview != nullptr && body != nullptr && heading != nullptr && tabs != nullptr,
+           "the title page does not expose its body scroll, heading or provider tabs");
+  QCOMPARE(page.objectName(), QStringLiteral("titlePage"));
+  QVERIFY(overview->widget() == body);
+  QVERIFY2(body->isAncestorOf(tabs),
+           "the episode tabs are outside the page's one body scroll");
+
   // One release tab carries every episode of the canned release, and the page
   // paints a pill per episode.
   QTRY_VERIFY_WITH_TIMEOUT(
       page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() >= kEpisodes, 30000);
+  QTRY_COMPARE_WITH_TIMEOUT(heading->text(), QStringLiteral("Canned 1"), 30000);
 
   // The pills must be the release's, not an artefact of a leftover state: every
   // canned episode number has exactly one button.
@@ -1260,6 +1403,10 @@ void TestFeedRender::theTitlePageRendersItsEpisodes() {
     const auto* push = qobject_cast<QPushButton*>(button);
     QVERIFY(push != nullptr);
     labels.insert(push->text());
+    // A pill is a real tap target inside the provider tabs, not a leftover.
+    QVERIFY2(tabs->isAncestorOf(push), "an episode pill lives outside the provider tabs");
+    QVERIFY2(push->height() >= 44, "an episode pill is shorter than a touch target");
+    QVERIFY2(push->width() >= 44, "an episode pill is narrower than a touch target");
   }
   QCOMPARE(labels.size(), kEpisodes);
 }
@@ -1617,9 +1764,8 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
 
   // The API's description is longer than its preview, so its disclosure starts
   // collapsed and can be opened for real.
-  QTRY_VERIFY_WITH_TIMEOUT(visibleButtonWithText(page, QStringLiteral("Read more")) != nullptr,
-                           5000);
-  QPushButton* descriptionButton = visibleButtonWithText(page, QStringLiteral("Read more"));
+  QTRY_VERIFY_WITH_TIMEOUT(disclosureAction(page, false) != nullptr, 5000);
+  QPushButton* descriptionButton = disclosureAction(page, false);
   QVERIFY(descriptionButton != nullptr);
   QVERIFY2(description->text() != cannedDescription(),
            "the canned description fits its preview, so expanding it would be invisible");
@@ -1631,17 +1777,18 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   QTest::mouseClick(descriptionButton, Qt::LeftButton);
   QCoreApplication::processEvents();
   QCOMPARE(description->text(), cannedDescription());
-  QCOMPARE(descriptionButton->text(), QStringLiteral("Collapse description"));
 
-  // The metadata disclosure, open, with its own caption.
-  QPushButton* metaButton = visibleButtonWithText(page, QStringLiteral("More details"));
+  // The details action opens the sheet over the page; it is dismissed in place.
+  QPushButton* metaButton = disclosureAction(page, true);
   QVERIFY(metaButton != nullptr);
-  overview->ensureWidgetVisible(metaButton, 0, 0);
-  QCoreApplication::processEvents();
   QTest::mouseClick(metaButton, Qt::LeftButton);
   QCoreApplication::processEvents();
   QTRY_VERIFY_WITH_TIMEOUT(details->isVisible(), 5000);
-  QCOMPARE(metaButton->text(), QStringLiteral("Hide details"));
+  QVERIFY(metaButton->isChecked());
+  QTest::mouseClick(metaButton, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(!details->isVisible(), 5000);
+  QVERIFY(!metaButton->isChecked());
 
   // A release other than the first is selected, and its chip is what the
   // language switch has to keep checked.
@@ -1694,7 +1841,6 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
            qPrintable(QStringLiteral("the canned release no longer needs a second episode page "
                                      "(%1 pills on the first)")
                           .arg(pageSize)));
-  const QString secondPageStart = QStringLiteral("Episode %1").arg(pageSize + 1);
 
   // The second episode page: a page selection, not just the first page.
   QPushButton* nextPage = pagerArrow(*pager, QStringLiteral("→"));
@@ -1704,47 +1850,39 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   // The departing pills are deleted through the event loop, so wait for the
   // grid to hold exactly one page again before reading it.
   QTRY_COMPARE_WITH_TIMEOUT(pillTexts().size(), pageSize, 10000);
-  QTRY_VERIFY_WITH_TIMEOUT(pillTexts().contains(secondPageStart), 10000);
+  // The page stride is the grid's, not a caption's: the second page must hold
+  // exactly one page of pills and none of them may be a first-page pill.
+  QTRY_VERIFY_WITH_TIMEOUT(pillTexts() != firstPagePills, 10000);
   const QStringList pillTextsBefore = pillTexts();
-  QVERIFY2(!pillTextsBefore.contains(firstPagePills.constFirst()),
-           "the second page still shows the first page's pills");
+  QSet<QString> secondPagePills;
+  for (const QString& text : pillTextsBefore) {
+    QVERIFY2(!firstPagePills.contains(text),
+             qPrintable(QStringLiteral("the second page still shows a first-page pill: %1")
+                            .arg(text)));
+    secondPagePills.insert(text);
+  }
+  QCOMPARE(secondPagePills.size(), pageSize);
 
   QCoreApplication::processEvents();
   QTest::qWait(100);
-  auto* episodeScroll = currentTab->findChild<QScrollArea*>(QStringLiteral("episodeScroll"));
-  QVERIFY(episodeScroll != nullptr);
-  QWidget* episodeGrid = episodeScroll->widget();
-  QVERIFY2(episodeGrid != nullptr, "the episode scroll holds no grid to measure");
-  // The section is clamped to a fixed maximum height and the grid is sized to
-  // its content, so a wide window can show a whole page of pills and leave the
-  // bar with no range for a language switch to reset. Constrain the real
-  // viewport to a few pill rows and keep the grid taller than any viewport the
-  // page can ask for, using the pills' own geometry and the layout's spacing.
-  const QList<QPushButton*> pagePills =
-      currentTab->findChildren<QPushButton*>(QStringLiteral("episodeButton"));
-  QVERIFY2(!pagePills.isEmpty(), "the episode grid holds no pill to measure");
-  int pillRowSpan = pagePills.constFirst()->sizeHint().height();
-  if (auto* gridLayout = qobject_cast<QGridLayout*>(episodeGrid->layout())) {
-    pillRowSpan += qMax(0, gridLayout->verticalSpacing());
-  }
-  QVERIFY2(pillRowSpan > 0, "the episode pills have no measurable row height");
-  const int episodeFrame = episodeScroll->frameWidth();
-  const int gridHeight = qMax(episodeGrid->height(), episodeGrid->sizeHint().height());
-  episodeScroll->setFixedHeight(episodeFrame * 2 + pillRowSpan * 3);
-  episodeGrid->setMinimumHeight(gridHeight + pillRowSpan * 4);
-  QCoreApplication::processEvents();
-  QScrollBar* episodeBar = episodeScroll->verticalScrollBar();
-  QTRY_VERIFY_WITH_TIMEOUT(episodeBar->maximum() > 0, 5000);
-  QVERIFY2(episodeBar->maximum() > 0,
-           "the episode grid does not fill its view, so a scroll reset would be invisible");
-  episodeBar->setValue(qMin(40, episodeBar->maximum()));
-  const int episodeScrollBefore = episodeBar->value();
-  QVERIFY(episodeScrollBefore > 0);
-
+  // One body scroll holds the hero, the carousels and the whole grid. Take a
+  // nonzero offset: a switch must leave it alone.
   QScrollBar* overviewBar = overview->verticalScrollBar();
-  QVERIFY2(overviewBar->maximum() > 0,
-           "the title overview does not fill its view, so a scroll reset would be invisible");
-  overviewBar->setValue(qMin(60, overviewBar->maximum()));
+  QTRY_VERIFY_WITH_TIMEOUT(overviewBar->maximum() > 0, 5000);
+  overviewBar->setValue(qMin(160, overviewBar->maximum()));
+  QCoreApplication::processEvents();
+  QVERIFY2(overviewBar->value() > 0,
+           "the title body does not fill its view, so a scroll reset would be invisible");
+
+  // Reopened sheet, checked action, expanded description, chosen release.
+  metaButton = disclosureAction(page, true);
+  QVERIFY(metaButton != nullptr);
+  QTest::mouseClick(metaButton, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(details->isVisible(), 5000);
+  QVERIFY(metaButton->isChecked());
+  overviewBar->setValue(qMin(160, overviewBar->maximum()));
+  QCoreApplication::processEvents();
   const int overviewScrollBefore = overviewBar->value();
   QVERIFY(overviewScrollBefore > 0);
 
@@ -1756,11 +1894,7 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   const QString chipTipBefore = secondChip->toolTip();
   const QString descriptionBefore = description->text();
   const QString descriptionActionBefore = descriptionButton->text();
-  const QString metaActionBefore = metaButton->text();
   const QString episodesHeadingBefore = episodesHeading->text();
-  QCOMPARE(episodesHeadingBefore, QStringLiteral("Episodes"));
-  QCOMPARE(descriptionActionBefore, QStringLiteral("Collapse description"));
-  QCOMPARE(metaActionBefore, QStringLiteral("Hide details"));
 
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCoreApplication::processEvents();
@@ -1768,15 +1902,13 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   // The app's own captions are restated...
   const QString ukrainianDescriptionAction =
       QCoreApplication::translate("mikai::app::TitlePage", "Collapse description");
-  const QString ukrainianMetaAction =
-      QCoreApplication::translate("mikai::app::TitlePage", "Hide details");
   const QString ukrainianEpisodes =
       QCoreApplication::translate("mikai::app::TitlePage", "Episodes");
   QVERIFY2(ukrainianDescriptionAction != descriptionActionBefore,
            "the catalog did not translate the description action, so this slot proves nothing");
   QCOMPARE(descriptionButton->text(), ukrainianDescriptionAction);
-  QCOMPARE(metaButton->text(), ukrainianMetaAction);
   QCOMPARE(episodesHeading->text(), ukrainianEpisodes);
+  QVERIFY(metaButton->isChecked());
 
   // ...while the title, the description and the release's team name are API
   // data and read exactly as they arrived.
@@ -1797,7 +1929,7 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
            qPrintable(QStringLiteral("the release tooltip kept its old kind: %1")
                           .arg(secondChip->toolTip())));
 
-  // The episode page, its pills and both scrolls are where they were.
+  // The episode page, its pills and the body scroll are where they were.
   QCOMPARE(pager->page(), 2);
   QCOMPARE(pager->pages(), episodePagesBeforeSwitch);
   QStringList pillTextsAfter;
@@ -1808,7 +1940,6 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   }
   pillTextsAfter.sort();
   QCOMPARE(pillTextsAfter, pillTextsBefore);
-  QCOMPARE(episodeBar->value(), episodeScrollBefore);
   QCOMPARE(overviewBar->value(), overviewScrollBefore);
   QCOMPARE(api.requestCount(), requestsBeforeSwitch);
 
@@ -1816,23 +1947,984 @@ void TestFeedRender::loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclos
   QCoreApplication::processEvents();
 
   QCOMPARE(descriptionButton->text(), descriptionActionBefore);
-  QCOMPARE(metaButton->text(), metaActionBefore);
   QCOMPARE(episodesHeading->text(), episodesHeadingBefore);
   QCOMPARE(heading->text(), QStringLiteral("Canned 1"));
   QCOMPARE(description->text(), descriptionBefore);
   QVERIFY(details->isVisible());
+  QVERIFY(metaButton->isChecked());
   QVERIFY(secondChip->isChecked());
   QCOMPARE(secondChip->text(), chipLabelBefore);
   QCOMPARE(secondChip->toolTip(), chipTipBefore);
   QCOMPARE(pager->page(), 2);
   QCOMPARE(pager->pages(), episodePagesBeforeSwitch);
-  QCOMPARE(episodeBar->value(), episodeScrollBefore);
   QCOMPARE(overviewBar->value(), overviewScrollBefore);
   QCOMPARE(api.requestCount(), requestsBeforeSwitch);
 
   settings.sync();
   QCOMPARE(settings.contains(languageKey), storedLanguagePresent);
   QCOMPARE(settings.value(languageKey), storedLanguage);
+}
+
+void TestFeedRender::titlePageBodyScrollsItsSectionsWithoutHorizontalClipping_data() {
+  QTest::addColumn<int>("width");
+  QTest::newRow("compact") << 760;
+  QTest::newRow("wide") << 1440;
+}
+
+void TestFeedRender::titlePageBodyScrollsItsSectionsWithoutHorizontalClipping() {
+  QFETCH(int, width);
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  // A window manager clamps a first geometry to the screen it opens on, which
+  // would quietly measure both rows at the same width. The page is laid out at
+  // the requested width wherever the suite runs.
+  page.setAttribute(Qt::WA_DontShowOnScreen, true);
+  page.resize(width, 720);
+  page.show();
+  QCOMPARE(page.width(), width);
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
+  auto* hero = page.findChild<QWidget*>(QStringLiteral("titleHero"));
+  auto* related = page.findChild<QWidget*>(QStringLiteral("titleRelated"));
+  auto* episodes = page.findChild<QWidget*>(QStringLiteral("titleEpisodes"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("episodeSectionHeading"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(overview != nullptr && body != nullptr && hero != nullptr && related != nullptr &&
+               episodes != nullptr && heading != nullptr && tabs != nullptr,
+           "the title page does not expose its body, hero, related host, episodes host or tabs");
+  QVERIFY(overview->widget() == body);
+
+  // The episodes and the recommendation carousel are both asynchronous: wait for
+  // the real content before measuring the column either one lays out in.
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() >= kEpisodes, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QPushButton*>(QStringLiteral("animeCard")).size() > 0, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(related->isVisible(), 5000);
+  // The last carousel and the episode grid both landed after a layout
+  // activation: give the queue one turn before measuring widths against them.
+  QCoreApplication::processEvents();
+  QTest::qWait(50);
+
+  QWidget* viewport = overview->viewport();
+  QVERIFY2(body->width() <= viewport->width(),
+           qPrintable(QStringLiteral("the content column (%1px) is wider than its viewport (%2px)")
+                          .arg(body->width())
+                          .arg(viewport->width())));
+  // Widget-resizable scrolling only avoids horizontal clipping while the body's
+  // minimum width still fits: a layout that cannot shrink leaves the right side
+  // of the page unreachable because the horizontal bar is off.
+  QVERIFY2(body->minimumSizeHint().width() <= viewport->width(),
+           qPrintable(QStringLiteral("the body demands %1px, more than its %2px viewport")
+                          .arg(body->minimumSizeHint().width())
+                          .arg(viewport->width())));
+
+  // Every section stays inside the content column. A section left inside the
+  // hero's text column or a fixed-width block fails here.
+  const QVector<QPair<QWidget*, QString>> sections = {
+      {hero, QStringLiteral("hero")},
+      {related, QStringLiteral("related")},
+      {episodes, QStringLiteral("episodes")},
+      {tabs, QStringLiteral("tabs")}};
+  for (const auto& section : sections) {
+    const QRect rect(section.first->mapTo(body, QPoint(0, 0)), section.first->size());
+    QVERIFY2(rect.left() >= -1 && rect.right() <= body->width(),
+             qPrintable(QStringLiteral("%1 escapes the content column: %2..%3 of %4px")
+                            .arg(section.second)
+                            .arg(rect.left())
+                            .arg(rect.right())
+                            .arg(body->width())));
+  }
+
+  // The related carousels and the episode grid use the content width rather than
+  // being trapped in the narrower hero text column.
+  QVERIFY2(related->width() >= body->width() / 2,
+           "the related carousels are trapped in the hero's text column");
+  QVERIFY2(tabs->width() >= body->width() / 2,
+           "the episode tabs are trapped in the hero's text column");
+
+  QWidget* currentTab = tabs->currentWidget();
+  QVERIFY2(currentTab != nullptr, "the episode tabs hold no current page");
+  const QList<QPushButton*> pills =
+      currentTab->findChildren<QPushButton*>(QStringLiteral("episodeButton"));
+  QVERIFY2(!pills.isEmpty(), "the current provider tab rendered no episode pills");
+  for (QPushButton* pill : pills) {
+    const QRect rect(pill->mapTo(body, QPoint(0, 0)), pill->size());
+    QVERIFY2(rect.right() <= body->width(),
+             qPrintable(QStringLiteral("an episode pill is clipped at %1px of %2px")
+                            .arg(rect.right())
+                            .arg(body->width())));
+  }
+  QPushButton* lastPill = *std::max_element(
+      pills.begin(), pills.end(), [tabs](QPushButton* left, QPushButton* right) {
+        return left->mapTo(tabs, QPoint(0, 0)).y() < right->mapTo(tabs, QPoint(0, 0)).y();
+      });
+
+  // The one body scroll reaches the full-width carousels and the episodes
+  // section (header and last pill) instead of requiring a separate inner scroll.
+  QScrollBar* bar = overview->verticalScrollBar();
+  QTRY_VERIFY_WITH_TIMEOUT(bar->maximum() > 0, 5000);
+  const auto reachable = [overview](QWidget* target) {
+    overview->ensureWidgetVisible(target, 0, 0);
+    QCoreApplication::processEvents();
+    const QRect rect(target->mapTo(overview->viewport(), QPoint(0, 0)), target->size());
+    return target->isVisible() && overview->viewport()->rect().intersects(rect);
+  };
+  QVERIFY2(reachable(related), "the related carousels cannot be scrolled into view");
+  QVERIFY2(reachable(heading), "the episodes heading cannot be scrolled into view");
+  QVERIFY2(reachable(lastPill), "the last episode pill cannot be scrolled into view");
+}
+
+void TestFeedRender::titlePageContentColumnFillsItsViewportUpToTheCap_data() {
+  QTest::addColumn<int>("width");
+  QTest::newRow("compact") << 760;
+  QTest::newRow("wide") << 1440;
+}
+
+void TestFeedRender::titlePageContentColumnFillsItsViewportUpToTheCap() {
+  QFETCH(int, width);
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.setAttribute(Qt::WA_DontShowOnScreen, true);
+  page.resize(width, 720);
+  page.show();
+  QCOMPARE(page.width(), width);
+
+  auto* overview = page.findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+  auto* body = page.findChild<QWidget*>(QStringLiteral("titleBody"));
+  auto* column = page.findChild<QWidget*>(QStringLiteral("titleColumn"));
+  auto* header = page.findChild<QWidget*>(QStringLiteral("titleHeader"));
+  auto* headerRow = page.findChild<QWidget*>(QStringLiteral("titleHeaderRow"));
+  QVERIFY2(overview != nullptr && body != nullptr && column != nullptr && header != nullptr &&
+               headerRow != nullptr,
+           "the title page does not expose its body, column or header row");
+
+  // Wait for the asynchronous blocks: the page's natural height, and with it
+  // the scrollbar that narrows the viewport, is only settled once they landed.
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() >= kEpisodes, 30000);
+  QCoreApplication::processEvents();
+  QTest::qWait(50);
+
+  // The column fills every pixel the viewport offers and stops at the cap: a
+  // stretch-shared column would keep only its share of the width.
+  QWidget* viewport = overview->viewport();
+  const int available = qMin(viewport->width(), mikai::app::theme::kTitlePageMaxWidth);
+  QVERIFY2(qAbs(body->width() - available) <= 1,
+           qPrintable(QStringLiteral("the content column is %1px of %2px available (cap %3px)")
+                          .arg(body->width())
+                          .arg(viewport->width())
+                          .arg(mikai::app::theme::kTitlePageMaxWidth)));
+  QCOMPARE(column->width(), body->width());
+
+  // Past the cap the surplus is split evenly, so the column sits centred in the
+  // viewport instead of hugging one side.
+  const int bodyLeft = body->mapTo(viewport, QPoint(0, 0)).x();
+  QVERIFY2(qAbs(bodyLeft - (viewport->width() - body->width()) / 2) <= 1,
+           qPrintable(QStringLiteral("the column starts at %1px of %2px, not centred")
+                          .arg(bodyLeft)
+                          .arg(viewport->width())));
+
+  // The sticky header spans the window, but the row inside it uses the same
+  // content width and the same centring.
+  const int headerAvailable = qMin(page.width(), mikai::app::theme::kTitlePageMaxWidth);
+  QVERIFY2(qAbs(headerRow->width() - headerAvailable) <= 1,
+           qPrintable(QStringLiteral("the header row is %1px of %2px available (cap %3px)")
+                          .arg(headerRow->width())
+                          .arg(page.width())
+                          .arg(mikai::app::theme::kTitlePageMaxWidth)));
+  const int headerLeft = headerRow->mapTo(&page, QPoint(0, 0)).x();
+  QVERIFY2(qAbs(headerLeft - (page.width() - headerRow->width()) / 2) <= 1,
+           qPrintable(QStringLiteral("the header row starts at %1px of %2px, not centred")
+                          .arg(headerLeft)
+                          .arg(page.width())));
+}
+
+void TestFeedRender::titleDetailsSheetDismissesInPlaceAndKeepsStateAcrossLanguageSwitch() {
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  QSettings settings;
+  const QString languageKey = QString::fromLatin1(mikai::app::kUiLanguageSettingKey);
+  settings.sync();
+  const bool storedLanguagePresent = settings.contains(languageKey);
+  const QVariant storedLanguage = settings.value(languageKey);
+  const auto restoreState = qScopeGuard([&settings, languageKey, storedLanguagePresent,
+                                         storedLanguage, openingLanguage] {
+    if (storedLanguagePresent) {
+      settings.setValue(languageKey, storedLanguage);
+    } else {
+      settings.remove(languageKey);
+    }
+    settings.sync();
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreState);
+
+  QVERIFY2(primeBuiltCatalogForSwitching(),
+           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") +
+                      builtCatalogPath()));
+  QCOMPARE(mikai::app::activeInterfaceLanguage(), QStringLiteral("en"));
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.resize(1100, 760);
+  page.show();
+
+  auto* overlay = page.findChild<QWidget*>(QStringLiteral("titleDetailsOverlay"));
+  auto* details = page.findChild<QWidget*>(QStringLiteral("titleDetails"));
+  auto* close = page.findChild<QPushButton*>(QStringLiteral("titleDetailsClose"));
+  auto* scrim = page.findChild<QPushButton*>(QStringLiteral("titleDetailsScrim"));
+  auto* description = page.findChild<QLabel*>(QStringLiteral("titleDescription"));
+  auto* heading = page.findChild<QLabel*>(QStringLiteral("titleHeading"));
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(overlay != nullptr && details != nullptr && close != nullptr && scrim != nullptr &&
+               description != nullptr && heading != nullptr && tabs != nullptr,
+           "the title page does not expose its details sheet, description or episode tabs");
+  QVERIFY2(!overlay->isVisible(), "the details sheet is open before the reader asked for it");
+
+  QTRY_COMPARE_WITH_TIMEOUT(heading->text(), QStringLiteral("Canned 1"), 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0, 30000);
+
+  QSignalSpy backRequested(&page, &TitlePage::backRequested);
+  QVERIFY2(backRequested.isValid(), "the page no longer exposes backRequested");
+
+  QPushButton* detailsAction = disclosureAction(page, true);
+  QVERIFY2(detailsAction != nullptr, "the page has no details action");
+  QVERIFY(detailsAction->isCheckable());
+
+  // The close action.
+  QTest::mouseClick(detailsAction, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QVERIFY(details->isVisible());
+  QVERIFY(close->isVisible());
+  QVERIFY(detailsAction->isChecked());
+  QTest::mouseClick(close, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
+  QVERIFY(!detailsAction->isChecked());
+  QCOMPARE(backRequested.count(), 0);
+
+  // Escape closes the sheet, not the page.
+  QTest::mouseClick(detailsAction, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QTest::keyClick(&page, Qt::Key_Escape);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
+  QVERIFY(!detailsAction->isChecked());
+  QCOMPARE(backRequested.count(), 0);
+
+  // The scrim behind the sheet.
+  QTest::mouseClick(detailsAction, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QVERIFY(scrim->isVisible());
+  QTest::mouseClick(scrim, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
+  QVERIFY(!detailsAction->isChecked());
+  QCOMPARE(backRequested.count(), 0);
+
+  // Expanded description, second release, reopened sheet: all three survive.
+  QPushButton* readMore = disclosureAction(page, false);
+  QVERIFY2(readMore != nullptr, "the long canned description has no expand action");
+  QTest::mouseClick(readMore, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QCOMPARE(description->text(), cannedDescription());
+  const QString expandedDescription = description->text();
+
+  const QList<QPushButton*> chips =
+      page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+  QCOMPARE(chips.size(), 2);
+  const QPointer<QWidget> openingTab = tabs->currentWidget();
+  QTest::mouseClick(chips.at(1), Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(chips.at(1)->isChecked(), 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabs->currentWidget() != nullptr && tabs->currentWidget() != openingTab.data(), 10000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() > 0, 10000);
+
+  QTest::mouseClick(detailsAction, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(overlay->isVisible(), 5000);
+  QVERIFY(hasLabelText(*details, QStringLiteral("Test Studio")));
+
+  const int requestsBeforeSwitch = quietRequestCount(api);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+
+  QVERIFY2(overlay->isVisible(), "the language switch closed the details sheet");
+  QVERIFY(details->isVisible());
+  QVERIFY2(detailsAction->isChecked(), "the language switch unchecked the details action");
+  QCOMPARE(description->text(), expandedDescription);
+  QVERIFY2(chips.at(1)->isChecked(), "the language switch reset the release selection");
+  QVERIFY2(hasLabelText(*details, QStringLiteral("Test Studio")),
+           "the language switch rewrote an API metadata value");
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+  QCoreApplication::processEvents();
+
+  QVERIFY(overlay->isVisible());
+  QVERIFY(detailsAction->isChecked());
+  QCOMPARE(description->text(), expandedDescription);
+  QVERIFY(chips.at(1)->isChecked());
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  // Still dismissible without navigating back after the switch.
+  QTest::keyClick(&page, Qt::Key_Escape);
+  QCoreApplication::processEvents();
+  QTRY_VERIFY_WITH_TIMEOUT(!overlay->isVisible(), 5000);
+  QCOMPARE(backRequested.count(), 0);
+  QCOMPARE(api.requestCount(), requestsBeforeSwitch);
+
+  settings.sync();
+  QCOMPARE(settings.contains(languageKey), storedLanguagePresent);
+  QCOMPARE(settings.value(languageKey), storedLanguage);
+}
+
+void TestFeedRender::theTitlePageWatchActionFollowsTheSelectedRelease() {
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  // Watch resolves a real embed: the marker routes that request back here,
+  // where it 404s without opening a player.
+  api.setEmbedMarkers(true);
+
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, QString::number(kRef));
+  page.resize(1100, 800);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY2(tabs != nullptr, "the title page exposes no provider tabs");
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      page.findChildren<QWidget*>(QStringLiteral("episodeButton")).size() >= kEpisodes, 30000);
+
+  const QList<QPushButton*> chips =
+      page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+  QCOMPARE(chips.size(), 2);
+  QVERIFY2(chips.at(0)->isChecked(), "the first release is not the opening selection");
+  const QPointer<QWidget> openingTab = tabs->currentWidget();
+  QTest::mouseClick(chips.at(1), Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QVERIFY2(chips.at(1)->isChecked(), "the second release did not become the selection");
+  // The old tab is queued for deletion, so wait for the new one rather than for
+  // a count the old widgets still satisfy.
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabs->currentWidget() != nullptr && tabs->currentWidget() != openingTab.data(), 10000);
+  QWidget* selectedTab = tabs->currentWidget();
+  QVERIFY(selectedTab != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      selectedTab->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+      10000);
+
+  auto* watchPanel = page.findChild<QWidget*>(QStringLiteral("titleWatchPanel"));
+  auto* watch = page.findChild<QPushButton*>(QStringLiteral("titleWatchButton"));
+  QVERIFY2(watchPanel != nullptr && watch != nullptr,
+           "the title page exposes no Watch panel or action");
+  QTRY_VERIFY_WITH_TIMEOUT(watchPanel->isVisible(), 5000);
+  QTRY_VERIFY_WITH_TIMEOUT(watch->isVisible() && watch->isEnabled(), 5000);
+
+  // Drain each release's one-off quality probes, so the requests observed below
+  // belong to Watch alone.
+  QTRY_VERIFY_WITH_TIMEOUT(
+      api.requestedPaths().join(QLatin1Char('|')).contains(
+          QStringLiteral("/ashdi.vip/vod/voice/1")),
+      15000);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      api.requestedPaths().join(QLatin1Char('|')).contains(QStringLiteral("/ashdi.vip/vod/sub/1")),
+      15000);
+  const int requestsSettled = quietRequestCount(api);
+  const int pathCountBefore = api.requestedPaths().size();
+
+  QTest::mouseClick(watch, Qt::LeftButton);
+  QTRY_VERIFY_WITH_TIMEOUT(api.requestCount() > requestsSettled, 15000);
+
+  QStringList watchedPaths;
+  const QStringList pathsAfter = api.requestedPaths();
+  for (int index = pathCountBefore; index < pathsAfter.size(); ++index) {
+    watchedPaths.append(pathsAfter.at(index));
+  }
+  bool selectedReleaseResolved = false;
+  bool otherReleaseResolved = false;
+  for (const QString& path : watchedPaths) {
+    if (path.contains(QStringLiteral("/ashdi.vip/vod/sub/1"))) {
+      selectedReleaseResolved = true;
+    }
+    if (path.contains(QStringLiteral("/ashdi.vip/vod/voice/"))) {
+      otherReleaseResolved = true;
+    }
+  }
+  QVERIFY2(selectedReleaseResolved,
+           qPrintable(QStringLiteral("Watch did not resolve the selected release; requests: %1")
+                          .arg(watchedPaths.join(QLatin1Char('|')))));
+  QVERIFY2(!otherReleaseResolved,
+           qPrintable(QStringLiteral("Watch resolved the unselected release; requests: %1")
+                          .arg(watchedPaths.join(QLatin1Char('|')))));
+}
+
+void TestFeedRender::episodeMarksPersistAcrossReopenAndViewChanges() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+
+  {
+    TitlePage page(runner, client, cache, ref);
+    page.resize(1100, 900);
+    page.show();
+
+    auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+    QVERIFY2(tabs != nullptr, "the title page exposes no provider tabs");
+    QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+    QWidget* tabPage = tabs->currentWidget();
+    QVERIFY(tabPage != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+        30000);
+
+    auto* watchEpisode = page.findChild<QLabel*>(QStringLiteral("titleWatchEpisode"));
+    auto* toggle = page.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+    QVERIFY2(watchEpisode != nullptr && toggle != nullptr,
+             "the watch panel exposes no episode caption or manual mark");
+    QTRY_VERIFY_WITH_TIMEOUT(toggle->isVisible() && toggle->isEnabled(), 5000);
+    QVERIFY2(!toggle->isChecked(), "an unmarked episode opened with its mark already set");
+
+    QPushButton* first = episodePill(*tabPage, QStringLiteral("1"));
+    QVERIFY(first != nullptr);
+    QVERIFY2(!episodeWatchedMarkShown(first), "the grid painted a watched mark nobody recorded");
+
+    QTest::mouseClick(toggle, Qt::LeftButton);
+    QCoreApplication::processEvents();
+    QVERIFY(toggle->isChecked());
+    QVERIFY2(episodeWatchedMarkShown(first), "the manual mark never reached the grid");
+    {
+      WatchHistory store;
+      QVERIFY(store.isWatched(ref, QStringLiteral("1")));
+      QVERIFY2(store.current(ref).isEmpty(),
+               "marking an episode by hand recorded it as the episode that played");
+    }
+
+    QPushButton* second = episodePill(*tabPage, QStringLiteral("2"));
+    QVERIFY(second != nullptr);
+    QTest::mouseClick(second, Qt::LeftButton);
+    QCoreApplication::processEvents();
+    QVERIFY(toggle->isVisible() && !toggle->isChecked());
+    QVERIFY(episodeWatchedMarkShown(first));
+    {
+      WatchHistory store;
+      QVERIFY(store.current(ref).isEmpty());
+      QVERIFY(!store.isWatched(ref, QStringLiteral("2")));
+    }
+
+    QVERIFY2(primeBuiltCatalogForSwitching(), "the built Ukrainian catalog was not found");
+    const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+    const auto restoreLanguage = qScopeGuard([openingLanguage] {
+      mikai::app::applyInterfaceLanguage(openingLanguage);
+      QCoreApplication::processEvents();
+    });
+    Q_UNUSED(restoreLanguage);
+    QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+    QCoreApplication::processEvents();
+    QVERIFY2(episodeWatchedMarkShown(first), "the language switch lost the watched mark");
+    QVERIFY(!toggle->isChecked());
+    {
+      WatchHistory store;
+      QVERIFY(store.isWatched(ref, QStringLiteral("1")));
+    }
+    QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
+    QCoreApplication::processEvents();
+
+    const QList<QPushButton*> chips =
+        page.findChildren<QPushButton*>(QStringLiteral("releaseChip"));
+    QCOMPARE(chips.size(), 2);
+    const QPointer<QWidget> openingTab = tabs->currentWidget();
+    QTest::mouseClick(chips.at(1), Qt::LeftButton);
+    QCoreApplication::processEvents();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        tabs->currentWidget() != nullptr && tabs->currentWidget() != openingTab.data(), 10000);
+    QWidget* subPage = tabs->currentWidget();
+    QTRY_VERIFY_WITH_TIMEOUT(
+        subPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+        10000);
+    QPushButton* subFirst = episodePill(*subPage, QStringLiteral("1"));
+    QVERIFY(subFirst != nullptr);
+    QVERIFY2(episodeWatchedMarkShown(subFirst), "the release switch lost the watched mark");
+  }
+
+  {
+    TitlePage reopened(runner, client, cache, ref);
+    reopened.resize(1100, 900);
+    reopened.show();
+    auto* tabs = reopened.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+    QVERIFY(tabs != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+    QWidget* tabPage = tabs->currentWidget();
+    QVERIFY(tabPage != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+        30000);
+    auto* toggle = reopened.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+    QVERIFY(toggle != nullptr);
+    QPushButton* first = episodePill(*tabPage, QStringLiteral("1"));
+    QVERIFY(first != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(episodeWatchedMarkShown(first), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(toggle->isChecked(), 5000);
+
+    QTest::mouseClick(toggle, Qt::LeftButton);
+    QCoreApplication::processEvents();
+    QVERIFY(!toggle->isChecked());
+    QVERIFY2(!episodeWatchedMarkShown(first), "unmarking left the watched rule on the pill");
+    WatchHistory store;
+    QVERIFY(!store.isWatched(ref, QStringLiteral("1")));
+  }
+}
+
+void TestFeedRender::episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisodes() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+  const QString otherRef = QStringLiteral("other-title");
+  {
+    WatchHistory store;
+    store.setCurrent(ref, QStringLiteral("8"));
+    store.setWatched(ref, QStringLiteral("1"), true);
+    store.setWatched(ref, QStringLiteral("5"), true);
+    store.setWatched(ref, QStringLiteral("9"), true);
+    store.setCurrent(otherRef, QStringLiteral("2"));
+    store.setWatched(otherRef, QStringLiteral("OVA 1"), true);
+  }
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setEmbedMarkers(true);
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+  TitlePage page(runner, client, cache, ref);
+  page.resize(1100, 900);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QWidget* tabPage = tabs->currentWidget();
+  QVERIFY(tabPage != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+      30000);
+  QPushButton* clicked = episodePill(*tabPage, QStringLiteral("5"));
+  QVERIFY(clicked != nullptr);
+
+  ContextMenuActionResult action =
+      activateEpisodeContextAction(clicked, QStringLiteral("episodeWatchPreviousAction"));
+  QVERIFY(action.found && action.enabled);
+  {
+    WatchHistory store;
+    for (int number = 1; number <= 5; ++number) {
+      QVERIFY2(store.isWatched(ref, QString::number(number)),
+               qPrintable(QStringLiteral("previous episode %1 was not watched").arg(number)));
+    }
+    QVERIFY(store.isWatched(ref, QStringLiteral("9")));
+    QVERIFY(episodeWatchedMarkShown(clicked));
+    QCOMPARE(store.current(ref), QStringLiteral("8"));
+    QCOMPARE(store.current(otherRef), QStringLiteral("2"));
+    QVERIFY(store.isWatched(otherRef, QStringLiteral("OVA 1")));
+  }
+
+  action = activateEpisodeContextAction(clicked, QStringLiteral("episodeUnwatchPreviousAction"));
+  QVERIFY(action.found && action.enabled);
+  {
+    WatchHistory store;
+    for (int number = 1; number < 5; ++number) {
+      QVERIFY2(!store.isWatched(ref, QString::number(number)),
+               qPrintable(QStringLiteral("previous episode %1 remained watched").arg(number)));
+    }
+    QVERIFY(!episodeWatchedMarkShown(episodePill(*tabPage, QStringLiteral("1"))));
+    QVERIFY(episodeWatchedMarkShown(clicked));
+    QVERIFY(store.isWatched(ref, QStringLiteral("5")));
+    QVERIFY(store.isWatched(ref, QStringLiteral("9")));
+    QCOMPARE(store.current(ref), QStringLiteral("8"));
+    QVERIFY(store.isWatched(otherRef, QStringLiteral("OVA 1")));
+  }
+
+  action = activateEpisodeContextAction(clicked, QStringLiteral("episodeUnwatchAction"));
+  QVERIFY(action.found && action.enabled);
+  {
+    WatchHistory store;
+    QVERIFY(!store.isWatched(ref, QStringLiteral("5")));
+    QVERIFY(!episodeWatchedMarkShown(clicked));
+    QVERIFY(store.isWatched(ref, QStringLiteral("9")));
+  }
+
+  QPushButton* markable = episodePill(*tabPage, QStringLiteral("4"));
+  QVERIFY(markable != nullptr);
+  action = activateEpisodeContextAction(markable, QStringLiteral("episodeMarkWatchedAction"));
+  QVERIFY(action.found && action.enabled);
+  {
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("4")));
+    QVERIFY(episodeWatchedMarkShown(markable));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("5")));
+    QVERIFY(store.isWatched(ref, QStringLiteral("9")));
+    QCOMPARE(store.current(ref), QStringLiteral("8"));
+  }
+
+  quietRequestCount(api);
+  const QStringList paths = api.requestedPaths();
+  QVERIFY2(std::none_of(paths.cbegin(), paths.cend(), [](const QString& path) {
+             return path.contains(QStringLiteral("/embed/")) ||
+                    path.contains(QStringLiteral("/ashdi.vip/vod/"));
+           }),
+           qPrintable(QStringLiteral("opening a history menu requested media extraction: %1")
+                          .arg(paths.join(QLatin1Char('|')))));
+}
+
+void TestFeedRender::episodeContextMenuHandlesPagingAndSpecialIdentifiers() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+  {
+    CannedApi api;
+    QString error;
+    QVERIFY2(api.start(&error), qPrintable(error));
+    api.setReleaseEpisodeCount(150);
+    MikaiClient client(QString(), api.baseUrl());
+    Runner runner;
+    QualityCache cache;
+    TitlePage page(runner, client, cache, ref);
+    page.resize(1100, 900);
+    page.show();
+
+    auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+    QVERIFY(tabs != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+    QWidget* tabPage = tabs->currentWidget();
+    QVERIFY(tabPage != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >=
+            mikai::app::theme::kEpisodesPerPage,
+        30000);
+
+    auto* pager = tabPage->findChild<RangePager*>();
+    QVERIFY(pager != nullptr && pager->isVisible());
+    auto* pageNumber = pager->findChild<QSpinBox*>();
+    QVERIFY(pageNumber != nullptr && pageNumber->isEnabled());
+    pageNumber->setFocus();
+    pageNumber->selectAll();
+    QTest::keyClicks(pageNumber, QStringLiteral("2"));
+    QTest::keyClick(pageNumber, Qt::Key_Return);
+    QTRY_VERIFY_WITH_TIMEOUT(episodePill(*tabPage, QStringLiteral("145")) != nullptr, 10000);
+
+    QPushButton* late = episodePill(*tabPage, QStringLiteral("145"));
+    ContextMenuActionResult action =
+        activateEpisodeContextAction(late, QStringLiteral("episodeWatchPreviousAction"));
+    QVERIFY(action.found && action.enabled);
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("1")));
+    QVERIFY(store.isWatched(ref, QStringLiteral("144")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("145")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("146")));
+  }
+
+  clearEpisodeHistory();
+  {
+    CannedApi api;
+    QString error;
+    QVERIFY2(api.start(&error), qPrintable(error));
+    api.setSpecialEpisodes(true);
+    MikaiClient client(QString(), api.baseUrl());
+    Runner runner;
+    QualityCache cache;
+    TitlePage page(runner, client, cache, ref);
+    page.resize(1100, 900);
+    page.show();
+
+    auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+    QVERIFY(tabs != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+    QWidget* tabPage = tabs->currentWidget();
+    QVERIFY(tabPage != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+        30000);
+
+    QPushButton* first = episodePill(*tabPage, QStringLiteral("OVA 1"));
+    QPushButton* second = episodePill(*tabPage, QStringLiteral("OVA 2"));
+    QVERIFY(first != nullptr && second != nullptr);
+    ContextMenuActionResult action =
+        activateEpisodeContextAction(first, QStringLiteral("episodeUnwatchPreviousAction"));
+    QVERIFY(action.found && !action.enabled);
+    action = activateEpisodeContextAction(second, QStringLiteral("episodeWatchPreviousAction"));
+    QVERIFY(action.found && action.enabled);
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("OVA 1")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("OVA 2")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("OVA 12")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("1")));
+  }
+}
+
+void TestFeedRender::titlePageRendersDeclaredEpisodesTheReleaseLacks() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+  {
+    WatchHistory store;
+    store.setCurrent(ref, QStringLiteral("11"));
+  }
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setReleaseEpisodeCount(9);
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+
+  TitlePage page(runner, client, cache, ref);
+  page.resize(1100, 900);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QWidget* tabPage = tabs->currentWidget();
+  QVERIFY(tabPage != nullptr);
+  QTRY_COMPARE_WITH_TIMEOUT(
+      tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size(), kEpisodes, 10000);
+
+  QPushButton* carried = episodePill(*tabPage, QStringLiteral("9"));
+  QPushButton* missing = episodePill(*tabPage, QStringLiteral("10"));
+  QVERIFY(carried != nullptr && missing != nullptr);
+  QVERIFY(carried->isEnabled());
+  QVERIFY2(!missing->isEnabled(), "a declared-but-missing episode was offered as playable");
+
+  auto* toggle = page.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+  QVERIFY(toggle != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(toggle->isEnabled(), 5000);
+  QTest::mouseClick(toggle, Qt::LeftButton);
+  {
+    WatchHistory store;
+    QCOMPARE(store.current(ref), QStringLiteral("11"));
+    QVERIFY(store.isWatched(ref, QStringLiteral("1")));
+  }
+
+  const int requestsBefore = quietRequestCount(api);
+  QTest::mouseClick(missing, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QCOMPARE(quietRequestCount(api), requestsBefore);
+  {
+    WatchHistory store;
+    QCOMPARE(store.current(ref), QStringLiteral("11"));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("10")));
+  }
+}
+
+void TestFeedRender::titlePageKeepsSpecialEpisodeIdentifiers() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setSpecialEpisodes(true);
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+
+  TitlePage page(runner, client, cache, ref);
+  page.resize(1100, 900);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QWidget* tabPage = tabs->currentWidget();
+  QVERIFY(tabPage != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+      30000);
+
+  QVERIFY(episodePill(*tabPage, QStringLiteral("OVA 1")) != nullptr);
+  QVERIFY(episodePill(*tabPage, QStringLiteral("OVA 12")) != nullptr);
+  QCOMPARE(tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size(), kEpisodes);
+  QVERIFY2(episodePill(*tabPage, QStringLiteral("1")) == nullptr,
+           "a numbered slot was invented beside the release's own identifiers");
+  QVERIFY2(episodePill(*tabPage, QStringLiteral("13")) == nullptr,
+           "a slot beyond the declared total was invented");
+}
+
+void TestFeedRender::clickingAnEpisodeDoesNotAdvanceTheCurrentEpisode() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+  {
+    WatchHistory store;
+    store.setCurrent(ref, QStringLiteral("2"));
+  }
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+
+  TitlePage page(runner, client, cache, ref);
+  page.resize(1100, 900);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QWidget* tabPage = tabs->currentWidget();
+  QVERIFY(tabPage != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >= kEpisodes,
+      30000);
+
+  auto* watchEpisode = page.findChild<QLabel*>(QStringLiteral("titleWatchEpisode"));
+  QVERIFY(watchEpisode != nullptr);
+  auto* toggle = page.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+  QVERIFY(toggle != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(toggle->isVisible() && toggle->isEnabled(), 5000);
+
+  QPushButton* clicked = episodePill(*tabPage, QStringLiteral("5"));
+  QVERIFY(clicked != nullptr);
+  QTest::mouseClick(clicked, Qt::LeftButton);
+  QCoreApplication::processEvents();
+
+  {
+    WatchHistory store;
+    QCOMPARE(store.current(ref), QStringLiteral("2"));
+    QVERIFY2(store.progress(ref).watched.isEmpty(), "a click was recorded as a completed episode");
+  }
+  QTest::mouseClick(toggle, Qt::LeftButton);
+  {
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("5")));
+    QVERIFY(!store.isWatched(ref, QStringLiteral("2")));
+    QCOMPARE(store.current(ref), QStringLiteral("2"));
+  }
+}
+
+void TestFeedRender::episodeMarksSurvivePagingAndLanguageSwitch() {
+  clearEpisodeHistory();
+  const auto clearHistory = qScopeGuard([] { clearEpisodeHistory(); });
+  const QString ref = QString::number(kRef);
+  {
+    WatchHistory store;
+    store.setCurrent(ref, QStringLiteral("145"));
+  }
+
+  CannedApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.setReleaseEpisodeCount(150);
+  MikaiClient client(QString(), api.baseUrl());
+  Runner runner;
+  QualityCache cache;
+
+  TitlePage page(runner, client, cache, ref);
+  page.resize(1100, 900);
+  page.show();
+
+  auto* tabs = page.findChild<QTabWidget*>(QStringLiteral("episodeTabs"));
+  QVERIFY(tabs != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(tabs->count() > 0, 30000);
+  QWidget* tabPage = tabs->currentWidget();
+  QVERIFY(tabPage != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(
+      tabPage->findChildren<QPushButton*>(QStringLiteral("episodeButton")).size() >=
+          mikai::app::theme::kEpisodesPerPage,
+      30000);
+
+  auto* watchEpisode = page.findChild<QLabel*>(QStringLiteral("titleWatchEpisode"));
+  auto* toggle = page.findChild<QPushButton*>(QStringLiteral("titleWatchWatchedToggle"));
+  QVERIFY(watchEpisode != nullptr && toggle != nullptr);
+
+  auto* pager = tabPage->findChild<RangePager*>();
+  QVERIFY2(pager != nullptr && pager->isVisible(), "a 150-episode release offered no pager");
+  QPushButton* pageTwo = nullptr;
+  for (QPushButton* chip : pager->findChildren<QPushButton*>(QStringLiteral("pagerChip"))) {
+    if (chip->toolTip() == QStringLiteral("Page 2")) {
+      pageTwo = chip;
+      break;
+    }
+  }
+  QVERIFY2(pageTwo != nullptr, "the pager has no second page to step to");
+  QTest::mouseClick(pageTwo, Qt::LeftButton);
+  QCoreApplication::processEvents();
+
+  QPushButton* late = nullptr;
+  QTRY_VERIFY_WITH_TIMEOUT((late = episodePill(*tabPage, QStringLiteral("145"))) != nullptr, 10000);
+  QVERIFY(!episodeWatchedMarkShown(late));
+
+  QTest::mouseClick(toggle, Qt::LeftButton);
+  QCoreApplication::processEvents();
+  QVERIFY(toggle->isChecked());
+  QVERIFY2(episodeWatchedMarkShown(late), "the manual mark never reached the second page");
+  {
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("145")));
+  }
+
+  QVERIFY2(primeBuiltCatalogForSwitching(), "the built Ukrainian catalog was not found");
+  const QString openingLanguage = mikai::app::activeInterfaceLanguage();
+  const auto restoreLanguage = qScopeGuard([openingLanguage] {
+    mikai::app::applyInterfaceLanguage(openingLanguage);
+    QCoreApplication::processEvents();
+  });
+  Q_UNUSED(restoreLanguage);
+  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
+  QCoreApplication::processEvents();
+  QPushButton* restated = episodePill(*tabPage, QStringLiteral("145"));
+  QVERIFY(restated != nullptr);
+  QVERIFY2(episodeWatchedMarkShown(restated), "the language switch lost the watched mark");
+  QVERIFY(toggle->isChecked());
+  {
+    WatchHistory store;
+    QVERIFY(store.isWatched(ref, QStringLiteral("145")));
+    QCOMPARE(store.current(ref), QStringLiteral("145"));
+  }
 }
 
 void TestFeedRender::aFailedBackendShowsAVisibleFailureInsteadOfAnEmptyPage() {

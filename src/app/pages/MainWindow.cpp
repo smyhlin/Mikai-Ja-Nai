@@ -263,7 +263,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 void MainWindow::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Escape) {
         if (title_ != nullptr && stack_ != nullptr && stack_->currentWidget() == title_) {
-            goSearch();
+            title_->escapePage();
             event->accept();
             return;
         }
@@ -1087,6 +1087,7 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
     title_ = new TitlePage(*runner_, client_, *qualityCache_, ref, poster,
                            hint != nullptr ? *hint : backend::AnimeDetail(), stack_);
     connect(title_, &TitlePage::backRequested, this, &MainWindow::goSearch);
+    connect(title_, &TitlePage::homeRequested, this, &MainWindow::goHome);
     connect(title_, &TitlePage::settingsRequested, this, &MainWindow::openSettings);
     // An episode player's processing-failure remedy reaches the same Processing
     // surface as the standalone player's, aimed at the dialog that raised it.
@@ -1104,6 +1105,14 @@ bool MainWindow::openTitle(const QString& ref, const QString& poster, bool prese
                 openRelated(target, targetPoster);
             });
     connect(title_, &TitlePage::recentTitleLoaded, search_, &SearchPage::recordRecentTitle);
+    connect(title_, &TitlePage::teamRequested, this, [this](const QString& ref) {
+        if (!disposeTitle()) return;
+        titleHistory_.clear();
+        titleRef_.clear();
+        titlePoster_.clear();
+        stack_->setCurrentWidget(search_);
+        search_->browseTeam(ref);
+    });
     stack_->addWidget(title_);
     stack_->setCurrentWidget(title_);
     return true;
@@ -1137,6 +1146,17 @@ void MainWindow::goSearch() {
     titleRef_.clear();
     titlePoster_.clear();
     stack_->setCurrentWidget(search_);
+}
+
+void MainWindow::goHome() {
+    if (!disposeTitle()) {
+        return;
+    }
+    titleHistory_.clear();
+    titleRef_.clear();
+    titlePoster_.clear();
+    stack_->setCurrentWidget(search_);
+    search_->returnHome();
 }
 
 bool MainWindow::disposeTitle() {

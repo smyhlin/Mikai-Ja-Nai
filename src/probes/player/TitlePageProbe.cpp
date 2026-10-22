@@ -781,30 +781,32 @@ int main(int argc, char** argv) {
         }
 
         QWidget* first = tabs->widget(0);
-        auto* scroll = first->findChild<QScrollArea*>(QStringLiteral("episodeScroll"));
-        QWidget* grid = scroll != nullptr ? scroll->widget() : nullptr;
-        const auto pills = grid != nullptr
-                               ? grid->findChildren<QPushButton*>(QStringLiteral("episodeButton"))
-                               : QList<QPushButton*>();
-        bool layoutPass = scroll != nullptr && !pills.isEmpty();
-        if (layoutPass && scroll->verticalScrollBar()->maximum() == 0) {
+        // The episode grid now expands inside the page's one body scroll: there
+        // is no inner episode viewport. Measure the pills where they land and
+        // prove the body column still fits its scroll viewport.
+        const auto pills = first->findChildren<QPushButton*>(QStringLiteral("episodeButton"));
+        auto* overview = page->findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+        auto* body = page->findChild<QWidget*>(QStringLiteral("titleBody"));
+        bool layoutPass = overview != nullptr && body != nullptr && !pills.isEmpty();
+        if (layoutPass) {
+            const int viewportWidth = overview->viewport()->width();
+            layoutPass = body->minimumSizeHint().width() <= viewportWidth;
             int lastPillBottom = 0;
             for (QPushButton* button : pills) {
-                lastPillBottom = qMax(
-                    lastPillBottom,
-                    button->mapTo(scroll->viewport(), QPoint(0, button->height())).y());
+                const int right = button->mapTo(body, QPoint(button->width(), 0)).x();
+                layoutPass = layoutPass && right <= body->width() + 1;
+                lastPillBottom = qMax(lastPillBottom,
+                                      button->mapTo(first, QPoint(0, button->height())).y());
             }
-            const int trailingGap = scroll->viewport()->height() - lastPillBottom;
-            layoutPass = trailingGap <= 1;
+            layoutPass = layoutPass && lastPillBottom <= first->height() + 1;
             std::fprintf(stderr,
-                         "TITLE-PROBE: episode footer gap=%dpx viewport=%dpx pills=%d %s\n",
-                         trailingGap, scroll->viewport()->height(),
-                         static_cast<int>(pills.size()),
+                         "TITLE-PROBE: body=%dx%d viewport=%dpx pills=%d last-row=%dpx/%dpx %s\n",
+                         body->width(), body->height(), viewportWidth,
+                         static_cast<int>(pills.size()), lastPillBottom, first->height(),
                          layoutPass ? "PASS" : "FAIL");
-        } else if (layoutPass) {
-            std::fprintf(stderr, "TITLE-PROBE: episode footer alignment skipped (scrolling list)\n");
         } else {
-            std::fprintf(stderr, "TITLE-PROBE: episode footer alignment FAIL (missing grid/pills)\n");
+            std::fprintf(stderr,
+                         "TITLE-PROBE: episode layout FAIL (missing body scroll, body or pills)\n");
         }
         if (layoutOnly) {
             auto* episodesHeading = page->findChild<QLabel*>(
@@ -820,6 +822,14 @@ int main(int argc, char** argv) {
             }
             selectorPass = selectorPass && checkedCount == 1;
             if (episodesHeading != nullptr && releaseChipsHost != nullptr) {
+                // The selector lives inside the body scroll now, so bring it on
+                // screen before grabbing its section instead of capturing
+                // whatever happens to be scrolled into the viewport.
+                auto* bodyScroll = page->findChild<QScrollArea*>(QStringLiteral("titleOverview"));
+                if (bodyScroll != nullptr) {
+                    bodyScroll->ensureWidgetVisible(releaseChipsHost, 0, 0);
+                    QCoreApplication::processEvents();
+                }
                 const QRect headingRect(episodesHeading->mapTo(page, QPoint(0, 0)),
                                         episodesHeading->size());
                 const QRect chipsRect(releaseChipsHost->mapTo(page, QPoint(0, 0)),

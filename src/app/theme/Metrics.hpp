@@ -78,6 +78,75 @@ inline constexpr int kTitleBadgeHPadding = 8;
 // in: the panel keeps the app radius, the pill steps one token down.
 inline constexpr int kTitlePillRadius = 6;
 
+// ── Title page redesign ─────────────────────────────────────────────────────
+// The media detail page uses its own wide, editorial rhythm: a fixed 1180
+// content column, a 320x480 hero poster and a right-hand details sheet. These
+// are title-page only; the settings-led tokens above still drive every other
+// page.
+inline constexpr int kTitlePageMaxWidth = 1180;
+inline constexpr int kTitlePageInset = 32;
+inline constexpr int kTitlePageCompactInset = 20;
+inline constexpr int kTitleHeroSpacing = 48;
+inline constexpr int kTitleSectionSpacing = 64;
+inline constexpr int kTitleCompactBreakpoint = 900;
+
+inline constexpr int kTitleHeroCoverWidth = 320;
+inline constexpr int kTitleHeroCoverHeight = 480;
+inline constexpr int kTitleCompactCoverWidth = 280;
+inline constexpr int kTitleCompactCoverHeight = 420;
+
+inline constexpr int kTitleControlHeight = 40;
+inline constexpr int kTitleDetailsWidth = 460;
+inline constexpr int kTitleDetailsCloseSize = 36;
+inline constexpr int kTitleDetailsThumbRadius = 8;
+
+inline constexpr int kTitleEpisodeButtonWidth = 64;
+inline constexpr int kTitleEpisodeButtonHeight = 44;
+inline constexpr int kTitleWatchedMarkWidth = 12;
+inline constexpr int kTitleWatchedMarkHeight = 2;
+inline constexpr int kTitleWatchedMarkInset = 6;
+inline constexpr int kTitleLegendSwatchSize = 10;
+inline constexpr int kTitleLegendSwatchRadius = 4;
+
+// Typography. Font sizes are pixels, matching the reference's editorial scale;
+// the compact heading is the stacked-viewport size.
+inline constexpr int kTitleHeroTitlePixelSize = 44;
+inline constexpr int kTitleHeroTitlePixelSizeCompact = 34;
+inline constexpr int kTitleSubtitlePixelSize = 18;
+inline constexpr int kTitleBodyPixelSize = 15;
+inline constexpr int kTitleMetaPixelSize = 14;
+inline constexpr int kTitleSectionHeadingPixelSize = 22;
+inline constexpr int kTitleDetailsHeadingPixelSize = 18;
+inline constexpr int kTitleWatchEpisodePixelSize = 16;
+inline constexpr int kTitleCaptionPixelSize = 13;
+inline constexpr int kTitleTinyPixelSize = 12;
+inline constexpr int kTitleSmallPixelSize = 11;
+
+inline constexpr int kTitleAccentRuleHeight = 2;
+inline constexpr int kTitleAccentRuleWidth = 48;
+/// The backdrop's footprint, the small surface it is blurred on, and how much
+/// of its right edge dissolves into the page bed.
+inline constexpr int kTitleBackdropWidth = 420;
+inline constexpr int kTitleBackdropHeight = 560;
+inline constexpr int kTitleBackdropSourceWidth = 96;
+inline constexpr int kTitleBackdropSourceHeight = 128;
+inline constexpr int kTitleBackdropBlurRadius = 18;
+inline constexpr int kTitleBackdropEdgeFade = 150;
+
+// Rounded geometry shared by the title page. Pills are half the control height,
+// the same as the reference's `rounded-full` 40px buttons.
+inline constexpr int kTitlePillRadiusRound = kTitleControlHeight / 2;
+inline constexpr int kTitleCardRadius = 16;
+inline constexpr int kTitlePosterRadius = 12;
+inline constexpr int kTitleEpisodeRadius = 12;
+inline constexpr int kTitleCircleControlSize = 36;
+inline constexpr int kTitleCircleRadius = kTitleCircleControlSize / 2;
+inline constexpr int kTitleChipPaddingH = 14;
+inline constexpr int kTitleButtonPaddingH = 16;
+inline constexpr int kTitleTabPaddingV = 10;
+inline constexpr int kTitleTabPaddingH = 16;
+inline constexpr int kTitleTabSpacing = 8;
+
 inline constexpr int kCoverBackdropDownscale = 8;
 inline constexpr double kCoverZoomMin = 0.1;
 inline constexpr double kCoverZoomMax = 8.0;

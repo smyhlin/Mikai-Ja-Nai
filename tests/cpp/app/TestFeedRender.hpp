@@ -35,9 +35,46 @@ class TestFeedRender : public QObject {
   void interpolationOnlyRunsWaitForTheirSelectedSlot();
   void settingsClosingDuringAcquisitionRestoresMainWindowInput();
 
-  // A title page's episode pills come from the release payload. When it answers,
-  // every canned episode must have a button, and the heading must be the title's.
+  // A title page's episode pills come from the release payload and live in the
+  // page's one body scroll. When it answers, every canned episode must have a
+  // button, the heading must be the title's, and the episodes section must be
+  // inside the same scroll as the hero instead of a detached inner viewport.
   void theTitlePageRendersItsEpisodes();
+
+  /// The one body scroll, at both the compact and the wide width: every section
+  /// fits the content column without horizontal clipping, and the related
+  /// carousels, the episodes heading and the episode pills are all reachable by
+  /// scrolling it. A section trapped in the hero's text column or a body wider
+  /// than its viewport fails here.
+  void titlePageBodyScrollsItsSectionsWithoutHorizontalClipping_data();
+  void titlePageBodyScrollsItsSectionsWithoutHorizontalClipping();
+
+  /// The content column fills the viewport until the page's max width and is
+  /// centred beyond it, and the header row inside the full-width header follows
+  /// the same cap. A column given a stretch share of the width fails at both
+  /// widths.
+  void titlePageContentColumnFillsItsViewportUpToTheCap_data();
+  void titlePageContentColumnFillsItsViewportUpToTheCap();
+
+  /// The details sheet is dismissed where it opened: Escape, its close action and
+  /// its scrim each hide it without asking the page to go back. With the sheet
+  /// open and the description expanded over a selected release, a live language
+  /// switch re-words the app's captions but keeps the sheet, the release
+  /// selection and the expanded text, and asks the backend for nothing.
+  void titleDetailsSheetDismissesInPlaceAndKeepsStateAcrossLanguageSwitch();
+
+  /// Watch is a real action on the active provider: after switching to the
+  /// second canned release, pressing it resolves that release's first episode
+  /// embed and not the first release's.
+  void theTitlePageWatchActionFollowsTheSelectedRelease();
+
+  void episodeMarksPersistAcrossReopenAndViewChanges();
+  void episodeContextMenuActionsUpdateOnlyTheOrderedPreviousEpisodes();
+  void episodeContextMenuHandlesPagingAndSpecialIdentifiers();
+  void titlePageRendersDeclaredEpisodesTheReleaseLacks();
+  void titlePageKeepsSpecialEpisodeIdentifiers();
+  void clickingAnEpisodeDoesNotAdvanceTheCurrentEpisode();
+  void episodeMarksSurvivePagingAndLanguageSwitch();
 
   /// A loaded search result set, switched en -> uk -> en from the real Settings
   /// selector: the captions and the status line restate themselves, while the
@@ -48,11 +85,10 @@ class TestFeedRender : public QObject {
   /// API data and must read the same in both languages.
   void loadedResultsRetranslateWithoutRefetchingOrLosingViewState();
 
-  /// A loaded title page, switched en -> uk -> en: the description and metadata
+  /// A loaded title page, switched en -> uk -> en: the description and details
   /// disclosures stay open, the release chip and the episode page keep their
-  /// selections, the overview and episode scrolls do not move, the API's own
-  /// description and title stay verbatim, and no request is issued merely to
-  /// translate.
+  /// selections, the body scroll does not move, the API's own description and
+  /// title stay verbatim, and no request is issued merely to translate.
   void loadedTitlePageRetranslatesWithoutRefetchingOrLosingDisclosureState();
 
   // The other direction, and the reason this suite exists: a backend that fails

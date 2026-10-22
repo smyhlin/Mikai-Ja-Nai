@@ -208,6 +208,31 @@ void TitlePage::openPlayer(EpisodeEntry* entry, const QMap<int, QString>& qualit
                     emit playerComponentSetupRequested();
                 }
             });
+    // A provider switch can replace the grid, so resolve the session's own episode identity.
+    connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackStarted, this,
+            [this, session](int playlistIndex) {
+                if (!sessions_.contains(session) || session->dialog == nullptr) {
+                    return;
+                }
+                const QString number = session->playlist.value(playlistIndex)
+                                           .value(QStringLiteral("number"))
+                                           .toString();
+                if (!number.isEmpty()) {
+                    noteEpisodeStarted(number);
+                }
+            });
+    connect(session->dialog, &mplayer::shell::PlayerDialog::episodePlaybackFinished, this,
+            [this, session](int playlistIndex) {
+                if (!sessions_.contains(session) || session->dialog == nullptr) {
+                    return;
+                }
+                const QString number = session->playlist.value(playlistIndex)
+                                           .value(QStringLiteral("number"))
+                                           .toString();
+                if (!number.isEmpty()) {
+                    setEpisodeWatched(number, true);
+                }
+            });
     // The app-owned assembly answers this episode player's native requests: it
     // reads the owned model store, the requested recipe and the measured machine
     // identity off the GUI thread and submits the whole request back through the

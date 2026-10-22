@@ -136,6 +136,7 @@ private:
     bool openTitle(const QString& ref, const QString& poster, bool preserveHistory = false);
     void openRelated(const QString& ref, const QString& poster);
     void goSearch();
+    void goHome();
     /// Disposes the title page and every player it owns. False when a player
     /// refused its close: the page and its sessions are kept for a retry.
     bool disposeTitle();
