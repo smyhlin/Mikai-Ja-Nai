@@ -170,6 +170,7 @@ private:
     QPushButton* swapButton_ = nullptr;
     QPushButton* recaptureButton_ = nullptr;
     QPushButton* pinButton_ = nullptr;
+    QToolButton* closeButton_ = nullptr;
     QToolButton* fullscreenButton_ = nullptr;
     QAction* fullscreenAction_ = nullptr;
     QFrame* modeDivider_ = nullptr;

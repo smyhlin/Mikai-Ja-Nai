@@ -222,6 +222,7 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
       ajiBackend_(ajiBackend) {
     setWindowTitle(tr("Quality Comparison"));
     setModal(false);
+    setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::CustomizeWindowHint);
     resize(kWindowWidth, kWindowHeight);
     setStyleSheet(windowStyleSheet());
     if (surface_ != nullptr) {
@@ -552,6 +553,11 @@ void CompareWindow::retranslateUi() {
         pinButton_->setToolTip(tr("Keep Compare window always on top (P)"));
         pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
+    if (closeButton_ != nullptr) {
+        closeButton_->setText(tr("✕"));
+        closeButton_->setToolTip(tr("Close (Esc)"));
+        closeButton_->setAccessibleName(tr("Close Compare window"));
+    }
     syncFullscreenButton();
     if (splitLabel_ != nullptr) splitLabel_->setText(tr("Split:"));
     if (flickerLabel_ != nullptr) flickerLabel_->setText(tr("Flicker, Hz:"));
@@ -798,6 +804,16 @@ void CompareWindow::buildUi() {
     connect(fullscreenButton_, &QToolButton::clicked, this,
             &CompareWindow::toggleFullscreen);
     header->addWidget(fullscreenButton_);
+
+    closeButton_ = new QToolButton(toolbarCard);
+    closeButton_->setObjectName(QStringLiteral("compareClose"));
+    closeButton_->setFocusPolicy(Qt::NoFocus);
+    closeButton_->setCursor(Qt::PointingHandCursor);
+    closeButton_->setText(tr("✕"));
+    closeButton_->setToolTip(tr("Close (Esc)"));
+    closeButton_->setAccessibleName(tr("Close Compare window"));
+    connect(closeButton_, &QToolButton::clicked, this, &CompareWindow::close);
+    header->addWidget(closeButton_);
 
     fullscreenAction_ = new QAction(this);
     fullscreenAction_->setShortcut(QKeySequence(Qt::Key_F11));
