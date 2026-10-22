@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include <QMap>
+#include <QMetaType>
 #include <utility>
 #include <QString>
 #include <QStringList>
@@ -49,7 +50,18 @@ struct Source {
 struct Episode {
     QVariant number;
     QString label;
+    QString kind;
     QVector<Source> sources;
+};
+
+struct EpisodeRange {
+    double from = 0.0;
+    double to = 0.0;
+};
+
+struct NextEpisode {
+    QVariant episode;
+    QString airing;
 };
 
 struct Release {
@@ -62,6 +74,10 @@ struct Release {
 };
 
 struct UaPoster {
+    qint64 id = 0;
+    bool is_selected = false;
+    QString author;
+    std::optional<Team> team;
     PosterSet images;
 };
 
@@ -110,12 +126,15 @@ struct AnimeUpdate {
     bool is_collab = false;
     QString kind;
     QString provider;
+    QString embed_url;
     QVariant episode;
     QString published_at;
 };
 
 struct UpdatesResult {
     std::optional<int> total;
+    std::optional<int> page;
+    std::optional<int> pages;
     QVector<AnimeUpdate> items;
 };
 
@@ -153,13 +172,72 @@ struct AnimeDetail {
     QVector<GenreTag> tags;
     PosterSet poster;
     QVector<UaPoster> ua_posters;
+    QMap<QString, QVector<EpisodeRange>> episode_types;
+    std::optional<NextEpisode> next_episode;
+    bool licensed = false;
+    QJsonObject license;
     QVector<AnimeRelation> relations;
     QVector<AnimeSummary> similar;
 };
 
 struct PlayerResult {
     bool licensed = false;
+    QJsonObject license;
     QVector<Release> releases;
+};
+
+struct AnimeQuery {
+    QString search;
+    QStringList genres;
+    QStringList genres_exclude;
+    QString genres_match = QStringLiteral("all");
+    QStringList tags;
+    QStringList tags_exclude;
+    QString tags_match = QStringLiteral("all");
+    QVector<int> years;
+    std::optional<int> year_from;
+    std::optional<int> year_to;
+    QStringList seasons;
+    QStringList formats;
+    QStringList statuses;
+    QStringList studios;
+    QVector<qint64> teams;
+    QString sort = QStringLiteral("name");
+    QString order;
+    int page = 1;
+    int limit = 20;
+
+    bool operator==(const AnimeQuery&) const = default;
+};
+
+struct ApiMeta {
+    QString version;
+    QStringList formats;
+    QStringList statuses;
+    QStringList seasons;
+    QStringList anime_sort_fields;
+    QStringList sort_orders;
+    QStringList match_modes;
+};
+
+struct TeamProfile {
+    Team team;
+    QString description;
+    QString birthday;
+    PosterSet avatar;
+    QMap<QString, QString> links;
+    bool has_voice = false;
+    bool has_subs = false;
+    int anime_count = 0;
+    qint64 views_total = 0;
+    qint64 views_last_30_days = 0;
+};
+
+struct TeamsResult {
+    std::optional<int> total;
+    std::optional<int> page;
+    std::optional<int> pages;
+    QVector<TeamProfile> items;
 };
 
 // Free helpers mirroring the Python properties and module-level helpers.
@@ -172,8 +250,16 @@ QString animePageUrl(const QString& ref);
 QString animePageUrl(const QString& ref, const QString& slug);
 QString thumbUrl(const AnimeSummary& anime);
 QString posterUrl(const AnimeSummary& anime);
+/// The UA poster the cover actually shows: the selected one when it carries
+/// a usable image, otherwise the first UA poster that does. Null when the
+/// display falls back to the original poster, so a caller can credit exactly
+/// the picture on screen - and name no author when the picture is not a UA
+/// poster at all.
+const UaPoster* coverPoster(const AnimeDetail& detail);
 QString coverUrl(const AnimeDetail& detail);
+QString episodeKindFor(const AnimeDetail& detail, const Episode& episode);
 QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail);
+QString teamLinkServiceName(const QString& key);
 
 // JSON parsers mirroring the Python _parse_* functions.
 Titles parseTitles(const QJsonObject& data);
@@ -187,3 +273,12 @@ AnimeDetail parseDetail(const QJsonObject& data);
 PlayerResult parsePlayer(const QJsonObject& data);
 
 }  // namespace mikai::backend
+
+Q_DECLARE_METATYPE(mikai::backend::Team)
+Q_DECLARE_METATYPE(mikai::backend::GenreTag)
+Q_DECLARE_METATYPE(mikai::backend::AnimeQuery)
+Q_DECLARE_METATYPE(mikai::backend::ApiMeta)
+Q_DECLARE_METATYPE(mikai::backend::TeamProfile)
+Q_DECLARE_METATYPE(mikai::backend::TeamsResult)
+Q_DECLARE_METATYPE(mikai::backend::AnimeUpdate)
+Q_DECLARE_METATYPE(mikai::backend::UpdatesResult)

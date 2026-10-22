@@ -85,12 +85,16 @@ void TestLiveOracle::cleanupTestCase() {}
 
 void TestLiveOracle::searchFindsBlackTorchFirst() {
   MikaiClient client(qEnvironmentVariable("MIKAI_API_KEY"));
-  const SearchResult result = client.search(QStringLiteral("BLACK TORCH"));
+  mikai::backend::AnimeQuery liveQuery;
+  liveQuery.search = QStringLiteral("BLACK TORCH");
+  const SearchResult result = client.search(liveQuery);
   QVERIFY(!result.items.isEmpty());
   // Both spellings must land on the same title, or the English search the
   // wrapper advertises silently opens a different show.
   QCOMPARE(asText(result.items.first().ref), QString::fromLatin1(kRef));
-  const SearchResult ukrainian = client.search(QString::fromUtf8(kTitle));
+  mikai::backend::AnimeQuery ukrainianQuery;
+  ukrainianQuery.search = QString::fromUtf8(kTitle);
+  const SearchResult ukrainian = client.search(ukrainianQuery);
   QVERIFY(!ukrainian.items.isEmpty());
   QCOMPARE(asText(ukrainian.items.first().ref), QString::fromLatin1(kRef));
 }

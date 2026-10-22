@@ -36,6 +36,12 @@ class TestModels : public QObject {
   // Detail.
   void detailReadsEveryScalarField();
   void detailReadsEpisodeStatsAndScores();
+  void detailPreservesFractionalClassificationAndLicenseMetadata();
+  void episodeClassificationUsesKindsAndFractionalCanonicalRanges();
+  void detailKeepsUnknownAndZeroCountsDistinct();
+  void selectedUaPosterWinsCoverAndRetainsCredit();
+  void aSelectedPosterWithoutAnImageIsNotTheCoverAndIsNotCredited();
+  void theOriginalPosterIsCreditedToNobody();
   void detailWithoutScoresLeavesThemAbsent();
   void detailReadsGenresAndTags();
   void detailReadsUaPostersRelationsAndSimilar();
@@ -57,10 +63,12 @@ class TestModels : public QObject {
 
   // Updates.
   void updateReadsTeamsAndEpisode();
+  void updateRetainsEmbedUrlIdentity();
   void updateWithoutTeamsIsStillUsable();
 
   // Player.
   void playerReadsReleasesEpisodesAndSources();
+  void playerPreservesFullLicenseObjectAndEpisodeKind();
   void playerToleratesMissingCollections();
   void playerDefaultsProviderToQuestionMark();
   void episodeNumberAcceptsEveryWireShape_data();

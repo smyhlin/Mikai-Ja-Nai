@@ -17,6 +17,7 @@ using mikai_test::asText;
 
 using mikai::backend::AnimeDetail;
 using mikai::backend::AnimeSummary;
+using mikai::backend::AnimeUpdate;
 using mikai::backend::Episode;
 using mikai::backend::PlayerResult;
 using mikai::backend::Release;
@@ -25,6 +26,7 @@ using mikai::backend::animePageUrl;
 using mikai::backend::coverUrl;
 using mikai::backend::displayName;
 using mikai::backend::externalLinks;
+using mikai::backend::episodeKindFor;
 using mikai::backend::parseDetail;
 using mikai::backend::parsePlayer;
 using mikai::backend::parseSummary;
@@ -308,6 +310,76 @@ void TestModels::detailReadsEpisodeStatsAndScores() {
   QCOMPARE(asInt(detail.scores.mal_count), 12000);
 }
 
+void TestModels::detailPreservesFractionalClassificationAndLicenseMetadata() {
+  QJsonObject payload;
+  payload.insert(QStringLiteral("episodeTypes"),
+                 QJsonObject{{QStringLiteral("filler"), QJsonArray{QJsonObject{
+                                  {QStringLiteral("from"), 12.5}, {QStringLiteral("to"), 13.0}}}},
+                             {QStringLiteral("canon"), QJsonArray{QJsonObject{
+                                  {QStringLiteral("from"), 1.0}, {QStringLiteral("to"), 12.0}}}}});
+  payload.insert(QStringLiteral("nextEpisode"),
+                 QJsonObject{{QStringLiteral("episode"), 13.5},
+                             {QStringLiteral("airing"), QStringLiteral("2026-10-22T12:00:00Z")}});
+  payload.insert(QStringLiteral("licensed"), true);
+  payload.insert(QStringLiteral("license"),
+                 QJsonObject{{QStringLiteral("holder"), QStringLiteral("Example Studio")},
+                             {QStringLiteral("terms"), QJsonArray{QStringLiteral("streaming")}}});
+  const AnimeDetail detail = parseDetail(payload);
+  QVERIFY(detail.licensed);
+  // The legal terms are kept whole: the API's licence shape is not specified,
+  // so a field the client does not know about still has to reach the surface
+  // that shows it.
+  QCOMPARE(detail.license.value(QStringLiteral("holder")).toString(), QStringLiteral("Example Studio"));
+  QCOMPARE(detail.license.value(QStringLiteral("terms")).toArray().size(), 1);
+  QCOMPARE(detail.license.value(QStringLiteral("terms")).toArray().first().toString(),
+           QStringLiteral("streaming"));
+  // A fractional range is a range like any other: the numbers are kept exactly.
+  QCOMPARE(detail.episode_types.value(QStringLiteral("filler")).size(), 1);
+  QCOMPARE(detail.episode_types.value(QStringLiteral("filler")).first().from, 12.5);
+  QCOMPARE(detail.episode_types.value(QStringLiteral("filler")).first().to, 13.0);
+  // The upcoming broadcast, not the episode the viewer is watching.
+  QVERIFY(detail.next_episode.has_value());
+  QCOMPARE(detail.next_episode->episode.toDouble(), 13.5);
+  QCOMPARE(detail.next_episode->airing, QStringLiteral("2026-10-22T12:00:00Z"));
+}
+
+void TestModels::episodeClassificationUsesKindsAndFractionalCanonicalRanges() {
+  const AnimeDetail detail = parseDetail(QJsonObject{
+      {QStringLiteral("episodeTypes"),
+       QJsonObject{{QStringLiteral("canon"), QJsonArray{QJsonObject{
+                        {QStringLiteral("from"), 1.0}, {QStringLiteral("to"), 2.0}}}},
+                   {QStringLiteral("filler"), QJsonArray{QJsonObject{
+                        {QStringLiteral("from"), 3.0}, {QStringLiteral("to"), 3.0}}}}}}});
+  Episode episode;
+  episode.number = 1.5;
+  QCOMPARE(episodeKindFor(detail, episode), QStringLiteral("canon"));
+  episode.number = QStringLiteral("1.5");
+  QCOMPARE(episodeKindFor(detail, episode), QStringLiteral("canon"));
+  episode.number = 2.0;
+  QCOMPARE(episodeKindFor(detail, episode), QStringLiteral("canon"));
+  episode.number = 3.5;
+  QCOMPARE(episodeKindFor(detail, episode), QStringLiteral("filler"));
+  episode.kind = QStringLiteral("future-kind");
+  QCOMPARE(episodeKindFor(detail, episode), QStringLiteral("future-kind"));
+  episode.kind.clear();
+  episode.number = QStringLiteral("OVA");
+  QVERIFY(episodeKindFor(detail, episode).isEmpty());
+  episode.number = 0.0;
+  QVERIFY(episodeKindFor(detail, episode).isEmpty());
+}
+
+void TestModels::detailKeepsUnknownAndZeroCountsDistinct() {
+  QJsonObject episodes{{QStringLiteral("total"), 0},
+                       {QStringLiteral("aired"), 0},
+                       {QStringLiteral("localized"), 0}};
+  const AnimeDetail detail = parseDetail(QJsonObject{{QStringLiteral("episodes"), episodes}});
+  QCOMPARE(detail.episodes.total.value_or(-1), 0);
+  QCOMPARE(detail.episodes.aired, 0);
+  QCOMPARE(detail.episodes.localized, 0);
+  const AnimeDetail missing = parseDetail({});
+  QVERIFY(!missing.episodes.total.has_value());
+}
+
 void TestModels::detailWithoutScoresLeavesThemAbsent() {
   const AnimeDetail detail = parseDetail({});
   QVERIFY(!asFlag(detail.scores.mikai.has_value()));
@@ -356,6 +428,70 @@ void TestModels::detailReadsUaPostersRelationsAndSimilar() {
   QCOMPARE(asText(detail.relations[0].anime.ref), QStringLiteral("9999"));
   QCOMPARE(static_cast<int>(detail.similar.size()), 1);
   QCOMPARE(asText(detail.similar[0].ref), QStringLiteral("8888"));
+}
+
+void TestModels::selectedUaPosterWinsCoverAndRetainsCredit() {
+  const QJsonObject unselected{{QStringLiteral("id"), 11},
+                               {QStringLiteral("isSelected"), false},
+                               {QStringLiteral("author"), QStringLiteral("Old artist")},
+                               {QStringLiteral("images"), QJsonObject{{QStringLiteral("big"),
+                                   QJsonObject{{QStringLiteral("webp"), QStringLiteral("old.webp")}}}}}};
+  const QJsonObject selected{{QStringLiteral("id"), 912},
+                             {QStringLiteral("isSelected"), true},
+                             {QStringLiteral("author"), QStringLiteral("Poster artist")},
+                             {QStringLiteral("team"), QJsonObject{{QStringLiteral("id"), 7},
+                                 {QStringLiteral("slug"), QStringLiteral("poster-team")},
+                                 {QStringLiteral("name"), QStringLiteral("Poster Team")}}},
+                             {QStringLiteral("images"), QJsonObject{{QStringLiteral("big"),
+                                 QJsonObject{{QStringLiteral("webp"), QStringLiteral("selected.webp")}}}}}};
+  const AnimeDetail detail =
+      parseDetail(QJsonObject{{QStringLiteral("uaPosters"), QJsonArray{unselected, selected}}});
+
+  // The cover is the poster the site selected, and the credit is that poster's
+  // author: the two cannot disagree.
+  QCOMPARE(coverUrl(detail), QStringLiteral("selected.webp"));
+  const mikai::backend::UaPoster* credited = mikai::backend::coverPoster(detail);
+  QVERIFY(credited != nullptr);
+  QCOMPARE(credited->id, qint64(912));
+  QCOMPARE(credited->author, QStringLiteral("Poster artist"));
+  QVERIFY(credited->is_selected);
+  QVERIFY(credited->team.has_value());
+  QCOMPARE(credited->team->slug, QStringLiteral("poster-team"));
+  QCOMPARE(credited->team->name, QStringLiteral("Poster Team"));
+}
+
+void TestModels::aSelectedPosterWithoutAnImageIsNotTheCoverAndIsNotCredited() {
+  // The selected poster carries no picture, so it is not on screen. Crediting
+  // its author would name someone for a picture nobody sees, and showing its
+  // (empty) address would leave the cover blank.
+  const QJsonObject selectedWithoutImage{{QStringLiteral("id"), 5},
+                                         {QStringLiteral("isSelected"), true},
+                                         {QStringLiteral("author"), QStringLiteral("Absent artist")}};
+  const QJsonObject usable{{QStringLiteral("id"), 6},
+                           {QStringLiteral("isSelected"), false},
+                           {QStringLiteral("author"), QStringLiteral("Shown artist")},
+                           {QStringLiteral("images"), QJsonObject{{QStringLiteral("big"),
+                               QJsonObject{{QStringLiteral("webp"), QStringLiteral("shown.webp")}}}}}};
+  const AnimeDetail detail = parseDetail(
+      QJsonObject{{QStringLiteral("uaPosters"), QJsonArray{selectedWithoutImage, usable}}});
+
+  // The picture on screen is the one that can be shown, and the credit names
+  // the artist of that picture - not the one the selection pointed at.
+  QCOMPARE(coverUrl(detail), QStringLiteral("shown.webp"));
+  const mikai::backend::UaPoster* credited = mikai::backend::coverPoster(detail);
+  QVERIFY(credited != nullptr);
+  QCOMPARE(credited->author, QStringLiteral("Shown artist"));
+  QVERIFY(!credited->is_selected);
+}
+
+void TestModels::theOriginalPosterIsCreditedToNobody() {
+  // No UA poster at all: the picture on screen is the original one, which is
+  // not a UA poster, so nobody is credited for it.
+  const AnimeDetail detail = parseDetail(QJsonObject{
+      {QStringLiteral("images"), QJsonObject{{QStringLiteral("poster"), QJsonObject{
+          {QStringLiteral("big"), QJsonObject{{QStringLiteral("webp"), QStringLiteral("original.webp")}}}}}}}});
+  QCOMPARE(coverUrl(detail), QStringLiteral("original.webp"));
+  QVERIFY(mikai::backend::coverPoster(detail) == nullptr);
 }
 
 void TestModels::detailToleratesAMinimalPayload() {
@@ -543,6 +679,22 @@ void TestModels::updateReadsTeamsAndEpisode() {
   QCOMPARE(asText(update.published_at), QStringLiteral("2026-09-24T17:30:00Z"));
 }
 
+void TestModels::updateRetainsEmbedUrlIdentity() {
+  // One series hosted by two providers is two events, so the address it can be
+  // watched at is part of the event's identity and has to survive the parse.
+  const AnimeUpdate first = parseUpdate(QJsonObject{
+      {QStringLiteral("provider"), QStringLiteral("provider-a")},
+      {QStringLiteral("embedUrl"), QStringLiteral("https://video.example/embed/1")}});
+  const AnimeUpdate second = parseUpdate(QJsonObject{
+      {QStringLiteral("provider"), QStringLiteral("provider-b")},
+      {QStringLiteral("embedUrl"), QStringLiteral("https://video.example/embed/2")}});
+  QCOMPARE(first.provider, QStringLiteral("provider-a"));
+  QCOMPARE(first.embed_url, QStringLiteral("https://video.example/embed/1"));
+  QCOMPARE(second.provider, QStringLiteral("provider-b"));
+  QCOMPARE(second.embed_url, QStringLiteral("https://video.example/embed/2"));
+  QVERIFY(first.embed_url != second.embed_url);
+}
+
 void TestModels::updateWithoutTeamsIsStillUsable() {
   QJsonObject entry;
   entry.insert(QStringLiteral("anime"), withIds(QStringLiteral("mikai"), QJsonValue(1)));
@@ -592,6 +744,26 @@ void TestModels::playerReadsReleasesEpisodesAndSources() {
   QCOMPARE(static_cast<int>(first.sources.size()), 1);
   QCOMPARE(asText(first.sources[0].provider), QStringLiteral("ashdi"));
   QCOMPARE(asText(first.sources[0].embed_url), QStringLiteral("https://ashdi.vip/vod/268104"));
+}
+
+void TestModels::playerPreservesFullLicenseObjectAndEpisodeKind() {
+  const QJsonObject episode{{QStringLiteral("kind"), QStringLiteral("filler")},
+                            {QStringLiteral("number"), 12.5}};
+  const QJsonObject release{{QStringLiteral("episodes"), QJsonArray{episode}}};
+  const PlayerResult player = parsePlayer(QJsonObject{
+      {QStringLiteral("licensed"), true},
+      {QStringLiteral("license"),
+       QJsonObject{{QStringLiteral("licensee"), QStringLiteral("Studio")},
+                   {QStringLiteral("territories"),
+                    QJsonArray{QStringLiteral("JP"), QStringLiteral("UA")}}}},
+      {QStringLiteral("releases"), QJsonArray{release}}});
+  QVERIFY(player.licensed);
+  // Every legal field the server sent survives, including the ones the client
+  // has no name for: the licence is shown as the API described it.
+  QCOMPARE(player.license.value(QStringLiteral("licensee")).toString(), QStringLiteral("Studio"));
+  QCOMPARE(player.license.value(QStringLiteral("territories")).toArray().size(), 2);
+  QCOMPARE(player.releases.first().episodes.first().kind, QStringLiteral("filler"));
+  QCOMPARE(player.releases.first().episodes.first().number.toDouble(), 12.5);
 }
 
 void TestModels::playerToleratesMissingCollections() {

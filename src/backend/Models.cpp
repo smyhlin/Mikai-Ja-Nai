@@ -4,6 +4,8 @@
 #include <QJsonArray>
 #include <QJsonValue>
 
+#include <cmath>
+
 namespace mikai::backend {
 namespace {
 
@@ -42,6 +44,18 @@ std::optional<int> optInt(const QJsonValue& value) {
         if (ok) {
             return parsed;
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<qint64> optInt64(const QJsonValue& value) {
+    if (value.isDouble()) {
+        return static_cast<qint64>(value.toDouble());
+    }
+    if (value.isString()) {
+        bool ok = false;
+        const qint64 parsed = value.toString().toLongLong(&ok);
+        if (ok) return parsed;
     }
     return std::nullopt;
 }
@@ -113,9 +127,31 @@ QString posterUrl(const AnimeSummary& anime) {
     return imageUrl(anime.poster.big);
 }
 
-QString coverUrl(const AnimeDetail& detail) {
+const UaPoster* coverPoster(const AnimeDetail& detail) {
+    // The selected poster wins, but only when it carries an image that can
+    // actually be shown: a selected poster with no usable URL is not on
+    // screen, and crediting its author would name someone for a picture
+    // nobody sees.
+    const auto usable = [](const UaPoster& poster) {
+        return !imageUrl(poster.images.big).isEmpty() || !imageUrl(poster.images.medium).isEmpty();
+    };
     for (const UaPoster& poster : detail.ua_posters) {
-        for (const ImageVariant& size : {poster.images.big, poster.images.medium}) {
+        if (poster.is_selected && usable(poster)) {
+            return &poster;
+        }
+    }
+    for (const UaPoster& poster : detail.ua_posters) {
+        if (usable(poster)) {
+            return &poster;
+        }
+    }
+    // The original poster is on screen instead: no UA poster is credited.
+    return nullptr;
+}
+
+QString coverUrl(const AnimeDetail& detail) {
+    if (const UaPoster* poster = coverPoster(detail)) {
+        for (const ImageVariant& size : {poster->images.big, poster->images.medium}) {
             const QString url = imageUrl(size);
             if (!url.isEmpty()) {
                 return url;
@@ -129,6 +165,56 @@ QString coverUrl(const AnimeDetail& detail) {
         }
     }
     return {};
+}
+
+QString episodeKindFor(const AnimeDetail& detail, const Episode& episode) {
+    if (!episode.kind.isEmpty()) {
+        return episode.kind;
+    }
+    const int type = episode.number.metaType().id();
+    if (type != QMetaType::Double && type != QMetaType::Float && type != QMetaType::Int &&
+        type != QMetaType::UInt && type != QMetaType::LongLong &&
+        type != QMetaType::ULongLong && type != QMetaType::Short &&
+        type != QMetaType::UShort && type != QMetaType::QString) {
+        return {};
+    }
+    bool ok = false;
+    const double number = episode.number.toDouble(&ok);
+    if (!ok || !std::isfinite(number) || number <= 0.0) {
+        return {};
+    }
+    const double canonical = std::floor(number);
+    for (auto it = detail.episode_types.cbegin(); it != detail.episode_types.cend(); ++it) {
+        for (const EpisodeRange& range : it.value()) {
+            if (canonical >= range.from && canonical <= range.to) {
+                return it.key();
+            }
+        }
+    }
+    return {};
+}
+
+QString teamLinkServiceName(const QString& key) {
+    static const QMap<QString, QString> names{
+        {QStringLiteral("telegram"), QStringLiteral("Telegram")},
+        {QStringLiteral("youtube"), QStringLiteral("YouTube")},
+        {QStringLiteral("tiktok"), QStringLiteral("TikTok")},
+        {QStringLiteral("instagram"), QStringLiteral("Instagram")},
+        {QStringLiteral("discord"), QStringLiteral("Discord")},
+        {QStringLiteral("patreon"), QStringLiteral("Patreon")},
+        {QStringLiteral("donatello"), QStringLiteral("Donatello")},
+        {QStringLiteral("monobase"), QStringLiteral("Monobase")},
+        {QStringLiteral("monojar"), QStringLiteral("Monobank")},
+        {QStringLiteral("monobank"), QStringLiteral("Monobank")},
+        {QStringLiteral("facebook"), QStringLiteral("Facebook")},
+        {QStringLiteral("twitter"), QStringLiteral("Twitter")},
+        {QStringLiteral("x"), QStringLiteral("X")},
+        {QStringLiteral("vk"), QStringLiteral("VK")},
+        {QStringLiteral("vimeo"), QStringLiteral("Vimeo")},
+        {QStringLiteral("twitch"), QStringLiteral("Twitch")},
+    };
+    const QString named = names.value(key);
+    return named.isEmpty() ? key : named;
 }
 
 QVector<std::pair<QString, QString>> externalLinks(const AnimeDetail& detail) {
@@ -182,7 +268,7 @@ PosterSet parsePosterSet(const QJsonObject& data) {
 
 Team parseTeam(const QJsonObject& data) {
     Team team;
-    team.id = optInt(data.value(QStringLiteral("id"))).value_or(0);
+    team.id = optInt64(data.value(QStringLiteral("id"))).value_or(0);
     team.slug = text(data.value(QStringLiteral("slug")));
     team.name = text(data.value(QStringLiteral("name")));
     return team;
@@ -228,6 +314,7 @@ AnimeUpdate parseUpdate(const QJsonObject& entry) {
     update.provider = text(entry.value(QStringLiteral("provider")));
     update.episode = optionalVariant(entry.value(QStringLiteral("episode")));
     update.published_at = text(entry.value(QStringLiteral("publishedAt")));
+    update.embed_url = text(entry.value(QStringLiteral("embedUrl")));
     return update;
 }
 
@@ -287,11 +374,49 @@ AnimeDetail parseDetail(const QJsonObject& data) {
     const QJsonArray uaPosters = arrayOrEmpty(data.value(QStringLiteral("uaPosters")));
     detail.ua_posters.reserve(uaPosters.size());
     for (const QJsonValue& value : uaPosters) {
+        const QJsonObject raw = value.toObject();
         UaPoster poster;
-        poster.images =
-            parsePosterSet(objectOrEmpty(value.toObject().value(QStringLiteral("images"))));
+        poster.id = optInt64(raw.value(QStringLiteral("id"))).value_or(0);
+        poster.is_selected = raw.value(QStringLiteral("isSelected")).toBool();
+        poster.author = text(raw.value(QStringLiteral("author")));
+        if (raw.value(QStringLiteral("team")).isObject()) {
+            poster.team = parseTeam(raw.value(QStringLiteral("team")).toObject());
+        }
+        poster.images = parsePosterSet(objectOrEmpty(raw.value(QStringLiteral("images"))));
         detail.ua_posters.append(poster);
     }
+
+    const QJsonObject episodeTypes = objectOrEmpty(data.value(QStringLiteral("episodeTypes")));
+    for (auto it = episodeTypes.begin(); it != episodeTypes.end(); ++it) {
+        QVector<EpisodeRange> ranges;
+        const QJsonArray values = arrayOrEmpty(it.value());
+        ranges.reserve(values.size());
+        for (const QJsonValue& value : values) {
+            if (value.isObject()) {
+                const QJsonObject range = value.toObject();
+                const auto from = optDouble(range.value(QStringLiteral("from")));
+                const auto to = optDouble(range.value(QStringLiteral("to")));
+                if (from && to) ranges.append(EpisodeRange{*from, *to});
+                continue;
+            }
+            const QJsonArray pair = value.toArray();
+            if (pair.size() >= 2) {
+                const auto from = optDouble(pair.at(0));
+                const auto to = optDouble(pair.at(1));
+                if (from && to) ranges.append(EpisodeRange{*from, *to});
+            }
+        }
+        detail.episode_types.insert(it.key(), std::move(ranges));
+    }
+    const QJsonValue nextEpisode = data.value(QStringLiteral("nextEpisode"));
+    if (nextEpisode.isObject()) {
+        const QJsonObject raw = nextEpisode.toObject();
+        detail.next_episode = NextEpisode{
+            optionalVariant(raw.value(QStringLiteral("episode"))),
+            text(raw.value(QStringLiteral("airing")))};
+    }
+    detail.licensed = data.value(QStringLiteral("licensed")).toBool();
+    detail.license = objectOrEmpty(data.value(QStringLiteral("license")));
 
     const QJsonArray relations = arrayOrEmpty(data.value(QStringLiteral("relations")));
     detail.relations.reserve(relations.size());
@@ -315,6 +440,7 @@ AnimeDetail parseDetail(const QJsonObject& data) {
 PlayerResult parsePlayer(const QJsonObject& data) {
     PlayerResult player;
     player.licensed = data.value(QStringLiteral("licensed")).toBool();
+    player.license = objectOrEmpty(data.value(QStringLiteral("license")));
 
     const QJsonArray releases = arrayOrEmpty(data.value(QStringLiteral("releases")));
     player.releases.reserve(releases.size());
@@ -339,6 +465,7 @@ PlayerResult parsePlayer(const QJsonObject& data) {
             Episode episode;
             episode.number = optionalVariant(rawEpisode.value(QStringLiteral("number")));
             episode.label = text(rawEpisode.value(QStringLiteral("label")));
+            episode.kind = text(rawEpisode.value(QStringLiteral("kind")));
 
             const QJsonArray sources = arrayOrEmpty(rawEpisode.value(QStringLiteral("sources")));
             episode.sources.reserve(sources.size());
