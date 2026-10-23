@@ -80,6 +80,8 @@ add_library(mikai_native_support STATIC
   src/player/core/MpvApi.hpp
   src/player/core/MpvHandle.cpp
   src/player/core/MpvHandle.hpp
+  src/player/core/MediaTracks.cpp
+  src/player/core/MediaTracks.hpp
   src/player/core/PlaybackDiagnostics.cpp
   src/player/core/PlaybackDiagnostics.hpp
   # Native bundle discovery & runtime selection

@@ -477,6 +477,7 @@ void PlayerDialog::buildStatus() {
 }
 
 void PlayerDialog::connectShell() {
+    watchMediaTracks(surface_);
     connect(shell_, &PlayerShell::playPauseRequested, surface_, &VideoSurface::togglePause);
     connect(shell_, &PlayerShell::seekRequested, surface_, &VideoSurface::seek);
     connect(shell_, &PlayerShell::rateChanged, this, [this](double rate) {
@@ -1083,7 +1084,7 @@ void PlayerDialog::onMediaDropped(const QString& path) {
         ensureOpenFailureVisible();
         return;
     }
-            flashStatus(tr("Playing local file"));
+    flashStatus(tr("Playing local file"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1296,7 +1297,7 @@ void PlayerDialog::publishQualityOptions() {
 }
 
 void PlayerDialog::openAudioMenu() {
-    if (closed_ || directMedia_) {
+    if (closed_) {
         return;
     }
     shell_->dismissOverlay();
@@ -1311,7 +1312,7 @@ void PlayerDialog::openAudioMenu() {
 }
 
 void PlayerDialog::openSubtitlesMenu() {
-    if (closed_ || directMedia_) {
+    if (closed_) {
         return;
     }
     shell_->dismissOverlay();
@@ -1326,6 +1327,7 @@ void PlayerDialog::openSubtitlesMenu() {
 }
 
 QVector<MenuEntry> PlayerDialog::trackEntries(const QString& kind) const {
+    if (directMedia_) return mediaTrackEntries(kind);
     QVector<MenuEntry> entries;
     QString heading;
     for (const VariantInfo& variant : variants_) {
@@ -1355,6 +1357,73 @@ QVector<MenuEntry> PlayerDialog::trackEntries(const QString& kind) const {
         payload.insert(QStringLiteral("label"), variant.label.isEmpty() ? text : variant.label);
         entry.payload = payload;
         entries.append(entry);
+    }
+    return entries;
+}
+
+void PlayerDialog::watchMediaTracks(VideoSurface* source) {
+    connect(source, &VideoSurface::mediaTracksChanged, this, [this, source] {
+        if (!closed_ && directMedia_ && source == playbackSurface()) refreshTrackMenus();
+    });
+    connect(source, &VideoSurface::mediaTracksError, this, [this, source](const QString& reason) {
+        if (!closed_ && directMedia_ && source == playbackSurface()) flashStatus(reason);
+    });
+}
+
+void PlayerDialog::refreshTrackMenus() {
+    setVariantsVisibility();
+    for (const auto& [popup, kind] :
+         {std::pair{audioPopup_, QStringLiteral("voice")},
+          std::pair{subtitlesPopup_, QStringLiteral("sub")}}) {
+        if (!popup->isVisible()) continue;
+        popup->setEntries(trackEntries(kind));
+        if (popup->rowCount() == 0) popup->close();
+    }
+}
+
+QVector<MenuEntry> PlayerDialog::mediaTrackEntries(const QString& kind) const {
+    const VideoSurface* source = playbackSurface();
+    if (source == nullptr || !source->mediaTracks().ready) return {};
+    const MediaTrackSnapshot& snapshot = source->mediaTracks();
+    const MediaTrackType type = kind == QLatin1String("sub") ? MediaTrackType::Subtitle
+                                                            : MediaTrackType::Audio;
+    if (std::none_of(snapshot.tracks.cbegin(), snapshot.tracks.cend(),
+                     [type](const MediaTrack& track) { return track.type == type; })) return {};
+    const auto payload = [&snapshot, type](int64_t id) {
+        return QVariantMap{
+            {QStringLiteral("mediaTrackType"),
+             type == MediaTrackType::Audio ? QStringLiteral("audio") : QStringLiteral("sub")},
+            {QStringLiteral("trackId"), QVariant::fromValue<qlonglong>(id)},
+            {QStringLiteral("coreIdentity"), QVariant::fromValue<qulonglong>(snapshot.coreIdentity)},
+            {QStringLiteral("sourceEpoch"), QVariant::fromValue<qulonglong>(snapshot.sourceEpoch)}};
+    };
+    QVector<MenuEntry> entries;
+    if (type == MediaTrackType::Subtitle) {
+        MenuEntry off;
+        off.text = tr("Off");
+        off.current = source->mediaTrackSelection().subtitle == 0;
+        off.payload = payload(0);
+        entries.append(std::move(off));
+    }
+    for (const MediaTrack& track : snapshot.tracks) {
+        if (track.type != type) continue;
+        QStringList details;
+        const QString fallback = type == MediaTrackType::Audio ? tr("Audio track %1").arg(track.id)
+                                                               : tr("Subtitle track %1").arg(track.id);
+        details.append(track.title.isEmpty() ? fallback : track.title);
+        if (!track.language.isEmpty()) details.append(track.language);
+        if (!track.codec.isEmpty()) details.append(track.codec.toUpper());
+        if (track.audioChannels > 0) details.append(tr("%1 ch").arg(track.audioChannels));
+        if (track.external) details.append(tr("External"));
+        if (track.forced) details.append(tr("Forced"));
+        if (track.isDefault) details.append(tr("Default"));
+        MenuEntry entry;
+        entry.text = details.join(QStringLiteral(" · "));
+        entry.tooltip = track.externalFilename.isEmpty()
+                            ? entry.text : entry.text + QLatin1Char('\n') + track.externalFilename;
+        entry.current = track.selected;
+        entry.payload = payload(track.id);
+        entries.append(std::move(entry));
     }
     return entries;
 }
@@ -1394,8 +1463,20 @@ void PlayerDialog::setVariants(const QVector<QVariantMap>& variants, const QStri
 }
 
 void PlayerDialog::setVariantsVisibility() {
-    // A button appears only when there is a choice: more than one dub, or at
-    // least one subtitle track.
+    if (directMedia_) {
+        const VideoSurface* source = playbackSurface();
+        int audio = 0;
+        int subtitles = 0;
+        if (source != nullptr && source->mediaTracks().ready) {
+            for (const MediaTrack& track : source->mediaTracks().tracks) {
+                if (track.type == MediaTrackType::Audio) ++audio;
+                else ++subtitles;
+            }
+        }
+        shell_->setAudioAvailable(audio > 1);
+        shell_->setSubtitlesAvailable(subtitles > 0);
+        return;
+    }
     int dub = 0;
     int subs = 0;
     for (const VariantInfo& variant : variants_) {
@@ -1442,10 +1523,25 @@ void PlayerDialog::setTrackQuality(const QString& embed, int quality) {
 }
 
 void PlayerDialog::onTrackPicked(const QVariant& payload) {
-    if (closed_ || directMedia_ || payload.typeId() != QMetaType::QVariantMap) {
+    if (closed_ || payload.typeId() != QMetaType::QVariantMap) return;
+    const QVariantMap map = payload.toMap();
+    if (directMedia_) {
+        const QString type = map.value(QStringLiteral("mediaTrackType")).toString();
+        if (type != QLatin1String("audio") && type != QLatin1String("sub")) return;
+        bool idOk = false;
+        bool coreOk = false;
+        bool epochOk = false;
+        const int64_t id = map.value(QStringLiteral("trackId")).toLongLong(&idOk);
+        const uint64_t core = map.value(QStringLiteral("coreIdentity")).toULongLong(&coreOk);
+        const uint64_t epoch = map.value(QStringLiteral("sourceEpoch")).toULongLong(&epochOk);
+        VideoSurface* source = playbackSurface();
+        if (source != nullptr && idOk && coreOk && epochOk) {
+            source->selectMediaTrack(type == QLatin1String("audio") ? MediaTrackType::Audio
+                                                                  : MediaTrackType::Subtitle,
+                                     id, core, epoch);
+        }
         return;
     }
-    const QVariantMap map = payload.toMap();
     const QString embed = map.value(QStringLiteral("embed")).toString();
     const QString label = map.value(QStringLiteral("label")).toString();
     if (!embed.isEmpty() && embed != currentEmbed_) {
@@ -1775,6 +1871,7 @@ void PlayerDialog::changeEvent(QEvent* event) {
     updateSeriesToggle();
     audioPopup_->setTitle(tr("AUDIO"));
     subtitlesPopup_->setTitle(tr("SUBTITLES"));
+    refreshTrackMenus();
     retryButton_->setText(tr("Retry"));
     retryButton_->setToolTip(tr("Retry playback"));
     retryButton_->setAccessibleName(tr("Retry playback"));

@@ -25,6 +25,7 @@
 
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
+#include "MediaTracks.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/AnimeJanaiBuildLog.hpp"
 #include "PlaybackDiagnostics.hpp"
@@ -127,6 +128,12 @@ public:
     // caller asked for later. 0 says the caller named none.
     bool open(const QString& url, quint64 mediaToken = 0);
     void close();
+
+    const MediaTrackSnapshot& mediaTracks() const { return mediaTracks_; }
+    MediaTrackSelection mediaTrackSelection() const { return selectedMediaTracks(mediaTracks_); }
+    bool selectMediaTrack(MediaTrackType type, int64_t id, uint64_t expectedCoreIdentity,
+                          uint64_t expectedSourceEpoch);
+    void setNextMediaTrackSelection(MediaTrackSelection selection);
 
     void togglePause();
     /// Sets the paused state outright; same-value requests still express intent.
@@ -383,6 +390,8 @@ signals:
     void streamStatsChanged(double bytesPerSecond, double framesPerSecond,
                             StreamFpsSource fpsSource);
     void errorOccurred(const QString& message);
+    void mediaTracksChanged();
+    void mediaTracksError(const QString& reason);
     void nativeStatusChanged(const native::NativeStatusView& status);
     /// A native transition ended in a named non-Active verdict: a refused or
     /// timed-out command, or a filter that refused the admitted plan.
@@ -445,6 +454,8 @@ private:
     /// so the 50 ms pump never takes the core lock to learn what it shows.
     void observePlaybackState();
     void publishObservedState();
+    void resetMediaTracks();
+    void refreshMediaTracks();
     /// One native-status pump step, driven from the 50 ms timer. The reader is
     /// ticked even while polling is off, so a timed-out request is still
     /// abandoned and the current source epoch keeps being observed.
@@ -888,10 +899,19 @@ private:
     /// Playlist entry from the last START_FILE, used to reject stale END_FILE events.
     int64_t currentPlaylistEntryId_ = 0;
     bool havePlaylistEntryId_ = false;
-    /// Reply userdata → token until each loadfile result identifies its entry.
-    std::map<uint64_t, quint64> pendingLoadTokens_;
-    /// Playlist entry id → token from its own command result; consumed at START_FILE.
-    std::map<int64_t, quint64> entryTokensById_;
+    struct LoadIdentity {
+        quint64 token = 0;
+        uint64_t epoch = 0;
+    };
+    std::map<uint64_t, LoadIdentity> pendingLoadTokens_;
+    std::map<int64_t, LoadIdentity> entryTokensById_;
+    uint64_t entrySourceEpoch_ = 0;
+    MediaTrackSnapshot mediaTracks_;
+    AsyncRequestId mediaTracksRequest_;
+    bool mediaTracksLoaded_ = false;
+    bool mediaTracksDirty_ = false;
+    std::optional<MediaTrackSelection> nextMediaTrackSelection_;
+    MediaTrackSelection pendingMediaTrackSelection_;
     /// Identity of the load named by the last START_FILE: the file playing now.
     quint64 entryMediaToken_ = 0;
     /// Suppresses duplicate FILE_LOADED events for one entry.

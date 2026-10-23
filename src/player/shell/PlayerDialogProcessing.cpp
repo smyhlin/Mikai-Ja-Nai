@@ -1108,6 +1108,7 @@ void PlayerDialog::enterPip() {
     // again on every entry would stack a second copy of each handler, so one
     // restore click would run leavePip repeatedly.
     if (fresh) {
+        watchMediaTracks(window->videoSurface());
         // No play/seek signals: the float drives its own core, so routing them
         // to the main surface would move a video the viewer cannot see.
         connect(window, &PipFloat::muteChanged, this, [this](bool muted) {
@@ -1186,6 +1187,9 @@ void PlayerDialog::enterPip() {
     window->setPlaying(!enteringPaused);
     window->setTime(surface_->position(), surface_->duration());
     window->setMuted(muted_);
+    if (directMedia_) {
+        window->videoSurface()->setNextMediaTrackSelection(surface_->mediaTrackSelection());
+    }
     window->openStream(url_, surface_->position(), enteringPaused, episodeMediaToken());
     // Volume lives on the core and the float has its own. Without this it
     // opens at mpv's default 100% while the player sits wherever the viewer
@@ -1211,6 +1215,7 @@ void PlayerDialog::enterPip() {
         }
     }
     pip_ = window;
+    refreshTrackMenus();
     moveEnginePreparationPause(window->videoSurface(), enteringPauseIntent);
     syncAnimeJanaiEngineBuildState(window->videoSurface());
     // The owning core changes here, so a capture asked of the main core can no
@@ -1399,9 +1404,11 @@ void PlayerDialog::leavePip(bool closing) {
     ++pipTransitionGeneration_;
     PipFloat* window = pip_;
     const bool returningPaused = window->videoSurface()->playbackPauseIntent();
+    const MediaTrackSelection returningTracks = window->videoSurface()->mediaTrackSelection();
     surface_->setAnimeJanaiPlan(animeJanaiPlan_);
     pip_ = nullptr;
     cancelWindowHandoff();
+    refreshTrackMenus();
     // The hold moves BEFORE the explicit request is applied: with the hold in
     syncAnimeJanaiEngineBuildState(surface_);
     // place the request only records the intent.
@@ -1473,7 +1480,7 @@ void PlayerDialog::leavePip(bool closing) {
     const quint64 transition = pipTransitionGeneration_;
     QPointer<PipFloat> parked(window);
     QTimer::singleShot(0, this, [this, parked, resumeAt, wasFullscreen, returnEpoch,
-                                returnPauseGeneration, returningPaused, transition] {
+                                returnPauseGeneration, returningPaused, returningTracks, transition] {
         if (transition != pipTransitionGeneration_) {
             return;
         }
@@ -1482,6 +1489,17 @@ void PlayerDialog::leavePip(bool closing) {
             // Set the mode before mapping to avoid a visible intermediate windowed frame.
             if (wasFullscreen) {
                 fullscreen_ = true;
+            }
+            if (directMedia_ && surface_->sourceEpoch() == returnEpoch) {
+                const MediaTrackSnapshot& snapshot = surface_->mediaTracks();
+                if (returningTracks.audio.has_value()) {
+                    surface_->selectMediaTrack(MediaTrackType::Audio, *returningTracks.audio,
+                                                snapshot.coreIdentity, snapshot.sourceEpoch);
+                }
+                if (returningTracks.subtitle.has_value()) {
+                    surface_->selectMediaTrack(MediaTrackType::Subtitle, *returningTracks.subtitle,
+                                                snapshot.coreIdentity, snapshot.sourceEpoch);
+                }
             }
             beginWindowHandoff(WindowHandoff::FloatToPlayer, parked.data());
             if (!isVisible()) {

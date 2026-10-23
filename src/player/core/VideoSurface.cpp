@@ -255,7 +255,7 @@ void VideoSurface::ensureEngine() {
             // result still identifies the entry created by this loadfile.
             const auto pending = pendingLoadTokens_.find(event->reply_userdata);
             if (pending != pendingLoadTokens_.end()) {
-                const quint64 token = pending->second;
+                const LoadIdentity load = pending->second;
                 pendingLoadTokens_.erase(pending);
                 if (event->error >= 0 && event->data != nullptr) {
                     if (const auto entryId = playlistEntryIdFromCommand(
@@ -264,7 +264,16 @@ void VideoSurface::ensureEngine() {
                         if (entryTokensById_.size() >= 64) {
                             entryTokensById_.erase(entryTokensById_.begin());
                         }
-                        entryTokensById_[*entryId] = token;
+                        if (havePlaylistEntryId_ && currentPlaylistEntryId_ == *entryId) {
+                            entryMediaToken_ = load.token;
+                            entrySourceEpoch_ = load.epoch;
+                            if (entryLoadReported_ && load.epoch == mpv_->sourceEpoch()) {
+                                mediaTracksLoaded_ = true;
+                                mediaTracksDirty_ = true;
+                            }
+                        } else {
+                            entryTokensById_[*entryId] = load;
+                        }
                     }
                 }
             }
@@ -280,10 +289,12 @@ void VideoSurface::ensureEngine() {
             }
             // Unknown entries stay unnamed; never pair by command issue order.
             entryMediaToken_ = 0;
+            entrySourceEpoch_ = 0;
             if (havePlaylistEntryId_) {
                 const auto known = entryTokensById_.find(currentPlaylistEntryId_);
                 if (known != entryTokensById_.end()) {
-                    entryMediaToken_ = known->second;
+                    entryMediaToken_ = known->second.token;
+                    entrySourceEpoch_ = known->second.epoch;
                     entryTokensById_.erase(known);
                 }
             }
@@ -295,6 +306,10 @@ void VideoSurface::ensureEngine() {
             // says the file is loaded.
             if (!entryLoadReported_) {
                 entryLoadReported_ = true;
+                if (entrySourceEpoch_ == mpv_->sourceEpoch()) {
+                    mediaTracksLoaded_ = true;
+                    mediaTracksDirty_ = true;
+                }
                 emit mediaLoaded(entryMediaToken_);
             }
             return;
@@ -629,6 +644,8 @@ VideoSurface::~VideoSurface() {
 
 bool VideoSurface::open(const QString& url, quint64 mediaToken) {
     invalidateEngineFrameHold();
+    pendingMediaTrackSelection_ = {};
+    resetMediaTracks();
     discardEnginePause();
     finishAnimeJanaiEngineBuild(false, tr("The source changed during engine preparation."));
     animeJanaiSourceRequested_ = !url.isEmpty();
@@ -720,15 +737,17 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     // a reply for the source being replaced, and a command queued behind this
     // one must already be reading the new epoch when its reply lands.
     mpv_->invalidateAsyncEpoch();
-    std::vector<std::string> load{"loadfile", url_.toStdString()};
-    if (resumeAt > 0.0) {
-        // `start` is a per-file option, applied with the file. A seek issued
-        // after the load would race it: loadfile returns once the load has
-        // STARTED, and a seek into a file that is still opening is dropped.
-        load.push_back("replace");
-        load.push_back("-1");
-        load.push_back("start=" + mpvNumber(resumeAt));
-    }
+    resetMediaTracks();
+    const MediaTrackSelection selection = nextMediaTrackSelection_.value_or(MediaTrackSelection{});
+    nextMediaTrackSelection_.reset();
+    const auto option = [](std::optional<int64_t> id) {
+        if (!id.has_value()) return std::string("auto");
+        return *id == 0 ? std::string("no") : std::to_string(*id);
+    };
+    std::string options = "aid=" + option(selection.audio) + ",sid=" + option(selection.subtitle) +
+                          ",sub-auto=exact,audio-file-auto=exact";
+    if (resumeAt > 0.0) options += ",start=" + mpvNumber(resumeAt);
+    std::vector<std::string> load{"loadfile", url_.toStdString(), "replace", "-1", std::move(options)};
     issueCoreCommand(std::move(load), "loadfile", /*reportRefusal=*/true, mediaToken_);
     // mpv also comes up paused when a render context is its only consumer: it
     // has no window of its own to drive playback. Without this the core decodes
@@ -756,6 +775,9 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
 
 void VideoSurface::close() {
     invalidateEngineFrameHold();
+    resetMediaTracks();
+    nextMediaTrackSelection_.reset();
+    pendingMediaTrackSelection_ = {};
     discardEnginePause();
     finishAnimeJanaiEngineBuild(false, tr("Playback closed during engine preparation."));
     animeJanaiSourceRequested_ = false;
@@ -974,7 +996,7 @@ void VideoSurface::issueCoreCommand(std::vector<std::string> args, const char* w
         // exact command created even when the transport drops the callback
         // above: a source superseded before the reply lands still names its
         // entry, and that entry's start is real if mpv gets to it.
-        pendingLoadTokens_.emplace(request.value, *mediaToken);
+        pendingLoadTokens_.emplace(request.value, LoadIdentity{*mediaToken, epoch});
     }
     if (!request.valid()) {
         // No reply will ever arrive for a command mpv would not take, so the
@@ -1109,7 +1131,7 @@ void VideoSurface::initializeGL() {
         // is holding, even if no frame has been decoded yet: the framebuffer
         // has never been drawn into.
         forceRender_ = true;
-        if (recreated) {
+        if (recreated && !pendingOpen_) {
             // Freeing the old render context disabled the core's video track
             // (vo_libmpv kills the VO and errors the track), so a source that was
             // already loaded has to be handed back to it, at the position the
@@ -1118,6 +1140,12 @@ void VideoSurface::initializeGL() {
             // no longer in the core.
             animeJanaiFilterBound_ = false;
             nativeFilterBound_ = false;
+            MediaTrackSelection selection = mediaTrackSelection();
+            if (pendingMediaTrackSelection_.audio.has_value())
+                selection.audio = pendingMediaTrackSelection_.audio;
+            if (pendingMediaTrackSelection_.subtitle.has_value())
+                selection.subtitle = pendingMediaTrackSelection_.subtitle;
+            setNextMediaTrackSelection(selection);
             startPendingUrl(observedPosition_);
         }
         if (requestedPause() || enginePauseHeld()) reassertPaused();
@@ -1532,6 +1560,105 @@ void VideoSurface::observePlaybackState() {
           [this](const Property& p) { observedContainerFps_ = p.isNumber() ? p.number : 0.0; });
     watch("glsl-shaders", MPV_FORMAT_STRING,
           [this](const Property& p) { shaderChain_ = QString::fromStdString(p.text); });
+    for (const char* property : {"track-list", "aid", "sid"}) {
+        watch(property, MPV_FORMAT_NONE, [this](const Property&) { mediaTracksDirty_ = true; });
+    }
+}
+
+void VideoSurface::setNextMediaTrackSelection(MediaTrackSelection selection) {
+    nextMediaTrackSelection_ = std::move(selection);
+}
+
+void VideoSurface::resetMediaTracks() {
+    if (mpv_ != nullptr && mediaTracksRequest_.valid()) mpv_->cancelAsync(mediaTracksRequest_);
+    mediaTracksRequest_ = {};
+    mediaTracksLoaded_ = false;
+    mediaTracksDirty_ = false;
+    const MediaTrackSnapshot cleared{mpv_ != nullptr ? mpv_->coreIdentity() : 0,
+                                     mpv_ != nullptr ? mpv_->sourceEpoch() : 0, false, {}};
+    if (mediaTracks_ == cleared) return;
+    mediaTracks_ = cleared;
+    emit mediaTracksChanged();
+}
+
+void VideoSurface::refreshMediaTracks() {
+    if (mpv_ == nullptr || !mediaTracksLoaded_ || !mediaTracksDirty_ ||
+        mediaTracksRequest_.valid() || entrySourceEpoch_ != mpv_->sourceEpoch()) return;
+    mediaTracksDirty_ = false;
+    const uint64_t identity = mpv_->coreIdentity();
+    const uint64_t epoch = mpv_->sourceEpoch();
+    mediaTracksRequest_ = mpv_->getPropertyAsync(
+        "track-list", MPV_FORMAT_NODE, [this, identity, epoch](const AsyncReply& reply) {
+            mediaTracksRequest_ = {};
+            if (mpv_ == nullptr || identity != mpv_->coreIdentity() ||
+                epoch != mpv_->sourceEpoch() || !mediaTracksLoaded_ ||
+                entrySourceEpoch_ != epoch) return;
+            QString reason;
+            auto tracks = reply.ok() ? parseMediaTracks(reply.node, &reason) : std::nullopt;
+            if (!tracks.has_value()) {
+                const MediaTrackSnapshot unavailable{identity, epoch, false, {}};
+                if (mediaTracks_ != unavailable) {
+                    mediaTracks_ = unavailable;
+                    emit mediaTracksChanged();
+                }
+                if (!reply.ok()) reason = QString::fromStdString(mpv_->describeError(reply.error));
+                emit mediaTracksError(tr("Cannot read audio/subtitle tracks: %1").arg(reason));
+                return;
+            }
+            MediaTrackSnapshot snapshot{identity, epoch, true, std::move(*tracks)};
+            const MediaTrackSelection observed = selectedMediaTracks(snapshot);
+            if (observed.audio == pendingMediaTrackSelection_.audio)
+                pendingMediaTrackSelection_.audio.reset();
+            if (observed.subtitle == pendingMediaTrackSelection_.subtitle)
+                pendingMediaTrackSelection_.subtitle.reset();
+            if (snapshot == mediaTracks_) return;
+            mediaTracks_ = std::move(snapshot);
+            emit mediaTracksChanged();
+        });
+    if (!mediaTracksRequest_.valid()) {
+        emit mediaTracksError(tr("The playback core did not accept the track discovery request."));
+    }
+}
+
+bool VideoSurface::selectMediaTrack(MediaTrackType type, int64_t id,
+                                     uint64_t expectedCoreIdentity, uint64_t expectedSourceEpoch) {
+    if (mpv_ == nullptr || !mediaTracks_.ready || expectedCoreIdentity != mpv_->coreIdentity() ||
+        expectedSourceEpoch != mpv_->sourceEpoch() || mediaTracks_.coreIdentity != expectedCoreIdentity ||
+        mediaTracks_.sourceEpoch != expectedSourceEpoch) {
+        emit mediaTracksError(tr("The media changed. Reopen the track menu."));
+        return false;
+    }
+    const bool available = id == 0 || std::any_of(
+        mediaTracks_.tracks.cbegin(), mediaTracks_.tracks.cend(),
+        [type, id](const MediaTrack& track) { return track.type == type && track.id == id; });
+    if (!available) {
+        emit mediaTracksError(tr("The selected track is no longer available."));
+        return false;
+    }
+    const char* property = type == MediaTrackType::Audio ? "aid" : "sid";
+    const AsyncRequestId request = mpv_->commandAsync(
+        {"set", property, id == 0 ? std::string("no") : std::to_string(id)},
+        [this, type, id](const AsyncReply& reply) {
+            if (!reply.ok()) {
+                auto& pending = type == MediaTrackType::Audio
+                                    ? pendingMediaTrackSelection_.audio
+                                    : pendingMediaTrackSelection_.subtitle;
+                if (pending == id) pending.reset();
+                emit mediaTracksError(tr("Cannot select %1: %2")
+                    .arg(type == MediaTrackType::Audio ? tr("audio track") : tr("subtitle track"),
+                         QString::fromStdString(mpv_->describeError(reply.error))));
+                return;
+            }
+            mediaTracksDirty_ = true;
+        });
+    if (request.valid()) {
+        auto& pending = type == MediaTrackType::Audio ? pendingMediaTrackSelection_.audio
+                                                     : pendingMediaTrackSelection_.subtitle;
+        pending = id;
+        return true;
+    }
+    emit mediaTracksError(tr("The playback core did not accept the track selection request."));
+    return false;
 }
 
 void VideoSurface::publishObservedState() {
@@ -1583,6 +1710,7 @@ void VideoSurface::pumpEvents() {
     pollNativeStatus();
     pollDiagnostics();
     pollAnimeJanaiEngineBuild();
+    refreshMediaTracks();
     // Bounded deadline for the native transition in flight: a command the core
     // accepted but the filter never acknowledged ends in a named non-Active
     // verdict rather than hanging the transition forever.

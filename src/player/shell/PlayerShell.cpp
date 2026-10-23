@@ -607,7 +607,7 @@ void PlayerShell::buildDock() {
     actions->addWidget(btnWindowMode_);
 
     btnAudio_ = new IconButton(IconPainter::microphone,
-                               tr("Audio — choose a dub  (T)"),
+                               tr("Audio — choose a track  (T)"),
                                kDockActionSize, kDockActionGlyph, actionHost);
     connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
     btnAudio_->hide();
@@ -2171,7 +2171,7 @@ void PlayerShell::retranslateUi() {
     vol_->setAccessibleName(tr("Volume"));
     scrub_->setAccessibleName(tr("Timeline"));
     relabel(btnPip_, tr("Picture in picture"));
-    relabel(btnAudio_, tr("Audio — choose a dub  (T)"));
+    relabel(btnAudio_, tr("Audio — choose a track  (T)"));
     relabel(btnSubs_, tr("Subtitles — choose a track  (C)"));
     relabel(btnEnhance_, tr("Open enhancements"));
     relabel(btnSettings_, tr("Quality and speed"));

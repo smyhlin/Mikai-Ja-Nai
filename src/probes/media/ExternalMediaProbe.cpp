@@ -259,8 +259,6 @@ bool videoOnly(PlayerDialog* player) {
     player->toggleSeries();
     auto* series = player->findChild<QPushButton*>(QStringLiteral("playerSeriesToggle"));
     bool clean = series && !series->isVisible();
-    clean = clean && !anyVisibleGlyphButton(shell, IconPainter::microphone);
-    clean = clean && !anyVisibleGlyphButton(shell, IconPainter::captions);
     clean = clean && !anyVisibleGlyphButton(shell, IconPainter::chevronLeft);
     clean = clean && !anyVisibleGlyphButton(shell, IconPainter::chevronRight);
     shell->openSettings();

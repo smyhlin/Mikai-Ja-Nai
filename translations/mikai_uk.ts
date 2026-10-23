@@ -7351,7 +7351,7 @@ Active: %1 · queued: %2</source>
         <translation>Компіляція вибраної моделі для цієї роздільної здатності відео.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="338"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="353"/>
         <source>Could not play the video (mpv: %1)</source>
         <translation>Не вдалося відтворити відео (mpv: %1)</translation>
     </message>
@@ -7366,7 +7366,7 @@ Active: %1 · queued: %2</source>
         <translation>Немає активного ядра mpv для захоплення кадру.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="760"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="782"/>
         <source>Playback closed during engine preparation.</source>
         <translation>Відтворення закрито під час підготовки рушія.</translation>
     </message>
@@ -7381,24 +7381,64 @@ Active: %1 · queued: %2</source>
         <translation>Збирання рушія TensorRT скасовано.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="895"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="917"/>
         <source>pause: %1</source>
         <translation>Пауза: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="905"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="927"/>
         <source>pause: the mpv transport did not accept the command</source>
         <translation>Пауза: транспорт mpv не прийняв команду</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="965"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="987"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="986"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1008"/>
         <source>%1: the mpv transport did not accept the command</source>
         <translation>%1: транспорт mpv не прийняв команду</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1605"/>
+        <source>Cannot read audio/subtitle tracks: %1</source>
+        <translation>Не вдалося прочитати аудіодоріжки та доріжки субтитрів: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1619"/>
+        <source>The playback core did not accept the track discovery request.</source>
+        <translation>Модуль відтворення не прийняв запит на визначення доріжок.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1628"/>
+        <source>The media changed. Reopen the track menu.</source>
+        <translation>Медіафайл змінився. Відкрийте меню доріжок знову.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1635"/>
+        <source>The selected track is no longer available.</source>
+        <translation>Вибрана доріжка більше не доступна.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1647"/>
+        <source>Cannot select %1: %2</source>
+        <translation>Не вдалося вибрати %1: %2</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1648"/>
+        <source>audio track</source>
+        <translation>аудіодоріжку</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1648"/>
+        <source>subtitle track</source>
+        <translation>доріжку субтитрів</translation>
+    </message>
+    <message>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1660"/>
+        <source>The playback core did not accept the track selection request.</source>
+        <translation>Модуль відтворення не прийняв запит на вибір доріжки.</translation>
     </message>
     <message>
         <location filename="../src/player/core/VideoSurfaceNative.cpp" line="861"/>
@@ -7491,8 +7531,8 @@ Active: %1 · queued: %2</source>
         <translation>Сусідній вихідний кадр збігається за пікселями з попереднім, тому не може слугувати другим еталоном.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="633"/>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1567"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="650"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1694"/>
         <source>The source changed during engine preparation.</source>
         <translation>Джерело змінилося під час підготовки рушія.</translation>
     </message>
@@ -7537,7 +7577,7 @@ Active: %1 · queued: %2</source>
         <translation>У цій збірці не вказано декодер для запитаного провайдера.</translation>
     </message>
     <message>
-        <location filename="../src/player/core/VideoSurface.cpp" line="1307"/>
+        <location filename="../src/player/core/VideoSurface.cpp" line="1335"/>
         <source>Video render failed (mpv: %1)</source>
         <translation>Помилка рендерингу відео (mpv: %1)</translation>
     </message>
@@ -8188,7 +8228,7 @@ Active: %1 · queued: %2</source>
         <translation>%1 Залишаємо оригінальне зображення.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1484"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1580"/>
         <source>%1p is not available for this release</source>
         <translation>%1p недоступно для цього релізу</translation>
     </message>
@@ -8199,7 +8239,7 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="294"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1776"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1872"/>
         <source>AUDIO</source>
         <translation>ОЗВУЧЕННЯ</translation>
     </message>
@@ -8211,34 +8251,34 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="463"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1788"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1885"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="927"/>
         <source>Choose the processing provider</source>
         <translation>Вибрати провайдера обробки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="639"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="640"/>
         <source>Containing folder opened</source>
         <translation>Папку з файлом відкрито</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="636"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="637"/>
         <source>Could not open the containing folder</source>
         <translation>Не вдалося відкрити папку з файлом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="520"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="521"/>
         <source>Could not open the video source</source>
         <translation>Не вдалося відкрити джерело відео</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="754"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1606"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="755"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1702"/>
         <source>Could not play the stream</source>
         <translation>Не вдалося відтворити потік</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1051"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1052"/>
         <source>Could not read the current frame</source>
         <translation>Не вдалося прочитати поточний кадр</translation>
     </message>
@@ -8254,37 +8294,67 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="414"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1514"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1610"/>
         <source>Episode list (S)</source>
         <translation>Список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1209"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1210"/>
         <source>Episode: %1</source>
         <translation>Серія: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1055"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1056"/>
         <source>Failed to copy frame</source>
         <translation>Не вдалося скопіювати кадр</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="609"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="610"/>
         <source>Failed to copy link</source>
         <translation>Не вдалося скопіювати посилання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1058"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1059"/>
         <source>Frame copied (%1×%2)</source>
         <translation>Кадр скопійовано (%1×%2)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1514"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1411"/>
+        <source>Audio track %1</source>
+        <translation>Аудіодоріжка %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1412"/>
+        <source>Subtitle track %1</source>
+        <translation>Доріжка субтитрів %1</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1416"/>
+        <source>%1 ch</source>
+        <translation>%1 кан.</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1417"/>
+        <source>External</source>
+        <translation>Зовнішня</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1418"/>
+        <source>Forced</source>
+        <translation>Примусова</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1419"/>
+        <source>Default</source>
+        <translation>Типова</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1610"/>
         <source>Hide episode list (S)</source>
         <translation>Сховати список серій (S)</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1999"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="2096"/>
         <source>Native processing did not acknowledge its stop; the player stays open so it can be retried.</source>
         <translation>Нативна обробка не підтвердила зупинку; плеєр залишається відкритим для повторної спроби.</translation>
     </message>
@@ -8299,12 +8369,12 @@ Active: %1 · queued: %2</source>
         <translation>Нативна обробка вимкнена · Оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1046"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1047"/>
         <source>No frame to copy</source>
         <translation>Немає кадру для копіювання</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1306"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1307"/>
         <source>No other audio tracks available</source>
         <translation>Інших аудіодоріжок немає</translation>
     </message>
@@ -8319,64 +8389,65 @@ Active: %1 · queued: %2</source>
         <translation>Жодне ядро відтворення не може прийняти нативний план.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1321"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1322"/>
         <source>No subtitles available</source>
         <translation>Субтитри недоступні</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1016"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1017"/>
         <source>No video to compare</source>
         <translation>Немає відео для порівняння</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1024"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1025"/>
         <source>Not enough variants to compare</source>
         <translation>Недостатньо варіантів для порівняння</translation>
     </message>
     <message>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1403"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="332"/>
         <source>Off</source>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1787"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1884"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="926"/>
         <source>Open processing and component settings</source>
         <translation>Відкрити налаштування обробки та компонентів</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="466"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1790"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1887"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="929"/>
         <source>Original</source>
         <translation>Оригінал</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1349"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1354"/>
         <source>Picture in picture</source>
         <translation>Картинка в картинці</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="224"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1079"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1193"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1080"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1194"/>
         <source>Player — %1</source>
         <translation>Плеєр — %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1086"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1087"/>
         <source>Playing local file</source>
         <translation>Відтворення локального файлу</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="459"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1781"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1878"/>
         <source>Prepare</source>
         <translation>Підготувати</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="460"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1782"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1879"/>
         <source>Prepare the selected recipe</source>
         <translation>Підготувати вибраний рецепт</translation>
     </message>
@@ -8387,86 +8458,86 @@ Active: %1 · queued: %2</source>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="462"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1785"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1882"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="924"/>
         <source>Providers</source>
         <translation>Провайдери</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="442"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1778"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1875"/>
         <source>Retry</source>
         <translation>Повторити</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="443"/>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="444"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1779"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1780"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1876"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1877"/>
         <source>Retry playback</source>
         <translation>Повторити відтворення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1495"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1513"/>
         <source>Returned to window</source>
         <translation>Повернуто у вікно</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="296"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1777"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1873"/>
         <source>SUBTITLES</source>
         <translation>СУБТИТРИ</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1785"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1882"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="924"/>
         <source>Settings</source>
         <translation>Налаштування</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1020"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1021"/>
         <source>Shaders folder not found — comparison is unavailable</source>
         <translation>Папку шейдерів не знайдено — порівняння недоступне</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerDialog.cpp" line="467"/>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1791"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1888"/>
         <source>Stay on the Original picture</source>
         <translation>Залишити оригінальне зображення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1256"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1257"/>
         <source>Stream link has expired — refreshing</source>
         <translation>Посилання на потік застаріло — оновлення</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1477"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1573"/>
         <source>Switching to %1p…</source>
         <translation>Перемикання на %1p…</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1219"/>
-        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1414"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1224"/>
+        <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="1421"/>
         <source>The reference capture was asked of the other core.</source>
         <translation>Запит еталонного захоплення було адресовано іншому ядру.</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="631"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="632"/>
         <source>The video file is no longer there</source>
         <translation>Відеофайл більше не існує за вказаним шляхом</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="624"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="625"/>
         <source>This source is a stream — it has no folder</source>
         <translation>Це потокове відео — у нього немає локальної папки</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1234"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1235"/>
         <source>Track: %1</source>
         <translation>Доріжка: %1</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="1790"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="1887"/>
         <location filename="../src/player/shell/PlayerDialogProcessing.cpp" line="929"/>
         <source>Turn off AnimeJaNai</source>
         <translation>Вимкнути AnimeJaNai</translation>
@@ -8508,7 +8579,7 @@ Active: %1 · queued: %2</source>
         <translation>Недоступно · не підготовлено</translation>
     </message>
     <message>
-        <location filename="../src/player/shell/PlayerDialog.cpp" line="612"/>
+        <location filename="../src/player/shell/PlayerDialog.cpp" line="613"/>
         <source>Video link copied</source>
         <translation>Посилання на відео скопійовано</translation>
     </message>
@@ -8525,12 +8596,6 @@ Active: %1 · queued: %2</source>
         <location filename="../src/player/shell/PlayerShell.cpp" line="1427"/>
         <source>Anime4K: %1</source>
         <translation>Anime4K: %1</translation>
-    </message>
-    <message>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="610"/>
-        <location filename="../src/player/shell/PlayerShell.cpp" line="2174"/>
-        <source>Audio — choose a dub  (T)</source>
-        <translation>Озвучення — вибрати доріжку  (T)</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="787"/>
@@ -8605,6 +8670,12 @@ Active: %1 · queued: %2</source>
         <location filename="../src/player/shell/PlayerShell.cpp" line="2170"/>
         <source>Skip forward 85 seconds</source>
         <translation>Перейти вперед на 85 секунд</translation>
+    </message>
+    <message>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="610"/>
+        <location filename="../src/player/shell/PlayerShell.cpp" line="2174"/>
+        <source>Audio — choose a track  (T)</source>
+        <translation>Аудіо — вибрати доріжку  (T)</translation>
     </message>
     <message>
         <location filename="../src/player/shell/PlayerShell.cpp" line="628"/>

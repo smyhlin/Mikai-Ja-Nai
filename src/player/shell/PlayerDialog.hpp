@@ -358,6 +358,9 @@ private:
     void fillQualityMenu();
     void probeUnknownTracks();
     void setVariantsVisibility();
+    void watchMediaTracks(VideoSurface* source);
+    void refreshTrackMenus();
+    QVector<MenuEntry> mediaTrackEntries(const QString& kind) const;
     /// Rows for one kind of track, or every kind when `kind` is empty.
     QVector<MenuEntry> trackEntries(const QString& kind) const;
     static QString trackRowText(const VariantInfo& variant);
