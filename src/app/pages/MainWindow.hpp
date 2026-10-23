@@ -23,6 +23,10 @@ namespace mplayer::shell {
 class PlayerDialog;
 }
 
+namespace mikai::gui {
+class VideoDropTarget;
+}
+
 namespace mikai::app {
 
 class SettingsDialog;
@@ -164,6 +168,7 @@ private:
     void answerMediaRuntimeResolved();
 
     backend::MikaiClient& client_;
+    gui::VideoDropTarget* videoDrop_ = nullptr;
     Runner* runner_ = nullptr;
     NativeComponentProvisioner* componentProvisioner_ = nullptr;
     /// Outlives Settings. Closing the dialog gives this tab back instead of

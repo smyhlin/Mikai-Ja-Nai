@@ -203,6 +203,7 @@ endif()
 # 3. mikai_player — OpenGL VideoSurface, Shaders, Shell Chrome & Compare UI
 # ---------------------------------------------------------------------------
 set(PLAYER_SOURCES
+  src/gui/VideoDropTarget.cpp
   # OpenGL render bridge & video surface
   src/player/core/MpvRenderContext.cpp
   src/player/core/VideoSurface.cpp
@@ -231,6 +232,7 @@ set(PLAYER_SOURCES
 )
 
 set(PLAYER_HEADERS
+  src/gui/VideoDropTarget.hpp
   src/player/core/MpvRenderContext.hpp
   src/player/core/VideoSurface.hpp
   src/player/shaders/Anime4K.hpp

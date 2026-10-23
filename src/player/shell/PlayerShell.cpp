@@ -2,6 +2,7 @@
 #include "PlayerShell.hpp"
 
 #include "PlayerPopups.hpp"
+#include "gui/VideoDropTarget.hpp"
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -9,7 +10,6 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QKeyEvent>
-#include <QMimeData>
 #include <QPainter>
 #include <QMap>
 #include <QWindow>
@@ -371,7 +371,6 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
     } else {
         resize(1280, 760);
     }
-    setAcceptDrops(true);
     setMouseTracking(true);
     setAutoFillBackground(false);
 
@@ -445,9 +444,31 @@ PlayerShell::PlayerShell(QWidget* parent, bool frameless) : QWidget(parent) {
 
     applyState();
     layoutChrome();
+
+    // The application filter can dismiss popups and schedule either paint
+    // device, so install it only after all chrome and overlays exist.
+    videoDrop_ = new mikai::gui::VideoDropTarget(
+        this, mikai::gui::VideoDropTarget::OverlayMode::HostPainted);
+    connect(videoDrop_, &mikai::gui::VideoDropTarget::videoDropped,
+            this, &PlayerShell::mediaDropped);
+    connect(videoDrop_, &mikai::gui::VideoDropTarget::indicatorChanged, this, [this] {
+        hideTimer_.stop();
+        if (videoDrop_->active()) {
+            dismissOverlay();
+        } else if (isVisible()) {
+            hideTimer_.start(kAutohideMs);
+        }
+        chromeDirtyAll();
+    });
 }
 
-PlayerShell::~PlayerShell() = default;
+PlayerShell::~PlayerShell() {
+    delete std::exchange(videoDrop_, nullptr);
+    if (surface_ != nullptr) {
+        disconnect(surface_, &VideoSurface::paintOverlay, this, &PlayerShell::paintSurfaceOverlay);
+        surface_->removeEventFilter(this);
+    }
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  BUILDERS
@@ -948,7 +969,7 @@ void PlayerShell::windowModeToggled() {
 }
 
 void PlayerShell::registerOverlay(QWidget* overlay) {
-    if (overlay == nullptr || overlays_.contains(overlay)) {
+    if (overlay == nullptr || overlays_.contains(QPointer<QWidget>(overlay))) {
         return;
     }
     overlays_.append(overlay);
@@ -957,8 +978,8 @@ void PlayerShell::registerOverlay(QWidget* overlay) {
 bool PlayerShell::dismissOverlay() {
     cancelEnhancementHover();
     bool dismissed = false;
-    for (QWidget* overlay : overlays_) {
-        if (overlay->isVisible()) {
+    for (const QPointer<QWidget>& overlay : overlays_) {
+        if (overlay != nullptr && overlay->isVisible()) {
             overlay->close();
             dismissed = true;
         }
@@ -967,8 +988,8 @@ bool PlayerShell::dismissOverlay() {
 }
 
 bool PlayerShell::hasVisibleOverlay() const {
-    for (const QWidget* overlay : overlays_) {
-        if (overlay->isVisible()) {
+    for (const QPointer<QWidget>& overlay : overlays_) {
+        if (overlay != nullptr && overlay->isVisible()) {
             return true;
         }
     }
@@ -978,7 +999,7 @@ bool PlayerShell::hasVisibleOverlay() const {
 void PlayerShell::enterAutoHidden() {
     // Never yank the chrome away mid-gesture: an open overlay or a live drag
     // means the user is interacting even though no move crossed the shell.
-    if (hasVisibleOverlay()) {
+    if ((videoDrop_ != nullptr && videoDrop_->active()) || hasVisibleOverlay()) {
         hideTimer_.start(kAutohideMs);
         return;
     }
@@ -2076,33 +2097,6 @@ bool PlayerShell::eventFilter(QObject* watched, QEvent* event) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  DRAG & DROP
-// ═════════════════════════════════════════════════════════════════════════════
-
-void PlayerShell::dragEnterEvent(QDragEnterEvent* event) {
-    if (event->mimeData()->hasUrls()) event->acceptProposedAction();
-}
-
-void PlayerShell::dropEvent(QDropEvent* event) {
-    const QList<QUrl> paths = event->mimeData()->urls();
-    for (const QUrl& url : paths) {
-        const QString candidate = url.toLocalFile();
-        const QString lower = candidate.toLower();
-        static const QStringList kVideoSuffixes = {
-            QStringLiteral(".mp4"), QStringLiteral(".mkv"), QStringLiteral(".webm"),
-            QStringLiteral(".avi"), QStringLiteral(".mov"), QStringLiteral(".m4v"),
-            QStringLiteral(".ts"),  QStringLiteral(".flv")};
-        for (const QString& suffix : kVideoSuffixes) {
-            if (lower.endsWith(suffix)) {
-                emit mediaDropped(candidate);
-                event->acceptProposedAction();
-                return;
-            }
-        }
-    }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
 //  PAINT & LIFECYCLE
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -2236,6 +2230,12 @@ void PlayerShell::paintSurfaceOverlay(QPainter* painter) {
 }
 
 void PlayerShell::paintChrome(QPainter& painter, const QRect& clip) {
+    if (videoDrop_ != nullptr && videoDrop_->active()) {
+        // Both devices use shell coordinates: the card stays whole across the
+        // picture edge without a translucent widget above the GL surface.
+        videoDrop_->paintIndicator(painter, rect());
+        return;
+    }
     // The discs are the shell's, not the buttons', so they are painted under
     // every control.
     for (IconButton* button : {btnPrev_, btnNext_}) {

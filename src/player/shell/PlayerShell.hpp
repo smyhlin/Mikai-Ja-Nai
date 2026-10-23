@@ -30,8 +30,6 @@
 #pragma once
 
 #include <QCloseEvent>
-#include <QDragEnterEvent>
-#include <QDropEvent>
 #include <QElapsedTimer>
 #include <QKeyEvent>
 #include <QLabel>
@@ -56,6 +54,10 @@ QT_END_NAMESPACE
 #include "ShellTheme.hpp"
 #include "ShellWidgets.hpp"
 #include "native/status/NativeMenu.hpp"
+
+namespace mikai::gui {
+class VideoDropTarget;
+}
 
 namespace mplayer {
 class VideoSurface;
@@ -230,8 +232,6 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
-    void dragEnterEvent(QDragEnterEvent* event) override;
-    void dropEvent(QDropEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
@@ -316,6 +316,7 @@ private:
     void releasePointer();
 
     VideoSurface* surface_ = nullptr;
+    mikai::gui::VideoDropTarget* videoDrop_ = nullptr;
     /// Filled once, where the chrome is built; a frame only walks it.
     ChromeList chrome_;
 
@@ -402,16 +403,7 @@ private:
     int pendingEnhancementHoverSpot_ = -1;
     QElapsedTimer sincePosition_;
 
-    /// Every floating overlay in the player window: the four popovers, the
-    /// settings flyout, the shortcut card, plus whatever the host registers.
-    /// dismissOverlay()/hasVisibleOverlay() used to find these by walking the
-    /// whole widget tree and asking each node for a dynamic property, which
-    /// on a long playlist means a 150-widget walk several times a second.
-    ///
-    /// Held raw because every entry is a child widget that outlives its own
-    /// registration: the shell's belong to the shell, the dialog's to the
-    /// dialog, and neither outlives the other in the hosted player.
-    QVector<QWidget*> overlays_;
+    QVector<QPointer<QWidget>> overlays_;
     /// Whether a corner mask is currently installed on the surface. Tracked
     /// rather than read back from QWidget::mask(), which returns by value.
     bool hasMask_ = false;

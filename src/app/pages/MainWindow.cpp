@@ -1,4 +1,5 @@
 #include "pages/MainWindow.hpp"
+#include "gui/VideoDropTarget.hpp"
 
 #include "dialogs/SettingsDialog.hpp"
 #include "dialogs/ComponentStoreTab.hpp"
@@ -135,6 +136,9 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     setWindowTitle(tr("Mikai Wrapper"));
     setMinimumSize(860, 620);
     resize(1080, 760);
+    videoDrop_ = new gui::VideoDropTarget(this, gui::VideoDropTarget::OverlayMode::Widget);
+    connect(videoDrop_, &gui::VideoDropTarget::videoDropped, this,
+            [this](const QString& path) { openMedia(path); });
 
     runner_ = new Runner(this);
     componentProvisioner_ = new NativeComponentProvisioner(*runner_, this);
@@ -203,6 +207,8 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+    delete videoDrop_;
+    videoDrop_ = nullptr;
     // Destruction cannot be refused: the player is closed anyway, with the
     // forced stop named and its own close still run first so the core dies
     // before the widget releases what its filter was holding.
