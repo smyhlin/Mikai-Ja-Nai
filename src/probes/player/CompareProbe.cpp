@@ -2056,12 +2056,9 @@ int main(int argc, char** argv) {
         surface->setNativeStatusPolling(false);
 
         // ── 10. an unsettled capture fails and still restores the surface ──
-        // This is the failure path that cannot be reached through the dialog's
-        // guard: hasVideo() is true, but grabSettledFrame runs out of time. A
-        // timer keeps re-seeking while the capture runs, so the surface never
-        // stops reporting a move and no frame is ever believed. The window
-        // must name the failure, freeze nothing, and - the correction this
-        // exercises - hand the native status polling it paused back on.
+        // Hidden-window cleanup discards even a successful capture, so keep this refusal visible.
+        compare->show();
+        QTest::qWait(3000);
         surface->setNativeStatusPolling(true);
         check(surface->nativeStatusPolling(), "native polling is on before the forced failure");
         QTimer churn;
@@ -2074,7 +2071,8 @@ int main(int argc, char** argv) {
         compare->captureNow();
         churn.stop();
         QTest::qWait(200);
-        std::fprintf(stderr, "     unsettled refusal: %s\n", qPrintable(compare->captureError()));
+        std::fprintf(stderr, "     unsettled refusal: capture=%s lock=%s\n",
+                     qPrintable(compare->captureError()), qPrintable(compare->lockError()));
         check(!compare->captureError().isEmpty(), "an unsettled capture refuses by name");
         check(compare->frozenFrame().isNull(), "the unsettled capture froze no frame");
         check(surface->nativeStatusPolling(),
@@ -2142,25 +2140,24 @@ int main(int argc, char** argv) {
               "compare never rewrites the stored preset");
 
         // ── 10c. a failed capture hands playback back as it found it ──
-        // The pause that buys a settled grab is a temporary override too: when
-        // the grab never settles there is no picture, so the surface has to be
-        // left playing - with its chain and polling as well - exactly as found.
+        compare->show();
+        QTest::qWait(3000);
         surface->setNativeStatusPolling(true);
         surface->setPaused(false);
         QTest::qWait(200);
         check(surface->isPlaying(), "the surface is playing before the failed capture");
         check(surface->nativeStatusPolling(), "native polling is on before the failed capture");
         QTimer churnPlayback;
-        bool flipPlayback = false;
+        const double repeatedSeekTarget = surface->position();
         QObject::connect(&churnPlayback, &QTimer::timeout, [&] {
-            flipPlayback = !flipPlayback;
-            surface->seek(flipPlayback ? 4.0 : 9.0);
+            surface->seek(repeatedSeekTarget);
         });
         churnPlayback.start(20);
         compare->captureNow();
         churnPlayback.stop();
         QTest::qWait(200);
-        std::fprintf(stderr, "     playback refusal: %s\n", qPrintable(compare->captureError()));
+        std::fprintf(stderr, "     playback refusal: capture=%s lock=%s\n",
+                     qPrintable(compare->captureError()), qPrintable(compare->lockError()));
         check(!compare->captureError().isEmpty(), "a playback capture that cannot settle refuses");
         check(compare->frozenFrame().isNull(), "the playback refusal froze no frame");
         check(surface->isPlaying(), "a failed capture hands playback back playing");

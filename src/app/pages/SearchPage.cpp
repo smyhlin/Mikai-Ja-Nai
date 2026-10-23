@@ -2,6 +2,7 @@
 #include "pages/SearchPage.hpp"
 
 #include "gui/Clipboard.hpp"
+#include "gui/ImageDecode.hpp"
 #include "Labels.hpp"
 #include "state/Feeds.hpp"
 #include "support/I18n.hpp"
@@ -23,8 +24,8 @@
 
 #include <QAccessible>
 #include <QAccessibilityHints>
-#include <QBuffer>
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QComboBox>
 #include <QDialog>
@@ -34,7 +35,6 @@
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QHBoxLayout>
-#include <QImageReader>
 #include <QJsonArray>
 #include <QEasingCurve>
 #include <QJsonDocument>
@@ -91,36 +91,6 @@ QString formatFeedTime(const QString& timestamp, bool timeOnly = false) {
 /// poster. Search rows (56x78) and feed posters (34x48) are smaller, so
 /// decoding down to this leaves no consumer upscaling.
 const QSize kThumbDecodeSize(theme::kHomePosterWidth, theme::kHomePosterHeight);
-
-QPixmap pixmapFrom(const QByteArray& data, const QSize& target) {
-    // A QImageReader built straight from the bytes would read them as a
-    // filename, not as an image: the reader needs a device to pull from.
-    QBuffer buffer;
-    buffer.setData(data);
-    if (!buffer.open(QIODevice::ReadOnly)) {
-        return {};
-    }
-    QImageReader reader(&buffer);
-    // Posters are WebP and may carry an EXIF orientation. Honouring it keeps a
-    // rotated artwork upright, and Qt 6.12's effectiveSize() (unlike size())
-    // reports the post-rotation dimensions, so the decode-to-target decision is
-    // made against the size the pixels actually have.
-    reader.setAutoTransform(true);
-    // Scaling during the decode is far cheaper than decoding a full cover and
-    // then throwing nearly all of it away, and the two agree on the result to
-    // within a rounding step. Artwork already at or below the display rect is
-    // decoded whole: scaling it up first would only cost time.
-    const QSize source = reader.effectiveSize();
-    if (source.isValid() && !target.isEmpty() &&
-        (source.width() > target.width() || source.height() > target.height())) {
-        reader.setScaledSize(source.scaled(target, Qt::KeepAspectRatioByExpanding));
-    }
-    const QImage image = reader.read();
-    if (image.isNull()) {
-        return {};
-    }
-    return QPixmap::fromImage(image);
-}
 
 /// Enable a carousel's arrows only where there is somewhere to scroll to.
 void syncArrows(QScrollBar* bar, QPushButton* previous, QPushButton* next) {
@@ -2576,11 +2546,7 @@ void SearchPage::requestThumb(const QString& url) {
         applyFeedPosters();
         return;
     }
-    const auto cached = thumbCache_.constFind(url);
-    if (cached != thumbCache_.constEnd()) {
-        applyThumb(url, cached.value());
-        return;
-    }
+    if (pendingThumbs_.contains(url)) return;
     thumbsInFlight_.insert(url);
     // The client travels into the worker by value; the page is reached only
     // through a guard, so a poster that lands after the page was closed is
@@ -2588,14 +2554,20 @@ void SearchPage::requestThumb(const QString& url) {
     backend::MikaiClient* client = &client_;
     const QPointer<SearchPage> self(this);
     runner_.runImage(
-        [client, url] { return client->fetchBytes(url); },
+        [client, url] {
+            return QVariant::fromValue(gui::decodeImage(client->fetchBytes(url), kThumbDecodeSize));
+        },
         [self, url](const QVariant& result) {
             if (self.isNull()) {
                 return;
             }
             self->thumbsInFlight_.remove(url);
-            self->thumbCache_.insert(url, result.toByteArray());
-            self->applyThumb(url, result.toByteArray());
+            auto decoded = result.value<gui::DecodedImage>();
+            if (decoded.image.isNull()) {
+                qWarning().noquote() << "SearchPage: thumbnail decode failed:" << decoded.error;
+                return;
+            }
+            self->applyThumb(url, std::move(decoded.image));
         },
         [self, url](const backend::Failure&) {
             if (self.isNull()) {
@@ -2605,13 +2577,8 @@ void SearchPage::requestThumb(const QString& url) {
         });
 }
 
-void SearchPage::applyThumb(const QString& url, const QByteArray& data) {
-    // A whole feed's worth of these lands in one burst. Each one used to decode
-    // twice, rescan every card, walk every result row and re-scale every feed
-    // poster, all before the next one; queueing them lets one pass over the
-    // whole batch do each of those jobs once, and each visible surface is
-    // touched once instead of once per arrival.
-    pendingThumbs_.insert(url, data);
+void SearchPage::applyThumb(const QString& url, QImage image) {
+    pendingThumbs_.insert(url, std::move(image));
     thumbTimer_->start();
 }
 
@@ -2619,23 +2586,15 @@ void SearchPage::flushThumbs() {
     if (pendingThumbs_.isEmpty()) {
         return;
     }
-    // One poster per event-loop turn, never the whole queue: a JPEG decode
-    // plus two smooth scales costs milliseconds each, and decoding a full feed
-    // in one timer tick froze every menu, click and hover until the queue
-    // drained. The timer re-arms while work remains, so posters trickle in and
-    // the UI stays responsive between decodes.
-    auto it = pendingThumbs_.constBegin();
+    // QPixmap creation stays on the GUI thread, with one image published per turn.
+    auto it = pendingThumbs_.begin();
     const QString key = it.key();
-    const QByteArray data = it.value();
-    pendingThumbs_.erase(pendingThumbs_.find(key));
+    QImage image = std::move(it.value());
+    pendingThumbs_.erase(it);
     if (!icons_.contains(key)) {
-        const QPixmap pixmap = pixmapFrom(data, kThumbDecodeSize);
+        const QPixmap pixmap = QPixmap::fromImage(std::move(image));
         if (!pixmap.isNull()) {
             icons_.insert(key, pixmap);
-            // Bytes served their purpose: the decoded icon is what every
-            // consumer reads from here on, so holding both doubles poster
-            // memory per feed.
-            thumbCache_.remove(key);
             // A poster URL is shared by several cards; the index turns that
             // into a lookup instead of a scan of every card on the page. The
             // rounded variant is painted once per URL, not once per card.

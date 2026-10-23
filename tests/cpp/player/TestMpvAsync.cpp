@@ -7,8 +7,10 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTimer>
 
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -344,6 +346,94 @@ void TestMpvAsync::anAsyncPropertyReplyCarriesItsOwnValue() {
     handle.drainEvents();
     QCOMPARE(replies.size(), size_t{1});
     QCOMPARE(handle.pendingAsyncCount(), size_t{0});
+}
+
+void TestMpvAsync::eventBacklogYieldsToTheGui() {
+    if (!requireRuntime()) return;
+    auto handle = makeHandle();
+    int completed = 0;
+    int submitted = 0;
+    for (int index = 0; index < 512; ++index) {
+        const auto request = handle.getPropertyAsync("mpv-version", MPV_FORMAT_STRING,
+                    [&completed](const AsyncReply&) {
+                        ++completed;
+                        QThread::msleep(5);
+                    });
+        if (!request.valid()) break;
+        ++submitted;
+    }
+    QVERIFY(submitted >= 64);
+    QTest::qWait(100);
+    bool timerRan = false;
+    QTimer::singleShot(0, this, [&] { timerRan = true; });
+    QElapsedTimer clock;
+    clock.start();
+    handle.drainEvents();
+    QCoreApplication::processEvents();
+    QVERIFY(timerRan);
+    QVERIFY2(clock.elapsed() < 250,
+             qPrintable(QStringLiteral("one event drain blocked the GUI for %1 ms").arg(clock.elapsed())));
+    QVERIFY(pumpUntil(handle, [&] { return completed == submitted; }, 10000));
+}
+
+void TestMpvAsync::nestedEventDrainsPreserveTheCurrentReply() {
+    if (!requireRuntime()) return;
+    auto handle = makeHandle();
+    bool nested = false;
+    handle.setEventSink([&](mpv_event* event) {
+        if (event->event_id != MPV_EVENT_GET_PROPERTY_REPLY || nested) return;
+        nested = true;
+        handle.drainEvents();
+    });
+    std::string version;
+    std::string directory;
+    QVERIFY(handle.getPropertyAsync("mpv-version", MPV_FORMAT_STRING,
+                [&](const AsyncReply& reply) { version = reply.text; }).valid());
+    QVERIFY(handle.getPropertyAsync("working-directory", MPV_FORMAT_STRING,
+                [&](const AsyncReply& reply) { directory = reply.text; }).valid());
+    QVERIFY(pumpUntil(handle, [&] { return !version.empty() && !directory.empty(); }));
+    QVERIFY(nested);
+    QVERIFY(version != directory);
+}
+
+void TestMpvAsync::selfUnobservingCallbacksKeepTheirCapturesAlive() {
+    if (!requireRuntime()) return;
+    auto handle = makeHandle();
+    auto token = std::make_shared<int>(7);
+    const std::weak_ptr<int> lifetime = token;
+    bool delivered = false;
+    bool aliveDuringCallback = false;
+    uint64_t observer = 0;
+    observer = handle.observe("idle-active", MPV_FORMAT_FLAG,
+        [&, token](const Property&) {
+            handle.unobserve(observer);
+            aliveDuringCallback = !lifetime.expired();
+            delivered = true;
+        });
+    token.reset();
+    QVERIFY(pumpUntil(handle, [&] { return delivered; }));
+    QVERIFY(aliveDuringCallback);
+    QVERIFY(lifetime.expired());
+}
+
+void TestMpvAsync::selfReplacingEventSinksKeepTheirCapturesAlive() {
+    if (!requireRuntime()) return;
+    auto handle = makeHandle();
+    auto token = std::make_shared<int>(7);
+    const std::weak_ptr<int> lifetime = token;
+    bool observed = false;
+    bool aliveDuringCallback = false;
+    handle.setEventSink([&, token](mpv_event* event) {
+        if (event->event_id != MPV_EVENT_GET_PROPERTY_REPLY) return;
+        handle.setEventSink({});
+        aliveDuringCallback = !lifetime.expired();
+    });
+    token.reset();
+    QVERIFY(handle.getPropertyAsync("mpv-version", MPV_FORMAT_STRING,
+                [&](const AsyncReply& reply) { observed = !reply.text.empty(); }).valid());
+    QVERIFY(pumpUntil(handle, [&] { return observed; }));
+    QVERIFY(aliveDuringCallback);
+    QVERIFY(lifetime.expired());
 }
 
 void TestMpvAsync::anUnknownPropertyRepliesWithAnError() {

@@ -167,8 +167,8 @@ public:
     // this before touching the source; others call it when they replace the core.
     void invalidateAsyncEpoch();
 
-    // Drains the event queue, dispatching to the sink and observers as events
-    // arrive. Safe to call often.
+    // Processes a bounded batch so log/reply floods cannot starve GUI rendering.
+    // Nested drains leave the current mpv-owned event valid until dispatch ends.
     void drainEvents();
 
     // The pointer is valid only for the duration of the call: mpv reclaims the
@@ -213,12 +213,14 @@ private:
     const MpvApiInstance* api_ = nullptr;
     mpv_handle* handle_ = nullptr;
     std::function<void(mpv_event*)> sink_;
+    uint64_t sinkRevision_ = 0;
     std::unordered_map<uint64_t, Observer> observers_;
     std::unordered_map<uint64_t, Pending> pending_;
     uint64_t nextObserverId_ = 1;
     uint64_t nextRequestId_ = 1;
     // Zero only for a moved-from handle; a live handle's token is never reused.
     uint64_t identity_ = 0;
+    bool drainingEvents_ = false;
     bool developerVerboseLogs_ = false;
     // '\0' means no threshold has been requested from this core yet.
     char requestedLogLevel_ = '\0';

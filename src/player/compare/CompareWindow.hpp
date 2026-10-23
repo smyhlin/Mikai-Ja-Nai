@@ -40,6 +40,7 @@ struct AjiPreparationTask;
 class CompareRenderer;
 class CompareCanvas;
 class CompareGrid;
+class CompareGifExport;
 
 // Each candidate renders in an isolated core from one immutable source PNG.
 class CompareWindow : public QDialog {
@@ -155,6 +156,7 @@ private:
     void dismissCandidateMenus();
     void updateInfo();
     void updateFlickerTimer();
+    void updateGifExport();
     bool ensurePlanLock();
     void releasePlanLock();
     void onNativeStatusSettled();
@@ -173,6 +175,7 @@ private:
     QPushButton* pinButton_ = nullptr;
     QToolButton* closeButton_ = nullptr;
     QPushButton* saveGifButton_ = nullptr;
+    QPointer<CompareGifExport> gifExport_;
     QToolButton* fullscreenButton_ = nullptr;
     QAction* fullscreenAction_ = nullptr;
     QFrame* modeDivider_ = nullptr;
@@ -226,6 +229,7 @@ private:
     QRgb hoverRgb_ = 0;
     bool hoverValid_ = false;
     quint64 positionEpoch_ = 0;
+    quint64 seekEpoch_ = 0;
     QStringList candidates_;
     QVector<ChoiceEntry> choices_;
     /// Each offered id's catalogue label without the synthetic "unavailable"

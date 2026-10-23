@@ -6,6 +6,7 @@
 #include <backend/UpdateFeed.hpp>
 
 #include <QHash>
+#include <QImage>
 #include <QList>
 #include <QPointer>
 #include <QSet>
@@ -291,8 +292,7 @@ private:
     void resultsContextMenu(const QPoint& position);
     void animeCardMenu(const QString& ref, const QPoint& globalPos);
     void requestThumb(const QString& url);
-    void applyThumb(const QString& url, const QByteArray& data);
-    /// Decode and paint everything applyThumb queued, once per batch.
+    void applyThumb(const QString& url, QImage image);
     void flushThumbs();
     void applyThumbs();
     void applyFeedPosters();
@@ -339,10 +339,8 @@ private:
     int formatTotalsSeq_ = 0;
     QString formatTotalsQuery_;
 
-    QHash<QString, QByteArray> thumbCache_;
     QSet<QString> thumbsInFlight_;
-    /// Thumb bytes waiting for the coalescing timer, keyed by url.
-    QHash<QString, QByteArray> pendingThumbs_;
+    QHash<QString, QImage> pendingThumbs_;
     QHash<QString, QPixmap> icons_;
     /// Rounded card pixmaps per poster URL. Several cards share one feed
     /// poster and one box, so the scale-crop-clip runs once per URL.

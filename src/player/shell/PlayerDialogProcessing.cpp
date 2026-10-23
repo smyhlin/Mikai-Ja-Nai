@@ -1091,16 +1091,10 @@ void PlayerDialog::enterPip() {
     if (url_.isEmpty()) {
         return;
     }
+    ++pipTransitionGeneration_;
     pipWasFullscreen_ = fullscreen_;
-    if (fullscreen_) {
-        fullscreen_ = false;
-        transitioning_ = true;
-        if (isFullScreen()) {
-            showNormal();
-        }
-        transitioning_ = false;
-        shell_->leaveFullscreen();
-    }
+    // Leave the visible fullscreen window intact until the float has a picture.
+    const bool leftFullscreen = fullscreen_;
     // Parentless on purpose: a child window is clipped to its parent's z-order,
     // so a float parented to the player slides under whatever app the user
     // switches to.
@@ -1201,8 +1195,6 @@ void PlayerDialog::enterPip() {
     // hidden window unless it is stopped. That doubled the bandwidth, burned
     // the rate budget, and meant coming back to two videos at different
     // positions. Only the float plays while PiP is up.
-    pipResumePosition_ = surface_->position();
-    pipResumePlaying_ = !enteringPaused;
     surface_->setPaused(true);
 
     // Pooled reentry preserves the viewer's position and size.
@@ -1225,6 +1217,7 @@ void PlayerDialog::enterPip() {
     // longer describe what the viewer is watching.
     cancelPendingReferenceCapture(QStringLiteral("native.reference.coreChanged"),
                                   tr("The reference capture was asked of the other core."));
+    beginWindowHandoff(WindowHandoff::PlayerToFloat, window, leftFullscreen);
     window->show();
     window->raise();
     syncPipBar();
@@ -1252,10 +1245,116 @@ void PlayerDialog::enterPip() {
     // announcement is not made here: the float's own settle step makes it once
     // the claim is free.
     pushNativeInputs();
-            flashStatus(tr("Picture in picture"));
-    // The float owns the picture now, so what is left behind would be an empty
-    // black frame.
-    hide();
+}
+
+void PlayerDialog::beginWindowHandoff(WindowHandoff kind, PipFloat* floatWindow,
+                                      bool leftFullscreen) {
+    cancelWindowHandoff();
+    if (kind == WindowHandoff::None) {
+        return;
+    }
+    VideoSurface* successor = kind == WindowHandoff::PlayerToFloat
+                                  ? (floatWindow != nullptr ? floatWindow->videoSurface()
+                                                            : nullptr)
+                                  : surface_;
+    if (successor == nullptr) {
+        // No window to hand over to: nothing was replaced, so nothing is hidden.
+        return;
+    }
+    windowHandoff_ = kind;
+    windowHandoffFloat_ = floatWindow;
+    windowHandoffSurface_ = successor;
+    windowHandoffLeftFullscreen_ = leftFullscreen;
+    windowHandoffGeneration_ = pipTransitionGeneration_;
+    // A same-turn reversal may leave the original picture visible without another swap.
+    if (successor->hasVisibleOutputFrame() && successor->isVisible()) {
+        finishWindowHandoff();
+        return;
+    }
+    windowHandoffFrameSwapped_ =
+        connect(successor, &QOpenGLWidget::frameSwapped, this,
+                &PlayerDialog::onHandoffPainted);
+    windowHandoffFailed_ = connect(successor, &VideoSurface::errorOccurred, this,
+                                   &PlayerDialog::onHandoffFailed);
+}
+
+void PlayerDialog::cancelWindowHandoff() {
+    windowHandoff_ = WindowHandoff::None;
+    windowHandoffFloat_.clear();
+    windowHandoffSurface_.clear();
+    windowHandoffLeftFullscreen_ = false;
+    windowHandoffGeneration_ = 0;
+    if (windowHandoffFrameSwapped_) {
+        disconnect(windowHandoffFrameSwapped_);
+        windowHandoffFrameSwapped_ = QMetaObject::Connection();
+    }
+    if (windowHandoffFailed_) {
+        disconnect(windowHandoffFailed_);
+        windowHandoffFailed_ = QMetaObject::Connection();
+    }
+}
+
+void PlayerDialog::onHandoffPainted() {
+    if (windowHandoff_ == WindowHandoff::None) {
+        return;
+    }
+    if (windowHandoffGeneration_ != pipTransitionGeneration_) {
+        cancelWindowHandoff();
+        return;
+    }
+    VideoSurface* successor = windowHandoffSurface_.data();
+    if (successor == nullptr) {
+        return;
+    }
+    // Initial compositions can contain only the cleared FBO.
+    if (!successor->hasVisibleOutputFrame()) {
+        return;
+    }
+    finishWindowHandoff();
+}
+
+void PlayerDialog::onHandoffFailed(const QString& reason) {
+    if (windowHandoff_ == WindowHandoff::None) {
+        return;
+    }
+    if (windowHandoffGeneration_ != pipTransitionGeneration_) {
+        cancelWindowHandoff();
+        return;
+    }
+    // Terminal failures use the surface's existing error UI instead of waiting forever.
+    Q_UNUSED(reason);
+    finishWindowHandoff();
+}
+
+void PlayerDialog::finishWindowHandoff() {
+    const WindowHandoff kind = windowHandoff_;
+    if (kind == WindowHandoff::None) {
+        return;
+    }
+    QPointer<PipFloat> floatWindow = windowHandoffFloat_;
+    const bool leftFullscreen = windowHandoffLeftFullscreen_;
+    // Hiding a window can re-enter its lifecycle handlers.
+    cancelWindowHandoff();
+    if (closed_) {
+        if (floatWindow != nullptr) {
+            floatWindow->hide();
+        }
+        return;
+    }
+    if (kind == WindowHandoff::PlayerToFloat) {
+        if (floatWindow.isNull() || pip_ != floatWindow.data()) {
+            return;
+        }
+        hide();
+        flashStatus(tr("Picture in picture"));
+        if (leftFullscreen) {
+            shell_->leaveFullscreen();
+        }
+        return;
+    }
+    if (floatWindow != nullptr && pip_ != floatWindow.data()) {
+        floatWindow->hide();
+    }
 }
 
 bool PlayerDialog::settleParkedNative() {
@@ -1268,6 +1367,9 @@ bool PlayerDialog::settleParkedNative() {
 }
 
 void PlayerDialog::releasePipPool() {
+    // The float is about to be destroyed, so a wait that names it can never be
+    // completed and must not be left observing a dying surface.
+    cancelWindowHandoff();
     nativeHandoff_ = NativeHandoff::None;
     nativeHandoffFloat_.clear();
     nativeReferencePending_ = false;
@@ -1293,16 +1395,13 @@ void PlayerDialog::releasePipPool() {
 }
 
 void PlayerDialog::leavePip(bool closing) {
+    if (pip_ == nullptr) return;
+    ++pipTransitionGeneration_;
     PipFloat* window = pip_;
-    // The float owns play/pause while PiP is up: the main core returns to the
-    // float's live pause intent, not to the entry record. A viewer who paused
-    // the float comes back paused; one who left it running comes back
-    // running. The entry flag only covers a missing window.
-    const bool returningPaused = window != nullptr
-        ? window->videoSurface()->playbackPauseIntent()
-        : !pipResumePlaying_;
+    const bool returningPaused = window->videoSurface()->playbackPauseIntent();
     surface_->setAnimeJanaiPlan(animeJanaiPlan_);
     pip_ = nullptr;
+    cancelWindowHandoff();
     // The hold moves BEFORE the explicit request is applied: with the hold in
     syncAnimeJanaiEngineBuildState(surface_);
     // place the request only records the intent.
@@ -1318,18 +1417,19 @@ void PlayerDialog::leavePip(bool closing) {
     // entry. Read before anything else, and NOT clamped against the main
     // surface's duration: the two cores can disagree, and clamping a good
     // position to zero would silently skip the hand-back.
-    const double resumeAt = window != nullptr ? std::max(0.0, window->position()) : 0.0;
+    const double resumeAt = std::max(0.0, window->position());
     if (window != nullptr) {
-        // Hidden, not destroyed. Tearing down its QOpenGLWidget while the
-        // player's is coming back crashed the display driver; keeping the float
-        // alive costs one idle surface and makes the next entry instant. It is
-        // released with the dialog.
-        window->hide();
-        // Paused, though: a hidden float still has a live mpv core, and a
-        // playing one decodes the stream a second time behind the player.
+        // Paused immediately: the main core plays again below, and a float left
+        // decoding behind the player would fetch the stream twice.
         window->videoSurface()->setPaused(true);
     }
     if (closed_) {
+        // Nothing is coming back in front of the float, so it goes now. Hidden,
+        // not destroyed: tearing down its QOpenGLWidget beside the player's
+        // crashed the display driver, and keeping it costs one idle surface.
+        if (window != nullptr) {
+            window->hide();
+        }
         nativeHandoff_ = NativeHandoff::None;
         nativeHandoffFloat_.clear();
         return;
@@ -1337,6 +1437,9 @@ void PlayerDialog::leavePip(bool closing) {
     const bool wasFullscreen = pipWasFullscreen_;
     pipWasFullscreen_ = false;
     if (closing) {
+        if (window != nullptr) {
+            window->hide();
+        }
         nativeHandoff_ = NativeHandoff::None;
         nativeHandoffFloat_.clear();
         return;
@@ -1367,20 +1470,34 @@ void PlayerDialog::leavePip(bool closing) {
     // The pause generation drops a request a newer viewer intent overtook.
     const uint64_t returnEpoch = surface_->sourceEpoch();
     const quint64 returnPauseGeneration = surface_->pauseRequestGeneration();
-    QTimer::singleShot(0, this, [this, resumeAt, wasFullscreen, returnEpoch,
-                                returnPauseGeneration, returningPaused] {
-        if (closed_ || pip_ != nullptr || surface_->sourceEpoch() != returnEpoch) {
+    const quint64 transition = pipTransitionGeneration_;
+    QPointer<PipFloat> parked(window);
+    QTimer::singleShot(0, this, [this, parked, resumeAt, wasFullscreen, returnEpoch,
+                                returnPauseGeneration, returningPaused, transition] {
+        if (transition != pipTransitionGeneration_) {
             return;
         }
-        if (!isVisible()) {
-            show();
+        const bool playerTakesOver = !closed_ && pip_ == nullptr;
+        if (playerTakesOver) {
+            // Set the mode before mapping to avoid a visible intermediate windowed frame.
+            if (wasFullscreen) {
+                fullscreen_ = true;
+            }
+            beginWindowHandoff(WindowHandoff::FloatToPlayer, parked.data());
+            if (!isVisible()) {
+                show();
+            } else if (fullscreen_ && !isFullScreen()) {
+                transitioning_ = true;
+                showFullScreen();
+                transitioning_ = false;
+                shell_->enterFullscreen();
+            }
+            flashStatus(tr("Returned to window"));
+        } else if (parked != nullptr && pip_ != parked.data()) {
+            parked->hide();
         }
-        if (wasFullscreen && !fullscreen_) {
-            fullscreen_ = true;
-            transitioning_ = true;
-            showFullScreen();
-            transitioning_ = false;
-            shell_->enterFullscreen();
+        if (!playerTakesOver || surface_->sourceEpoch() != returnEpoch) {
+            return;
         }
         if (surface_->hasVideo() && pip_ == nullptr &&
             surface_->sourceEpoch() == returnEpoch) {
@@ -1394,8 +1511,8 @@ void PlayerDialog::leavePip(bool closing) {
             }
         }
     });
-            flashStatus(tr("Returned to window"));
 }
+
 
 void PlayerDialog::syncPipBar() {
     if (pip_ == nullptr) {

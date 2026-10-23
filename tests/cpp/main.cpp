@@ -26,6 +26,7 @@
 #include "TestRunner.hpp"
 #include "TestStreams.hpp"
 #include "TestMpvAsync.hpp"
+#include "TestCompareGif.hpp"
 #include "TestNativeAssets.hpp"
 #include "TestNativeUserRecipes.hpp"
 #include "TestNativeBundle.hpp"
@@ -87,7 +88,7 @@ constexpr const char* kSuites[] = {
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
     "TestPlaybackDiagnostics",
     "TestNativePrefs",
-    "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync",
+    "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
     "TestNativeCatalog",
 #endif
@@ -236,6 +237,7 @@ int main(int argc, char** argv) {
   TestNativeUserRecipes nativeUserRecipes;
   TestNativeAssets nativeAssets;
   TestMpvAsync mpvAsync;
+  TestCompareGif compareGif;
 #ifdef MIKAI_WITH_MODEL_INSPECTION
   TestNativeCatalog nativeCatalog;
 #endif
@@ -346,6 +348,7 @@ int main(int argc, char** argv) {
   run("TestNativeUserRecipes", &nativeUserRecipes, true);
   run("TestNativeAssets", &nativeAssets, true);
   run("TestMpvAsync", &mpvAsync, true);
+  run("TestCompareGif", &compareGif, true);
   runWrapper("TestDownloads", runTestDownloads);
   runWrapper("TestDiagnostics", runTestDiagnostics);
   runWrapper("TestApiClient", runTestApiClient);

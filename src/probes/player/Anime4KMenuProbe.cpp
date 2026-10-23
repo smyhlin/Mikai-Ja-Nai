@@ -339,6 +339,17 @@ bool chainMatches(VideoSurface* surface, const QString& id) {
     return staged == expected.size() && anime4k::chainIsComplete(anime4k::candidateForId(id));
 }
 
+/// mpv acknowledges a glsl-shaders write asynchronously and reports the chain
+/// only from its own observer, so a read taken straight after the menu click
+/// can still be the chain from before it: wait for the real one instead.
+bool chainSettlesTo(VideoSurface* surface, const QString& id, int timeoutMs = 8000) {
+    return waitUntil([surface, id] { return chainMatches(surface, id); }, timeoutMs);
+}
+
+bool chainSettlesOff(VideoSurface* surface, int timeoutMs = 8000) {
+    return waitUntil([surface] { return surface->effectiveShaderChain().isEmpty(); }, timeoutMs);
+}
+
 void shoot(QWidget* widget, const QString& name) {
     check(widget != nullptr, "there is a widget to screenshot");
     if (widget == nullptr) return;
@@ -507,7 +518,7 @@ int main(int argc, char** argv) {
     // settled grabs with nothing between them: that difference is the noise
     // floor every later comparison has to clear.
     surface->setAnime4KMode(anime4k::Mode::Off);
-    check(surface->effectiveShaderChain().isEmpty(),
+    check(chainSettlesOff(surface),
           "Disabled leaves mpv with no shader chain at all");
     surface->setPaused(true);
     pump(400);
@@ -587,7 +598,7 @@ int main(int argc, char** argv) {
           "the experiment is selected through the real menu");
     check(surface->anime4KChainId() == QLatin1String(kExperiment),
           "the experiment is the applied candidate id");
-    check(chainMatches(surface, QLatin1String(kExperiment)),
+    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
           "mpv is running the experiment's ordered chain, stage for stage");
     check(levelPanel(dialog, QStringLiteral("anime4k/experimental")) == nullptr,
           "choosing a preset takes the level it was reached through off the screen");
@@ -630,7 +641,7 @@ int main(int argc, char** argv) {
         }
         check(surface->anime4KChainId() == id,
               (QStringLiteral("leaf applies its exact id: ") + id).toUtf8().constData());
-        check(chainMatches(surface, id),
+        check(chainSettlesTo(surface, id),
               (QStringLiteral("mpv runs that preset's ordered chain: ") + id).toUtf8().constData());
     }
 
@@ -638,6 +649,8 @@ int main(int argc, char** argv) {
     check(clickLeaf({QStringLiteral("anime4k/experimental")}, QLatin1String(kExperiment), shell,
                     dialog, menus),
           "the experiment is selected again for the compare and PiP checks");
+    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
+          "the compare baseline chain settles to the experiment before it is read");
     const QString chainBeforeCompare = surface->effectiveShaderChain();
     const QString idBeforeCompare = surface->anime4KChainId();
     shell->openPictureMenu(QPoint(dialog->width() / 2, dialog->height() / 2));
@@ -813,7 +826,7 @@ int main(int argc, char** argv) {
               "the float carries the experiment's chain, not just the mode");
         check(waitForVideo(floating->videoSurface(), 12000),
               "the float decoded the same stream in its own core");
-        check(chainMatches(floating->videoSurface(), QLatin1String(kExperiment)),
+        check(chainSettlesTo(floating->videoSurface(), QLatin1String(kExperiment)),
               "the float runs that chain stage for stage");
     }
     dialog->togglePip();
@@ -867,7 +880,7 @@ int main(int argc, char** argv) {
           "the reopened player restored the experiment's chain by id");
     check(anime4k::modeId(surface->anime4KMode()) == QLatin1String(kExperiment),
           "the reopened player's mode is the restored experiment");
-    check(chainMatches(surface, QLatin1String(kExperiment)),
+    check(chainSettlesTo(surface, QLatin1String(kExperiment)),
           "the reopened player applies the experiment's ordered chain");
     chip = dialog->findChild<QLabel*>(QStringLiteral("playerEnhancementStatus"));
     check(chip != nullptr && !chip->isHidden() && chip->text().contains(experimentLabel),
@@ -908,7 +921,7 @@ int main(int argc, char** argv) {
     // from the same paused position, so the two frames share one decode.
     check(clickLeaf({}, QStringLiteral("off"), shell, dialog, menus),
           "Disabled is selected through the reopened menu");
-    check(surface->effectiveShaderChain().isEmpty(),
+    check(chainSettlesOff(surface),
           "Disabled clears every active shader path");
     pump(500);
     const QImage restoredOff = settledFrame(surface);

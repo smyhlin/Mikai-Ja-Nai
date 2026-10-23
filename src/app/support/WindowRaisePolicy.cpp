@@ -92,12 +92,6 @@ void requestForeground(QPointer<QWidget> window, int attempt) {
             return;
         }
     }
-    if (attempt > 0) {
-        if (QWidget* active = QApplication::activeWindow();
-            active != nullptr && active->window() != window) {
-            return;
-        }
-    }
 
     window->raise();
     window->activateWindow();

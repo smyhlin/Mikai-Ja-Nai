@@ -90,6 +90,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestAnime4K.cpp
     tests/cpp/player/TestMpvAsync.hpp
     tests/cpp/player/TestMpvAsync.cpp
+    tests/cpp/player/TestCompareGif.hpp
+    tests/cpp/player/TestCompareGif.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
     tests/cpp/player/TestPlaybackDiagnostics.cpp
     # Native bundle, component, model, preparation & status suites

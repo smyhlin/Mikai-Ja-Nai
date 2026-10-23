@@ -590,13 +590,14 @@ int runRenderLifecycle(const Options& options) {
         holdMotion.changedFraction() >= kMinMotionChangedFraction) {
         const double positionBeforeHold = surface->position();
         surface->setEngineFrameHold(true);
-        surface->update();
+        // Acquisition may consume one pending frame; measure stability from the acquired picture.
+        const QImage acquiredHold = surface->grabFramebuffer();
         pumpEvents(500);
         verdict.require(surface->position() >= positionBeforeHold + 0.25,
                         QStringLiteral("the media clock advances while the picture is held"));
         const QImage held = surface->grabFramebuffer();
         const PictureStats frozen =
-            statsOf(held, motionEnd, surface->videoWidth(), surface->videoHeight(), dpr);
+            statsOf(held, acquiredHold, surface->videoWidth(), surface->videoHeight(), dpr);
         const double freezeTolerance = std::min(0.02, holdMotion.changedFraction() / 4.0);
         verdict.require(frozen.compared > 0 && frozen.changedFraction() <= freezeTolerance,
                         QStringLiteral("a transition hold freezes the live picture (%1% changed)")

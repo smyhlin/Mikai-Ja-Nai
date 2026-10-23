@@ -472,6 +472,17 @@ private:
     QPoint settingsAnchor() const;
     void enterPip();
     void leavePip(bool closing = false);
+
+    /// Which window is waiting to be replaced by the other one.
+    enum class WindowHandoff { None, PlayerToFloat, FloatToPlayer };
+
+    // Arm before show(); slow successors must not uncover an empty window.
+    void beginWindowHandoff(WindowHandoff kind, PipFloat* floatWindow,
+                            bool leftFullscreen = false);
+    void cancelWindowHandoff();
+    void finishWindowHandoff();
+    void onHandoffPainted();
+    void onHandoffFailed(const QString& reason);
     /// Acknowledges the parked float's native stop while its core and GL context
     /// are still alive, so releasePipPool() never destroys a pending transition.
     /// False when a stop never acknowledged within its bound.
@@ -612,6 +623,15 @@ private:
     /// The float a hand-off is waiting on, guarded: the pooled float can be
     /// released by the dialog while a transition it started is still in flight.
     QPointer<PipFloat> nativeHandoffFloat_;
+    WindowHandoff windowHandoff_ = WindowHandoff::None;
+    QPointer<PipFloat> windowHandoffFloat_;
+    QPointer<VideoSurface> windowHandoffSurface_;
+    QMetaObject::Connection windowHandoffFrameSwapped_;
+    QMetaObject::Connection windowHandoffFailed_;
+    bool windowHandoffLeftFullscreen_ = false;
+    // Pooled floats retain identity and source epochs across distinct transitions.
+    quint64 pipTransitionGeneration_ = 0;
+    quint64 windowHandoffGeneration_ = 0;
     /// The last observation that was announced, so the request is reissued only
     /// when the selection or an observed source/device fact is new - never as a
     /// busy loop while the context is still being observed.
@@ -633,10 +653,6 @@ private:
     // Re-entering PiP reuses this one; the dialog's destructor is what finally
     // releases it. While PiP is up this and pip_ name the same object.
     PipFloat* pipPool_ = nullptr;
-    // What the main core was doing when PiP took over, so leaving PiP restores
-    // the state rather than guessing it from a toggle.
-    double pipResumePosition_ = 0.0;
-    bool pipResumePlaying_ = true;
     // The resume point a stream swap holds until the new file reports a
     // duration: mpv cannot seek a stream it has not loaded yet.
     bool resumePending_ = false;

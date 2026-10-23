@@ -49,7 +49,6 @@
 #include <QJsonValue>
 #include <QLabel>
 #include <QMap>
-#include <QTabWidget>
 #include <QNetworkAccessManager>
 #include <QPointer>
 #include <QPushButton>
@@ -196,15 +195,10 @@ public:
     }
 
     bool wasOpened() const { return dialog_->isVisible(); }
-    /// True when the surface really is on its Processing tab.
-    bool processingTabActive() const {
-        auto* tabs = dialog_->findChild<QTabWidget*>();
-        return tabs != nullptr && tabs->count() > 2 && tabs->currentIndex() == 2;
-    }
-    /// True when the existing provider choice is the one on screen and usable.
-    bool providerChoicePresent() const {
-        auto* backend = dialog_->findChild<QComboBox*>(QStringLiteral("nativeBackendCombo"));
-        return backend != nullptr && backend->count() > 0 && backend->isEnabled();
+    bool processingSurfaceUsable() const {
+        auto* runtime = dialog_->findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));
+        return runtime != nullptr && runtime->count() > 0 && runtime->isEnabled() &&
+               dialog_->isVisible() && runtime->isVisibleTo(dialog_);
     }
 
 private:
@@ -658,10 +652,8 @@ int main(int argc, char** argv) {
         prepare->click();
     }
     QTest::qWait(200);
-    check(surface.wasOpened() && surface.processingTabActive(),
-          "Prepare reaches the Processing surface through the real SettingsDialog");
-    check(surface.providerChoicePresent(),
-          "the Processing surface the remedy opens really carries the native request");
+    check(surface.wasOpened() && surface.processingSurfaceUsable(),
+          "Prepare opens Settings with a visible, usable processing runtime choice");
     check(quietHost.failed() == 0 && !quietHost.recovered() &&
               readFacts(factsUrl).requests == requestsBeforeFailure,
           "Prepare neither re-extracts the URL nor reloads the media");
@@ -677,7 +669,7 @@ int main(int argc, char** argv) {
         providers->click();
     }
     QTest::qWait(200);
-    check(surface.processingTabActive() && visibleRemedies(quietPointer) == 3,
+    check(surface.processingSurfaceUsable() && visibleRemedies(quietPointer) == 3,
           "Providers lands on the Processing surface without retiring the remedies");
     check(readFacts(factsUrl).requests == requestsBeforeFailure,
           "no processing remedy re-extracts the URL or reloads the media");
@@ -785,7 +777,7 @@ int main(int argc, char** argv) {
         hostlessPrepare->click();
     }
     QTest::qWait(200);
-    check(hostlessSurface.wasOpened() && hostlessSurface.processingTabActive(),
+    check(hostlessSurface.wasOpened() && hostlessSurface.processingSurfaceUsable(),
           "a hostless remedy reaches the application's Processing surface too");
     check(readFacts(factsUrl).requests == requestsBeforeHostless,
           "the hostless remedy resolves no new stream either");

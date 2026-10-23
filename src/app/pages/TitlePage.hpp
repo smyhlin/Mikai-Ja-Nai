@@ -318,6 +318,7 @@ private:
     /// rounded copies are produced once per size, never per paint.
     void applyCoverPixmap();
     void loadCover(const QString& url, bool allowHint);
+    void onCoverFailed(const QString& url, bool allowHint, const QString& reason);
     void coverContextMenu(const QPoint& globalPos);
     void copyCoverUrl();
     void saveCover();

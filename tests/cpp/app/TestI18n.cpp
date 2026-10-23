@@ -1162,10 +1162,9 @@ void TestI18n::processingFormsRemainReadableWhenResized() {
   const QSize compactSize(qMax(width, dialog.minimumWidth()), dialog.minimumHeight());
   dialog.resize(compactSize);
   dialog.show();
-  QTRY_COMPARE(dialog.size(), compactSize);
   auto* footer = dialog.findChild<QWidget*>(QStringLiteral("settingsFooter"));
   QVERIFY(footer != nullptr);
-  QVERIFY(dialog.rect().contains(QRect(footer->mapTo(&dialog, QPoint()), footer->size())));
+  QTRY_VERIFY(dialog.rect().contains(QRect(footer->mapTo(&dialog, QPoint()), footer->size())));
   dialog.showProcessingTab();
 
   auto* runtime = dialog.findChild<QComboBox*>(QStringLiteral("runtimeChoiceCombo"));

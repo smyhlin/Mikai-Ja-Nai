@@ -10,6 +10,7 @@
 
 #include <native/bundle/NativeRuntimeSelection.hpp>
 
+class QDialog;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
@@ -87,8 +88,13 @@ private:
     /// focuses the existing choice. Opening settings plain starts nothing.
     void openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent intent,
                                QPointer<mplayer::shell::PlayerDialog> core);
-    /// Offers the AnimeJaNai component setup once while it is recommended.
-    void offerAnimeJanaiSetup(SettingsDialog* settings = nullptr);
+    /// Offers the AnimeJaNai component setup once while it is recommended, on
+    /// the next event-loop turn. The ask runs a nested modal loop and is never
+    /// entered from inside a player's or the catalogue tab's own signal
+    /// emission, so destroying either one while the ask is up cannot resume a
+    /// suspended frame on a deleted object. Whether Settings is open is read
+    /// when the turn runs, not when the offer is made.
+    void offerAnimeJanaiSetup();
     void showAnimeJanaiSetupPrompt(SettingsDialog* settings);
     /// Pauses the player that is actually playing, once, for a component prompt.
     /// `releaseAnimeJanai` turns AnimeJaNai off when the prompt is finished so
@@ -166,6 +172,17 @@ private:
     /// The settings dialog `openSettingsImpl` is inside, when one is open.
     /// A second open raises this one instead of nesting another modal loop.
     QPointer<SettingsDialog> settingsDialog_;
+    /// The two component prompts while their nested `exec()` loops are running.
+    /// Both are heap dialogs with no QObject owner: this window's frame owns
+    /// them and deletes them after the loop, so neither a player they name as
+    /// their native owner nor this window being destroyed can delete the dialog
+    /// out from under its own `exec()`. The close event still refuses to tear
+    /// the shell's players down underneath one.
+    QPointer<QDialog> setupPrompt_;
+    QPointer<QDialog> componentPrompt_;
+    /// True between scheduling a setup offer and the turn that presents it, so
+    /// two inventory results cannot queue two asks.
+    bool setupPromptScheduled_ = false;
     QWidget* acquisitionBar_ = nullptr;
     QLabel* acquisitionStatus_ = nullptr;
     QPushButton* acquisitionDetails_ = nullptr;

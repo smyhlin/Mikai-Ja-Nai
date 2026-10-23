@@ -54,6 +54,10 @@ private slots:
 
     // ── transport against a real core ──────────────────────────────────────
     void anAsyncPropertyReplyCarriesItsOwnValue();
+    void eventBacklogYieldsToTheGui();
+    void nestedEventDrainsPreserveTheCurrentReply();
+    void selfUnobservingCallbacksKeepTheirCapturesAlive();
+    void selfReplacingEventSinksKeepTheirCapturesAlive();
     void anUnknownPropertyRepliesWithAnError();
     void anAsyncNodeReplySurvivesTheNextDrain();
     void aCancelledRequestNeverCallsBack();

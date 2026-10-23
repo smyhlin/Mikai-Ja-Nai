@@ -188,6 +188,12 @@ inline int peakRgbDiff(const uchar* pa, const uchar* pb) {
 
 QImage differenceJet(const QImage& a, const QImage& b) {
     if (a.isNull() || b.isNull() || a.size() != b.size()) return QImage();
+    static const auto colors = [] {
+        std::array<std::array<uchar, 3>, 256> palette{};
+        for (int value = 0; value < 256; ++value)
+            jetColor(value / 255.0, palette[value].data());
+        return palette;
+    }();
     const QImage left = a.convertToFormat(QImage::Format_RGB888);
     const QImage right = b.convertToFormat(QImage::Format_RGB888);
     QImage out(left.size(), QImage::Format_RGB888);
@@ -199,8 +205,7 @@ QImage differenceJet(const QImage& a, const QImage& b) {
         uchar* dst = out.scanLine(y);
         for (int x = 0; x < width; ++x) {
             const int offset = x * 3;
-            uchar rgb[3];
-            jetColor(peakRgbDiff(sa + offset, sb + offset) / 255.0, rgb);
+            const auto& rgb = colors[peakRgbDiff(sa + offset, sb + offset)];
             dst[offset + 0] = rgb[0];
             dst[offset + 1] = rgb[1];
             dst[offset + 2] = rgb[2];

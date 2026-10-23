@@ -3,6 +3,7 @@
 #include "Anime4K.hpp"
 #include "CompareCanvas.hpp"
 #include "CompareGrid.hpp"
+#include "CompareGif.hpp"
 #include "CompareRenderer.hpp"
 #include "ShellTheme.hpp"
 #include "VideoSurface.hpp"
@@ -22,7 +23,6 @@
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QFileDialog>
-#include <QtGui/QImageWriter>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHideEvent>
@@ -31,6 +31,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
@@ -284,6 +285,8 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
         });
         connect(surface_, &VideoSurface::positionChanged, this,
                 [this](double) { ++positionEpoch_; });
+        connect(surface_, &VideoSurface::seekRequested, this,
+                [this](double) { ++seekEpoch_; });
         // Carries the queue depth and the end of a settling transition, so the
         // armed retry never freezes a stale epoch.
         connect(surface_, &VideoSurface::nativePlaybackStatusChanged, this,
@@ -302,6 +305,7 @@ CompareWindow::CompareWindow(VideoSurface* surface, const QString& currentCandid
 }
 
 CompareWindow::~CompareWindow() {
+    if (gifExport_) gifExport_->cancel();
     if (preparationTask_) {
         preparationTask_->cancelled.store(true, std::memory_order_release);
     }
@@ -475,6 +479,7 @@ void CompareWindow::keyReleaseEvent(QKeyEvent* event) {
 }
 
 void CompareWindow::closeEvent(QCloseEvent* event) {
+    if (gifExport_) gifExport_->cancel();
     requestPlaybackHoldRelease();
     QDialog::closeEvent(event);
 }
@@ -485,6 +490,7 @@ void CompareWindow::hideEvent(QHideEvent* event) {
         return;
     }
     dismissCandidateMenus();
+    if (gifExport_) gifExport_->cancel();
     ++selectionGeneration_;
     if (preparationTask_) {
         preparationTask_->cancelled.store(true, std::memory_order_release);
@@ -556,9 +562,14 @@ void CompareWindow::retranslateUi() {
         pinButton_->setAccessibleName(pinned_ ? tr("Pinned") : tr("Pin"));
     }
     if (closeButton_ != nullptr) {
-        closeButton_->setText(tr("✕"));
+        closeButton_->setText(tr("Close"));
         closeButton_->setToolTip(tr("Close (Esc)"));
         closeButton_->setAccessibleName(tr("Close Compare window"));
+    }
+    if (saveGifButton_ != nullptr) {
+        saveGifButton_->setText(gifExport_ ? tr("Saving GIF…") : tr("Save GIF"));
+        saveGifButton_->setToolTip(tr("Save the two images as a blinking GIF"));
+        saveGifButton_->setAccessibleName(tr("Save as GIF"));
     }
     syncFullscreenButton();
     if (splitLabel_ != nullptr) splitLabel_->setText(tr("Split:"));
@@ -702,12 +713,17 @@ void CompareWindow::buildUi() {
     auto* right = new QVBoxLayout();
     right->setSpacing(kGapSmall);
 
-    // --- Single workstation top toolbar card ------------------------------
     auto* toolbarCard = new QFrame(this);
     toolbarCard->setObjectName(QStringLiteral("compareToolbarCard"));
-    auto* header = new QHBoxLayout(toolbarCard);
-    header->setContentsMargins(10, 6, 10, 6);
+    auto* toolbarLayout = new QVBoxLayout(toolbarCard);
+    toolbarLayout->setContentsMargins(10, 8, 10, 8);
+    toolbarLayout->setSpacing(kGapSmall);
+    auto* header = new QHBoxLayout();
     header->setSpacing(kGapSmall);
+    toolbarLayout->addLayout(header);
+    auto* actions = new QHBoxLayout();
+    actions->setSpacing(kGapSmall);
+    toolbarLayout->addLayout(actions);
 
     modeCaption_ = new QLabel(tr("Mode:"), toolbarCard);
     header->addWidget(modeCaption_);
@@ -767,8 +783,7 @@ void CompareWindow::buildUi() {
     zoom_->setMinimumWidth(
         QFontMetrics(zoom_->font()).horizontalAdvance(QStringLiteral("9999%")) + 12);
     header->addWidget(zoom_);
-
-    header->addWidget(createVerticalDivider(toolbarCard));
+    header->addStretch(1);
 
     swapButton_ = new QPushButton(tr("Swap A ⇄ B"), toolbarCard);
     swapButton_->setObjectName(QStringLiteral("compareSwap"));
@@ -777,7 +792,7 @@ void CompareWindow::buildUi() {
     swapButton_->setToolTip(tr("Swap Side A and Side B (S)"));
     swapButton_->setAccessibleName(tr("Swap A ⇄ B"));
     connect(swapButton_, &QPushButton::clicked, this, &CompareWindow::swapSides);
-    header->addWidget(swapButton_);
+    actions->addWidget(swapButton_);
 
     recaptureButton_ = new QPushButton(tr("Recapture"), toolbarCard);
     recaptureButton_->setObjectName(QStringLiteral("compareRecapture"));
@@ -786,7 +801,7 @@ void CompareWindow::buildUi() {
     recaptureButton_->setToolTip(tr("Capture the current player frame (R)"));
     recaptureButton_->setAccessibleName(tr("Recapture"));
     connect(recaptureButton_, &QPushButton::clicked, this, &CompareWindow::captureNow);
-    header->addWidget(recaptureButton_);
+    actions->addWidget(recaptureButton_);
 
     pinButton_ = new QPushButton(tr("Pin"), toolbarCard);
     pinButton_->setObjectName(QStringLiteral("comparePinBtn"));
@@ -796,7 +811,7 @@ void CompareWindow::buildUi() {
     pinButton_->setToolTip(tr("Keep Compare window always on top (P)"));
     pinButton_->setAccessibleName(tr("Pin"));
     connect(pinButton_, &QPushButton::toggled, this, &CompareWindow::togglePin);
-    header->addWidget(pinButton_);
+    actions->addWidget(pinButton_);
 
     fullscreenButton_ = new QToolButton(toolbarCard);
     fullscreenButton_->setObjectName(QStringLiteral("compareFullscreen"));
@@ -814,13 +829,12 @@ void CompareWindow::buildUi() {
     saveGifButton_->setToolTip(tr("Save the two images as a blinking GIF"));
     saveGifButton_->setAccessibleName(tr("Save as GIF"));
     connect(saveGifButton_, &QPushButton::clicked, this, &CompareWindow::saveGif);
-    header->addWidget(saveGifButton_);
 
     closeButton_ = new QToolButton(toolbarCard);
     closeButton_->setObjectName(QStringLiteral("compareClose"));
     closeButton_->setFocusPolicy(Qt::NoFocus);
     closeButton_->setCursor(Qt::PointingHandCursor);
-    closeButton_->setText(tr("✕"));
+    closeButton_->setText(tr("Close"));
     closeButton_->setToolTip(tr("Close (Esc)"));
     closeButton_->setAccessibleName(tr("Close Compare window"));
     connect(closeButton_, &QToolButton::clicked, this, &CompareWindow::close);
@@ -835,10 +849,8 @@ void CompareWindow::buildUi() {
     addAction(fullscreenAction_);
     syncFullscreenButton();
 
-    // Inline contextual mode controls inside the single top toolbar so switching
-    // modes never shifts the video viewport up or down.
     modeDivider_ = createVerticalDivider(toolbarCard);
-    header->addWidget(modeDivider_);
+    actions->addWidget(modeDivider_);
     modeDivider_->hide();
 
     modeControls_ = new QWidget(toolbarCard);
@@ -901,20 +913,21 @@ void CompareWindow::buildUi() {
     view->addWidget(gain_);
     modeControls_->hide();
 
-    header->addWidget(modeControls_);
-
-    header->addStretch(1);
+    actions->addWidget(modeControls_);
+    actions->addWidget(saveGifButton_);
+    actions->addStretch(1);
     hoverSwatch_ = new QLabel(toolbarCard);
     hoverSwatch_->setObjectName(QStringLiteral("compareHoverSwatch"));
     hoverSwatch_->setFixedSize(14, 14);
     hoverSwatch_->hide();
-    header->addWidget(hoverSwatch_);
+    actions->addWidget(hoverSwatch_);
     hover_ = new QLabel(toolbarCard);
     hover_->setObjectName(QStringLiteral("compareHover"));
     hover_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     hover_->setFont(monoFont(9));
     hover_->setStyleSheet(QStringLiteral("color: #d1d5db;"));
-    header->addWidget(hover_);
+    hover_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    actions->addWidget(hover_, 1);
 
     right->addWidget(toolbarCard);
 
@@ -1493,11 +1506,13 @@ QImage CompareWindow::grabSettledFrame() {
     int stableRounds = 0;
     quint64 epoch = positionEpoch_;
     int quietEpochRounds = 0;
+    const quint64 expectedSeekEpoch = seekEpoch_;
     for (int waited = 0; waited < kSettleTimeoutMs; waited += kPollIntervalMs) {
         QCoreApplication::processEvents();
         if (self.isNull()) {
             return QImage();
         }
+        if (seekEpoch_ != expectedSeekEpoch) return QImage();
         QThread::msleep(kPollIntervalMs);
         // The event loop above can deliver a close that destroys the borrowed
         // surface; the QPointer turns that into a refusal here instead of a
@@ -1599,6 +1614,7 @@ void CompareWindow::captureFrame() {
     }
     const uint64_t sourceEpoch = surface_->sourceEpoch();
     const quint64 captureGeneration = selectionGeneration_;
+    const quint64 expectedSeekEpoch = seekEpoch_;
     for (int waited = 0; waited < kSettleTimeoutMs &&
                          (!surface_->pauseObserved() || surface_->isPlaying());
          waited += kPollIntervalMs) {
@@ -1658,6 +1674,10 @@ void CompareWindow::captureFrame() {
             std::abs(*playbackTimestamp - *timestampBefore) <= 1e-6) {
             break;
         }
+    }
+    if (seekEpoch_ != expectedSeekEpoch) {
+        captureError_ = tr("Playback changed during frame capture");
+        return;
     }
     if (!playbackTimestamp.has_value() || !playbackHoldOwned() ||
         std::abs(*playbackTimestamp - *timestampBefore) > 1e-6 || surface_ == nullptr ||
@@ -1847,6 +1867,7 @@ void CompareWindow::render() {
              (isVisible() && playbackHoldOwned() && !frame_.isNull() &&
               activeRenderGeneration_ != selectionGeneration_));
     rendering_ = false;
+    updateGifExport();
     if (!isVisible() || !playbackHoldOwned()) {
         if (isolatedRenderer_) isolatedRenderer_->stop();
     }
@@ -1942,7 +1963,8 @@ void CompareWindow::renderOnce() {
     renderedBId_ = renderBId;
     renderedBackend_ = ajiBackend_;
     QImage difference;
-    if (!a.isNull() && !b.isNull() && a.size() == b.size()) {
+    if (mode_ == CompareMode::Difference && !a.isNull() && !b.isNull() &&
+        a.size() == b.size()) {
         // Gain 1 is the honest picture, so it is the colour-mapped one;
         // anything above it is an explicitly amplified grey.
         difference = gain_->value() > 1 ? differenceGrayscale(a, b, gain_->value())
@@ -1981,22 +2003,43 @@ void CompareWindow::onFlickerTimeout() {
     canvas_->setFlickerShowA(flickerShowA_);
 }
 
+void CompareWindow::updateGifExport() {
+    if (saveGifButton_ == nullptr) return;
+    saveGifButton_->setVisible(mode_ == CompareMode::Flicker);
+    saveGifButton_->setEnabled(!gifExport_ && !comparisonPending() &&
+                              !renderedA_.isNull() && !renderedB_.isNull() &&
+                              renderedAId_ == sideA() && renderedBId_ == sideB() &&
+                              playbackHoldOwned());
+    saveGifButton_->setText(gifExport_ ? tr("Saving GIF…") : tr("Save GIF"));
+}
+
 void CompareWindow::saveGif() {
-    if (renderedA_.isNull() || renderedB_.isNull()) {
-        return;
-    }
-    const QString path = QFileDialog::getSaveFileName(this, tr("Save GIF"), QString(), tr("GIF images (*.gif)"));
-    if (path.isEmpty()) return;
-    QImageWriter writer(path, "gif");
-    if (!writer.canWrite()) {
-        return;
-    }
-    writer.setQuality(100);
-    for (int i = 0; i < 2; ++i) {
-        QImage frame = (i == 0 ? renderedA_ : renderedB_).scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        writer.write(frame);
-    }
-    writer.write(renderedA_);
+    updateGifExport();
+    if (!saveGifButton_->isEnabled()) return;
+    const QImage a = renderedA_;
+    const QImage b = renderedB_;
+    const int delay = 1000 / std::max(1, flicker_->value());
+    const QPointer<CompareWindow> self(this);
+    QPointer<QFileDialog> picker = new QFileDialog(this, tr("Save GIF"));
+    picker->setAcceptMode(QFileDialog::AcceptSave);
+    picker->setNameFilter(tr("GIF images (*.gif)"));
+    picker->setDefaultSuffix(QStringLiteral("gif"));
+    const int result = picker->exec();
+    if (self.isNull() || picker.isNull()) return;
+    const QStringList files = picker->selectedFiles();
+    picker->deleteLater();
+    if (result != QDialog::Accepted || files.isEmpty() || !isVisible()) return;
+    auto* job = new CompareGifExport();
+    gifExport_ = job;
+    connect(job, &CompareGifExport::finished, this, [this](bool succeeded, const QString& error) {
+        gifExport_.clear();
+        updateGifExport();
+        if (!succeeded && isVisible()) {
+            QMessageBox::warning(this, tr("GIF export failed"), error);
+        }
+    }, Qt::QueuedConnection);
+    updateGifExport();
+    job->start(files.first(), a, b, delay);
 }
 
 void CompareWindow::onModeChanged(int index) {
@@ -2011,6 +2054,7 @@ void CompareWindow::onModeChanged(int index) {
     // does nothing, and a hidden one cannot be asked.
     const bool isSplit = mode == CompareMode::SplitH || mode == CompareMode::SplitV;
     const bool isFlicker = mode == CompareMode::Flicker;
+    updateGifExport();
     const bool isDifference = mode == CompareMode::Difference;
     splitLabel_->setVisible(isSplit);
     if (splitSlider_ != nullptr) splitSlider_->setVisible(isSplit);
@@ -2208,6 +2252,7 @@ QString CompareWindow::unavailableReason(const QString& id) const {
 }
 
 void CompareWindow::updateInfo() {
+    updateGifExport();
     QStringList parts;
     if (!lockError_.isEmpty()) parts.append(tr("Native plan not frozen: %1").arg(lockError_));
     if (!captureError_.isEmpty()) parts.append(tr("Capture error: %1").arg(captureError_));

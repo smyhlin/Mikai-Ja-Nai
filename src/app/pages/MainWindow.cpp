@@ -31,19 +31,21 @@
 #include <QLineEdit>
 #include <QUrl>
 #include <QVariant>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QKeyEvent>
-#include <QApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFont>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScreen>
 #include <QSizePolicy>
 #include <QHBoxLayout>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QWindow>
 
 namespace mikai::app {
 
@@ -92,6 +94,39 @@ struct SettingsNativeJob {
 /// named and nothing is guessed.
 constexpr int kNativeContextWaitMs = 8000;
 
+/// Gives an ask the window it belongs to as its native owner without making it
+/// that window's QObject child: the frame running the ask's `exec()` loop owns
+/// and deletes it, so a player deleted from the shell's own close and
+/// navigation paths cannot take a dialog whose loop is still running. Stacking
+/// and placement only need the native relation.
+void attachPromptOwner(QDialog* prompt, QWidget* shell, bool preferActiveWindow) {
+    QWidget* owner = preferActiveWindow ? QApplication::activeWindow() : nullptr;
+    if (owner == shell) owner = nullptr;
+    if (owner != nullptr &&
+        (owner->windowType() == Qt::Popup || owner->windowType() == Qt::ToolTip)) {
+        // A menu or tooltip is about to close: naming it would leave the ask
+        // owned by a window that vanishes as soon as the pointer moves.
+        owner = nullptr;
+    }
+    // The owner must be named before the window is shown: the platform applies
+    // the transient relation while showing it, which is what keeps the ask
+    // above a fullscreen player and off the taskbar.
+    prompt->winId();
+    QWidget* nativeOwner = owner != nullptr ? owner : shell;
+    if (nativeOwner != nullptr && nativeOwner->windowHandle() != nullptr) {
+        prompt->windowHandle()->setTransientParent(nativeOwner->windowHandle());
+    }
+    // Centre on the owner's screen, not the shell's: a player fullscreen on
+    // another display must not put the ask where nobody is watching.
+    QScreen* placement = owner != nullptr ? owner->screen()
+                                          : (shell != nullptr ? shell->screen() : nullptr);
+    if (placement != nullptr) {
+        prompt->adjustSize();
+        const QRect available = placement->availableGeometry();
+        prompt->move(available.center() - QPoint(prompt->width() / 2, prompt->height() / 2));
+    }
+}
+
 }  // namespace
 
 MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
@@ -114,8 +149,7 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
         if (setupDeclined_ || setupPromptOffered_ || componentsTab_ == nullptr ||
             !componentsTab_->inventoryReady() || componentsTab_->acquisitionRunning() ||
             componentsTab_->setupPrompt().isEmpty()) return;
-        if (!settingsDialog_.isNull()) showAnimeJanaiSetupPrompt(settingsDialog_.data());
-        else showAnimeJanaiSetupPrompt(nullptr);
+        offerAnimeJanaiSetup();
     });
     connect(componentsTab_, &ComponentStoreTab::acquisitionProgress, this,
             &MainWindow::noteComponentAcquisition);
@@ -242,9 +276,13 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     // ignored and the window stays usable for a retry. The same holds for a
     // reentrant close arriving through the player's own settling pump, which
     // finds the same refusal and returns without recursing.
-    if (!settingsDialog_.isNull()) {
-        // Settings is inside its nested exec() loop: tearing the window down
-        // underneath it would destroy the dialog mid-callback.
+    if (!settingsDialog_.isNull() || !setupPrompt_.isNull() || !componentPrompt_.isNull()) {
+        // Settings and both component prompts are inside their own nested exec()
+        // loops. The prompts are heap dialogs owned by those loops, so a close
+        // would no longer delete them, but it would still tear down the players
+        // whose windows they name as native owners - under an application-wide
+        // modal ask. The window stays up and the close can be retried once the
+        // ask is answered.
         event->ignore();
         return;
     }
@@ -520,62 +558,74 @@ void MainWindow::answerMediaRuntimeResolved() {
 }
 
 void MainWindow::ensureNativeComponents() {
-    // The device is observed before the runtime check, so the one line naming
-    // what this machine actually has is written even when the selected runtime
-    // is Standard and the component check returns immediately. Without it, a
-    // "no GPU" report has nothing behind it in the log.
+    // Observed before the runtime check, so the device and the pack it resolves
+    // to are named in the log even when the selection is Standard and the
+    // component check returns immediately.
     const mplayer::native::GpuComputeCapability& gpu = mplayer::native::observeComputeCapability();
-    // The pack this device resolves to is what the Components tab lists; naming
-    // it here is what makes the selection checkable without opening the dialog.
     const mplayer::native::ComponentPack* resource =
         mplayer::native::tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
     qInfo().noquote() << "mikai: tensorrt component" << (resource == nullptr
                                                              ? QStringLiteral("none")
                                                              : resource->name);
     if (componentProvisioner_ == nullptr) return;
-    // The prompt is the gate: ensure() may submit work only after the viewer
-    // chose Download. Running it before the question made a Native startup
-    // pull hundreds of megabytes before the first paint - the prompt then
-    // appeared beside a download already in flight, or never appeared once
-    // the store had filled.
+    // Only the muted dismissal is persisted; every other answer is re-decided
+    // from the store's actual contents on the next launch.
     if (mplayer::native::nativeComponentsPromptDismissed()) {
-        // "Skip and never ask" bought this viewer silence: no question and no
-        // download. ensure() is deliberately not called - even for its log
-        // line - so a muted prompt can never be the branch that starts work.
+        // A muted prompt is never the branch that starts work, so ensure() is
+        // deliberately not called here, not even for its log line.
         qInfo() << "mikai: native components prompt muted by the viewer";
         return;
     }
     QString missing;
     const bool needs = componentProvisioner_->needsDownload(&missing);
     if (!needs) {
-        // Nothing to ask, but the startup check stays diagnosable: this call
-        // is what writes "notNative"/"satisfied"/"noGpu"/"noBundle" into
-        // mikai.log. Every path that answers "no download needed" is a path
-        // that refuses before the submit, so it is log-only in practice too.
+        // Log-only: this call is what writes "notNative"/"satisfied"/"noGpu"/
+        // "noBundle" into mikai.log, and nothing is missing, so nothing submits.
         QString reason;
         if (!componentProvisioner_->ensure(&reason)) {
             qInfo().noquote() << "mikai: native components:" << reason;
         }
         return;
     }
-    // The one warning the viewer asked for at startup: when the GPU's own packs
-    // are missing from the store, offer to fetch them, this run only, or stay
-    // quiet forever. Only the muted dismissal is persisted; everything else is
-    // re-decided on the next launch from the store's actual contents.
-    QMessageBox prompt(QMessageBox::Warning, tr("GPU components missing"),
-                       tr("The TensorRT packs this GPU needs are not installed:\n%1\n\n"
-                          "Without them, preparing a TensorRT engine fails.")
-                           .arg(missing),
-                       QMessageBox::NoButton, this);
-    QPushButton* download = prompt.addButton(tr("Download"), QMessageBox::AcceptRole);
-    prompt.addButton(tr("Skip for now"), QMessageBox::RejectRole);
-    prompt.addButton(tr("Skip and never ask"), QMessageBox::DestructiveRole);
-    prompt.setDefaultButton(download);
+    // ensure() may submit work only after the viewer chose Download, so the ask
+    // is the gate; only the muted dismissal above is persisted. Heap and
+    // parentless on purpose: this frame owns the box and reads its answer.
+    const QPointer<MainWindow> self(this);
+    auto* prompt = new QMessageBox(QMessageBox::Warning, tr("GPU components missing"),
+                                   tr("The TensorRT packs this GPU needs are not installed:\n%1\n\n"
+                                      "Without them, preparing a TensorRT engine fails.")
+                                       .arg(missing),
+                                   QMessageBox::NoButton);
+    QPointer<QMessageBox> promptGuard(prompt);
+    prompt->setObjectName(QStringLiteral("nativeComponentsPrompt"));
+    QPushButton* download = prompt->addButton(tr("Download"), QMessageBox::AcceptRole);
+    prompt->addButton(tr("Skip for now"), QMessageBox::RejectRole);
+    prompt->addButton(tr("Skip and never ask"), QMessageBox::DestructiveRole);
+    prompt->setDefaultButton(download);
     pausePlaybackForComponentAsk(false);
-    prompt.exec();
+    // This box was always owned by the shell itself, so keep that relation;
+    // only the QObject ownership is gone.
+    attachPromptOwner(prompt, this, /*preferActiveWindow=*/false);
+    // A shell deleted programmatically ends the ask instead of leaving a nested
+    // loop whose owner is gone.
+    QObject::connect(this, &QObject::destroyed, prompt, [prompt] { prompt->reject(); });
+    componentPrompt_ = prompt;
+    prompt->exec();
+    if (promptGuard.isNull()) {
+        // The box was destroyed while its loop ran, so there is no answer to
+        // read and none is invented: no download and no persisted dismissal.
+        if (self.isNull()) return;
+        componentPrompt_.clear();
+        resumePlaybackAfterComponentAsk();
+        return;
+    }
     // Roles, not pointers: only QAbstractButton is declared here, and the role
     // is exactly the viewer's choice rather than which widget instance it was.
-    switch (prompt.buttonRole(prompt.clickedButton())) {
+    const QMessageBox::ButtonRole chosen = prompt->buttonRole(prompt->clickedButton());
+    delete promptGuard.data();
+    if (self.isNull()) return;
+    componentPrompt_.clear();
+    switch (chosen) {
         case QMessageBox::DestructiveRole:
             mplayer::native::dismissNativeComponentsPrompt();
             qInfo() << "mikai: native components prompt dismissed by the viewer";
@@ -613,43 +663,56 @@ void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent 
     openSettingsImpl(intent, core);
 }
 
-void MainWindow::offerAnimeJanaiSetup(SettingsDialog* settings) {
-    if (setupDeclined_ || setupPromptOffered_) return;
-    if (componentsTab_ == nullptr || !componentsTab_->inventoryReady()) return;
-    showAnimeJanaiSetupPrompt(settings);
+void MainWindow::offerAnimeJanaiSetup() {
+    if (setupDeclined_ || setupPromptOffered_ || setupPromptScheduled_ ||
+        componentsTab_ == nullptr) return;
+    // The ask runs its own nested loop, so the queued turn keeps it out of the
+    // caller's frame: that caller - a player's button handler or the inventory
+    // signal - may be deleted before the loop returns. Whether Settings is open
+    // is read in that turn, so no offer answers for a dialog that opened since.
+    QTimer::singleShot(0, this, [this] {
+        setupPromptScheduled_ = false;
+        showAnimeJanaiSetupPrompt(settingsDialog_.isNull() ? nullptr : settingsDialog_.data());
+    });
 }
 
 void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
     if (setupDeclined_ || setupPromptOffered_ || componentsTab_ == nullptr ||
         componentsTab_->acquisitionRunning()) return;
-    // The inventory was hashed by ComponentStoreTab's worker; prompt construction
-    // uses only that published snapshot and never probes the stores on the GUI thread.
+    // Both ends of the nested loop are guarded: this window may be deleted
+    // while the ask owns the loop, and the caller's dialog may be gone before
+    // the answer is read.
+    const QPointer<MainWindow> self(this);
+    const QPointer<SettingsDialog> settingsGuard(settings);
+    // Only the snapshot ComponentStoreTab's worker published is used; the
+    // stores are never probed on the GUI thread.
     const QString promptBody = componentsTab_->setupPrompt();
     if (promptBody.isEmpty()) return;
-    // AnimeJaNai is released when this ask finishes so the viewer can keep
-    // watching on a shader while the packs download. The pause itself happens
-    // only when a video is already playing.
+    // AnimeJaNai stays released after this ask, so the viewer keeps watching on
+    // a shader while the packs download; the pause itself happens only when a
+    // video is already playing.
     pausePlaybackForComponentAsk(true);
-    QWidget* parent = QApplication::activeWindow();
-    if (parent == nullptr) parent = this;
+    // Heap and parentless on purpose: this frame owns the dialog and deletes it
+    // after the loop, with attachPromptOwner supplying only the native owner.
+    auto* dialog = new QDialog();
+    QPointer<QDialog> dialogGuard(dialog);
+    dialog->setObjectName(QStringLiteral("animeJanaiSetupPrompt"));
+    dialog->setWindowTitle(tr("Set up AnimeJaNai"));
+    dialog->setModal(true);
 
-    QDialog prompt(parent);
-    prompt.setWindowTitle(tr("Set up AnimeJaNai"));
-    prompt.setModal(true);
-
-    auto* layout = new QVBoxLayout(&prompt);
-    auto* heading = new QLabel(tr("Set up AnimeJaNai"), &prompt);
+    auto* layout = new QVBoxLayout(dialog);
+    auto* heading = new QLabel(tr("Set up AnimeJaNai"), dialog);
     QFont headingFont = heading->font();
     headingFont.setBold(true);
     heading->setFont(headingFont);
     layout->addWidget(heading);
 
-    auto* body = new QLabel(promptBody, &prompt);
+    auto* body = new QLabel(promptBody, dialog);
     body->setTextFormat(Qt::RichText);
     body->setWordWrap(true);
     layout->addWidget(body);
 
-    auto* buttons = new QDialogButtonBox(&prompt);
+    auto* buttons = new QDialogButtonBox(dialog);
     auto* install = buttons->addButton(tr("Install"), QDialogButtonBox::AcceptRole);
     install->setObjectName(QStringLiteral("primary"));
     auto* notNow = buttons->addButton(tr("Not now"), QDialogButtonBox::RejectRole);
@@ -658,31 +721,49 @@ void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
     layout->addWidget(buttons);
     install->setDefault(true);
 
+    // Native ownership and placement only; see attachPromptOwner.
+    attachPromptOwner(dialog, this, /*preferActiveWindow=*/true);
+
     setupPromptOffered_ = true;
     bool installChosen = false;
     bool notNowChosen = false;
-    connect(install, &QPushButton::clicked, &prompt, [&prompt, &installChosen] {
+    connect(install, &QPushButton::clicked, dialog, [dialog, &installChosen] {
         installChosen = true;
-        prompt.accept();
+        dialog->accept();
     });
-    connect(notNow, &QPushButton::clicked, &prompt, [&prompt, &notNowChosen] {
+    connect(notNow, &QPushButton::clicked, dialog, [dialog, &notNowChosen] {
         notNowChosen = true;
-        prompt.reject();
+        dialog->reject();
     });
-    prompt.exec();
+    // A shell deleted programmatically ends the ask: the dialog is not its
+    // child, so this is what stops it outliving the window that asked.
+    QObject::connect(this, &QObject::destroyed, dialog, [dialog] { dialog->reject(); });
+    setupPrompt_ = dialog;
+    dialog->exec();
+    if (dialogGuard.isNull()) {
+        // Destroyed while its loop ran: neither answer was given, so nothing
+        // installs and nothing is declined.
+        if (self.isNull()) return;
+        setupPrompt_.clear();
+        if (settingsGuard.isNull()) resumePlaybackAfterComponentAsk();
+        return;
+    }
+    delete dialogGuard.data();
+    if (self.isNull()) return;
+    setupPrompt_.clear();
     if (installChosen) {
-        if (settings != nullptr) {
-            settings->showComponentsTab();
-            settings->installRecommended();
+        if (!settingsGuard.isNull()) {
+            settingsGuard->showComponentsTab();
+            settingsGuard->installRecommended();
         } else {
             openSettingsImpl(std::nullopt, {}, true, true);
         }
     } else if (notNowChosen) {
         setupDeclined_ = true;
     }
-    // A prompt opened from inside Settings waits for that dialog to close.
-    // Resuming here would start the video behind the still-modal page.
-    if (settings == nullptr) resumePlaybackAfterComponentAsk();
+    // An ask opened from inside Settings resumes when that dialog closes;
+    // resuming now would start the video behind the still-modal page.
+    if (settingsGuard.isNull()) resumePlaybackAfterComponentAsk();
 }
 
 void MainWindow::pausePlaybackForComponentAsk(bool releaseAnimeJanai) {
@@ -789,14 +870,11 @@ void MainWindow::openSettingsImpl(std::optional<mplayer::shell::ProcessingSettin
             [this](SettingsDialog* settings) {
                 if (componentsTab_ == nullptr) return;
                 if (componentsTab_->inventoryReady()) {
-                    offerAnimeJanaiSetup(settings);
+                    offerAnimeJanaiSetup();
                     return;
                 }
-                const QPointer<SettingsDialog> target(settings);
                 connect(componentsTab_, &ComponentStoreTab::inventoryUpdated, settings,
-                        [this, target] {
-                            if (!target.isNull()) offerAnimeJanaiSetup(target.data());
-                        }, Qt::SingleShotConnection);
+                        [this] { offerAnimeJanaiSetup(); }, Qt::SingleShotConnection);
             });
     if (showComponentsFirst) {
         dialog.showComponentsTab();

@@ -508,9 +508,7 @@ void VideoSurface::setEngineFrameHold(bool active) {
         if (engineFrameHoldActive_) return;
         engineFrameHoldActive_ = true;
         engineFrameHoldAwaitingOutput_ = false;
-        // The caller acquires this hold before changing mpv's filter chain. Copy
-        // the last clean Qt video FBO once at that boundary; paintGL must not
-        // turn ordinary playback into a per-frame copy path.
+        // Capture before the filter changes; ordinary playback must not copy every frame.
         if (!engineFrameHoldFbo_) captureEngineFrameHold();
         update();
         return;
@@ -932,6 +930,7 @@ void VideoSurface::seek(double seconds) {
     // tolerated here - the same tolerance the synchronous call had.
     issueCoreCommand({"seek", mpvNumber(seconds), "absolute"}, "seek",
                      /*reportRefusal=*/false);
+    emit seekRequested(seconds);
 }
 
 void VideoSurface::setVolume(double volume) {

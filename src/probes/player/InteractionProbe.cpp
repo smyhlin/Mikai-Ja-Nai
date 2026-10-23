@@ -22,6 +22,8 @@
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDoubleSpinBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -32,6 +34,7 @@
 #include <QKeyEvent>
 #include <QLibraryInfo>
 #include <QLocale>
+#include <QMimeData>
 #include <QPointer>
 #include <QTest>
 #include <QGuiApplication>
@@ -43,6 +46,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
+#include <QUrl>
 #include <QWidget>
 #include <algorithm>
 #include <cmath>
@@ -575,6 +579,90 @@ private:
     std::function<bool()> guard_;
     std::function<void()> finish_;
     int index_ = 0;
+};
+
+/// Watches the two windows a PiP round trip moves between and records the
+/// orderings that leave the desktop uncovered. Both are event order rather than
+/// timing: QEvent::Show is delivered before a window is exposed and QEvent::Hide
+/// after it stops painting, so the pair names exactly the interval a compositor
+/// would fill with the desktop.
+class PipTransitionWatch : public QObject {
+public:
+    /// `floatWindow` may be null on entry: the float does not exist yet, and the
+    /// check that matters there reads the visible floats from the application
+    /// rather than the one this watch was handed.
+    PipTransitionWatch(QWidget* player, QWidget* floatWindow) {
+        player_ = player;
+        float_ = floatWindow;
+        if (player_ != nullptr) {
+            player_->installEventFilter(this);
+            playerShown_ = player_->isVisible();
+        }
+        if (float_ != nullptr) {
+            float_->installEventFilter(this);
+        }
+    }
+
+    ~PipTransitionWatch() override {
+        if (player_ != nullptr) player_->removeEventFilter(this);
+        if (float_ != nullptr) float_->removeEventFilter(this);
+    }
+
+    /// The float went away while the player's window was not up. The viewer was
+    /// looking at the desktop until the player was mapped.
+    bool floatLeftWithNoPlayerWindow() const { return floatLeftWithNoPlayerWindow_; }
+    /// The player went away before the float that replaces it was shown.
+    bool playerLeftWithNoFloatWindow() const { return playerLeftWithNoFloatWindow_; }
+    /// The player went away while the float behind it had no picture yet.
+    bool playerLeftWithoutFloatPicture() const { return playerLeftWithoutFloatPicture_; }
+    /// The player was on screen in its windowed rect while it was still the
+    /// visible window: the narrowed flash a fullscreen round trip must not have.
+    bool windowedPlayerWasVisible() const { return windowedPlayerWasVisible_; }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == float_ && event->type() == QEvent::Hide && !playerShown_) {
+            floatLeftWithNoPlayerWindow_ = true;
+        } else if (watched == player_) {
+            if (event->type() == QEvent::Show) {
+                playerShown_ = true;
+            } else if (event->type() == QEvent::Hide) {
+                PipFloat* floater = visibleFloat();
+                if (floater == nullptr) {
+                    playerLeftWithNoFloatWindow_ = true;
+                } else if (VideoSurface* successor = floater->videoSurface();
+                           successor == nullptr || !successor->hasVisibleOutputFrame()) {
+                    // The replacement was up but empty: the player's picture was
+                    // taken away before anything could take its place.
+                    playerLeftWithoutFloatPicture_ = true;
+                }
+            } else if (event->type() == QEvent::Resize && player_->isVisible() &&
+                       !player_->isFullScreen()) {
+                windowedPlayerWasVisible_ = true;
+            }
+        }
+        return false;
+    }
+
+private:
+    static PipFloat* visibleFloat() {
+        const QList<QWidget*> tops = QApplication::topLevelWidgets();
+        for (QWidget* window : tops) {
+            if (auto* floater = qobject_cast<PipFloat*>(window);
+                floater != nullptr && floater->isVisible()) {
+                return floater;
+            }
+        }
+        return nullptr;
+    }
+
+    QPointer<QWidget> player_;
+    QPointer<QWidget> float_;
+    bool playerShown_ = false;
+    bool floatLeftWithNoPlayerWindow_ = false;
+    bool playerLeftWithNoFloatWindow_ = false;
+    bool playerLeftWithoutFloatPicture_ = false;
+    bool windowedPlayerWasVisible_ = false;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2642,6 +2730,7 @@ int main(int argc, char** argv) {
                 QApplication::sendEvent(surface, &move);
             }
         }
+        auto transition = std::make_unique<PipTransitionWatch>(dialog, nullptr);
         if (QPushButton* pipButton = buttonWithGlyph(dialog, IconPainter::pip)) {
             pipButton->click();
         }
@@ -2653,6 +2742,25 @@ int main(int argc, char** argv) {
             return;
         }
         pipFloat = pip;
+        // The entry is one visible step for the player - it is hidden - and no
+        // resize of it: narrowing the fullscreen window first left the windowed
+        // player over the desktop for the whole float construction.
+        check(!transition->windowedPlayerWasVisible(),
+              "PiP entry never presents the fullscreen player in its windowed rect");
+        // The player's window goes away only behind a float that already has a
+        // picture, so the wait is on that hand-off rather than on a beat.
+        const bool playerHandedOver =
+            waitFor([&] { return dialogGuard.isNull() || !dialog->isVisible(); }, 12000);
+        if (playerHandedOver) {
+            check(!transition->playerLeftWithNoFloatWindow(),
+                  "the player's window stayed up until the float was shown");
+            check(!transition->playerLeftWithoutFloatPicture(),
+                  "the player's window only went away behind a float with a picture");
+        } else {
+            // A readiness precondition, not an environment: without the hand-off
+            // there is nothing to prove, and a skip would pass a regression.
+            check(false, "the entry hand-off: the player's window went away behind the float");
+        }
         // The float lays its chrome out when it is first shown, so give the
         // show a beat before reading geometry off it.
         QTest::qWait(400);
@@ -2986,6 +3094,7 @@ int main(int argc, char** argv) {
         if (restore == nullptr) {
             return;
         }
+        auto transition = std::make_unique<PipTransitionWatch>(dialog, pipFloat);
         restore->click();
         // The hand-back is deferred by a tick on purpose, so wait for the float
         // to be gone and the window to be back rather than sampling
@@ -2994,16 +3103,30 @@ int main(int argc, char** argv) {
             return dialogGuard.isNull() ||
                    (pipFloat != nullptr && !pipFloat->isVisible() && dialog->isVisible());
         }, 8000);
-        // The float is pooled rather than destroyed - each owns a
-        // QOpenGLWidget and tearing one down beside the player's crashes
-        // the display driver - so "closed" means hidden, not gone.
-        check(pipFloat != nullptr && !pipFloat->isVisible(),
-              "the restore button put the float away");
         check(dialogGuard != nullptr && dialog->isVisible(), "the player window is back");
         auto* mainSurface = dialog->findChild<VideoSurface*>();
         if (mainSurface == nullptr) {
             return;
         }
+        // The float is pooled rather than destroyed - each owns a
+        // QOpenGLWidget and tearing one down beside the player's crashes
+        // the display driver - so "closed" means hidden, not gone. It is
+        // retired by the player's own picture, so a surface with nothing to
+        // show keeps it up instead of uncovering an empty window.
+        const bool floatStillUp = pipFloat != nullptr && pipFloat->isVisible();
+        check(!floatStillUp || !mainSurface->hasVideo(),
+              "the float is only still up because the player has no picture to show");
+        if (mainSurface->hasVideo()) {
+            check(!floatStillUp, "the restore button put the float away");
+        }
+        // The order the two windows change in, not the state they end in: the
+        // float is the only picture on screen until the player's window is up,
+        // and the fullscreen return never presents the player in its windowed
+        // rect on the way back.
+        check(!transition->floatLeftWithNoPlayerWindow(),
+              "the float stayed on screen until the player's window was back");
+        check(!transition->windowedPlayerWasVisible(),
+              "the fullscreen return never presents the player in its windowed rect");
         waitFor([&] {
             return dialogGuard.isNull() ||
                    (std::abs(mainSurface->position() - floatExitPosition) < 1.5 &&
@@ -3015,6 +3138,222 @@ int main(int argc, char** argv) {
               "the main player resumes where the float left off");
         check(mainSurface->isPlaying() == floatExitPlaying,
               "the main core continues the float's playback state");
+    });
+
+    runner.add(24500, [&] {
+        // The host must outlive the dialog's deferred WA_DeleteOnClose destruction.
+        static StubHost lateHost;
+        auto* late = new PlayerDialog(QStringLiteral("probe slow hand-back"), url, qualities, 720,
+                                      &lateHost);
+        QPointer<PlayerDialog> lateGuard(late);
+        QVector<PipFloat*> preexisting;
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            if (auto* f = qobject_cast<PipFloat*>(w)) preexisting.append(f);
+        }
+        late->startPlayer();
+        late->show();
+        auto* lateShell = late->findChild<PlayerShell*>();
+        auto* lateSurface = late->findChild<VideoSurface*>();
+        check(lateShell != nullptr && lateSurface != nullptr,
+              "the delayed hand-back player built its shell and surface");
+        if (lateShell == nullptr || lateSurface == nullptr) {
+            late->close();
+            return;
+        }
+        if (!waitFor([&] { return lateSurface->hasVideo(); }, 15000)) {
+            // Readiness precondition: the hand-back cannot be proven if the
+            // returning player never had a picture to hand off.
+            check(false, "the delayed hand-back player loaded a picture before PiP");
+            late->close();
+            return;
+        }
+        emit lateShell->pipRequested();
+        PipFloat* lateFloat = nullptr;
+        waitFor([&] {
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                auto* f = qobject_cast<PipFloat*>(w);
+                if (f != nullptr && f->isVisible() && !preexisting.contains(f)) {
+                    lateFloat = f;
+                    return true;
+                }
+            }
+            return false;
+        }, 8000);
+        check(lateFloat != nullptr, "the delayed hand-back player opened its float");
+        if (lateFloat == nullptr) {
+            late->close();
+            return;
+        }
+        QPointer<PipFloat> floatGuard(lateFloat);
+        // The float must own the picture before the player's is taken away,
+        // otherwise this is only testing the entry hand-off.
+        if (!waitFor([&] {
+                VideoSurface* floated = floatGuard.isNull() ? nullptr : floatGuard->videoSurface();
+                return lateGuard.isNull() ||
+                       (floated != nullptr && floated->hasVideo() && !late->isVisible());
+            }, 15000)) {
+            check(false, "the float took the picture before the player's was taken away");
+            if (!lateGuard.isNull()) late->close();
+            return;
+        }
+        // No picture for the player to hand back to, and no error either: the
+        // successor is merely not ready.
+        lateSurface->close();
+        check(waitFor([&] { return lateGuard.isNull() || !lateSurface->hasVideo(); }, 3000),
+              "the returning core was left with no picture");
+        auto* restore = lateFloat->findChild<QPushButton*>(QStringLiteral("pipRestore"));
+        check(restore != nullptr, "the delayed hand-back float has a restore button");
+        if (restore != nullptr && !lateGuard.isNull()) {
+            restore->click();
+            // Twice the longest fallback the hand-off used to run.
+            QTest::qWait(1400);
+            check(!lateGuard.isNull() && late->isVisible(),
+                  "the player's window comes back before its picture does");
+            check(!floatGuard.isNull() && floatGuard->isVisible(),
+                  "the float stays on screen while the player has no picture to show");
+        }
+        if (!lateGuard.isNull()) {
+            late->close();
+        }
+        waitFor([&] { return lateGuard.isNull(); }, 6000);
+    });
+
+    // Pooled identity and source epochs alone cannot reject superseded transitions.
+    runner.add(24600, [&] {
+        static StubHost rapidHost;
+        auto* rapid = new PlayerDialog(QStringLiteral("probe rapid hand-off"), url, qualities, 720,
+                                       &rapidHost);
+        QPointer<PlayerDialog> rapidGuard(rapid);
+        const auto floatNotIn = [](const QVector<PipFloat*>& known) -> PipFloat* {
+            for (QWidget* w : QApplication::topLevelWidgets()) {
+                auto* f = qobject_cast<PipFloat*>(w);
+                if (f != nullptr && f->isVisible() && !known.contains(f)) return f;
+            }
+            return nullptr;
+        };
+        QVector<PipFloat*> preexisting;
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            if (auto* f = qobject_cast<PipFloat*>(w)) preexisting.append(f);
+        }
+        rapid->startPlayer();
+        rapid->show();
+        auto* rapidShell = rapid->findChild<PlayerShell*>();
+        auto* rapidSurface = rapid->findChild<VideoSurface*>();
+        check(rapidShell != nullptr && rapidSurface != nullptr,
+              "the rapid hand-off player built its shell and surface");
+        if (rapidShell == nullptr || rapidSurface == nullptr) {
+            rapid->close();
+            return;
+        }
+        if (!waitFor([&] { return rapidSurface->hasVideo(); }, 15000)) {
+            // Readiness precondition: the cancellation turns are meaningless
+            // without a picture either window could carry.
+            check(false, "the rapid hand-off player loaded a picture before PiP");
+            rapid->close();
+            return;
+        }
+        // Enter and leave in one turn, before either hand-off can complete.
+        emit rapidShell->pipRequested();
+        emit rapidShell->pipRequested();
+        QTest::qWait(1500);
+        check(!rapid->isPipActive(), "a rapid enter/leave settles on PiP down");
+        check(rapid->isVisible(), "the player's window is the one left standing");
+        check(floatNotIn(preexisting) == nullptr,
+              "the float the rapid pair opened is not left on screen");
+        // Leave and enter in one turn: a restore is queued, then PiP is asked
+        // for again. The queued turn belongs to the superseded intent.
+        emit rapidShell->pipRequested();
+        PipFloat* rapidFloat = nullptr;
+        waitFor([&] { rapidFloat = floatNotIn(preexisting); return rapidFloat != nullptr; }, 8000);
+        check(rapidFloat != nullptr, "the rapid hand-off player opened its float");
+        if (rapidFloat == nullptr) {
+            if (!rapidGuard.isNull()) rapid->close();
+            return;
+        }
+        QPointer<PipFloat> rapidFloatGuard(rapidFloat);
+        waitFor([&] {
+            VideoSurface* floated = rapidFloatGuard.isNull() ? nullptr : rapidFloatGuard->videoSurface();
+            return !rapidGuard.isNull() && floated != nullptr && floated->hasVideo() &&
+                   !rapid->isVisible();
+        }, 15000);
+        emit rapidShell->pipRequested();
+        emit rapidShell->pipRequested();
+        QTest::qWait(1500);
+        check(!rapidGuard.isNull() && rapid->isPipActive(), "the last intent wins: PiP is up");
+        check(!rapidFloatGuard.isNull() && rapidFloatGuard->isVisible(),
+              "the float is the window left standing");
+        check(!rapidGuard.isNull() && !rapid->isVisible(),
+              "the superseded restore turn did not take the player's window back");
+        auto* restore = rapidFloatGuard.isNull()
+                            ? nullptr
+                            : rapidFloatGuard->findChild<QPushButton*>(QStringLiteral("pipRestore"));
+        check(restore != nullptr, "the rapid hand-off float has a restore button");
+        if (restore != nullptr && !rapidGuard.isNull()) {
+            restore->click();
+            restore->click();
+            const bool restored = waitFor([&] {
+                return !rapidGuard.isNull() && rapid->isVisible() && !rapid->isPipActive() &&
+                       !rapidFloatGuard.isNull() && !rapidFloatGuard->isVisible();
+            }, 8000);
+            check(restored, "two restore clicks in one turn leave no orphan float");
+        }
+        if (!rapidGuard.isNull()) {
+            rapid->close();
+        }
+        waitFor([&] { return rapidGuard.isNull(); }, 6000);
+    });
+
+    // A drop without prior PiP used to dereference the absent float.
+    runner.add(27000, [&] {
+        static StubHost dropHost;
+        auto* drop = new PlayerDialog(QStringLiteral("probe media drop"), url, qualities, 720,
+                                      &dropHost);
+        QPointer<PlayerDialog> dropGuard(drop);
+        drop->startPlayer();
+        drop->show();
+        auto* dropShell = drop->findChild<PlayerShell*>();
+        auto* dropSurface = playerSurface(drop);
+        check(dropShell != nullptr && dropSurface != nullptr,
+              "the dropped-media player built its shell and surface");
+        if (dropShell == nullptr || dropSurface == nullptr) {
+            drop->close();
+            return;
+        }
+        // A live stream first: the drop reloads the same file, and a fresh epoch
+        // only means anything measured against one that was already up.
+        check(waitFor([dropSurface] { return dropSurface->hasVideo(); }, 20000),
+              "the dropped-media player rendered a stream before the drop");
+        check(waitFor([dropSurface] {
+            return dropSurface->isPlaying() && dropSurface->position() > 0.2;
+        }, 8000), "the dropped-media player is playing before the drop");
+        check(!drop->isPipActive(), "no float is up before the drop");
+        const int floatsBefore = livePipFloats();
+        const quint64 epochBefore = dropSurface->sourceEpoch();
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(QFileInfo(url).absoluteFilePath())});
+        const QPoint at = dropShell->rect().center();
+        QDragEnterEvent enter(at, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(dropShell, &enter);
+        check(enter.isAccepted(), "the shell accepted the drag of a local video");
+        QDropEvent dropped(QPointF(at), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(dropShell, &dropped);
+        check(dropped.isAccepted(), "the shell accepted the dropped local video");
+        check(waitFor([dropSurface, epochBefore] {
+                  return dropSurface->sourceEpoch() != epochBefore;
+              }, 12000),
+              "the dropped file opened a fresh source for the same local media");
+        check(waitFor([dropSurface] { return dropSurface->hasVideo(); }, 20000),
+              "the dropped local video is what the player renders");
+        check(waitFor([dropSurface] {
+            return dropSurface->isPlaying() && dropSurface->position() > 0.2;
+        }, 8000), "a file drop without PiP preserves the running playback intent");
+        check(drop->currentHeight() == 0,
+              "the drop left currentHeight at zero for the direct source");
+        check(!drop->isPipActive(), "dropping a file did not put the player into PiP");
+        check(livePipFloats() == floatsBefore, "the drop opened no float");
+        check(!dropGuard.isNull() && drop->isVisible(), "the player survived the drop");
+        if (!dropGuard.isNull()) drop->close();
+        waitFor([&] { return dropGuard.isNull(); }, 6000);
     });
 
     // The float's X and its expand button mean opposite things, and they were
@@ -3142,10 +3481,27 @@ int main(int argc, char** argv) {
                                          {"embed", QStringLiteral("e1")},
                                          {"kind", QStringLiteral("voice")}}},
                             QStringLiteral("e1"));
+        parked->startPlayer();
         parked->show();
         auto* parkedShell = parked->findChild<PlayerShell*>();
         check(parkedShell != nullptr, "the parked-case player has a shell");
         if (parkedShell == nullptr) {
+            parked->close();
+            return;
+        }
+        // The restore puts the float away only behind the player's own picture -
+        // a parked float whose successor never opened a stream has nothing to
+        // hand back to and could only sit on screen - so the main stream has to
+        // be genuinely up before PiP, not merely requested.
+        auto* parkedSurface = playerSurface(parked);
+        check(parkedSurface != nullptr, "the parked-case player has a surface");
+        if (parkedSurface == nullptr) {
+            parked->close();
+            return;
+        }
+        check(waitFor([parkedSurface] { return parkedSurface->hasVideo(); }, 20000),
+              "the parked-case player rendered its own stream before PiP");
+        if (!parkedSurface->hasVideo()) {
             parked->close();
             return;
         }

@@ -136,7 +136,7 @@ public:
     bool pauseObserved() const { return observedPaused_; }
     /// Holds output paused during engine work, retaining explicit viewer intent.
     void setEnginePreparationPaused(bool active, bool restoreIntent = true);
-    /// Retains the last visible output through an engine/filter transition. A
+    /// Retains one clean video snapshot through an engine/filter transition. A
     /// single video-only GPU snapshot is captured at activation and held until
     /// a fresh output frame arrives after deactivation; source and GL-context
     /// changes invalidate it.
@@ -214,6 +214,7 @@ public:
     int videoWidth() const;
     int videoHeight() const;
     bool hasVideo() const;
+    bool hasVisibleOutputFrame() const { return hasVideo_ && hasVisibleOutputFrame_; }
     /// Current mpv source epoch; changes whenever the loaded source is replaced.
     uint64_t sourceEpoch() const;
     QString sourceUrl() const { return url_; }
@@ -374,6 +375,8 @@ signals:
     void mediaEnded(quint64 mediaToken);
     /// The loaded source changed, invalidating any frame captured under the old epoch.
     void sourceEpochChanged(uint64_t epoch);
+    /// A seek intent can precede, or never change, the observed position.
+    void seekRequested(double seconds);
     void positionChanged(double seconds);
     void durationChanged(double seconds);
     void videoSizeChanged(int width, int height);

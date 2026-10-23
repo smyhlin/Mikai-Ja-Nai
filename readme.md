@@ -16,7 +16,7 @@ A cross-platform C++20 / Qt 6.12 desktop client and integrated video player for 
   - **Episode watch history:** the grid outlines the last successfully loaded episode, underlines watched episodes, and dims unavailable slots when the API supplies a known episode total. **Mark as watched** / **Watched** toggles individual marks. The episode right-click menu provides **Watch all previous**, **Unwatch all previous**, and an explicit per-episode **Unwatch**. Previous-episode actions follow the selected provider's catalogue order across pages, including known earlier unavailable slots, and exclude the clicked episode and all later episodes. History-only actions do not extract stream URLs or change current playback. Normal mpv EOF also marks an episode watched; clicks, failed loads, early closes, episode/track replacements and PiP handoffs do not. Current and watched identifiers are saved locally in QSettings (`title/watchHistory`), per title and shared across dubs/providers, and survive reopening, pagination and language changes. This stores episode state, not a playback timestamp.
 - **Integrated `libmpv` OpenGL Player (`PlayerDialog`, `VideoSurface`, `PlayerShell`):**
   - Single-process OpenGL render surface (`QOpenGLWidget` + `mpv_render_context`) with dynamic `libmpv` symbol loading (`LoadLibraryExW` on Windows, `dlopen` on Linux).
-  - Flicker-free continuous compositor pipeline (`QOpenGLWidget::NoPartialUpdate`) unconditionally blitting into the backing FBO on every `paintGL()` pass.
+  - Continuous `QOpenGLWidget::NoPartialUpdate` rendering into the backing FBO on every `paintGL()` pass, including paused HUD repaints.
   - Auto-hiding HUD controls on both playback and idle paused state, timeline thumbnail/chapter scrubbing, audio & subtitle track popups with live probed quality badges (`1080p`, `720p`, etc.), episode drawer (`S`), Picture-in-Picture mode, and multi-level `Esc` navigation.
 - **Real-Time Video Enhancement Pipelines:**
   - **Anime4K GLSL Shaders:** 6 composite modes (`A`, `B`, `C`, `A+A`, `B+B`, `C+A` in Fast and High Quality variants) plus individual Restore, Upscale, Denoise, Deblur, Darken, and Thin shaders.
@@ -115,20 +115,31 @@ The player uses **Qt Widgets + desktop OpenGL**, not Qt Quick's RHI. Rendering s
 - `frameSwapped()` reports a swap only when the surface rendered an unacknowledged frame. Hidden, minimized, and fully covered surfaces consume updates with `SKIP_RENDERING` outside `paintGL()` and acknowledge the discarded frame. Decoding and native inference can still consume GPU resources.
 - On-video controls paint through `QPainter(this)` in the surface's GL pass. Existing widgets retain input, focus, accessibility, and layout roles; popovers and off-video chrome remain normal widgets. The native block restores Qt's FBO, VAO, and pixel-unpack state before painter drawing resumes.
 - Renderer cleanup runs both on `aboutToBeDestroyed` and during destruction with the correct context current. A recreated context reloads the current source at its observed position and pause state. GUI playback commands are asynchronous.
+- Each event-pump drain yields after 128 events or 4 ms rather than draining an unbounded backlog on the GUI thread. Nested drains cannot invalidate a borrowed mpv event; callbacks retain their captures if they unobserve or replace themselves while executing.
 - Frame exports and compare inputs use `grabVideoFramebuffer()` to exclude chrome; ordinary `grabFramebuffer()` includes the HUD.
+- PiP keeps the outgoing window visible until its successor composes a picture or reports a terminal error. Fullscreen intent is set before mapping the returning player; transition generations reject superseded restores of the pooled float.
+- Cover and thumbnail decoding runs on the image workers. Only pixmap publication and widget updates run on the GUI thread. Thumbnail scaling accounts for EXIF rotation; invalid selected-cover bytes use the same explicit hint fallback as a failed download.
+- Component setup prompts retain native stacking over the active window without becoming its QObject children. Closing the shell is refused while a prompt owns the modal loop; programmatic owner destruction cannot leave an orphan modal loop.
 
 `hwdec=auto-safe` remains enabled for interactive playback. It requests a safe hardware path; it is not a universal zero-copy guarantee. See the [Qt OpenGL widget contract](https://doc.qt.io/qt-6/qopenglwidget.html) and [libmpv render API](https://github.com/mpv-player/mpv/blob/master/include/mpv/render.h).
 
 ### Rendering Regression Probes
 
-Build the opt-in `mpv_surface_smoke` and `native_hud_probe` targets, then place their executables beside the deployed application runtime. In PowerShell:
+Build the opt-in probe targets and `mikai_test_launcher`. Run legacy probes through the launcher so their executable-local store is disposable; never copy mutable probes beside a populated deployment. In PowerShell from the repository root:
 
 ```powershell
+$qt = "C:/temp/qt6/6.12.0/mingw_64"
+$env:PATH = "$qt/bin;C:/temp/w64dev/w64devkit/bin;$env:PATH"
 $env:QT_QPA_PLATFORM = "windows"
 $env:QT_OPENGL = "desktop"
-.\mpv_surface_smoke.exe --render-lifecycle C:\media\moving-video.mp4 --dpr 1.0 --out lifecycle100
-.\mpv_surface_smoke.exe --render-lifecycle C:\media\moving-video.mp4 --dpr 1.5 --out lifecycle150
-.\native_hud_probe.exe --framebuffer-capture
+$launcher = "$PWD/build/release/mikai_test_launcher.exe"
+$runtime = (Resolve-Path build/release/mpv/libmpv-2.dll).Path
+$stage = @("$PWD/shaders", $runtime, "$qt/bin", "$qt/plugins", "$PWD/build/release/_test-runs")
+& $launcher "$PWD/build/release/mpv_surface_smoke.exe" @stage --render-lifecycle C:\media\moving-video.mp4 --dpr 1.0 --out "$PWD/.probe-out/lifecycle100"
+& $launcher "$PWD/build/release/mpv_surface_smoke.exe" @stage --render-lifecycle C:\media\moving-video.mp4 --dpr 1.5 --out "$PWD/.probe-out/lifecycle150"
+& $launcher "$PWD/build/release/native_hud_probe.exe" @stage --framebuffer-capture
+& $launcher "$PWD/build/release/interaction_probe.exe" @stage C:\media\moving-video.mp4
+& $launcher "$PWD/build/release/main_window_modal_probe.exe" @stage
 ```
 
 Use a moving, non-black local clip. The lifecycle probe checks frame progression, pause/repaint stability, HUD-free exports, rapid pause toggles, hidden/covered recovery, DPR resizing, context recreation, teardown, and recovery after a real source error. It saves framebuffer evidence. The transition-hold check requires observable motion, proves that the picture freezes while the media clock advances, and reports an explicit inconclusive result if motion is insufficient. A companion `.srt` exercises subtitle texture uploads.
@@ -136,6 +147,24 @@ Use a moving, non-black local clip. The lifecycle probe checks frame progression
 `--dpr` sets Qt's global scale multiplier, not an absolute monitor ratio. Check the reported device-pixel ratio; on a native 2× monitor, `--dpr 0.75` exercises a fractional 1.5× framebuffer.
 
 The HUD probe uses synthetic status snapshots to check **presentation, not inference**. Its explicit framebuffer mode verifies GPU-painted text without claiming desktop presentation. Run it without that flag on an active desktop to check the presented screen. Neither offscreen benchmark fps nor framebuffer captures establish display-vsync smoothness.
+
+The interaction walk exercises fullscreen/PiP presentation order, paused restore, slow successors, rapid opposite transitions, repeated restore clicks, pool reuse and local-file drops without a float. The modal probe exercises the real shell's setup prompt over a fullscreen top-level owner, destruction of that owner, shell-close refusal, and programmatic shell deletion. It requires a missing-component prompt in the disposable stage and never accepts an installation. `engine_popup_probe` additionally requires a real configured AnimeJaNai installation for its inference-dependent section; a stock runtime in an empty stage cannot prove that section.
+
+`fullscreen_stability_probe` and `compare_export_probe` stage their own executable copies. Set an explicit Standard runtime hint, then run:
+
+```powershell
+$env:MIKAI_MPV_MODULE = $runtime
+.\build\release\fullscreen_stability_probe.exe C:\media\moving-nonblack-20min.mp4 1080 .probe-out\fullscreen-fast-a fast_a
+.\build\release\compare_export_probe.exe C:\media\moving-video.mp4 .probe-out\compare-export
+```
+
+The fullscreen probe samples the backing video framebuffer immediately before composition without forcing a repaint. It records black compositions, playback progress, GUI timer gaps, and working-set memory to `samples.jsonl`, while periodically exercising HUD visibility. Screen-geometry/application-state events and capture, readback, image-save and sampling costs separate display-connection changes and probe overhead from renderer delays. Use a clip whose centre stays non-black for longer than the requested duration; an HTTP source also exercises mpv's network cache. The optional final argument selects an Anime4K preset (`off` by default), and the result verifies that it was applied. Desktop samples are recorded separately: an all-black capture on a disconnected desktop is not evidence of a black renderer or successful physical presentation.
+
+The export probe opens the actual Flicker controls and Save dialog, decodes both saved frames and their timing, checks compact/wide toolbars, and closes the owning player with the picker open. Use a fresh output directory; it refuses to overwrite an existing `comparison.gif`.
+
+The Windows stability audit exercised 18 minutes of HTTP playback with `fast_a`: 27,741 video compositions, no black video compositions, no stalled seconds, and a 117 ms maximum GUI gap. This is framebuffer and responsiveness evidence, not confirmation that the originally reported intermittent display flash is resolved: desktop GDI capture was unreliable and Desktop Duplication was denied. A separate older run's isolated 2.141-second gap remains unattributed. Phone-connection screenshots are not renderer-failure evidence.
+
+Keep build outputs in `build/`, portable runtime files in `dist-mikai/`, and disposable probe output in `.probe-out/`; none belong in source commits. Retain diagnostic evidence separately when needed. Never use blanket cleanup commands on executable-adjacent native stores, imported models, borrowed graphs, credentials, or local settings.
 
 ---
 
@@ -274,8 +303,16 @@ Open the Compare Window from the player toolbar (`Compare` button) while playing
 | `P` | Toggle Always-on-Top window pin (`Qt::WindowStaysOnTopHint` + Win32 `HWND_TOPMOST`) |
 | `F11` or toolbar fullscreen button | Enter or leave fullscreen; the previous normal size or maximized state is restored on exit |
 | `Esc` | Leave fullscreen; when windowed, close Compare and release the player pause hold |
+| Close button | Close Compare from its tools panel, including in fullscreen |
+| Save GIF (Flicker only) | Export the settled Side A/B pair as an infinitely looping two-frame GIF |
 | `Space` | Hold to peek Side A (original or reference) across all modes |
 | Mouse Wheel / Drag | Synchronized cursor-anchored zoom (up to `32x`) and direct left-drag pan across all panes |
+
+The tools panel has separate presentation and action rows so Close and Save GIF remain available at compact widths. Difference images are computed only in Difference mode.
+
+A capture is refused if a seek is requested while its image or timestamp is being read, even when repeated seeks target the same frame and `positionChanged` does not fire. Refusal publishes no stale pair and restores the viewer's prior playback intent.
+
+Save GIF snapshots both images and the current Flicker interval before opening the file picker. Both frames use one common canvas with aspect-preserving letterboxing; delays round to GIF's 10 ms resolution. Encoding runs off the GUI thread and commits atomically, with visible write errors and cancellation when the window closes. GIF uses a fixed 256-colour palette: exported colours are quantized, so it is not a bit-exact image-quality reference.
 
 ---
 

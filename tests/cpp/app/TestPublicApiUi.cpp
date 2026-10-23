@@ -12,7 +12,9 @@
 #include <support/I18n.hpp>
 #include <theme/Theme.hpp>
 #include <workers/Runner.hpp>
+#include <gui/ImageDecode.hpp>
 
+#include <QtCore/QBuffer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -32,6 +34,7 @@
 #include <QtCore/QUrlQuery>
 #include <QtGui/QDesktopServices>
 #include <QtGui/QImage>
+#include <QtGui/QPainter>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextDocument>
 #include <QtGui/QTextFragment>
@@ -191,7 +194,9 @@ class ApiFixture final : public QObject {
           const QString target = QString::fromLatin1(parts.value(1));
           const bool poster = target.endsWith(QStringLiteral("/poster.png")) ||
                               target.endsWith(QStringLiteral("/ua-poster.png"));
-          const QByteArray body = poster ? pngBytes() : response(target);
+          const bool selectedPoster = target.endsWith(QStringLiteral("/ua-poster.png"));
+          const QByteArray body = poster ? (selectedPoster ? selectedPosterBody : posterBody)
+                                         : response(target);
           QByteArray head = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: ");
           head += poster ? QByteArrayLiteral("image/png")
                          : QByteArrayLiteral("application/json");
@@ -236,6 +241,8 @@ class ApiFixture final : public QObject {
   }
   QString teamCatalogueTitle() const { return QStringLiteral("Team Probe"); }
   bool licensed = false;
+  QByteArray posterBody = pngBytes();
+  QByteArray selectedPosterBody = pngBytes();
   bool holdTeamResponses = false;
   bool teamResponsePending() const { return !heldTeamResponses_.isEmpty(); }
   void releaseTeamResponses() {
@@ -751,6 +758,64 @@ void TestPublicApiUi::liveCoverShadingChangesWithoutResizing() {
   QVERIFY(shaded.pixelColor(sample).value() + 20 < original.pixelColor(sample).value());
   dialog.reject();
   QCOMPARE(cover->pixmap().toImage().pixelColor(sample), original.pixelColor(sample));
+}
+
+void TestPublicApiUi::invalidSelectedPosterFallsBackToHint() {
+  IsolatedSettings settings;
+  const auto saved = mikai::app::currentAppearance();
+  const auto restore = qScopeGuard([saved] { mikai::app::setCurrentAppearance(saved); });
+  auto appearance = saved;
+  appearance.coverGradient = false;
+  mikai::app::setCurrentAppearance(appearance);
+  ApiFixture api;
+  api.selectedPosterBody = QByteArrayLiteral("not an image");
+  QImage poster(48, 64, QImage::Format_RGB32);
+  const QColor expected(QStringLiteral("#e02040"));
+  poster.fill(expected);
+  QBuffer encoded(&api.posterBody);
+  QVERIFY(encoded.open(QIODevice::WriteOnly));
+  QVERIFY(poster.save(&encoded, "PNG"));
+  encoded.close();
+  QVERIFY(api.start());
+  mikai::backend::MikaiClient client(kFixtureKey, api.base());
+  mikai::app::Runner runner;
+  mikai::app::QualityCache cache;
+  const QString hint = QUrl(api.base()).resolved(QUrl(QStringLiteral("/poster.png"))).toString();
+  mikai::app::TitlePage page(runner, client, cache, QStringLiteral("7428"), hint);
+  page.resize(1120, 800);
+  page.show();
+  auto* cover = page.findChild<QLabel*>(QStringLiteral("titleCover"));
+  QVERIFY(cover != nullptr);
+  QTRY_VERIFY_WITH_TIMEOUT(!cover->pixmap().isNull(), 5000);
+  const QImage shown = cover->pixmap().toImage();
+  QCOMPARE(shown.pixelColor(shown.width() / 2, shown.height() / 2), expected);
+  auto* credit = page.findChild<QLabel*>(QStringLiteral("posterCreditLabel"));
+  QVERIFY(credit != nullptr);
+  QVERIFY(!credit->isVisible());
+}
+
+void TestPublicApiUi::decodedPosterScalesAfterExifRotation() {
+  QImage source(160, 80, QImage::Format_RGB32);
+  source.fill(Qt::red);
+  {
+    QPainter painter(&source);
+    painter.fillRect(QRect(80, 0, 80, 80), Qt::blue);
+  }
+  QByteArray bytes;
+  QBuffer encoded(&bytes);
+  QVERIFY(encoded.open(QIODevice::WriteOnly));
+  QVERIFY(source.save(&encoded, "JPEG"));
+  encoded.close();
+  bytes.insert(2, QByteArray::fromHex(
+                      "ffe100224578696600004d4d002a00000008000101120003000000010006000000000000"));
+
+  const auto decoded = mikai::gui::decodeImage(bytes, QSize(40, 80));
+  QVERIFY2(!decoded.image.isNull(), qPrintable(decoded.error));
+  QCOMPARE(decoded.image.size(), QSize(40, 80));
+  const QColor top = decoded.image.pixelColor(20, 10);
+  const QColor bottom = decoded.image.pixelColor(20, 70);
+  QVERIFY(top.red() > top.blue() + 100);
+  QVERIFY(bottom.blue() > bottom.red() + 100);
 }
 
 void TestPublicApiUi::titleSectionHeadersLetTheGradientThrough() {

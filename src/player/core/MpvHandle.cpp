@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
@@ -259,6 +260,7 @@ MpvHandle::MpvHandle(MpvHandle&& other) noexcept
     : api_(other.api_),
       handle_(std::exchange(other.handle_, nullptr)),
       sink_(std::move(other.sink_)),
+      sinkRevision_(other.sinkRevision_),
       observers_(std::move(other.observers_)),
       pending_(std::move(other.pending_)),
       nextObserverId_(other.nextObserverId_),
@@ -293,6 +295,7 @@ MpvHandle& MpvHandle::operator=(MpvHandle&& other) noexcept {
     api_ = other.api_;
     handle_ = std::exchange(other.handle_, nullptr);
     sink_ = std::move(other.sink_);
+    sinkRevision_ = other.sinkRevision_;
     observers_ = std::move(other.observers_);
     pending_ = std::move(other.pending_);
     nextObserverId_ = other.nextObserverId_;
@@ -566,15 +569,45 @@ void MpvHandle::dispatchPropertyChange(const mpv_event_property* change,
     Property property;
     property.name = change->name != nullptr ? change->name : it->second.name;
     readInto(property, change);
-    it->second.fn(property);
+    // A callback may unobserve itself; its captures must survive that erase.
+    struct CallbackScope {
+        std::unordered_map<uint64_t, Observer>& observers;
+        uint64_t id;
+        std::function<void(const Property&)> callback;
+        ~CallbackScope() {
+            const auto current = observers.find(id);
+            if (current != observers.end()) current->second.fn = std::move(callback);
+        }
+    };
+    CallbackScope scope{observers_, replyUserData, std::move(it->second.fn)};
+    scope.callback(property);
 }
 
 void MpvHandle::drainEvents() {
-    if (handle_ == nullptr || api_ == nullptr) return;
-    while (true) {
+    if (handle_ == nullptr || api_ == nullptr || drainingEvents_) return;
+    struct DrainScope {
+        bool& active;
+        ~DrainScope() { active = false; }
+    };
+    drainingEvents_ = true;
+    const DrainScope scope{drainingEvents_};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+    for (int processed = 0; processed < 128; ++processed) {
         mpv_event* event = api_->waitEvent(handle_, 0);
         if (event == nullptr || event->event_id == MPV_EVENT_NONE) break;
-        if (sink_) sink_(event);
+        if (sink_) {
+            struct SinkScope {
+                std::function<void(mpv_event*)>& target;
+                const uint64_t& currentRevision;
+                uint64_t revision;
+                std::function<void(mpv_event*)> callback;
+                ~SinkScope() {
+                    if (revision == currentRevision) target = std::move(callback);
+                }
+            };
+            SinkScope scope{sink_, sinkRevision_, sinkRevision_, std::move(sink_)};
+            scope.callback(event);
+        }
         switch (event->event_id) {
             case MPV_EVENT_PROPERTY_CHANGE:
                 dispatchPropertyChange(static_cast<const mpv_event_property*>(event->data),
@@ -587,10 +620,12 @@ void MpvHandle::drainEvents() {
             default:
                 break;
         }
+        if (std::chrono::steady_clock::now() >= deadline) break;
     }
 }
 
 void MpvHandle::setEventSink(std::function<void(mpv_event*)> sink) {
+    ++sinkRevision_;
     sink_ = std::move(sink);
 }
 

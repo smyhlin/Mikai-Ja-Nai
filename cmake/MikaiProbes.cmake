@@ -82,6 +82,12 @@ mikai_add_probe(shell_probe src/probes/player/ShellProbe.cpp
 mikai_add_probe(dialog_probe src/probes/player/DialogProbe.cpp
   LINKS mikai_player Qt6::Widgets
   DEPLOY_SHADERS)
+mikai_add_probe(fullscreen_stability_probe src/probes/player/FullscreenStabilityProbe.cpp
+  LINKS mikai_player Qt6::Widgets Qt6::Test
+  DEPLOY_SHADERS)
+if(WIN32)
+  target_link_libraries(fullscreen_stability_probe PRIVATE psapi)
+endif()
 mikai_add_probe(interaction_probe src/probes/player/InteractionProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
@@ -89,6 +95,9 @@ mikai_add_probe(compare_shot_probe src/probes/player/CompareShotProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
 mikai_add_probe(compare_probe src/probes/player/CompareProbe.cpp
+  LINKS mikai_player Qt6::Widgets Qt6::Test
+  DEPLOY_SHADERS)
+mikai_add_probe(compare_export_probe src/probes/player/CompareExportProbe.cpp
   LINKS mikai_player Qt6::Widgets Qt6::Test
   DEPLOY_SHADERS)
 mikai_add_probe(anime4k_menu_probe src/probes/player/Anime4KMenuProbe.cpp
@@ -134,6 +143,8 @@ if(TARGET mikai_app)
   mikai_add_probe(benchmark_probe src/probes/player/BenchmarkProbe.cpp
     LINKS mikai_app Qt6::Test
     DEPLOY_SHADERS)
+  mikai_add_probe(main_window_modal_probe src/probes/app/MainWindowModalProbe.cpp
+    LINKS mikai_app Qt6::Widgets)
 
   if(MIKAI_WITH_MODEL_INSPECTION)
     mikai_add_probe(native_assets_probe src/probes/native/NativeAssetsProbe.cpp

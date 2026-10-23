@@ -221,6 +221,7 @@ set(PLAYER_SOURCES
   # Visual Compare Workstation
   src/player/compare/CompareCanvas.cpp
   src/player/compare/CompareGrid.cpp
+  src/player/compare/CompareGif.cpp
   src/player/compare/CompareLayout.cpp
   src/player/compare/ComparePane.cpp
   src/player/compare/CompareRenderer.cpp
@@ -242,6 +243,7 @@ set(PLAYER_HEADERS
   src/player/shell/ShellWidgets.hpp
   src/player/compare/CompareCanvas.hpp
   src/player/compare/CompareGrid.hpp
+  src/player/compare/CompareGif.hpp
   src/player/compare/CompareLayout.hpp
   src/player/compare/ComparePane.hpp
   src/player/compare/CompareRenderer.hpp
@@ -282,6 +284,7 @@ target_link_libraries(mikai_player PUBLIC
 # 4. mikai_app & mikai — Desktop Client Pages, Dialogs, State & Workers
 # ---------------------------------------------------------------------------
 set(APP_SOURCES
+  src/gui/ImageDecode.cpp
   src/app/support/CrashLog.cpp
   src/app/support/I18n.cpp
   src/app/support/Labels.cpp
@@ -329,6 +332,7 @@ set(APP_SOURCES
 
 set(APP_HEADERS
   src/gui/Clipboard.hpp
+  src/gui/ImageDecode.hpp
   src/app/support/CrashLog.hpp
   src/app/support/I18n.hpp
   src/app/support/Labels.hpp

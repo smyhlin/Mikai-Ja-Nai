@@ -4,6 +4,7 @@
 #include "pages/EpisodeGrid.hpp"
 
 #include "gui/Clipboard.hpp"
+#include "gui/ImageDecode.hpp"
 #include "Labels.hpp"
 #include "dialogs/CoverViewer.hpp"
 #include "state/AppearanceStore.hpp"
@@ -117,6 +118,7 @@ public:
         posterKey_ = poster.cacheKey();
         image_ = poster.isNull() ? QImage() : blurredCover(poster.toImage());
         rebuild();
+        update();
     }
 
     void refreshPalette() {
@@ -1511,19 +1513,29 @@ QWidget* TitlePage::buildRelatedCarousel(
             backend::MikaiClient* client = &client_;
             const QPointer<TitlePage> self(this);
             const QPointer<QLabel> poster(posterLabel);
+            const QSize target = posterLabel->size();
             runner_.runImage(
-                [client, posterUrl] { return client->fetchBytes(posterUrl); },
+                [client, posterUrl, target] {
+                    return QVariant::fromValue(gui::decodeImage(client->fetchBytes(posterUrl), target));
+                },
                 [self, poster](const QVariant& result) {
                     if (self.isNull() || poster.isNull()) {
                         return;
                     }
-                    QPixmap pixmap;
-                    if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
-                        poster->setText(QString());
-                        poster->setPixmap(TitleCard::rounded(pixmap, poster->size()));
+                    auto decoded = result.value<gui::DecodedImage>();
+                    if (decoded.image.isNull()) {
+                        qWarning().noquote() << "TitlePage: related artwork decode failed:"
+                                             << self->ref_ << decoded.error;
+                        return;
                     }
+                    const QPixmap pixmap = QPixmap::fromImage(std::move(decoded.image));
+                    poster->setText(QString());
+                    poster->setPixmap(TitleCard::rounded(pixmap, poster->size()));
                 },
-                [](const backend::Failure&) {});
+                [](const backend::Failure& failure) {
+                    qWarning().noquote() << "TitlePage: related artwork fetch failed:"
+                                         << backend::failureLine(failure);
+                });
         }
     }
     track->adjustSize();
@@ -2966,38 +2978,50 @@ void TitlePage::loadCover(const QString& url, bool allowHint) {
     backend::MikaiClient* client = &client_;
     const QPointer<TitlePage> self(this);
     runner_.runImage(
-        [client, url] { return client->fetchBytes(url); },
-        [self, url](const QVariant& result) {
-            if (self.isNull() || self->closed_) {
-                return;
-            }
-            QPixmap pixmap;
-            if (pixmap.loadFromData(result.toByteArray()) && !pixmap.isNull()) {
-                self->coverState_ = CoverState::Ready;
-                self->coverPixmap_ = pixmap;
-                self->coverUrl_ = url;
-                self->updatePosterCredit();
-                self->cover_->setZoomable(true);
-                self->cover_->setToolTip(
-                    QCoreApplication::translate("TitlePage", "Click to open the cover"));
-                self->cover_->setText(QString());
-                self->applyCoverPixmap();
-            }
+        [client, url] {
+            return QVariant::fromValue(gui::decodeImage(client->fetchBytes(url)));
         },
-        [self, url, allowHint](const backend::Failure&) {
-            if (self.isNull() || self->closed_) {
+        [self, url, allowHint](const QVariant& result) {
+            if (self.isNull() || self->closed_) return;
+            auto decoded = result.value<gui::DecodedImage>();
+            if (decoded.image.isNull()) {
+                self->onCoverFailed(url, allowHint, decoded.error);
                 return;
             }
-            if (allowHint && !self->posterHint_.isEmpty() && self->posterHint_ != url) {
-                self->loadCover(self->posterHint_, false);
-            } else {
-                self->coverState_ = CoverState::Missing;
-                self->updatePosterCredit();
-                self->cover_->setZoomable(false);
-                self->cover_->setText(QCoreApplication::translate("TitlePage", "No cover"));
-                self->detailsThumb_->setText(QCoreApplication::translate("TitlePage", "No cover"));
+            self->coverState_ = CoverState::Ready;
+            self->coverPixmap_ = QPixmap::fromImage(std::move(decoded.image));
+            self->coverAppliedSize_ = {};
+            self->coverUrl_ = url;
+            self->updatePosterCredit();
+            self->cover_->setZoomable(true);
+            self->cover_->setToolTip(
+                QCoreApplication::translate("TitlePage", "Click to open the cover"));
+            self->cover_->setText(QString());
+            self->applyCoverPixmap();
+        },
+        [self, url, allowHint](const backend::Failure& failure) {
+            if (!self.isNull() && !self->closed_) {
+                self->onCoverFailed(url, allowHint, backend::failureLine(failure));
             }
         });
+}
+
+void TitlePage::onCoverFailed(const QString& url, bool allowHint, const QString& reason) {
+    qWarning().noquote() << "TitlePage: cover failed:" << ref_ << reason;
+    if (allowHint && !posterHint_.isEmpty() && posterHint_ != url) {
+        loadCover(posterHint_, false);
+        return;
+    }
+    coverState_ = CoverState::Missing;
+    coverPixmap_ = {};
+    coverAppliedSize_ = {};
+    coverUrl_.clear();
+    updatePosterCredit();
+    cover_->setZoomable(false);
+    const QString missing = QCoreApplication::translate("TitlePage", "No cover");
+    cover_->setText(missing);
+    detailsThumb_->setText(missing);
+    if (backdrop_ != nullptr) backdrop_->setPoster({});
 }
 
 void TitlePage::applyCoverPixmap() {

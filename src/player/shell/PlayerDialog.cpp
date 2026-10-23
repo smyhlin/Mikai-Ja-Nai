@@ -1734,28 +1734,27 @@ void PlayerDialog::showEvent(QShowEvent* event) {
     const bool wasTransitioning = transitioning_;
     transitioning_ = true;
     // The state is requested before the base handler shows the window, so the
-    // platform window is created at monitor size. Calling showFullScreen()
-    // afterwards meant it was created at the windowed rect and then animated
-    // up, which read as a stutter on every episode open. It has to happen
-    // here and not in the constructor: the shell and its OpenGL surface do
-    // not exist yet at that point, and asking for full screen underneath them
-    // faulted in Qt6Widgets three seconds into a session.
+    // platform window is created at the size the viewer is about to see.
+    // Calling showFullScreen() afterwards meant it was created at the windowed
+    // rect and then animated up, which read as a stutter on every episode open.
+    // The drop is the same rule in the other direction: a window still
+    // fullscreen from a previous presentation is created windowed, instead of
+    // being mapped over the whole monitor and shrunk a paint later. It has to
+    // happen here and not in the constructor: the shell and its OpenGL surface
+    // do not exist yet at that point, and asking for full screen underneath
+    // them faulted in Qt6Widgets three seconds into a session.
     if (fullscreen_ && !isFullScreen()) {
         setWindowState(windowState() | Qt::WindowFullScreen);
+    } else if (!fullscreen_ && isFullScreen()) {
+        setWindowState(windowState() & ~Qt::WindowFullScreen);
     }
     QDialog::showEvent(event);
     shell_->setGeometry(rect());
     shell_->show();
     shell_->setFocus(Qt::OtherFocusReason);
     if (fullscreen_) {
-        if (!isFullScreen()) {
-            showFullScreen();
-        }
         shell_->enterFullscreen();
     } else {
-        if (isFullScreen()) {
-            showNormal();
-        }
         if (windowedSize_.isValid()) {
             setGeometry(windowedSize_);
         } else {
@@ -1937,6 +1936,18 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     }
     shuttingDown_ = true;
     closed_ = true;
+    // A window hand-off may still be waiting for a picture. The float it was
+    // holding is on screen right now, so it is put away here rather than left to
+    // outlive the player by a deleteLater turn; dropping the wait keeps its
+    // observations off a surface that is about to be torn down. The generation
+    // bump makes every callback this dialog already queued stale.
+    ++pipTransitionGeneration_;
+    if (PipFloat* pending = windowHandoff_ == WindowHandoff::FloatToPlayer
+                                ? windowHandoffFloat_.data()
+                                : nullptr) {
+        pending->hide();
+    }
+    cancelWindowHandoff();
     // Remembered before the flag is cleared: a close that is refused below has to
     // restore the status this dialog was holding, not leave it blank.
     const bool runtimePendingWasVisible = runtimePendingVisible_;
