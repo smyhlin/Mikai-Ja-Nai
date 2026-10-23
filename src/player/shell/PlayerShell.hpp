@@ -146,9 +146,7 @@ public:
     void updatePlayIcon();
     /// Opens the picture context menu at a point in shell coordinates.
     void openPictureMenu(const QPoint& position);
-    /// The dub and subtitle pickers only appear when there is a choice.
-    void setAudioAvailable(bool available);
-    void setSubtitlesAvailable(bool available);
+    void setTrackAvailability(int audioTracks, int subtitleTracks, bool localMedia);
     void setAspectRatio(double ratio);
 
     State state() const;

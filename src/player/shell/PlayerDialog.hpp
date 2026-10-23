@@ -573,8 +573,7 @@ private:
     double volume_ = 0.7;      // 0..1, what the shell shows
     double speed_ = 1.0;
     anime4k::Mode anime4kMode_ = anime4k::Mode::Off;
-    /// The applied chain as a candidate id. A chain with no Mode still has to
-    /// survive a restart, and an enum ordinal cannot name one.
+    // Custom shader chains have no Mode; PiP must retain their candidate ID.
     QString anime4kChainId_ = QStringLiteral("off");
     QString animeJanaiPresetId_;
     native::Backend animeJanaiBackend_ = native::Backend::TensorRT;
@@ -635,6 +634,7 @@ private:
     // Pooled floats retain identity and source epochs across distinct transitions.
     quint64 pipTransitionGeneration_ = 0;
     quint64 windowHandoffGeneration_ = 0;
+    bool nativePlaybackRequested_ = false;
     /// The last observation that was announced, so the request is reissued only
     /// when the selection or an observed source/device fact is new - never as a
     /// busy loop while the context is still being observed.

@@ -609,6 +609,7 @@ void PlayerShell::buildDock() {
     btnAudio_ = new IconButton(IconPainter::microphone,
                                tr("Audio — choose a track  (T)"),
                                kDockActionSize, kDockActionGlyph, actionHost);
+    btnAudio_->setObjectName(QStringLiteral("playerAudioButton"));
     connect(btnAudio_, &QPushButton::clicked, this, &PlayerShell::audioRequested);
     btnAudio_->hide();
     actions->addWidget(btnAudio_);
@@ -616,6 +617,7 @@ void PlayerShell::buildDock() {
     btnSubs_ = new IconButton(IconPainter::captions,
                               tr("Subtitles — choose a track  (C)"),
                               kDockActionSize, kDockActionGlyph, actionHost);
+    btnSubs_->setObjectName(QStringLiteral("playerSubtitlesButton"));
     connect(btnSubs_, &QPushButton::clicked, this, &PlayerShell::subtitlesRequested);
     btnSubs_->hide();
     actions->addWidget(btnSubs_);
@@ -1191,20 +1193,13 @@ void PlayerShell::setQuality(const QString& quality) {
     flyout_->setQuality(quality_);
 }
 
-void PlayerShell::setAudioAvailable(bool available) {
-    if (btnAudio_ != nullptr) {
-        btnAudio_->setVisible(available);
-        dock_->adjustSize();
-        layoutChrome();
-    }
-}
-
-void PlayerShell::setSubtitlesAvailable(bool available) {
-    if (btnSubs_ != nullptr) {
-        btnSubs_->setVisible(available);
-        dock_->adjustSize();
-        layoutChrome();
-    }
+void PlayerShell::setTrackAvailability(int audioTracks, int subtitleTracks, bool localMedia) {
+    btnAudio_->setVisible(localMedia || audioTracks > 1);
+    btnAudio_->setEnabled(audioTracks > 0);
+    btnSubs_->setVisible(localMedia || subtitleTracks > 0);
+    btnSubs_->setEnabled(subtitleTracks > 0);
+    dock_->adjustSize();
+    layoutChrome();
 }
 
 void PlayerShell::setAspectRatio(double ratio) {

@@ -333,7 +333,8 @@ void IconButton::paintChrome(QPainter& painter) {
         paintRoundedBrush(painter, box, chrome_.radius, chrome_.hoverFill, chrome_.hoverBorder,
                           chrome_.borderWidth);
     }
-    const QColor color = hasTint_ ? tint_ : w90();
+    QColor color = hasTint_ ? tint_ : w90();
+    if (!isEnabled()) color.setAlpha(color.alpha() / 3);
     const qreal off = (width() - glyph_) / 2.0;
     if (icon_) {
         icon_(painter, off, off, glyph_, color);

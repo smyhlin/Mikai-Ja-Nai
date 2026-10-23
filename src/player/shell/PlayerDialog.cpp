@@ -103,7 +103,6 @@ constexpr double kShellRateMin = 0.25;
 constexpr double kShellRateMax = 2.0;
 
 constexpr auto kAnime4KSettingKey = "player/anime4k";
-constexpr auto kAnimeJanaiPresetSettingKey = "player/animejanai/preset";
 constexpr auto kAnimeJanaiBackendSettingKey = "player/animejanai/backend";
 
 QString animeJanaiBackendName(native::Backend backend) {
@@ -241,11 +240,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
         shell_->setEpisodeLabel(initialEpisode);
     }
 
-    // Applied before any file is opened: the surface builds its mpv core on the
-    // first open() and glsl-shaders is only honoured as a construction option,
-    // so a mode restored later would land on a core that already ignored it.
     QSettings animeJanaiSettings;
-    animeJanaiPresetId_ = animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString();
     const QString storedAnimeJanaiBackend =
         animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
     if (const auto backend = native::backendFromName(storedAnimeJanaiBackend)) {
@@ -255,20 +250,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
         // AnimeJaNai backend changes are explicit and persisted independently.
         animeJanaiBackend_ = native::loadNativePreferences().backend;
     }
-    const QString storedChain = QSettings().value(kAnime4KSettingKey).toString();
-    // Resolves the experiments too: every catalogue entry has an id.
-    anime4kMode_ = anime4k::modeForId(storedChain);
-    // A chain with no Mode is stored under the same key, so the id is loaded
-    // even when the enum came back as Off: a single .glsl is a real setting
-    // and reading only the mode would drop it on every start.
-    anime4kChainId_ = storedChain.isEmpty() ? modeId(anime4kMode_) : storedChain;
     surface_->setAnime4KMode(anime4kMode_);
-    // A stored chain that is not one of the presets has no Mode, so the enum
-    // above came back Off and the shader would be dropped. The id is applied
-    // after it, which is also the order the setter expects: the chain wins.
-    if (!anime4kChainId_.isEmpty() && anime4kChainId_ != QLatin1String("off")) {
-        surface_->setAnime4KChain(anime4kChainId_);
-    }
     shell_->setAnime4KMode(anime4kMode_);
 
     auto* root = new QVBoxLayout(this);
@@ -326,10 +308,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
     connect(surface_, &VideoSurface::sourceEpochChanged, this,
             &PlayerDialog::onAnimeJanaiSourceContextChanged);
     shell_->setAnimeJanaiBackend(animeJanaiBackendName(animeJanaiBackend_));
-    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, tr("Unavailable · not prepared"));
-    if (!animeJanaiPresetId_.isEmpty()) {
-        applyAnimeJanaiRequest(animeJanaiPresetId_);
-    }
+    shell_->setAnimeJanaiSelection(animeJanaiPresetId_, tr("Off"));
 
     // A child widget is shown when its parent is, so the panels that start
     // closed have to say so: an empty episode drawer and a retry chip would
@@ -1473,8 +1452,7 @@ void PlayerDialog::setVariantsVisibility() {
                 else ++subtitles;
             }
         }
-        shell_->setAudioAvailable(audio > 1);
-        shell_->setSubtitlesAvailable(subtitles > 0);
+        shell_->setTrackAvailability(audio, subtitles, directMedia_);
         return;
     }
     int dub = 0;
@@ -1489,8 +1467,7 @@ void PlayerDialog::setVariantsVisibility() {
             ++dub;
         }
     }
-    shell_->setAudioAvailable(dub > 1);
-    shell_->setSubtitlesAvailable(subs > 0);
+    shell_->setTrackAvailability(dub, subs, directMedia_);
 }
 
 PlayerDialog::VariantInfo PlayerDialog::variantFromMap(const QVariantMap& map) {

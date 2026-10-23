@@ -91,6 +91,7 @@ void PlayerDialog::pushNativeInputs() {
     // and the filter's own status. None of them is invented here.
     native::menu::Inputs inputs;
     inputs.preferences = native::loadNativePreferences();
+    inputs.preferences.enabled = nativePlaybackRequested_ && inputs.preferences.enabled;
     // The availability is a pure projection of the factory observation the core
     // that OWNS PLAYBACK has actually published for the source it is playing -
     // the float's own observation while PiP is up, never the parked main core's.
@@ -112,7 +113,9 @@ void PlayerDialog::pushNativeInputs() {
 void PlayerDialog::refreshStoredSettings() {
     loadPresetShortcuts();
     QSettings animeJanaiSettings;
-    const QString preset = animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString();
+    const bool wasEnabled = !animeJanaiPresetId_.isEmpty();
+    const QString preset = wasEnabled
+        ? animeJanaiSettings.value(kAnimeJanaiPresetSettingKey).toString() : QString{};
     const QString backendName = animeJanaiSettings.value(kAnimeJanaiBackendSettingKey).toString();
     const auto backend = native::backendFromName(backendName);
     const bool changed = preset != animeJanaiPresetId_ ||
@@ -124,7 +127,7 @@ void PlayerDialog::refreshStoredSettings() {
     // Components can install missing dependencies without changing the request.
     const bool retryUnavailable = animeJanaiPlan_.enabled && !animeJanaiPlan_.available &&
                                   animeJanaiPlanGeneration_ == animeJanaiSequence_;
-    if (changed || retryUnavailable) applyAnimeJanaiRequest(animeJanaiPresetId_);
+    if (wasEnabled && (changed || retryUnavailable)) applyAnimeJanaiRequest(animeJanaiPresetId_);
 }
 
 void PlayerDialog::refreshNativeInputs() {
@@ -221,6 +224,7 @@ void PlayerDialog::applyNativeRequest(native::menu::Action action, const QString
         flashStatus(tr("Could not save the native preference: %1").arg(reason));
         return;
     }
+    nativePlaybackRequested_ = action != native::menu::Action::TurnOff;
     refreshNativeInputs();
 
     if (action == native::menu::Action::TurnOff) {
@@ -618,7 +622,7 @@ VideoSurface* PlayerDialog::playbackSurface() const {
 }
 
 bool PlayerDialog::nativeRequestEnabled() const {
-    return native::loadNativePreferences().enabled;
+    return nativePlaybackRequested_ && native::loadNativePreferences().enabled;
 }
 
 std::optional<native::NativePreparationContext> PlayerDialog::nativePreparationContext() const {
@@ -636,7 +640,7 @@ void PlayerDialog::armNativeProbe(native::Backend backend) {
 }
 
 void PlayerDialog::announceNativeRequest() {
-    if (closed_) {
+    if (closed_ || !nativePlaybackRequested_) {
         return;
     }
     const native::RuntimeSelection& runtime = native::currentSelection();
