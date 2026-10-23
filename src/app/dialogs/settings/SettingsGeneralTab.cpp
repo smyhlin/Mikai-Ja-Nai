@@ -4,6 +4,8 @@
 #include "dialogs/settings/SettingsHelpers.hpp"
 #include "dialogs/settings/SettingsUi.hpp"
 #include "state/Feeds.hpp"
+#include "support/SystemContextMenu.hpp"
+#include "support/SystemStartup.hpp"
 #include "theme/Colors.hpp"
 #include "theme/Icons.hpp"
 #include "theme/Metrics.hpp"
@@ -223,6 +225,145 @@ QWidget* SettingsDialog::buildGeneralTab() {
     scroll->setWidget(page);
     generalScroll_ = scroll;
     return scroll;
+}
+
+QFrame* SettingsDialog::buildSystemIntegrationCard(QWidget* parent) {
+    QVBoxLayout* layout = nullptr;
+    QFrame* card = makeSettingsCard(parent, &layout);
+    layout->setSpacing(theme::kSpacingSmall);
+    systemIntegrationTitle_ = new QLabel(card);
+    styleSectionHeading(systemIntegrationTitle_);
+    layout->addWidget(systemIntegrationTitle_);
+    systemIntegrationHint_ = new QLabel(card);
+    styleMutedCaption(systemIntegrationHint_);
+    layout->addWidget(systemIntegrationHint_);
+    layout->addWidget(makeSettingsDivider(card));
+
+    systemStartup_ = new QCheckBox(card);
+    systemStartup_->setObjectName(QStringLiteral("systemStartupCheck"));
+    polishInteractiveControl(systemStartup_, theme::kSettingsControlSize);
+    layout->addWidget(systemStartup_);
+    systemStartupHint_ = new QLabel(card);
+    styleMutedCaption(systemStartupHint_);
+    layout->addWidget(systemStartupHint_);
+    layout->addWidget(makeSettingsDivider(card));
+
+    systemContextMenu_ = new QCheckBox(card);
+    systemContextMenu_->setObjectName(QStringLiteral("systemContextMenuCheck"));
+    polishInteractiveControl(systemContextMenu_, theme::kSettingsControlSize);
+    layout->addWidget(systemContextMenu_);
+    systemContextMenuHint_ = new QLabel(card);
+    styleMutedCaption(systemContextMenuHint_);
+    layout->addWidget(systemContextMenuHint_);
+
+    systemIntegrationError_ = new QLabel(card);
+    systemIntegrationError_->setObjectName(QStringLiteral("systemIntegrationError"));
+    systemIntegrationError_->setWordWrap(true);
+    yieldCaptionWidth(systemIntegrationError_);
+    styleStatusBanner(systemIntegrationError_, QStringLiteral("error"));
+    systemIntegrationError_->hide();
+    layout->addWidget(systemIntegrationError_);
+    retranslateSystemIntegration();
+    refreshSystemIntegrationControls();
+    return card;
+}
+
+void SettingsDialog::refreshSystemIntegrationControls() {
+    initialSystemStartup_ = systemStartupSupported() && systemStartupEnabled();
+    initialSystemContextMenu_ = systemContextMenuSupported() && systemContextMenuEnabled();
+    systemContextMenuWriteFailed_ = false;
+    systemStartup_->setEnabled(systemStartupSupported());
+    systemStartup_->setChecked(initialSystemStartup_);
+    systemContextMenu_->setEnabled(systemContextMenuSupported());
+    systemContextMenu_->setChecked(initialSystemContextMenu_);
+    systemIntegrationError_->clear();
+    systemIntegrationError_->hide();
+}
+
+void SettingsDialog::retranslateSystemIntegration() {
+    if (systemIntegrationTitle_ == nullptr) return;
+    systemIntegrationTitle_->setText(tr("System integration"));
+    systemIntegrationHint_->setText(
+        tr("Applies to your Windows account only. Changes take effect when you save."));
+    systemStartup_->setText(tr("Start Mikai when I &sign in"));
+    systemStartup_->setAccessibleName(tr("Start Mikai when I sign in"));
+    const QString startupHint = systemStartupSupported()
+                                    ? tr("Open Mikai automatically after signing in to Windows.")
+                                    : tr("Automatic startup is only available on Windows.");
+    systemStartupHint_->setText(startupHint);
+    systemStartup_->setToolTip(startupHint);
+    systemStartup_->setAccessibleDescription(startupHint);
+    systemContextMenu_->setText(tr("Add Mikai to the video file &context menu"));
+    systemContextMenu_->setAccessibleName(tr("Add Mikai to the video file context menu"));
+    const QString contextHint =
+        systemContextMenuSupported()
+            ? tr("Add an Open in Mikai command for video files without changing their default app.")
+            : tr("The video file context menu integration is only available on Windows.");
+    systemContextMenuHint_->setText(contextHint);
+    systemContextMenu_->setToolTip(contextHint);
+    systemContextMenu_->setAccessibleDescription(contextHint);
+    if (!systemStartupSupported() && !systemContextMenuSupported()) {
+        systemIntegrationHint_->setText(
+            tr("These system integrations are only available on Windows and are disabled here."));
+    }
+}
+
+void SettingsDialog::showSystemIntegrationError(const QString& message) {
+    systemIntegrationError_->setText(message);
+    systemIntegrationError_->show();
+    showPage(QStringLiteral("customization/general"));
+    if (customizationGeneralScroll_ != nullptr) {
+        customizationGeneralScroll_->ensureWidgetVisible(systemIntegrationError_);
+    }
+    QAccessibleEvent alert(systemIntegrationError_, QAccessible::Alert);
+    QAccessible::updateAccessibility(&alert);
+}
+
+bool SettingsDialog::saveSystemIntegrations() {
+    const bool changeStartup = systemStartup_->isEnabled() &&
+                               systemStartup_->isChecked() != initialSystemStartup_;
+    const bool changeContextMenu = systemContextMenu_->isEnabled() &&
+                                   (systemContextMenu_->isChecked() != initialSystemContextMenu_ ||
+                                    systemContextMenuWriteFailed_);
+    if (!changeStartup && !changeContextMenu) return true;
+
+    // Capture the live state, not just the opening state: another process may
+    // have changed the registration while this dialog was open.
+    const bool previousStartup = systemStartupEnabled();
+    QString reason;
+    if (changeStartup && !setSystemStartupEnabled(systemStartup_->isChecked(), &reason)) {
+        showSystemIntegrationError(
+            tr("Automatic startup could not be saved. Settings remain open with your edits: %1")
+                .arg(reason));
+        return false;
+    }
+    if (changeContextMenu &&
+        !setSystemContextMenuEnabled(systemContextMenu_->isChecked(), &reason)) {
+        // The backend attempts to restore its exact prior values. If rollback
+        // itself failed, a partial registration may not be representable as a
+        // bool. Keep this attempted edit dirty even if the user unchecks it,
+        // so a later Save explicitly applies that choice rather than accepting
+        // unknown partial state. Only undo the earlier startup change here.
+        systemContextMenuWriteFailed_ = true;
+        QString rollbackReason;
+        const bool restored =
+            !changeStartup || setSystemStartupEnabled(previousStartup, &rollbackReason);
+        QString message = tr("The video context menu could not be saved. Settings remain open "
+                             "with your edits: %1")
+                              .arg(reason);
+        if (!restored) {
+            initialSystemStartup_ = systemStartupEnabled();
+            message += tr("\nAutomatic startup could not be restored: %1. Its current state is %2.")
+                           .arg(rollbackReason,
+                                initialSystemStartup_ ? tr("enabled") : tr("disabled"));
+        }
+        showSystemIntegrationError(message);
+        return false;
+    }
+    initialSystemStartup_ = systemStartupEnabled();
+    initialSystemContextMenu_ = systemContextMenuEnabled();
+    systemContextMenuWriteFailed_ = false;
+    return true;
 }
 
 bool SettingsDialog::feedsChanged() const {

@@ -287,6 +287,7 @@ QWidget* SettingsDialog::buildCustomizationGeneralTab() {
         applyAppearancePreview();
     });
     root->addWidget(displayCard);
+    root->addWidget(buildSystemIntegrationCard(page));
     root->addStretch(1);
 
     scroll->setWidget(page);
@@ -691,6 +692,7 @@ void SettingsDialog::restoreOpeningAppearance() {
 }
 
 void SettingsDialog::retranslateCustomizationTabs() {
+    retranslateSystemIntegration();
     if (customizationHeading_ != nullptr) customizationHeading_->setText(tr("General"));
     if (customizationDescription_ != nullptr) {
         customizationDescription_->setText(tr("Adjust how content and more are displayed"));

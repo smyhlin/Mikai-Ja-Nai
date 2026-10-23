@@ -287,6 +287,11 @@ private:
     /// next action produces them in the new language.
     void retranslateUi();
     void retranslateGeneralTab();
+    QFrame* buildSystemIntegrationCard(QWidget* parent);
+    void refreshSystemIntegrationControls();
+    void retranslateSystemIntegration();
+    bool saveSystemIntegrations();
+    void showSystemIntegrationError(const QString& message);
     void retranslatePresetsTab();
     void retranslateProcessingTab();
     void retranslateBenchmarkTab();
@@ -346,6 +351,16 @@ private:
     Runner& runner_;
     QLineEdit* token_ = nullptr;
     QComboBox* language_ = nullptr;
+    QCheckBox* systemStartup_ = nullptr;
+    QCheckBox* systemContextMenu_ = nullptr;
+    QLabel* systemIntegrationTitle_ = nullptr;
+    QLabel* systemIntegrationHint_ = nullptr;
+    QLabel* systemStartupHint_ = nullptr;
+    QLabel* systemContextMenuHint_ = nullptr;
+    QLabel* systemIntegrationError_ = nullptr;
+    bool initialSystemStartup_ = false;
+    bool initialSystemContextMenu_ = false;
+    bool systemContextMenuWriteFailed_ = false;
     QLabel* quota_ = nullptr;
     QLabel* status_ = nullptr;
     QPushButton* testButton_ = nullptr;

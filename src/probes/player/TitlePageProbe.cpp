@@ -44,7 +44,6 @@
 #include "player/shell/PlayerDialog.hpp"
 #include "player/shell/PlayerPopups.hpp"
 #include "player/shell/PlayerShell.hpp"
-#include "player/shell/ShellWidgets.hpp"
 #include "ProbeRuntime.hpp"
 #include "VideoSurface.hpp"
 #include "state/QualityCache.hpp"
@@ -410,17 +409,8 @@ private:
 };
 #endif
 
-/// A decoded frame exists only where a real GL context does: the offscreen
-/// platform plugin has no createPlatformOpenGLContext, so VideoSurface's
-/// QOpenGLWidget never gets a context there and hasVideo() can never turn true.
-/// Demanding one offscreen would fail on the platform's own limitation rather
-/// than on the hosted path under test, so the copy gate that reads pixels back
-/// passes requireDecodedSource.
-bool hostedSessionReady(mplayer::shell::PlayerDialog* player, bool requireDecodedSource) {
-    if (player == nullptr || !player->isVisible()) {
-        return false;
-    }
-    if (requireDecodedSource && !player->hasActiveSource()) {
+bool hostedSessionReady(mplayer::shell::PlayerDialog* player) {
+    if (player == nullptr || !player->isVisible() || !player->hasActiveSource()) {
         return false;
     }
     if (player->currentEmbed().isEmpty()) {
@@ -433,7 +423,7 @@ bool hostedSessionReady(mplayer::shell::PlayerDialog* player, bool requireDecode
     return shell != nullptr && shell->videoSurface() != nullptr;
 }
 
-bool hostRefusalProbe(TitlePage* page, bool browserFailure) {
+bool hostCopyRefusalProbe(TitlePage* page) {
     const QPointer<TitlePage> guardedPage(page);
     QPointer<QPushButton> episode;
     for (int elapsed = 0; elapsed < 30000 && guardedPage; elapsed += 50) {
@@ -455,31 +445,14 @@ bool hostRefusalProbe(TitlePage* page, bool browserFailure) {
         return false;
     }
     episode->click();
-    // What this scenario has to prove is the HOST, not the decoder: the real API
-    // episode opened a real hosted dialog on the real host bridge, and that host
-    // owns the failure feedback. A decoded frame is not part of it.
-    //
-    // The Windows clipboard copy gate needs one, because copying a frame is a
-    // pixel readback of a live core and an unlocked clipboard is only ever proven
-    // against a write that could have succeeded. It runs on the Windows QPA,
-    // where a real GL context exists, and it keeps the full decoded-source
-    // requirement below.
-    //
-    // The offscreen platform plugin has no createPlatformOpenGLContext, so
-    // VideoSurface is a QOpenGLWidget that can never get a context there and
-    // hasVideo() can never turn true. Demanding a decoded frame offscreen would
-    // fail on the platform's own limitation, not on the host path under test, so
-    // the browser mode proves the session itself instead: the dialog exists, its
-    // shell and surface were really built, the host really owns the embed, and
-    // the host's own browser action really ran and raised a named modal warning
-    // parented to that player. No quality is fabricated and the prompt is never
-    // forced.
+    // Clipboard refusal needs a decoded source so the attempted write could
+    // have succeeded without the separate process holding the clipboard.
     QPointer<mplayer::shell::PlayerDialog> player;
     for (int elapsed = 0; elapsed < 60000 && guardedPage; elapsed += 50) {
         for (QWidget* widget : QApplication::topLevelWidgets()) {
             if (auto* candidate = qobject_cast<mplayer::shell::PlayerDialog*>(widget);
                 candidate != nullptr && candidate->isVisible() &&
-                hostedSessionReady(candidate, !browserFailure)) {
+                hostedSessionReady(candidate)) {
                 player = candidate;
                 break;
             }
@@ -498,12 +471,9 @@ bool hostRefusalProbe(TitlePage* page, bool browserFailure) {
         std::fprintf(stderr, "TITLE-PROBE: FAIL hosted session has no shell or video surface\n");
         return false;
     }
-    if (!browserFailure) {
-        // The decoded-frame prerequisite, kept exactly for the copy gate.
-        if (!player->hasActiveSource()) {
-            std::fprintf(stderr, "TITLE-PROBE: FAIL copy session has no decoded source frame\n");
-            return false;
-        }
+    if (!player->hasActiveSource()) {
+        std::fprintf(stderr, "TITLE-PROBE: FAIL copy session has no decoded source frame\n");
+        return false;
     }
     surface->setPaused(true);
     shell->wake();
@@ -516,68 +486,39 @@ bool hostRefusalProbe(TitlePage* page, bool browserFailure) {
     bool action = false;
     bool clipboardPreserved = true;
     bool lockReleased = true;
-    bool sessionIntact = true;
-
-    if (browserFailure) {
-        QPointer<mplayer::shell::PillButton> original =
-            player->findChild<mplayer::shell::PillButton*>(QStringLiteral("originalFileButton"));
-        // The strip's own chrome hides after an idle moment, so the wake above
-        // may not have revealed it yet. Wait, bounded, for the real control: the
-        // action under test is a press on the actual button, never a synthesised
-        // signal.
-        for (int elapsed = 0; elapsed < 5000 && original; elapsed += 50) {
-            if (original->isVisible() && original->isEnabled()) break;
-            QTest::qWait(50);
-        }
-        if (original && original->isVisible() && original->isEnabled()) {
-            warning = dismissPlayerWarning(player, [&] {
-                if (!original) return;
-                action = true;
-                QTest::mouseClick(original, Qt::LeftButton);
-            }, QStringLiteral("title-host-browser-refusal.png"),
-            QCoreApplication::translate("TitlePage", "Failed to open in browser"));
-        } else {
-            std::fprintf(stderr, "TITLE-PROBE: hosted player's original-file button is not usable\n");
-        }
-    } else {
 #ifdef Q_OS_WIN
-        const ClipboardSnapshot clipboardBefore = ClipboardSnapshot::capture();
-        if (!clipboardBefore.valid) {
-            std::fprintf(stderr, "TITLE-PROBE: FAIL original clipboard snapshot unavailable\n");
-            return false;
-        }
-        ClipboardLock lock;
-        if (!lock.acquire()) {
-            std::fprintf(stderr, "TITLE-PROBE: FAIL separate Win32 clipboard lock unavailable\n");
-            return false;
-        }
-        warning = dismissPlayerWarning(player, [&] {
-            if (player) action = clickPlayerCopyAction(player);
-        }, QStringLiteral("title-host-copy-refusal.png"),
-        QCoreApplication::translate("TitlePage", "Failed to copy link"));
-        const bool sequencePreserved = GetClipboardSequenceNumber() == clipboardBefore.sequence;
-        lockReleased = lock.release();
-        clipboardPreserved = sequencePreserved && clipboardBefore.unchanged();
-#else
+    const ClipboardSnapshot clipboardBefore = ClipboardSnapshot::capture();
+    if (!clipboardBefore.valid) {
+        std::fprintf(stderr, "TITLE-PROBE: FAIL original clipboard snapshot unavailable\n");
         return false;
-#endif
     }
+    ClipboardLock lock;
+    if (!lock.acquire()) {
+        std::fprintf(stderr, "TITLE-PROBE: FAIL separate Win32 clipboard lock unavailable\n");
+        return false;
+    }
+    warning = dismissPlayerWarning(player, [&] {
+        if (player) action = clickPlayerCopyAction(player);
+    }, QStringLiteral("title-host-copy-refusal.png"),
+    QCoreApplication::translate("TitlePage", "Failed to copy link"));
+    const bool sequencePreserved = GetClipboardSequenceNumber() == clipboardBefore.sequence;
+    lockReleased = lock.release();
+    clipboardPreserved = sequencePreserved && clipboardBefore.unchanged();
+#else
+    return false;
+#endif
     QTest::qWait(100);
-    // A refused clipboard or browser action must not take the player down. The
-    // browser mode checks the session it opened is still the same hosted one,
-    // because a decoded frame is not available offscreen; the Windows copy mode
-    // keeps the full decoded-source check it entered with.
-    sessionIntact = hostedSessionReady(player, !browserFailure);
+    const bool sessionIntact = hostedSessionReady(player);
     const bool noFalseSuccess = status && status->text() == statusBefore;
     const bool passed = action && warning.shown && warning.parentedToPlayer &&
         warning.captured && warning.accessible && warning.alert && warning.namedFailure &&
         !warning.timedOut &&
         lockReleased && clipboardPreserved && sessionIntact && noFalseSuccess;
     std::fprintf(stderr,
-                 "TITLE-PROBE: hosted %s refusal action=%d visible=%d parent=%d accessible=%d "
+                 "TITLE-PROBE: hosted copy refusal action=%d visible=%d parent=%d accessible=%d "
                  "Alert=%d screenshots=%d timeout=%d clipboard-preserved=%d released=%d "
                  "no-false-success=%d session-intact=%d RESULT %s\n",
-                 browserFailure ? "browser" : "copy", action, warning.shown,
+                 action, warning.shown,
                  warning.parentedToPlayer, warning.accessible, warning.alert, warning.captured,
                  warning.timedOut, clipboardPreserved, lockReleased, noFalseSuccess,
                  sessionIntact, passed ? "PASS" : "FAIL");
@@ -667,8 +608,6 @@ int main(int argc, char** argv) {
     const bool disposeEarly = app.arguments().contains(QStringLiteral("--dispose-early"));
     const bool browserFailureOnly =
         app.arguments().contains(QStringLiteral("--browser-refusal-only"));
-    const bool hostBrowserFailureOnly =
-        app.arguments().contains(QStringLiteral("--host-browser-refusal-only"));
     const bool hostCopyFailureOnly =
         app.arguments().contains(QStringLiteral("--host-copy-refusal-only"));
     for (const QString& argument : app.arguments().mid(1)) {
@@ -676,20 +615,19 @@ int main(int argc, char** argv) {
             argument != QLatin1String("--layout-only") &&
             argument != QLatin1String("--dispose-early") &&
             argument != QLatin1String("--browser-refusal-only") &&
-            argument != QLatin1String("--host-browser-refusal-only") &&
             argument != QLatin1String("--host-copy-refusal-only")) {
             std::fprintf(stderr, "TITLE-PROBE: unknown option %s\n", qPrintable(argument));
             return 2;
         }
     }
     if (int(layoutOnly) + int(disposeEarly) + int(browserFailureOnly) +
-        int(hostBrowserFailureOnly) + int(hostCopyFailureOnly) > 1) {
+        int(hostCopyFailureOnly) > 1) {
         std::fprintf(stderr,
-                     "TITLE-PROBE: choose one of --host-browser-refusal-only (offscreen) "
-                     "or --host-copy-refusal-only (windows)\n");
+                     "TITLE-PROBE: choose one of --layout-only, --dispose-early, "
+                     "--browser-refusal-only (offscreen), or --host-copy-refusal-only (windows)\n");
         return 2;
     }
-    if ((browserFailureOnly || hostBrowserFailureOnly) &&
+    if (browserFailureOnly &&
         QGuiApplication::platformName() != QLatin1String("offscreen")) {
         std::fprintf(stderr, "TITLE-PROBE: browser refusal requires QT_QPA_PLATFORM=offscreen\n");
         return 2;
@@ -725,7 +663,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if ((hostBrowserFailureOnly || hostCopyFailureOnly) && ref != QLatin1String("7428")) {
+    if (hostCopyFailureOnly && ref != QLatin1String("7428")) {
         std::fprintf(stderr, "TITLE-PROBE: hosted refusal scenarios require real title7428\n");
         return 2;
     }
@@ -756,8 +694,8 @@ int main(int argc, char** argv) {
     page->resize(layoutOnly ? QSize(860, 620) : QSize(1400, 900));
     page->show();
 
-    if (hostBrowserFailureOnly || hostCopyFailureOnly) {
-        const bool passed = hostRefusalProbe(page, hostBrowserFailureOnly);
+    if (hostCopyFailureOnly) {
+        const bool passed = hostCopyRefusalProbe(page);
         delete page;
         return passed ? 0 : 1;
     }

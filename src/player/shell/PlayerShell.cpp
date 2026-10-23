@@ -3,6 +3,7 @@
 
 #include "PlayerPopups.hpp"
 #include "gui/VideoDropTarget.hpp"
+#include "gui/SystemDefaultPlayer.hpp"
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -12,6 +13,7 @@
 #include <QKeyEvent>
 #include <QPainter>
 #include <QMap>
+#include <QMessageBox>
 #include <QWindow>
 #include <QPainterPath>
 #include <QRegion>
@@ -497,15 +499,6 @@ void PlayerShell::buildWindowControls() {
     lay->setContentsMargins(4, 4, 4, 4);
     lay->setSpacing(2);
 
-    // "Original File" is an action, so it lives with the other controls rather
-    // than floating over the middle of the picture. A PillButton keeps its own
-    // glyph and label, so it reads as a chip at the head of the row.
-    btnOriginal_ = new PillButton(windowControls_);
-    btnOriginal_->setObjectName(QStringLiteral("originalFileButton"));
-    btnOriginal_->setToolTip(tr("Open the original file"));
-    connect(btnOriginal_, &PillButton::clicked, this, &PlayerShell::openOriginalRequested);
-    lay->addWidget(btnOriginal_);
-
     btnMin_ = new IconButton(IconPainter::minimize, tr("Minimize the window"), 28, 15,
                              windowControls_);
     connect(btnMin_, &QPushButton::clicked, this, &QWidget::showMinimized);
@@ -679,6 +672,18 @@ void PlayerShell::buildDock() {
     flyout_ = new SettingsFlyout(overlayHost);
     connect(flyout_, &SettingsFlyout::speedSelected, this, &PlayerShell::onRate);
     connect(flyout_, &SettingsFlyout::qualitySelected, this, &PlayerShell::qualityRequested);
+    connect(flyout_, &SettingsFlyout::defaultPlayerRequested, this, [this] {
+        QString error;
+        if (!mikai::gui::requestSystemDefaultPlayer(&error)) {
+            auto* message = new QMessageBox(QMessageBox::Warning,
+                tr("Default video player"), error, QMessageBox::Ok, this);
+            message->setTextFormat(Qt::PlainText);
+            message->setAttribute(Qt::WA_DeleteOnClose);
+            message->open();
+            return;
+        }
+        toast_->flash(tr("Choose Mikai in Windows Default Apps. Your defaults have not been changed."));
+    });
 
     // The enhancement tree is one panel per level, standing side by side:
     // the root is ENHANCEMENTS, and every panel after it is the submenu of a row
@@ -784,6 +789,8 @@ void PlayerShell::buildPictureMenu() {
             emit copyLinkRequested();
         } else if (action == QStringLiteral("folder")) {
             emit openFolderRequested();
+        } else if (action == QStringLiteral("information")) {
+            emit mediaInformationRequested();
         } else if (action == QStringLiteral("keys")) {
             openKeys();
         } else if (action == QStringLiteral("exit")) {
@@ -812,6 +819,10 @@ void PlayerShell::updatePictureMenu() {
     const QString folder = localMediaFolder();
     if (!folder.isEmpty()) {
         add(tr("Open containing folder"), QStringLiteral("folder"), folder);
+    }
+    if (!path_.isEmpty() && (QDir::isAbsolutePath(path_) ||
+                             QUrl::fromUserInput(path_).isLocalFile())) {
+        add(tr("Media information"), QStringLiteral("information"));
     }
     add(tr("Keyboard shortcuts  (?)"), QStringLiteral("keys"));
     add(tr("Exit  (Esc)"), QStringLiteral("exit"));
@@ -2120,13 +2131,6 @@ void PlayerShell::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
-        // Qt hands the event to a widget before its children, and the controls
-        // that carry text of their own - the "Original File" pill - re-measure
-        // when their turn comes, after this pass already sized the window
-        // controls from the old hint. A longer translation would then be drawn
-        // past the panel, with the buttons beside it clipped and unclickable.
-        // One pass once the whole propagation is done re-fits the row.
-        QTimer::singleShot(0, this, [this] { layoutChrome(); });
     }
 }
 
@@ -2141,7 +2145,6 @@ void PlayerShell::retranslateUi() {
         button->setToolTip(text);
         button->setAccessibleName(text);
     };
-    btnOriginal_->setToolTip(tr("Open the original file"));
     relabel(titleMin_, tr("Minimize the window"));
     relabel(titleMax_, tr("Toggle fullscreen / windowed"));
     relabel(titleClose_, tr("Exit the player  (Esc)"));

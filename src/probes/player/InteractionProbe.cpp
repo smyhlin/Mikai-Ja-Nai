@@ -75,7 +75,6 @@ public:
     void requestVariant(const QString&, const QString&) override {}
     void requestEpisode(int) override {}
     void requestTrackProbe(const QString&) override {}
-    void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     // The dialog carries WA_DeleteOnClose, so once Esc closes it the pointer is
     // dangling and isVisible() would read freed memory. The host is told, and
@@ -1180,7 +1179,6 @@ int runLanguageSmoke(const QString& url, PlayerHost* host) {
     const QStringList shellNames{QStringLiteral("playerSettingsButton"),
                                  QStringLiteral("playerEnhanceButton"),
                                  QStringLiteral("playerPlayToggle"),
-                                 QStringLiteral("originalFileButton"),
                                  QStringLiteral("playerSeriesToggle")};
     const auto harvestShell = [&] {
         QStringList values{shell->windowTitle()};
@@ -2703,17 +2701,12 @@ int main(int argc, char** argv) {
         }
         QApplication::processEvents();
 
-        QWidget* original = dialog->findChild<QWidget*>(QStringLiteral("originalFileButton"));
-        check(original != nullptr, "the original-file button exists");
-        if (original == nullptr) {
-            return;
-        }
-        const QPoint at = original->mapTo(dialog, QPoint(0, 0));
-        check(at.x() > dialog->width() / 2 && at.y() < dialog->height() / 2,
-              "the original-file button is in the top-right corner");
-        check(original->isVisible(), "the original-file button is visible while the chrome is up");
+        QPushButton* close = buttonWithGlyph(shell, IconPainter::close);
+        check(close != nullptr && close->isVisible(),
+              "the window controls are visible while the chrome is up");
+        if (close == nullptr) return;
 
-        check(waitFor([&] { return !original->isVisible(); }, 4000),
+        check(waitFor([&] { return !close->isVisible(); }, 4000),
               "the window controls auto-hide once the pointer goes idle");
     });
 

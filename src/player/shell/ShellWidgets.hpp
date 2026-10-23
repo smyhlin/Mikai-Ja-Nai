@@ -199,7 +199,7 @@ private:
 
 // ── settings flyout ────────────────────────────────────────────────────────
 
-/// 190 px popover: continuous speed slider, preset list, quality row.
+/// Player settings popover: speed, stream quality and system video defaults.
 class SettingsFlyout : public QFrame {
     Q_OBJECT
 public:
@@ -228,12 +228,14 @@ protected:
 signals:
     void speedSelected(double speed);
     void qualitySelected(int height);
+    void defaultPlayerRequested();
 
 private:
     void retranslate();
     void pick(double speed);
     void onSlider(double fraction);
     void refresh();
+    void resizeToContents();
 
     double rate_ = 1.0;
     QString quality_;
@@ -248,6 +250,8 @@ private:
     QVBoxLayout* qualityBody_ = nullptr;
     QVector<QualityOption> qualityOptions_;
     QVector<QPushButton*> qualityRows_;
+    QPushButton* defaultPlayerButton_ = nullptr;
+    QLabel* defaultPlayerLabel_ = nullptr;
 };
 
 // ── overlays ───────────────────────────────────────────────────────────────
@@ -295,32 +299,6 @@ protected:
 
 private:
     Kind kind_ = Kind::Play;
-};
-
-/// "Original File" — folder glyph plus label, click-emitting.
-class PillButton : public QWidget, public ChromePaint {
-    Q_OBJECT
-public:
-    explicit PillButton(QWidget* parent = nullptr);
-
-    void paintChrome(QPainter& painter) override;
-
-signals:
-    void clicked();
-
-protected:
-    void changeEvent(QEvent* event) override;
-    void enterEvent(QEnterEvent* event) override;
-    void leaveEvent(QEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
-
-private:
-    void retranslate();
-
-    QString text_;
-    QFont font_;
-    bool hover_ = false;
 };
 
 /// Transient centred notification.

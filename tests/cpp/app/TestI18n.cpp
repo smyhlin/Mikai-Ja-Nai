@@ -1847,30 +1847,6 @@ void TestI18n::processingOverlayKeepsItsRunAcrossLanguageSwitches() {
   QCoreApplication::processEvents();
 }
 
-void TestI18n::pillButtonCaptionFollowsTheLanguage() {
-  QVERIFY2(primeBuiltCatalogForSwitching(),
-           qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));
-
-  mplayer::shell::PillButton pill;
-  pill.show();
-  QCoreApplication::processEvents();
-
-  const QString english = pill.accessibleName();
-  QVERIFY2(!english.isEmpty(), "the painted pill has no accessible caption");
-  QCOMPARE(english, QCoreApplication::translate("mplayer::shell::PillButton", "Original File"));
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
-  QCoreApplication::processEvents();
-  const QString ukrainian = pill.accessibleName();
-  QVERIFY2(ukrainian != english, "the painted caption stayed in the opening language");
-  QCOMPARE(ukrainian,
-           QCoreApplication::translate("mplayer::shell::PillButton", "Original File"));
-
-  QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
-  QCoreApplication::processEvents();
-  QCOMPARE(pill.accessibleName(), english);
-}
-
 void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
   QVERIFY2(primeBuiltCatalogForSwitching(),
            qPrintable(QStringLiteral("built Ukrainian catalog not found at: ") + builtCatalogPath()));

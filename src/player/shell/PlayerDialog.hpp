@@ -53,6 +53,7 @@ namespace mplayer {
 namespace shell {
 
 class CompareWindow;
+class MediaInformationDialog;
 
 class PlayerShell;
 class MenuPopup;
@@ -75,7 +76,6 @@ public:
     virtual void requestVariant(const QString& embed, const QString& label) = 0;
     virtual void requestEpisode(int index) = 0;
     virtual void requestTrackProbe(const QString& embed) = 0;
-    virtual void requestOpenOriginal() = 0;
     virtual void requestCopyStreamUrl() = 0;
     virtual void playerClosed() = 0;
     /// The stream could not be played: the host re-extracts and reloads.
@@ -373,6 +373,8 @@ private:
     /// Puts the frame currently on screen on the clipboard as an image.
     void copyCurrentFrame();
     void openMediaFolder();
+    void openMediaInformation();
+    void closeMediaInformation();
     /// Opens (or raises) the shader comparison window.
     void openCompareWindow();
     void onShellStateChanged(const QString& state);
@@ -498,6 +500,7 @@ private:
     VideoSurface* surface_ = nullptr;
     PlayerHost* host_ = nullptr;
     bool directMedia_ = false;
+    QPointer<MediaInformationDialog> mediaInformation_;
 
     MenuPopup* audioPopup_ = nullptr;
     MenuPopup* subtitlesPopup_ = nullptr;

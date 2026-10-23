@@ -546,6 +546,8 @@ void MpvHandle::dispatchAsyncReply(const mpv_event* event) {
             readInto(value, property);
             reply.format = value.format;
             reply.number = value.number;
+            if (property->format == MPV_FORMAT_INT64 && property->data != nullptr)
+                reply.integer = *static_cast<const int64_t*>(property->data);
             reply.flag = value.flag;
             reply.text = value.text;
             copyReplyNode(property, reply.node);

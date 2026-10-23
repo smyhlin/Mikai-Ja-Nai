@@ -16,6 +16,7 @@
 #include <cmath>
 
 #include "ShellSliders.hpp"
+#include "gui/SystemDefaultPlayer.hpp"
 
 namespace mplayer {
 namespace shell {
@@ -435,7 +436,34 @@ SettingsFlyout::SettingsFlyout(QWidget* parent)
     lay->addWidget(qualitySection_);
     qualitySection_->setVisible(false);
 
-    refresh();
+    auto* defaultSeparator = new QFrame(this);
+    defaultSeparator->setFixedHeight(1);
+    defaultSeparator->setStyleSheet(QStringLiteral("background: %1;").arg(rgba(w10())));
+    lay->addWidget(defaultSeparator);
+
+    defaultPlayerButton_ = new QPushButton(this);
+    defaultPlayerButton_->setObjectName(QStringLiteral("playerDefaultVideoPlayerButton"));
+    defaultPlayerButton_->setFont(uiFont(10));
+    defaultPlayerButton_->setFocusPolicy(Qt::StrongFocus);
+    defaultPlayerButton_->setCursor(Qt::PointingHandCursor);
+    defaultPlayerButton_->setEnabled(mikai::gui::systemDefaultPlayerSupported());
+    // A wrapping label keeps the full action readable in narrow windows and
+    // longer translations. The button owns focus and the accessible name.
+    auto* defaultLayout = new QVBoxLayout(defaultPlayerButton_);
+    defaultLayout->setContentsMargins(10, 6, 10, 6);
+    defaultPlayerLabel_ = new QLabel(defaultPlayerButton_);
+    defaultPlayerLabel_->setFont(uiFont(10));
+    defaultPlayerLabel_->setWordWrap(true);
+    defaultPlayerLabel_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    defaultPlayerLabel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    defaultLayout->addWidget(defaultPlayerLabel_);
+    lay->addWidget(defaultPlayerButton_);
+    connect(defaultPlayerButton_, &QPushButton::clicked, this, [this] {
+        close();
+        emit defaultPlayerRequested();
+    });
+
+    retranslate();
 }
 
 // Qt reads the 4th component of rgba() as an integer 0..255, so the old
@@ -510,6 +538,19 @@ void SettingsFlyout::retranslate() {
     // Spoken names never reach the painter, so only this handler refreshes them.
     slider_->setAccessibleName(tr("Speed"));
     qualitySection_->setAccessibleName(tr("Quality"));
+    const QString defaultText = tr("Set as default video player…");
+    defaultPlayerLabel_->setText(defaultText);
+    defaultPlayerButton_->setAccessibleName(defaultText);
+    const QString defaultDescription = mikai::gui::systemDefaultPlayerSupported()
+        ? tr("Opens Windows Default Apps so you can choose Mikai. Your defaults are not changed automatically.")
+        : tr("Setting the default video player is only supported on Windows.");
+    defaultPlayerButton_->setToolTip(defaultDescription);
+    defaultPlayerButton_->setAccessibleDescription(defaultDescription);
+    defaultPlayerButton_->setStyleSheet(rowQss(false)
+        + QStringLiteral("QPushButton:focus { border-color: %1; }").arg(rgba(w70())));
+    defaultPlayerLabel_->setStyleSheet(
+        QStringLiteral("background: transparent; color: %1;")
+            .arg(rgba(defaultPlayerButton_->isEnabled() ? w90() : w45())));
     // refresh() rewrites the translated preset rows from rate_ and the
     // caller-held quality options: neither selection moves.
     refresh();
@@ -519,10 +560,7 @@ void SettingsFlyout::retranslate() {
     }
     // popupNear() froze the size for the previous wording, and a longer caption
     // would be clipped by it. The anchor is gone by now, so the corner stays.
-    layout()->invalidate();
-    layout()->activate();
-    setFixedSize(layout()->sizeHint());
-    layout()->activate();
+    resizeToContents();
     clampInsideHost(this);
     update();
 }
@@ -536,14 +574,26 @@ void SettingsFlyout::paintEvent(QPaintEvent*) {
     p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1, height() - 1), 10.0, 10.0);
 }
 
+void SettingsFlyout::resizeToContents() {
+    // Drop the previous fixed bounds before measuring translated/wrapped text.
+    setMinimumSize(0, 0);
+    setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    layout()->invalidate();
+    layout()->activate();
+    int targetWidth = layout()->sizeHint().width();
+    if (parentWidget() != nullptr) {
+        targetWidth = qMin(targetWidth, qMax(1, parentWidget()->width() - 8));
+    }
+    const int wrappedHeight = layout()->totalHeightForWidth(targetWidth);
+    setFixedSize(targetWidth, wrappedHeight >= 0 ? wrappedHeight : layout()->sizeHint().height());
+    layout()->activate();
+}
+
 void SettingsFlyout::popupNear(const QPoint& anchorGlobal) {
     show();
     refresh();
     ensurePolished();
-    layout()->invalidate();
-    layout()->activate();
-    setFixedSize(layout()->sizeHint());
-    layout()->activate();
+    resizeToContents();
     QWidget* host = parentWidget();
     if (host == nullptr) {
         return;
@@ -729,65 +779,6 @@ void CenterGlyph::paintChrome(QPainter& painter) {
         IconPainter::pause(painter, off, off, kGlyph, w95());
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  PILL BUTTON
-// ═══════════════════════════════════════════════════════════════════════════
-
-PillButton::PillButton(QWidget* parent) : QWidget(parent), font_(uiFont(10)) {
-    setCursor(Qt::PointingHandCursor);
-    retranslate();
-}
-
-void PillButton::changeEvent(QEvent* event) {
-    QWidget::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange) {
-        retranslate();
-    }
-}
-
-void PillButton::retranslate() {
-    const QString text = tr("Original File");
-    if (text == text_) {
-        return;
-    }
-    text_ = text;
-    // The caption is painted, so the name is the only thing a screen reader
-    // has to go on.
-    setAccessibleName(text_);
-    // The fixed size is both the hit target and the clip the caption is drawn
-    // into, so a translated string re-measures both.
-    setFixedSize(textWidth(font_, text_) + 26, 22);
-    chromeUpdate(this);
-}
-
-void PillButton::enterEvent(QEnterEvent* event) {
-    hover_ = true;
-    chromeUpdate(this);
-    QWidget::enterEvent(event);
-}
-
-void PillButton::leaveEvent(QEvent* event) {
-    hover_ = false;
-    chromeUpdate(this);
-    QWidget::leaveEvent(event);
-}
-
-void PillButton::mousePressEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) {
-        emit clicked();
-    }
-}
-
-void PillButton::paintChrome(QPainter& painter) {
-    const QColor color = hover_ ? w95() : w70();
-    IconPainter::folder(painter, 1, 4, 14, color);
-    painter.setFont(font_);
-    painter.setPen(color);
-    painter.drawText(QRectF(19, 0, width() - 19, height()), Qt::AlignVCenter, text_);
-}
-
-void PillButton::paintEvent(QPaintEvent*) { paintOwnBackingStore(this); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  TOAST

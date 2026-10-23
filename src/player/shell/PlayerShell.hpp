@@ -74,7 +74,6 @@ class CenterGlyph;
 class KeyHints;
 class MenuPopup;
 class Panel;
-class PillButton;
 class SettingsFlyout;
 class Toast;
 class VolumeGroup;
@@ -202,7 +201,6 @@ signals:
     void nextRequested();
     void prevRequested();
     void downloadRequested();
-    void openOriginalRequested();
     void mediaDropped(const QString& path);
     void closeRequested();
     /// A right-click on the picture asked for the current frame. The shell owns
@@ -214,6 +212,7 @@ signals:
     void compareRequested();
     void copyLinkRequested();
     void openFolderRequested();
+    void mediaInformationRequested();
     void stateChanged(const QString& state);
     /// A native row was chosen. The action is typed rather than spelled, and
     /// the value is the backend stable name or the recipe id, empty for
@@ -331,7 +330,6 @@ private:
     IconButton* titleMin_ = nullptr;
     IconButton* titleMax_ = nullptr;
     IconButton* titleClose_ = nullptr;
-    PillButton* btnOriginal_ = nullptr;
     IconButton* btnMin_ = nullptr;
     IconButton* btnClose_ = nullptr;
 

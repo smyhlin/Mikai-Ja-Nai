@@ -238,38 +238,24 @@ QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
     const GpuComputeCapability& gpu = observeComputeCapability();
     QStringList missing;
     qint64 totalBytes = 0;
-    auto translate = [](const char* source) {
-        return QCoreApplication::translate("mikai::app::ComponentStoreTab", source);
-    };
     auto append = [&](const QString& title, qint64 size) {
-        missing.append(QStringLiteral("<li>%1 — %2 MB</li>")
-                           .arg(title.toHtmlEscaped())
-                           .arg(QLocale().toString(size / 1048576)));
+        missing.append(QStringLiteral("<li>%1 — %2</li>")
+                           .arg(title.toHtmlEscaped(),
+                                QLocale().formattedDataSize(size).toHtmlEscaped()));
         totalBytes += size;
     };
 
+    // Match the upscaling-only recommendation, not every absent store pack:
+    // an installed bundle can already supply the GPU components.
     if (gpu.nvidia) {
-        if (tensorRtClosureBytes_ > 0) {
-            append(translate(QT_TRANSLATE_NOOP(
-                       "mikai::app::ComponentStoreTab", "AnimeJaNai TensorRT closure")),
-                   tensorRtClosureBytes_);
-        } else if (!componentDirsAvailable_) {
-            const ComponentPack* kernel =
-                tensorRtResourcePackFor(gpu.smMajor, gpu.smMinor);
-            if (kernel != nullptr) append(kernel->name, kernel->assetBytes);
+        if ((runtimeRecommended_ || kernelsRecommended_) && tensorRtClosureBytes_ > 0) {
+            append(tr("Upscaling runtime and GPU components"), tensorRtClosureBytes_);
         }
 #ifdef Q_OS_WIN
-    } else if (directMlClosureBytes_ > 0) {
-        append(translate(QT_TRANSLATE_NOOP(
-                   "mikai::app::ComponentStoreTab", "AnimeJaNai DirectML closure")),
-               directMlClosureBytes_);
+    } else if (!animeJanaiDirectMlInstalled_ && directMlClosureBytes_ > 0) {
+        append(tr("Upscaling runtime and GPU components"), directMlClosureBytes_);
 #endif
     }
-
-    if (!rifeInstalled_)
-        append(translate(QT_TRANSLATE_NOOP(
-                   "mikai::app::ComponentStoreTab", "RIFE interpolation models")),
-               rifeArchivePack().assetBytes);
     qint64 missingSpatialBytes = 0;
     int missingSpatialCount = 0;
     const QVector<SpatialAsset> spatialCatalog = spatialAssetCatalog();
@@ -281,21 +267,15 @@ QString ComponentStoreTab::setupPrompt(qint64* bytes) const {
         }
     }
     if (missingSpatialCount > 0)
-        append(translate(QT_TRANSLATE_NOOP(
-                   "mikai::app::ComponentStoreTab",
-                   "AnimeJaNai upscaling models (%1 of %2 missing)"))
+        append(tr("Upscaling models (%1 of %2 missing)")
                    .arg(missingSpatialCount).arg(spatialCatalog.size()),
                missingSpatialBytes);
     if (bytes != nullptr) *bytes = totalBytes;
     if (missing.isEmpty()) return {};
-    return translate(QT_TRANSLATE_NOOP(
-               "mikai::app::ComponentStoreTab",
-               "Components recommended for this PC are not installed:"))
+    return tr("For AI upscaling, download these optional components. Normal playback works without them.")
         + QStringLiteral("<ul>") + missing.join(QString()) + QStringLiteral("</ul>")
-        + translate(QT_TRANSLATE_NOOP(
-               "mikai::app::ComponentStoreTab",
-               "Download and install them now (%1 MB)?"))
-              .arg(QLocale().toString(totalBytes / 1048576));
+        + tr("Download these optional components (%1)?")
+              .arg(QLocale().formattedDataSize(totalBytes));
 }
 
 void ComponentStoreTab::buildUi() {
@@ -942,7 +922,6 @@ void ComponentStoreTab::updateCardStates() {
         componentSelectionsInitialized_ = true;
         if (runtimeRecommended) selectedPacks_.insert(QStringLiteral("component:runtime"));
         if (kernelsRecommended) selectedPacks_.insert(QStringLiteral("component:kernels"));
-        if (!rifeInstalled) selectedPacks_.insert(QStringLiteral("rife:archive"));
         if (spatialRecommended) selectedPacks_.insert(QStringLiteral("component:spatial"));
     }
     auto showSelection = [this](QCheckBox* box, const QString& pack) {

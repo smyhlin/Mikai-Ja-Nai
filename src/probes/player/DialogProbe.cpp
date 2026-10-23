@@ -29,7 +29,6 @@ public:
     void requestVariant(const QString&, const QString&) override {}
     void requestEpisode(int) override {}
     void requestTrackProbe(const QString&) override {}
-    void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     void playerClosed() override {}
     void playbackFailed() override {}

@@ -204,11 +204,13 @@ endif()
 # ---------------------------------------------------------------------------
 set(PLAYER_SOURCES
   src/gui/VideoDropTarget.cpp
+  src/gui/SystemDefaultPlayer.cpp
   # OpenGL render bridge & video surface
   src/player/core/MpvRenderContext.cpp
   src/player/core/VideoSurface.cpp
   src/player/core/VideoSurfaceAnimeJanai.cpp
   src/player/core/VideoSurfaceNative.cpp
+  src/player/core/VideoSurfaceMediaInformation.cpp
   # Shader presets & shortcuts
   src/player/shaders/Anime4K.cpp
   src/player/shaders/PresetShortcuts.cpp
@@ -216,6 +218,10 @@ set(PLAYER_SOURCES
   src/player/shell/PipFloat.cpp
   src/player/shell/PlayerDialog.cpp
   src/player/shell/PlayerDialogProcessing.cpp
+  src/player/shell/MediaInformationDialog.cpp
+  src/player/shell/MediaInformationPresentation.cpp
+  src/player/shell/MediaInformationTree.cpp
+  src/player/shell/MediaInformationOverview.cpp
   src/player/shell/PlayerPopups.cpp
   src/player/shell/PlayerShell.cpp
   src/player/shell/ShellSliders.cpp
@@ -233,12 +239,18 @@ set(PLAYER_SOURCES
 
 set(PLAYER_HEADERS
   src/gui/VideoDropTarget.hpp
+  src/gui/SystemDefaultPlayer.hpp
   src/player/core/MpvRenderContext.hpp
   src/player/core/VideoSurface.hpp
+  src/player/core/MediaInformation.hpp
   src/player/shaders/Anime4K.hpp
   src/player/shaders/PresetShortcuts.hpp
   src/player/shell/PipFloat.hpp
   src/player/shell/PlayerDialog.hpp
+  src/player/shell/MediaInformationDialog.hpp
+  src/player/shell/MediaInformationPresentation.hpp
+  src/player/shell/MediaInformationTree.hpp
+  src/player/shell/MediaInformationOverview.hpp
   src/player/shell/PlayerPopups.hpp
   src/player/shell/PlayerShell.hpp
   src/player/shell/ProcessingSettingsIntent.hpp
@@ -267,7 +279,7 @@ target_include_directories(mikai_player PUBLIC
 )
 
 if(WIN32)
-  set(MIKAI_PLATFORM_GL_LIBS opengl32 gdi32)
+  set(MIKAI_PLATFORM_GL_LIBS opengl32 gdi32 advapi32 shell32)
 else()
   find_package(OpenGL REQUIRED)
   set(MIKAI_PLATFORM_GL_LIBS OpenGL::GL ${CMAKE_DL_LIBS})
@@ -292,6 +304,8 @@ set(APP_SOURCES
   src/app/support/CrashLog.cpp
   src/app/support/I18n.cpp
   src/app/support/Labels.cpp
+  src/app/support/SystemStartup.cpp
+  src/app/support/SystemContextMenu.cpp
   src/app/support/WindowRaisePolicy.cpp
   src/app/theme/Appearance.cpp
   src/app/theme/Icons.cpp
@@ -340,6 +354,8 @@ set(APP_HEADERS
   src/app/support/CrashLog.hpp
   src/app/support/I18n.hpp
   src/app/support/Labels.hpp
+  src/app/support/SystemStartup.hpp
+  src/app/support/SystemContextMenu.hpp
   src/app/support/WindowRaisePolicy.hpp
   src/app/theme/Appearance.hpp
   src/app/theme/Colors.hpp
@@ -399,6 +415,10 @@ target_link_libraries(mikai_app PUBLIC
   Qt6::Widgets
   Qt6::Network
 )
+
+if(WIN32)
+  target_link_libraries(mikai_app PRIVATE advapi32 shell32)
+endif()
 
 if(MIKAI_WITH_MODEL_INSPECTION)
   target_link_libraries(mikai_app PUBLIC mikai_model_inspection)

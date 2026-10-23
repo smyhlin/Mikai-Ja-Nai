@@ -24,6 +24,10 @@ struct MediaTrack {
     bool external = false;
     bool isDefault = false;
     bool forced = false;
+    bool selectionKnown = false;
+    bool externalKnown = false;
+    bool defaultKnown = false;
+    bool forcedKnown = false;
     friend bool operator==(const MediaTrack&, const MediaTrack&) = default;
 };
 

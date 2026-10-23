@@ -243,16 +243,6 @@ void IconPainter::gear(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) 
     p.restore();
 }
 
-void IconPainter::folder(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
-    const QColor color = resolve(c, w70());
-    stroke(p, x, y, s);
-    p.setPen(Qt::NoPen);
-    p.setBrush(QBrush(color));
-    p.drawRoundedRect(QRectF(3.5, 5.5, 7.5, 3), 1, 1);
-    p.drawRoundedRect(QRectF(3.5, 7.5, 17, 11.5), 1.6, 1.6);
-    p.restore();
-}
-
 void IconPainter::download(QPainter& p, qreal x, qreal y, qreal s, const QColor& c) {
     const QColor color = resolve(c, w90());
     stroke(p, x, y, s);

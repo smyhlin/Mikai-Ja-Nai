@@ -130,8 +130,9 @@ void attachPromptOwner(QDialog* prompt, QWidget* shell, bool preferActiveWindow)
 
 }  // namespace
 
-MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
-    : QWidget(parent), client_(client) {
+MainWindow::MainWindow(backend::MikaiClient& client, StartupMode startupMode, QWidget* parent)
+    : QWidget(parent), client_(client),
+      automaticSetupAllowed_(startupMode == StartupMode::Application) {
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Mikai Wrapper"));
     setMinimumSize(860, 620);
@@ -150,8 +151,9 @@ MainWindow::MainWindow(backend::MikaiClient& client, QWidget* parent)
     componentsTab_->setClient(&client_);
     componentsTab_->setComponentProvisioner(componentProvisioner_);
     connect(componentsTab_, &ComponentStoreTab::inventoryUpdated, this, [this] {
-        if (setupDeclined_ || setupPromptOffered_ || componentsTab_ == nullptr ||
-            !componentsTab_->inventoryReady() || componentsTab_->acquisitionRunning() ||
+        if (!automaticSetupAllowed_ || setupDeclined_ || setupPromptOffered_ ||
+            componentsTab_ == nullptr || !componentsTab_->inventoryReady() ||
+            componentsTab_->acquisitionRunning() ||
             componentsTab_->setupPrompt().isEmpty()) return;
         offerAnimeJanaiSetup();
     });
@@ -382,30 +384,24 @@ bool MainWindow::openMedia(const QString& source) {
 }
 
 bool MainWindow::closeMedia(bool forced) {
-    if (mediaPlayer_) {
-        const bool accepted = mediaPlayer_->close();
-        if (!accepted && !forced) {
-            return false;
-        }
-        // A runtime reply for this dialog must not reach the next one: bump the
-        // sequence and drop the pending flag so the replacement can ask anew.
-        // A resolution this window started is released here rather than at the
-        // reply, so closing the initiating player cannot leave the one process
-        // resolution held by a wait nobody is waiting for any more.
-        ++runtimeSeq_;
-        runtimePending_ = false;
-        releaseRuntimeResolution();
-        if (!accepted) {
-            // Visible GL teardown has faulted the driver; forced destruction must hide first.
-            if (mediaPlayer_) mediaPlayer_->hide();
-            qWarning().noquote()
-                << "mikai: forced media teardown (destruction cannot be refused; native claims "
-                   "are released only after the core is destroyed)";
-        }
-        // Release the old core before another player is created.
-        delete mediaPlayer_.data();
-        mediaPlayer_.clear();
+    const bool accepted = mediaPlayer_.isNull() || mediaPlayer_->close();
+    if (!accepted && !forced) {
+        return false;
     }
+    // A self-deleted dialog can still own a pending runtime wait.
+    ++runtimeSeq_;
+    runtimePending_ = false;
+    releaseRuntimeResolution();
+    if (!accepted) {
+        // Visible GL teardown has faulted the driver; forced destruction must hide first.
+        if (mediaPlayer_) mediaPlayer_->hide();
+        qWarning().noquote()
+            << "mikai: forced media teardown (destruction cannot be refused; native claims "
+               "are released only after the core is destroyed)";
+    }
+    // Release the old core before another player is created.
+    delete mediaPlayer_.data();
+    mediaPlayer_.clear();
     return true;
 }
 
@@ -458,6 +454,7 @@ void MainWindow::requestMediaRuntime() {
     }
     runtimeResolutionHeld_ = true;
     runtimePending_ = true;
+    dialog->showRuntimePendingStatus();
     runMediaRuntimeResolution();
 }
 
@@ -465,28 +462,27 @@ void MainWindow::runMediaRuntimeResolution() {
     const int seq = ++runtimeSeq_;
     const QPointer<MainWindow> self(this);
     const QPointer<mplayer::shell::PlayerDialog> target(mediaPlayer_.data());
+    const mplayer::native::ResolutionLease lease = runtimeResolution_;
     // Validate the bundle off-thread; load the process-pinned module on the GUI thread.
     runner_->run(
         [] {
             return QVariant::fromValue(
                 mplayer::native::resolveRuntime(mplayer::native::storedRuntimeChoice()));
         },
-        [self, target, seq](const QVariant& result) {
-            if (self.isNull()) {
+        [self, target, seq, lease](const QVariant& result) {
+            if (self.isNull() || seq != self->runtimeSeq_) {
+                // A discarded source must not commit into a replacement's runtime.
+                mplayer::native::endResolution(lease);
                 return;
             }
-            // The terminal state is published before this window's wait is
-            // released, so a request that arrives the moment the module is
-            // pinned sees a module, not a resolution that just ended.
-            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
-                result.value<mplayer::native::RuntimeSelection>());
-            if (seq != self->runtimeSeq_ || target.isNull()) {
-                // A superseded dialog: the resolution it started is already
-                // recorded, so this window's lease - if it still owns one - is
-                // released without touching the dialog that replaced it.
+            if (target.isNull()) {
+                self->runtimePending_ = false;
                 self->releaseRuntimeResolution();
                 return;
             }
+            // Publish the terminal state before releasing this resolution.
+            const mplayer::native::RuntimeSelection selection = mplayer::native::commitRuntime(
+                result.value<mplayer::native::RuntimeSelection>());
             self->runtimePending_ = false;
             if (!selection.loaded) {
                 const QString text =
@@ -500,15 +496,16 @@ void MainWindow::runMediaRuntimeResolution() {
             // and it opens only after the module is pinned.
             target->startPlayer();
         },
-        [self, target, seq](const backend::Failure& failure) {
-            if (self.isNull()) {
-                return;
-            }
-            if (seq != self->runtimeSeq_ || target.isNull()) {
-                self->releaseRuntimeResolution();
+        [self, target, seq, lease](const backend::Failure& failure) {
+            if (self.isNull() || seq != self->runtimeSeq_) {
+                mplayer::native::endResolution(lease);
                 return;
             }
             self->runtimePending_ = false;
+            if (target.isNull()) {
+                self->releaseRuntimeResolution();
+                return;
+            }
             const QString text =
                 mplayer::native::runtimeUnavailablePlaybackText(backend::failureLine(failure));
             self->releaseRuntimeResolution();
@@ -523,7 +520,10 @@ void MainWindow::answerRuntimeWhenSettled() {
     if (mediaPlayer_) {
         mediaPlayer_->showRuntimePendingStatus();
     }
-    mplayer::native::whenRuntimeResolutionFinishes(this, [this] {
+    const int seq = runtimeSeq_;
+    const QPointer<mplayer::shell::PlayerDialog> target(mediaPlayer_);
+    mplayer::native::whenRuntimeResolutionFinishes(this, [this, seq, target] {
+        if (seq != runtimeSeq_ || target.isNull() || target != mediaPlayer_) return;
         answerMediaRuntimeResolved();
     });
 }
@@ -672,6 +672,7 @@ void MainWindow::openSettingsForIntent(mplayer::shell::ProcessingSettingsIntent 
 void MainWindow::offerAnimeJanaiSetup() {
     if (setupDeclined_ || setupPromptOffered_ || setupPromptScheduled_ ||
         componentsTab_ == nullptr) return;
+    setupPromptScheduled_ = true;
     // The ask runs its own nested loop, so the queued turn keeps it out of the
     // caller's frame: that caller - a player's button handler or the inventory
     // signal - may be deleted before the loop returns. Whether Settings is open
@@ -703,11 +704,11 @@ void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
     auto* dialog = new QDialog();
     QPointer<QDialog> dialogGuard(dialog);
     dialog->setObjectName(QStringLiteral("animeJanaiSetupPrompt"));
-    dialog->setWindowTitle(tr("Set up AnimeJaNai"));
+    dialog->setWindowTitle(tr("Optional AI upscaling"));
     dialog->setModal(true);
 
     auto* layout = new QVBoxLayout(dialog);
-    auto* heading = new QLabel(tr("Set up AnimeJaNai"), dialog);
+    auto* heading = new QLabel(tr("Optional AI upscaling"), dialog);
     QFont headingFont = heading->font();
     headingFont.setBold(true);
     heading->setFont(headingFont);
@@ -719,7 +720,7 @@ void MainWindow::showAnimeJanaiSetupPrompt(SettingsDialog* settings) {
     layout->addWidget(body);
 
     auto* buttons = new QDialogButtonBox(dialog);
-    auto* install = buttons->addButton(tr("Install"), QDialogButtonBox::AcceptRole);
+    auto* install = buttons->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
     install->setObjectName(QStringLiteral("primary"));
     auto* notNow = buttons->addButton(tr("Not now"), QDialogButtonBox::RejectRole);
     install->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);

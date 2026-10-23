@@ -47,13 +47,22 @@ class MainWindow : public QWidget {
     Q_OBJECT
 
 public:
-    explicit MainWindow(backend::MikaiClient& client, QWidget* parent = nullptr);
+    enum class StartupMode { Application, FilePlayer };
+
+    explicit MainWindow(backend::MikaiClient& client,
+                        StartupMode startupMode = StartupMode::Application,
+                        QWidget* parent = nullptr);
     ~MainWindow() override;
 
     /// The standalone video player the page currently owns, or nullptr. The
     /// media probes address the stream they just opened through this rather
     /// than guessing it from child order.
     mplayer::shell::PlayerDialog* currentMediaPlayer() const;
+
+    /// Opens `source` through the same standalone-player route used by the file
+    /// picker and video drops. Keeps the current player if its native stop has
+    /// not settled; runtime resolution remains asynchronous.
+    bool openMedia(const QString& source);
 
     /// The first-run TensorRT component check. A no-op unless the Native runtime
     /// is selected and the bundle does not carry the builder resource this GPU
@@ -130,9 +139,6 @@ private:
                           bool installAnimeJanaiRecommended = false);
     void chooseMediaFile();
     void chooseMediaUrl();
-    /// Opens `source` in a fresh player. Refuses, keeping the current player,
-    /// when that player has not acknowledged its own native stop yet.
-    bool openMedia(const QString& source);
     /// Closes the media player, honouring its own close barrier. False when the
     /// player refused because native work is still stopping: nothing is deleted
     /// and `mediaPlayer_` is kept so the close can be retried. `forced` is the
@@ -214,6 +220,9 @@ private:
     /// Whether this window is holding the resolution lease, which is what keeps
     /// the lease from being released twice.
     bool runtimeResolutionHeld_ = false;
+    /// File-player launches never offer setup automatically. Explicit Settings
+    /// and player actions use the same setup surface regardless of this policy.
+    const bool automaticSetupAllowed_;
     bool setupDeclined_ = false;
     bool setupPromptOffered_ = false;
     /// The player a component prompt paused, and whether that prompt must turn

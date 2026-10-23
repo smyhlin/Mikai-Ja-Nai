@@ -1218,6 +1218,7 @@ void PlayerDialog::enterPip() {
             window->moveToCorner(fallback);
         }
     }
+    closeMediaInformation();
     pip_ = window;
     refreshTrackMenus();
     moveEnginePreparationPause(window->videoSurface(), enteringPauseIntent);
@@ -1383,6 +1384,7 @@ void PlayerDialog::releasePipPool() {
     nativeHandoffFloat_.clear();
     nativeReferencePending_ = false;
     nativeReferenceSurface_.clear();
+    closeMediaInformation();
     PipFloat* pool = pipPool_;
     pipPool_ = nullptr;
     pip_ = nullptr;
@@ -1405,6 +1407,7 @@ void PlayerDialog::releasePipPool() {
 
 void PlayerDialog::leavePip(bool closing) {
     if (pip_ == nullptr) return;
+    closeMediaInformation();
     ++pipTransitionGeneration_;
     PipFloat* window = pip_;
     const bool returningPaused = window->videoSurface()->playbackPauseIntent();

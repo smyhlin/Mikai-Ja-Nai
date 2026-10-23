@@ -130,7 +130,6 @@ struct FakeHost : PlayerHost {
     void requestVariant(const QString&, const QString&) override {}
     void requestEpisode(int) override {}
     void requestTrackProbe(const QString&) override {}
-    void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     void playerClosed() override {}
     // Composition double only: the player needs a host to exist. The probe never

@@ -34,14 +34,12 @@ struct RefusalHost : public mplayer::shell::PlayerHost {
     int episodeRequests = 0;
     int trackProbes = 0;
     int copyRequests = 0;
-    int originalRequests = 0;
     int playbackFailures = 0;
     int closed = 0;
 
     void requestVariant(const QString&, const QString&) override { ++variantRequests; }
     void requestEpisode(int) override { ++episodeRequests; }
     void requestTrackProbe(const QString&) override { ++trackProbes; }
-    void requestOpenOriginal() override { ++originalRequests; }
     void requestCopyStreamUrl() override { ++copyRequests; }
     void playerClosed() override { ++closed; }
     void playbackFailed() override { ++playbackFailures; }
@@ -125,7 +123,6 @@ public:
     void requestVariant(const QString&, const QString&) override {}
     void requestEpisode(int) override {}
     void requestTrackProbe(const QString&) override {}
-    void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     void playerClosed() override {}
     void playbackFailed() override {}
@@ -600,11 +597,11 @@ int runRuntimeRefusal(const QString& clip) {
     const int exitCode = verdict.report("engine_popup_runtime_refusal");
     std::fprintf(stderr,
                  "[runtime-refusal] isolatedRoot=%s missingModule=%s refusal=%d alerts=%d "
-                 "host: variant=%d episode=%d trackProbe=%d copy=%d original=%d "
+                 "host: variant=%d episode=%d trackProbe=%d copy=%d "
                  "playbackFailed=%d runtimeRequested=%d closed=%d\n",
                  qPrintable(missingRoot), qPrintable(missingModule), missingRefused ? 1 : 0,
                  alertsBefore, host.variantRequests, host.episodeRequests, host.trackProbes,
-                 host.copyRequests, host.originalRequests, host.playbackFailures,
+                 host.copyRequests, host.playbackFailures,
                  runtimeRequests, host.closed);
     return exitCode;
 }

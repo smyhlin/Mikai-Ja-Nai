@@ -46,14 +46,19 @@ std::optional<QVector<MediaTrack>> parseMediaTracks(const NodeValue& value, QStr
                 track.codec = QString::fromStdString(field.text);
             else if (key == "external-filename" && field.format == MPV_FORMAT_STRING)
                 track.externalFilename = QString::fromStdString(field.text);
-            else if (key == "selected" && field.format == MPV_FORMAT_FLAG)
+            else if (key == "selected" && field.format == MPV_FORMAT_FLAG) {
                 track.selected = field.flag;
-            else if (key == "external" && field.format == MPV_FORMAT_FLAG)
+                track.selectionKnown = true;
+            } else if (key == "external" && field.format == MPV_FORMAT_FLAG) {
                 track.external = field.flag;
-            else if (key == "default" && field.format == MPV_FORMAT_FLAG)
+                track.externalKnown = true;
+            } else if (key == "default" && field.format == MPV_FORMAT_FLAG) {
                 track.isDefault = field.flag;
-            else if (key == "forced" && field.format == MPV_FORMAT_FLAG)
+                track.defaultKnown = true;
+            } else if (key == "forced" && field.format == MPV_FORMAT_FLAG) {
                 track.forced = field.flag;
+                track.forcedKnown = true;
+            }
             else if (key == "demux-channel-count" && field.format == MPV_FORMAT_INT64 &&
                      field.integer > 0 && field.integer <= std::numeric_limits<int>::max())
                 track.audioChannels = static_cast<int>(field.integer);

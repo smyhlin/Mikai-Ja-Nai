@@ -26,6 +26,7 @@
 #include "Anime4K.hpp"
 #include "MpvHandle.hpp"
 #include "MediaTracks.hpp"
+#include "MediaInformation.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
 #include "native/components/AnimeJanaiBuildLog.hpp"
 #include "PlaybackDiagnostics.hpp"
@@ -134,6 +135,12 @@ public:
     bool selectMediaTrack(MediaTrackType type, int64_t id, uint64_t expectedCoreIdentity,
                           uint64_t expectedSourceEpoch);
     void setNextMediaTrackSelection(MediaTrackSelection selection);
+
+    /// Reads only owned asynchronous mpv properties, against this core/source.
+    /// Publishes partial results as they arrive. Only one information view owns
+    /// a request at a time; cancelling or replacing the source retires it.
+    bool requestMediaInformation(std::function<void(const MediaInformation&)> callback);
+    void cancelMediaInformation();
 
     void togglePause();
     /// Sets the paused state outright; same-value requests still express intent.
@@ -391,6 +398,8 @@ signals:
                             StreamFpsSource fpsSource);
     void errorOccurred(const QString& message);
     void mediaTracksChanged();
+    /// Fired before replacing or closing a source, even before its epoch advances.
+    void mediaInformationInvalidated();
     void mediaTracksError(const QString& reason);
     void nativeStatusChanged(const native::NativeStatusView& status);
     /// A native transition ended in a named non-Active verdict: a refused or
@@ -908,6 +917,8 @@ private:
     uint64_t entrySourceEpoch_ = 0;
     MediaTrackSnapshot mediaTracks_;
     AsyncRequestId mediaTracksRequest_;
+    std::vector<AsyncRequestId> mediaInformationRequests_;
+    uint64_t mediaInformationGeneration_ = 0;
     bool mediaTracksLoaded_ = false;
     bool mediaTracksDirty_ = false;
     std::optional<MediaTrackSelection> nextMediaTrackSelection_;

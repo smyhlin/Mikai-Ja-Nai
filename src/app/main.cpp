@@ -13,9 +13,98 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QFile>
+#include <QFileInfo>
+#include <QMessageBox>
 #include <QPointer>
+#include <QStringList>
+#include <QTimer>
+
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#include <shellapi.h>
+#endif
 
 namespace {
+
+QStringList launchArguments(int argc, char** argv) {
+#ifdef Q_OS_WIN
+    // The CRT's narrow argv loses non-ASCII Explorer filenames. Read Windows'
+    // actual Unicode command line before QApplication consumes any Qt options.
+    int count = 0;
+    wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (arguments != nullptr) {
+        QStringList result;
+        result.reserve(count);
+        for (int i = 0; i < count; ++i) result.append(QString::fromWCharArray(arguments[i]));
+        LocalFree(arguments);
+        return result;
+    }
+#endif
+    QStringList result;
+    result.reserve(argc);
+    for (int i = 0; i < argc; ++i) result.append(QFile::decodeName(argv[i]));
+    return result;
+}
+
+struct LaunchRequest {
+    QString video;
+    QString error;
+};
+
+LaunchRequest parseLaunchRequest(const QStringList& arguments) {
+    LaunchRequest request;
+    bool positionalOnly = false;
+    bool supplied = false;
+    for (qsizetype index = 1; index < arguments.size(); ++index) {
+        const QString& argument = arguments[index];
+        if (!positionalOnly && argument == QStringLiteral("--")) {
+            positionalOnly = true;
+            continue;
+        }
+        QString path;
+        if (!positionalOnly && argument == QStringLiteral("--open-video")) {
+            if (++index == arguments.size()) {
+                request.error = QCoreApplication::translate(
+                    "CommandLine", "The --open-video option requires a local file path.");
+                return request;
+            }
+            // Consume exactly one literal argument. A filename that starts with
+            // '-' is a filename here, never another application or Qt option.
+            path = arguments[index];
+        } else if (!positionalOnly && argument.startsWith(QLatin1Char('-'))) {
+            request.error = QCoreApplication::translate(
+                "CommandLine", "Unknown command-line option: %1").arg(argument);
+            return request;
+        } else {
+            path = argument;
+        }
+        if (supplied) {
+            request.error = QCoreApplication::translate(
+                "CommandLine", "Specify only one video file per launch.");
+            return request;
+        }
+        supplied = true;
+        if (path.isEmpty()) {
+            request.error = QCoreApplication::translate(
+                "CommandLine", "The video file path cannot be empty.");
+            return request;
+        }
+        // mpv checks readability asynchronously; a UNC stat could block startup.
+        request.video = QFileInfo(path).absoluteFilePath();
+    }
+    return request;
+}
+
+void showLaunchError(const QString& error, QWidget* parent = nullptr) {
+    qCritical().noquote() << "mikai: cannot open command-line video:" << error;
+    auto* message = new QMessageBox(QMessageBox::Critical,
+        QCoreApplication::translate("CommandLine", "Cannot open video"),
+        error, QMessageBox::Ok, parent);
+    message->setTextFormat(Qt::PlainText);
+    message->exec();
+    delete message;
+}
 
 // Cold runtime selection is the launch's one expensive step: describing the
 // packaged module hashes ~100MB, and doing that on the GUI thread is what froze
@@ -87,8 +176,14 @@ int main(int argc, char** argv) {
     // The log and any crash report land in the folder this exe runs from.
     mikai::app::installCrashLog();
 
+    const QStringList arguments = launchArguments(argc, argv);
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
-    QApplication app(argc, argv);
+    // Application file arguments belong to our parser, not QApplication. In
+    // particular, a video named "-platform" must never select a Qt plugin.
+    // Normal launch and the autorun command supply no application arguments.
+    int qtArgc = 1;
+    char* qtArgv[] = {argv[0], nullptr};
+    QApplication app(qtArgc, qtArgv);
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
     app.setOrganizationName(QStringLiteral("Mikai"));
@@ -105,6 +200,12 @@ int main(int argc, char** argv) {
     mplayer::shell::setAccent(mikai::app::theme::accentColor(mikai::app::currentAppearance()));
     app.setStyleSheet(
         mikai::app::theme::buildStylesheet(mikai::app::currentAppearance()));
+
+    const LaunchRequest launch = parseLaunchRequest(arguments);
+    if (!launch.error.isEmpty()) {
+        showLaunchError(launch.error);
+        return 2;
+    }
 
     // After the application object exists (the policy installs an event filter
     // on it) and before any window is shown, so the first window - the shell -
@@ -145,12 +246,26 @@ int main(int argc, char** argv) {
 
     {
         mikai::backend::MikaiClient client;
-        mikai::app::MainWindow window(client);
+        const auto startupMode = launch.video.isEmpty()
+            ? mikai::app::MainWindow::StartupMode::Application
+            : mikai::app::MainWindow::StartupMode::FilePlayer;
+        mikai::app::MainWindow window(client, startupMode);
         window.show();
         // After the first paint: the runtime is resolved on a worker rather than
         // blocking show(), and the app is fully usable without a runtime - home,
         // search and settings never touch mpv.
         startRuntimeResolution(startupRunner, &window);
+        if (!launch.video.isEmpty()) {
+            // Establish the app's resolution lease first, then use the exact
+            // picker/drop route. The player's existing wait joins that lease;
+            // no synchronous hashing or processing-preset override is added.
+            QTimer::singleShot(0, &window, [&window, video = launch.video] {
+                if (!window.openMedia(video)) {
+                    showLaunchError(QCoreApplication::translate(
+                        "CommandLine", "The video player could not be opened."), &window);
+                }
+            });
+        }
         app.exec();
         // The window is still open here only when the loop ended another way, so
         // its own teardown ran before anything a worker may still referenced.

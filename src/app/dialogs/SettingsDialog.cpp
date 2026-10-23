@@ -298,6 +298,7 @@ void SettingsDialog::showEvent(QShowEvent* event) {
     // committed.
     if (!roundDone_) return;
     roundDone_ = false;
+    refreshSystemIntegrationControls();
     openingAppearance_ = currentAppearance();
     appearanceDraft_ = openingAppearance_;
     appearanceCommitted_ = false;
@@ -430,6 +431,8 @@ void SettingsDialog::showNativeError(const QString& message) {
 }
 
 void SettingsDialog::save() {
+    systemIntegrationError_->clear();
+    systemIntegrationError_->hide();
     QMap<QString, QString> presets;
     const QString presetProblem = collectPresetShortcuts(&presets);
     if (!presetProblem.isEmpty()) {
@@ -528,9 +531,12 @@ void SettingsDialog::save() {
     }
     previewLanguagePreference_ = chosenLanguage;
 
-    // Every fallible write has succeeded, so the preferences can now be
-    // committed. Until this point a refusal has left the store exactly as the
-    // dialog found it, which is what lets Cancel keep rolling back the preview.
+    // OS integrations are the final fallible writes. A failure keeps the
+    // requested controls and previews intact, and never accepts the dialog.
+    if (!saveSystemIntegrations()) return;
+
+    // Every fallible write has succeeded, so the remaining preferences can now
+    // be committed. Cancel can still roll back previews until this point.
     applyAppearancePreview();
     appearanceStyleTimer_->stop();
     applyAppearanceStyles();

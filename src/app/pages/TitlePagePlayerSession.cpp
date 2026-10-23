@@ -28,7 +28,6 @@
 #include <QAccessible>
 #include <QButtonGroup>
 #include <QtCore/QDebug>
-#include <QDesktopServices>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QFileDialog>
@@ -51,7 +50,6 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -124,12 +122,6 @@ public:
     void requestTrackProbe(const QString& embed) override {
         page_->probeTrackQuality(session_, embed);
     }
-    void requestOpenOriginal() override {
-        if (session_->entry != nullptr && !session_->entry->embedUrl.isEmpty() &&
-            !QDesktopServices::openUrl(QUrl(session_->entry->embedUrl))) {
-            showPlayerWarning(QCoreApplication::translate("TitlePage", "Failed to open in browser"));
-        }
-    }
     void requestCopyStreamUrl() override {
         if (session_->entry != nullptr && !mikai::gui::copyText(session_->entry->embedUrl)) {
             showPlayerWarning(QCoreApplication::translate("TitlePage", "Failed to copy link"));
@@ -139,7 +131,7 @@ public:
     void playbackFailed() override { page_->recoverStream(session_); }
 
 private:
-    /// The named failure the dialog's clipboard or browser action could not
+    /// The named failure the dialog's clipboard action could not
     /// complete. Parented to the player so the warning sits above the thing that
     /// raised it and is reachable by a screen reader, with the page's status line
     /// as the only fallback when there is no live dialog.

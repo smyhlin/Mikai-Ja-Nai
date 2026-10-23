@@ -129,7 +129,9 @@ void ComponentStoreTab::finishRecommendedInstall() {
                                                    !animeJanaiDirectMlInstalled_);
     kernelsCheck_->setChecked(kernelsRecommended_);
     spatialCheck_->setChecked(spatialRecommended_);
-    rifeCheck_->setChecked(!rifeInstalled_ || !rifeVerified_);
+    // This explicit setup approval advertises upscaling only. Reset a prior
+    // manual RIFE choice here, never during refresh, retranslation or Apply.
+    rifeCheck_->setChecked(false);
     downloadMissing(false);
 }
 

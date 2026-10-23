@@ -59,7 +59,6 @@ class TestI18n : public QObject {
   void rangePagerRetranslatesWithoutMovingThePageOrAsking();
   void failureViewRephrasesOnlyItsOwnWordsAndKeepsBackendDetail();
   void processingOverlayKeepsItsRunAcrossLanguageSwitches();
-  void pillButtonCaptionFollowsTheLanguage();
 
   /// The popover's speed presets are one `const char*` table, so the only thing
   /// that makes them translatable is the context-carrying extraction the

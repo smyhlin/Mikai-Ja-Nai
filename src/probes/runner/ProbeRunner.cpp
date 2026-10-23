@@ -89,7 +89,6 @@ public:
         dialog->applyEpisode(label, embed, index, qualities, {});
     }
     void requestTrackProbe(const QString&) override {}
-    void requestOpenOriginal() override {}
     void requestCopyStreamUrl() override {}
     void playerClosed() override {}
     void playbackFailed() override {}

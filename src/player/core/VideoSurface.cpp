@@ -617,6 +617,7 @@ bool VideoSurface::drawEngineFrameHold(unsigned int target, int width, int heigh
 }
 
 VideoSurface::~VideoSurface() {
+    cancelMediaInformation();
     cancelAnimeJanaiOperation();
     // The render context holds a pointer to the mpv core, so it has to go first,
     // and with THIS widget's context current: freeing it releases GL objects.
@@ -672,11 +673,25 @@ bool VideoSurface::open(const QString& url, quint64 mediaToken) {
             mpv_->setBackendLogObservationEnabled(animeJanaiBackendLogsNeeded());
         }
         ensureEngine();
+        // Qt does not repeat initializeGL when a pending runtime becomes available.
+        if (!contextReady_ && context_ != nullptr && context_ == context() && isValid()) {
+            QOpenGLContext* previous = QOpenGLContext::currentContext();
+            QOpenGLWidget::makeCurrent();
+            try {
+                if (QOpenGLContext::currentContext() != context_) {
+                    throw MpvError(tr("Could not activate the video OpenGL context.").toStdString());
+                }
+                createRenderContext();
+                forceRender_ = true;
+            } catch (...) {
+                releaseRenderContextCurrent(previous);
+                throw;
+            }
+            releaseRenderContextCurrent(previous);
+            update();
+        }
     } catch (const MpvError& e) {
-        // No core could be created - the selected runtime refused, or none was
-        // selected. That is an unavailability to report, not an exception for a
-        // caller that only asked whether the open worked: this function is the
-        // first thing that touches the loader on the GUI thread.
+        // A failed renderer cannot drain a deferred load.
         url_.clear();
         animeJanaiSourceRequested_ = false;
         pendingOpen_ = false;
@@ -1123,6 +1138,10 @@ uint64_t VideoSurface::sourceEpoch() const {
 void VideoSurface::initializeGL() {
     QOpenGLWidget::initializeGL();
     context_ = QOpenGLContext::currentContext();
+    // Failed runtime initialization still leaves a Qt context that needs tracking.
+    contextDestroyedConnection_ =
+        connect(context_, &QOpenGLContext::aboutToBeDestroyed, this,
+                &VideoSurface::releaseRenderContext, Qt::DirectConnection);
     const bool recreated = renderGeneration_ > 0;
     try {
         ensureEngine();
@@ -1178,11 +1197,6 @@ void VideoSurface::createRenderContext() {
     // QOpenGLWidget's framebuffer from the top-left. Without this the picture
     // is upside down - which a non-black pixel check happily passes.
     render_->setFlipY(true);
-    // Direct, and emitted while the context can still be made current - which is
-    // exactly what freeing the renderer needs.
-    contextDestroyedConnection_ =
-        connect(context_, &QOpenGLContext::aboutToBeDestroyed, this,
-                &VideoSurface::releaseRenderContext, Qt::DirectConnection);
     contextReady_ = true;
 }
 
@@ -1460,7 +1474,15 @@ void VideoSurface::releaseRenderContextCurrent(QOpenGLContext* previous) {
 }
 
 void VideoSurface::releaseRenderContext() {
-    if (render_ == nullptr) return;
+    if (render_ == nullptr) {
+        if (contextDestroyedConnection_) {
+            disconnect(contextDestroyedConnection_);
+            contextDestroyedConnection_ = QMetaObject::Connection();
+        }
+        contextReady_ = false;
+        context_ = nullptr;
+        return;
+    }
     QOpenGLContext* previous = nullptr;
     const bool current = makeRenderContextCurrent(&previous);
     if (current) engineFrameHoldFbo_.reset();
@@ -1570,6 +1592,8 @@ void VideoSurface::setNextMediaTrackSelection(MediaTrackSelection selection) {
 }
 
 void VideoSurface::resetMediaTracks() {
+    cancelMediaInformation();
+    emit mediaInformationInvalidated();
     if (mpv_ != nullptr && mediaTracksRequest_.valid()) mpv_->cancelAsync(mediaTracksRequest_);
     mediaTracksRequest_ = {};
     mediaTracksLoaded_ = false;

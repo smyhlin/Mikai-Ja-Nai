@@ -148,7 +148,6 @@ public:
     static void contract(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     static void pip(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     static void gear(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
-    static void folder(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 14, const QColor& c = QColor());
     static void download(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     static void more(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 16, const QColor& c = QColor());
     static void reset(QPainter& p, qreal x = 0, qreal y = 0, qreal s = 14, const QColor& c = QColor());

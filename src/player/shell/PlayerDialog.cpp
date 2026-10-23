@@ -13,6 +13,7 @@
 
 #include "CompareWindow.hpp"
 #include "PlayerDialog.hpp"
+#include "MediaInformationDialog.hpp"
 
 #include <QSettings>
 
@@ -323,6 +324,7 @@ PlayerDialog::PlayerDialog(const QString& caption,
 
 PlayerDialog::~PlayerDialog() {
     closed_ = true;
+    closeMediaInformation();
     // Child teardown (PlayerShell/surface_ destruction in ~QDialog) emits
     // nativeStatusChanged and friends through VideoSurface's reader detach.
     // Derived PlayerDialog members are already destroyed at that point, so a
@@ -490,22 +492,13 @@ void PlayerDialog::connectShell() {
     connect(shell_, &PlayerShell::prevRequested, this, [this] { stepEpisode(-1); });
     connect(shell_, &PlayerShell::nextRequested, this, [this] { stepEpisode(1); });
     connect(shell_, &PlayerShell::pipRequested, this, &PlayerDialog::togglePip);
-    connect(shell_, &PlayerShell::openOriginalRequested, this, [this] {
-        if (!directMedia_) {
-            host_->requestOpenOriginal();
-            return;
-        }
-        const QUrl source = QUrl::fromUserInput(url_);
-        if (!QDesktopServices::openUrl(source)) {
-            flashStatus(tr("Could not open the video source"));
-        }
-    });
     connect(shell_, &PlayerShell::downloadRequested, this, &PlayerDialog::copyStreamUrl);
     connect(shell_, &PlayerShell::mediaDropped, this, &PlayerDialog::onMediaDropped);
     connect(shell_, &PlayerShell::closeRequested, this, &PlayerDialog::close);
     connect(shell_, &PlayerShell::copyLinkRequested, this, &PlayerDialog::copyStreamUrl);
     connect(shell_, &PlayerShell::frameRequested, this, &PlayerDialog::copyCurrentFrame);
     connect(shell_, &PlayerShell::openFolderRequested, this, &PlayerDialog::openMediaFolder);
+    connect(shell_, &PlayerShell::mediaInformationRequested, this, &PlayerDialog::openMediaInformation);
     connect(shell_, &PlayerShell::compareRequested, this, &PlayerDialog::openCompareWindow);
     connect(shell_, &PlayerShell::stateChanged, this, &PlayerDialog::onShellStateChanged);
     connect(shell_, &PlayerShell::audioRequested, this, &PlayerDialog::openAudioMenu);
@@ -590,6 +583,28 @@ void PlayerDialog::copyStreamUrl() {
         return;
     }
     flashStatus(tr("Video link copied"));
+}
+
+void PlayerDialog::closeMediaInformation() {
+    if (mediaInformation_ != nullptr) mediaInformation_->close();
+}
+
+void PlayerDialog::openMediaInformation() {
+    VideoSurface* source = playbackSurface();
+    if (closed_ || !directMedia_ || source == nullptr) return;
+    const QString local = source->sourceUrl();
+    if (local.isEmpty() || (!QDir::isAbsolutePath(local) &&
+                            !QUrl::fromUserInput(local).isLocalFile())) return;
+    if (mediaInformation_ == nullptr) {
+        auto* dialog = new MediaInformationDialog(source, this);
+        mediaInformation_ = dialog;
+        connect(dialog, &QDialog::finished, this, [this, dialog] {
+            if (mediaInformation_ == dialog) mediaInformation_.clear();
+        });
+    }
+    mediaInformation_->show();
+    mediaInformation_->raise();
+    mediaInformation_->activateWindow();
 }
 
 void PlayerDialog::openMediaFolder() {
@@ -2010,6 +2025,7 @@ void PlayerDialog::closeEvent(QCloseEvent* event) {
     }
     shuttingDown_ = true;
     closed_ = true;
+    closeMediaInformation();
     // A window hand-off may still be waiting for a picture. The float it was
     // holding is on screen right now, so it is put away here rather than left to
     // outlive the player by a deleteLater turn; dropping the wait keeps its

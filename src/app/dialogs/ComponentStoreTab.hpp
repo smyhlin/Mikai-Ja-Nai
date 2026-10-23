@@ -81,8 +81,9 @@ public:
     /// Reviews and installs the selected runtime/backend closure, RIFE archive,
     /// and the complete pinned AnimeJaNai upscaling-model pack.
     void downloadMissing();
-    /// Selects the GPU-matched backend and currently missing recommended packs
-    /// after explicit setup confirmation, without a second confirmation.
+    /// Selects the GPU-matched backend and missing upscaling packs after explicit
+    /// setup confirmation, without a second confirmation. Clears any RIFE
+    /// selection to match that upscaling-only offer.
     /// The tab's Apply changes action instead preserves the user's selections.
     void installRecommended();
     /// Stops the download or verification the Cancel button stops. Explicit:
