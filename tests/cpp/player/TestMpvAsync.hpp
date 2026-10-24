@@ -31,6 +31,7 @@ private slots:
     void aRelativeModulePathIsRefusedByName();
     void aMissingModuleIsRefusedByName();
     void aModuleOutsideTheOwnedRootIsRefusedByName();
+    void linuxRuntimeSelectionMatchesTheConfiguredModule();
     void aDifferentModuleIsRefusedWhileOneIsPinned();
     void theHeaderApiVersionIsAlwaysReported();
     void aHandleWithoutASelectedRuntimeIsRefused();

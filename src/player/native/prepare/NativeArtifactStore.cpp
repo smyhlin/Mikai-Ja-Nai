@@ -1159,7 +1159,7 @@ QStringList stagingDirectories(const ArtifactStore& store) {
   QStringList found;
   if (!store.isOwned(nullptr)) return found;
   const QFileInfoList entries =
-      QDir(store.root()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+      QDir(store.root()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden, QDir::Name);
   for (const QFileInfo& entry : entries) {
     if (!entry.fileName().startsWith(QLatin1String(kStagingPrefix))) continue;
     found.append(entry.fileName());

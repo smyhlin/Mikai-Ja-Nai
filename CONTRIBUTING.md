@@ -1,0 +1,17 @@
+# Contributing
+
+Mikai is a C++20 / Qt Widgets desktop client. Before making a change, read the relevant user/build documentation and existing code conventions. Keep changes focused, preserve platform-specific behavior, and do not commit generated builds, release packages, local runtime stores, credentials, or personal media.
+
+## Changes and review
+
+- Base changes on the current project branch and keep each change narrowly scoped.
+- Explain the user-visible effect and any important design trade-offs in the pull request. Link related issues when applicable; do not include private user data or secrets.
+- For bug reports, include reproducible steps, expected and actual behavior, platform, and relevant sanitized logs. See the issue templates.
+- Add or update focused automated coverage for behavior changes where appropriate. Do not claim checks you did not run; list the exact checks and results in the pull request.
+- Follow the license and third-party notices in the repository. Do not add dependencies, media, icons, fonts, or other assets unless their provenance and redistribution terms are clear.
+
+## Build and checks
+
+Use [Building Mikai](docs/building.md) for prerequisites and platform-specific configure/build/test commands. The release assembly entry points are `cmake --build <build> --target dist`, `packaging/windows/package.ps1` (with `-BuildDir` and `-OutputDir`), and `packaging/linux/package.sh` (build and output directories). Read [Releasing Mikai](docs/releasing.md) before changing packaging or release workflows. Do not commit generated output from these commands.
+
+For every contribution, run relevant checks for the affected code and state what was or was not exercised. Release artifacts are prepared locally or by the configured workflows; contribution does not imply authorization to publish or sign a release.

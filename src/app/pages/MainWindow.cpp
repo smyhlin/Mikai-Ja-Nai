@@ -485,9 +485,11 @@ void MainWindow::runMediaRuntimeResolution() {
                 result.value<mplayer::native::RuntimeSelection>());
             self->runtimePending_ = false;
             if (!selection.loaded) {
+                // End the wait before formatting a terminal refusal: while the
+                // lease is held the shared formatter deliberately says pending.
+                self->releaseRuntimeResolution();
                 const QString text =
                     mplayer::native::runtimeUnavailablePlaybackText(selection.reason);
-                self->releaseRuntimeResolution();
                 target->showError(text);
                 return;
             }
@@ -506,9 +508,9 @@ void MainWindow::runMediaRuntimeResolution() {
                 self->releaseRuntimeResolution();
                 return;
             }
+            self->releaseRuntimeResolution();
             const QString text =
                 mplayer::native::runtimeUnavailablePlaybackText(backend::failureLine(failure));
-            self->releaseRuntimeResolution();
             target->showError(text);
         });
 }

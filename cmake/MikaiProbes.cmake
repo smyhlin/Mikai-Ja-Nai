@@ -145,6 +145,11 @@ if(TARGET mikai_app)
     DEPLOY_SHADERS)
   mikai_add_probe(main_window_modal_probe src/probes/app/MainWindowModalProbe.cpp
     LINKS mikai_app Qt6::Widgets)
+  mikai_add_probe(startup_recovery_probe src/probes/player/StartupRecoveryProbe.cpp
+    LINKS mikai_app Qt6::Widgets)
+  mikai_add_probe(release_gallery_probe src/probes/app/ReleaseGalleryProbe.cpp
+    LINKS mikai_app Qt6::Widgets Qt6::Test
+    DEPLOY_SHADERS)
 
   if(MIKAI_WITH_MODEL_INSPECTION)
     mikai_add_probe(native_assets_probe src/probes/native/NativeAssetsProbe.cpp

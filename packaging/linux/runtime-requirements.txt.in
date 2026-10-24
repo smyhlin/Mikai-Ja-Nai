@@ -1,0 +1,66 @@
+Mikai @PROJECT_VERSION@ — Linux x86_64 runtime requirements
+
+Validation status: packaging implementation prepared; no tested Linux baseline is
+claimed by these source files. Read the release's actual CI/runtime evidence.
+Ubuntu 24.04 with separately installed Qt 6.12 is the initial CI target, not a
+claim that Ubuntu 24.04's older distribution Qt can run this binary.
+
+Default packaging (MIKAI_LINUX_DEPLOY_QT=OFF) is a dependency-based relocatable
+install tree, NOT a standalone archive. Host dependencies:
+- Qt >= 6.12 shared Core, Gui, Widgets, OpenGL, OpenGLWidgets and Network libraries.
+- Matching Qt platform integration plugins (XCB and/or Wayland), imageformat
+  plugins including WebP, TLS backend plugins and their system dependencies.
+- With MIKAI_LINUX_BUNDLE_MPV=OFF: libmpv.so.2, client API major 2 (mpv >= 0.35),
+  with its distro FFmpeg/codec, audio output, graphics and TLS dependencies.
+  libmpv remains dynamically loaded in either mode.
+  With MIKAI_LINUX_BUNDLE_MPV=ON, the pinned Linux libmpv runtime and its
+  private shared dependencies are installed under @CMAKE_INSTALL_BINDIR@/mpv
+  with $ORIGIN RUNPATH. The module is a regular file named libmpv.so.2.
+  They are owned copies from the pinned archive; glibc, the dynamic loader,
+  graphics drivers, Vulkan/EGL and host audio subsystem remain system
+  dependencies. No global LD_LIBRARY_PATH is used or required.
+- Desktop OpenGL and a working display/session; software rendering availability
+  depends on the host's Mesa/driver setup. No GPU/driver performance guarantee.
+- Compatible glibc, libstdc++ and libgcc; the compiler and packaging-host libc are
+  recorded in VERSION. A newer build host can raise the runtime baseline. No
+  untested backwards-compatible minimum glibc or distribution is asserted.
+
+If Qt was installed outside the system loader's paths, select that complete Qt
+runtime before launching, for example:
+  export LD_LIBRARY_PATH="/path/to/Qt/6.12.0/gcc_64/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export QT_PLUGIN_PATH="/path/to/Qt/6.12.0/gcc_64/plugins"
+  ./bin/mikai --open-video /absolute/path/to/video.mkv
+Replace the Qt example prefix with your actual compatible installation; do not
+mix Qt library and plugin versions. Never copy Windows DLLs into this package.
+
+Build-time host libmpv header pkg-config version: @MIKAI_LINUX_MPV_HEADER_PKGCONFIG@
+(an empty value means manually selected headers without pkg-config evidence).
+This is development-header evidence, not the bundled runtime's version.
+Runtime selection identity: @MIKAI_LINUX_MPV_RUNTIME_IDENTITY@
+
+MIKAI_LINUX_MPV_MODE=@MIKAI_LINUX_MPV_MODE@ for this build. When "bundled",
+  the archive SHA-256 is @MIKAI_LINUX_MPV_ARCHIVE_SHA256@ and private .so files
+  use RUNPATH @MIKAI_LINUX_MPV_PATCHED_RUNPATH@. When "system", libmpv remains a
+  host dependency and no mpv archive is bundled. A requested bundle that fails to
+  acquire, verify, extract or patch is a configure-time failure; there is no
+  silent fallback to system libraries.
+MIKAI_LINUX_DEPLOY_QT=@MIKAI_LINUX_DEPLOY_QT@ for this build. When enabled, Qt's
+official CMake deployment gathers Qt libraries/plugins, generates qt.conf and
+uses the relative executable RPATH. Deployment errors are fatal. The result
+still needs system graphics/audio libraries and a compatible libc, plus host
+libmpv when MIKAI_LINUX_BUNDLE_MPV=OFF. It is NOT automatically a
+standalone/AppImage package. Review every bundled
+library's redistribution/source obligations before public distribution.
+
+Shaders are under share/mikai/shaders with an executable-relative symlink, so
+lookup does not depend on the current directory. The app translation is embedded.
+Desktop/icon/AppStream files are installed under share. Install to a standard
+prefix (or configure your desktop's XDG_DATA_DIRS/PATH for a custom prefix) for
+menu visibility. Desktop registration advertises supported video types but does
+not assign defaults, enable autorun, or alter existing associations.
+
+Optional native inference engines/models, acquired components, user settings,
+API credentials, caches, logs, benchmarks and test/probe binaries are excluded.
+Review share/licenses/mikai/third-party.json and third-party/ before distribution.
+No installer integration, signing, update, publishing or user-data deletion is
+performed by the Linux package script.

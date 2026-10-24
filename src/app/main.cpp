@@ -15,6 +15,7 @@
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
+#include <QIcon>
 #include <QMessageBox>
 #include <QPointer>
 #include <QStringList>
@@ -185,8 +186,11 @@ int main(int argc, char** argv) {
     char* qtArgv[] = {argv[0], nullptr};
     QApplication app(qtArgc, qtArgv);
     app.setApplicationName(QStringLiteral("Mikai Wrapper"));
+    app.setApplicationDisplayName(QStringLiteral("Mikai"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
     app.setOrganizationName(QStringLiteral("Mikai"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/app/mikai.png")));
+    app.setDesktopFileName(QStringLiteral("mikai"));
 
     // After the identity, which the preference and catalog paths resolve through,
     // and before the runtime selection whose log lines go through these

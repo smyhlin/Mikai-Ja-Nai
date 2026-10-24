@@ -10,10 +10,6 @@ namespace {
 constexpr char kDefaultAccent[] = "#bdacff";
 constexpr char kDefaultGradient[] = "#67e4e4";
 
-QString tr(const char* text) {
-    return QCoreApplication::translate("mikai::app::theme", text);
-}
-
 }  // namespace
 
 QVector<AccentPreset> accentPresets() {
@@ -33,7 +29,8 @@ QVector<int> radiusSteps() { return {0, 4, 6, 8, 12, 16}; }
 int radiusStepCount() { return radiusSteps().size(); }
 
 QStringList radiusNames() {
-    return {tr("None"), QStringLiteral("XS"), QStringLiteral("SM"), QStringLiteral("MD"),
+    return {QCoreApplication::translate("mikai::app::theme", "None"),
+            QStringLiteral("XS"), QStringLiteral("SM"), QStringLiteral("MD"),
             QStringLiteral("LG"), QStringLiteral("XL")};
 }
 
@@ -103,13 +100,20 @@ NameLanguage nameLanguageFromId(const QString& id) {
 QString presetName(const QString& color) {
     const QColor value(color);
     if (!value.isValid()) return QString();
-    if (value == QColor(QStringLiteral("#f27bb0"))) return tr("Pink");
-    if (value == QColor(QStringLiteral("#6797e4"))) return tr("Blue");
-    if (value == QColor(QStringLiteral("#5fd08a"))) return tr("Green");
-    if (value == QColor(QStringLiteral("#f0a35e"))) return tr("Orange");
-    if (value == QColor(QString::fromLatin1(kDefaultAccent))) return tr("Purple");
-    if (value == QColor(QStringLiteral("#ef6b78"))) return tr("Red");
-    if (value == QColor(QString::fromLatin1(kDefaultGradient))) return tr("Turquoise");
+    if (value == QColor(QStringLiteral("#f27bb0")))
+        return QCoreApplication::translate("mikai::app::theme", "Pink");
+    if (value == QColor(QStringLiteral("#6797e4")))
+        return QCoreApplication::translate("mikai::app::theme", "Blue");
+    if (value == QColor(QStringLiteral("#5fd08a")))
+        return QCoreApplication::translate("mikai::app::theme", "Green");
+    if (value == QColor(QStringLiteral("#f0a35e")))
+        return QCoreApplication::translate("mikai::app::theme", "Orange");
+    if (value == QColor(QString::fromLatin1(kDefaultAccent)))
+        return QCoreApplication::translate("mikai::app::theme", "Purple");
+    if (value == QColor(QStringLiteral("#ef6b78")))
+        return QCoreApplication::translate("mikai::app::theme", "Red");
+    if (value == QColor(QString::fromLatin1(kDefaultGradient)))
+        return QCoreApplication::translate("mikai::app::theme", "Turquoise");
     return QString();
 }
 

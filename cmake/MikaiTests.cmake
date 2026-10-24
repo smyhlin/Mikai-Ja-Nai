@@ -1,6 +1,15 @@
 # CMake contract tests, test launcher, and hermetic Qt Test suite (mikai_tests).
 
-# Unconditional launcher & dist contract registrations
+# Launcher process-lifetime contracts are meaningful on both Windows and Linux.
+set(MIKAI_TEST_QT_PLUGIN_DIR "${MIKAI_TEST_QT_PREFIX}/plugins")
+if(NOT IS_DIRECTORY "${MIKAI_TEST_QT_PLUGIN_DIR}/platforms" AND NOT WIN32)
+  get_filename_component(_mikai_distro_qt_plugins
+    "${Qt6_DIR}/../../qt6/plugins" ABSOLUTE)
+  if(IS_DIRECTORY "${_mikai_distro_qt_plugins}/platforms")
+    set(MIKAI_TEST_QT_PLUGIN_DIR "${_mikai_distro_qt_plugins}")
+  endif()
+endif()
+
 add_executable(mikai_test_launcher cmake/MikaiTestLauncher.cpp)
 target_link_libraries(mikai_test_launcher PRIVATE Qt6::Core)
 
@@ -9,9 +18,10 @@ add_test(NAME LauncherContracts
     -DFIXTURE_EXE=$<TARGET_FILE:mikai_launcher_child>
     -DLAUNCHER_EXE=$<TARGET_FILE:mikai_test_launcher>
     -DSHADERS_DIR=${CMAKE_SOURCE_DIR}/shaders
-    -DMPV_DLL=${MIKAI_MPV_DLL}
+    -DMPV_MODULE=${MIKAI_SELECTED_MPV_MODULE}
+    -DMPV_RUNTIME_DIR=${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}
     -DQT_BIN_DIR=$<TARGET_FILE_DIR:Qt6::Core>
-    -DQT_PLUGIN_DIR=${MIKAI_TEST_QT_PREFIX}/plugins
+    -DQT_PLUGIN_DIR=${MIKAI_TEST_QT_PLUGIN_DIR}
     -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
     -P ${CMAKE_SOURCE_DIR}/tests/cmake/LauncherContracts.cmake
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -21,24 +31,37 @@ set_tests_properties(LauncherContracts PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
 )
 
-set(MIKAI_DIST_CONTRACT_PE_SOURCE "${CMAKE_SOURCE_DIR}/dist-mikai/libwinpthread-1.dll"
-  CACHE FILEPATH
-  "Genuine read-only x64 PE DLL the DistContracts script re-uses as its archive member"
-)
-set(dist_contract_pe_args)
-if(MIKAI_DIST_CONTRACT_PE_SOURCE AND EXISTS "${MIKAI_DIST_CONTRACT_PE_SOURCE}")
-  list(APPEND dist_contract_pe_args
-    -DDIST_CONTRACT_PE_SOURCE=${MIKAI_DIST_CONTRACT_PE_SOURCE})
+if(WIN32)
+  set(MIKAI_DIST_CONTRACT_PE_SOURCE "${CMAKE_SOURCE_DIR}/dist-mikai/libwinpthread-1.dll"
+    CACHE FILEPATH
+    "Genuine read-only x64 PE DLL the DistContracts script re-uses as its archive member"
+  )
+  set(dist_contract_pe_args)
+  if(MIKAI_DIST_CONTRACT_PE_SOURCE AND EXISTS "${MIKAI_DIST_CONTRACT_PE_SOURCE}")
+    list(APPEND dist_contract_pe_args
+      -DDIST_CONTRACT_PE_SOURCE=${MIKAI_DIST_CONTRACT_PE_SOURCE})
+  endif()
+  add_test(NAME DistContracts
+    COMMAND ${CMAKE_COMMAND}
+      -DDIST_CONTRACT_PROJECT=ON
+      -DDIST_CONTRACT_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/dist.cmake
+      ${dist_contract_pe_args}
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/DistContracts.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+  set_tests_properties(DistContracts PROPERTIES TIMEOUT 300)
 endif()
-add_test(NAME DistContracts
-  COMMAND ${CMAKE_COMMAND}
-    -DDIST_CONTRACT_PROJECT=ON
-    -DDIST_CONTRACT_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/dist.cmake
-    ${dist_contract_pe_args}
-    -P ${CMAKE_SOURCE_DIR}/tests/cmake/DistContracts.cmake
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-set_tests_properties(DistContracts PROPERTIES TIMEOUT 300)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_test(NAME LinuxPackageContracts
+    COMMAND ${CMAKE_COMMAND}
+      -DBUILD_DIR=${CMAKE_BINARY_DIR}
+      -DPACKAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/linux/Package.cmake
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/LinuxPackageContracts.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+  set_tests_properties(LinuxPackageContracts PROPERTIES TIMEOUT 360)
+endif()
 
 if(MIKAI_BUILD_PROBES)
   add_test(NAME NativeStageContracts
@@ -94,6 +117,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/player/TestCompareGif.cpp
     tests/cpp/player/TestPlaybackDiagnostics.hpp
     tests/cpp/player/TestPlaybackDiagnostics.cpp
+    tests/cpp/player/TestMediaInformation.hpp
+    tests/cpp/player/TestMediaInformation.cpp
     # Native bundle, component, model, preparation & status suites
     tests/cpp/native/TestAnimeJanaiRuntime.hpp
     tests/cpp/native/TestAnimeJanaiRuntime.cpp
@@ -154,6 +179,8 @@ if(MIKAI_BUILD_PROBES)
     tests/cpp/app/TestRunner.cpp
     tests/cpp/app/TestWatchHistory.hpp
     tests/cpp/app/TestWatchHistory.cpp
+    tests/cpp/app/TestSystemIntegration.hpp
+    tests/cpp/app/TestSystemIntegration.cpp
     tests/cpp/app/TestWindowRaise.hpp
     tests/cpp/app/TestWindowRaise.cpp
   )
@@ -205,16 +232,43 @@ if(MIKAI_BUILD_PROBES)
     COMMENT "Deploying Anime4K shader fixtures for mikai_tests"
   )
 
-  add_test(NAME mikai_tests COMMAND mikai_test_launcher
+  set(_mikai_tests_launcher_args
     "$<TARGET_FILE:mikai_tests>"
     "${CMAKE_SOURCE_DIR}/shaders"
-    "${MIKAI_MPV_DLL}"
+    "${MIKAI_SELECTED_MPV_MODULE}"
     "$<TARGET_FILE_DIR:Qt6::Core>"
-    "${MIKAI_TEST_QT_PREFIX}/plugins"
+    "${MIKAI_TEST_QT_PLUGIN_DIR}"
     "${CMAKE_BINARY_DIR}/_test-runs"
+  )
+  if(MIKAI_SELECTED_MPV_BUNDLED)
+    list(APPEND _mikai_tests_launcher_args
+      --mpv-runtime-dir "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}")
+  endif()
+  add_test(NAME mikai_tests COMMAND mikai_test_launcher
+    ${_mikai_tests_launcher_args}
   )
   set_tests_properties(mikai_tests PROPERTIES
     TIMEOUT 900
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
+  add_dependencies(mikai_tests mikai_bundle)
+  set(_mikai_bundle_cli_args
+    -DBUNDLE_TOOL=$<TARGET_FILE:mikai_bundle>
+    -DMPV_MODULE=${MIKAI_SELECTED_MPV_MODULE}
+  )
+  if(MIKAI_SELECTED_MPV_BUNDLED)
+    list(APPEND _mikai_bundle_cli_args
+      -DMPV_RUNTIME_DIR=${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}
+    )
+  endif()
+  add_test(NAME BundleCliContracts
+    COMMAND ${CMAKE_COMMAND}
+      ${_mikai_bundle_cli_args}
+      -P ${CMAKE_SOURCE_DIR}/tests/cmake/BundleCliContracts.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+  set_tests_properties(BundleCliContracts PROPERTIES
+    TIMEOUT 180
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
   )
 endif()

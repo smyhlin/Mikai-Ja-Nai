@@ -1,6 +1,6 @@
 # Schema version 6 in CMakePresets.json requires CMake >= 3.25.
 cmake_minimum_required(VERSION 3.25)
-project(mikai LANGUAGES CXX)
+project(mikai VERSION 0.1.0 LANGUAGES CXX)
 
 if(WIN32)
   enable_language(RC)
@@ -205,6 +205,7 @@ endif()
 set(PLAYER_SOURCES
   src/gui/VideoDropTarget.cpp
   src/gui/SystemDefaultPlayer.cpp
+  src/gui/SystemDefaultPlayerLaunch.cpp
   # OpenGL render bridge & video surface
   src/player/core/MpvRenderContext.cpp
   src/player/core/VideoSurface.cpp
@@ -240,6 +241,7 @@ set(PLAYER_SOURCES
 set(PLAYER_HEADERS
   src/gui/VideoDropTarget.hpp
   src/gui/SystemDefaultPlayer.hpp
+  src/gui/SystemDefaultPlayerLaunch.hpp
   src/player/core/MpvRenderContext.hpp
   src/player/core/VideoSurface.hpp
   src/player/core/MediaInformation.hpp
@@ -427,7 +429,15 @@ endif()
 
 qt_add_executable(mikai src/app/main.cpp)
 target_link_libraries(mikai PRIVATE mikai_app)
-set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE)
+qt_add_resources(mikai "mikai_brand"
+  PREFIX "/app"
+  BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app"
+  FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/app/mikai.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/app/mikai.svg"
+)
+set_target_properties(mikai PROPERTIES WIN32_EXECUTABLE TRUE VERSION "${PROJECT_VERSION}")
+target_compile_definitions(mikai PRIVATE MIKAI_VERSION="${PROJECT_VERSION}")
 
 if(WIN32)
   set(mikai_manifest "${CMAKE_CURRENT_BINARY_DIR}/mikai.exe.manifest")
@@ -470,63 +480,86 @@ else()
   message(WARNING "Qt Ukrainian base translations not found at ${MIKAI_QTBASE_UK_CATALOG}")
 endif()
 
-if(MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
-  get_filename_component(MIKAI_MPV_DEPLOY_NAME "${MIKAI_MPV_DLL}" NAME)
-  if(WIN32)
-    set(MIKAI_MPV_DEPLOY_NAME "libmpv-2.dll")
-  endif()
+if(WIN32 AND MIKAI_MPV_DLL AND EXISTS "${MIKAI_MPV_DLL}")
   add_custom_command(TARGET mikai POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:mikai>/mpv"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/${MIKAI_MPV_DEPLOY_NAME}"
-    COMMENT "Deploying the libmpv runtime library"
+      "${MIKAI_MPV_DLL}" "$<TARGET_FILE_DIR:mikai>/mpv/libmpv-2.dll"
+    COMMENT "Deploying the pinned libmpv runtime library"
     VERBATIM
   )
 endif()
 
 add_custom_command(TARGET mikai POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-    $<TARGET_FILE_DIR:mikai>/shaders
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    "$<TARGET_FILE_DIR:mikai>/shaders"
   COMMENT "Deploying Anime4K shaders to output directory"
+  VERBATIM
 )
 
 # ---------------------------------------------------------------------------
 # 5. Distribution, Probes, Tests & Release Tuning
 # ---------------------------------------------------------------------------
-option(MIKAI_DIST_NATIVE "Copy the installed Native bundle into the dist folder" OFF)
-set(MIKAI_DIST_DIR "${CMAKE_SOURCE_DIR}/dist-mikai" CACHE PATH
-  "Where the deploy target assembles the app (must not already exist)")
-set(MIKAI_DIST_NATIVE_ROOT "" CACHE PATH
-  "Override the executable-local native store that MIKAI_DIST_NATIVE copies "
-  "(empty: <EXE dir>/native, matching production nativeRoot())")
-get_target_property(MIKAI_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
-if(MIKAI_QMAKE_EXECUTABLE)
-  get_filename_component(MIKAI_QT_BIN_DIR "${MIKAI_QMAKE_EXECUTABLE}" DIRECTORY)
-  set(MIKAI_WINDEPLOYQT "${MIKAI_QT_BIN_DIR}/windeployqt.exe")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MikaiPackaging.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MikaiLinux.cmake")
+if(WIN32)
+  set(MIKAI_SELECTED_MPV_MODULE "${MIKAI_MPV_DLL}")
+  set(MIKAI_SELECTED_MPV_DEPENDENCY_ROOT "")
+  set(MIKAI_SELECTED_MPV_BUNDLED FALSE)
+  set(MIKAI_SELECTED_MPV_PLATFORM "windows-x64")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  if(MIKAI_LINUX_MPV_BUNDLE)
+    set(MIKAI_SELECTED_MPV_MODULE "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libmpv.so.2")
+    set(MIKAI_SELECTED_MPV_DEPENDENCY_ROOT "${MIKAI_LINUX_MPV_BUNDLE_ROOT}")
+    set(MIKAI_SELECTED_MPV_BUNDLED TRUE)
+  else()
+    set(MIKAI_SELECTED_MPV_MODULE "${mpv_system_real_library}")
+    set(MIKAI_SELECTED_MPV_DEPENDENCY_ROOT "")
+    set(MIKAI_SELECTED_MPV_BUNDLED FALSE)
+  endif()
+  set(MIKAI_SELECTED_MPV_PLATFORM "linux-x86_64")
 endif()
-add_custom_target(dist
-  COMMAND ${CMAKE_COMMAND}
-    -DDIST_DIR=${MIKAI_DIST_DIR}
-    -DEXE=$<TARGET_FILE:mikai>
-    -DWINDEPLOYQT=${MIKAI_WINDEPLOYQT}
-    -DSHADERS=${CMAKE_CURRENT_SOURCE_DIR}/shaders
-    -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-    -DMIKAI_DIST_NATIVE=${MIKAI_DIST_NATIVE}
-    "-DMIKAI_DIST_NATIVE_ROOT=${MIKAI_DIST_NATIVE_ROOT}"
-    "-DMIKAI_DIST_MPV_ARCHIVE=${MIKAI_PINNED_MPV_ARCHIVE}"
-    "-DMIKAI_DIST_CACHE_DIR=${MIKAI_DIST_MPV_CACHE_DIR}"
-    "-DMIKAI_MPV_ARCHIVE_NAME=${MIKAI_MPV_ARCHIVE_NAME}"
-    "-DMIKAI_MPV_ARCHIVE_URL=${MIKAI_MPV_ARCHIVE_URL}"
-    "-DMIKAI_MPV_ARCHIVE_SHA256=${MIKAI_MPV_ARCHIVE_SHA256}"
-    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/dist.cmake
-  DEPENDS mikai
-  COMMENT "Assembling the self-contained dist folder"
-)
+if(DEFINED MIKAI_SELECTED_MPV_MODULE AND NOT MIKAI_SELECTED_MPV_MODULE STREQUAL "")
+  if(MIKAI_SELECTED_MPV_BUNDLED)
+    set(_mikai_runtime_bundled_json true)
+  else()
+    set(_mikai_runtime_bundled_json false)
+  endif()
+  file(TO_CMAKE_PATH "${MIKAI_SELECTED_MPV_MODULE}" _mikai_runtime_module_json)
+  file(TO_CMAKE_PATH "${MIKAI_SELECTED_MPV_DEPENDENCY_ROOT}" _mikai_runtime_root_json)
+  file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/mikai-runtime-$<CONFIG>.json"
+    CONTENT
+      "{\n  \"schema\": \"mikai.runtime.bundle/1\",\n  \"module\": \"${_mikai_runtime_module_json}\",\n  \"dependencyRoot\": \"${_mikai_runtime_root_json}\",\n  \"bundled\": ${_mikai_runtime_bundled_json},\n  \"platform\": \"${MIKAI_SELECTED_MPV_PLATFORM}\"\n}\n")
+endif()
 
 add_subdirectory(tests/fixtures)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MikaiProbes.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MikaiTests.cmake)
+if(TARGET mikai_tests AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_compile_definitions(mikai_tests PRIVATE
+    MIKAI_LINUX_BUNDLE_MPV=$<BOOL:${MIKAI_LINUX_MPV_BUNDLE}>)
+  if(MIKAI_LINUX_MPV_BUNDLE)
+    target_compile_definitions(mikai_tests PRIVATE
+      MIKAI_LINUX_MPV_MODULE_RELATIVE="mpv/libmpv.so.2")
+    set(_mikai_linux_test_mpv_copy_commands
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:mikai_tests>/mpv")
+    foreach(_library IN LISTS MIKAI_LINUX_MPV_BUILD_LIBRARIES)
+      get_filename_component(_library_name "${_library}" NAME)
+      list(APPEND _mikai_linux_test_mpv_copy_commands
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "${_library}" "$<TARGET_FILE_DIR:mikai_tests>/mpv/${_library_name}")
+    endforeach()
+    add_custom_command(TARGET mikai_tests POST_BUILD
+      ${_mikai_linux_test_mpv_copy_commands}
+      COMMENT "Deploying pinned Linux libmpv for runtime-selection tests"
+      VERBATIM)
+  else()
+    target_compile_definitions(mikai_tests PRIVATE
+      MIKAI_LINUX_SYSTEM_MPV_MODULE="${mpv_system_real_library}")
+  endif()
+endif()
 
 set(MIKAI_IPO OFF)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

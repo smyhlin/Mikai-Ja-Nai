@@ -957,6 +957,8 @@ private:
     double observedDuration_ = 0.0;
     double observedPosition_ = 0.0;
     bool observedPaused_ = false;
+    /// Pause alone does not mean playback: mpv remains unpaused after EOF/stop.
+    bool observedIdle_ = true;
     double observedVideoWidth_ = 0.0;
     double observedVideoHeight_ = 0.0;
     double observedCacheSpeed_ = 0.0;

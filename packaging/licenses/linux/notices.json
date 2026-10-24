@@ -1,0 +1,47 @@
+{
+  "schema":"mikai.packaging.license-evidence/1",
+  "scope":"Actual Linux release stage observed at /root/mikai-bundled-release/mikai-0.1.0-linux-x86_64; this indexes retained notices and distinguishes evidence from unresolved closure.",
+  "stageArchive":"release-artifacts/linux-runtime-review/mikai-0.1.0-linux-x86_64.tar.gz",
+  "observedNoticeFilesInStage":[
+    "share/licenses/mikai/LICENSE",
+    "share/licenses/mikai/third-party.json",
+    "share/licenses/mikai/third-party/NOTICE.txt",
+    "share/licenses/mikai/third-party/Qt-6.12.0-qtbase-attributions.txt",
+    "share/licenses/mikai/third-party/Qt-6.12.0-qtimageformats-attributions.txt",
+    "share/licenses/mikai/third-party/Qt-6.12.0-qtsvg-attributions.txt",
+    "share/licenses/mikai/third-party/Qt-6.12.0-qttranslations-attributions.txt",
+    "share/licenses/mikai/third-party/qt/ (module/dependency license texts, individual files present in stage)",
+    "share/licenses/mikai/third-party/mpv/Copyright.txt",
+    "share/licenses/mikai/third-party/mpv/GPL-2.0.txt",
+    "share/licenses/mikai/third-party/mpv/LGPL-2.1.txt",
+    "share/licenses/mikai/third-party/ffmpeg/LICENSE.txt",
+    "share/licenses/mikai/third-party/ffmpeg/COPYING.GPLv2",
+    "share/licenses/mikai/third-party/ffmpeg/COPYING.GPLv3",
+    "share/licenses/mikai/third-party/ffmpeg/COPYING.LGPLv2.1",
+    "share/licenses/mikai/third-party/ffmpeg/COPYING.LGPLv3",
+    "share/licenses/mikai/third-party/Anime4K-MIT.txt",
+    "share/licenses/mikai/third-party/Anime4K-Unlicense.txt",
+    "share/licenses/mikai/third-party/GCC-Runtime-Library-Exception-3.1.txt",
+    "share/licenses/mikai/third-party/LibreSSL-COPYING.txt",
+    "share/licenses/mikai/third-party/OpenSSL-3.6.5-LICENSE.txt",
+    "share/licenses/mikai/third-party/MinGW-w64-runtime.txt",
+    "share/licenses/mikai/third-party/winpthreads-COPYING.txt"
+  ],
+  "repositoryNoticeInputs":[
+    "packaging/licenses/NOTICE.txt",
+    "packaging/licenses/Qt-6.12.0-qtbase-attributions.txt",
+    "packaging/licenses/Qt-6.12.0-qtimageformats-attributions.txt",
+    "packaging/licenses/Qt-6.12.0-qtsvg-attributions.txt",
+    "packaging/licenses/Qt-6.12.0-qttranslations-attributions.txt",
+    "packaging/licenses/qt/",
+    "packaging/licenses/mpv/",
+    "packaging/licenses/ffmpeg/",
+    "packaging/licenses/Anime4K-MIT.txt",
+    "packaging/licenses/Anime4K-Unlicense.txt"
+  ],
+  "limitations":[
+    "Notice/license texts are observed in the actual final stage; their presence does not establish a complete component mapping, license election, or compliant source delivery.",
+    "The staged MinGW-w64, winpthreads, LibreSSL and OpenSSL notices are not evidence those Windows-associated components ship in the Linux profile; they are present in the common project license payload. Linux payload inventory did not establish bundled OpenSSL/LibreSSL.",
+    "No Ubuntu 22.04 copyright files or package/source metadata were matched to all remaining private dependency ELF files. Those components' exact copyright/license closure remains unresolved."
+  ]
+}

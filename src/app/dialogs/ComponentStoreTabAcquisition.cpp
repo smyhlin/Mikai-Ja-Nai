@@ -936,6 +936,8 @@ void ComponentStoreTab::cancelAcquisition() {
         // The in-flight hash run's delivery is discarded rather than
         // published: nothing proves a verdict from a run nobody waited for,
         // and no partial result may be mistaken for the answer.
+        if (modelCancelFlag_) modelCancelFlag_->store(true);
+        modelCancelFlag_.reset();
         ++runGeneration_;
         verifying_ = false;
         applyStatus(QStringLiteral("native.components.cancelled"),
@@ -987,7 +989,8 @@ void ComponentStoreTab::syncAcquisitionState() {
 void ComponentStoreTab::publishAcquisition() {
     const bool downloading = (provisioner_ != nullptr && provisioner_->running()) ||
                              animeJanaiRuntimeDownloading_ || rifeDownloading_ ||
-                             modelsDownloading_ || acquisitionSequenceActive_;
+                             modelsDownloading_ || verifying_ || acquisitionChecking_ ||
+                             acquisitionSequenceActive_;
     if (!downloading) {
         if (!acquisitionAnnounced_) return;
         acquisitionAnnounced_ = false;

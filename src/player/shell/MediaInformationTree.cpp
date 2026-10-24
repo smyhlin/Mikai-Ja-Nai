@@ -153,6 +153,12 @@ MediaInformationTree::MediaInformationTree(QWidget* parent) : QTreeWidget(parent
     header()->setMinimumSectionSize(8 * kFrameMargin);
     setColumnWidth(0, 24 * kFrameMargin);
     connect(header(), &QHeaderView::sectionResized, this, [this] {
+        // Interactive header dragging must obey the same bound as window
+        // resizing; otherwise the value column disappears with no scrollbar.
+        const int maximumPropertyWidth =
+            std::max(header()->minimumSectionSize(), viewport()->width() / 2);
+        if (columnWidth(0) > maximumPropertyWidth)
+            setColumnWidth(0, maximumPropertyWidth);
         scheduleDelayedItemsLayout();
     });
 }
@@ -164,6 +170,7 @@ void MediaInformationTree::setDocument(const MediaInformationDocument& document)
         if (item->childCount() > 0) expansion.insert(item->data(0, nodeIdRole).toString(), item->isExpanded());
     }
     const QString currentId = currentItem() ? currentItem()->data(0, nodeIdRole).toString() : QString();
+    const bool currentSelected = currentItem() != nullptr && currentItem()->isSelected();
     const int column = currentColumn();
     const int scroll = verticalScrollBar()->value();
     QTreeWidgetItem* anchor = itemAt(QPoint(viewport()->width() / 2, 0));
@@ -179,8 +186,10 @@ void MediaInformationTree::setDocument(const MediaInformationDocument& document)
     QHash<QString, QTreeWidgetItem*> items;
     for (const MediaInformationNode& node : document)
         appendNode(this, nullptr, node, expansion, items);
-    if (QTreeWidgetItem* current = items.value(currentId))
-        setCurrentItem(current, std::max(0, column), QItemSelectionModel::ClearAndSelect);
+    if (QTreeWidgetItem* current = items.value(currentId)) {
+        setCurrentItem(current, std::max(0, column), QItemSelectionModel::NoUpdate);
+        current->setSelected(currentSelected);
+    }
     // Resolve variable-height rows before restoring the visible stable-ID anchor.
     doItemsLayout();
     if (QTreeWidgetItem* restoredAnchor = items.value(anchorId)) {

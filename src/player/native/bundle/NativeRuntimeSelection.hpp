@@ -115,6 +115,9 @@ RuntimeSelection selectStartupRuntime(const QString& hint = {});
 
 /// Resolution validates installed bytes but neither loads nor downloads a module.
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint = {});
+/// Resolves only the manifest at this absolute, local, non-reparse bundle root.
+/// It never searches another runtime, reads or writes user preferences, or loads the module.
+RuntimeSelection resolveNamedBundle(const QString& root);
 
 /// Loads a resolved descriptor. Runs on the GUI thread and, once it succeeds,
 /// pins the module for the rest of the process.

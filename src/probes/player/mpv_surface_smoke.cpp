@@ -337,6 +337,35 @@ int runRenderLifecycle(const Options& options) {
                      },
                      Qt::DirectConnection);
 
+    // A request made before the first show must retain both its URL and pause
+    // intent until Qt creates the GL context and the core accepts the file.
+    {
+        LifecycleSurface deferred;
+        deferred.setWindowFlag(Qt::WindowStaysOnTopHint, true);
+        deferred.resize(320, 180);
+        const bool accepted = deferred.open(source);
+        deferred.setPaused(true);
+        verdict.require(accepted, QStringLiteral("a pre-show media request was accepted"));
+        deferred.show();
+        const bool deferredPaused = accepted && waitUntil(
+            [&] {
+                return deferred.isContextReady() && deferred.hasVideo() &&
+                       deferred.videoWidth() > 0 && deferred.pauseObserved() &&
+                       !deferred.isPlaying();
+            },
+            8000);
+        verdict.require(deferredPaused,
+                        QStringLiteral("pre-show open creates video and applies deferred pause"));
+        if (deferredPaused) {
+            const double parkedAt = deferred.position();
+            pumpEvents(350);
+            verdict.require(deferred.pauseObserved() && !deferred.isPlaying() &&
+                                std::abs(deferred.position() - parkedAt) <= 0.12,
+                            QStringLiteral("the deferred pre-show pause keeps the core parked"));
+        }
+    }
+
+    host.show();
     const auto renderedFrames = [surface] {
         return surface->playbackDiagnostics().renderedOutputFrames;
     };
@@ -966,7 +995,13 @@ int runRenderLifecycle(const Options& options) {
                     QStringLiteral("the surviving surface still shows a lit picture (%1%)")
                         .arg(100.0 * afterDoomedStats.litFraction(), 0, 'f', 1));
 
-    // ── reparent: a real context recreation, then the same picture ────────
+    // ── reparent while paused: a real context recreation restores intent ──
+    surface->setPaused(true);
+    const bool pauseBeforeReparent =
+        waitUntil([&] { return surface->pauseObserved() && !surface->isPlaying(); }, 3000);
+    verdict.require(pauseBeforeReparent,
+                    QStringLiteral("the core observed pause before GL recreation"));
+    const double pausePositionBeforeReparent = surface->position();
     const int initsBeforeReparent = surface->glInits;
     QWidget host2;
     host2.setWindowFlag(Qt::WindowStaysOnTopHint, true);
@@ -985,11 +1020,23 @@ int runRenderLifecycle(const Options& options) {
         waitUntil([&] { return surface->isContextReady() && surface->hasVideo(); }, 8000);
     verdict.require(reparented,
                     QStringLiteral("the reparented surface reports a ready context and video"));
-    verdict.instrumentation(surface->glInits > initsBeforeReparent,
-                            QStringLiteral("the reparent recreated the GL context (initializeGL "
+            verdict.instrumentation(surface->glInits > initsBeforeReparent,
+                                QStringLiteral("the reparent recreated the GL context (initializeGL "
                                            "%1 -> %2)")
                                 .arg(initsBeforeReparent)
                                 .arg(surface->glInits));
+        const bool pauseRestored = waitUntil(
+            [&] { return surface->pauseObserved() && !surface->isPlaying(); }, 3000);
+        verdict.require(pauseRestored,
+                        QStringLiteral("GL recreation restores the observed paused state"));
+        pumpEvents(300);
+        verdict.require(std::abs(surface->position() - pausePositionBeforeReparent) <= 0.12,
+                        QStringLiteral("the paused source remains parked across GL recreation"));
+    if (reparented && pauseBeforeReparent) {
+        surface->setPaused(false);
+        const bool resumed = waitUntil([&] { return !surface->pauseObserved(); }, 3000);
+        verdict.require(resumed, QStringLiteral("playback resumes after paused GL recreation"));
+    }
     if (reparented) {
         QImage reparentA = surface->grabFramebuffer();
         QImage reparentB = reparentA;
@@ -1036,6 +1083,29 @@ int runRenderLifecycle(const Options& options) {
     // ── close, then reopen a different source ─────────────────────────────
     surface->close();
     pumpEvents(300);
+    const double stoppedAt = surface->position();
+    const int initsBeforeStoppedReparent = surface->glInits;
+    QWidget host3;
+    host3.setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    host3.resize(640, 420);
+    surface->setParent(&host3);
+    surface->setGeometry(10, 10, 600, 340);
+    host3.show();
+    host3.raise();
+    host3.activateWindow();
+    surface->show();
+    const bool stoppedContextRecreated = waitUntil(
+        [&] {
+            return surface->isContextReady() && surface->glInits > initsBeforeStoppedReparent;
+        },
+        8000);
+    verdict.require(stoppedContextRecreated,
+                    QStringLiteral("a closed surface recreates its GL context"));
+    pumpEvents(500);
+    verdict.require(!surface->hasVideo() && !surface->isPlaying() &&
+                        std::abs(surface->position() - stoppedAt) <= 0.12,
+                    QStringLiteral("GL recreation after close stays stopped instead of reopening "
+                                   "the former source"));
     const QString reopened = QStringLiteral("av://lavfi:testsrc=size=320x180:rate=30");
     const bool reopenedAccepted = surface->open(reopened);
     verdict.require(reopenedAccepted, QStringLiteral("reopening after close was accepted"));
@@ -1271,6 +1341,14 @@ int runSingleClip(QApplication& app, const QString& requested) {
             std::fprintf(stderr, "frame-drop-count (VO drops)=unavailable (named core "
                                  "limitation, not a measured zero)\n");
         }
+        const auto hardwareDecoder =
+            surface.probeMpvProperty(QStringLiteral("hwdec-current"),
+                                     mplayer::ProbePropertyKind::Text);
+        const QString hardwareDecoderName =
+            hardwareDecoder && hardwareDecoder->kind == mplayer::ProbePropertyValue::Kind::Text
+                ? hardwareDecoder->text
+                : QStringLiteral("unavailable");
+        std::fprintf(stderr, "hwdec-current=%s\n", qPrintable(hardwareDecoderName));
         if (diagnostics.nativeFilterPresent.has_value()) {
             std::fprintf(stderr, "native filter in the live vf chain=%s (%d entries)\n",
                          *diagnostics.nativeFilterPresent ? "present" : "absent",

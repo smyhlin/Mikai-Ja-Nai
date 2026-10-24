@@ -20,6 +20,7 @@
 #include "MpvHandle.hpp"
 #include "MpvRenderContext.hpp"
 #include "VideoSurface.hpp"
+#include "native/bundle/NativeRuntimeSelection.hpp"
 #include "dialogs/settings/BenchmarkPlayback.hpp"
 
 using mplayer::AsyncReply;
@@ -148,6 +149,39 @@ void TestMpvAsync::aModuleOutsideTheOwnedRootIsRefusedByName() {
     MpvBundle bundle = descriptorIn(root.path(), QStringLiteral("libmpv-2.dll"));
     bundle.modulePath = QFileInfo(QCoreApplication::applicationFilePath()).absoluteFilePath();
     expectRefusal(bundle, QStringLiteral("outside the owned runtime root"));
+}
+
+void TestMpvAsync::linuxRuntimeSelectionMatchesTheConfiguredModule() {
+#ifdef Q_OS_LINUX
+    const mplayer::native::RuntimeSelection selection =
+        mplayer::native::resolveRuntime(mplayer::native::RuntimeChoice::Standard);
+    QVERIFY2(selection.resolvedBundle.has_value(), qPrintable(selection.reason));
+    QCOMPARE(selection.kind, mplayer::native::BundleKind::Standard);
+    const MpvBundle descriptor = selection.resolvedBundle->toMpvBundleDescriptor();
+    QCOMPARE(descriptor.modulePath, selection.modulePath);
+#if defined(MIKAI_LINUX_BUNDLE_MPV) && MIKAI_LINUX_BUNDLE_MPV
+#ifndef MIKAI_LINUX_MPV_MODULE_RELATIVE
+#define MIKAI_LINUX_MPV_MODULE_RELATIVE "mpv/libmpv.so.2"
+#endif
+    const QString expected =
+        QFileInfo(QDir(QCoreApplication::applicationDirPath())
+                      .filePath(QString::fromUtf8(MIKAI_LINUX_MPV_MODULE_RELATIVE)))
+            .canonicalFilePath();
+    QVERIFY2(!expected.isEmpty(), "the configured executable-local mpv module must exist");
+    QCOMPARE(selection.modulePath, expected);
+    QCOMPARE(selection.resolvedBundle->layout, mplayer::native::BundleLayout::OwnedDirectory);
+#elif defined(MIKAI_LINUX_SYSTEM_MPV_MODULE)
+    const QString expected =
+        QFileInfo(QString::fromUtf8(MIKAI_LINUX_SYSTEM_MPV_MODULE)).canonicalFilePath();
+    QVERIFY2(!expected.isEmpty(), "the configured system mpv module must exist");
+    QCOMPARE(selection.modulePath, expected);
+    QCOMPARE(selection.resolvedBundle->layout, mplayer::native::BundleLayout::SystemModule);
+#else
+    QSKIP("this Linux test target has no configured runtime mode");
+#endif
+#else
+    QSKIP("Linux runtime selection is not applicable on this platform");
+#endif
 }
 
 void TestMpvAsync::aDifferentModuleIsRefusedWhileOneIsPinned() {

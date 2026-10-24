@@ -21,6 +21,7 @@ class TestRuntimeSelection : public QObject {
     void aResolvedNativeHandoffCarriesItsDependencyClosureAndProtocol();
     void aStaleOrForgedBundleIsRefusedBeforeTheLoader();
     void publishingAStockRuntimeNeverTouchesTheSourceOrTheReferenceInstall();
+    void namedBundleResolutionIsExactAndHasNoFallback();
     void forkIdentityRequiresTheValidatedModuleAndActualApi();
 
     // The M07 loader handoff and the M08 failure surfaces. These stay ahead of
@@ -36,6 +37,7 @@ class TestRuntimeSelection : public QObject {
     void aPendingResolutionNamesTheWaitRatherThanAMissingRuntime();
     void aResolutionWaiterIsPublishedOnceAfterTheTerminalState();
     void aRefusedRequestJoinsTheRunningResolutionAndAnswersLate();
+    void aResolutionWaiterSeesThePublishedRuntimeRefusalReason();
     void aStaleLeaseNeverReleasesTheResolutionThatReplacedIt();
     void aModuleSystemDriverImportIsReadFromItsOwnImage();
 

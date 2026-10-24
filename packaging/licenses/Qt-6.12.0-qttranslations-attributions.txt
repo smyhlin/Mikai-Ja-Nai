@@ -1,0 +1,48 @@
+Qt 6.12.0 — qttranslations: installed SDK attribution evidence
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+This is an attribution/source-evidence SUPERSET for this SDK module, not a
+claim that every item below is shipped by Mikai. Build tools and unselected
+plugins appear because the publisher SBOM describes the SDK, not our package.
+A final per-file package inventory selects the deployed subset. NOASSERTION
+and unresolved source/build obligations are not cleared by this notice.
+For LGPL use, see qt/LGPL-3.0-only.txt and qt/GPL-3.0-only.txt.
+Other SPDX texts named below are in qt/ or upstream source; extracted custom
+license texts follow the attribution list. No commercial Qt license is selected.
+
+qttranslations
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qttranslations.git
+  License expression (publisher): NOASSERTION
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Translations
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qttranslations.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR BSD-3-Clause
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+CMake
+  Version: 4.3.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+CMake generator Ninja
+  Version: 1.10.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Compiler GNU
+  Version: 15.1.0
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Linker
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+

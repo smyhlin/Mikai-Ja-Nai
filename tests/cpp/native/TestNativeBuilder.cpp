@@ -4,8 +4,10 @@
 #include <thread>
 #include <utility>
 
+#include <QtCore/QDir>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QTemporaryDir>
 
 #include "native/prepare/NativeBuilder.hpp"
 #include "native/prepare/NativeWorkLease.hpp"
@@ -84,7 +86,7 @@ namespace {
 
 // One complete, observed probe document. Every test below is this document with
 // exactly one member changed, so a refusal names the changed member.
-QJsonObject builderProbeDocument() {
+QJsonObject builderProbeDocument(const QString& root) {
   const QJsonObject source{{QStringLiteral("width"), 1920},
                            {QStringLiteral("height"), 1080},
                            {QStringLiteral("fps"),
@@ -114,14 +116,16 @@ QJsonObject builderProbeDocument() {
                   QStringLiteral("--networkFlags=1"),
                   QStringLiteral("--builderOptimizationLevel=3"),
                   QStringLiteral("--engineCapability=standard")}}};
-  const QJsonObject tools{{QStringLiteral("inspect"), QStringLiteral("C:/tools/native_inspect.exe")},
-                          {QStringLiteral("prep"), QStringLiteral("C:/tools/ajinative.exe")},
-                          {QStringLiteral("verifier"), QStringLiteral("C:/tools/ajiverify.exe")},
-                          {QStringLiteral("ortRuntimeDir"), QStringLiteral("C:/ort")}};
+  const QDir base(root);
+  const QJsonObject tools{
+      {QStringLiteral("inspect"), base.filePath(QStringLiteral("tools/native_inspect.exe"))},
+      {QStringLiteral("prep"), base.filePath(QStringLiteral("tools/ajinative.exe"))},
+      {QStringLiteral("verifier"), base.filePath(QStringLiteral("tools/ajiverify.exe"))},
+      {QStringLiteral("ortRuntimeDir"), base.filePath(QStringLiteral("ort"))}};
   return QJsonObject{
-      {QStringLiteral("recipe"), QStringLiteral("C:/recipes/default.json")},
-      {QStringLiteral("modelRoot"), QStringLiteral("C:/models")},
-      {QStringLiteral("store"), QStringLiteral("C:/artifacts")},
+      {QStringLiteral("recipe"), base.filePath(QStringLiteral("recipes/default.json"))},
+      {QStringLiteral("modelRoot"), base.filePath(QStringLiteral("models"))},
+      {QStringLiteral("store"), base.filePath(QStringLiteral("artifacts"))},
       {QStringLiteral("workspaceBytes"), 268435456},
       {QStringLiteral("source"), source},
       {QStringLiteral("device"), device},
@@ -129,7 +133,8 @@ QJsonObject builderProbeDocument() {
       {QStringLiteral("build"), build},
       {QStringLiteral("tools"), tools},
       {QStringLiteral("references"),
-       QJsonArray{QJsonObject{{QStringLiteral("fixture"), QStringLiteral("C:/frames/frame.bin")}}}}};
+       QJsonArray{QJsonObject{{QStringLiteral("fixture"),
+                               base.filePath(QStringLiteral("frames/frame.bin"))}}}}};
 }
 
 // Replaces the declared builderOptimizationLevel entries with `levels`, so a
@@ -153,15 +158,18 @@ QJsonObject withOptimizationLevels(QJsonObject document, const QJsonArray& level
 }  // namespace
 
 void TestNativeBuilder::probeRequestParsesEveryObservedFact() {
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  const QDir base(temp.path());
   BuilderProbeRequest request;
   QString key;
   QString reason;
-  QVERIFY(parseBuilderProbeRequest(builderProbeDocument(), &request, &key, &reason));
+  QVERIFY(parseBuilderProbeRequest(builderProbeDocument(temp.path()), &request, &key, &reason));
   QVERIFY(key.isEmpty());
   QVERIFY(reason.isEmpty());
-  QCOMPARE(request.recipePath, QStringLiteral("C:/recipes/default.json"));
-  QCOMPARE(request.request.modelRoot, QStringLiteral("C:/models"));
-  QCOMPARE(request.request.store.root(), QStringLiteral("C:/artifacts"));
+  QCOMPARE(request.recipePath, base.filePath(QStringLiteral("recipes/default.json")));
+  QCOMPARE(request.request.modelRoot, base.filePath(QStringLiteral("models")));
+  QCOMPARE(request.request.store.root(), base.filePath(QStringLiteral("artifacts")));
   QCOMPARE(request.request.workspaceBytes, static_cast<quint64>(268435456));
   QVERIFY(request.source.codedSize.has_value());
   QCOMPARE(*request.source.codedSize, QSize(1920, 1080));
@@ -181,12 +189,13 @@ void TestNativeBuilder::probeRequestParsesEveryObservedFact() {
   QVERIFY(request.request.build.canonicalOptions().contains(QStringLiteral("builderFlags=65")));
   QVERIFY(request.request.build.canonicalOptions().contains(
       QStringLiteral("builderOptimizationLevel=3")));
-  QCOMPARE(request.request.tools.prepExecutable, QStringLiteral("C:/tools/ajinative.exe"));
-  QCOMPARE(request.request.tools.ortRuntimeDir, QStringLiteral("C:/ort"));
+  QCOMPARE(request.request.tools.prepExecutable, base.filePath(QStringLiteral("tools/ajinative.exe")));
+  QCOMPARE(request.request.tools.ortRuntimeDir, base.filePath(QStringLiteral("ort")));
   QCOMPARE(request.backends.available.size(), 1);
   QVERIFY(request.backends.available.contains(Backend::TensorRT));
   QCOMPARE(request.request.references.size(), 1);
-  QCOMPARE(request.request.references.first().fixturePath, QStringLiteral("C:/frames/frame.bin"));
+  QCOMPARE(request.request.references.first().fixturePath,
+           base.filePath(QStringLiteral("frames/frame.bin")));
   // The plan and the owned rows are the probe's to fill after resolution; the
   // parser never invents either.
   QVERIFY(request.request.plan.stages.isEmpty());
@@ -194,7 +203,9 @@ void TestNativeBuilder::probeRequestParsesEveryObservedFact() {
 }
 
 void TestNativeBuilder::probeRequestRefusesAnIncompleteBuildIdentity() {
-  QJsonObject document = builderProbeDocument();
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
   QJsonObject build = document.value(QStringLiteral("build")).toObject();
   build.remove(QStringLiteral("cudaVersion"));
   document.insert(QStringLiteral("build"), build);
@@ -208,7 +219,9 @@ void TestNativeBuilder::probeRequestRefusesAnIncompleteBuildIdentity() {
 }
 
 void TestNativeBuilder::probeRequestRefusesPlaceholderIdentity() {
-  QJsonObject document = builderProbeDocument();
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
   QJsonObject build = document.value(QStringLiteral("build")).toObject();
   build.insert(QStringLiteral("runtimeVersion"), QStringLiteral("unknown"));
   document.insert(QStringLiteral("build"), build);
@@ -222,7 +235,9 @@ void TestNativeBuilder::probeRequestRefusesPlaceholderIdentity() {
 }
 
 void TestNativeBuilder::probeRequestRefusesRelativePaths() {
-  QJsonObject document = builderProbeDocument();
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
   QJsonObject tools = document.value(QStringLiteral("tools")).toObject();
   tools.insert(QStringLiteral("prep"), QStringLiteral("ajinative.exe"));
   document.insert(QStringLiteral("tools"), tools);
@@ -235,7 +250,9 @@ void TestNativeBuilder::probeRequestRefusesRelativePaths() {
 }
 
 void TestNativeBuilder::probeRequestRequiresAnExplicitWorkspace() {
-  QJsonObject document = builderProbeDocument();
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
   document.remove(QStringLiteral("workspaceBytes"));
   BuilderProbeRequest request;
   QString key;
@@ -245,7 +262,9 @@ void TestNativeBuilder::probeRequestRequiresAnExplicitWorkspace() {
 }
 
 void TestNativeBuilder::probeRequestRejectsAnUnknownMember() {
-  QJsonObject document = builderProbeDocument();
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
   document.insert(QStringLiteral("deviceName"), QStringLiteral("RTX 5090"));
   BuilderProbeRequest request;
   QString key;
@@ -256,14 +275,18 @@ void TestNativeBuilder::probeRequestRejectsAnUnknownMember() {
 }
 
 void TestNativeBuilder::probeRequestRefusesTwoReferenceModes() {
-  QJsonObject document = builderProbeDocument();
-  QJsonObject both{{QStringLiteral("fixture"), QStringLiteral("C:/frames/frame.bin")},
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
+  QJsonObject document = builderProbeDocument(temp.path());
+  QJsonObject both{{QStringLiteral("fixture"),
+                    QDir(temp.path()).filePath(QStringLiteral("frames/frame.bin"))},
                    {QStringLiteral("raw"),
                     QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("input")},
                                            {QStringLiteral("dtype"), QStringLiteral("fp16")},
                                            {QStringLiteral("shape"), QStringLiteral("1x3x64x64")},
                                            {QStringLiteral("path"),
-                                            QStringLiteral("C:/frames/input.bin")}}}}};
+                                            QDir(temp.path()).filePath(
+                                                QStringLiteral("frames/input.bin"))}}}}};
   document.insert(QStringLiteral("references"), QJsonArray{both});
   BuilderProbeRequest request;
   QString key;
@@ -273,12 +296,14 @@ void TestNativeBuilder::probeRequestRefusesTwoReferenceModes() {
 }
 
 void TestNativeBuilder::probeRequestAcceptsOptimizationLevelBounds() {
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
   for (const int level : {0, 5}) {
     BuilderProbeRequest request;
     QString key;
     QString reason;
     const QJsonObject document =
-        withOptimizationLevels(builderProbeDocument(), QJsonArray{level});
+        withOptimizationLevels(builderProbeDocument(temp.path()), QJsonArray{level});
     QVERIFY2(parseBuilderProbeRequest(document, &request, &key, &reason), qPrintable(reason));
     QVERIFY(request.request.build.canonicalOptions().contains(
         QStringLiteral("builderOptimizationLevel=%1").arg(level)));
@@ -286,32 +311,38 @@ void TestNativeBuilder::probeRequestAcceptsOptimizationLevelBounds() {
 }
 
 void TestNativeBuilder::probeRequestRefusesAnInvalidOptimizationLevel() {
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
   for (const int level : {6, -1}) {
     BuilderProbeRequest request;
     QString key;
     QString reason;
     const QJsonObject document =
-        withOptimizationLevels(builderProbeDocument(), QJsonArray{level});
+        withOptimizationLevels(builderProbeDocument(temp.path()), QJsonArray{level});
     QVERIFY(!parseBuilderProbeRequest(document, &request, &key, &reason));
     QCOMPARE(key, QStringLiteral("build.options.optimizationLevel"));
   }
 }
 
 void TestNativeBuilder::probeRequestRefusesAMissingOptimizationLevel() {
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
   BuilderProbeRequest request;
   QString key;
   QString reason;
   QVERIFY(!parseBuilderProbeRequest(
-      withOptimizationLevels(builderProbeDocument(), QJsonArray{}), &request, &key, &reason));
+      withOptimizationLevels(builderProbeDocument(temp.path()), QJsonArray{}), &request, &key, &reason));
   QCOMPARE(key, QStringLiteral("build.options.optimizationLevel"));
 }
 
 void TestNativeBuilder::probeRequestRefusesARepeatedOptimizationLevel() {
+  QTemporaryDir temp;
+  QVERIFY(temp.isValid());
   BuilderProbeRequest request;
   QString key;
   QString reason;
   QVERIFY(!parseBuilderProbeRequest(
-      withOptimizationLevels(builderProbeDocument(), QJsonArray{3, 3}), &request, &key, &reason));
+      withOptimizationLevels(builderProbeDocument(temp.path()), QJsonArray{3, 3}), &request, &key, &reason));
   QCOMPARE(key, QStringLiteral("build.options.optimizationLevel"));
 }
 

@@ -16,6 +16,9 @@
 
 namespace {
 
+constexpr auto ownerName = "MikaiRegistrationOwner";
+constexpr auto ownerId = "{7D1829D9-6F44-47BA-B79B-871D57145C86}";
+
 // Default associations, UserChoice and other applications' verbs remain untouched.
 constexpr const char* videoExtensions[] = {
     ".mkv", ".mp4", ".webm", ".avi", ".mov", ".m4v",
@@ -71,11 +74,12 @@ QList<OwnedValue> ownedValues() {
     const QString command = QStringLiteral("\"%1\" --open-video \"%2\"")
                                 .arg(executable, QStringLiteral("%1"));
     QList<OwnedValue> values;
-    values.reserve(3 * static_cast<qsizetype>(std::size(videoExtensions)));
+    values.reserve(4 * static_cast<qsizetype>(std::size(videoExtensions)));
     for (const char* extension : videoExtensions) {
         const QString path = QStringLiteral(
             "Software\\Classes\\SystemFileAssociations\\%1\\shell\\Mikai.OpenVideo")
                                  .arg(QString::fromLatin1(extension));
+        values.append({path, QString::fromLatin1(ownerName), QString::fromLatin1(ownerId)});
         values.append({path, {}, QCoreApplication::translate("SystemContextMenu", "Open with Mikai")});
         values.append({path, QStringLiteral("Icon"), icon});
         values.append({path + QStringLiteral("\\command"), {}, command});
@@ -102,6 +106,58 @@ LSTATUS readValue(OwnedValue& value) {
     value.bytes.resize(bytes);
     value.existed = true;
     return ERROR_SUCCESS;
+}
+
+bool stringValue(const OwnedValue& value, QString* text) {
+    if (!value.existed || value.type != REG_SZ ||
+        value.bytes.size() % sizeof(wchar_t) != 0) return false;
+    text->resize(value.bytes.size() / sizeof(wchar_t));
+    if (!value.bytes.isEmpty()) {
+        std::memcpy(text->data(), value.bytes.constData(), value.bytes.size());
+    }
+    while (text->endsWith(QChar(u'\0'))) text->chop(1);
+    return !text->contains(QChar(u'\0'));
+}
+
+bool checkOwnership(const QList<OwnedValue>& values, bool enabling, QString* error) {
+    for (qsizetype index = 0; index < values.size(); index += 4) {
+        const OwnedValue& owner = values.at(index);
+        if (!owner.keyExisted) continue;
+        QString actual;
+        if (stringValue(owner, &actual) && actual == QString::fromLatin1(ownerId)) {
+            // Explicitly enabling can repair a moved portable registration.
+            // Disabling must never remove another installation's working verb.
+            if (enabling || !values.at(index + 3).existed) continue;
+            if (stringValue(values.at(index + 3), &actual) &&
+                actual.compare(values.at(index + 3).desired, Qt::CaseInsensitive) == 0) continue;
+        } else if (!owner.existed) {
+            RegistryKey key;
+            LSTATUS status = RegOpenKeyExW(HKEY_CURRENT_USER, wide(owner.path), 0,
+                                           KEY_QUERY_VALUE, &key.handle);
+            if (status != ERROR_SUCCESS) {
+                if (error != nullptr) *error = failureText(owner.path, status);
+                return false;
+            }
+            DWORD subkeys = 0;
+            DWORD count = 0;
+            status = RegQueryInfoKeyW(key.handle, nullptr, nullptr, nullptr, &subkeys, nullptr,
+                                      nullptr, &count, nullptr, nullptr, nullptr, nullptr);
+            if (status != ERROR_SUCCESS) {
+                if (error != nullptr) *error = failureText(owner.path, status);
+                return false;
+            }
+            if (subkeys == 0 && count == 0) continue;
+        }
+        if (error != nullptr) {
+            *error = QCoreApplication::translate(
+                "SystemContextMenu",
+                "HKCU\\%1 contains a context menu registration not owned by this installation. "
+                "It was left unchanged. If Mikai was moved, enable the integration from the "
+                "new location to register it there first.").arg(owner.path);
+        }
+        return false;
+    }
+    return true;
 }
 
 LSTATUS writeValue(const OwnedValue& value, bool present, DWORD type, const BYTE* bytes,
@@ -186,18 +242,12 @@ bool systemContextMenuEnabled() {
 #ifdef Q_OS_WIN
     QList<OwnedValue> values = ownedValues();
     for (OwnedValue& value : values) {
-        if (readValue(value) != ERROR_SUCCESS || !value.existed || value.type != REG_SZ
-            || value.bytes.size() < static_cast<qsizetype>(sizeof(wchar_t))
-            || value.bytes.size() % sizeof(wchar_t) != 0) return false;
-        // Copy into aligned QString storage rather than reading QByteArray as
-        // wchar_t. Registry strings are not required to carry a trailing NUL.
-        QString actual(value.bytes.size() / sizeof(wchar_t), Qt::Uninitialized);
-        std::memcpy(actual.data(), value.bytes.constData(), value.bytes.size());
-        while (actual.endsWith(QChar(u'\0'))) actual.chop(1);
+        QString actual;
+        if (readValue(value) != ERROR_SUCCESS || !stringValue(value, &actual)) return false;
         // A prior interface language's label is still a valid registration.
         if (value.name.isEmpty() && !value.path.endsWith(QStringLiteral("\\command"))) {
             if (actual.isEmpty()) return false;
-        } else if (actual != value.desired) {
+        } else if (actual.compare(value.desired, Qt::CaseInsensitive) != 0) {
             return false;
         }
     }
@@ -220,8 +270,19 @@ bool setSystemContextMenuEnabled(bool enabled, QString* error) {
             return false;
         }
     }
+    if (!checkOwnership(values, enabled, error)) return false;
+    const QString executable = QCoreApplication::applicationFilePath();
+    if (enabled && (executable.isEmpty() || executable.contains(QLatin1Char('"')))) {
+        if (error != nullptr) {
+            *error = QCoreApplication::translate(
+                "SystemContextMenu", "The application executable path is unavailable or invalid.");
+        }
+        return false;
+    }
     QString failure;
+    qsizetype attempted = 0;
     for (const OwnedValue& value : values) {
+        ++attempted;
         const LSTATUS status = writeValue(value, enabled, REG_SZ,
             reinterpret_cast<const BYTE*>(value.desired.utf16()),
             static_cast<DWORD>((value.desired.size() + 1) * sizeof(wchar_t)));
@@ -240,7 +301,7 @@ bool setSystemContextMenuEnabled(bool enabled, QString* error) {
         }
     }
     if (!failure.isEmpty()) {
-        const QStringList rollbackErrors = restoreValues(values);
+        const QStringList rollbackErrors = restoreValues(values.mid(0, attempted));
         if (!rollbackErrors.isEmpty()) {
             failure += QLatin1Char('\n') + QCoreApplication::translate(
                 "SystemContextMenu",

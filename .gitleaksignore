@@ -1,0 +1,3 @@
+# Synthetic X-API-Key redaction fixture; these exact history/source locations are not credentials.
+28bcbff695c9c6d253a6779758f17081216c0b6e:tests/cpp/TestNativeStatus.cpp:generic-api-key:796
+tests/cpp/native/TestNativeStatus.cpp:generic-api-key:976

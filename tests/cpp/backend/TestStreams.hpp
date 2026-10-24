@@ -35,4 +35,5 @@ class TestStreams : public QObject {
 
   void theTimeoutIsTwentySeconds();
   void theFetchRetriesTwice();
+  void cancellingAQuietProviderFetchReturnsPromptly();
 };

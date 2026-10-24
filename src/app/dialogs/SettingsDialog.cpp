@@ -531,12 +531,18 @@ void SettingsDialog::save() {
     }
     previewLanguagePreference_ = chosenLanguage;
 
-    // OS integrations are the final fallible writes. A failure keeps the
-    // requested controls and previews intact, and never accepts the dialog.
-    if (!saveSystemIntegrations()) return;
+    // OS integrations are the final fallible writes. Their own rollback does
+    // not undo independent stores already committed above.
+    if (!saveSystemIntegrations()) {
+        showSystemIntegrationError(
+            systemIntegrationError_->text() +
+            tr("\nAny other settings already saved remain saved, even if you cancel. "
+               "Unsaved language and appearance previews will still be restored."));
+        return;
+    }
 
     // Every fallible write has succeeded, so the remaining preferences can now
-    // be committed. Cancel can still roll back previews until this point.
+    // be committed. Cancel rolls back previews, not previously saved stores.
     applyAppearancePreview();
     appearanceStyleTimer_->stop();
     applyAppearanceStyles();

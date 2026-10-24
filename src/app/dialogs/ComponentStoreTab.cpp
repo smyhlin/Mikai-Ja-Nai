@@ -6,6 +6,7 @@
 #include "theme/Metrics.hpp"
 
 #include <backend/MikaiClient.hpp>
+#include <backend/Cancellation.hpp>
 
 #include <native/bundle/NativeBundle.hpp>
 #include <native/bundle/NativeRuntimeSelection.hpp>
@@ -110,9 +111,14 @@ const StoredSpatialAsset* spatialInventoryRow(const QVector<StoredSpatialAsset>&
 QVariantMap inventorySnapshot(const GpuComputeCapability& gpu, bool verifyRife,
                               bool rehashBackend, const std::atomic<bool>* cancelled) {
     const auto isCancelled = [cancelled] {
-        return cancelled != nullptr && cancelled->load();
+        return (cancelled != nullptr && cancelled->load()) ||
+               backend::WorkCancellationScope::cancellationRequested();
     };
     QVariantMap result;
+    if (isCancelled()) {
+        result.insert(QStringLiteral("cancelled"), true);
+        return result;
+    }
     const ComponentStore store = componentStore();
     const RifeArchiveStore rifeStore = rifeArchiveStore();
     const ComponentPack* runtimePack = tensorRtRuntimePack();
@@ -226,6 +232,7 @@ ComponentStoreTab::~ComponentStoreTab() {
     ++runGeneration_;
     verifying_ = false;
     if (provisioner_ != nullptr) provisioner_->cancel();
+    if (inventoryCancelFlag_) inventoryCancelFlag_->store(true);
     if (acquisitionCheckCancelFlag_) acquisitionCheckCancelFlag_->store(true);
     if (animeJanaiCancelFlag_) animeJanaiCancelFlag_->store(true);
     if (rifeCancelFlag_) rifeCancelFlag_->store(true);
@@ -1350,11 +1357,18 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
     verifying_ = true;
     ++runGeneration_;
     const quint64 generation = runGeneration_;
+    modelCancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+    const auto cancelled = modelCancelFlag_;
     status_->setText(tr("Verifying the installed components..."));
     updateControls();
 
     runner_->runTransfer(
-        [request, alive = alive_]() -> QVariant {
+        [request, alive = alive_, cancelled]() -> QVariant {
+            const backend::WorkCancellationScope verifyCancel(cancelled.get());
+            const auto stop = [&] {
+                return !alive->load() ||
+                       backend::WorkCancellationScope::cancellationRequested();
+            };
             const ComponentStore store = request.store;
             const RifeArchiveStore rifeStore = request.rifeStore;
             const Backend backend = request.backend;
@@ -1365,7 +1379,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
             QSet<QString> provedRifeGraphs;
             std::optional<int> provedBackend;
             for (const ComponentPack* pack : request.packs) {
-                if (!alive->load()) return QVariant{};
+                if (stop()) return QVariant{};
                 const StoredPack result = verifyPack(store, *pack);
                 if (result.installed) {
                     ++verified;
@@ -1377,7 +1391,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
                     failures.append(QStringLiteral("%1: %2").arg(pack->name, result.reason));
                 }
             }
-            if (!alive->load()) return QVariant{};
+            if (stop()) return QVariant{};
             const AnimeJanaiInstallation installation =
                 describeAnimeJanaiInstallation(backend, true);
             if (installation.reasonKey == QStringLiteral("animejanai.installation.recordMissing")) {
@@ -1399,7 +1413,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
             }
             int failedRifeGraphs = 0;
             for (const RifeModelPin& pin : request.rifePins) {
-                if (!alive->load()) return QVariant{};
+                if (stop()) return QVariant{};
                 const StoredRifeGraph stored = storedRifeGraph(rifeStore, pin);
                 if (!stored.installed) continue;
                 const StoredRifeGraph result = verifyRifeGraph(rifeStore, pin);
@@ -1415,7 +1429,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
             int failedSpatialModels = 0;
             const QVector<StoredSpatialAsset> storedSpatial = storedSpatialAssets();
             for (const SpatialAsset& asset : request.spatialCatalog) {
-                if (!alive->load()) return QVariant{};
+                if (stop()) return QVariant{};
                 const StoredSpatialAsset* model =
                     spatialInventoryRow(storedSpatial, asset.id);
                 if (model != nullptr && model->verified) {
@@ -1442,6 +1456,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
         },
         [this, alive = alive_, generation](const QVariant& value) {
             if (!alive->load() || runGeneration_ != generation) return;
+            modelCancelFlag_.reset();
             const QVariantMap map = value.toMap();
             const qint64 backendKey = map.value(QStringLiteral("backend")).toLongLong();
             std::optional<int> provedBackend;
@@ -1463,6 +1478,7 @@ void ComponentStoreTab::startVerify(const VerifyRequest& request) {
         [this, alive = alive_, generation](const backend::Failure& failure) {
             if (!alive->load() || runGeneration_ != generation) return;
             verifying_ = false;
+            modelCancelFlag_.reset();
             ++runGeneration_;
             const QString cause = backend::failureLine(failure);
             applyStatus(QStringLiteral("native.components.fetch"),

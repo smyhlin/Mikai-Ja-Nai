@@ -1,0 +1,1137 @@
+Qt 6.12.0 — qtbase: installed SDK attribution evidence
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+This is an attribution/source-evidence SUPERSET for this SDK module, not a
+claim that every item below is shipped by Mikai. Build tools and unselected
+plugins appear because the publisher SBOM describes the SDK, not our package.
+A final per-file package inventory selects the deployed subset. NOASSERTION
+and unresolved source/build obligations are not cleared by this notice.
+For LGPL use, see qt/LGPL-3.0-only.txt and qt/GPL-3.0-only.txt.
+Other SPDX texts named below are in qt/ or upstream source; extracted custom
+license texts follow the attribution list. No commercial Qt license is selected.
+
+qtbase
+  Version: 025bdad1+HEAD
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): NOASSERTION
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+syncqt
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Bootstrap_Attribution_pcre2
+  Version: 10.48
+  Source: https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.bz2
+  License expression (publisher): LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception
+Copyright (c) 1997-2007 University of Cambridge
+Copyright (c) 2007-2024 Philip Hazel
+Copyright (c) 2010-2024 Zoltan Herczeg
+
+Bootstrap_Attribution_pcre2-sljit
+  Version: 10.48
+  Source: https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.bz2
+  License expression (publisher): BSD-2-Clause
+Copyright Zoltan Herczeg
+
+Bootstrap
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+moc
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
+Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.org>
+Copyright (C) 2016 Intel Corporation.
+Copyright (C) 2018 Intel Corporation.
+Copyright (C) 2018 The Qt Company Ltd.
+Copyright (C) 2019 Olivier Goffart <ogoffart@woboq.com>
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+rcc
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+tracepointgen
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+tracegen
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+cmake_automoc_parser
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+EntryPointPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR BSD-3-Clause
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+BundledPcre2_Attribution_pcre2-sljit
+  Version: 10.48
+  Source: https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.bz2
+  License expression (publisher): BSD-2-Clause
+Copyright Zoltan Herczeg
+
+BundledPcre2
+  Version: 10.48
+  Source: https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.bz2
+  License expression (publisher): LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception
+Copyright (c) 1997-2007 University of Cambridge
+Copyright (c) 2007-2024 Philip Hazel
+Copyright (c) 2010-2024 Zoltan Herczeg
+
+BundledZLIB
+  Version: 1.3.2
+  Source: https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  License expression (publisher): Zlib
+(C) 1995-2026 Jean-loup Gailly and Mark Adler
+
+ZlibPrivate
+  Version: 1.3.2
+  Source: https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  License expression (publisher): Zlib
+(C) 1995-2026 Jean-loup Gailly and Mark Adler
+
+Core_Attribution_unicode-character-database
+  Version: 36
+  Source: https://www.unicode.org/ucd/
+  License expression (publisher): Unicode-3.0
+Copyright (C) 1991-2025 Unicode, Inc.
+
+Core_Attribution_unicode-cldr
+  Version: v48.2
+  Source: https://cldr.unicode.org/
+  License expression (publisher): Unicode-3.0
+Copyright (C) 2004-2025 Unicode, Inc.
+
+Core_Attribution_tlexpected
+  Version: 41d3e1f48d682992a2230b2a715bca38b848b269
+  Source: https://github.com/TartanLlama/expected/blob/41d3e1f48d682992a2230b2a715bca38b848b269/include/tl/expected.hpp
+  License expression (publisher): CC0-1.0
+To the extent possible under law, Sy Brand has waived all copyright and related or neighboring rights to the expected library. This work is published from: United Kingdom.
+
+Core_Attribution_siphash
+  Version: unknown
+  Source: https://raw.githubusercontent.com/veorq/SipHash/adcbf09b1684a718f594faa650ffc56bacdb0777/siphash24.c
+  License expression (publisher): CC0-1.0
+Copyright (C) 2012-2014 Jean-Philippe Aumasson
+Copyright (C) 2012-2014 Daniel J. Bernstein <djb@cr.yp.to>
+Copyright (C) 2016 Intel Corporation
+
+Core_Attribution_blake2
+  Version: ed1974ea83433eba7b2d95c5dcd9ac33cb847913
+  Source: https://github.com/BLAKE2/BLAKE2/tree/ed1974ea83433eba7b2d95c5dcd9ac33cb847913
+  License expression (publisher): CC0-1.0 OR Apache-2.0
+Copyright 2012, Samuel Neves <sneves@dei.uc.pt>
+
+Core_Attribution_md4
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): CC0-1.0
+Written by Alexander Peslyak - better known as Solar Designer <solar@openwall.com> - in 2001, and placed in the public domain. There's absolutely no warranty.
+
+Core_Attribution_md5
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): CC0-1.0
+Written by Colin Plumb in 1993, no copyright is claimed. Ian Jackson <ian@chiark.greenend.org.uk>.
+
+Core_Attribution_sha1
+  Version: unknown
+  Source: http://www.dominik-reichl.de/projects/csha1/
+  License expression (publisher): LicenseRef-SHA1-Public-Domain
+Copyright (C) Dominik Reichl <dominik.reichl@t-online.de>
+Copyright (C) 2016 The Qt Company Ltd
+
+Core_Attribution_sha3_endian
+  Version: 1.0.0
+  Source: NOASSERTION
+  License expression (publisher): BSD-2-Clause
+Copyright (c) 1998-2013, Brian Gladman, Worcester, UK. All rights reserved.
+
+Core_Attribution_sha3_keccak
+  Version: 3.2
+  Source: NOASSERTION
+  License expression (publisher): CC0-1.0
+Guido Bertoni, Joan Daemen, Michaël Peeters and Gilles Van Assche.
+To the extent possible under law, the implementers have waived all copyright
+and related or neighboring rights to the source code in this file.
+
+Core_Attribution_rfc6234
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): BSD-3-Clause
+Copyright (c) 2011 IETF Trust and the persons identified as authors of the code.
+
+Core_Attribution_tinycbor
+  Version: 7.0
+  Source: https://github.com/intel/tinycbor/archive/v7.0/tinycbor-7.0.tar.gz
+  License expression (publisher): MIT
+Copyright (C) 2015-2025 Intel Corporation
+
+Core_Attribution_doubleconversion
+  Version: 3.4.0
+  Source: https://github.com/google/double-conversion/releases/tag/v3.4.0
+  License expression (publisher): BSD-3-Clause
+Copyright 2006-2012, the V8 project authors
+
+Core_Attribution_easing
+  Version: unknown
+  Source: http://robertpenner.com/easing/
+  License expression (publisher): BSD-3-Clause
+Copyright (c) 2001 Robert Penner
+
+Core_Attribution_tika-mimetypes
+  Version: c29724782854bb5a319f4a1940d0828a58ace3f9
+  Source: https://github.com/apache/tika/blob/c29724782854bb5a319f4a1940d0828a58ace3f9/tika-core/src/main/resources/org/apache/tika/mime/tika-mimetypes.xml
+  License expression (publisher): Apache-2.0
+Copyright 2026 The Apache Software Foundation
+
+Core
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+BundledLibpng
+  Version: 1.6.58
+  Source: https://download.sourceforge.net/libpng/libpng-1.6.58.tar.xz
+  License expression (publisher): Libpng AND libpng-2.0
+Copyright (c) 1995-2026 The PNG Reference Library Authors
+Copyright (c) 2000-2026 Cosmin Truta
+Copyright (c) 1998-2018 Glenn Randers-Pehrson
+Copyright (c) 1996-1997 Andreas Dilger
+Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
+Copyright (c) 2000-2017 Simon-Pierre Cadieux
+Copyright (c) 2000-2017 Eric S. Raymond
+Copyright (c) 2000-2017 Mans Rullgard
+Copyright (c) 2000-2017 Gilles Vollant
+Copyright (c) 2000-2017 James Yu
+Copyright (c) 2000-2017 Mandar Sahastrabuddhe
+Copyright (c) 1998-2000 Tom Lane
+Copyright (c) 1998-2000 Willem van Schaik
+Copyright (c) 1996-1997 John Bowler
+Copyright (c) 1996-1997 Kevin Bracey
+Copyright (c) 1996-1997 Sam Bushell
+Copyright (c) 1996-1997 Magnus Holmgren
+Copyright (c) 1996-1997 Greg Roelofs
+Copyright (c) 1996-1997 Tom Tanner
+Copyright (c) 1995-1996 Dave Martindale
+Copyright (c) 1995-1996 Paul Schmidt
+Copyright (c) 1995-1996 Tim Wegner
+
+PngPrivate
+  Version: 1.6.58
+  Source: https://download.sourceforge.net/libpng/libpng-1.6.58.tar.xz
+  License expression (publisher): Libpng AND libpng-2.0
+Copyright (c) 1995-2026 The PNG Reference Library Authors
+Copyright (c) 2000-2026 Cosmin Truta
+Copyright (c) 1998-2018 Glenn Randers-Pehrson
+Copyright (c) 1996-1997 Andreas Dilger
+Copyright (c) 1995-1996 Guy Eric Schalnat, Group 42, Inc.
+Copyright (c) 2000-2017 Simon-Pierre Cadieux
+Copyright (c) 2000-2017 Eric S. Raymond
+Copyright (c) 2000-2017 Mans Rullgard
+Copyright (c) 2000-2017 Gilles Vollant
+Copyright (c) 2000-2017 James Yu
+Copyright (c) 2000-2017 Mandar Sahastrabuddhe
+Copyright (c) 1998-2000 Tom Lane
+Copyright (c) 1998-2000 Willem van Schaik
+Copyright (c) 1996-1997 John Bowler
+Copyright (c) 1996-1997 Kevin Bracey
+Copyright (c) 1996-1997 Sam Bushell
+Copyright (c) 1996-1997 Magnus Holmgren
+Copyright (c) 1996-1997 Greg Roelofs
+Copyright (c) 1996-1997 Tom Tanner
+Copyright (c) 1995-1996 Dave Martindale
+Copyright (c) 1995-1996 Paul Schmidt
+Copyright (c) 1995-1996 Tim Wegner
+
+BundledLibjpeg16bits
+  Version: 3.2.0
+  Source: https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz
+  License expression (publisher): IJG AND BSD-3-Clause
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 1991-1998 Thomas G. Lane
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1999 Ken Murchison
+Copyright (C) 2015-2016, 2018, 2022 Matthieu Darbois
+Copyright (C) 2018 Matthias Räncker
+Copyright (C) 2019-2020 Arm Limited
+Copyright (C) 2022 Felix Hanau
+Copyright (C) 1997-1998 Thomas G. Lane, Todd Newman
+Copyright (C) 2021 Alex Richardson
+Copyright (C) 2015, 2020 Google, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2014 Olle Liljenzin
+Copyright (C) 1991-2020 Thomas G. Lane, Guido Vollbeding
+
+
+BundledLibjpeg12bits
+  Version: 3.2.0
+  Source: https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz
+  License expression (publisher): IJG AND BSD-3-Clause
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 1991-1998 Thomas G. Lane
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1999 Ken Murchison
+Copyright (C) 2015-2016, 2018, 2022 Matthieu Darbois
+Copyright (C) 2018 Matthias Räncker
+Copyright (C) 2019-2020 Arm Limited
+Copyright (C) 2022 Felix Hanau
+Copyright (C) 1997-1998 Thomas G. Lane, Todd Newman
+Copyright (C) 2021 Alex Richardson
+Copyright (C) 2015, 2020 Google, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2014 Olle Liljenzin
+Copyright (C) 1991-2020 Thomas G. Lane, Guido Vollbeding
+
+
+BundledLibjpeg
+  Version: 3.2.0
+  Source: https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz
+  License expression (publisher): IJG AND BSD-3-Clause
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 1991-1998 Thomas G. Lane
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1999 Ken Murchison
+Copyright (C) 2015-2016, 2018, 2022 Matthieu Darbois
+Copyright (C) 2018 Matthias Räncker
+Copyright (C) 2019-2020 Arm Limited
+Copyright (C) 2022 Felix Hanau
+Copyright (C) 1997-1998 Thomas G. Lane, Todd Newman
+Copyright (C) 2021 Alex Richardson
+Copyright (C) 2015, 2020 Google, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2014 Olle Liljenzin
+Copyright (C) 1991-2020 Thomas G. Lane, Guido Vollbeding
+
+
+JpegPrivate
+  Version: 3.2.0
+  Source: https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz
+  License expression (publisher): IJG AND BSD-3-Clause
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 1991-1998 Thomas G. Lane
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1999 Ken Murchison
+Copyright (C) 2015-2016, 2018, 2022 Matthieu Darbois
+Copyright (C) 2018 Matthias Räncker
+Copyright (C) 2019-2020 Arm Limited
+Copyright (C) 2022 Felix Hanau
+Copyright (C) 1997-1998 Thomas G. Lane, Todd Newman
+Copyright (C) 2021 Alex Richardson
+Copyright (C) 2015, 2020 Google, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2014 Olle Liljenzin
+Copyright (C) 1991-2020 Thomas G. Lane, Guido Vollbeding
+
+
+BundledFreetype_Attribution_freetype-zlib
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): Zlib
+Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
+
+BundledFreetype_Attribution_freetype-bdf
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): MIT
+Copyright (c) 2000 Computing Research Labs, New Mexico State University
+Copyright (c) 2001-2014 Francesco Zappa Nardelli
+
+BundledFreetype_Attribution_freetype-pcf
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): MIT AND MIT-open-group
+Copyright (c) 2001, 2012 David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2000-2014 Francesco Zappa Nardelli
+Copyright (c) 1990, 1994, 1998 The Open Group
+
+BundledFreetype
+  Version: 2.14.3
+  Source: https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
+  License expression (publisher): FTL OR GPL-2.0-only
+Copyright (c) 2007-2014 Adobe Systems Incorporated
+Copyright (c) 2004-2026 Albert Chin-A-Young
+Copyright (c) 2018-2026 Armin Hasitzka, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2000 Computing Research Labs, New Mexico State University
+Copyright (c) 1996-2026 David Turner, Robert Wilhelm, Dominik Röttsches, and Werner Lemberg
+Copyright (c) 2004-2026 David Turner, Robert Wilhelm, Werner Lemberg and George Williams
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, and Moazin Khatti
+Copyright (c) 2008-2026 David Turner, Robert Wilhelm, Werner Lemberg, and suzuki toshiya
+Copyright (c) 2003-2026 David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2005-2026 David Turner
+Copyright (c) 2007-2026 Derek Clegg and Michael Toftdal
+Copyright (c) 2007 Dmitry Timoshkov for Codeweavers
+Copyright (c) 2001-2015 Francesco Zappa Nardelli
+Copyright (c) 2005, 2007, 2008, 2013 George Williams
+Copyright (c) 2013-2026 Google, Inc. Google Author(s) Behdad Esfahbod and Stuart Gill
+Copyright (c) 2013-2022 Google, Inc.
+Copyright (c) 2003 Huw D M Davies for Codeweavers
+Copyright (c) 2010-2026 Joel Klinghed
+Copyright (c) 1996-2026 Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2003-2026 Masatake YAMATO and Redhat K.K.
+Copyright (c) 2004-2026 Masatake YAMATO, Redhat K.K, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2019-2026 Nikhil Ramakrishnan, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2009-2026 Oran Agra and Mickey Gabel
+Copyright (c) 2007-2026 Rahul Bhalerao <rahul.bhalerao@redhat.com>
+Copyright (c) 2002-2026 Roberto Alameda
+Copyright (c) 2015-2026 Werner Lemberg
+Copyright (c) 2004-2026 suzuki toshiya, Masatake YAMATO, Red Hat K.K., David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2019 nyorain
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, George Williams, and Dominik Röttsches
+Copyright (C) 2009, 2023  Red Hat, Inc.
+
+FreetypePrivate_Attribution_freetype-zlib
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): Zlib
+Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
+
+FreetypePrivate_Attribution_freetype-bdf
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): MIT
+Copyright (c) 2000 Computing Research Labs, New Mexico State University
+Copyright (c) 2001-2014 Francesco Zappa Nardelli
+
+FreetypePrivate_Attribution_freetype-pcf
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): MIT AND MIT-open-group
+Copyright (c) 2001, 2012 David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2000-2014 Francesco Zappa Nardelli
+Copyright (c) 1990, 1994, 1998 The Open Group
+
+FreetypePrivate
+  Version: 2.14.3
+  Source: https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.gz
+  License expression (publisher): FTL OR GPL-2.0-only
+Copyright (c) 2007-2014 Adobe Systems Incorporated
+Copyright (c) 2004-2026 Albert Chin-A-Young
+Copyright (c) 2018-2026 Armin Hasitzka, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2000 Computing Research Labs, New Mexico State University
+Copyright (c) 1996-2026 David Turner, Robert Wilhelm, Dominik Röttsches, and Werner Lemberg
+Copyright (c) 2004-2026 David Turner, Robert Wilhelm, Werner Lemberg and George Williams
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, and Moazin Khatti
+Copyright (c) 2008-2026 David Turner, Robert Wilhelm, Werner Lemberg, and suzuki toshiya
+Copyright (c) 2003-2026 David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2005-2026 David Turner
+Copyright (c) 2007-2026 Derek Clegg and Michael Toftdal
+Copyright (c) 2007 Dmitry Timoshkov for Codeweavers
+Copyright (c) 2001-2015 Francesco Zappa Nardelli
+Copyright (c) 2005, 2007, 2008, 2013 George Williams
+Copyright (c) 2013-2026 Google, Inc. Google Author(s) Behdad Esfahbod and Stuart Gill
+Copyright (c) 2013-2022 Google, Inc.
+Copyright (c) 2003 Huw D M Davies for Codeweavers
+Copyright (c) 2010-2026 Joel Klinghed
+Copyright (c) 1996-2026 Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2003-2026 Masatake YAMATO and Redhat K.K.
+Copyright (c) 2004-2026 Masatake YAMATO, Redhat K.K, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2019-2026 Nikhil Ramakrishnan, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2009-2026 Oran Agra and Mickey Gabel
+Copyright (c) 2007-2026 Rahul Bhalerao <rahul.bhalerao@redhat.com>
+Copyright (c) 2002-2026 Roberto Alameda
+Copyright (c) 2015-2026 Werner Lemberg
+Copyright (c) 2004-2026 suzuki toshiya, Masatake YAMATO, Red Hat K.K., David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2019 nyorain
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, George Williams, and Dominik Röttsches
+Copyright (C) 2009, 2023  Red Hat, Inc.
+
+BundledHarfbuzz
+  Version: 14.5.0
+  Source: https://github.com/harfbuzz/harfbuzz/releases/tag/14.5.0
+  License expression (publisher): MIT
+Copyright © 2010-2022  Google, Inc.
+Copyright © 2015-2020  Ebrahim Byagowi
+Copyright © 2019,2020  Facebook, Inc.
+Copyright © 2012,2015  Mozilla Foundation
+Copyright © 2011  Codethink Limited
+Copyright © 2008,2010  Nokia Corporation and/or its subsidiary(-ies)
+Copyright © 2009  Keith Stribley
+Copyright © 2011  Martin Hosken and SIL International
+Copyright © 2007  Chris Wilson
+Copyright © 2005,2006,2020,2021,2022,2023  Behdad Esfahbod
+Copyright © 2004,2007,2008,2009,2010,2013,2021,2022,2023  Red Hat, Inc.
+Copyright © 1998-2005  David Turner and Werner Lemberg
+Copyright © 2016  Igalia S.L.
+Copyright © 2022  Matthias Clasen
+Copyright © 2018,2021  Khaled Hosny
+Copyright © 2018,2019,2020  Adobe, Inc
+Copyright © 2013-2015  Alexei Podtelezhnikov
+
+HarfbuzzPrivate
+  Version: 14.5.0
+  Source: https://github.com/harfbuzz/harfbuzz/releases/tag/14.5.0
+  License expression (publisher): MIT
+Copyright © 2010-2022  Google, Inc.
+Copyright © 2015-2020  Ebrahim Byagowi
+Copyright © 2019,2020  Facebook, Inc.
+Copyright © 2012,2015  Mozilla Foundation
+Copyright © 2011  Codethink Limited
+Copyright © 2008,2010  Nokia Corporation and/or its subsidiary(-ies)
+Copyright © 2009  Keith Stribley
+Copyright © 2011  Martin Hosken and SIL International
+Copyright © 2007  Chris Wilson
+Copyright © 2005,2006,2020,2021,2022,2023  Behdad Esfahbod
+Copyright © 2004,2007,2008,2009,2010,2013,2021,2022,2023  Red Hat, Inc.
+Copyright © 1998-2005  David Turner and Werner Lemberg
+Copyright © 2016  Igalia S.L.
+Copyright © 2022  Matthias Clasen
+Copyright © 2018,2021  Khaled Hosny
+Copyright © 2018,2019,2020  Adobe, Inc
+Copyright © 2013-2015  Alexei Podtelezhnikov
+
+Concurrent
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Sql
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Network_Attribution_zlib
+  Version: 1.3.2
+  Source: https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  License expression (publisher): Zlib
+(C) 1995-2026 Jean-loup Gailly and Mark Adler
+
+Network_Attribution_psl-data
+  Version: 2026-05-14_08-35-31_UTC
+  Source: https://publicsuffix.org/list/public_suffix_list.dat
+  License expression (publisher): MPL-2.0
+The list was originally provided by Jo Hermans <jo.hermans@gmail.com>.
+It is now maintained on github (https://github.com/publicsuffix/list).
+
+Network_Attribution_libpsl
+  Version: 664f3dc85259ec65e30248a61fa1c45b7b0e4c3f
+  Source: https://github.com/rockdaboot/libpsl
+  License expression (publisher): BSD-3-Clause
+Copyright 2014-2016 The Chromium Authors. All rights reserved.
+
+Network
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Xml
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+DBus_Attribution_libdbus-1-headers
+  Version: 1.13.12
+  Source: https://www.freedesktop.org/wiki/Software/dbus/
+  License expression (publisher): AFL-2.1 OR GPL-2.0-or-later
+Copyright (C) 2002, 2003 CodeFactory AB
+Copyright (C) 2004, 2005 Red Hat, Inc.
+
+DBus
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+uic
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qdbuscpp2xml
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qdbusxml2cpp
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qlalr
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qvkgen
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qtpaths
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+androiddeployqt
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+androidtestrunner
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+wasmdeployqt
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+windeployqt
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+harmonydeployqt
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+harmonyostestrunner
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Gui_Attribution_rhi-miniengine-d3d12-mipmap
+  Version: 0aa79bad78992da0b6a8279ddb9002c1753cb849
+  Source: https://github.com/microsoft/DirectX-Graphics-Samples
+  License expression (publisher): MIT
+Copyright (c) 2015 Microsoft
+
+Gui_Attribution_opengl-headers
+  Version: Revision 27684
+  Source: https://www.khronos.org/
+  License expression (publisher): MIT
+Copyright (c) 2013-2014 The Khronos Group Inc.
+
+Gui_Attribution_opengl-es2-headers
+  Version: Revision 27673
+  Source: https://www.khronos.org/
+  License expression (publisher): MIT
+Copyright (c) 2013-2014 The Khronos Group Inc.
+
+Gui_Attribution_grayraster
+  Version: unknown
+  Source: http://www.freetype.org
+  License expression (publisher): FTL OR GPL-2.0-only
+Copyright 2000-2016 by David Turner, Robert Wilhelm, and Werner Lemberg.
+
+Gui_Attribution_smooth-scaling-algorithm
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): BSD-2-Clause AND Imlib2
+Copyright (C) 2004, 2005 Daniel M. Duley.
+(C) Carsten Haitzler and various contributors.
+(C) Willem Monsuwe <willem@stack.nl>
+
+Gui_Attribution_xserverhelper
+  Version: unknown
+  Source: https://www.x.org/
+  License expression (publisher): X11 AND HPND
+Copyright (c) 1987, 1988 X Consortium
+Copyright 1987, 1988 by Digital Equipment Corporation, Maynard, Massachusetts.
+
+Gui_Attribution_aglfn
+  Version: 1.7
+  Source: https://github.com/adobe-type-tools/agl-aglfn
+  License expression (publisher): BSD-3-Clause
+Copyright 2002, 2003, 2005, 2006, 2008, 2010, 2015 Adobe Systems
+
+Gui_Attribution_xsvg
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): HPND-sell-variant
+Copyright 2002 USC/Information Sciences Institute
+
+Gui_Attribution_vulkanmemoryallocator
+  Version: 3.3.0
+  Source: https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+  License expression (publisher): MIT
+Copyright (c) 2017-2025 Advanced Micro Devices, Inc. All rights reserved.
+
+Gui_Attribution_emoji-segmenter
+  Version: 0.4.0
+  Source: https://github.com/google/emoji-segmenter/releases/tag/0.4.0
+  License expression (publisher): Apache-2.0
+Copyright 2019 Google LLC
+
+Gui_Attribution_webgradients
+  Version: unknown
+  Source: https://webgradients.com/
+  License expression (publisher): MIT
+Copyright (c) 2017 itmeo
+
+Gui_Attribution_icc-srgb-color-profile
+  Version: unknown
+  Source: http://www.color.org/
+  License expression (publisher): LicenseRef-ICC-License
+Copyright International Color Consortium, 2015
+
+Gui_Attribution_d3d12memoryallocator
+  Version: v3.1.0
+  Source: https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator
+  License expression (publisher): MIT
+Copyright (c) 2019-2026 Advanced Micro Devices, Inc. All rights reserved.
+
+Gui_Attribution_md4c
+  Version: 0.5.3
+  Source: https://github.com/mity/md4c/releases/tag/release-0.5.3
+  License expression (publisher): MIT
+Copyright © 2016-2024 Martin Mitáš
+
+Gui_Attribution_zlib
+  Version: 1.3.2
+  Source: https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  License expression (publisher): Zlib
+(C) 1995-2026 Jean-loup Gailly and Mark Adler
+
+Gui_Attribution_vulkan-xml-spec
+  Version: 1.4.308
+  Source: https://www.khronos.org/
+  License expression (publisher): Apache-2.0 OR MIT
+Copyright (c) 2015-2025 The Khronos Group Inc.
+
+Gui
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+OpenGL
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Widgets
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+OpenGLWidgets
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+DeviceDiscoverySupportPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+FbSupportPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+TestInternalsPrivate_Attribution_cmake-runcmake-test-modules
+  Version: 3.31.5
+  Source: https://cmake.org/
+  License expression (publisher): BSD-3-Clause
+Copyright © 2000-2024 Kitware, Inc. and Contributors
+
+TestInternalsPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Test_Attribution_catch2
+  Version: 2.13.10
+  Source: https://github.com/catchorg/Catch2
+  License expression (publisher): BSL-1.0
+Copyright (c) 2022 Two Blue Cubes Ltd. All rights reserved.
+
+Test_Attribution_cycle
+  Version: 3.3.11
+  Source: http://fftw.org/
+  License expression (publisher): MIT
+Copyright (c) 2003, 2007-14 Matteo Frigo
+Copyright (c) 2003, 2007-14 Massachusetts Institute of Technology
+
+Test_Attribution_linuxperf
+  Version: 7.0
+  Source: https://www.kernel.org
+  License expression (publisher): GPL-2.0-only WITH Linux-syscall-note
+Copyright (C) 2008-2009, Linutronix GmbH, Thomas Gleixner <tglx@kernel.org>
+Copyright (C) 2008-2011, Red Hat, Inc., Ingo Molnar
+Copyright (C) 2008-2011, Red Hat, Inc., Peter Zijlstra
+
+Test_Attribution_valgrind
+  Version: 3.25.1
+  Source: http://valgrind.org/
+  License expression (publisher): BSD-4-Clause
+Copyright (C) 2000-2017 Julian Seward
+Copyright (C) 2003-2017 Josef Weidendorfer.
+
+Test
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PrintSupport
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QPSQLDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QODBCDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QOCIDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QSQLiteDriverPlugin_Attribution_sqlite
+  Version: 3.53.4
+  Source: https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip
+  License expression (publisher): blessing
+The authors disclaim copyright to the source code. However, a license can be obtained if needed.
+
+QSQLiteDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QIBaseDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QMimerSQLDriverPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QMinimalIntegrationPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QOffscreenIntegrationPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QWindowsIntegrationPlugin_Attribution_wintab
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): LicenseRef-Lcs-Telegraphics
+Copyright 1991-1998 by LCS/Telegraphics.
+
+QWindowsIntegrationPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QWindowsDirect2DIntegrationPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QICOPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QJpegPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QGifPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTuioTouchPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QModernWindowsStylePlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QNLMNIPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTlsBackendOpenSSLPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QSchannelBackendPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTlsBackendCertOnlyPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QtLibraryInfo
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+qmake
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+CMake
+  Version: 4.3.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+CMake generator Ninja
+  Version: 1.10.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Compiler GNU
+  Version: 15.1.0
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Linker
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+GlobalConfig
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+GlobalConfigPrivate
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+Platform_Attribution_extra-cmake-modules
+  Version: 5.84.0
+  Source: https://api.kde.org/ecm/
+  License expression (publisher): BSD-3-Clause
+Copyright © 2011-2018 The KDE community
+
+Platform_Attribution_kwin
+  Version: 5.13.4
+  Source: https://www.kde.org/
+  License expression (publisher): BSD-3-Clause
+Copyright 2014 Alex Merry <alex.merry@kde.org>
+Copyright 2014 Martin Gräßlin <mgraesslin@kde.org>
+Copyright (c) 2006,2007 Laurent Montel, <montel@kde.org>
+
+Platform
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformCommonInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformModuleInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformPluginInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformAppInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformToolInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+PlatformExampleInternal
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtbase.git@025bdad181de241e81bf853c8a2d7bf3d19261a9
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+WrapRt
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+WrapAtomic
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+PostgreSQL
+  Version: 9.6.16
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+ODBC
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Oracle
+  Version: unknown
+  Source: https://www.oracle.com
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Interbase
+  Version: unknown
+  Source: https://www.embarcadero.com/products/interbase
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Mimer
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+========================================================================
+LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+    3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+EXEMPTION FOR BINARY LIBRARY-LIKE PACKAGES
+------------------------------------------
+
+The second condition in the BSD licence (covering binary redistributions) does not apply all the way down a chain of software. If binary package A includes PCRE2, it must respect the condition, but if package B is software that includes package A, the condition is not imposed on package B unless it uses PCRE2 independently.
+
+
+========================================================================
+LicenseRef-ICC-License
+For the file sRGB2014.icc:
+
+Copyright International Color Consortium, 2015
+
+This profile is made available by the International Color Consortium, and may be copied,
+distributed, embedded, made, used, and sold without restriction. Altered versions of this
+profile shall have the original identification and copyright information removed and
+shall not be misrepresented as the original profile.
+
+(original source location: http://www.color.org/srgbprofiles.xalter)
+
+
+========================================================================
+LicenseRef-Lcs-Telegraphics
+The text and information contained in this file may be freely used,
+copied, or distributed without compensation or licensing restrictions.
+
+
+========================================================================
+LicenseRef-SHA1-Public-Domain
+100% free public domain implementation of the SHA-1 algorithm
+by Dominik Reichl <dominik.reichl@t-online.de>
+Web: http://www.dominik-reichl.de/
+
+

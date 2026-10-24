@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Mikai
+GenericName=Video Player
+Comment=Watch video with optional Anime4K processing
+Exec=mikai --open-video %f
+TryExec=mikai
+Icon=mikai
+Terminal=false
+Categories=AudioVideo;Video;Player;
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/ogg;
+StartupNotify=true
+StartupWMClass=mikai
+Keywords=video;player;anime;Anime4K;

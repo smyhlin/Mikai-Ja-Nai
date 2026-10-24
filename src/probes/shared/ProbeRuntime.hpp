@@ -65,38 +65,12 @@ inline bool selectNamedBundle(const QString& requestedRoot) {
     if (!info.isDir()) {
         return refuse(requestedRoot, QStringLiteral("no such directory"));
     }
-    const QString root = info.canonicalFilePath();
-    if (root.isEmpty()) {
-        return refuse(requestedRoot, QStringLiteral("the directory could not be resolved"));
+    const native::RuntimeSelection resolved = native::resolveNamedBundle(requestedRoot);
+    if (!resolved.resolvedBundle.has_value()) {
+        return refuse(requestedRoot, resolved.reason.isEmpty()
+                                        ? QStringLiteral("the named bundle could not be resolved")
+                                        : resolved.reason);
     }
-
-    QString reason;
-    const std::optional<native::Bundle> bundle = native::readBundle(root, &reason);
-    if (!bundle.has_value()) {
-        return refuse(requestedRoot,
-                      reason.isEmpty() ? QStringLiteral("no readable bundle.json") : reason);
-    }
-    if (!native::validateBundle(*bundle, &reason)) {
-        return refuse(requestedRoot, reason.isEmpty()
-                                        ? QStringLiteral("the bundle does not validate against its files")
-                                        : reason);
-    }
-
-    // The selection is built from the descriptor that was just checked, and it
-    // carries that descriptor whole, so `commitRuntime` can prove the display
-    // fields still match it and hand the loader exactly these bytes. The
-    // requested kind is the kind the manifest declared: an owned fork may be a
-    // Standard bundle, and claiming otherwise would be the label-only inference
-    // this codebase refuses everywhere else.
-    native::RuntimeSelection resolved;
-    resolved.requested = bundle->kind == native::BundleKind::Native ? native::RuntimeChoice::Native
-                                                                    : native::RuntimeChoice::Standard;
-    resolved.kind = bundle->kind;
-    resolved.root = bundle->root;
-    resolved.modulePath = bundle->modulePath;
-    resolved.descriptorId = bundle->descriptorId;
-    resolved.version = bundle->version;
-    resolved.resolvedBundle = *bundle;
 
     const native::RuntimeSelection loaded = native::commitRuntime(resolved);
     if (!loaded.loaded) {

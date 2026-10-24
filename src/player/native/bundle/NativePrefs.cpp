@@ -339,6 +339,8 @@ NativeAvailability nativeAvailabilityFor(const RuntimeSelection& runtime,
     // never a descriptor label.
     if (!runtime.loaded || runtime.kind != BundleKind::Native) {
         available.engineReasonKey = QStringLiteral("native.runtimeUnavailable");
+        // Keep the runtime selection's concrete cause intact for callers that need
+        // to diagnose why the requested module was refused.
         available.engineReason =
             runtime.reason.isEmpty()
                 ? translated(QT_TRANSLATE_NOOP(
@@ -442,14 +444,20 @@ NativeSelectionView evaluateNativeSelection(const NativePreferences& preferences
     }
 
     if (!available.engineAvailable) {
-        view.availability = unavailableAvailability(
-            available.engineReasonKey.isEmpty() ? QStringLiteral("native.engineUnavailable")
-                                                : available.engineReasonKey,
-            available.engineReason.isEmpty()
+        const QString reasonKey = available.engineReasonKey.isEmpty()
+                                      ? QStringLiteral("native.engineUnavailable")
+                                      : available.engineReasonKey;
+        const QString reason =
+            reasonKey == QLatin1String("native.runtimeUnavailable")
                 ? translated(QT_TRANSLATE_NOOP(
                       "NativePrefs",
-                      "The native processing engine is not available."))
-                : available.engineReason);
+                      "The native runtime is not the module this launch selected."))
+                : available.engineReason.isEmpty()
+                      ? translated(QT_TRANSLATE_NOOP(
+                            "NativePrefs",
+                            "The native processing engine is not available."))
+                      : available.engineReason;
+        view.availability = unavailableAvailability(reasonKey, reason);
         return view;
     }
 

@@ -12,6 +12,10 @@
 #     verification run points DIST_DIR at scratch space.
 #   * MIKAI_DIST_DIR must not be inside MIKAI_DIST_NATIVE_ROOT, nor the reverse.
 # 
+if(POLICY CMP0207)
+  cmake_policy(SET CMP0207 NEW)
+endif()
+
 if(NOT DEFINED DIST_DIR OR DIST_DIR STREQUAL "")
   message(FATAL_ERROR "dist: DIST_DIR is not set")
 endif()
@@ -66,8 +70,13 @@ if(NOT actual_mpv_archive_sha256 STREQUAL mpv_archive_sha256)
     "expected ${mpv_archive_sha256}, got ${actual_mpv_archive_sha256}")
 endif()
 
-set(mpv_extract_dir "${MIKAI_DIST_CACHE_DIR}/extract")
-file(REMOVE_RECURSE "${mpv_extract_dir}")
+# A private extraction directory prevents concurrent staging jobs from removing
+# each other's input. Never recursively remove a caller-provided cache path.
+string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef mpv_extract_id)
+set(mpv_extract_dir "${MIKAI_DIST_CACHE_DIR}/extract-${mpv_extract_id}")
+if(EXISTS "${mpv_extract_dir}")
+  message(FATAL_ERROR "dist: extraction directory collision; retry with fresh staging")
+endif()
 file(MAKE_DIRECTORY "${mpv_extract_dir}")
 file(ARCHIVE_EXTRACT INPUT "${mpv_archive}" DESTINATION "${mpv_extract_dir}")
 file(GLOB_RECURSE mpv_dll_candidates LIST_DIRECTORIES FALSE "${mpv_extract_dir}/libmpv-2.dll")
@@ -102,6 +111,23 @@ endif()
 get_filename_component(qt_bin_dir "${WINDEPLOYQT}" DIRECTORY)
 get_filename_component(qt_prefix "${qt_bin_dir}" DIRECTORY)
 
+if(MIKAI_PUBLIC_RELEASE)
+  if(MIKAI_DIST_NATIVE)
+    message(FATAL_ERROR "dist: public packages cannot contain an optional native runtime")
+  endif()
+  foreach(legal_file LICENSE packaging/third-party.json)
+    if(NOT EXISTS "${SOURCE_DIR}/${legal_file}")
+      message(FATAL_ERROR "dist: missing release legal material: ${legal_file}")
+    endif()
+  endforeach()
+  if(NOT IS_DIRECTORY "${SOURCE_DIR}/packaging/licenses")
+    message(FATAL_ERROR "dist: missing third-party license directory")
+  endif()
+  if(NOT MIKAI_RELEASE_OBJDUMP OR NOT EXISTS "${MIKAI_RELEASE_OBJDUMP}")
+    message(FATAL_ERROR "dist: public dependency closure requires the configured MinGW objdump")
+  endif()
+endif()
+
 # Production nativeRoot() is executable-local (NativePaths.cpp), so the optional
 # copy follows the same rule and derives its default from the staged executable
 # rather than an obsolete %LOCALAPPDATA% profile path. An explicit
@@ -116,7 +142,13 @@ endif()
 # its own input. Creating ${DIST_DIR} by first removing anything already there
 # is the behaviour that destroyed adjacent installed state, so the script now
 # refuses to recreate any directory that already carries an installed app.
+if(IS_SYMLINK "${DIST_DIR}")
+  message(FATAL_ERROR "dist: refusing a symbolic-link staging directory: ${DIST_DIR}")
+endif()
 if(EXISTS "${DIST_DIR}")
+  if(NOT IS_DIRECTORY "${DIST_DIR}")
+    message(FATAL_ERROR "dist: staging path is not a directory: ${DIST_DIR}")
+  endif()
   file(GLOB dist_existing LIST_DIRECTORIES TRUE "${DIST_DIR}/*")
   if(dist_existing)
     list(JOIN dist_existing "\n  " dist_existing_text)
@@ -145,14 +177,22 @@ if(MIKAI_DIST_NATIVE)
   endif()
   # The output must not be inside the input: copying a store into itself would
   # let a later strip walk the real installed tree.
-  get_filename_component(dist_abs "${DIST_DIR}" ABSOLUTE)
-  get_filename_component(input_abs "${dist_native_root}" ABSOLUTE)
-  if(dist_abs STREQUAL input_abs OR dist_abs MATCHES "^${input_abs}/")
+  file(REAL_PATH "${DIST_DIR}" dist_abs)
+  file(REAL_PATH "${dist_native_root}" input_abs)
+  set(dist_abs_compare "${dist_abs}")
+  set(input_abs_compare "${input_abs}")
+  if(CMAKE_HOST_WIN32)
+    string(TOLOWER "${dist_abs}" dist_abs_compare)
+    string(TOLOWER "${input_abs}" input_abs_compare)
+  endif()
+  cmake_path(IS_PREFIX input_abs_compare "${dist_abs_compare}" NORMALIZE dist_inside_input)
+  cmake_path(IS_PREFIX dist_abs_compare "${input_abs_compare}" NORMALIZE input_inside_dist)
+  if(dist_inside_input)
     message(FATAL_ERROR
       "dist: MIKAI_DIST_DIR (${dist_abs}) must not be inside MIKAI_DIST_NATIVE_ROOT "
       "(${input_abs}); the script rewrites its output")
   endif()
-  if(input_abs MATCHES "^${dist_abs}/")
+  if(input_inside_dist)
     message(FATAL_ERROR
       "dist: MIKAI_DIST_NATIVE_ROOT (${input_abs}) must not be inside MIKAI_DIST_DIR "
       "(${dist_abs}); the script rewrites its output")
@@ -165,8 +205,15 @@ file(COPY "${EXE}" DESTINATION "${DIST_DIR}")
 get_filename_component(exe_name "${EXE}" NAME)
 set(dist_exe "${DIST_DIR}/${exe_name}")
 
+set(deploy_arguments --release --translations uk)
+if(MIKAI_PUBLIC_RELEASE)
+  # Plugin inputs are copied by the explicit allowlist below. This avoids
+  # silently adding a new optional codec/TLS dependency after a Qt update.
+  list(APPEND deploy_arguments --compiler-runtime --no-plugins --no-opengl-sw
+    --no-system-d3d-compiler --no-system-dxc-compiler)
+endif()
 execute_process(
-  COMMAND "${WINDEPLOYQT}" --release --translations uk "${dist_exe}"
+  COMMAND "${WINDEPLOYQT}" ${deploy_arguments} "${dist_exe}"
   RESULT_VARIABLE deploy_rc
   OUTPUT_VARIABLE deploy_out
   ERROR_VARIABLE deploy_err)
@@ -174,7 +221,18 @@ if(NOT deploy_rc EQUAL 0)
   message(FATAL_ERROR "dist: windeployqt failed (${deploy_rc}): ${deploy_err}")
 endif()
 
-file(COPY "${SHADERS}" DESTINATION "${DIST_DIR}")
+if(MIKAI_PUBLIC_RELEASE)
+  file(MAKE_DIRECTORY "${DIST_DIR}/shaders")
+  file(GLOB shader_files LIST_DIRECTORIES FALSE "${SHADERS}/*.glsl")
+  foreach(shader IN LISTS shader_files)
+    if(IS_SYMLINK "${shader}")
+      message(FATAL_ERROR "dist: shader symlinks are not accepted in public packages")
+    endif()
+    file(COPY "${shader}" DESTINATION "${DIST_DIR}/shaders")
+  endforeach()
+else()
+  file(COPY "${SHADERS}" DESTINATION "${DIST_DIR}")
+endif()
 
 file(MAKE_DIRECTORY "${DIST_DIR}/translations")
 foreach(catalog qt_uk.qm qtbase_uk.qm)
@@ -212,7 +270,14 @@ if(NOT git_rc EQUAL 0 OR git_rev STREQUAL "")
   set(git_rev "unknown")
 endif()
 string(TIMESTAMP built_at "%Y-%m-%dT%H:%M:%SZ" UTC)
-file(WRITE "${DIST_DIR}/VERSION" "${git_rev}\n${built_at}\n")
+# Keep the private VERSION contract; public artifacts additionally identify the
+# product/toolchain and ship a hash inventory written after all payload copies.
+if(MIKAI_PUBLIC_RELEASE)
+  file(WRITE "${DIST_DIR}/VERSION"
+    "Mikai ${MIKAI_RELEASE_VERSION}\n${git_rev}\n${built_at}\nQt ${MIKAI_RELEASE_QT_VERSION}\n${MIKAI_RELEASE_COMPILER}\n")
+else()
+  file(WRITE "${DIST_DIR}/VERSION" "${git_rev}\n${built_at}\n")
+endif()
 
 file(MAKE_DIRECTORY "${DIST_DIR}/mpv")
 file(COPY_FILE "${mpv_dll}" "${DIST_DIR}/mpv/libmpv-2.dll")
@@ -270,4 +335,147 @@ if(dist_stowaway)
     "These are per-machine downloads, never shipped bytes.")
 endif()
 
+if(MIKAI_PUBLIC_RELEASE)
+  file(COPY_FILE "${SOURCE_DIR}/LICENSE" "${DIST_DIR}/LICENSE")
+  file(COPY_FILE "${SOURCE_DIR}/packaging/third-party.json" "${DIST_DIR}/third-party.json")
+  file(COPY "${SOURCE_DIR}/packaging/licenses" DESTINATION "${DIST_DIR}")
+  file(WRITE "${DIST_DIR}/qt.conf" "[Paths]\nPrefix=.\nPlugins=.\nTranslations=translations\n")
+
+  # Schannel uses the OS certificate store; do not ship an unproven OpenSSL
+  # DLL or a plugin that would silently depend on a developer's PATH.
+  set(required_plugins platforms/qwindows.dll imageformats/qjpeg.dll
+    imageformats/qwebp.dll tls/qschannelbackend.dll)
+  set(optional_plugins imageformats/qgif.dll imageformats/qico.dll
+    imageformats/qsvg.dll iconengines/qsvgicon.dll tls/qcertonlybackend.dll
+    styles/qmodernwindowsstyle.dll styles/qwindowsvistastyle.dll
+    networkinformation/qnetworklistmanager.dll)
+  foreach(plugin IN LISTS required_plugins optional_plugins)
+    if(EXISTS "${qt_prefix}/plugins/${plugin}")
+      get_filename_component(plugin_type "${plugin}" DIRECTORY)
+      file(MAKE_DIRECTORY "${DIST_DIR}/${plugin_type}")
+      file(COPY "${qt_prefix}/plugins/${plugin}" DESTINATION "${DIST_DIR}/${plugin_type}")
+    elseif(plugin IN_LIST required_plugins)
+      message(FATAL_ERROR "dist: required Qt plugin is not installed: ${plugin}")
+    endif()
+  endforeach()
+
+  # LoadLibrary dependencies (mpv and plugins) are not reachable by scanning
+  # mikai.exe alone. Scan every deployed PE and close the non-system imports.
+  get_filename_component(compiler_bin "${MIKAI_RELEASE_COMPILER_BIN}" DIRECTORY)
+  foreach(runtime libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+    if(NOT EXISTS "${DIST_DIR}/${runtime}")
+      if(EXISTS "${qt_bin_dir}/${runtime}")
+        file(COPY "${qt_bin_dir}/${runtime}" DESTINATION "${DIST_DIR}")
+      elseif(EXISTS "${compiler_bin}/${runtime}")
+        file(COPY "${compiler_bin}/${runtime}" DESTINATION "${DIST_DIR}")
+      else()
+        message(FATAL_ERROR "dist: missing matching MinGW runtime ${runtime}")
+      endif()
+    endif()
+    if(EXISTS "${qt_bin_dir}/${runtime}")
+      file(SHA256 "${qt_bin_dir}/${runtime}" qt_runtime_hash)
+      file(SHA256 "${DIST_DIR}/${runtime}" deployed_runtime_hash)
+      if(NOT qt_runtime_hash STREQUAL deployed_runtime_hash)
+        message(FATAL_ERROR "dist: ${runtime} does not match the runtime provided with Qt")
+      endif()
+    endif()
+  endforeach()
+  set(CMAKE_GET_RUNTIME_DEPENDENCIES_PLATFORM windows+pe)
+  set(CMAKE_GET_RUNTIME_DEPENDENCIES_TOOL objdump)
+  set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "${MIKAI_RELEASE_OBJDUMP}")
+  file(GLOB_RECURSE deployed_libraries LIST_DIRECTORIES FALSE "${DIST_DIR}/*.dll")
+  get_filename_component(mpv_dll_dir "${mpv_dll}" DIRECTORY)
+  file(GET_RUNTIME_DEPENDENCIES
+    EXECUTABLES "${dist_exe}"
+    LIBRARIES ${deployed_libraries}
+    DIRECTORIES "${DIST_DIR}" "${qt_bin_dir}" "${compiler_bin}" "${mpv_dll_dir}"
+    PRE_EXCLUDE_REGEXES "^[aA][pP][iI]-" "^[eE][xX][tT]-"
+    POST_EXCLUDE_REGEXES ".*[/\\\\]([Ss][Yy][Ss][Tt][Ee][Mm]32|[Ss][Yy][Ss][Ww][Oo][Ww]64)[/\\\\].*"
+    RESOLVED_DEPENDENCIES_VAR resolved_dependencies
+    UNRESOLVED_DEPENDENCIES_VAR unresolved_dependencies
+    CONFLICTING_DEPENDENCIES_PREFIX dependency_conflicts)
+  if(unresolved_dependencies OR dependency_conflicts_FILENAMES)
+    message(FATAL_ERROR
+      "dist: dependency closure failed; unresolved=${unresolved_dependencies}; conflicting=${dependency_conflicts_FILENAMES}")
+  endif()
+  file(TO_CMAKE_PATH "$ENV{SystemRoot}" system_root)
+  string(TOLOWER "${system_root}" system_root)
+  if(system_root STREQUAL "")
+    message(FATAL_ERROR "dist: SystemRoot is unavailable for dependency classification")
+  endif()
+  foreach(dependency IN LISTS resolved_dependencies)
+    file(TO_CMAKE_PATH "${dependency}" dependency_path)
+    string(TOLOWER "${dependency_path}" dependency_lower)
+    cmake_path(IS_PREFIX system_root "${dependency_lower}" NORMALIZE system_dependency)
+    if(NOT system_dependency)
+      get_filename_component(dependency_name "${dependency}" NAME)
+      # Only known runtime families are redistributable inputs to this package.
+      # An unknown mpv import needs provenance review, not a directory-wide copy.
+      if(NOT dependency_name MATCHES "^(Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg)|libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1|libmpv-2)\\.dll$")
+        message(FATAL_ERROR "dist: dependency outside the reviewed runtime allowlist: ${dependency_name}")
+      endif()
+      if(NOT dependency_name STREQUAL "libmpv-2.dll")
+        if(EXISTS "${DIST_DIR}/${dependency_name}")
+          file(SHA256 "${dependency}" dependency_hash)
+          file(SHA256 "${DIST_DIR}/${dependency_name}" staged_hash)
+          if(NOT dependency_hash STREQUAL staged_hash)
+            message(FATAL_ERROR "dist: conflicting deployed dependency ${dependency_name}")
+          endif()
+        else()
+          file(COPY "${dependency}" DESTINATION "${DIST_DIR}")
+        endif()
+      endif()
+    endif()
+  endforeach()
+
+  foreach(required Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Network.dll
+      Qt6OpenGL.dll Qt6OpenGLWidgets.dll platforms/qwindows.dll
+      imageformats/qjpeg.dll imageformats/qwebp.dll tls/qschannelbackend.dll
+      libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll mpv/libmpv-2.dll)
+    if(NOT EXISTS "${DIST_DIR}/${required}")
+      message(FATAL_ERROR "dist: required public runtime file is missing: ${required}")
+    endif()
+  endforeach()
+
+  # This validates the entire resulting tree, not just names excluded from a
+  # broad source copy. User settings, stores, probes and neural graphs cannot
+  # enter an artifact via a dirty build/deployment directory.
+  file(GLOB_RECURSE public_entries RELATIVE "${DIST_DIR}" LIST_DIRECTORIES TRUE "${DIST_DIR}/*")
+  set(public_inventory "")
+  foreach(entry IN LISTS public_entries)
+    if(IS_SYMLINK "${DIST_DIR}/${entry}")
+      message(FATAL_ERROR "dist: public payload contains a symbolic link: ${entry}")
+    endif()
+    if(IS_DIRECTORY "${DIST_DIR}/${entry}")
+      continue()
+    endif()
+    if(entry MATCHES "^(mikai\\.exe|run\\.bat|VERSION|qt\\.conf|LICENSE|third-party\\.json)$")
+      set(owner mikai)
+    elseif(entry MATCHES "^Qt6(Core|Gui|Widgets|Network|OpenGL|OpenGLWidgets|Svg)\\.dll$"
+        OR entry MATCHES "^(platforms/qwindows|styles/q(modernwindowsstyle|windowsvistastyle)|iconengines/qsvgicon|networkinformation/qnetworklistmanager|tls/q(schannelbackend|certonlybackend)|imageformats/q(gif|ico|jpeg|svg|tga|tiff|wbmp|webp|icns))\\.dll$"
+        OR entry MATCHES "^translations/(qt|qtbase)_uk\\.qm$")
+      set(owner qt)
+    elseif(entry MATCHES "^(libgcc_s_seh-1|libstdc\\+\\+-6|libwinpthread-1)\\.dll$")
+      set(owner mingw)
+    elseif(entry STREQUAL "mpv/libmpv-2.dll")
+      set(owner mpv)
+    elseif(entry MATCHES "^shaders/[A-Za-z0-9_-]+\\.glsl$")
+      set(owner anime4k)
+    elseif(entry STREQUAL "translations/mikai_uk.qm")
+      set(owner mikai)
+    elseif(entry MATCHES "^licenses/[A-Za-z0-9_./+-]+\\.(txt|json|md|html)$"
+        OR entry MATCHES "^licenses/ffmpeg/COPYING\\.(GPLv[23]|LGPLv(2\\.1|3))$")
+      set(owner legal)
+    else()
+      message(FATAL_ERROR "dist: public payload is not allowlisted: ${entry}")
+    endif()
+    file(SHA256 "${DIST_DIR}/${entry}" payload_hash)
+    string(APPEND public_inventory "${payload_hash}  ${entry}\n")
+  endforeach()
+  file(WRITE "${DIST_DIR}/PACKAGE-CONTENTS.sha256" "${public_inventory}")
+  message(STATUS "dist: public payload allowlist and non-system dependency closure complete")
+endif()
+
+# Only our random scratch extraction is removed, never the cache or inputs.
+file(REMOVE_RECURSE "${mpv_extract_dir}")
 message(STATUS "dist: assembled ${DIST_DIR}")

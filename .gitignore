@@ -1,33 +1,85 @@
-# Secrets — never commit the API key
-.env
+# Local secrets and machine-specific configuration
+.env*
 /.mcp.json
 
-# Build output
-build/
+# Build and release output
+/build/
+/build-*/
+cmake-build-*/
 dist/
-/assets/
+/dist-*/
+/dist-mikai/
+/release-artifacts/
+/ci-artifacts/
+/collected/
 
-# Local scratch / UI review screenshots
-*.png
-*.zip
+# Runtime stores and acquired/generated model data (not application source)
+/native/components/
+/native/assets/
+/native/animejanai/
+/native/models/
+/native/cache/
+/native/caches/
+/native/user-data/
+/native/user-store/
+/native/user-stores/
+/native/userdata/
+/native/logs/
+/native/crashes/
+/native/crash-dumps/
+/models/
+/user-data/
+/user-store/
+/user-stores/
+/userdata/
+/cache/
+/caches/
+/logs/
+/crashes/
+/crash-dumps/
 
-# Throwaway measurement and verification artifacts
+# Local scratch and diagnostic output
 _scratch_*.py
 _scratch_*.json
 _*.png
+/runtime_recovery_*.png
 _ui_geometry.json
 _grab_*.png
-_*.log
+*.log
+*.log.*
+*.dmp
+*.core
+/core
+/probe-out/
+/.probe-out/
+/.probe-*
+/omp/
+/.omp/
+/$env
+/LauncherContracts/
+/mikai-tests-*/
+test-results/
+Testing/
+
+# Archives and platform build products must not enter source accidentally
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tar.xz
+*.tar.zst
+*.exe
+*.dll
+*.so
+*.dylib
 
 # Generated translation binaries: the .ts is the source, lrelease produces the .qm
 translations/*.qm
 
-# Test-contract scratch: a contract or launcher run started from the repository
-# root leaves these here, and they are disposable by construction
-/LauncherContracts/
-/mikai-tests-*/
-
-dist-mikai/
-.probe-out/
-.omp/
-/$env
+# Python bytecode and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+# Keep intentional public image assets trackable.
+# (No blanket image or assets-directory exclusion.)

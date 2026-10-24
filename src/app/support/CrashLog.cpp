@@ -257,13 +257,13 @@ void writeDecimal(ReportWriter* out, uint64_t value) {
     writeBytes(out, scratch, count);
 }
 
+#ifdef _WIN32
+
 char g_fallbackTail[kTailCapacityBytes] = {};
 
 bool tailBufferEndsWithoutNewline(const char* buffer, size_t length) {
     return length > 0 && buffer[length - 1] != '\n';
 }
-
-#ifdef _WIN32
 
 void writeWideUtf8(ReportWriter* out, const wchar_t* text, size_t length) {
     constexpr size_t kChunkWide = 64;

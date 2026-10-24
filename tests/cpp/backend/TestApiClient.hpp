@@ -41,14 +41,17 @@ class TestApiClient : public QObject {
   void aFreshResponseIsServedWithoutAnotherRoundTrip();
   void aStaleResponseIsRevalidatedAndTheNewBodyIsServed();
   void aStaleResponseTheServerStillHoldsIsReusedUnchanged();
+  void aRevalidatedBodySurvivesEvictionWhileItsRequestIsInFlight();
   void aNoCacheResponseIsRevalidatedEveryTime();
   void aNoStoreResponseIsNeverKeptAndTheCredentialDecidesWhatIsKept();
   void aFailureIsNotCachedAndACancelledCallReadsNothing();
   void fetchBytesReportsLoopbackDownloadProgress();
+  void anArtworkTimeoutDoesNotWaitForAnAlreadyFinishedAbort();
 
   // A transport failure is still reported as one, and is not confused with the
   // server answering an error.
   void aTransportFailureIsNotAnApiFailure();
+  void aCrossOriginRedirectDoesNotForwardTheApiCredential();
 
   // Validating a candidate key is the same reading path: a named failure comes
   // back named, so the dialog can offer the API's reason rather than a guess.
@@ -57,6 +60,7 @@ class TestApiClient : public QObject {
   // The credential that goes out is the one current at send time; a parked
   // caller never re-sends under an epoch it did not belong to.
   void aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey();
+  void validatingAParkedOldKeyDoesNotChangeTheNewKeysQuota();
 
   // Saving a key says whether it was saved, and a save that could not write
   // leaves the old key and the previous file exactly as they were.

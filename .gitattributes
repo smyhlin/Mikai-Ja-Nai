@@ -11,3 +11,7 @@
 *.dll binary
 *.7z binary
 *.exe binary
+*.mp4 binary
+*.mkv binary
+*.webm binary
+tests/fixtures/hls/**/*.ts binary

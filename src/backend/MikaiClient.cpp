@@ -222,16 +222,27 @@ struct HttpResult {
 HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request, int timeoutMs,
                       const std::function<void(qint64, qint64)>& progress = {}) {
     HttpResult result;
+    if (WorkCancellationScope::cancellationRequested()) {
+        result.cancelled = true;
+        return result;
+    }
     QNetworkReply* reply = manager->get(request);
     QEventLoop loop;
     QTimer timer;
+    QTimer abortDrainTimer;
     QMetaObject::Connection progressConnection;
     if (progress) {
         progressConnection = QObject::connect(reply, &QNetworkReply::downloadProgress, &loop,
             [&progress](qint64 received, qint64 total) { progress(received, total); });
     }
     timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    abortDrainTimer.setSingleShot(true);
+    bool timedOut = false;
+    QObject::connect(&timer, &QTimer::timeout, &loop, [&] {
+        timedOut = reply->isRunning();
+        loop.quit();
+    });
+    QObject::connect(&abortDrainTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     // Cancellation is observed on its own clock rather than only when the reply
     // finishes: a worker being shut down while a request is parked in DNS or
@@ -245,7 +256,7 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     QObject::connect(&cancelWatch, &QTimer::timeout, &loop, [&] {
         if (WorkCancellationScope::cancellationRequested()) {
             cancelSeen = true;
-            reply->abort();
+            loop.quit();
         }
     });
     cancelWatch.start();
@@ -254,16 +265,20 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     };
     timer.start(timeoutMs);
     loop.exec();
+    timer.stop();
     if (reply->isRunning()) {
         // The deadline fired first: abort so the reply cannot outlive us. The
         // drain is on the same timer rather than an unbounded wait, because an
         // abort can complete late and this thread belongs to a pool.
         reply->abort();
-        timer.start(kAbortDrainMs);
-        loop.exec();
+        if (reply->isRunning()) {
+            abortDrainTimer.start(kAbortDrainMs);
+            loop.exec();
+        }
     }
     stopWatchers();
     timer.stop();
+    abortDrainTimer.stop();
     QObject::disconnect(progressConnection);
     // Only a cancel that actually stopped this reply counts: a caller whose
     // scope happens to be installed while an ordinary reply completes has not
@@ -296,7 +311,9 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
                 break;
         }
     }
-    if (reply->error() != QNetworkReply::NoError) {
+    if (timedOut && !result.cancelled) {
+        result.error = QStringLiteral("the request timed out after %1 ms").arg(timeoutMs);
+    } else if (reply->error() != QNetworkReply::NoError) {
         result.error = reply->errorString();
     }
     result.body = reply->readAll();
@@ -514,10 +531,10 @@ int RateLimiter::acquireSlot() {
         // The mutex is held across the store, which is what makes the scope
         // observable exactly once rather than intermittently.
         const double windowMs = (delay + 0.05) * 1000.0;
-        const int sliceMs =
-            std::max(1, std::min<int>(std::isfinite(windowMs) ? static_cast<int>(windowMs)
-                                                              : kCancelSliceMs,
-                                      kCancelSliceMs));
+        const int sliceMs = std::isfinite(windowMs)
+                                ? static_cast<int>(std::clamp(
+                                      windowMs, 1.0, static_cast<double>(kCancelSliceMs)))
+                                : kCancelSliceMs;
         condition_.wait(&mutex_, QDeadlineTimer(sliceMs));
     }
 }
@@ -683,6 +700,7 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
     const bool cacheable = cacheableEndpoint(target, overrideKey);
     QByteArray key;
     QByteArray validator;
+    QJsonObject revalidationBody;
     if (cacheable) {
         const CredentialSlot slot = credentialSlot();
         key = cacheKey(target, slot);
@@ -693,6 +711,7 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
             it->touched = ++cache.clock;
             if (it->freshUntil > monotonicSeconds()) return it->body;
             validator = it->etag;
+            if (!validator.isEmpty()) revalidationBody = it->body;
         }
     }
 
@@ -702,6 +721,8 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
         // current now, not with a header from the epoch it parked under.
         limiter_.acquireSlot();
         QNetworkRequest request(target);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::SameOriginRedirectPolicy);
         request.setRawHeader("Accept", "application/json");
         request.setRawHeader("User-Agent", apiUserAgent().toUtf8());
         // The credential snapshot carries the generation it was read at, and
@@ -719,6 +740,7 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
             if (actualKey != key) {
                 key = actualKey;
                 validator.clear();
+                revalidationBody = {};
             }
         }
         if (!validator.isEmpty()) request.setRawHeader("If-None-Match", validator);
@@ -741,8 +763,10 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
             JsonCache& cache = jsonCache();
             QMutexLocker lock(&cache.mutex);
             auto it = cache.entries.find(key);
-            if (it != cache.entries.end()) {
-                const QJsonObject body = it->body;
+            // A different request can evict or replace this entry while the
+            // validator is in flight. A 304 describes the body that supplied
+            // that validator, never a later entry found under the same key.
+            if (it != cache.entries.end() && it->etag == validator) {
                 if (result.cacheControl.contains(QStringLiteral("no-store"), Qt::CaseInsensitive)) {
                     cache.bytes -= it->bytes;
                     cache.entries.erase(it);
@@ -751,8 +775,8 @@ QJsonObject MikaiClient::apiGet(const QString& url, const QMap<QString, QString>
                     it->freshUntil = monotonicSeconds() + cacheMaxAge(result.cacheControl);
                     it->touched = ++cache.clock;
                 }
-                return body;
             }
+            return revalidationBody;
         }
         if (!result.error.isEmpty() && !isHttpStatusError(status)) {
             throw MikaiApiError(QStringLiteral("network_error"), result.error, 0);
@@ -1059,14 +1083,16 @@ QMap<QString, QVariant> MikaiClient::validateApiKey(const QString& candidateKey)
 
     HttpResult result;
     try {
-        if (!key.isEmpty() && key == apiKey()) {
-            // The saved key: route it through the limiter so its own quota
-            // stays honest.
-            const int generation = limiter_.acquireSlot();
+        const CredentialSlot saved = credentialSlot();
+        if (!key.isEmpty() && key == saved.key) {
+            // Validation tests the fixed candidate, not whichever key becomes
+            // current while it parks. Its quota must therefore stay with the
+            // candidate's original epoch even if Save releases this waiter.
+            limiter_.acquireSlot();
             result = runBlocking(managerForThread(), request, kValidateTimeoutMs);
             const int status = result.status;
             limiter_.applyQuota(result.quota.limit, result.quota.remaining, result.quota.reset,
-                                result.quota.retryAfter, generation, status);
+                                result.quota.retryAfter, saved.generation, status);
             if (result.cancelled) {
                 throw MikaiApiError(QStringLiteral("cancelled"),
                                     QStringLiteral("the request was cancelled"), 0);

@@ -1,0 +1,311 @@
+MIKAI 0.1.0 — THIRD-PARTY NOTICES AND DISTRIBUTION CONDITIONS
+Evidence reviewed: 2026-10-24
+
+This payload contains actual upstream license texts, source references and
+attributions. It is not a legal opinion, permission from a third party, a
+warranty of compliance, or a substitute for corresponding source. Its presence
+does NOT make an unresolved binary redistributable. See ../third-party.json
+for the machine-readable selected profiles, obligations and open blockers.
+
+MIKAI'S OWN WORK
+The root LICENSE applies to the project's own original code and assets under
+The Unlicense. Third-party shaders, libraries and runtime files are not
+relicensed by it. A combined executable/library distribution must also satisfy
+the applicable third-party terms, including any GPL/LGPL conditions.
+
+BASE WINDOWS PROFILE (windows-x64)
+The normal dist/package path redistributes third-party binaries: the pinned
+libmpv-2.dll, Qt shared libraries/plugins/translations and compiler runtimes.
+It is false that cmake/dist.cmake ships no third-party binaries. Absence of
+optional AI files does not remove the base dependencies' obligations.
+
+Public binary release is BLOCKED on the present evidence. Package preparation
+for inspection/private testing is distinct from permission to publish. The
+Windows profile's publicReleaseReady is false. The recovered build log shows
+the pinned libmpv is a GPL-enabled non-LGPL build and statically includes a
+GPLv3 FFmpeg configuration; the complete linked source/license closure and
+rights-compatible distribution route are unestablished. Qt and MinGW source
+fulfillment is also incomplete. Do not convert that flag to true merely
+because package hashes, upstream URLs or license texts are now present.
+
+BASE LINUX PROFILE (linux-x86_64)
+The completed Linux Release stage/archive inventory is recorded under
+`release-artifacts/linux-runtime-review/`; the observed GNU 13.3.0, Qt 6.12
+Ubuntu 24.04/glibc 2.39 bundle-enabled profile contains the pinned bundled
+mpv closure, while optional native/model inspection is off. This establishes
+package contents and hashes, not runtime operation or legal clearance. The
+upstream Linux binary archive is not corresponding source and has no headers
+or notices; its complete source/license closure and compliant fulfillment
+remain unresolved. Recipe evidence identifies candidate dependency versions,
+but not every final binary-to-original-member/source/license mapping; the
+baseline image/package inputs and mutable libass source are not fully pinned.
+Host glibc/loader, graphics stack and GPU drivers remain external dependencies.
+Do not claim Linux public readiness: its flag remains false. The distinct
+system-libmpv profile is not evidence for the bundled profile. See
+`provenance/linux-runtime.json` and `provenance/windows-runtime.json`.
+
+QT 6.12.0
+Copyright (C) The Qt Company Ltd. and other contributors.
+Upstream: https://code.qt.io/qt/
+Source releases: https://download.qt.io/official_releases/qt/6.12/6.12.0/
+Open-source license selection for the used runtime modules: LGPL-3.0-only
+where offered. See qt/LGPL-3.0-only.txt together with qt/GPL-3.0-only.txt.
+No Qt commercial grant is asserted. Verify each actual selected module/plugin:
+a Qt SDK includes tools and optional components with different licenses.
+
+The Qt-6.12.0-*-attributions.txt files preserve publisher SPDX package
+attribution/source fields and extracted custom license texts from the local
+SDK (qtbase, qtimageformats, qtsvg, qttranslations). They are explicitly an
+SDK SUPERSET, not an assertion all packages/tools/plugins are included.
+The Windows release payload inventory records the exact deployed Qt 6.12.0
+files, file versions, hashes and sizes, including Qt6Core/Gui/Network/OpenGL/
+OpenGLWidgets/Svg/Widgets, qwindows, qsvg/qjpeg/qwebp plugins, qmodernwindowsstyle,
+qnetworklistmanager, the Schannel/cert-only TLS plugins and UK translations.
+The complete authoritative per-file inventory is the `payload` array in
+`release-artifacts/windows-runtime-review/mikai-0.1.0-windows-x64-release.json`;
+the smaller payload manifest is not repeated here. The SDK attribution files
+remain a superset, not a claim that every SDK package ships. The official Qt
+6.12.0 source archive is available at
+https://download.qt.io/official_releases/qt/6.12/6.12.0/single/qt-everywhere-src-6.12.0.tar.xz
+(SHA-256 98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165).
+The exact official source archive is retained at
+`../../release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz`
+(443,394,020 bytes; matching SHA-256 above);
+`../../release-artifacts/corresponding-source/source-materials.json` records
+`completeCorrespondingSource=false`. Retention resolves source availability
+but is not yet a distributor-controlled corresponding-source delivery: exact
+selected SDK module/build correspondence, modifications/build/install scripts
+and a practical LGPL replacement/relink path remain outstanding. Qt source
+fulfillment is not closed.
+They include the attribution records for Qt's embedded FreeType, HarfBuzz,
+PCRE2, zlib, PNG/JPEG, libb2, double-conversion, md4c, WebP, Unicode data,
+public suffix/MIME data and other module dependencies. The qt/ directory
+contains the referenced upstream standard/custom license texts. Retain all
+applicable per-component copyrights and notices in the final binary payload.
+
+The LGPL requires more than a license copy: provide the exact corresponding
+library source (including modifications and the scripts needed to control
+compilation/installation) by an applicable license-compliant mechanism;
+preserve required notices; do not restrict reverse engineering for debugging
+modifications; and permit replacement/relinking with modified libraries.
+Shared-library replacement must remain possible. Supply any required
+installation information; do not impose signature/loader restrictions that
+prevent exercising these rights. Record the source delivery route and exact
+build inputs. A version URL or SDK SPDX record alone is not complete source
+fulfillment. The present payload does not claim those steps have occurred.
+
+MPV — PINNED AUTHOR-FORK DEVELOPER BUILDS
+Upstream: https://github.com/mpv-player/mpv
+Fork: https://github.com/the-database/mpv
+Pinned upstream mpv source commit for both release assets:
+19c0fcf89595e6ab33908299207c555b67e81558.
+mpv's upstream `Copyright` file is retained as `mpv/Copyright.txt`; the
+upstream GPL-2.0 and LGPL-2.1 license texts are in `mpv/GPL-2.0.txt` and
+`mpv/LGPL-2.1.txt`. Copyright explains that mpv is GPL-2.0-or-later by
+default and that libmpv may be LGPL-2.1-or-later only when built without
+GPL-only files. The actual build configuration and linked dependencies are
+not established here. These texts are not a determination of the deployed
+binary's license.
+
+WINDOWS DEV ARCHIVE (the in-process import)
+Release:
+https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-09-19c0fcf895
+Asset: mpv-dev-x86_64-20261009-git-19c0fcf895.7z
+Publisher size: 32,845,274 bytes
+Publisher SHA-256:
+8801c722b5174a751d03f1cb435092c61304cd8605302fe7cae2cc77872b2d83
+The DEV archive contains the libmpv DLL and development headers/import
+library; it is the selected input for the in-process Windows mpv API. The
+observed extracted libmpv-2.dll was 122,173,440 bytes with SHA-256
+f7913c65750a53365a67ac0296baab5f8dcc1d406c697fa9249e83ed8391e090.
+This developer binary/header archive is not corresponding source and does not
+establish its complete linked dependency/license closure.
+
+WINDOWS CLI ARCHIVE (not selected)
+The separate mpv-x86_64-20261009-git-19c0fcf895.7z asset has publisher size
+33,627,201 bytes and SHA-256
+85134a3e4748b7ab2e9bdb0a2b445a012082c9afa97edc953f1ccfba191d09b6. It
+contains mpv.exe/mpv.com and CLI resources, but no libmpv DLL. Mikai uses the
+DEV import in-process; the CLI archive is neither selected nor executed or
+bundled by this integration. Do not conflate the two release assets.
+
+The Windows run 37965200722 identifies workflow commit
+597bab33931cbd2ec29abe9d44a29e6363da7499, workflow `.github/workflows/mpv.yml`,
+and successful job 113937766163 (`Build MPV (64, false)`). Its exact `64_logs`
+artifact is retained privately at
+`.probe-out/release-tools/windows-run-37965200722-logs/logs.7z` (upstream
+artifact ID 11634536202; artifact SHA-256
+9b1e5030380b62e6c01984463afd54fa66bf5b7b1932ce4af4164e80e20a9927).
+Recovered mpv configure output establishes Meson 1.12.1, mpv 0.41.0-UNKNOWN,
+Clang 23.1.3 / LLVM commit
+0d261d1ca552c95a8f007e061c787ac7132fbcbc, GCC 16.2.1 host compiler, shared
+libmpv, and the enabled `gpl` feature. The job uses the non-LGPL `-s false`
+build; the deployed DLL is therefore not LGPL-only. Its logged dependencies
+include FFmpeg ABI 63/61/12/10/7, libplacebo 7.374.0 and libass 0.17.5.
+The recovered FFmpeg configure summary explicitly says GPL version 3 or later,
+static-only, network-enabled and w32threads, and lists OpenSSL and numerous
+external libraries/codecs. Configure summaries do not identify exact source
+revision or archive digest for each dependency. The build-helper workflow also
+applies recipe edits and libplacebo patches described in
+`../provenance/windows-runtime.json`; conditional PR patches and custom
+commands were skipped. The exact deployed `libmpv-2.dll` (SHA-256
+f7913c65750a53365a67ac0296baab5f8dcc1d406c697fa9249e83ed8391e090) was
+started in an owned recovery probe; its version output reports FFmpeg
+`N-127263-g3fe6c8dee`. The primary FFmpeg GitHub commit API resolves this
+reported revision to `3fe6c8dee248df6732c400bced46d8d0557d3444`. The matching
+upstream codeload source archive is retained at
+`release-artifacts/corresponding-source/ffmpeg-3fe6c8dee248df6732c400bced46d8d0557d3444/ffmpeg-source.tar.gz`
+(SHA-256
+29a6a1e9985937f9c5b48e04784fb223eec5872f71fc6feae2c97403821b75cb); it
+contains FFmpeg's upstream license files. The sibling FFmpeg developer
+archive (SHA-256
+52ecb132577e770eb33d44fb3c45da325397435250b85805434cf1c29759dc72) is only
+corroborative. The runtime-reported version identifies FFmpeg's source commit,
+but does not establish that no downstream patch/build modification was applied
+or identify the full static dependency closure. The pinned mpv source locator
+is
+https://github.com/the-database/mpv/tree/19c0fcf89595e6ab33908299207c555b67e81558;
+it is not a corresponding-source offer. Despite this newly matched FFmpeg
+source, exact dependency/cache revisions, remaining patch bytes, complete
+linked license closure and a distributor-controlled source delivery route
+remain outstanding.
+
+LINUX BUNDLED ARCHIVE (selected input, not a standalone application package)
+Release:
+https://github.com/the-database/mpv/releases/tag/2026-10-09-19c0fcf
+Asset: mpv-linux-x64-2026-10-09-19c0fcf.tar.zst
+Publisher size: 41,531,271 bytes
+Publisher SHA-256:
+55af9ddbd694366ba016b9e421a6abae78f8559887b7591f7820eca8d5b2bf37
+Pinned mpv source commit:
+19c0fcf89595e6ab33908299207c555b67e81558.
+Observed archive contents include libmpv.so, libmpv.so.2, libmpv.so.2.5.0
+(each 3,675,576 bytes and identical SHA-256
+304482e267c6295b690c5cde7df62209172388d30e3235a7fd115ab67143f0c0), an mpv
+CLI and roughly 75 additional shared dependencies. The archive contains no
+development headers or license notices. Its digest identifies the original
+archive only; it is not the digest of a packaged or modified library.
+
+Observed `libmpv.so.2.5.0` ELF metadata names SONAME `libmpv.so.2`, lists
+dependencies including FFmpeg ABI 63/61/12/10/7 libraries, libass 9,
+libplacebo 360, cdio, dvdnav, lcms2, bluray, luajit 5.1, uchardet, X11
+libraries, ALSA, PulseAudio, JPEG 8, zlib, Vulkan, EGL and glibc/loader, and
+has no original RPATH/RUNPATH. This list establishes neither each dependency's
+package/source version nor every transitive dependency's license. The archive's
+many libraries and absent notices leave component attribution, source and
+redistribution closure unresolved. Do not infer a license or clearance from
+the upstream URL, API or archive digest.
+
+The packaging pipeline's optional `MIKAI_LINUX_BUNDLE_MPV=ON` mode is intended
+to consume the pinned local/downloaded archive and install its libmpv dependency
+closure under the executable-local `mpv/` directory. Its
+`MIKAI_LINUX_MPV_ARCHIVE` override is an archive-file path, not a source tree.
+The intended postprocess uses `patchelf` to set `$ORIGIN` runtime search paths
+on packaged owned libraries; this changes the extracted ELF bytes. Record and
+distinguish the publisher archive SHA-256 from the hashes of the final
+postprocessed payload. No global `LD_LIBRARY_PATH` is used; glibc/loader,
+graphics stack and GPU drivers remain host dependencies, so this is not
+self-contained or proof of runtime success. The Linux final package inventory
+is now recorded, but package hashes and `$ORIGIN` alone do not identify the
+complete dependency source/license closure or satisfy source obligations.
+
+FFMPEG AND OTHER LIBMPV DEPENDENCIES
+The Windows run 37965200722 FFmpeg configure log identifies FFmpeg ABI
+63/61/12/10/7 and a static-only GPL-3.0-or-later build with network support,
+w32threads, OpenSSL and many external codec/library inputs. The exact deployed
+DLL's runtime version reports `N-127263-g3fe6c8dee`; its source commit
+`3fe6c8dee248df6732c400bced46d8d0557d3444` and matching source archive are
+recorded above and in `../provenance/windows-runtime.json`. The separately
+published sibling FFmpeg developer archive SHA-256
+52ecb132577e770eb33d44fb3c45da325397435250b85805434cf1c29759dc72 is
+corroborative only. The Linux archive includes many FFmpeg-family and other
+libraries but provides neither their headers nor notices. For Windows, the
+runtime version establishes the FFmpeg source commit only; exact downstream
+patches, remaining dependency revisions/source hashes, all applicable notices
+and the complete static closure remain unresolved. The Linux closure remains
+similarly open. These facts do not determine redistribution compatibility or
+satisfy corresponding-source delivery.
+
+ANIME4K SHADERS
+Upstream: https://github.com/bloc97/Anime4K
+The shipped files themselves are authoritative: 47 shaders contain the MIT
+notice, Copyright (c) 2019-2021 bloc97, and two contain The Unlicense.
+Anime4K-MIT.txt and Anime4K-Unlicense.txt reproduce those complete headers
+with only the GLSL comment prefixes removed. The two public-domain files are
+Anime4K_AutoDownscalePre_x2.glsl and Anime4K_AutoDownscalePre_x4.glsl.
+Retain the original per-file headers when distributing shaders. This shader
+permission does not cover optional AnimeJaNai/RIFE ONNX model graphs.
+
+TLS
+Windows Qt's Schannel backend uses the operating system provider. Do not copy
+Windows system DLLs into the package. The inspected Qt configuration supports
+both Schannel and dynamically loaded OpenSSL 3; an OpenSSL Qt plugin by itself
+does not establish which TLS implementation or binary version is deployed.
+
+The deployed Windows package inventory contains `tls/qschannelbackend.dll`
+(292,712 bytes, SHA-256
+27df29799ebb736baae00877fde7ab1f482130b233cf72239f7947ce94ca6dd5) and
+`tls/qcertonlybackend.dll` (115,048 bytes, SHA-256
+c8c30cbe0d22ba66d25e70c9fdf7bba3e5c897a6c365a950249801b2047d6c39), both
+Qt 6.12.0. The recorded backend is Windows Schannel; no OpenSSL/LibreSSL
+payload is present in the inventory. The Windows TLS code is part of the deployed Qt source/build materials and is not yet covered by complete Qt source fulfillment.
+No standalone OpenSSL/LibreSSL binary is selected by the default profile.
+OpenSSL-3.6.5-LICENSE.txt is the actual upstream Apache-2.0 license text from
+that release, included as reference for a possible selected provider, NOT a
+statement that this version is deployed. LibreSSL-COPYING.txt is the actual
+upstream portable COPYING text, also reference-only. Its legacy OpenSSL/SSLeay
+and other notices must not be replaced by a generic Apache license. If either
+provider is bundled, identify its exact archive/digest/version/source/build
+and retain its own complete notices (including any NOTICE or per-file notices
+that apply); do not assume this reference set covers an arbitrary build.
+TLS code incorporated inside libmpv is part of the still-unresolved closure.
+Linux uses system-provided TLS under the default non-bundled profile.
+
+GCC AND MINGW-W64
+GNU libgcc/libstdc++ runtime code is GPL-3.0-or-later WITH the GCC Runtime
+Library Exception where the source file grants it. See
+GCC-Runtime-Library-Exception-3.1.txt and qt/GPL-3.0-only.txt. The exception
+permits eligible compiled combinations under other terms; it does NOT waive
+the source/license obligations for redistributing the runtime libraries
+themselves. Identify the exact deployed runtime provider and retain/provide
+its corresponding source, patches and build instructions by a compliant route.
+
+MinGW-w64-runtime.txt is the full notice supplied by the local w64devkit
+2.10.0 compiler distribution, including its multiple upstream attributions.
+winpthreads-COPYING.txt is the upstream MinGW-w64 v14.0.0 notice. They are
+not a claim that every bundled runtime DLL was produced by this compiler.
+The final Windows runtime inventory now records the deployed compiler runtime
+files: `libgcc_s_seh-1.dll` (109,056 bytes,
+5e27589147caa6d7a30f4cc058a14c455dc62233901ffff9a1797ede425e9f86),
+`libstdc++-6.dll` (2,243,072 bytes,
+8013488c5528bad7966ca07f3ea2e7a9b743cacb258fe76b46a326f821cc83b0), and
+`libwinpthread-1.dll` (53,248 bytes,
+c7c7dced65fff71c7bb61f80c771c562f533d26d72722d9d6091129a3b03d5ce).
+The local app toolchain reports GNU 16.2.0 / MinGW-w64 14.0.0; the Qt SDK
+records GCC 15.1.0. These differing toolchain records do not identify which
+provider produced the deployed DLL bytes. Notices for local w64devkit and
+MinGW-w64/winpthreads are retained, but exact runtime source, patches and
+build provenance/delivery are unresolved. The compiler may also embed runtime
+code in application and Qt binaries; no binary/source mapping is established.
+A DLL basename or notice is not provenance or corresponding-source
+fulfillment.
+
+OPTIONAL AI/NATIVE — NOT PART OF EITHER BASE PACKAGE
+Do not include any user native/component/model/record store, ABI-8 aji
+libraries, Prepared Native bundles, TensorRT/CUDA/ONNX Runtime/DirectML packs,
+trtexec, ONNX/checkpoint graphs, compiled engines or downloaded archives.
+This exclusion is deliberate even for a component whose individual terms
+permit some redistribution; the optional bundle has not been cleared.
+
+native/manifest/components.json remains authoritative for ESC-1..6:
+ESC-1 inference-shim upstream grant missing; ESC-2 spatial CC BY-NC-SA model
+redistribution not cleared; ESC-3 RIFE whole-graph rights unresolved; ESC-4
+DirectML licensing resolved only for that component; ESC-5 trtexec developer-
+tool redistribution unresolved on the upstream-config path; ESC-6 tracks
+GPL/LGPL obligations, including the separate base libmpv issue. No refusal is
+removed by preparing this base notice payload. User-initiated local acquisition
+is not a grant for Mikai to redistribute an acquired component.
+
+No source offer is made here on behalf of an upstream vendor. Any release
+source offer, if chosen as the applicable fulfillment mechanism, must actually
+meet the applicable license conditions and be supportable by the distributor.

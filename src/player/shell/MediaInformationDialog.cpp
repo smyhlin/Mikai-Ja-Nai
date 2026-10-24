@@ -273,7 +273,8 @@ void MediaInformationDialog::updatePlainText() {
 
 void MediaInformationDialog::changeEvent(QEvent* event) {
     QDialog::changeEvent(event);
-    if (event->type() == QEvent::LanguageChange) renderInformation();
+    if (event->type() == QEvent::LanguageChange || event->type() == QEvent::LocaleChange)
+        renderInformation();
 }
 
 void MediaInformationDialog::closeEvent(QCloseEvent* event) {

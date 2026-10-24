@@ -1,7 +1,6 @@
 #include "VideoSurface.hpp"
 
 #include <QCoreApplication>
-#include <QCryptographicHash>
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
@@ -105,9 +104,9 @@ constexpr const char* kVfProperty = "vf";
 
 /// The `lib=` option the native filter needs to open its inference shim: the
 /// producer library of the validated native bundle this process actually
-/// loaded, proved against that bundle's own inventory digest. Empty when the
-/// loaded runtime is not a native bundle or the declared dispatcher is gone or
-/// no longer matches its recorded bytes - the binding is then probe-only, and
+/// loaded, proved against that bundle's own inventory digest by resolution.
+/// Empty when the loaded runtime is not a native bundle or the worker's exact
+/// descriptor/stat-tree proof is stale - the binding is then probe-only, and
 /// an admission against it is refused by the core rather than loaded from a
 /// guessed path.
 QVector<native::NativeFilterOption> provedNativeAttachOptions() {
@@ -117,19 +116,15 @@ QVector<native::NativeFilterOption> provedNativeAttachOptions() {
         return {};
     }
     const native::Bundle& bundle = *selection.resolvedBundle;
+    // Resolution already hashed the inventory on its worker. An unchanged proof
+    // is checked here without re-reading a potentially large DLL on the GUI.
+    if (!native::isBundleValidationCurrent(bundle)) return {};
     const QString producer = native::bundlePreparationProducerLibrary();
     for (const native::BundleFile& file : bundle.files) {
         if (QFileInfo(file.path).fileName().compare(producer, Qt::CaseInsensitive) != 0) continue;
         const QString absolute =
             QFileInfo(QDir::cleanPath(QDir(bundle.root).filePath(file.path))).canonicalFilePath();
         if (absolute.isEmpty()) continue;
-        QFile handle(absolute);
-        if (!handle.open(QIODevice::ReadOnly)) continue;
-        QCryptographicHash hash(QCryptographicHash::Sha256);
-        if (!hash.addData(&handle)) continue;
-        if (hash.result().toHex().compare(file.sha256.toLatin1(), Qt::CaseInsensitive) != 0) {
-            continue;
-        }
         return {native::NativeFilterOption{QStringLiteral("lib"), absolute}};
     }
     return {};
@@ -270,6 +265,10 @@ void VideoSurface::ensureEngine() {
                             if (entryLoadReported_ && load.epoch == mpv_->sourceEpoch()) {
                                 mediaTracksLoaded_ = true;
                                 mediaTracksDirty_ = true;
+                                // FILE_LOADED may precede the command reply that
+                                // finally identifies this entry. Publish only
+                                // now, rather than emitting an unnamed token.
+                                emit mediaLoaded(load.token);
                             }
                         } else {
                             entryTokensById_[*entryId] = load;
@@ -309,8 +308,8 @@ void VideoSurface::ensureEngine() {
                 if (entrySourceEpoch_ == mpv_->sourceEpoch()) {
                     mediaTracksLoaded_ = true;
                     mediaTracksDirty_ = true;
+                    emit mediaLoaded(entryMediaToken_);
                 }
-                emit mediaLoaded(entryMediaToken_);
             }
             return;
         }
@@ -322,6 +321,11 @@ void VideoSurface::ensureEngine() {
             if (havePlaylistEntryId_ && ended->playlist_entry_id != currentPlaylistEntryId_) {
                 return;
             }
+            if (entrySourceEpoch_ != mpv_->sourceEpoch()) return;
+            // An ended file is not an open source to replay on GL recreation.
+            url_.clear();
+            animeJanaiSourceRequested_ = false;
+            diagnosticsActive_ = false;
             if (entryLoadReported_) emit mediaEnded(entryMediaToken_);
             entryMediaToken_ = 0;
             entryLoadReported_ = false;
@@ -350,6 +354,15 @@ void VideoSurface::ensureEngine() {
                      static_cast<long long>(currentPlaylistEntryId_), ended->error);
             return;
         }
+        if (entrySourceEpoch_ != 0 && entrySourceEpoch_ != mpv_->sourceEpoch()) {
+            // The replacement load has been submitted but has not reached
+            // START_FILE yet. The last started entry is already retired.
+            return;
+        }
+        url_.clear();
+        pendingOpen_ = false;
+        animeJanaiSourceRequested_ = false;
+        diagnosticsActive_ = false;
         emit errorOccurred(tr("Could not play the video (mpv: %1)").arg(ended->error));
     });
     observePlaybackState();
@@ -753,6 +766,17 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
     // one must already be reading the new epoch when its reply lands.
     mpv_->invalidateAsyncEpoch();
     resetMediaTracks();
+    // Even equal-length replacements owe a new duration notification so a
+    // deferred resume/seek cannot wait forever on the previous file's value.
+    observedDuration_ = 0.0;
+    observedPosition_ = 0.0;
+    observedVideoWidth_ = observedVideoHeight_ = 0.0;
+    hasVideo_ = false;
+    videoWidth_ = videoHeight_ = 0;
+    position_ = 0.0;
+    duration_ = 0.0;
+    emit durationChanged(0.0);
+    emit positionChanged(0.0);
     const MediaTrackSelection selection = nextMediaTrackSelection_.value_or(MediaTrackSelection{});
     nextMediaTrackSelection_.reset();
     const auto option = [](std::optional<int64_t> id) {
@@ -789,6 +813,9 @@ bool VideoSurface::startPendingUrl(double resumeAt) {
 }
 
 void VideoSurface::close() {
+    // A later GL recreation may restore only an open source, never a stopped
+    // pooled surface's last URL.
+    url_.clear();
     invalidateEngineFrameHold();
     resetMediaTracks();
     nextMediaTrackSelection_.reset();
@@ -1143,6 +1170,9 @@ void VideoSurface::initializeGL() {
         connect(context_, &QOpenGLContext::aboutToBeDestroyed, this,
                 &VideoSurface::releaseRenderContext, Qt::DirectConnection);
     const bool recreated = renderGeneration_ > 0;
+    // Reloading the VO issues an ordinary loadfile, which resets its pause
+    // write. Save the pre-reload intent, including a deferred pre-show pause.
+    const bool restorePaused = requestedPause() || enginePauseHeld();
     try {
         ensureEngine();
         createRenderContext();
@@ -1150,7 +1180,7 @@ void VideoSurface::initializeGL() {
         // is holding, even if no frame has been decoded yet: the framebuffer
         // has never been drawn into.
         forceRender_ = true;
-        if (recreated && !pendingOpen_) {
+        if (recreated && !pendingOpen_ && !url_.isEmpty()) {
             // Freeing the old render context disabled the core's video track
             // (vo_libmpv kills the VO and errors the track), so a source that was
             // already loaded has to be handed back to it, at the position the
@@ -1167,8 +1197,10 @@ void VideoSurface::initializeGL() {
             setNextMediaTrackSelection(selection);
             startPendingUrl(observedPosition_);
         }
-        if (requestedPause() || enginePauseHeld()) reassertPaused();
         if (pendingOpen_) startPendingUrl();
+        // The load must precede the pause reassertion; reversing the order lets
+        // startPendingUrl's normal unpause overwrite a paused hand-off.
+        if (restorePaused) reassertPaused();
     } catch (const MpvError& e) {
         emit errorOccurred(QString::fromUtf8(e.what()));
         contextReady_ = false;
@@ -1542,6 +1574,8 @@ void VideoSurface::observePlaybackState() {
             qWarning("mpv: cannot observe %s (%s)", name, error.what());
         }
     };
+    watch("idle-active", MPV_FORMAT_FLAG,
+          [this](const Property& p) { observedIdle_ = !p.isFlag() || p.flag; });
     watch("duration", MPV_FORMAT_DOUBLE,
           [this](const Property& p) { observedDuration_ = p.isNumber() ? p.number : 0.0; });
     watch("time-pos", MPV_FORMAT_DOUBLE,
@@ -1686,12 +1720,14 @@ bool VideoSurface::selectMediaTrack(MediaTrackType type, int64_t id,
 }
 
 void VideoSurface::publishObservedState() {
-    if (observedDuration_ > 0 && observedDuration_ != duration_) {
+    const bool currentLoaded =
+        entryLoadReported_ && entrySourceEpoch_ == mpv_->sourceEpoch();
+    if (currentLoaded && observedDuration_ > 0 && observedDuration_ != duration_) {
         duration_ = observedDuration_;
         emit durationChanged(duration_);
     }
     // 10 ms is finer than any display, so this cannot look stepped.
-    if (std::abs(observedPosition_ - position_) > 0.01) {
+    if (currentLoaded && std::abs(observedPosition_ - position_) > 0.01) {
         position_ = observedPosition_;
         emit positionChanged(position_);
     }
@@ -1700,7 +1736,8 @@ void VideoSurface::publishObservedState() {
     // (false vs false) never updates, so isPlaying() stays false forever. A write
     // still in flight is the viewer's intent, so an observation that has not
     // caught up with it cannot flip the control back.
-    const bool playing = !requestedPause() && !enginePauseHeld();
+    const bool playing =
+        !url_.isEmpty() && !observedIdle_ && !requestedPause() && !enginePauseHeld();
     if (playing != playing_) {
         playing_ = playing;
         emit playingChanged(playing_);
@@ -1777,7 +1814,7 @@ void VideoSurface::handleState() {
     // all and how wide it is, and it was observed rather than read, so this costs
     // no trip through the core lock against mpv's own render thread.
     const int w = static_cast<int>(observedVideoWidth_);
-    const bool vid = w > 0;
+    const bool vid = !url_.isEmpty() && w > 0;
     if (vid != hasVideo_) hasVideo_ = vid;
     if (hasVideo_) {
         const int h = static_cast<int>(observedVideoHeight_);

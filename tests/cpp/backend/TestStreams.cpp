@@ -1,10 +1,17 @@
 #include "TestStreams.hpp"
 
 #include <backend/Streams.hpp>
+#include <backend/Cancellation.hpp>
 
 #include <stdexcept>
+#include <atomic>
 
 #include <QtCore/QStringList>
+#include <QtCore/QElapsedTimer>
+#include <QtNetwork/QHostAddress>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 
 using mikai::backend::QualityVariant;
 using mikai::backend::StreamError;
@@ -187,6 +194,40 @@ void TestStreams::rejectsATortugaTokenThatIsNotBase64() {
     }
     QVERIFY2(raised, qPrintable(QStringLiteral("accepted token %1").arg(broken)));
   }
+}
+
+void TestStreams::cancellingAQuietProviderFetchReturnsPromptly() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  std::atomic_bool cancelled{false};
+  bool requested = false;
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        requested = true;
+        cancelled.store(true);
+      });
+    }
+  });
+  QNetworkAccessManager manager;
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  QElapsedTimer elapsed;
+  elapsed.start();
+  bool failed = false;
+  QString failure;
+  try {
+    mikai::backend::fetchText(
+        &manager, QStringLiteral("http://127.0.0.1:%1/quiet").arg(server.serverPort()), {});
+  } catch (const StreamError& caught) {
+    failed = true;
+    failure = QString::fromUtf8(caught.what());
+  }
+  QVERIFY(requested);
+  QVERIFY(failed);
+  QVERIFY2(failure.contains(QStringLiteral("cancelled"), Qt::CaseInsensitive),
+           qPrintable(failure));
+  QVERIFY2(elapsed.elapsed() < 2000, "cancellation waited for the provider timeout");
 }
 
 void TestStreams::theTimeoutIsTwentySeconds() {

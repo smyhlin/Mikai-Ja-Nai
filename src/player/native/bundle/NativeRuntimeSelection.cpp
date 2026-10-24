@@ -132,6 +132,53 @@ RuntimeSelection describe(const Bundle& bundle, RuntimeChoice choice) {
 /// valid one beside it: a candidate that fails validation is named and the
 /// search continues. The descriptor describes what is already on disk.
 RuntimeSelection describePackagedStandard(const QString& hint) {
+#ifdef Q_OS_LINUX
+#if defined(MIKAI_LINUX_BUNDLE_MPV) && MIKAI_LINUX_BUNDLE_MPV
+    Q_UNUSED(hint);
+#ifndef MIKAI_LINUX_MPV_MODULE_RELATIVE
+#define MIKAI_LINUX_MPV_MODULE_RELATIVE "mpv/libmpv.so.2"
+#endif
+    const QString module =
+        QDir(QCoreApplication::applicationDirPath())
+            .filePath(QString::fromUtf8(MIKAI_LINUX_MPV_MODULE_RELATIVE));
+    QString reason;
+    const std::optional<Bundle> bundle = describeStandardRuntimeCached(module, &reason);
+    if (bundle.has_value() && validateBundleCached(*bundle, &reason)) {
+        return describe(*bundle, RuntimeChoice::Standard);
+    }
+    return unavailable(
+        RuntimeChoice::Standard,
+        translated(QT_TRANSLATE_NOOP("RuntimeSelection", "The bundled mpv runtime is unusable: %1"))
+            .arg(reason.isEmpty() ? module : reason));
+#elif defined(MIKAI_LINUX_SYSTEM_MPV_MODULE)
+    if (!hint.isEmpty()) {
+        const QFileInfo hinted(hint);
+        if (hinted.isFile()) {
+            QString reason;
+            const std::optional<Bundle> bundle = describeSystemRuntimeCached(hint, &reason);
+            if (bundle.has_value()) return describe(*bundle, RuntimeChoice::Standard);
+            return unavailable(
+                RuntimeChoice::Standard,
+                translated(QT_TRANSLATE_NOOP("RuntimeSelection", "The selected system mpv runtime is unusable: %1"))
+                    .arg(reason.isEmpty() ? hint : reason));
+        }
+    }
+    const QString module = QString::fromUtf8(MIKAI_LINUX_SYSTEM_MPV_MODULE);
+    QString reason;
+    const std::optional<Bundle> bundle = describeSystemRuntimeCached(module, &reason);
+    if (bundle.has_value()) return describe(*bundle, RuntimeChoice::Standard);
+    return unavailable(
+        RuntimeChoice::Standard,
+        translated(QT_TRANSLATE_NOOP("RuntimeSelection", "The system mpv runtime is unusable: %1"))
+            .arg(reason.isEmpty() ? module : reason));
+#elif defined(MIKAI_LINUX_BUNDLE_MPV)
+    Q_UNUSED(hint);
+    return unavailable(
+        RuntimeChoice::Standard,
+        translated(QT_TRANSLATE_NOOP(
+            "RuntimeSelection", "The configured Linux system mpv module path is missing.")));
+#endif
+#endif
     const QStringList modules = mikai::backend::runtimeCandidates(hint);
     if (modules.isEmpty()) {
         return unavailable(RuntimeChoice::Standard,
@@ -142,7 +189,7 @@ RuntimeSelection describePackagedStandard(const QString& hint) {
     for (const QString& module : modules) {
         QString reason;
         const std::optional<Bundle> bundle = describeStandardRuntimeCached(module, &reason);
-        if (bundle.has_value()) {
+        if (bundle.has_value() && validateBundleCached(*bundle, &reason)) {
             return describe(*bundle, RuntimeChoice::Standard);
         }
         rejections.append(QStringLiteral("%1: %2").arg(module, reason));
@@ -317,6 +364,44 @@ bool restartRequiredFor(RuntimeChoice choice) {
 RuntimeSelection resolveRuntime(RuntimeChoice choice, const QString& hint) {
     return resolveWith(choice, &resolveStandardLocal, hint);
 }
+RuntimeSelection resolveNamedBundle(const QString& root) {
+    const QFileInfo rootInfo(root);
+    if (!rootInfo.isAbsolute()) {
+        return unavailable(
+            RuntimeChoice::Standard,
+            translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                         "The named mpv bundle path must be absolute.")));
+    }
+    if (!rootInfo.isDir()) {
+        return unavailable(
+            RuntimeChoice::Standard,
+            translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                         "The named mpv bundle directory does not exist.")));
+    }
+    QString reason;
+    const std::optional<Bundle> bundle = readBundle(root, &reason);
+    if (!bundle.has_value()) {
+        return unavailable(
+            RuntimeChoice::Standard,
+            reason.isEmpty()
+                ? translated(QT_TRANSLATE_NOOP("RuntimeSelection",
+                                               "The named mpv bundle has no readable manifest."))
+                : reason);
+    }
+    if (!validateBundleCached(*bundle, &reason)) {
+        return unavailable(
+            bundle->kind == BundleKind::Native ? RuntimeChoice::Native
+                                               : RuntimeChoice::Standard,
+            reason.isEmpty()
+                ? translated(QT_TRANSLATE_NOOP(
+                      "RuntimeSelection", "The named mpv bundle does not validate against its files."))
+                : reason);
+    }
+
+    const RuntimeChoice choice =
+        bundle->kind == BundleKind::Native ? RuntimeChoice::Native : RuntimeChoice::Standard;
+    return describe(*bundle, choice);
+}
 
 RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
     if (recorded().loaded) {
@@ -325,6 +410,20 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
         // is: dropping the request here would let a recovery attempt look as
         // though it had been honoured.
         RuntimeSelection selection = recorded();
+        if (!resolved.loaded &&
+            (resolved.runtimeUnavailable || !resolved.reason.isEmpty())) {
+            // A terminal refusal must remain visible without replacing the
+            // loader's pinned-module truth. This also covers a Standard request
+            // whose resolution failed while a Native module remains loaded.
+            selection.requested = resolved.requested;
+            selection.nativeNotApplied = resolved.nativeNotApplied;
+            selection.runtimeUnavailable = true;
+            if (!resolved.reason.isEmpty()) {
+                selection.reason = resolved.reason;
+            }
+            recorded() = selection;
+            return selection;
+        }
         if (resolved.nativeNotApplied) {
             // A native request that fell back to Standard is not a restart
             // question - it is the same kind that is already pinned - but the
@@ -335,13 +434,17 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
             if (!resolved.reason.isEmpty()) {
                 selection.reason = resolved.reason;
             }
+            recorded() = selection;
             return selection;
         }
-        if (selection.kind != resolved.kind) {
-            selection.requested = resolved.requested;
-            selection.restartRequired = true;
-            selection.reason = restartReason(selection.kind, resolved.requested);
-        }
+        selection.requested = resolved.requested;
+        selection.restartRequired = selection.kind != resolved.kind;
+        selection.nativeNotApplied = false;
+        selection.runtimeUnavailable = false;
+        selection.reason = selection.restartRequired
+                               ? restartReason(selection.kind, resolved.requested)
+                               : QString();
+        recorded() = selection;
         return selection;
     }
     // Nothing validated travels with this selection, so there is no descriptor
@@ -355,6 +458,7 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
                              ? translated(QT_TRANSLATE_NOOP(
                                    "RuntimeSelection", "No validated mpv runtime was resolved."))
                              : resolved.reason;
+        recorded() = refused;
         return refused;
     }
     const Bundle& bundle = *resolved.resolvedBundle;
@@ -369,13 +473,14 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
         forged.reason = translated(QT_TRANSLATE_NOOP(
                             "RuntimeSelection",
                             "The resolved selection does not match its validated bundle."));
+        recorded() = forged;
         return forged;
     }
-    // Revalidate the exact bytes the descriptor was built from: a bundle that
-    // was replaced or edited since resolve is refused by name here instead of
-    // being loaded stale. This is the check the resolve half deliberately skips.
+    // Resolution proved the exact bytes off-thread. Commit only checks that its
+    // exact descriptor and stat-tree identity still match that proof: a cold or
+    // changed cache must never fall back to hashing payloads on the GUI thread.
     QString reason;
-    if (!validateBundleCached(bundle, &reason)) {
+    if (!isBundleValidationCurrent(bundle, &reason)) {
         // A bundle that stops validating is dropped from the cache as well, so
         // the next start re-hashes it rather than trusting a stale verdict.
         invalidateBundleValidation(bundle.root);
@@ -387,6 +492,7 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
                                  "RuntimeSelection",
                                  "The resolved mpv runtime no longer validates."))
                            : reason;
+        recorded() = stale;
         return stale;
     }
     // Load exactly the descriptor that was validated: its dependency
@@ -401,6 +507,7 @@ RuntimeSelection commitRuntime(const RuntimeSelection& resolved) {
         failed.loaded = false;
         failed.runtimeUnavailable = true;
         failed.reason = reason.isEmpty() ? MpvApi::instance().error() : reason;
+        recorded() = failed;
         return failed;
     }
 
@@ -430,11 +537,14 @@ RuntimeSelection selectRuntime(RuntimeChoice choice, const QString& hint) {
         const BundleKind wanted =
             choice == RuntimeChoice::Native ? BundleKind::Native : BundleKind::Standard;
         RuntimeSelection selection = recorded();
-        if (selection.kind != wanted) {
-            selection.requested = choice;
-            selection.restartRequired = true;
-            selection.reason = restartReason(selection.kind, choice);
-        }
+        selection.requested = choice;
+        selection.restartRequired = selection.kind != wanted;
+        selection.nativeNotApplied = false;
+        selection.runtimeUnavailable = false;
+        selection.reason = selection.restartRequired
+                               ? restartReason(selection.kind, choice)
+                               : QString();
+        recorded() = selection;
         return selection;
     }
     // A descriptor the loader itself rejects is reported as-is: loading a
@@ -543,7 +653,8 @@ QString runtimeStatusText() {
     if (!selection.version.isEmpty()) {
         status += QLatin1Char(' ') + selection.version;
     }
-    if (selection.nativeNotApplied || selection.restartRequired) {
+    if (selection.nativeNotApplied || selection.restartRequired ||
+        selection.runtimeUnavailable) {
         status += QStringLiteral(" — ") +
                   (selection.reason.isEmpty() ? translated(QT_TRANSLATE_NOOP(
                                                     "RuntimeSelection", "native not applied"))

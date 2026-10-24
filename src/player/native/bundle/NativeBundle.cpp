@@ -17,6 +17,9 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonParseError>
+#include <QtCore/QHash>
+#include <QtCore/QMutex>
+#include <QtCore/QMutexLocker>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
 #include <QtCore/QSet>
@@ -935,8 +938,30 @@ bool validateBundle(const Bundle& bundle, QString* reason) {
         setReason(reason, QStringLiteral("the bundle declares no files"));
         return false;
     }
+    if (bundle.layout == BundleLayout::SystemModule) {
+#ifdef Q_OS_LINUX
+        static const QRegularExpression hostModuleName(
+            QStringLiteral("^libmpv\\.so\\.2(\\.[0-9]+)*$"));
+        if (bundle.kind != BundleKind::Standard || bundle.files.size() != 1 ||
+            !bundle.deps.isEmpty() || bundle.preparation.has_value() ||
+            bundle.mpvApiVersion != 0 || bundle.protocolVersion != 0 ||
+            bundle.engineSchemaVersion != 0 || canonical != bundle.root ||
+            canonicalPath(bundle.modulePath) != bundle.modulePath ||
+            !hostModuleName.match(QFileInfo(bundle.modulePath).fileName()).hasMatch() ||
+            QDir(canonical).filePath(bundle.files.first().path) != bundle.modulePath) {
+            setReason(reason, QStringLiteral("a system runtime must describe only its canonical "
+                                             "host libmpv.so.2 module, without native or private "
+                                             "dependency claims"));
+            return false;
+        }
+#else
+        setReason(reason, QStringLiteral("system-module runtimes are supported only on Linux"));
+        return false;
+#endif
+    }
     if (!verifyInventory(canonical, bundle.files, bundle.modulePath, reason)) return false;
-    if (!verifyNoUndeclaredFiles(canonical, bundle.files, reason)) return false;
+    if (bundle.layout != BundleLayout::SystemModule &&
+        !verifyNoUndeclaredFiles(canonical, bundle.files, reason)) return false;
 
     // Dependency directories are canonical, inside the root, and actually hold
     // something this bundle declared. A directory that holds no declared file
@@ -990,7 +1015,10 @@ bool validateBundle(const Bundle& bundle, QString* reason) {
 
 // -------------------------------------------------------------- stock bridge
 
-std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString* reason) {
+namespace {
+
+std::optional<Bundle> describeRuntime(const QString& modulePath, BundleLayout layout,
+                                     QString* reason) {
     setReason(reason, QString{});
     const auto refuse = [reason](const QString& text) -> std::optional<Bundle> {
         setReason(reason, text);
@@ -1001,6 +1029,9 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
     const QFileInfo moduleInfo(modulePath);
     if (!moduleInfo.exists() || !moduleInfo.isFile())
         return refuse(QStringLiteral("%1 is not an existing file").arg(modulePath));
+    if (layout == BundleLayout::OwnedDirectory &&
+        !pathHasNoReparsePoints(moduleInfo.absolutePath(), moduleInfo.absoluteFilePath()))
+        return refuse(QStringLiteral("%1 is reached through a reparse point").arg(modulePath));
     const QString canonicalModule = moduleInfo.canonicalFilePath();
     const QString root = QFileInfo(canonicalModule).absolutePath();
     if (root.isEmpty())
@@ -1040,6 +1071,7 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
 
     Bundle bundle;
     bundle.kind = BundleKind::Standard;
+    bundle.layout = layout;
     bundle.root = root;
     bundle.modulePath = canonicalModule;
     bundle.protocolVersion = 0;
@@ -1050,7 +1082,11 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
     bundle.mpvApiVersion = 0;
 
     QStringList present;
-    if (!listFilesRelative(root, &present, reason)) return std::nullopt;
+    if (layout == BundleLayout::SystemModule) {
+        present.append(QFileInfo(canonicalModule).fileName());
+    } else if (!listFilesRelative(root, &present, reason)) {
+        return std::nullopt;
+    }
     for (const QString& relative : present) {
         if (relative.compare(QLatin1String(kManifestFileName), Qt::CaseInsensitive) == 0) continue;
         const QString canonical = canonicalPath(QDir(root).filePath(relative));
@@ -1106,6 +1142,7 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
     // actually installed, so a stock runtime replaced in place is a different
     // descriptor rather than silently the same one.
     QString material;
+    if (layout == BundleLayout::SystemModule) material = QStringLiteral("system-module\n");
     for (const BundleFile& file : bundle.files)
         material += file.path + QLatin1Char(':') + QString::number(file.bytes) + QLatin1Char(':') +
                     file.sha256 + QLatin1Char('\n');
@@ -1116,15 +1153,20 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
     return bundle;
 }
 
+}  // namespace
+
+std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString* reason) {
+    return describeRuntime(modulePath, BundleLayout::OwnedDirectory, reason);
+}
+
 // --------------------------------------------------------- validation cache
 
 namespace {
 
 constexpr const char* kCacheFileName = "verified.json";
-// Bumped when the entry shape changes, so a cache written by an older build is
-// ignored rather than half-read: version 2 records the root on a stock entry so
-// an invalidation can drop it.
-constexpr const char* kCacheSchema = "mikai.native.cache/2";
+// Version 3 distinguishes a complete owned directory from a single host
+// module, so an older whole-directory proof cannot stand in for either layout.
+constexpr const char* kCacheSchema = "mikai.native.cache/3";
 
 QString cachePath() {
     // MIKAI_NATIVE_CACHE lets a test point the cache at its own temporary
@@ -1180,6 +1222,21 @@ QString treeFingerprint(const QString& root) {
     return QString::fromLatin1(hash.result().toHex());
 }
 
+/// Host libraries live among unrelated packages and symlinks. Their proof is
+/// deliberately limited to the canonical module, never a walk of /usr/lib.
+QString runtimeFingerprint(const Bundle& bundle) {
+    if (bundle.layout != BundleLayout::SystemModule) return treeFingerprint(bundle.root);
+    const QFileInfo module(bundle.modulePath);
+    if (!module.isFile() || module.isSymLink() ||
+        module.canonicalFilePath() != bundle.modulePath ||
+        !pathHasNoReparsePoints(bundle.root, bundle.modulePath)) return {};
+    const QByteArray material = bundle.modulePath.toUtf8() + '\0' +
+        QByteArray::number(module.size()) + '\0' +
+        QByteArray::number(module.lastModified().toMSecsSinceEpoch()) + '\0' +
+        QByteArray::number(metadataChangeTimeMs(bundle.modulePath, module));
+    return sha256OfBytes(material);
+}
+
 QJsonObject descriptorToJson(const Bundle& bundle) {
     QJsonArray files;
     for (const BundleFile& file : bundle.files) {
@@ -1191,6 +1248,7 @@ QJsonObject descriptorToJson(const Bundle& bundle) {
     }
     QJsonObject object;
     object.insert(QStringLiteral("root"), bundle.root);
+    object.insert(QStringLiteral("systemModule"), bundle.layout == BundleLayout::SystemModule);
     object.insert(QStringLiteral("modulePath"), bundle.modulePath);
     object.insert(QStringLiteral("descriptorId"), bundle.descriptorId);
     object.insert(QStringLiteral("version"), bundle.version);
@@ -1199,9 +1257,51 @@ QJsonObject descriptorToJson(const Bundle& bundle) {
     return object;
 }
 
+// The persistent Standard descriptor is deliberately compact. The validation
+// identity is not: every loader/admission-facing field must match the exact
+// bundle the worker proved before the GUI thread may consume that proof.
+QJsonObject validationDescriptor(const Bundle& bundle) {
+    QJsonObject identity = descriptorToJson(bundle);
+    identity.insert(QStringLiteral("kind"), static_cast<int>(bundle.kind));
+    identity.insert(QStringLiteral("mpvApiVersion"), QString::number(bundle.mpvApiVersion));
+    identity.insert(QStringLiteral("protocolVersion"), bundle.protocolVersion);
+    identity.insert(QStringLiteral("engineSchemaVersion"), bundle.engineSchemaVersion);
+    if (bundle.preparation.has_value()) {
+        const BundlePreparation& preparation = *bundle.preparation;
+        identity.insert(QStringLiteral("preparation"), QJsonObject{
+            {QStringLiteral("types"), QJsonArray::fromStringList(preparation.types)},
+            {QStringLiteral("coreSha"), preparation.coreSha},
+            {QStringLiteral("sourceAbi"), preparation.sourceAbi},
+            {QStringLiteral("inspect"), preparation.tools.inspect},
+            {QStringLiteral("prep"), preparation.tools.prep},
+            {QStringLiteral("verifier"), preparation.tools.verifier},
+            {QStringLiteral("ort"), preparation.runtime.ort},
+            {QStringLiteral("trt"), preparation.runtime.trt},
+            {QStringLiteral("cuda"), preparation.runtime.cuda}});
+    }
+    return identity;
+}
+
+struct ValidationStamp {
+    QString fingerprint;
+    QJsonObject descriptor;
+};
+
+QMutex validationStampsMutex;
+QHash<QString, ValidationStamp> validationStamps;
+
+void rememberValidation(const Bundle& bundle, const QString& fingerprint) {
+    if (fingerprint.isEmpty()) return;
+    const QMutexLocker lock(&validationStampsMutex);
+    validationStamps.insert(QDir::cleanPath(bundle.root),
+                            ValidationStamp{fingerprint, validationDescriptor(bundle)});
+}
+
 std::optional<Bundle> descriptorFromJson(const QJsonObject& object) {
     Bundle bundle;
     bundle.kind = BundleKind::Standard;
+    bundle.layout = object.value(QStringLiteral("systemModule")).toBool()
+                        ? BundleLayout::SystemModule : BundleLayout::OwnedDirectory;
     bundle.root = object.value(QStringLiteral("root")).toString();
     bundle.modulePath = object.value(QStringLiteral("modulePath")).toString();
     bundle.descriptorId = object.value(QStringLiteral("descriptorId")).toString();
@@ -1225,16 +1325,19 @@ std::optional<Bundle> descriptorFromJson(const QJsonObject& object) {
 
 bool validateBundleCached(const Bundle& bundle, QString* reason) {
     const QString key = QDir::cleanPath(bundle.root);
-    const QString fingerprint = treeFingerprint(bundle.root);
+    const QString fingerprint = runtimeFingerprint(bundle);
     QJsonObject cache = readCacheObject();
     const QJsonArray validations = cache.value(QStringLiteral("validations")).toArray();
+    const QJsonObject descriptor = validationDescriptor(bundle);
 
     if (!fingerprint.isEmpty()) {
         for (const QJsonValue& value : validations) {
             const QJsonObject entry = value.toObject();
             if (entry.value(QStringLiteral("root")).toString().compare(key, pathCaseSensitivity()) ==
                     0 &&
-                entry.value(QStringLiteral("fingerprint")).toString() == fingerprint) {
+                entry.value(QStringLiteral("fingerprint")).toString() == fingerprint &&
+                entry.value(QStringLiteral("descriptor")).toObject() == descriptor) {
+                rememberValidation(bundle, fingerprint);
                 setReason(reason, QString{});
                 return true;
             }
@@ -1242,6 +1345,10 @@ bool validateBundleCached(const Bundle& bundle, QString* reason) {
     }
 
     if (!validateBundle(bundle, reason)) {
+        {
+            const QMutexLocker lock(&validationStampsMutex);
+            validationStamps.remove(key);
+        }
         // A failure is never cached: a bundle that was just repaired, or a disk
         // that was just reconnected, must be re-probed rather than remembered as
         // broken.
@@ -1269,6 +1376,7 @@ bool validateBundleCached(const Bundle& bundle, QString* reason) {
         QJsonObject entry;
         entry.insert(QStringLiteral("root"), key);
         entry.insert(QStringLiteral("fingerprint"), fingerprint);
+        entry.insert(QStringLiteral("descriptor"), descriptor);
         entry.insert(QStringLiteral("checkedAt"),
                      QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
         kept.append(entry);
@@ -1276,14 +1384,46 @@ bool validateBundleCached(const Bundle& bundle, QString* reason) {
         cache.insert(QStringLiteral("validations"), kept);
         writeCacheObject(cache);
     }
+    // An unwritable persistent cache must not prevent playback: the live proof
+    // is process-owned and does not depend on writeCacheObject succeeding.
+    rememberValidation(bundle, fingerprint);
     return true;
 }
 
-std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, QString* reason) {
-    const QString canonical = QFileInfo(modulePath).canonicalFilePath();
-    const QString root =
-        canonical.isEmpty() ? QString{} : QFileInfo(canonical).absolutePath();
-    const QString fingerprint = root.isEmpty() ? QString{} : treeFingerprint(root);
+bool isBundleValidationCurrent(const Bundle& bundle, QString* reason) {
+    const QString fingerprint = runtimeFingerprint(bundle);
+    const QJsonObject descriptor = validationDescriptor(bundle);
+    {
+        const QMutexLocker lock(&validationStampsMutex);
+        const auto found = validationStamps.constFind(QDir::cleanPath(bundle.root));
+        if (!fingerprint.isEmpty() && found != validationStamps.cend() &&
+            found->fingerprint == fingerprint && found->descriptor == descriptor) {
+            setReason(reason, QString{});
+            return true;
+        }
+    }
+    setReason(reason, QStringLiteral("The mpv runtime bundle '%1' changed or has no current "
+                                    "validated proof; resolve it again before loading.")
+                          .arg(bundle.root));
+    return false;
+}
+
+namespace {
+
+std::optional<Bundle> describeRuntimeCached(const QString& modulePath, BundleLayout layout,
+                                           QString* reason) {
+    const QFileInfo module(modulePath);
+    if (layout == BundleLayout::OwnedDirectory &&
+        !pathHasNoReparsePoints(module.absolutePath(), module.absoluteFilePath())) {
+        setReason(reason, QStringLiteral("%1 is reached through a reparse point").arg(modulePath));
+        return std::nullopt;
+    }
+    const QString canonical = module.canonicalFilePath();
+    Bundle candidate;
+    candidate.layout = layout;
+    candidate.modulePath = canonical;
+    candidate.root = canonical.isEmpty() ? QString{} : QFileInfo(canonical).absolutePath();
+    const QString fingerprint = candidate.root.isEmpty() ? QString{} : runtimeFingerprint(candidate);
     QJsonObject cache = readCacheObject();
     const QJsonArray stock = cache.value(QStringLiteral("stock")).toArray();
 
@@ -1295,7 +1435,7 @@ std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, Q
                 entry.value(QStringLiteral("fingerprint")).toString() == fingerprint) {
                 const std::optional<Bundle> restored =
                     descriptorFromJson(entry.value(QStringLiteral("descriptor")).toObject());
-                if (restored.has_value()) {
+                if (restored.has_value() && restored->layout == layout) {
                     setReason(reason, QString{});
                     return restored;
                 }
@@ -1303,7 +1443,7 @@ std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, Q
         }
     }
 
-    const std::optional<Bundle> bundle = describeStandardRuntime(modulePath, reason);
+    const std::optional<Bundle> bundle = describeRuntime(modulePath, layout, reason);
 
     // Whatever this module had recorded is dropped either way: a describe that
     // succeeded replaces it, and one that failed because the module is no longer
@@ -1334,8 +1474,31 @@ std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, Q
     return bundle;
 }
 
+}  // namespace
+
+std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath, QString* reason) {
+    return describeRuntimeCached(modulePath, BundleLayout::OwnedDirectory, reason);
+}
+
+std::optional<Bundle> describeSystemRuntimeCached(const QString& modulePath, QString* reason) {
+#ifdef Q_OS_LINUX
+    const std::optional<Bundle> bundle =
+        describeRuntimeCached(modulePath, BundleLayout::SystemModule, reason);
+    if (!bundle.has_value() || !validateBundleCached(*bundle, reason)) return std::nullopt;
+    return bundle;
+#else
+    Q_UNUSED(modulePath);
+    setReason(reason, QStringLiteral("system-module runtimes are supported only on Linux"));
+    return std::nullopt;
+#endif
+}
+
 void invalidateBundleValidation(const QString& root) {
     const QString key = QDir::cleanPath(root);
+    {
+        const QMutexLocker lock(&validationStampsMutex);
+        validationStamps.remove(key);
+    }
     QJsonObject cache = readCacheObject();
 
     QJsonArray kept;
@@ -1479,6 +1642,8 @@ bool installAtomic(const Bundle& source, const QString& runtimeRoot, QString* re
         return false;
     };
 
+    if (source.layout == BundleLayout::SystemModule)
+        return fail(QStringLiteral("a host libmpv module is not a self-contained installable bundle"));
     if (runtimeRoot.trimmed().isEmpty())
         return fail(QStringLiteral("no runtime root was given"));
     if (!QDir::isAbsolutePath(runtimeRoot))

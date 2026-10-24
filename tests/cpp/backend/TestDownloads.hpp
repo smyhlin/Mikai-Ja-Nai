@@ -43,6 +43,8 @@ class TestDownloads : public QObject {
   // file does not survive the user changing their mind.
   void cancellingMidTransferRemovesWhatWasWritten();
   void aCancelledDownloadReportsThatItWasCancelled();
+  void cancellingTheFinalLocalChunkRemovesTheCopy();
+  void cancellingAQuietFetchReturnsWithoutWaitingForAnotherSignal();
 };
 
 /// Standalone entry point for the mikai_tests runner; the class above carries

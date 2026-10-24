@@ -707,6 +707,15 @@ void PlayerDialog::onMediaLoaded(VideoSurface* source, quint64 mediaToken) {
     if (closed_ || source == nullptr || source != playbackSurface()) {
         return;
     }
+    if (mediaToken != episodeMediaToken()) return;
+    // Only a positively identified newly loaded source retires a media
+    // failure. Pause/playing observations can still belong to the old video.
+    if (errorActive_) {
+        errorActive_ = false;
+        statusTimer_->stop();
+        retryButton_->hide();
+        statusPanel_->setVisible(processingActive_);
+    }
     const int index = episodeIndexFromToken(mediaToken);
     if (index < 0) {
         return;
@@ -798,17 +807,6 @@ void PlayerDialog::onEnginePlaying(bool playing) {
     shell_->setVolume(volume_);
     shell_->setMuted(muted_);
     shell_->setRate(std::clamp(speed_, kShellRateMin, kShellRateMax));
-    // Dismissed only by a stream that really plays. This callback also fires
-    // for the first pause observation, which a failed open still reports as
-    // "not paused"; dismissing on that hid the retry chip the failure had just
-    // raised, in the same pump tick that drained the end-file error. Real video
-    // is the surface's own evidence that a stream is up, so the chip survives
-    // until one exists.
-    if (errorActive_ && surface_->hasVideo()) {
-        errorActive_ = false;
-        statusTimer_->stop();
-        statusPanel_->hide();
-    }
     syncPipBar();
 }
 

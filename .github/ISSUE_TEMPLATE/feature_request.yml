@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a focused improvement to Mikai
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, personal information, or private media. Use SECURITY.md for suspected vulnerabilities.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What limitation are you encountering?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe what you would like Mikai to do and any relevant constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      validations:
+        required: false

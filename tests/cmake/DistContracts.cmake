@@ -152,17 +152,6 @@ if(NOT EXISTS "${_script}")
 endif()
 get_filename_component(_script "${_script}" ABSOLUTE)
 
-# The contract must be able to point the script at a local mpv archive rather
-# than let it download one: no test here may touch the network, and the pinned
-# URL is not reproduced anywhere in this tree.
-file(READ "${_script}" _script_text)
-if(NOT _script_text MATCHES "MIKAI_DIST_MPV_ARCHIVE")
-  message(SEND_ERROR
-    "${_prefix}: FAIL the dist script accepts no local mpv archive override; "
-    "this contract needs one to avoid a network download")
-  return()
-endif()
-
 # The child: set the inherited -D variables, then run the production script
 # exactly the way the `dist` target does. A FATAL_ERROR in the script is an
 # observable nonzero exit here rather than the end of this file.

@@ -69,8 +69,7 @@ QStringList libraryNames() {
 #ifdef Q_OS_WIN
     return {QStringLiteral("mpv-2.dll"), QStringLiteral("libmpv-2.dll"), QStringLiteral("mpv.dll")};
 #else
-    return {QStringLiteral("mpv-2.dll"), QStringLiteral("libmpv-2.dll"), QStringLiteral("mpv.dll"),
-            QStringLiteral("libmpv.so.2"), QStringLiteral("libmpv.so")};
+    return {QStringLiteral("libmpv.so.2"), QStringLiteral("libmpv.so")};
 #endif
 }
 

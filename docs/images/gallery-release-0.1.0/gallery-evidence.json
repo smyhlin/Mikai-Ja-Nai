@@ -1,0 +1,490 @@
+{
+    "applicationCloseAccepted": true,
+    "applicationVersion": "0.1.0",
+    "catalogue": {
+        "authentication": "anonymous; environment key cleared and .env lookup redirected",
+        "content": "live service metadata and artwork; no fixtures or fabricated entries",
+        "source": "https://api.mikai.me/public/v1"
+    },
+    "compareCloseReleasedHold": true,
+    "elapsedMs": 22140,
+    "errors": [
+    ],
+    "finishedUtc": "2026-10-24T14:36:01Z",
+    "interfaceLanguage": "en",
+    "isolation": "verified executable copy; fresh INI settings, home, cache, working directory and native store",
+    "logicalSize": [
+        1280,
+        800
+    ],
+    "platform": "windows",
+    "playbackSmoke": {
+        "clockAdvanced": true,
+        "fromSeconds": 1,
+        "pictureLitFraction": 0.9999971655328799,
+        "toSeconds": 1.4583333333333333
+    },
+    "processing": "Original playback; compare may use bundled Anime4K shaders only. No model/engine acquisition or AI inference requested.",
+    "qtVersion": "6.12.0",
+    "schema": 1,
+    "screenshots": [
+        {
+            "capturedUtc": "2026-10-24T14:35:46Z",
+            "cards": [
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/dac74698-c621-11f1-8c53-a61e2d6d302c.webp",
+                    "ref": "7666",
+                    "title": "HORROR COLLECTOR"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/7c4be18c-bf39-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7615",
+                    "title": "A Tale of the Secret Saint"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/7ab74269-c19d-11f1-8f08-2256fdb9c436.webp",
+                    "ref": "7637",
+                    "title": "The Cold Sato-san is Only Sweet to Me"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/c1f2a93b-bed7-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7611",
+                    "title": "Romelia War Chronicle"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/510d82de-be7e-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7601",
+                    "title": "The Apothecary Diaries Season 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/399f8c19-be9a-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7602",
+                    "title": "Токійські месники 4 сезон"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/b2df48bd-bed7-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7605",
+                    "title": "Firefly Wedding"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/bf872f7e-bed7-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7610",
+                    "title": "The Vermilion Mask"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/1b69b8e7-c245-11f1-8f08-2256fdb9c436.webp",
+                    "ref": "7641",
+                    "title": "Монолог Маомао 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/bd32a665-bed7-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7609",
+                    "title": "A Certain Dark Item"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/3da1d59f-be9a-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7603",
+                    "title": "TOUGEN ANKI: Nikko Kegon Falls Arc"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/a18b923d-c36c-11f1-961b-d2ef24229bee.webp",
+                    "ref": "7657",
+                    "title": "The Iceblade Sorcerer Shall Rule the World II"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/85951ef9-bdaf-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7598",
+                    "title": "FX Fighter Kurumi-chan"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/471988f4-77d1-11f1-9870-3a3323a6877a.webp",
+                    "ref": "7426",
+                    "title": "Please Excuse My Younger Brothers"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/9442aea0-c282-11f1-99c1-a6994bb0bde3.webp",
+                    "ref": "7646",
+                    "title": "A Returner's Magic Should be Special Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/48a7ab97-8872-11f1-ac09-62951faff73e.webp",
+                    "ref": "7495",
+                    "title": "BLEACH: Thousand-Year Blood War - The Calamity"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/badcf495-bed7-11f1-802e-1a9e631b924d.webp",
+                    "ref": "7608",
+                    "title": "Nia Liston: The Merciless Maiden"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/2b7310e7-c032-11f1-8f08-2256fdb9c436.webp",
+                    "ref": "7624",
+                    "title": "Aoashi Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/352724ea-2111-11f0-8fdc-0242ac120005.webp",
+                    "ref": "2662",
+                    "title": "ONE PIECE"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/93b5ad89-ecd8-11f0-b32d-46e833ca3405.webp",
+                    "ref": "7071",
+                    "title": "JUJUTSU KAISEN Season 3: The Culling Game Part 1"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/d13d036f-3be5-11f1-86f8-961cccca53e7.webp",
+                    "ref": "6985",
+                    "title": "Коли я переродився слизом Cезон 4"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/4f00e03c-77c3-11f1-9870-3a3323a6877a.webp",
+                    "ref": "7423",
+                    "title": "Mushoku Tensei: Jobless Reincarnation Season 3"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/dd59672b-3352-11f1-a11a-d67a57654ee4.webp",
+                    "ref": "7283",
+                    "title": "Re:ZERO -Starting Life in Another World- Season 4"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/77d45a77-2097-11f0-b8b6-0242ac120005.webp",
+                    "ref": "82",
+                    "title": "JUJUTSU KAISEN"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/a0a3ce65-5a8e-11f0-baf9-e627ce426d82.webp",
+                    "ref": "3055",
+                    "title": "Gachiakuta"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/f8c5de06-31d6-11f1-bbfe-12c3fcebece1.webp",
+                    "ref": "7272",
+                    "title": "Witch Hat Atelier"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/9a174786-7646-11f1-ab64-0edb926fbb5c.webp",
+                    "ref": "7412",
+                    "title": "The Exiled Heavy Knight Knows How to Game the System"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/6d897bf3-584c-11f0-bbc3-5e855efb9d4d.webp",
+                    "ref": "3028",
+                    "title": "DAN DA DAN Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/31f3c7a7-20a3-11f0-a350-0242ac120005.webp",
+                    "ref": "603",
+                    "title": "Bleach"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/dbed0f87-f2fd-11f0-85a2-ee729032c03a.webp",
+                    "ref": "7110",
+                    "title": "Frieren: Beyond Journey’s End Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/df163b18-ef14-11f0-937b-52343f095ca9.webp",
+                    "ref": "7095",
+                    "title": "Hell’s Paradise Season 2"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/593bfcc2-5f7c-11f1-b920-b607335cc112.webp",
+                    "ref": "7382",
+                    "title": "Smoking Behind the Supermarket with You"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/15ffafe8-d81e-11f0-8b6d-22622ebbf0bb.webp",
+                    "ref": "6978",
+                    "title": "Chainsaw Man – The Movie: Reze Arc"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/584e58a7-2098-11f0-b8b6-0242ac120005.webp",
+                    "ref": "146",
+                    "title": "Naruto"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/8f7ae762-61a5-11f1-b920-b607335cc112.webp",
+                    "ref": "7385",
+                    "title": "Кішка-куряга"
+                },
+                {
+                    "posterLoaded": true,
+                    "posterSource": "https://images.mikai.me/poster/big/4c623461-e8c8-11f0-bfec-3a0a37aa5ca9.webp",
+                    "ref": "7044",
+                    "title": "Sentenced to Be a Hero"
+                }
+            ],
+            "devicePixelRatio": 1.75,
+            "file": "catalogue.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "sha256": "96e1dea8d6d6f89b2c3f5863c087389c7a66d871d876f2ab5635b1d63c07a1da",
+            "surface": "live anonymous home catalogue",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Wrapper"
+        },
+        {
+            "capturedUtc": "2026-10-24T14:35:51Z",
+            "contextReady": true,
+            "devicePixelRatio": 1.75,
+            "durationSeconds": 12,
+            "file": "player.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pauseObserved": true,
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6d1ce64cda5f6318c5ce5ce6e54bc8fe652ca4505a7ccd055b707585c428088a",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv-2.dll",
+            "runtimeVersion": "stock-6d1ce64cda5f",
+            "sha256": "3b0658cf966383f3e48df98a2bcdd36f74be2526c5543afed2f814b32f900963",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 2,
+            "videoSize": [
+                320,
+                180
+            ],
+            "visibleOutputFrame": true,
+            "widgetClass": "mplayer::shell::PlayerDialog",
+            "widgetObjectName": "playerWindow",
+            "windowTitle": "Player — Mikai original demo.mp4"
+        },
+        {
+            "candidateA": "off",
+            "candidateB": "fast_a",
+            "capturedUtc": "2026-10-24T14:35:56Z",
+            "contextReady": true,
+            "devicePixelRatio": 1.75,
+            "durationSeconds": 12,
+            "file": "compare.png",
+            "frozenSize": [
+                2240,
+                1400
+            ],
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pauseObserved": true,
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "playbackHeld": true,
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6d1ce64cda5f6318c5ce5ce6e54bc8fe652ca4505a7ccd055b707585c428088a",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv-2.dll",
+            "runtimeVersion": "stock-6d1ce64cda5f",
+            "sha256": "e73cbeb6f06e8e1a5692ea2a8b8f170d467530b749d6fcab28e905d09d03648f",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 2,
+            "videoSize": [
+                320,
+                180
+            ],
+            "visibleOutputFrame": true,
+            "widgetClass": "mplayer::shell::CompareWindow",
+            "widgetObjectName": "",
+            "windowTitle": "Quality Comparison"
+        },
+        {
+            "capturedUtc": "2026-10-24T14:35:58Z",
+            "contextReady": true,
+            "devicePixelRatio": 1.75,
+            "durationSeconds": 12,
+            "file": "media-info.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "observedPlainText": "File\n  Filename: Mikai original demo.mp4\n  Path: <owned scratch>\\Mikai original demo.mp4\n  Container: mov,mp4,m4a,3gp,3g2,mj2\n  Duration: 00:00:12\n  Size: 403.09 KiB (412,765 bytes)\n\nVideo\n  Codec: H.265 / HEVC (High Efficiency Video Coding)\n  Dimensions: 320 × 180\n  Frame rate: 24.000 fps\n  Video bitrate: Unavailable\n  Audio bitrate: Unavailable\n\nAudio tracks: None\n\nSubtitle tracks: None\n\nUnavailable properties\n  Unavailable properties: video-bitrate: property unavailable\n  Unavailable properties: audio-bitrate: property unavailable\n",
+            "pauseObserved": true,
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "playing": false,
+            "positionSeconds": 1.5,
+            "runtimeDescriptor": "6d1ce64cda5f6318c5ce5ce6e54bc8fe652ca4505a7ccd055b707585c428088a",
+            "runtimeKind": "standard",
+            "runtimeLoaded": true,
+            "runtimeModule": "libmpv-2.dll",
+            "runtimeVersion": "stock-6d1ce64cda5f",
+            "sha256": "e39502f7992c28ad652716e0af1039701c605cb9716b3bbf25eaba26c0e321fe",
+            "shaderChain": "off",
+            "source": "Mikai original demo.mp4",
+            "sourceEpoch": 2,
+            "videoSize": [
+                320,
+                180
+            ],
+            "view": "Overview",
+            "visibleOutputFrame": true,
+            "widgetClass": "mplayer::shell::MediaInformationDialog",
+            "widgetObjectName": "playerMediaInformation",
+            "windowTitle": "Media information"
+        },
+        {
+            "appearancePreview": "before control changes",
+            "capturedUtc": "2026-10-24T14:36:00Z",
+            "devicePixelRatio": 1.75,
+            "file": "appearance-before.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "saved": false,
+            "sha256": "b3b308e2ba4320311b060437f78e1f7853c1aaad47f841ab5e063daf61f2ed04",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Wrapper"
+        },
+        {
+            "appearancePreview": "after control changes",
+            "capturedUtc": "2026-10-24T14:36:00Z",
+            "devicePixelRatio": 1.75,
+            "file": "appearance-preview.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "saved": false,
+            "sha256": "8049eff015bbf865ebc56ae15255cbf948dfa98ed8e0d532d5cfb3d8962bad51",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Wrapper"
+        },
+        {
+            "appearancePreview": "after Reset and repaint",
+            "capturedUtc": "2026-10-24T14:36:01Z",
+            "devicePixelRatio": 1.75,
+            "file": "appearance-reset.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "saved": false,
+            "sha256": "b3b308e2ba4320311b060437f78e1f7853c1aaad47f841ab5e063daf61f2ed04",
+            "widgetClass": "mikai::app::MainWindow",
+            "widgetObjectName": "mainWindow",
+            "windowTitle": "Mikai Wrapper"
+        },
+        {
+            "appearanceInteractions": {
+                "accentLabelUpdated": true,
+                "backgroundGradientToggled": true,
+                "cataloguePreviewCaptured": true,
+                "changedSliderValues": 6,
+                "gradientLabelUpdated": true,
+                "interactionRounds": 3,
+                "maximumControlDispatchAndEventsMs": 10,
+                "resetToDefaults": true,
+                "sliderLabelUpdated": true
+            },
+            "availablePages": [
+                "customization/general",
+                "customization/appearance",
+                "access",
+                "shortcuts",
+                "processing",
+                "components",
+                "benchmark"
+            ],
+            "capturedUtc": "2026-10-24T14:36:01Z",
+            "devicePixelRatio": 1.75,
+            "file": "settings.png",
+            "logicalSize": [
+                1280,
+                800
+            ],
+            "page": "customization/appearance",
+            "pixelSize": [
+                2240,
+                1400
+            ],
+            "saved": false,
+            "sha256": "52740f4f5187398ba6887508ad3f70c2a473af6f8a0da0931cb81c70d86b1be5",
+            "widgetClass": "mikai::app::SettingsDialog",
+            "widgetObjectName": "",
+            "windowTitle": "Settings"
+        }
+    ],
+    "startedUtc": "2026-10-24T14:35:39Z",
+    "success": true,
+    "video": {
+        "bytes": 412765,
+        "creditDeclaration": "Mikai project; generated from FFmpeg lavfi testsrc2; no third-party footage; Unlicense",
+        "declarationVerified": false,
+        "filename": "Mikai original demo.mp4",
+        "note": "Original/demo authorship is the operator's declaration, not inferred from the file. The input was copied read-only into owned scratch before playback.",
+        "sha256": "77b8d001611801aa478717013eecfa8a3b082a8586822080b5ad50ed4e67af44",
+        "sourceDeclaration": "tests/fixtures/README.md (12-second project-owned generated fixture)"
+    },
+    "workersDrained": true
+}

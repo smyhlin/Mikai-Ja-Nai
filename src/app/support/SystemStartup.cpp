@@ -68,7 +68,7 @@ LSTATUS readCommand(HKEY key, QString* command, bool* exists) {
     command->resize(static_cast<qsizetype>(bytes / sizeof(wchar_t)));
     if (!command->endsWith(QChar::Null)) return ERROR_INVALID_DATA;
     command->chop(1);
-    return ERROR_SUCCESS;
+    return command->contains(QChar::Null) ? ERROR_INVALID_DATA : ERROR_SUCCESS;
 }
 #endif
 
@@ -117,7 +117,7 @@ bool setSystemStartupEnabled(bool enabled, QString* error) {
     RegistryKey key;
     LSTATUS result = RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0,
                                    KEY_QUERY_VALUE | KEY_SET_VALUE, &key.handle);
-    if (result == ERROR_FILE_NOT_FOUND) {
+    if (result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND) {
         if (!enabled) return true;
         result = RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0,
                                  KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &key.handle, nullptr);
@@ -134,7 +134,11 @@ bool setSystemStartupEnabled(bool enabled, QString* error) {
     // A same-named foreign registration is not ours to replace or remove.
     if (exists && command.compare(expected, Qt::CaseInsensitive) != 0) {
         if (error != nullptr) {
-            *error = QCoreApplication::translate("SystemStartup", "The Mikai startup entry points to another executable and was left unchanged: %1")
+            *error = QCoreApplication::translate(
+                "SystemStartup",
+                "The Mikai startup entry points to another executable and was left unchanged: %1\n"
+                "If a portable folder was moved, disable startup from the old location before "
+                "moving it, or remove the stale Mikai entry in Windows before enabling it here.")
                          .arg(command);
         }
         return false;

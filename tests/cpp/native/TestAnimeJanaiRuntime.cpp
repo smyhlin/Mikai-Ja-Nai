@@ -306,6 +306,11 @@ void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() 
     mplayer::shell::PlayerDialog dialog(QStringLiteral("Dependency retry"), QString());
     auto* surface = dialog.findChild<mplayer::VideoSurface*>();
     QVERIFY(surface != nullptr);
+
+    // A saved preset is not an instruction to enable processing for a new player.
+    // Exercise the retry only after the user explicitly selects that preset.
+    QVERIFY(!surface->animeJanaiPlan().enabled);
+    dialog.applyAnimeJanaiRequest(QStringLiteral("builtin1002"));
     QTRY_COMPARE(surface->animeJanaiPlan().reasonKey,
                  QStringLiteral("animejanai.installation.fileInvalid"));
     QVERIFY(surface->animeJanaiPlan().enabled);

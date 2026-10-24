@@ -14,9 +14,11 @@
 //       the child is still suspended provably covers this process tree, while
 //       one performed after start does not.
 //   --exit-code <n>
-//       Run the event loop and exit with exactly <n>, no descendant.
+//       Run the event loop and exit with exactly <n>. With --descendant-id, start
+//       a detached descendant first so exit cleanup can be exercised too.
 //   --print-id <file>
-//       Write this process's identity (PID plus creation time) to <file>.
+//       Write this process's identity (PID plus the OS process-start token) to
+//       <file>.
 //   --descendant-id <file>
 //       Where the spawned descendant writes its own identity, and the handshake
 //       that orders the two files: the child records its identity only after
@@ -37,7 +39,14 @@
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
+
 #include <cstdio>
+#ifdef Q_OS_LINUX
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -55,15 +64,49 @@ constexpr int kDefaultDescendantMs = 10 * 60 * 1000;
 constexpr int kHandshakeWaitMs = 5000;
 constexpr int kHandshakePollMs = 10;
 
+QString processStartIdentity() {
+#ifdef Q_OS_WIN
+    FILETIME creationTime{};
+    FILETIME exitTime{};
+    FILETIME kernelTime{};
+    FILETIME userTime{};
+    if (::GetProcessTimes(::GetCurrentProcess(), &creationTime, &exitTime,
+                          &kernelTime, &userTime)) {
+        ULARGE_INTEGER ticks{};
+        ticks.LowPart = creationTime.dwLowDateTime;
+        ticks.HighPart = creationTime.dwHighDateTime;
+        constexpr ULONGLONG kUnixEpochOffset100ns = 116444736000000000ULL;
+        if (ticks.QuadPart >= kUnixEpochOffset100ns) {
+            return QString::number(static_cast<qlonglong>(
+                (ticks.QuadPart - kUnixEpochOffset100ns) / 10000ULL));
+        }
+    }
+    return QString();
+#elif defined(Q_OS_LINUX)
+    QFile statFile(QStringLiteral("/proc/self/stat"));
+    if (!statFile.open(QIODevice::ReadOnly)) return QString();
+    const QByteArray stat = statFile.readAll();
+    const qsizetype commandEnd = stat.lastIndexOf(')');
+    if (commandEnd < 0) return QString();
+    const QList<QByteArray> fields = stat.mid(commandEnd + 1).simplified().split(' ');
+    return fields.size() > 19 ? QString::fromLatin1(fields.at(19)) : QString();
+#else
+    return QString::number(QDateTime::currentDateTimeUtc().toMSecsSinceEpoch());
+#endif
+}
+
 void writeIdentityFile(const QString& path) {
-    // Both halves of a Win32 process's identity: the PID and the creation time.
-    // The contract script reads the PID here, then asks the OS for the process
-    // that holds it and compares the start time it reports. A recycled PID
-    // cannot survive that comparison, which is why this is written out rather
-    // than the process remembering its own number.
+    // creation= is the OS start identity: Unix milliseconds on Windows and
+    // /proc start-time ticks on Linux. The contract compares it to the live PID
+    // so PID reuse cannot make a dead process look like the original fixture.
+    const QString startIdentity = processStartIdentity();
+    if (startIdentity.isEmpty()) {
+        std::fprintf(stderr, "[launcher_fixture] cannot read this process's start identity\n");
+        return;
+    }
     QString text;
     text += QStringLiteral("pid=%1\n").arg(QCoreApplication::applicationPid());
-    text += QStringLiteral("creation=%1\n").arg(QDateTime::currentDateTimeUtc().toMSecsSinceEpoch());
+    text += QStringLiteral("creation=%1\n").arg(startIdentity);
     QFile file(path);
     if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Unbuffered)) {
         file.write(text.toUtf8());
@@ -81,10 +124,10 @@ QString optionValue(const QStringList& arguments, const QString& name) {
     return arguments.at(index + 1);
 }
 
-// Detached on purpose: the descendant's fate belongs to the launcher's tree
-// kill, not to this process's scope exit. A QProcess object destroyed while its
-// child runs would terminate the descendant and hide a missing tree kill.
-qint64 spawnDetachedDescendant(const QString& identityPath, int parkMs) {
+// The descendant's fate belongs to the launcher's tree kill, not to this
+// process's scope exit. It is genuinely detached on every platform so the
+// fixture detects failures that process-group-only cleanup cannot catch.
+qint64 spawnDescendant(const QString& identityPath, int parkMs) {
     qint64 pid = 0;
     const bool started = QProcess::startDetached(
         QCoreApplication::applicationFilePath(),
@@ -97,6 +140,19 @@ qint64 spawnDetachedDescendant(const QString& identityPath, int parkMs) {
         std::fflush(stderr);
         return 0;
     }
+#ifdef Q_OS_LINUX
+    // Make the regression observable: a normal child in the launcher's process
+    // group would pass a group-kill-only test without exercising subreaper cleanup.
+    const pid_t detachedSession = ::getsid(static_cast<pid_t>(pid));
+    const pid_t fixtureSession = ::getsid(0);
+    if (detachedSession < 0 || fixtureSession < 0 ||
+        detachedSession == fixtureSession) {
+        std::fprintf(stderr,
+                     "[launcher_fixture] descendant did not enter a detached Linux session\n");
+        std::fflush(stderr);
+        return 0;
+    }
+#endif
     return pid;
 }
 
@@ -129,7 +185,7 @@ int hangWithDescendant(const QCoreApplication& application) {
             ? optionValue(arguments, QStringLiteral("--descendant-ms")).toInt()
             : kDefaultDescendantMs;
 
-    const qint64 descendantPid = spawnDetachedDescendant(descendantIdentity, descendantMs);
+    const qint64 descendantPid = spawnDescendant(descendantIdentity, descendantMs);
     if (descendantPid == 0) return 71;
     // Order guarantees the contract script reads a descendant that really ran:
     // the descendant's identity file exists before the child's is written.
@@ -195,6 +251,33 @@ int main(int argc, char** argv) {
         if (!ok) {
             std::fprintf(stderr, "[launcher_fixture] --exit-code needs an integer\n");
             return 73;
+        }
+        if (parser.isSet(descendantIdOption)) {
+            const QString identity = parser.value(printIdOption);
+            if (identity.isEmpty()) {
+                std::fprintf(stderr,
+                             "[launcher_fixture] --descendant-id needs --print-id <file>\n");
+                return 70;
+            }
+            const QString descendantIdentity = parser.value(descendantIdOption);
+            const QString descendantMs = parser.value(descendantMsOption);
+            bool durationOk = false;
+            const int duration = descendantMs.isEmpty()
+                ? kDefaultDescendantMs : descendantMs.toInt(&durationOk);
+            if ((!descendantMs.isEmpty() && !durationOk) || duration <= 0) {
+                std::fprintf(stderr,
+                             "[launcher_fixture] --descendant-ms needs a positive integer\n");
+                return 71;
+            }
+            const qint64 descendantPid =
+                spawnDescendant(descendantIdentity, duration);
+            if (descendantPid == 0) return 71;
+            awaitDescendantIdentity(descendantIdentity);
+            writeIdentityFile(identity);
+        } else if (parser.isSet(printIdOption)) {
+            // Normal-child scenarios also need an identity to prove the fixture
+            // ran; this path does not spawn a descendant.
+            writeIdentityFile(parser.value(printIdOption));
         }
         // A healthy child still has a full application life before it leaves.
         QTimer::singleShot(0, &application, [&application, code]() {

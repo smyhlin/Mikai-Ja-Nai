@@ -1,0 +1,85 @@
+Qt 6.12.0 — qtimageformats: installed SDK attribution evidence
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+This is an attribution/source-evidence SUPERSET for this SDK module, not a
+claim that every item below is shipped by Mikai. Build tools and unselected
+plugins appear because the publisher SBOM describes the SDK, not our package.
+A final per-file package inventory selects the deployed subset. NOASSERTION
+and unresolved source/build obligations are not cleared by this notice.
+For LGPL use, see qt/LGPL-3.0-only.txt and qt/GPL-3.0-only.txt.
+Other SPDX texts named below are in qt/ or upstream source; extracted custom
+license texts follow the attribution list. No commercial Qt license is selected.
+
+qtimageformats
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): NOASSERTION
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTgaPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QWbmpPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QTiffPlugin_Attribution_libtiff
+  Version: 4.7.2
+  Source: https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz
+  License expression (publisher): libtiff
+Copyright (c) 1988-1997 Sam Leffler
+Copyright (c) 1991-1997 Silicon Graphics, Inc.
+
+QTiffPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QWebpPlugin_Attribution_libwebp
+  Version: 1.6.0
+  Source: https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz
+  License expression (publisher): BSD-3-Clause
+Copyright (c) 2010, Google Inc. All rights reserved.
+
+QWebpPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+QICNSPlugin
+  Version: 6.12.0
+  Source: git://code.qt.io/qt/qtimageformats.git
+  License expression (publisher): LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+Copyright (C) The Qt Company Ltd. and other contributors.
+
+CMake
+  Version: 4.3.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+CMake generator Ninja
+  Version: 1.10.2
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Compiler GNU
+  Version: 15.1.0
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+
+Linker
+  Version: unknown
+  Source: NOASSERTION
+  License expression (publisher): NOASSERTION
+NOASSERTION
+

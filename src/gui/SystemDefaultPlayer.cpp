@@ -1,12 +1,17 @@
 #include "SystemDefaultPlayer.hpp"
+#include "SystemDefaultPlayerLaunch.hpp"
 
 #include <QCoreApplication>
 
 #ifdef Q_OS_WIN
+#include <QByteArray>
 #include <QDir>
+#include <QList>
 #include <QOperatingSystemVersion>
+#include <QStringList>
+#include <algorithm>
+#include <utility>
 #include <QtCore/qt_windows.h>
-#include <shellapi.h>
 #include <shlobj.h>
 
 namespace {
@@ -91,7 +96,7 @@ LSTATUS readString(HKEY key, const wchar_t* name, QString* value, bool* exists) 
     if (type != REG_SZ || size % sizeof(wchar_t) != 0) return ERROR_INVALID_DATA;
     value->resize(size / sizeof(wchar_t));
     while (value->endsWith(QChar(u'\0'))) value->chop(1);
-    return ERROR_SUCCESS;
+    return value->contains(QChar(u'\0')) ? ERROR_INVALID_DATA : ERROR_SUCCESS;
 }
 
 // Do not adopt an existing foreign namespace just because it has our name.
@@ -134,18 +139,134 @@ bool checkRegisteredApplication(QString* error) {
         || collision(path + QStringLiteral("\\Mikai"), error);
 }
 
-bool writeString(const QString& path, const wchar_t* name, const QString& value,
-                 QString* error) {
+struct RegistrationValue {
+    RegistrationValue(QString valuePath, QString valueName, QString desiredValue)
+        : path(std::move(valuePath)), name(std::move(valueName)), desired(std::move(desiredValue)) {}
+
+    QString path;
+    QString name;
+    QString desired;
+    bool existed = false;
+    DWORD type = REG_NONE;
+    QByteArray bytes;
+};
+
+LSTATUS readValue(RegistrationValue& value) {
     RegistryKey key;
-    LSTATUS status = RegCreateKeyExW(HKEY_CURRENT_USER, wide(path), 0, nullptr,
-                                    REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
-                                    &key.handle, nullptr);
-    if (status == ERROR_SUCCESS) {
-        status = RegSetValueExW(key.handle, name, 0, REG_SZ,
-            reinterpret_cast<const BYTE*>(value.utf16()),
-            static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    LSTATUS status = RegOpenKeyExW(HKEY_CURRENT_USER, wide(value.path), 0,
+                                   KEY_QUERY_VALUE, &key.handle);
+    if (missing(status)) return ERROR_SUCCESS;
+    if (status != ERROR_SUCCESS) return status;
+    DWORD size = 0;
+    status = RegQueryValueExW(key.handle, wide(value.name), nullptr, &value.type, nullptr, &size);
+    if (missing(status)) return ERROR_SUCCESS;
+    if (status != ERROR_SUCCESS) return status;
+    if (size > 64 * 1024) return ERROR_INVALID_DATA;
+    value.bytes.resize(size);
+    status = RegQueryValueExW(key.handle, wide(value.name), nullptr, &value.type,
+                             reinterpret_cast<BYTE*>(value.bytes.data()), &size);
+    if (status != ERROR_SUCCESS) return status;
+    value.bytes.resize(size);
+    value.existed = true;
+    return ERROR_SUCCESS;
+}
+
+LSTATUS writeValue(const RegistrationValue& value, bool restore) {
+    RegistryKey key;
+    LSTATUS status;
+    if (restore && !value.existed) {
+        status = RegOpenKeyExW(HKEY_CURRENT_USER, wide(value.path), 0, KEY_SET_VALUE, &key.handle);
+        if (missing(status)) return ERROR_SUCCESS;
+    } else {
+        status = RegCreateKeyExW(HKEY_CURRENT_USER, wide(value.path), 0, nullptr,
+                                REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
+                                &key.handle, nullptr);
     }
-    return status == ERROR_SUCCESS || registryFailure(path, status, error);
+    if (status != ERROR_SUCCESS) return status;
+    if (restore && !value.existed) {
+        status = RegDeleteValueW(key.handle, wide(value.name));
+        return missing(status) ? ERROR_SUCCESS : status;
+    }
+    const BYTE* bytes = restore
+        ? reinterpret_cast<const BYTE*>(value.bytes.constData())
+        : reinterpret_cast<const BYTE*>(value.desired.utf16());
+    const DWORD size = restore ? static_cast<DWORD>(value.bytes.size())
+        : static_cast<DWORD>((value.desired.size() + 1) * sizeof(wchar_t));
+    return RegSetValueExW(key.handle, wide(value.name), 0, restore ? value.type : REG_SZ, bytes, size);
+}
+
+// Snapshot every owned field before touching anything. Preserve prior bytes,
+// types and foreign additions, including when a portable copy moves folders.
+bool writeRegistration(QList<RegistrationValue>& values, QString* error) {
+    QStringList newKeys;
+    for (RegistrationValue& value : values) {
+        const LSTATUS status = readValue(value);
+        if (status != ERROR_SUCCESS) return registryFailure(value.path, status, error);
+        // Include intermediate private keys so a failed first registration does
+        // not leave newly-created shell/Capabilities scaffolding behind.
+        QString path = value.path;
+        const QString root = path.startsWith(QString::fromWCharArray(applicationKey))
+            ? QString::fromWCharArray(applicationKey)
+            : path.startsWith(QString::fromWCharArray(progIdKey))
+                ? QString::fromWCharArray(progIdKey) : path;
+        for (;;) {
+            RegistryKey key;
+            const LSTATUS keyStatus = RegOpenKeyExW(HKEY_CURRENT_USER, wide(path), 0,
+                                                    KEY_QUERY_VALUE, &key.handle);
+            if (missing(keyStatus)) {
+                if (!newKeys.contains(path)) newKeys.append(path);
+            } else if (keyStatus != ERROR_SUCCESS) {
+                return registryFailure(path, keyStatus, error);
+            }
+            if (path == root) break;
+            path.truncate(path.lastIndexOf(QLatin1Char('\\')));
+        }
+    }
+    for (qsizetype index = 0; index < values.size(); ++index) {
+        const LSTATUS status = writeValue(values.at(index), false);
+        if (status == ERROR_SUCCESS) continue;
+        registryFailure(values.at(index).path, status, error);
+        QStringList failures;
+        for (qsizetype undo = index + 1; undo > 0; --undo) {
+            const RegistrationValue& value = values.at(undo - 1);
+            const LSTATUS restored = writeValue(value, true);
+            if (restored != ERROR_SUCCESS) {
+                failures.append(QStringLiteral("HKCU\\%1: %2").arg(value.path, windowsError(restored)));
+            }
+        }
+        std::sort(newKeys.begin(), newKeys.end(), [](const QString& a, const QString& b) {
+            return a.size() > b.size();
+        });
+        for (const QString& path : std::as_const(newKeys)) {
+            RegistryKey key;
+            LSTATUS pruned = RegOpenKeyExW(HKEY_CURRENT_USER, wide(path), 0,
+                                           KEY_QUERY_VALUE, &key.handle);
+            if (missing(pruned)) continue;
+            if (pruned == ERROR_SUCCESS) {
+                DWORD subkeys = 0;
+                DWORD count = 0;
+                pruned = RegQueryInfoKeyW(key.handle, nullptr, nullptr, nullptr, &subkeys, nullptr,
+                                          nullptr, &count, nullptr, nullptr, nullptr, nullptr);
+                // RegDeleteKey would discard foreign values even if there are
+                // no child keys. Never recursively delete a private namespace.
+                if (pruned == ERROR_SUCCESS && subkeys == 0 && count == 0) {
+                    pruned = RegDeleteKeyW(HKEY_CURRENT_USER, wide(path));
+                }
+            }
+            if (pruned != ERROR_SUCCESS && !missing(pruned)) {
+                failures.append(QStringLiteral("HKCU\\%1: %2").arg(path, windowsError(pruned)));
+            }
+        }
+        if (error != nullptr && !failures.isEmpty()) {
+            *error += QLatin1Char('\n') + QCoreApplication::translate(
+                "SystemDefaultPlayer",
+                "The previous registration could not be fully restored; some changes may remain:")
+                + QLatin1Char('\n') + failures.join(QLatin1Char('\n'));
+        }
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
+        return false;
+    }
+    return true;
 }
 
 bool registerApplication(QString* error) {
@@ -159,30 +280,38 @@ bool registerApplication(QString* error) {
     const QString capabilities = QString::fromWCharArray(capabilitiesKey);
     const QString progId = QString::fromWCharArray(progIdKey);
     const QString executable = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    if (executable.isEmpty() || executable.contains(QLatin1Char('"'))) {
+        if (error != nullptr) {
+            *error = QCoreApplication::translate(
+                "SystemDefaultPlayer", "The application executable path is unavailable or invalid.");
+        }
+        return false;
+    }
     const QString icon = QStringLiteral("\"%1\",0").arg(executable);
     // Literal file argument, including spaces and leading dashes; never a shell.
     const QString command = QStringLiteral("\"%1\" --open-video \"%2\"")
         .arg(executable, QStringLiteral("%1"));
     const QString owner = QString::fromWCharArray(ownerId);
-    if (!writeString(app, ownerValue, owner, error)
-        || !writeString(progId, ownerValue, owner, error)
-        || !writeString(progId, nullptr, QCoreApplication::translate(
-            "SystemDefaultPlayer", "Mikai video file"), error)
-        || !writeString(progId + QStringLiteral("\\DefaultIcon"), nullptr, icon, error)
-        || !writeString(progId + QStringLiteral("\\shell\\open\\command"), nullptr, command, error)
-        || !writeString(capabilities, L"ApplicationName", QString::fromWCharArray(applicationName), error)
-        || !writeString(capabilities, L"ApplicationDescription", QCoreApplication::translate(
-            "SystemDefaultPlayer", "Play local video files with Mikai."), error)
-        || !writeString(capabilities, L"ApplicationIcon", icon, error)) return false;
+    QList<RegistrationValue> values;
+    values.append({app, QString::fromWCharArray(ownerValue), owner});
+    values.append({progId, QString::fromWCharArray(ownerValue), owner});
+    values.append({progId, {}, QCoreApplication::translate(
+        "SystemDefaultPlayer", "Mikai video file")});
+    values.append({progId + QStringLiteral("\\DefaultIcon"), {}, icon});
+    values.append({progId + QStringLiteral("\\shell\\open\\command"), {}, command});
+    values.append({capabilities, QStringLiteral("ApplicationName"), QString::fromWCharArray(applicationName)});
+    values.append({capabilities, QStringLiteral("ApplicationDescription"), QCoreApplication::translate(
+        "SystemDefaultPlayer", "Play local video files with Mikai.")});
+    values.append({capabilities, QStringLiteral("ApplicationIcon"), icon});
     const QString associations = capabilities + QStringLiteral("\\FileAssociations");
     for (const char* extension : videoExtensions) {
-        const QString name = QString::fromLatin1(extension);
-        if (!writeString(associations, wide(name), QStringLiteral("Mikai.Video"), error)) return false;
+        values.append({associations, QString::fromLatin1(extension), QStringLiteral("Mikai.Video")});
     }
-    // Publish only after all executable and capabilities metadata is present.
-    if (!writeString(QString::fromWCharArray(registeredApplicationsKey), applicationName,
-                     capabilities, error)) return false;
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    // Publish last; if any step fails, restore the exact previous registration.
+    values.append({QString::fromWCharArray(registeredApplicationsKey),
+                   QString::fromWCharArray(applicationName), capabilities});
+    if (!writeRegistration(values, error)) return false;
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSHNOWAIT, nullptr, nullptr);
     return true;
 }
 
@@ -211,14 +340,8 @@ bool requestSystemDefaultPlayer(QString* error) {
         >= QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 22000);
     const wchar_t* uri = windows11 ? L"ms-settings:defaultapps?registeredAppUser=Mikai"
                                   : L"ms-settings:defaultapps";
-    SHELLEXECUTEINFOW info{};
-    info.cbSize = sizeof(info);
-    info.fMask = SEE_MASK_FLAG_NO_UI;
-    info.lpVerb = L"open";
-    info.lpFile = uri;
-    info.nShow = SW_SHOWNORMAL;
-    if (ShellExecuteExW(&info)) return true;
-    const DWORD status = GetLastError();
+    DWORD status = ERROR_SUCCESS;
+    if (detail::launchDefaultAppsSettings(uri, &status)) return true;
     if (error != nullptr) {
         *error = QCoreApplication::translate(
             "SystemDefaultPlayer",

@@ -17,6 +17,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDeadlineTimer>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
@@ -403,8 +404,8 @@ constexpr auto kNewKey = "mk_new_key_synthetic";
 
 class CallOutcome {
  public:
-  explicit CallOutcome(MikaiClient* client, const QString& query)
-      : client_(client), query_(query) {}
+  explicit CallOutcome(MikaiClient* client, const QString& query, bool validateKey = false)
+      : client_(client), query_(query), validateKey_(validateKey) {}
 
   CallOutcome(const CallOutcome&) = delete;
   CallOutcome& operator=(const CallOutcome&) = delete;
@@ -437,9 +438,15 @@ class CallOutcome {
  private:
   void run() {
     try {
-      mikai::backend::AnimeQuery namedQuery;
-      namedQuery.search = query_;
-      client_->search(namedQuery);
+      if (validateKey_) {
+        const QMap<QString, QVariant> result = client_->validateApiKey(query_);
+        threw_ = !result.value(QStringLiteral("valid")).toBool();
+        code_ = result.value(QStringLiteral("error_code")).toString();
+      } else {
+        mikai::backend::AnimeQuery namedQuery;
+        namedQuery.search = query_;
+        client_->search(namedQuery);
+      }
     } catch (const MikaiApiError& error) {
       threw_ = true;
       code_ = error.code;
@@ -452,6 +459,7 @@ class CallOutcome {
 
   MikaiClient* client_ = nullptr;
   QString query_;
+  bool validateKey_ = false;
   QThread* thread_ = nullptr;
   std::atomic<bool> finished_{false};
   bool threw_ = false;
@@ -951,6 +959,47 @@ void TestApiClient::aStaleResponseTheServerStillHoldsIsReusedUnchanged() {
   QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Held title"));
 }
 
+void TestApiClient::aRevalidatedBodySurvivesEvictionWhileItsRequestIsInFlight() {
+  LoopbackApi api;
+  LoopbackApi fillerApi;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  QVERIFY2(fillerApi.start(&error), qPrintable(error));
+  fillerApi.setRoute([](const CapturedRequest&) {
+    return WireReply{200, catalogueBody(QStringLiteral("Other catalogue entry")),
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")}}};
+  });
+  MikaiClient filler(QString::fromLatin1(kNewKey), fillerApi.baseUrl());
+  int call = 0;
+  bool conditional = false;
+  api.setRoute([&](const CapturedRequest& request) {
+    if (++call == 1) {
+      return WireReply{200, catalogueBody(QStringLiteral("Validated title")),
+                       {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=0")},
+                        {QStringLiteral("ETag"), QStringLiteral("\"original\"")}}};
+    }
+    conditional = LoopbackApi::valueOf(request, QStringLiteral("If-None-Match")) ==
+                  QLatin1String("\"original\"");
+    // The original reply is still in flight. Populate more than the bounded
+    // cache can hold through another endpoint before sending its 304.
+    for (int index = 0; index < 129; ++index) {
+      AnimeQuery query;
+      query.search = QStringLiteral("eviction-entry-%1").arg(index);
+      filler.search(query);
+    }
+    return WireReply{304, {},
+                     {{QStringLiteral("Cache-Control"), QStringLiteral("max-age=60")}}};
+  });
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("cache-evicted-validator");
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Validated title"));
+  QCOMPARE(client.search(query).items.first().titles.english, QStringLiteral("Validated title"));
+  QVERIFY(conditional);
+  QCOMPARE(api.requestCount(), 2);
+  QCOMPARE(fillerApi.requestCount(), 129);
+}
+
 void TestApiClient::aNoCacheResponseIsRevalidatedEveryTime() {
   LoopbackApi api;
   QString error;
@@ -1066,6 +1115,25 @@ void TestApiClient::fetchBytesReportsLoopbackDownloadProgress() {
   }
   QCOMPARE(previous, qint64(body.size()));
 }
+void TestApiClient::anArtworkTimeoutDoesNotWaitForAnAlreadyFinishedAbort() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  MikaiClient client(QString::fromLatin1(kOldKey));
+  QElapsedTimer elapsed;
+  elapsed.start();
+  bool failed = false;
+  try {
+    client.fetchBytes(QStringLiteral("http://127.0.0.1:%1/quiet").arg(server.serverPort()), 100);
+  } catch (const MikaiApiError& caught) {
+    failed = true;
+    QCOMPARE(caught.code, QStringLiteral("network_error"));
+    QVERIFY2(caught.message.contains(QStringLiteral("timed out"), Qt::CaseInsensitive),
+             qPrintable(caught.message));
+  }
+  QVERIFY(failed);
+  QVERIFY2(elapsed.elapsed() < 1500, "a completed abort was followed by a second event-loop wait");
+}
+
 void TestApiClient::aPlainEnvelopeSuccessParsesIntoTheResult() {
   LoopbackApi api;
   QString error;
@@ -1108,6 +1176,32 @@ void TestApiClient::aTransportFailureIsNotAnApiFailure() {
   }
 }
 
+void TestApiClient::aCrossOriginRedirectDoesNotForwardTheApiCredential() {
+  LoopbackApi source;
+  LoopbackApi destination;
+  QString error;
+  QVERIFY2(source.start(&error), qPrintable(error));
+  QVERIFY2(destination.start(&error), qPrintable(error));
+  source.setRoute([&destination](const CapturedRequest&) {
+    return WireReply{302, {}, {{QStringLiteral("Location"),
+                                destination.baseUrl() + QStringLiteral("/anime")}}};
+  });
+
+  MikaiClient client(QString::fromLatin1(kOldKey), source.baseUrl());
+  try {
+    AnimeQuery query;
+    query.search = QStringLiteral("redirect");
+    client.search(query);
+    QFAIL("a cross-origin redirect must not be followed with the API credential");
+  } catch (const MikaiApiError& caught) {
+    QVERIFY(caught.code == QStringLiteral("network_error") ||
+            caught.code == QStringLiteral("http_error"));
+  }
+  QCOMPARE(source.requestCount(), 1);
+  QCOMPARE(source.headerOf(0, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
+  QCOMPARE(destination.requestCount(), 0);
+}
+
 void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   LoopbackApi api;
   QString error;
@@ -1146,6 +1240,36 @@ void TestApiClient::aKeyChangedWhileARequestWasParkedDoesNotSendTheOldKey() {
   QVERIFY2(parked.finished(), "the parked request never completed");
   QVERIFY2(!parked.threw(), qPrintable(parked.code()));
   QTRY_VERIFY_WITH_TIMEOUT(client.rateLimitState().queued == 0, 5000);
+}
+
+void TestApiClient::validatingAParkedOldKeyDoesNotChangeTheNewKeysQuota() {
+  LoopbackApi api;
+  QString error;
+  QVERIFY2(api.start(&error), qPrintable(error));
+  api.enqueue(200, okListPayload(), LoopbackApi::quota(300, 0, 2));
+  api.enqueue(200, QByteArrayLiteral(R"({"ok":true,"result":{"authenticated":true}})"),
+              LoopbackApi::quota(300, 0, 60));
+  MikaiClient client(QString::fromLatin1(kOldKey), api.baseUrl());
+  AnimeQuery query;
+  query.search = QStringLiteral("prime-validation-window");
+  client.search(query);
+
+  CallOutcome validation(&client, QString::fromLatin1(kOldKey), true);
+  validation.start();
+  QTRY_VERIFY_WITH_TIMEOUT(client.rateLimitState().queued == 1, 1500);
+  const ApiKeySaveResult saved = client.setApiKey(QString::fromLatin1(kNewKey));
+  QVERIFY2(saved.ok, qPrintable(saved.reason));
+
+  validation.waitForFinished();
+  QVERIFY(validation.finished());
+  QVERIFY2(!validation.threw(), qPrintable(validation.code()));
+  QCOMPARE(api.requestCount(), 2);
+  QCOMPARE(api.headerOf(1, QStringLiteral("X-API-Key")), QString::fromLatin1(kOldKey));
+  QCOMPARE(client.apiKey(), QString::fromLatin1(kNewKey));
+  const mikai::backend::RateLimitState state = client.rateLimitState();
+  QVERIFY2(!state.remaining.has_value(), "the candidate's old quota contaminated the saved key");
+  QCOMPARE(state.resetIn, 0);
+  QCOMPARE(state.inFlight, 0);
 }
 
 void TestApiClient::aSavedKeyIsReportedAsSaved() {

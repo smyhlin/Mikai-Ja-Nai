@@ -234,15 +234,15 @@ The upstream runtime dependencies, stock model graphs, and source revisions belo
 
 ## 4. Rights & Redistribution Boundaries (`ESC-1..6`)
 
-- **No third-party binaries or model graphs are vendored in this repository or shipped by `cmake/dist.cmake`.**
-- `cmake/dist.cmake` explicitly strips any `components`, `assets`, `models`, or `records` directories from `dist-mikai/native/` and verifies their absence before completing.
+- Optional native/runtime bundles and acquired model graphs are not vendored in this repository or included in `cmake/dist.cmake` output. The distribution does include base third-party binaries such as the pinned `libmpv` and Qt/runtime files; see [`packaging/licenses/NOTICE.txt`](../packaging/licenses/NOTICE.txt) and [`packaging/third-party.json`](../packaging/third-party.json) for their obligations and publication blockers.
+- `cmake/dist.cmake` strips any `components`, `assets`, `models`, or `records` directories from `dist-mikai/native/` and verifies their absence before completing. This does not mean that the application distribution contains no third-party binaries.
 - **Escalation summary (`native/manifest/components.json`):**
   - `ESC-1`: Upstream `the-database/animejanai-inference` carries no repository license file (`license: null`). Local user-initiated acquisition into `<nativeRoot>/components/` is supported; public redistribution of compiled `aji*` binaries remains `blocked`.
   - `ESC-2`: The 5 spatial ONNX models (`models-2x_AnimeJaNai-1`) are licensed under **CC BY-NC-SA 4.0** (local non-commercial use permitted; bundle redistribution `blocked`).
   - `ESC-3`: RIFE `v4.14` weight tensors trace byte-for-byte (128/128 FP32→FP16 tensors) to `hzwer/Practical-RIFE` (MIT), while the ONNX exporter wrapper metadata is unattributed; graphs are acquired per-machine into `<nativeRoot>/components/rife/3.7.0`.
   - `ESC-4` *(Resolved)*: DirectML (`Microsoft.AI.DirectML 1.15.4`) and ONNX Runtime DirectML (`1.24.4`) licenses are verified (`LICENSE.txt` + `LICENSE-CODE.txt`).
   - `ESC-5`: `trtexec` is an NVIDIA SDK developer tool; the Prepared Native helper (`mikai_native_prep`) uses the in-process `nvinfer1` C++ builder API without invoking `trtexec`, while the official AnimeJaNai config path extracts `trtexec` only into the user's local component store.
-  - `ESC-6`: Tracks GPL/LGPL complete-corresponding-source obligations for `mpv`.
+  - `ESC-6`: Tracks GPL/LGPL complete-corresponding-source obligations for the base `mpv` runtime. The pinned Windows DEV and Linux bundle archives are binary releases, not corresponding source. Windows run 37965200722 configure logs are retained privately and establish a GPL-enabled non-LGPL libmpv build with static GPLv3 FFmpeg; exact dependency revisions/source-cache, all patch bytes and complete license closure remain unresolved. The Qt 6.12.0 Windows payload and compiler-runtime DLLs are inventoried by deployed path/hash/version. The official Qt source archive is also retained at `../release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz`, but its own manifest says complete corresponding source is false; SDK module/build mapping, modifications/scripts, distributor-controlled source delivery and Qt replacement/relink requirements remain open. See [`packaging/provenance/windows-runtime.json`](../packaging/provenance/windows-runtime.json), [`packaging/licenses/NOTICE.txt`](../packaging/licenses/NOTICE.txt) and [`packaging/third-party.json`](../packaging/third-party.json). This escalation remains open.
 
 ---
 

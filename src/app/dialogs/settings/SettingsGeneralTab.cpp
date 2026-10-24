@@ -288,7 +288,9 @@ void SettingsDialog::retranslateSystemIntegration() {
     systemStartup_->setText(tr("Start Mikai when I &sign in"));
     systemStartup_->setAccessibleName(tr("Start Mikai when I sign in"));
     const QString startupHint = systemStartupSupported()
-                                    ? tr("Open Mikai automatically after signing in to Windows.")
+                                    ? tr("Open Mikai automatically after signing in to Windows. "
+                                         "Disable this before moving a portable folder, then enable "
+                                         "it again from the new location.")
                                     : tr("Automatic startup is only available on Windows.");
     systemStartupHint_->setText(startupHint);
     systemStartup_->setToolTip(startupHint);
@@ -297,7 +299,8 @@ void SettingsDialog::retranslateSystemIntegration() {
     systemContextMenu_->setAccessibleName(tr("Add Mikai to the video file context menu"));
     const QString contextHint =
         systemContextMenuSupported()
-            ? tr("Add an Open in Mikai command for video files without changing their default app.")
+            ? tr("Add an Open in Mikai command for video files without changing their default app. "
+                 "After moving a portable folder, enable this again to update its path.")
             : tr("The video file context menu integration is only available on Windows.");
     systemContextMenuHint_->setText(contextHint);
     systemContextMenu_->setToolTip(contextHint);

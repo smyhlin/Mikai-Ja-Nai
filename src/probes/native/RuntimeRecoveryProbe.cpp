@@ -388,15 +388,16 @@ void runPublish(const QString& scratch, const QString& module) {
                                          &secondReason),
           QStringLiteral("republishing the same inventory is refused: %1").arg(secondReason));
 
-    // The recovery resolve half answers from what is installed, so this run
-    // provisions nothing: the bundle published above is the one it finds.
-    const RuntimeSelection resolved = mplayer::native::resolveRuntime(RuntimeChoice::Standard);
-    check(!resolved.loaded, QStringLiteral("resolve does not load; commit alone pins"));
-    check(resolved.resolvedBundle.has_value(), QStringLiteral("resolve produced a validated bundle"));
+    // Resolve this exact immutable bundle, not the executable-adjacent stock
+    // tree that the public default Standard choice uses in bundled builds.
+    const RuntimeSelection resolved = mplayer::native::resolveNamedBundle(publishedRoot);
+    check(!resolved.loaded, QStringLiteral("exact-root resolve does not load; commit alone pins"));
+    check(resolved.resolvedBundle.has_value(),
+          QStringLiteral("exact-root resolve produced a validated bundle"));
     if (!resolved.resolvedBundle.has_value()) return;
-    check(QDir::cleanPath(resolved.root).compare(QDir::cleanPath(publishedRoot), Qt::CaseInsensitive) == 0,
-          QStringLiteral("resolve preferred the published bundle over the staged stock tree (%1)")
-              .arg(resolved.root));
+    check(QDir::cleanPath(resolved.root).compare(QDir::cleanPath(publishedRoot),
+                                                 Qt::CaseInsensitive) == 0,
+          QStringLiteral("exact-root resolve selected the published bundle (%1)").arg(resolved.root));
 
     const RuntimeSelection committed = mplayer::native::commitRuntime(resolved);
     checkPublishedAndLoaded(committed, publishedRoot);

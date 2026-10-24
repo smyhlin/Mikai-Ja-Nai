@@ -1638,13 +1638,16 @@ void TestNativeBundle::aDifferentlyCasedFileNameResolvesOnWindows() {
 
     QString reason;
     const std::optional<Bundle> bundle = readBundle(temp.path(), &reason);
-    QVERIFY2(bundle.has_value(), qPrintable(reason));
 #ifdef Q_OS_WIN
     // Windows compares paths case-insensitively, so the declared spelling
     // resolves and the bundle is valid.
+    QVERIFY2(bundle.has_value(), qPrintable(reason));
     QVERIFY2(validateBundle(*bundle, &reason), qPrintable(reason));
 #else
-    QVERIFY(!validateBundle(*bundle, &reason));
+    // A case-different file name is not the declared file on a case-sensitive
+    // filesystem, so strict inventory parsing refuses the bundle itself.
+    QVERIFY(!bundle.has_value());
+    QVERIFY(reason.contains(QStringLiteral("not in the file inventory")));
 #endif
 }
 

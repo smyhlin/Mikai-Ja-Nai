@@ -156,16 +156,24 @@ HMODULE loadRestricted(const QString& absolutePath, QString* reason) {
 
 inline void* lookupModuleSymbol(HMODULE module, const char* name) {
 #ifdef _WIN32
-    return reinterpret_cast<void*>(lookupModuleSymbol(module, name));
+    return reinterpret_cast<void*>(::GetProcAddress(module, name));
 #else
     return ::dlsym(module, name);
 #endif
 }
 
-QStringList declaredDlls(const native::Bundle& bundle) {
+bool isDeclaredLibrary(const QString& path) {
+#ifdef _WIN32
+    return path.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive);
+#else
+    return QFileInfo(path).fileName().contains(QLatin1String(".so"));
+#endif
+}
+
+QStringList declaredLibraries(const native::Bundle& bundle) {
     QStringList paths;
     for (const native::BundleFile& file : bundle.files) {
-        if (file.path.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive))
+        if (isDeclaredLibrary(file.path))
             paths.append(file.path);
     }
     paths.sort(Qt::CaseInsensitive);
@@ -173,9 +181,9 @@ QStringList declaredDlls(const native::Bundle& bundle) {
 }
 
 // GGML keeps a process-global terminate handler; loading and unloading every helper is unsafe.
-bool classifyInventoryDlls(const native::Bundle& bundle, QStringList* mpvModules, QString* reason) {
+bool classifyInventoryLibraries(const native::Bundle& bundle, QStringList* mpvModules, QString* reason) {
     mpvModules->clear();
-    for (const QString& relative : declaredDlls(bundle)) {
+    for (const QString& relative : declaredLibraries(bundle)) {
         const QString absolute = native::canonicalPath(QDir(bundle.root).filePath(relative));
         QFile file(absolute);
         if (!file.open(QIODevice::ReadOnly)) {
@@ -193,6 +201,7 @@ bool classifyInventoryDlls(const native::Bundle& bundle, QStringList* mpvModules
         const auto unmap = qScopeGuard([&file, mapping] { file.unmap(mapping); });
         const QByteArray bytes = QByteArray::fromRawData(
             reinterpret_cast<const char*>(mapping), file.size());
+#ifdef _WIN32
         const native::PeExportInfo exp = native::inspectPeExports(bytes);
         if (!exp.ok) {
             if (reason != nullptr)
@@ -200,9 +209,17 @@ bool classifyInventoryDlls(const native::Bundle& bundle, QStringList* mpvModules
                               .arg(relative, exp.reason);
             return false;
         }
-        if (exp.exportsMpvClientApiVersion) {
+        if (exp.exportsMpvClientApiVersion)
             mpvModules->append(relative);
-        }
+#else
+        const QString modulePath = native::canonicalPath(QDir(bundle.root).filePath(relative));
+        HMODULE module = loadRestricted(modulePath, reason);
+        if (module == nullptr)
+            return false;
+        if (lookupModuleSymbol(module, "mpv_client_api_version") != nullptr)
+            mpvModules->append(relative);
+        FreeLibrary(module);
+#endif
     }
     return true;
 }
@@ -221,8 +238,8 @@ int loadDependencyOnly(const QString& root, const QString& relative, QTextStream
             break;
         }
     }
-    if (declared == nullptr || !relative.endsWith(QLatin1String(".dll"), Qt::CaseInsensitive)) {
-        err << "not a declared DLL: " << relative << '\n';
+    if (declared == nullptr || !isDeclaredLibrary(relative)) {
+        err << "not a declared shared library: " << relative << '\n';
         return 2;
     }
     QFile file(QDir(bundle->root).filePath(relative));
@@ -252,26 +269,26 @@ int loadDependencyOnly(const QString& root, const QString& relative, QTextStream
 
 bool checkDependenciesInChildren(const native::Bundle& bundle, const QString& core,
                                 QString* reason) {
-    for (const QString& relative : declaredDlls(bundle)) {
+    for (const QString& relative : declaredLibraries(bundle)) {
         if (relative == core) continue;
         QProcess child;
         child.setProgram(QCoreApplication::applicationFilePath());
         child.setArguments({QStringLiteral("__load-dll"), bundle.root, relative});
         child.start();
         if (!child.waitForStarted(10000)) {
-            *reason = QStringLiteral("cannot start the isolated DLL check for '%1': %2")
+            *reason = QStringLiteral("cannot start the isolated library check for '%1': %2")
                           .arg(relative, child.errorString());
             return false;
         }
         if (!child.waitForFinished(60000)) {
             child.kill();
             child.waitForFinished();
-            *reason = QStringLiteral("the isolated DLL check for '%1' did not finish: %2")
+            *reason = QStringLiteral("the isolated library check for '%1' did not finish: %2")
                           .arg(relative, child.errorString());
             return false;
         }
         if (child.exitStatus() != QProcess::NormalExit || child.exitCode() != 0) {
-            *reason = QStringLiteral("the isolated DLL check for '%1' failed (exit %2): %3")
+            *reason = QStringLiteral("the isolated library check for '%1' failed (exit %2): %3")
                           .arg(relative).arg(child.exitCode())
                           .arg(QString::fromLocal8Bit(child.readAllStandardError()).trimmed());
             return false;
@@ -455,7 +472,7 @@ int verify(const QString& path, QTextStream& out, QTextStream& err) {
     if (!searchReason.isEmpty()) return reject(searchReason);
 
     QStringList mpvModules;
-    if (!classifyInventoryDlls(*bundle, &mpvModules, &reason)) return reject(reason);
+    if (!classifyInventoryLibraries(*bundle, &mpvModules, &reason)) return reject(reason);
     if (mpvModules.size() != 1)
         return reject(QStringLiteral("a bundle carries exactly one mpv module; this one carries %1")
                           .arg(mpvModules.isEmpty() ? QStringLiteral("none")
@@ -496,10 +513,14 @@ int verify(const QString& path, QTextStream& out, QTextStream& err) {
 
     out << "accepted: " << path << '\n';
     describeBundle(out, *bundle);
-    out << "  inventory        " << declaredDlls(*bundle).size()
+    out << "  inventory        " << declaredLibraries(*bundle).size()
+#ifdef _WIN32
         << " DLL(s), verified hashes and x64 eager/delay import closure; static export classification\n"
-        << "  dependency loads " << declaredDlls(*bundle).size() - 1
-        << " DLL(s), each checked in a fresh restricted-search child\n"
+#else
+        << " shared object(s), verified hashes and restricted dynamic loading/export classification\n"
+#endif
+        << "  dependency loads " << declaredLibraries(*bundle).size() - 1
+        << " shared library(s), each checked in a fresh restricted-search child\n"
         << "  mpv module       1 (" << mpvModules.first() << "), client API " << reported << '\n'
         << "  native filter    "
         << (bundle->kind == native::BundleKind::Native

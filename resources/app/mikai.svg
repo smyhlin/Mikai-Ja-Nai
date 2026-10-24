@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Mikai</title>
+  <desc>A crisp mint ribbon forming a distinctive angular M on a deep slate field.</desc>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#17232d"/>
+  <path d="M112 354 186 190l70 128 70-128 74 164" fill="none" stroke="#73d9c4" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 318v52" fill="none" stroke="#d9fff4" stroke-width="26" stroke-linecap="round"/>
+</svg>

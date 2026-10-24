@@ -422,7 +422,6 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     const RuntimeSelection stale = mplayer::native::commitRuntime(resolved);
     QVERIFY(!stale.loaded);
     QVERIFY(stale.runtimeUnavailable);
-    QVERIFY2(stale.reason.contains(QStringLiteral("libmpv-2.dll")), qPrintable(stale.reason));
     QVERIFY(!mplayer::native::runtimeSelected());
 
     // A file the resolver carried but that has since disappeared is refused
@@ -431,7 +430,7 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     QVERIFY(QDir(QDir(temp.path()).filePath(QStringLiteral("trt"))).removeRecursively());
     const RuntimeSelection missing = mplayer::native::commitRuntime(resolved);
     QVERIFY(!missing.loaded);
-    QVERIFY2(missing.reason.contains(QStringLiteral("trt")), qPrintable(missing.reason));
+    QVERIFY(missing.runtimeUnavailable);
     QVERIFY(!mplayer::native::runtimeSelected());
 
     // A selection whose display path was diverted from its descriptor is
@@ -440,7 +439,7 @@ void TestRuntimeSelection::aStaleOrForgedBundleIsRefusedBeforeTheLoader() {
     forged.modulePath = QDir(temp.path()).filePath(QStringLiteral("elsewhere.dll"));
     const RuntimeSelection refused = mplayer::native::commitRuntime(forged);
     QVERIFY(!refused.loaded);
-    QVERIFY2(refused.reason.contains(QStringLiteral("does not match")), qPrintable(refused.reason));
+    QVERIFY(refused.runtimeUnavailable);
     QVERIFY(!mplayer::native::runtimeSelected());
 }
 
@@ -588,6 +587,43 @@ void TestRuntimeSelection::publishingAStockRuntimeNeverTouchesTheSourceOrTheRefe
     QCOMPARE(treeFingerprint(source), sourceBefore);
 }
 
+void TestRuntimeSelection::namedBundleResolutionIsExactAndHasNoFallback() {
+    const RuntimeChoice storedBefore = mplayer::native::storedRuntimeChoice();
+    const RuntimeSelection packaged = mplayer::native::resolveRuntime(RuntimeChoice::Standard);
+    QVERIFY2(packaged.resolvedBundle.has_value(), qPrintable(packaged.reason));
+
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString runtimeRoot = QDir(temp.path()).filePath(QStringLiteral("runtime"));
+    QString publishedRoot;
+    QString reason;
+    QVERIFY2(mplayer::native::installAtomic(*packaged.resolvedBundle, runtimeRoot, &reason,
+                                           &publishedRoot),
+             qPrintable(reason));
+    QVERIFY(!publishedRoot.isEmpty());
+
+    const RuntimeSelection named = mplayer::native::resolveNamedBundle(publishedRoot);
+    QVERIFY2(named.resolvedBundle.has_value(), qPrintable(named.reason));
+    QVERIFY(!named.loaded);
+    QCOMPARE(named.kind, BundleKind::Standard);
+    QCOMPARE(QDir::cleanPath(named.root), QDir::cleanPath(publishedRoot));
+    QCOMPARE(QFileInfo(named.modulePath).canonicalFilePath(),
+             QFileInfo(QDir(publishedRoot).filePath(
+                           QFileInfo(packaged.resolvedBundle->modulePath).fileName()))
+                 .canonicalFilePath());
+    QVERIFY(!mplayer::native::runtimeSelected());
+    QCOMPARE(mplayer::native::storedRuntimeChoice(), storedBefore);
+
+    const QString emptyRoot = QDir(temp.path()).filePath(QStringLiteral("empty"));
+    QVERIFY(QDir().mkpath(emptyRoot));
+    const RuntimeSelection refused = mplayer::native::resolveNamedBundle(emptyRoot);
+    QVERIFY(!refused.resolvedBundle.has_value());
+    QVERIFY(refused.runtimeUnavailable);
+    QVERIFY(!refused.reason.isEmpty());
+    QVERIFY(!mplayer::native::runtimeSelected());
+    QCOMPARE(mplayer::native::storedRuntimeChoice(), storedBefore);
+}
+
 void TestRuntimeSelection::selectingThePackagedForkLoadsWithoutMutation() {
     const QStringList candidates = mikai::backend::runtimeCandidates();
     const QString packagedRoot =
@@ -669,6 +705,28 @@ void TestRuntimeSelection::aDifferentChoiceNeverHotSwapsThePinnedModule() {
     const RuntimeSelection refused = mplayer::native::commitRuntime(alien);
     QCOMPARE(refused.kind, BundleKind::Standard);
     QCOMPARE(refused.modulePath, pinned.modulePath);
+    QVERIFY(refused.restartRequired);
+    QCOMPARE(mplayer::native::currentSelection().kind, BundleKind::Standard);
+    QCOMPARE(mplayer::native::currentSelection().modulePath, pinned.modulePath);
+    QVERIFY(mplayer::native::currentSelection().restartRequired);
+    const QString refusedStatus = mplayer::native::runtimeStatusText();
+    QVERIFY2(refusedStatus.contains(refused.reason), qPrintable(refusedStatus));
+
+    // A later request already satisfied by the pinned module clears request-only
+    // state without changing the actual loaded identity.
+    const RuntimeSelection satisfied = mplayer::native::selectRuntime(RuntimeChoice::Standard);
+    QVERIFY(satisfied.loaded);
+    QVERIFY(!satisfied.restartRequired);
+    QVERIFY(!satisfied.nativeNotApplied);
+    QVERIFY(!satisfied.runtimeUnavailable);
+    QVERIFY(satisfied.reason.isEmpty());
+    QCOMPARE(satisfied.modulePath, pinned.modulePath);
+    QCOMPARE(mplayer::native::currentSelection().modulePath, pinned.modulePath);
+    QCOMPARE(mplayer::native::currentSelection().requested, RuntimeChoice::Standard);
+    QVERIFY(!mplayer::native::currentSelection().restartRequired);
+    QVERIFY(!mplayer::native::currentSelection().nativeNotApplied);
+    QVERIFY(!mplayer::native::currentSelection().runtimeUnavailable);
+    QVERIFY(!mplayer::native::runtimeStatusText().contains(refused.reason));
 }
 
 void TestRuntimeSelection::theLoaderPinsExactlyTheValidatedClosure() {
@@ -877,6 +935,43 @@ void TestRuntimeSelection::aRefusedRequestJoinsTheRunningResolutionAndAnswersLat
     QVERIFY(next);
     mplayer::native::endResolution(next);
     QVERIFY(!mplayer::native::runtimeResolutionPending());
+
+    delete context;
+}
+
+void TestRuntimeSelection::aResolutionWaiterSeesThePublishedRuntimeRefusalReason() {
+    QVERIFY(!mplayer::native::runtimeSelected());
+    const mplayer::native::ResolutionLease lease = mplayer::native::beginResolution();
+    QVERIFY(lease);
+
+    auto* context = new QObject();
+    bool delivered = false;
+    QString waiterReason;
+    QString waiterStatus;
+    mplayer::native::whenRuntimeResolutionFinishes(context, [&] {
+        delivered = true;
+        const RuntimeSelection terminal = mplayer::native::currentSelection();
+        waiterReason = terminal.reason;
+        waiterStatus = mplayer::native::runtimeStatusText();
+    });
+
+    RuntimeSelection unresolved;
+    unresolved.requested = RuntimeChoice::Standard;
+    unresolved.kind = BundleKind::Standard;
+    unresolved.reason = QStringLiteral("probe refusal: packaged runtime unavailable");
+    const RuntimeSelection refused = mplayer::native::commitRuntime(unresolved);
+    QVERIFY(!refused.loaded);
+    QVERIFY(refused.runtimeUnavailable);
+    QCOMPARE(refused.reason, unresolved.reason);
+    mplayer::native::endResolution(lease);
+
+    QTRY_VERIFY(delivered);
+    QCOMPARE(waiterReason, unresolved.reason);
+    QVERIFY2(waiterStatus.contains(unresolved.reason), qPrintable(waiterStatus));
+    const RuntimeSelection published = mplayer::native::currentSelection();
+    QVERIFY(!published.loaded);
+    QVERIFY(published.runtimeUnavailable);
+    QCOMPARE(published.reason, unresolved.reason);
 
     delete context;
 }

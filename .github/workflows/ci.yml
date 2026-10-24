@@ -1,0 +1,88 @@
+name: Build, test and prepare packages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact trusted commit selected by the release ref-validation job
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: ${{ matrix.profile }} / Qt 6.12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            profile: windows-x64
+          - runner: ubuntu-24.04
+            profile: linux-x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source without retained credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux compiler, runtime and software display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake ninja-build pkg-config patchelf libmpv-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgl1-mesa-dri libglu1-mesa-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
+            libxcb-xkb1 libx11-xcb1 libfontconfig1 libdbus-1-3 \
+            xvfb xauth
+      - name: Ensure Windows installer compiler is available
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup provisioning failed' }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC.exe missing: $iscc" }
+          Split-Path $iscc | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install public SDK acquisition tooling
+        run: python -m pip install aqtinstall==3.3.0 ninja==1.11.1.4
+      - name: Provision Qt 6.12 and its matching Windows compiler
+        run: python packaging/ci/provision.py --root "$RUNNER_TEMP/mikai-sdk" --evidence ci-artifacts/evidence
+      - name: Build, hermetic CTest, isolated software renderer smoke, package
+        run: >-
+          python packaging/ci/build.py
+          --build-dir "$RUNNER_TEMP/mikai-build"
+          --output-dir ci-artifacts/packages
+          --evidence ci-artifacts/evidence
+      - name: Preserve prepared packages and actual verification logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mikai-${{ matrix.profile }}
+          path: ci-artifacts/
+          if-no-files-found: error
+          retention-days: 14

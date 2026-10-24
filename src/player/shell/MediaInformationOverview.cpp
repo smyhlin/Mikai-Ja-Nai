@@ -2,14 +2,16 @@
 
 #include "ShellTheme.hpp"
 
-#include <QAbstractTextDocumentLayout>
+#include <QApplication>
 #include <QFrame>
+#include <QHash>
 #include <QGridLayout>
 #include <QLabel>
 #include <QPalette>
-#include <QResizeEvent>
+#include <QPointer>
 #include <QScrollBar>
 #include <QStringList>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTextOption>
@@ -33,25 +35,54 @@ public:
         setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
         document()->setDocumentMargin(0);
+        measurement_.setDocumentMargin(0);
+        measurement_.setDefaultTextOption(document()->defaultTextOption());
         QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         policy.setHeightForWidth(true);
         setSizePolicy(policy);
         setMinimumWidth(0);
-        connect(document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
-                this, [this] { updateGeometry(); });
     }
 
     QSize sizeHint() const override { return {24 * fontMetrics().averageCharWidth(), fontMetrics().lineSpacing()}; }
     QSize minimumSizeHint() const override { return {0, fontMetrics().lineSpacing()}; }
     bool hasHeightForWidth() const override { return true; }
     int heightForWidth(int width) const override {
-        document()->setTextWidth(std::max(1, width));
-        return std::max(fontMetrics().lineSpacing(), static_cast<int>(std::ceil(document()->size().height())));
+        // A layout can query several candidate widths. Never resize the live
+        // editor document here: doing so emits documentSizeChanged during the
+        // parent's layout pass and disturbs its viewport/selection geometry.
+        measurement_.setDefaultFont(font());
+        measurement_.setTextWidth(std::max(1, width));
+        return std::max(fontMetrics().lineSpacing(),
+                        static_cast<int>(std::ceil(measurement_.size().height())));
     }
 
     void setValue(const QString& value) {
-        if (value == toPlainText()) return;
-        setPlainText(value);
+        const QString previous = toPlainText();
+        if (value == previous) return;
+        const QTextCursor selection = textCursor();
+        qsizetype prefix = 0;
+        const qsizetype commonSize = std::min(previous.size(), value.size());
+        while (prefix < commonSize && previous[prefix] == value[prefix]) ++prefix;
+        qsizetype suffix = 0;
+        while (suffix < commonSize - prefix &&
+               previous[previous.size() - suffix - 1] == value[value.size() - suffix - 1])
+            ++suffix;
+        const int oldEnd = static_cast<int>(previous.size() - suffix);
+        const int newEnd = static_cast<int>(value.size() - suffix);
+        const auto updatedPosition = [prefix, oldEnd, newEnd](int position) {
+            if (position <= prefix) return position;
+            if (position >= oldEnd) return position + newEnd - oldEnd;
+            return std::min(position, newEnd);
+        };
+        QTextCursor edit(document());
+        edit.setPosition(static_cast<int>(prefix));
+        edit.setPosition(oldEnd, QTextCursor::KeepAnchor);
+        edit.insertText(value.mid(prefix, value.size() - prefix - suffix));
+        QTextCursor restored(document());
+        restored.setPosition(updatedPosition(selection.anchor()));
+        restored.setPosition(updatedPosition(selection.position()), QTextCursor::KeepAnchor);
+        setTextCursor(restored);
+        measurement_.setPlainText(value);
         QString escaped = value.toHtmlEscaped();
         escaped.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
         setToolTip(QStringLiteral("<qt>%1</qt>").arg(escaped));
@@ -59,11 +90,10 @@ public:
     }
 
 protected:
-    void resizeEvent(QResizeEvent* event) override {
-        QTextEdit::resizeEvent(event);
-        updateGeometry();
-    }
     void wheelEvent(QWheelEvent* event) override { event->ignore(); }
+
+private:
+    mutable QTextDocument measurement_;
 };
 
 enum class RowKind { Card, Heading, Summary, Fact };
@@ -157,7 +187,31 @@ void MediaInformationOverview::setDocument(const MediaInformationDocument& docum
         }
     }
     const int scroll = verticalScrollBar()->value();
+    QString anchorId;
+    int anchorOffset = 0;
+    const auto rowWidget = [](const Content::Widgets& widgets) -> QWidget* {
+        return widgets.value != nullptr && !widgets.value->isHidden()
+            ? static_cast<QWidget*>(widgets.value) : widgets.label;
+    };
+    for (qsizetype i = 0; i < content_->widgets.size(); ++i) {
+        QWidget* candidate = rowWidget(content_->widgets[i]);
+        if (candidate == nullptr) continue;
+        const int top = candidate->mapTo(viewport(), QPoint()).y();
+        if (top + candidate->height() > 0) {
+            anchorId = content_->rows[i].id;
+            anchorOffset = top;
+            break;
+        }
+    }
+    QPointer<QWidget> focus = QApplication::focusWidget();
     if (!sameStructure) {
+        // Loading/error/track sections can come and go while the user is
+        // copying a different field. Move surviving editors instead of
+        // destroying their documents and selections with the old layout.
+        QHash<QString, qsizetype> previousRows;
+        for (qsizetype i = 0; i < content_->rows.size(); ++i)
+            previousRows.insert(content_->rows[i].id, i);
+        const QVector<Content::Widgets> previousWidgets = content_->widgets;
         auto* body = new QWidget;
         auto* layout = new QVBoxLayout(body);
         layout->setContentsMargins(0, 0, 0, 0);
@@ -169,6 +223,10 @@ void MediaInformationOverview::setDocument(const MediaInformationDocument& docum
         int gridRow = 0;
         for (const OverviewRow& row : rows) {
             Content::Widgets widgets;
+            const auto previous = previousRows.constFind(row.id);
+            if (previous != previousRows.cend() &&
+                content_->rows[*previous].kind == row.kind)
+                widgets = previousWidgets[*previous];
             if (row.kind == RowKind::Card) {
                 auto* frame = new QFrame(body);
                 frame->setFrameShape(QFrame::StyledPanel);
@@ -186,25 +244,33 @@ void MediaInformationOverview::setDocument(const MediaInformationDocument& docum
                 grid->setVerticalSpacing(kFrameMargin / 2);
                 grid->setColumnStretch(1, 1);
                 gridRow = 0;
-                widgets.label = headingLabel(card);
+                if (widgets.label == nullptr) widgets.label = headingLabel(card);
+                else widgets.label->setParent(card);
                 grid->addWidget(widgets.label, gridRow++, 0, 1, 2);
-                widgets.value = new FactValue(card);
+                if (widgets.value == nullptr) widgets.value = new FactValue(card);
+                else widgets.value->setParent(card);
                 grid->addWidget(widgets.value, gridRow++, 0, 1, 2);
                 layout->addWidget(frame);
             } else if (row.kind == RowKind::Heading) {
-                widgets.label = headingLabel(card);
+                if (widgets.label == nullptr) widgets.label = headingLabel(card);
+                else widgets.label->setParent(card);
                 grid->addWidget(widgets.label, gridRow++, 0, 1, 2);
             } else {
-                widgets.value = new FactValue(card);
+                if (widgets.value == nullptr) widgets.value = new FactValue(card);
+                else widgets.value->setParent(card);
                 if (row.kind == RowKind::Fact) {
-                    widgets.label = new QLabel(card);
-                    widgets.label->setTextFormat(Qt::PlainText);
-                    widgets.label->setWordWrap(true);
-                    widgets.label->setMinimumWidth(0);
-                    widgets.label->setMaximumWidth(16 * fontMetrics().averageCharWidth());
-                    QPalette colors = widgets.label->palette();
-                    colors.setColor(QPalette::WindowText, w70());
-                    widgets.label->setPalette(colors);
+                    if (widgets.label == nullptr) {
+                        widgets.label = new QLabel(card);
+                        widgets.label->setTextFormat(Qt::PlainText);
+                        widgets.label->setWordWrap(true);
+                        widgets.label->setMinimumWidth(0);
+                        widgets.label->setMaximumWidth(16 * fontMetrics().averageCharWidth());
+                        QPalette colors = widgets.label->palette();
+                        colors.setColor(QPalette::WindowText, w70());
+                        widgets.label->setPalette(colors);
+                    } else {
+                        widgets.label->setParent(card);
+                    }
                     grid->addWidget(widgets.label, gridRow, 0, Qt::AlignTop);
                     grid->addWidget(widgets.value, gridRow++, 1);
                 } else {
@@ -219,7 +285,10 @@ void MediaInformationOverview::setDocument(const MediaInformationDocument& docum
     for (qsizetype i = 0; i < rows.size(); ++i) {
         const OverviewRow& row = rows[i];
         const Content::Widgets& widgets = content_->widgets[i];
-        if (widgets.label != nullptr) widgets.label->setText(row.label);
+        if (widgets.label != nullptr) {
+            widgets.label->setText(row.label);
+            widgets.label->show();
+        }
         if (widgets.value != nullptr) {
             widgets.value->setVisible(!row.value.isEmpty());
             widgets.value->setValue(row.value);
@@ -229,7 +298,18 @@ void MediaInformationOverview::setDocument(const MediaInformationDocument& docum
     content_->document = document;
     content_->rows = rows;
     if (widget() != nullptr && widget()->layout() != nullptr) widget()->layout()->activate();
-    verticalScrollBar()->setValue(scroll);
+    if (focus != nullptr && isAncestorOf(focus)) focus->setFocus(Qt::OtherFocusReason);
+    bool restoredAnchor = false;
+    for (qsizetype i = 0; !anchorId.isEmpty() && i < rows.size(); ++i) {
+        if (rows[i].id != anchorId) continue;
+        if (QWidget* anchor = rowWidget(content_->widgets[i])) {
+            const int top = anchor->mapTo(viewport(), QPoint()).y();
+            verticalScrollBar()->setValue(verticalScrollBar()->value() + top - anchorOffset);
+            restoredAnchor = true;
+        }
+        break;
+    }
+    if (!restoredAnchor) verticalScrollBar()->setValue(scroll);
 }
 
 }

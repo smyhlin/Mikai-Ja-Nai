@@ -30,6 +30,11 @@ namespace native {
 /// Persisted as the lowercase strings "standard" / "native", never as ordinals.
 enum class BundleKind { Standard, Native };
 
+/// Owned runtimes prove their complete directory tree. A host libmpv proves
+/// only its canonical module; its dependencies remain the host loader's
+/// responsibility and it must never be published as a self-contained bundle.
+enum class BundleLayout { OwnedDirectory, SystemModule };
+
 /// One declared file: root-relative, forward slashes, exact size, lower-case
 /// SHA-256.
 struct BundleFile {
@@ -77,10 +82,12 @@ struct BundlePreparation {
 /// `root` and `modulePath` are absolute and canonical. `deps` are dependency
 /// directory names as the manifest states them, relative to `root`;
 /// `toMpvBundleDescriptor()` is what turns them into the absolute directories
-/// restricted DLL search needs. `files` is the complete declared inventory, so
-/// a caller need not re-read the manifest to enumerate the closure.
+/// restricted DLL search needs. `files` is the complete declared inventory for
+/// OwnedDirectory, or just the canonical libmpv for SystemModule. The latter
+/// deliberately makes no claim about the host's dependency closure.
 struct Bundle {
     BundleKind kind = BundleKind::Standard;
+    BundleLayout layout = BundleLayout::OwnedDirectory;
     QString root;
     QString modulePath;
     QString descriptorId;
@@ -144,7 +151,9 @@ std::optional<Bundle> readBundle(const QString& root, QString* reason = nullptr)
 /// its recorded size and digest, stays inside the root, crosses no reparse
 /// point, names a real x64 PE for every DLL, leaves no imported module
 /// unresolved except the explicit Windows system exceptions, and leaves nothing
-/// undeclared in the root. A statement about files, never about a loaded module.
+/// undeclared in an owned root. SystemModule instead proves exactly one
+/// canonical host libmpv, not the directory around it. A statement about files,
+/// never about a loaded module.
 bool validateBundle(const Bundle& bundle, QString* reason = nullptr);
 
 /// `validateBundle` with a trust-on-unchanged fast path.
@@ -160,6 +169,12 @@ bool validateBundle(const Bundle& bundle, QString* reason = nullptr);
 /// `invalidateBundleValidation` drops a remembered verdict, which is what the
 /// load-failure path does so a bundle that stops working is re-hashed.
 bool validateBundleCached(const Bundle& bundle, QString* reason = nullptr);
+
+/// Stat-only check of an exact descriptor validated in this process. Never
+/// hashes payload bytes or repairs a missing/stale verdict: resolution must run
+/// validateBundleCached off-thread first. Used at GUI-thread load/attach
+/// boundaries so a cold cache cannot turn playback startup into a blocking hash.
+bool isBundleValidationCurrent(const Bundle& bundle, QString* reason = nullptr);
 
 /// Drops the remembered verdict for `root`, so the next check hashes again.
 void invalidateBundleValidation(const QString& root);
@@ -186,6 +201,14 @@ std::optional<Bundle> describeStandardRuntime(const QString& modulePath, QString
 /// fingerprint and rebuilt from the cache when nothing moved.
 std::optional<Bundle> describeStandardRuntimeCached(const QString& modulePath,
                                                     QString* reason = nullptr);
+
+/// Linux host-only selection: resolves the SONAME alias to one regular
+/// canonical libmpv.so.2[.version], hashes that module, and records a stat-only
+/// proof for GUI-thread commit. Does not inventory /usr/lib, follow unrelated
+/// symlinks, claim private dependency ownership, or alter loader search paths.
+/// Host dependency availability and the actual API are learned only at load.
+std::optional<Bundle> describeSystemRuntimeCached(const QString& modulePath,
+                                                 QString* reason = nullptr);
 
 /// Stages into a same-volume `.staging-*` directory, copies only the verified
 /// inventory plus the manifest, re-validates the staged payload from disk,

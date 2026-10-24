@@ -72,15 +72,28 @@ struct HttpResult {
 // Python implementation.
 HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& request) {
     HttpResult result;
+    if (WorkCancellationScope::cancellationRequested()) {
+        result.error = QStringLiteral("the request was cancelled");
+        return result;
+    }
     QNetworkReply* reply = manager->get(request);
     QEventLoop loop;
     QTimer timer;
+    QTimer abortDrainTimer;
     timer.setSingleShot(true);
+    abortDrainTimer.setSingleShot(true);
     QTimer cancelTimer;
     cancelTimer.setInterval(200);
-    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    bool timedOut = false;
+    bool cancelled = false;
+    QObject::connect(&timer, &QTimer::timeout, &loop, [&]() {
+        timedOut = reply->isRunning();
+        loop.quit();
+    });
+    QObject::connect(&abortDrainTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(&cancelTimer, &QTimer::timeout, &loop, [&]() {
         if (WorkCancellationScope::cancellationRequested()) {
+            cancelled = true;
             loop.quit();
         }
     });
@@ -88,23 +101,31 @@ HttpResult runBlocking(QNetworkAccessManager* manager, const QNetworkRequest& re
     timer.start(kTimeoutMs);
     cancelTimer.start();
     loop.exec();
+    timer.stop();
     cancelTimer.stop();
     if (reply->isRunning()) {
         // The deadline fired first: abort so the reply cannot outlive us. The
         // drain is on the same timer rather than an unbounded wait, because an
         // abort can complete late and this thread belongs to a pool.
         reply->abort();
-        timer.start(kTimeoutMs);
-        loop.exec();
+        if (reply->isRunning()) {
+            abortDrainTimer.start(2000);
+            loop.exec();
+        }
     }
     timer.stop();
+    abortDrainTimer.stop();
 
     result.status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     const auto pairs = reply->rawHeaderPairs();
     for (const auto& pair : pairs) {
         result.headers.insert(QString::fromUtf8(pair.first), QString::fromUtf8(pair.second));
     }
-    if (reply->error() != QNetworkReply::NoError) {
+    if (cancelled) {
+        result.error = QStringLiteral("the request was cancelled");
+    } else if (timedOut) {
+        result.error = QStringLiteral("the request timed out after %1 ms").arg(kTimeoutMs);
+    } else if (reply->error() != QNetworkReply::NoError) {
         result.error = reply->errorString();
     }
     result.body = reply->readAll();

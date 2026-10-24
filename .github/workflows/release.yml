@@ -1,0 +1,121 @@
+name: Prepare and optionally publish a release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag reachable from the default branch
+        required: true
+        type: string
+      publish:
+        description: Request publication after rights gates and release environment approval
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate trusted existing version tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.ref.outputs.tag }}
+      commit: ${{ steps.ref.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Enforce default-branch ancestry and tagged project version
+        id: ref
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python packaging/ci/release.py validate --tag "$REQUESTED_TAG"
+
+  build:
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source-ref: ${{ needs.validate.outputs.commit }}
+
+  prepare:
+    name: Assemble source, provenance, checksums and verification logs
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: mikai-*
+          path: collected
+      - name: Bind all packages and reports to the validated source commit
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: >-
+          python packaging/ci/release.py assemble
+          --tag "$RELEASE_TAG" --artifacts collected --output release-artifacts
+      - name: Preserve release preparation even when publication is blocked
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mikai-source-provenance
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Approved public release (fails closed on redistribution blockers)
+    needs: [validate, prepare]
+    if: github.event_name == 'push' || inputs.publish == true
+    runs-on: ubuntu-24.04
+    # Maintainers MUST configure required reviewers and allowed version tags on
+    # this environment before enabling publication. Build jobs have no secrets.
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mikai-source-provenance
+          path: release-artifacts
+      - name: Require explicit base-runtime rights clearance and intact evidence
+        run: python packaging/ci/release.py gate --directory release-artifacts
+      - name: Publish only this verified existing tag, without overwriting a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: |
+          gh release create "$RELEASE_TAG" release-artifacts/* \
+            --verify-tag --target "$RELEASE_COMMIT" \
+            --title "Mikai ${RELEASE_TAG#v}" \
+            --notes-file release-artifacts/RELEASE-NOTES.txt

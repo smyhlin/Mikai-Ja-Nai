@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>mikai.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Unlicense</project_license>
+  <name>Mikai</name>
+  <summary>Video playback with optional Anime4K processing</summary>
+  <description>
+    <p>Mikai is a Qt desktop video player and catalogue browser. Ordinary playback
+    uses libmpv. Anime4K shader presets and a visual comparison workspace are
+    optional; original video playback does not require AI components.</p>
+    <p>The Linux package requires a compatible desktop OpenGL environment and
+    system libmpv. Optional Windows native inference bundles are not included or
+    supported by this Linux release path.</p>
+  </description>
+  <launchable type="desktop-id">mikai.desktop</launchable>
+  <provides><binary>mikai</binary></provides>
+  <categories><category>AudioVideo</category><category>Player</category></categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@PROJECT_VERSION@" type="development" date="2026-10-23">
+      <description><p>Initial release preparation. Platform verification is recorded separately.</p></description>
+    </release>
+  </releases>
+</component>

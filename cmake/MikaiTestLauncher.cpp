@@ -5,17 +5,33 @@
 #include <QtCore/QDirIterator>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
 #include <QtCore/QProcessEnvironment>
 #include <QtCore/QTemporaryDir>
+#ifdef Q_OS_LINUX
+#include <QtCore/QThread>
+#endif
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #include <tlhelp32.h>
 #endif
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
+#include <vector>
+
+#ifdef Q_OS_LINUX
+#include <cerrno>
+#include <csignal>
+#include <sys/prctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -29,6 +45,127 @@ constexpr qint64 kKillGraceMs = 10 * 1000;
 constexpr qint64 kPollSliceMs = 100;
 
 constexpr int kExitTimeout = 3;
+
+#ifdef Q_OS_LINUX
+// QProcess owns the direct test child. Once that child exits, Linux reparents
+// its orphaned descendants to this subreaper. Every child visible here belongs
+// to the single test process tree launched below; use its kernel parent PID and
+// start time rather than a process name or a broad system-wide match.
+struct AdoptedChildIdentity {
+    pid_t pid = -1;
+    unsigned long long startTime = 0;
+};
+
+bool readLinuxProcessIdentity(pid_t pid, pid_t* parentPid,
+                              unsigned long long* startTime) {
+    QFile statFile(QStringLiteral("/proc/%1/stat").arg(static_cast<qlonglong>(pid)));
+    if (!statFile.open(QIODevice::ReadOnly)) return false;
+    const QByteArray stat = statFile.readAll();
+    const qsizetype commandEnd = stat.lastIndexOf(')');
+    if (commandEnd < 0) return false;
+
+    // comm is parenthesized but may itself contain spaces or ')'. The final ')'
+    // is the delimiter before field 3 (state).
+    const QList<QByteArray> fields = stat.mid(commandEnd + 1).simplified().split(' ');
+    if (fields.size() <= 19) return false;
+    bool parentOk = false;
+    bool startOk = false;
+    const qlonglong parsedParent = fields.at(1).toLongLong(&parentOk);
+    const qulonglong parsedStart = fields.at(19).toULongLong(&startOk);
+    if (!parentOk || !startOk) return false;
+    *parentPid = static_cast<pid_t>(parsedParent);
+    *startTime = static_cast<unsigned long long>(parsedStart);
+    return true;
+}
+
+QList<AdoptedChildIdentity> directAdoptedChildren(bool* scanSucceeded) {
+    QList<AdoptedChildIdentity> children;
+    QDir proc(QStringLiteral("/proc"));
+    const QStringList entries =
+        proc.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    const pid_t launcherPid = ::getpid();
+    bool launcherEntryFound = false;
+    for (const QString& entry : entries) {
+        bool pidOk = false;
+        const qlonglong parsedPid = entry.toLongLong(&pidOk);
+        if (!pidOk || parsedPid <= 0) continue;
+        if (parsedPid == launcherPid) {
+            launcherEntryFound = true;
+            continue;
+        }
+
+        const pid_t pid = static_cast<pid_t>(parsedPid);
+        pid_t parentPid = -1;
+        unsigned long long startTime = 0;
+        if (readLinuxProcessIdentity(pid, &parentPid, &startTime) &&
+            parentPid == launcherPid) {
+            children.append({pid, startTime});
+        }
+    }
+    *scanSucceeded = launcherEntryFound;
+    return children;
+}
+
+bool stillOwnedAdoptedChild(const AdoptedChildIdentity& child) {
+    pid_t parentPid = -1;
+    unsigned long long startTime = 0;
+    return readLinuxProcessIdentity(child.pid, &parentPid, &startTime) &&
+           parentPid == ::getpid() && startTime == child.startTime;
+}
+
+// Kills and reaps only direct children adopted by this launcher. Killing a
+// child can orphan another generation, so rescan until the owned tree is empty.
+bool killAndReapAdoptedChildren(bool* foundChildren) {
+    QElapsedTimer timer;
+    timer.start();
+    bool found = false;
+    while (timer.elapsed() < kKillGraceMs) {
+        bool scanSucceeded = false;
+        const QList<AdoptedChildIdentity> children =
+            directAdoptedChildren(&scanSucceeded);
+        if (!scanSucceeded) {
+            std::fprintf(stderr,
+                         "[mikai_test_launcher] cannot enumerate direct children in /proc\n");
+            *foundChildren = found;
+            return false;
+        }
+        if (children.isEmpty()) {
+            *foundChildren = found;
+            return true;
+        }
+        found = true;
+
+        for (const AdoptedChildIdentity& child : children) {
+            if (!stillOwnedAdoptedChild(child)) continue;
+            if (::kill(child.pid, SIGKILL) != 0 && errno != ESRCH) {
+                std::fprintf(stderr,
+                             "[mikai_test_launcher] cannot kill adopted test descendant %ld: %d\n",
+                             static_cast<long>(child.pid), errno);
+            }
+        }
+
+        bool madeProgress = false;
+        for (const AdoptedChildIdentity& child : children) {
+            int status = 0;
+            const pid_t waited = ::waitpid(child.pid, &status, WNOHANG);
+            if (waited == child.pid || (waited < 0 && errno == ECHILD)) {
+                madeProgress = true;
+            } else if (waited < 0 && errno != EINTR) {
+                std::fprintf(stderr,
+                             "[mikai_test_launcher] cannot reap adopted test descendant %ld: %d\n",
+                             static_cast<long>(child.pid), errno);
+            }
+        }
+        if (!madeProgress) QThread::msleep(10);
+    }
+
+    *foundChildren = found;
+    bool scanSucceeded = false;
+    const QList<AdoptedChildIdentity> remaining =
+        directAdoptedChildren(&scanSucceeded);
+    return scanSucceeded && remaining.isEmpty();
+}
+#endif
 
 #  ifdef Q_OS_WIN
 // A terminated job member reports this exit code. A child killed for overrunning
@@ -122,6 +259,7 @@ public:
     /// reason when any step fails.
     bool joinAndResume(qint64 pid, QString* error) {
         if (!adoptChild(pid, error)) return false;
+        childPid_ = static_cast<DWORD>(pid);
         if (!::AssignProcessToJobObject(job_, childProcess_)) {
             *error = QStringLiteral("AssignProcessToJobObject failed (%1)")
                          .arg(static_cast<unsigned long>(::GetLastError()));
@@ -147,27 +285,70 @@ public:
         return true;
     }
 
-    // Terminates every process in the job (the child and all of its
-    // descendants) and waits for the job itself to drain, so the caller can
-    // then remove the scratch directory with nothing holding it. Safe to call
-    // when no process was ever joined.
-    void killTree() {
+    // QProcess has already observed the direct child exit and captured its
+    // status. Release this second process handle so job accounting can distinguish
+    // completed-root bookkeeping from any live descendants.
+    bool releaseExitedChildHandle() {
+        if (!childProcess_) return true;
+        if (::WaitForSingleObject(childProcess_, 0) != WAIT_OBJECT_0) return false;
+        ::CloseHandle(childProcess_);
+        childProcess_ = nullptr;
+        return true;
+    }
+
+    // Stops every process still in the job before scratch removal. Job signaling
+    // is not an end-of-job predicate for ordinary process exits, so inspect the
+    // member snapshot and verify each non-root PID against this job.
+    void killTree(bool forceTermination = false) {
         if (!job_) return;
-        // A process that failed to join may still exist and may still be
-        // suspended; TerminateJobObject cannot reach it. Kill it directly so no
-        // live or wedged child is ever left behind.
-        if (childProcess_ && !memberJoined_) {
-            ::TerminateProcess(childProcess_, kTerminatedExitCode);
+        if (childProcess_ && !memberJoined_ &&
+            !::TerminateProcess(childProcess_, kTerminatedExitCode)) {
+            activeMemberCountKnown_ = false;
+            activeMemberCountError_ = ::GetLastError();
         }
+
         if (memberJoined_) {
-            ::TerminateJobObject(job_, kTerminatedExitCode);
-        }
-        // The wait is what makes the confirmation meaningful: a job whose
-        // member is wedged would still hold the scratch directory open.
-        if (childProcess_ &&
-            ::WaitForSingleObject(childProcess_, static_cast<DWORD>(kKillGraceMs)) ==
-                WAIT_OBJECT_0) {
-            killedAndDrained_ = true;
+            hadActiveMembers_ = false;
+            if (!scanLiveDescendants(&hadActiveMembers_)) {
+                activeMemberCountKnown_ = false;
+            }
+            if (forceTermination || !activeMemberCountKnown_ || hadActiveMembers_) {
+                if (!::TerminateJobObject(job_, kTerminatedExitCode)) {
+                    activeMemberCountKnown_ = false;
+                    activeMemberCountError_ = ::GetLastError();
+                }
+            }
+
+            QElapsedTimer elapsed;
+            elapsed.start();
+            while (activeMemberCountKnown_) {
+                bool liveDescendant = false;
+                if (!scanLiveDescendants(&liveDescendant)) {
+                    activeMemberCountKnown_ = false;
+                    break;
+                }
+                bool directChildAlive = false;
+                if (childProcess_) {
+                    const DWORD result = ::WaitForSingleObject(childProcess_, 0);
+                    if (result == WAIT_TIMEOUT) {
+                        directChildAlive = true;
+                    } else if (result != WAIT_OBJECT_0) {
+                        activeMemberCountKnown_ = false;
+                        activeMemberCountError_ = ::GetLastError();
+                        break;
+                    }
+                }
+                if (!liveDescendant && !directChildAlive) {
+                    killedAndDrained_ = true;
+                    break;
+                }
+                if (elapsed.elapsed() >= kKillGraceMs) break;
+                ::Sleep(10);
+            }
+        } else if (childProcess_) {
+            killedAndDrained_ =
+                ::WaitForSingleObject(childProcess_, static_cast<DWORD>(kKillGraceMs)) ==
+                WAIT_OBJECT_0;
         }
         close();
     }
@@ -175,8 +356,84 @@ public:
     // False when the timed kill could not confirm the tree is gone. The caller
     // must report it rather than claim the scratch is free.
     bool killConfirmed() const { return killedAndDrained_; }
+    bool activeMemberCountKnown() const { return activeMemberCountKnown_; }
+    unsigned long activeMemberCountError() const { return activeMemberCountError_; }
+    bool hadActiveMembers() const { return hadActiveMembers_; }
 
 private:
+    bool scanLiveDescendants(bool* found) {
+        *found = false;
+        size_t capacity = 1;
+        std::vector<unsigned char> storage;
+        JOBOBJECT_BASIC_PROCESS_ID_LIST* list = nullptr;
+        bool listed = false;
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            const size_t bytes =
+                FIELD_OFFSET(JOBOBJECT_BASIC_PROCESS_ID_LIST, ProcessIdList) +
+                capacity * sizeof(ULONG_PTR);
+            if (bytes > std::numeric_limits<DWORD>::max()) {
+                activeMemberCountError_ = ERROR_NOT_ENOUGH_MEMORY;
+                return false;
+            }
+            storage.resize(std::max(bytes, sizeof(JOBOBJECT_BASIC_PROCESS_ID_LIST)));
+            list = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(storage.data());
+            if (::QueryInformationJobObject(job_, JobObjectBasicProcessIdList, list,
+                                            static_cast<DWORD>(storage.size()), nullptr)) {
+                listed = true;
+                break;
+            }
+            const DWORD error = ::GetLastError();
+            if (error != ERROR_MORE_DATA) {
+                activeMemberCountError_ = error;
+                return false;
+            }
+            const size_t assigned = list->NumberOfAssignedProcesses;
+            capacity = assigned > capacity ? assigned : capacity * 2;
+        }
+        if (!listed) {
+            activeMemberCountError_ = ERROR_MORE_DATA;
+            return false;
+        }
+
+        for (ULONG i = 0; i < list->NumberOfProcessIdsInList; ++i) {
+            const DWORD pid = static_cast<DWORD>(list->ProcessIdList[i]);
+            if (pid == childPid_) continue;
+            HANDLE process =
+                ::OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (process == nullptr) {
+                const DWORD error = ::GetLastError();
+                if (error == ERROR_INVALID_PARAMETER) continue;
+                activeMemberCountError_ = error;
+                return false;
+            }
+            const DWORD firstWait = ::WaitForSingleObject(process, 0);
+            if (firstWait == WAIT_OBJECT_0) {
+                ::CloseHandle(process);
+                continue;
+            }
+            if (firstWait != WAIT_TIMEOUT) {
+                activeMemberCountError_ = ::GetLastError();
+                ::CloseHandle(process);
+                return false;
+            }
+            BOOL stillInJob = FALSE;
+            if (!::IsProcessInJob(process, job_, &stillInJob)) {
+                activeMemberCountError_ = ::GetLastError();
+                ::CloseHandle(process);
+                return false;
+            }
+            const DWORD finalWait = ::WaitForSingleObject(process, 0);
+            ::CloseHandle(process);
+            if (finalWait == WAIT_OBJECT_0 || !stillInJob) continue;
+            if (finalWait != WAIT_TIMEOUT) {
+                activeMemberCountError_ = ::GetLastError();
+                return false;
+            }
+            *found = true;
+        }
+        return true;
+    }
+
     /// Resumes the child's initial thread. A process created suspended has
     /// exactly one thread, and QProcess hands out neither thread handle, so the
     /// thread id is looked up in a snapshot and opened just to resume it.
@@ -230,8 +487,12 @@ private:
 
     HANDLE job_ = nullptr;
     HANDLE childProcess_ = nullptr;
+    DWORD childPid_ = 0;
     bool memberJoined_ = false;
     bool killedAndDrained_ = false;
+    bool activeMemberCountKnown_ = true;
+    unsigned long activeMemberCountError_ = 0;
+    bool hadActiveMembers_ = false;
 
 public:
     bool installFailed = false;
@@ -247,8 +508,10 @@ struct JobInstaller {
         // The child is created suspended, so its only thread is the initial one
         // and it has not run any user code yet. The job joins it afterwards, by
         // pid: at this point the process does not exist, so processInformation
-        // cannot be used for the assignment.
-        arguments->flags |= CREATE_SUSPENDED;
+        // cannot be used for the assignment. The fixture's forwarded standard
+        // handles work without attaching a console; detaching avoids a conhost
+        // helper being mistaken for a fixture descendant in the job.
+        arguments->flags |= CREATE_SUSPENDED | DETACHED_PROCESS;
         // The limit must be in place before the process joins the job.
         if (!applyKillOnClose(owner->job_)) {
             owner->installFailed = true;
@@ -256,6 +519,48 @@ struct JobInstaller {
     }
 };
 #endif
+
+bool stageMpvRuntime(const QString& moduleSource, const QString& runtimeRoot,
+                     const QString& mpvDirectory, QString* stagedModule) {
+    const QFileInfo moduleInfo(moduleSource);
+    if (!moduleInfo.isFile() || moduleInfo.isSymLink() || !moduleInfo.isReadable()) return false;
+    if (runtimeRoot.isEmpty()) {
+        *stagedModule = QDir(mpvDirectory).filePath(moduleInfo.fileName());
+        return QFile::copy(moduleSource, *stagedModule);
+    }
+#ifdef Q_OS_LINUX
+    const QFileInfo rootInfo(runtimeRoot);
+    if (!rootInfo.isDir() || rootInfo.isSymLink()) return false;
+    const QString canonicalRoot = rootInfo.canonicalFilePath();
+    const QString canonicalModule = moduleInfo.canonicalFilePath();
+    if (canonicalRoot.isEmpty() || canonicalModule.isEmpty() ||
+        QFileInfo(canonicalModule).absolutePath() != canonicalRoot) return false;
+
+    QDir root(canonicalRoot);
+    const QStringList entries = root.entryList(
+        QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot, QDir::Name);
+    bool moduleCopied = false;
+    for (const QString& name : entries) {
+        const QFileInfo source(root.filePath(name));
+        if (source.isSymLink()) return false;
+        if (!name.contains(QLatin1String(".so"))) continue;
+        if (!source.isFile() || !source.isReadable()) return false;
+        const QString destination = QDir(mpvDirectory).filePath(name);
+        if (!QFile::copy(source.absoluteFilePath(), destination)) return false;
+        if (source.canonicalFilePath() == canonicalModule) {
+            *stagedModule = destination;
+            moduleCopied = true;
+        }
+    }
+    return moduleCopied;
+#else
+    Q_UNUSED(moduleSource);
+    Q_UNUSED(runtimeRoot);
+    Q_UNUSED(mpvDirectory);
+    Q_UNUSED(stagedModule);
+    return false;
+#endif
+}
 
 bool copyTree(const QString& source, const QString& destination) {
     if (!QFileInfo(source).isDir() || !QDir().mkpath(destination)) return false;
@@ -280,14 +585,16 @@ bool copyTree(const QString& source, const QString& destination) {
 }
 
 int stageAndRun(const QStringList& arguments, const QString& directory,
-                 const QString& explicitTimeoutSpec, const QStringList& forwarded) {
+                 const QString& explicitTimeoutSpec, const QString& runtimeRoot,
+                 const QStringList& forwarded) {
     const QString executable = QDir(directory).filePath(QFileInfo(arguments.at(1)).fileName());
     const QString mpvDirectory = QDir(directory).filePath(QStringLiteral("mpv"));
-    const QString module = QDir(mpvDirectory).filePath(QStringLiteral("libmpv-2.dll"));
+    QString module;
     if (!QFile::copy(arguments.at(1), executable) ||
         !copyTree(arguments.at(2), QDir(directory).filePath(QStringLiteral("shaders"))) ||
-        !QDir().mkpath(mpvDirectory) || !QFile::copy(arguments.at(3), module)) {
-        std::fprintf(stderr, "[mikai_test_launcher] cannot stage test executable/shaders/mpv in %s\n",
+        !QDir().mkpath(mpvDirectory) ||
+        !stageMpvRuntime(arguments.at(3), runtimeRoot, mpvDirectory, &module)) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot stage test executable/shaders/mpv module in %s\n",
                      qPrintable(directory));
         return 2;
     }
@@ -301,8 +608,12 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     if (timeoutMs < 0) return 2;
 
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+#ifdef Q_OS_WIN
     environment.insert(QStringLiteral("PATH"), arguments.at(4) + QDir::listSeparator() +
                        environment.value(QStringLiteral("PATH")));
+#else
+    environment.insert(QStringLiteral("LD_LIBRARY_PATH"), arguments.at(4));
+#endif
     environment.insert(QStringLiteral("QT_PLUGIN_PATH"), arguments.at(5));
     environment.insert(QStringLiteral("QT_QPA_PLATFORM_PLUGIN_PATH"),
                        QDir(arguments.at(5)).filePath(QStringLiteral("platforms")));
@@ -350,7 +661,7 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
                      qPrintable(why), static_cast<unsigned long>(::GetLastError()));
         QString ignored;
         job.adoptChild(child.processId(), &ignored);
-        job.killTree();
+        job.killTree(true);
         if (!job.killConfirmed()) {
             std::fprintf(stderr,
                          "[mikai_test_launcher] the abandoned test process did not die within "
@@ -380,12 +691,21 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
         return abandonSuspendedChild(QStringLiteral("cannot join the test process to the child job"));
     }
 #else
+#ifdef Q_OS_LINUX
+    pid_t processGroup = -1;
+    child.setChildProcessModifier([] {
+        if (::setpgid(0, 0) != 0) std::_Exit(127);
+    });
+#endif
     child.start(executable, forwarded);
     if (!child.waitForStarted()) {
         std::fprintf(stderr, "[mikai_test_launcher] cannot start tests: %s\n",
                      qPrintable(child.errorString()));
         return 2;
     }
+#ifdef Q_OS_LINUX
+    processGroup = static_cast<pid_t>(child.processId());
+#endif
 #endif
 
     // Bounded wait: poll in slices so the process stays alive and responsive to
@@ -405,7 +725,7 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
             // TerminateJobObject bounds the whole tree: the direct child and
             // every descendant, because the child was joined to the job before
             // it ran. It is awaited so the scratch directory is removable.
-            job.killTree();
+            job.killTree(true);
             if (!job.killConfirmed()) {
                 std::fprintf(stderr,
                              "[mikai_test_launcher] the killed test tree did not exit "
@@ -413,15 +733,45 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
                              static_cast<long long>(kKillGraceMs));
             }
 #else
-            // No tree walk: the suites spawn no descendants, so killing the
-            // direct child bounds the run.
-            child.kill();
-            if (!child.waitForFinished(kKillGraceMs)) {
+            // The process group contains ordinary descendants. A truly detached
+            // child has left it, but after the fixture dies the subreaper adopts
+            // that process directly and can identify it safely by PID, parent
+            // PID and /proc start time.
+            bool cleanupConfirmed = true;
+            if (processGroup > 0 && ::kill(-processGroup, SIGKILL) != 0 && errno != ESRCH) {
+                std::fprintf(stderr, "[mikai_test_launcher] cannot kill test process group: %d\n",
+                             errno);
+                cleanupConfirmed = false;
+            }
+            if (!child.waitForFinished(kKillGraceMs) &&
+                child.state() != QProcess::NotRunning) {
                 std::fprintf(stderr,
-                             "[mikai_test_launcher] the killed test process did not exit "
-                             "within %lld ms (state=%d)\n",
-                             static_cast<long long>(kKillGraceMs),
-                             static_cast<int>(child.state()));
+                             "[mikai_test_launcher] test process did not exit after the tree kill; "
+                             "trying direct-child termination\n");
+                child.kill();
+                if (!child.waitForFinished(kKillGraceMs) &&
+                    child.state() != QProcess::NotRunning) {
+                    std::fprintf(stderr,
+                                 "[mikai_test_launcher] direct test process did not exit within "
+                                 "%lld ms\n",
+                                 static_cast<long long>(kKillGraceMs));
+                    cleanupConfirmed = false;
+                }
+            }
+            bool adoptedChildrenFound = false;
+            const bool adoptedChildrenDrained =
+                killAndReapAdoptedChildren(&adoptedChildrenFound);
+            if (!adoptedChildrenDrained) {
+                std::fprintf(stderr,
+                             "[mikai_test_launcher] adopted test descendants did not drain within "
+                             "%lld ms; scratch cleanup may be incomplete\n",
+                             static_cast<long long>(kKillGraceMs));
+                cleanupConfirmed = false;
+            }
+            if (!cleanupConfirmed) {
+                std::fprintf(stderr,
+                             "[mikai_test_launcher] timed-out process tree cleanup was not confirmed\n");
+                return 2;
             }
 #endif
             std::fprintf(stderr, "[mikai_test_launcher] timed out (killed the test tree)\n");
@@ -440,7 +790,67 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
     }
 
     const int result = child.exitCode();
-    if (child.exitStatus() == QProcess::CrashExit) {
+    const QProcess::ExitStatus exitStatus = child.exitStatus();
+
+#ifdef Q_OS_WIN
+    // QProcess retains its native process handle until it is closed. Close it
+    // before querying the job so a completed root process is not counted as a
+    // remaining job member while its handle is still owned by QProcess.
+    child.close();
+    const bool directChildHandleReleased = job.releaseExitedChildHandle();
+    // A normal or abnormal direct-child exit still has to drain any detached
+    // processes retained by its job before the owned scratch directory is
+    // removed. An empty job preserves the child's exit status.
+    job.killTree(!directChildHandleReleased);
+    if (!directChildHandleReleased) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] cannot confirm the direct test process has exited\n");
+        return 2;
+    }
+    if (!job.killConfirmed()) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] remaining test-job processes did not drain within "
+                     "%lld ms; scratch cleanup may be incomplete\n",
+                     static_cast<long long>(kKillGraceMs));
+        return 2;
+    }
+    if (!job.activeMemberCountKnown()) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] cannot inspect the test job's remaining processes: "
+                     "%lu\n",
+                     job.activeMemberCountError());
+        return 2;
+    }
+    if (job.hadActiveMembers()) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] tests exited with live descendants; cleaned the "
+                     "owned job processes\n");
+        return 2;
+    }
+#endif
+
+#ifdef Q_OS_LINUX
+    // The direct child can exit normally or crash while a detached descendant
+    // remains outside its process group. It is now an adopted direct child of
+    // this subreaper; kill and reap it before returning or removing scratch.
+    bool adoptedChildrenFound = false;
+    const bool adoptedChildrenDrained =
+        killAndReapAdoptedChildren(&adoptedChildrenFound);
+    if (!adoptedChildrenDrained) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] unexpected adopted test descendants did not drain "
+                     "within %lld ms; scratch cleanup may be incomplete\n",
+                     static_cast<long long>(kKillGraceMs));
+        return 2;
+    }
+    if (adoptedChildrenFound) {
+        std::fprintf(stderr,
+                     "[mikai_test_launcher] tests exited with live descendants; cleaned the "
+                     "owned descendant processes\n");
+        return 2;
+    }
+#endif
+    if (exitStatus == QProcess::CrashExit) {
         std::fprintf(stderr, "[mikai_test_launcher] test process crashed (rc=%d)\n", result);
         return result != 0 ? result : 1;
     }
@@ -450,19 +860,35 @@ int stageAndRun(const QStringList& arguments, const QString& directory,
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef Q_OS_LINUX
+    // Make orphaned descendants children of this launcher so they can be
+    // reaped after their dedicated process group is terminated.
+    if (::prctl(PR_SET_CHILD_SUBREAPER, 1) != 0) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot become a child subreaper\n");
+        return 2;
+    }
+    bool procScanSucceeded = false;
+    directAdoptedChildren(&procScanSucceeded);
+    if (!procScanSucceeded) {
+        std::fprintf(stderr, "[mikai_test_launcher] cannot enumerate direct children in /proc\n");
+        return 2;
+    }
+#endif
     QCoreApplication application(argc, argv);
     const QStringList arguments = application.arguments();
     if (arguments.size() < 7) {
-        std::fprintf(stderr, "usage: mikai_test_launcher <test-exe> <shaders> <mpv-dll> "
+        std::fprintf(stderr, "usage: mikai_test_launcher <test-exe> <shaders> <mpv-module> "
                      "<qt-runtime-bin> <qt-plugins> <scratch-parent> [options/args...]\n"
                      "options consumed by this launcher:\n"
                      "  --launcher-timeout-ms <ms>  bound the child run (default 600000)\n"
-                     "  --launcher-deadline         print the effective deadline and exit\n");
+                     "  --launcher-deadline         print the effective deadline and exit\n"
+                     "  --mpv-runtime-dir <path>    stage a private Linux mpv dependency closure\n");
         return 2;
     }
     // Options are consumed here, never forwarded: a child that received one
     // would treat it as an unknown QTest argument rather than a deadline.
     QString explicitTimeoutSpec;
+    QString runtimeRoot;
     QStringList forwarded;
     for (int i = 7; i < arguments.size(); ++i) {
         const QString& argument = arguments.at(i);
@@ -472,6 +898,14 @@ int main(int argc, char** argv) {
                 return 2;
             }
             explicitTimeoutSpec = arguments.at(++i);
+            continue;
+        }
+        if (argument == QLatin1String("--mpv-runtime-dir")) {
+            if (i + 1 >= arguments.size() || !runtimeRoot.isEmpty()) {
+                std::fprintf(stderr, "[mikai_test_launcher] --mpv-runtime-dir needs one value\n");
+                return 2;
+            }
+            runtimeRoot = arguments.at(++i);
             continue;
         }
         if (argument.startsWith(QLatin1String("--launcher-timeout-ms="))) {
@@ -499,7 +933,8 @@ int main(int argc, char** argv) {
                      qPrintable(scratch.errorString()));
         return 2;
     }
-    const int result = stageAndRun(arguments, scratch.path(), explicitTimeoutSpec, forwarded);
+    const int result = stageAndRun(arguments, scratch.path(), explicitTimeoutSpec,
+                                   runtimeRoot, forwarded);
     // Remove only the directory QTemporaryDir created, even after fixture/test
     // failure, a child crash or a timeout kill. The public build output is never
     // moved/edited. This is the sole cleanup owner; the child is already gone by

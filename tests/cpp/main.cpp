@@ -12,6 +12,7 @@
 #include "TestWatchHistory.hpp"
 #include "TestWindowRaise.hpp"
 #include "TestLiveOracle.hpp"
+#include "TestSystemIntegration.hpp"
 #include "TestModels.hpp"
 #include "TestUpdateFeed.hpp"
 #include "TestPublicApiUi.hpp"
@@ -45,6 +46,7 @@
 #include "TestNativeRife.hpp"
 #include "TestNativeStatus.hpp"
 #include "TestPlaybackDiagnostics.hpp"
+#include "TestMediaInformation.hpp"
 #include "TestNativeTypes.hpp"
 #include "TestRuntimeSelection.hpp"
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -86,7 +88,7 @@ constexpr const char* kSuites[] = {
     "TestRuntimeSelection", "TestNativeTypes", "TestNativeRecipe", "TestNativeProfiles", "TestNativeRife",
     "TestNativeBundle", "TestNativePrepPlan", "TestNativeManifest", "TestNativeBuilder",
     "TestNativePreparationReferences", "TestNativeComponents", "TestNativeStoredModels", "TestNativePreparedPlan", "TestNativePlaybackController", "TestNativeStatus",
-    "TestPlaybackDiagnostics",
+    "TestPlaybackDiagnostics", "TestMediaInformation",
     "TestNativePrefs",
     "TestNativeMenu", "TestNativeUserRecipes", "TestNativeAssets", "TestMpvAsync", "TestCompareGif",
 #ifdef MIKAI_WITH_MODEL_INSPECTION
@@ -96,7 +98,7 @@ constexpr const char* kSuites[] = {
     "TestStreams", "TestPagers",
     "TestQualityCache", "TestRateLimiter", "TestWatchHistory", "TestDownloads", "TestDiagnostics",
     "TestApiClient", "TestFeedRender", "TestUpdateFeed", "TestPublicApiUi", "TestRunner",
-    "TestLayering", "TestWindowRaise", "TestClipboard", "TestLiveOracle"};
+    "TestLayering", "TestWindowRaise", "TestSystemIntegration", "TestClipboard", "TestLiveOracle"};
 
 bool nativeFixtureRootIsSafe() {
   const QString path = QDir(QCoreApplication::applicationDirPath())
@@ -232,6 +234,7 @@ int main(int argc, char** argv) {
   TestNativePlaybackController nativePlaybackController;
   TestNativeStatus nativeStatus;
   TestPlaybackDiagnostics playbackDiagnostics;
+  TestMediaInformation mediaInformation;
   TestNativePrefs nativePrefs;
   TestNativeMenu nativeMenu;
   TestNativeUserRecipes nativeUserRecipes;
@@ -254,6 +257,7 @@ int main(int argc, char** argv) {
   TestLayering layering;
   TestWindowRaise windowRaise;
   TestClipboard clipboard;
+  TestSystemIntegration systemIntegration;
   TestLiveOracle liveOracle;
 
   // A suite name on the command line runs only that suite; otherwise every
@@ -343,6 +347,7 @@ int main(int argc, char** argv) {
   run("TestNativePlaybackController", &nativePlaybackController, true);
   run("TestNativeStatus", &nativeStatus, true);
   run("TestPlaybackDiagnostics", &playbackDiagnostics, true);
+  run("TestMediaInformation", &mediaInformation, true);
   run("TestNativePrefs", &nativePrefs, true);
   run("TestNativeMenu", &nativeMenu, true);
   run("TestNativeUserRecipes", &nativeUserRecipes, true);
@@ -370,6 +375,7 @@ int main(int argc, char** argv) {
   run("TestWatchHistory", &watchHistory, true);
   run("TestRateLimiter", &rateLimiter, true);
   run("TestLayering", &layering, true);
+  run("TestSystemIntegration", &systemIntegration, true);
   run("TestWindowRaise", &windowRaise, true);
   run("TestClipboard", &clipboard, true);
   // Last, and off unless MIKAI_LIVE=1 with a key: it needs the network and the

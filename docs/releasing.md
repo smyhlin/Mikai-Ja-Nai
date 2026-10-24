@@ -1,0 +1,114 @@
+# Packaging and release
+
+This guide covers local package generation, not publication. There is no configured public repository/download URL in this checkout; do not link users to an invented release page or unofficial binary mirror. Source publication and binary publication are separate decisions. See the [current observed release status](release-status.md) for build outcomes and open gates; the commands and expected outputs below describe packaging paths, not proof that those paths succeeded.
+
+## Release status and redistribution
+
+The package scripts and CI/release workflow are preparation infrastructure, not evidence that an artifact was built, tested or published. Public binary release remains blocked because the exact pinned mpv/FFmpeg/dependency source and license closure is incomplete. Local runtime, installer and gallery acceptance are recorded separately in the current release status; they do not establish redistribution clearance. The matching Windows mpv-winbuild run is 37965200722, not the older run 37549675458; its retained logs are under `.probe-out/release-tools/windows-run-37965200722-logs` and `.probe-out/release-tools/mpv19c0-source-logs`. They establish that the selected 19c0fcf895 DEV runtime enables GPL and is not LGPL-only, and that static FFmpeg is GPL-3.0-or-later. The exact dependency checkout, source cache, patches and complete corresponding-source/license closure are still missing; see `packaging/third-party.json` and `packaging/licenses/NOTICE.txt`. Qt 6.12.0 source is retained at `release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz` (SHA-256 `98ff4f44bac6ec3e1e62ee2a4316ae0e3d15badb015d753cc0268a20db52f165`), but the source manifest and checksums do not establish complete corresponding-source fulfillment. Optional AI/native runtimes and models have separate upstream terms and are excluded from base packages.
+
+Check the repository's [license](../LICENSE), [native third-party notices](../native/manifest/THIRD_PARTY_NOTICES.md), native manifests and, when present, `packaging/licenses/` and `packaging/third-party.json` for current evidence and specific restrictions. A component omitted from a package may still have separate acquisition obligations. The Unlicense for Mikai source does not relicense Qt, mpv, FFmpeg, Anime4K, AnimeJaNai/AJI, models, drivers or any other third-party work. Preserve their notices and required source/provenance when redistributing.
+
+## Windows x64
+
+Use a configured Release MinGW x64 build with Qt 6.12 and Inno Setup 6 available. The installer smoke script requires PowerShell 7.1 or later (`pwsh`) for its .NET 5 hashing APIs and process-tree termination support. From PowerShell 7 at the repository root:
+
+```powershell
+cmake -S . -B build/release -G "MinGW Makefiles" `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_CXX_COMPILER="C:/path/to/mingw64/bin/g++.exe" `
+  -DCMAKE_MAKE_PROGRAM="C:/path/to/mingw64/bin/mingw32-make.exe" `
+  -DCMAKE_PREFIX_PATH="C:/path/to/Qt/6.12.x/mingw_64"
+
+powershell -NoProfile -File packaging/windows/package.ps1 `
+  -BuildDir build/release -OutputDir release-artifacts
+```
+
+If Inno Setup's `ISCC.exe` is not on `PATH`, pass its actual path with `-ISCC`. The script builds `mikai` and stages packages freshly from that build, rather than copying an existing populated `dist-mikai/`. Use a new/empty output directory; do not point it at user data or a populated release directory.
+
+Expected outputs are:
+
+- `mikai-0.1.0-windows-x64-portable.zip`
+- `mikai-0.1.0-windows-x64-setup.exe`
+- `SHA256SUMS`
+- `mikai-0.1.0-windows-x64-release.json`
+
+The installer is unsigned and per-user. It does not force associations or enable startup automatically. Upgrades preserve settings, logs, acquired models and user data; uninstall removes only integrations owned by the installation and does not erase acquired models by default. The portable application requires its deployed Qt/image-format/TLS/MinGW/mpv runtime files and a system Vulkan loader supplied with graphics drivers. Optional AI components are not part of the base portable package.
+
+For an isolated per-user install/upgrade/uninstall check after packaging, invoke `packaging/windows/smoke.ps1` with the setup artifact and a new, absent output directory. Match any result to the exact installer SHA-256 recorded in its evidence; the checked artifacts and account scope are listed in the current release status:
+
+```powershell
+pwsh -NoProfile -File packaging/windows/smoke.ps1 `
+  -Installer release-artifacts/mikai-0.1.0-windows-x64-setup.exe `
+  -OutputDir release-artifacts/installer-smoke
+```
+
+The script refuses to proceed if the current user's Mikai uninstall registration exists. It installs under a GUID-owned temporary root at a path containing spaces and Unicode, with a unique Start Menu group; checks executable and shortcut metadata; runs the same installer as an upgrade; then silently uninstalls. It verifies owned model/config/log sentinel bytes survive upgrade and uninstall, and that a fixed allowlist of Mikai HKCU integration values is unchanged. It does not launch Mikai or write real QSettings, enable context-menu/default-player/startup settings, or kill unrelated processes. Installer and uninstaller processes have bounded waits; an error or blocked action fails the gate rather than producing a pass.
+
+`installer-smoke.json` and per-process stdout/stderr logs are the evidence. Registry evidence contains only presence/type and hashes of allowlisted values, not raw values or broad dumps. Failure evidence preserves the original exception and reports cleanup/termination failures; an incompletely uninstalled owned tree is retained with its recovery evidence. This procedure does not establish application runtime health, OS-wide integration behavior, migration of existing user data, or safety beyond those checked values. A disposable Windows account is recommended. Never bypass the existing-installation or occupied-Start-Menu-group guards. A run certifies only the account and artifact actually exercised, not other users or machine-wide behavior.
+
+These outputs are local build products, not approval to upload them. Do not publish the Windows binaries while the mpv dependency/source/license closure described above remains unresolved. Windows builds consume a pinned development archive that supplies `include/mpv/*`, `libmpv.dll.a` and `libmpv-2.dll`. The upstream release is `2026-10-09-19c0fcf895` (source commit `19c0fcf89595e6ab33908299207c555b67e81558`, upstream run `37965200722`); the DEV archive `mpv-dev-x86_64-20261009-git-19c0fcf895.7z` has SHA-256 `8801c722b5174a751d03f1cb435092c61304cd8605302fe7cae2cc77872b2d83` and size 32,845,274 bytes. The observed `libmpv-2.dll` is 122,173,440 bytes with SHA-256 `f7913c65750a53365a67ac0296baab5f8dcc1d406c697fa9249e83ed8391e090`. The separate CLI/updater archive `mpv-x86_64-20261009-git-19c0fcf895.7z` (SHA-256 `85134a3e4748b7ab2e9bdb0a2b445a012082c9afa97edc953f1ccfba191d09b6`) contains no `libmpv` DLL and is not bundled or executed. A sibling FFmpeg archive `ffmpeg-x86_64-git-3fe6c8dee.7z` (SHA-256 `52ecb132577e770eb33d44fb3c45da325397435250b85805434cf1c29759dc72`) is also not bundled. The pinned archive and cache interface are documented in `cmake/FindOrFetchMpv.cmake`; `MIKAI_DIST_MPV_ARCHIVE` may override the cache copy, but its SHA-256 is always checked. It is a developer binary/header archive, not a corresponding-source release.
+
+## Linux x86_64
+
+The Linux path creates a dependency-based tarball and named install tree, not an AppImage, Debian package or universally self-contained bundle. By default it relies on compatible system Qt 6.12+ runtime/plugins, desktop OpenGL and `libmpv.so.2` (mpv 0.35+ / API 2), plus system WebP, TLS, codec and graphics dependencies. A specific local build/package observation is recorded in [release status](release-status.md); it does not establish distro-wide compatibility or a libc baseline. CI's Ubuntu 24.04 + separately supplied Qt 6.12 target is likewise not a claim about all distributions.
+
+Optional Qt deployment (`MIKAI_LINUX_DEPLOY_QT=ON`) deploys Qt libraries/plugins and relative RPATH; system mpv is required only when the separate mpv bundle option is off. `MIKAI_LINUX_BUNDLE_MPV=ON` bundles the pinned Linux `libmpv.so.2` and its private shared-library closure under `bin/mpv`, with owned `$ORIGIN` RUNPATH patching via build-time `patchelf`; it does not bundle the mpv CLI, docs or updaters. Host glibc/loader, graphics drivers and GL/EGL integration, and audio subsystems remain dependencies. CI and release preparation configure both options on, so the package and renderer smoke use the selected bundled runtime rather than host mpv. This is not a standalone or universal Linux bundle; Qt/mpv redistribution still requires separate rights review. `MIKAI_DIST_MPV_ARCHIVE` is Windows-only and is rejected on Linux.
+
+```bash
+cmake --preset linux-release
+bash packaging/linux/package.sh \
+  --build-dir build/linux-release \
+  --output-dir release-artifacts/linux
+```
+
+The build must be configured and built as Release. The shown Unix Makefiles preset is single-configuration; for a multi-configuration build, pass `--config Release` to the package script. The output directory must not already exist; the package script creates it. CI creates only the output parent and leaves final output creation to the package script; supplying a populated output directory, user data or an existing deployment is refused. The script writes `mikai-0.1.0-linux-x86_64.tar.gz`, `SHA256SUMS`, and a named install tree. The archive extracts to a directory containing `mikai-0.1.0-linux-x86_64/bin/mikai`; run that executable with compatible Qt plugins, desktop OpenGL and system mpv available. When using a custom Qt installation, configure `LD_LIBRARY_PATH` for the Qt libraries only during development; packaged runtime discovery uses relative RPATH and does not require a global `LD_LIBRARY_PATH` for the bundled mpv closure.
+
+```bash
+cmake --install build/linux-release --prefix /desired/prefix
+```
+
+Do not call the tarball self-contained: system Qt/plugin, mpv and graphics-driver dependencies remain in the default profile, and the bundled profile still depends on host glibc, graphics and audio. Optional AI component/runtime support has additional hardware and licensing prerequisites.
+
+The bundled profile's exact configure/build/package recipes are:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.12+/gcc_64 \
+  -DCMAKE_CXX_COMPILER=/path/to/Qt/6.12+/gcc_64/bin/g++ \
+  -DMIKAI_LINUX_BUNDLE_MPV=ON \
+  -DMIKAI_LINUX_DEPLOY_QT=ON \
+  -DMIKAI_LINUX_MPV_ARCHIVE=/path/to/mpv-linux-x64-2026-10-09-19c0fcf.tar.zst
+python -m json.tool build/mikai-runtime-Release.json
+cmake --build build --parallel 2 --target mikai
+bash packaging/linux/package.sh --build-dir build --output-dir /fresh/output --config Release
+```
+
+The configure step writes `build/mikai-runtime-Release.json` (`mikai.runtime.bundle/1`) with the selected absolute `module`, private `dependencyRoot`, `bundled` flag and target `platform`. Inspect that generated receipt before building; CI uses the same receipt to stage the configured module and its private `.so` closure for renderer smoke, and package installation deploys that selected runtime. The receipt's absolute paths are build-local and are not portable between machines.
+
+The pinned Linux archive is `mpv-linux-x64-2026-10-09-19c0fcf.tar.zst`, URL `https://github.com/the-database/mpv/releases/download/2026-10-09-19c0fcf/mpv-linux-x64-2026-10-09-19c0fcf.tar.zst`, SHA-256 `55af9ddbd694366ba016b9e421a6abae78f8559887b7591f7820eca8d5b2bf37`, size 41,531,271 bytes, source commit `19c0fcf89595e6ab33908299207c555b67e81558`. It contains `libmpv.so`, `libmpv.so.2` and `libmpv.so.2.5.0` (each 3,675,576 bytes, SHA-256 `304482e267c6295b690c5cde7df62209172388d30e3235a7fd115ab67143f0c0`), an mpv CLI that is not bundled, and about 75 shared dependencies. It contains no headers or notices. The bundle requires `patchelf` (build-only dependency), uses extraction stamp `.mikai-linux-mpv.sha256` keyed by the archive SHA, creates an owned regular `libmpv.so.2` because symlink module paths are refused by the runtime trust policy, removes duplicate aliases, runs `patchelf --set-rpath "$ORIGIN"` on every owned `*.so*`, and installs the closure under `bin/mpv`. Generated configuration variables are `MIKAI_LINUX_MPV_MODE`, `MIKAI_LINUX_MPV_BUNDLE`, `MIKAI_LINUX_MPV_ARCHIVE_SHA256` and `MIKAI_LINUX_MPV_PATCHED_RUNPATH`; `MIKAI_LINUX_MPV_VERSION` is set to the bundled marker when bundle mode is enabled. The runtime resolver uses the existing candidate path `<executable>/mpv`, finds `libmpv.so.2`, and does not search system directories when that hint is present. `describeStandardRuntime` refuses symlink module paths and bundle roots containing `bundle.json`; `NativePathTrust` refuses symlink/reparse module paths.
+
+The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses distribution `libmpv-dev` headers and `libmpv.so.2`. Requested bundle failures are fatal configure errors; there is no silent fallback.
+
+## Local source preview
+
+To prepare a source archive from the current worktree without staging or committing it, use a fresh output directory:
+
+```bash
+python packaging/source/package.py \
+  --source-dir . \
+  --output-dir /tmp/mikai-source-preview
+```
+
+The command writes `mikai-0.1.0-source.tar.gz`, `SHA256SUMS`, and `source-provenance.json`. It packages tracked files present in the worktree plus nonignored untracked files, so local changes and intended new assets are represented; ignored content, build/release outputs, user stores, logs, archives, and secret paths are excluded. Tracked sensitive paths and symlinks fail closed. The output must not exist and must not overlap the source tree. While archiving, each source file is hashed as its bytes are streamed, so provenance describes the bytes actually archived. Short reads, unexpected trailing bytes, changed file sizes and read failures abort packaging. This is not an atomic filesystem snapshot: a same-size edit before a member is read is represented by the newly archived content, not detected as a mutation. Review provenance and archive contents before sharing.
+
+Provenance records `format` 1, `artifact` `mikai-0.1.0-source.tar.gz`, `version` `0.1.0`, `snapshot_kind` `local-worktree-source-snapshot`, `head`, `dirty`, `commit_equivalence` `not-claimed`, `tree_sha256`, and `files[{path, sha256}]`. The tree digest is computed from those archived-byte hashes after archive creation. Selection is tracked files plus nonignored untracked files minus deleted files; exclusions include `.git`, `.omp`, build/release outputs, logs, caches, user stores, native runtime/model data, sensitive paths, symlinks, archives and logs. Production code under `src/player/native/models` is retained. The integrity guarantee is that hashes describe bytes actually archived; size/read checks do not detect every concurrent mutation or provide an atomic filesystem snapshot, and a dirty snapshot is not claimed to equal a commit or tag.
+
+This is explicitly a local preview: provenance records `HEAD`, whether the worktree is dirty, the sorted file hashes, and a deterministic tree digest, but does not claim that a dirty snapshot equals a commit or tag. It does not stage, commit, or tag anything. It is not a substitute for the trusted-tag CI archive, which is assembled from the exact validated tag commit described below, nor does preparing either archive authorize publication.
+
+## CI and publication
+
+The CI workflow handles pushes to `main`, pull requests and manual runs. Its `mikai-windows-x64` and `mikai-linux-x86_64` artifacts contain packages and evidence (including test logs/results and renderer evidence); they are workflow outputs, not permanent download URLs. The release workflow accepts `v*` tag pushes or a manual run for an existing default-branch tag, validates version/ancestry, and produces a `mikai-source-provenance` artifact containing package binaries, `mikai-0.1.0-source.tar.gz`, per-profile verification archives, `provenance.json`, `third-party.json`, `SHA256SUMS` and `RELEASE-NOTES.txt`. Inspect the workflow files and run record for the exact contents and outcome of a particular run. Do not describe a workflow as passing unless its run c…
+
+Manual publication defaults to disabled. Tagging or enabling publication enters the protected `release` environment and must also pass the `profiles.publicReleaseReady` gate. That gate is currently false, so public release is blocked. Before enabling publication, configure required reviewers and version-tag restrictions on the environment and resolve the documented rights blockers. Workflows and scripts are preparation only until an actual run produces evidence; no publication is authorized here.
+
+Before any public release, confirm the version and source revision, inspect package contents for secrets and user state, complete dependency/license/source obligations, retain checksum and provenance files, and record real build/test/package results. No publishing, tagging or upload is authorized by this document.

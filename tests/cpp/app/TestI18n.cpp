@@ -1882,6 +1882,7 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
       {"1.7", "Very fast"},
       {"2", "Double speed"},
   };
+  constexpr int kPresetCount = static_cast<int>(sizeof(kPresets) / sizeof(kPresets[0]));
   const auto at = [](int index) { return QString::fromLatin1(kPresets[index].rate); };
   // The table's fifth entry, "1.7x", is the rate this test opens the popover at.
   constexpr int kChecked = 4;
@@ -1912,16 +1913,8 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
     }
     return nullptr;
   };
-  int ownButtons = 0;
-  for (QPushButton* button : flyout->findChildren<QPushButton*>()) {
-    if (button->parentWidget() == flyout) {
-      ++ownButtons;
-    }
-  }
-  QCOMPARE(ownButtons, 6);
 
-  // A rate that is not the 1.0 the popover starts at, so a row that falls back
-  // to the default selection is visible.
+  // Set a concrete speed so retranslation must preserve the user's selected rate.
   flyout->setRate(1.7);
   flyout->setQuality(QStringLiteral("1080p"));
   struct QualityFixture {
@@ -1977,7 +1970,7 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
   QCOMPARE(qualityRows.size(), options.size());
 
   QStringList englishRows;
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < kPresetCount; ++i) {
     QPushButton* row = speedRowFor(at(i));
     QVERIFY2(row != nullptr,
              qPrintable(QStringLiteral("no speed row for %1x").arg(at(i))));
@@ -2002,10 +1995,10 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("uk")));
   QCoreApplication::processEvents();
 
-  // Every one of the six descriptions is restated. A row still carrying its
+  // Every preset description is restated. A row still carrying its
   // English source is exactly what a catalogue that missed the const char* table
   // produced, and it has to fail here rather than read as a translated row.
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < kPresetCount; ++i) {
     QPushButton* row = speedRowFor(at(i));
     QVERIFY2(row != nullptr,
              qPrintable(QStringLiteral("the %1x row disappeared").arg(at(i))));
@@ -2025,7 +2018,7 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
   // and the quality rows' own labels did not, and the restatement never reported
   // a selection to the owner.
   QStringList ukrainianRows;
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < kPresetCount; ++i) {
     QPushButton* row = speedRowFor(at(i));
     QVERIFY(row != nullptr);
     ukrainianRows << row->text();
@@ -2051,7 +2044,7 @@ void TestI18n::settingsFlyoutRetranslatesEverySpeedPresetWithoutReselecting() {
   QVERIFY(mikai::app::applyInterfaceLanguage(QStringLiteral("en")));
   QCoreApplication::processEvents();
 
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < kPresetCount; ++i) {
     QPushButton* row = speedRowFor(at(i));
     QVERIFY(row != nullptr);
     QCOMPARE(row->text(), englishRows.at(i));

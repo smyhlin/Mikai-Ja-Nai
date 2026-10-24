@@ -123,6 +123,9 @@ QNetworkAccessManager& managerForThread() {
 }  // namespace
 
 QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers, int timeoutMs) {
+    if (WorkCancellationScope::cancellationRequested()) {
+        throw std::runtime_error("the request was cancelled");
+    }
     QNetworkRequest request(url);
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
         request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
@@ -146,13 +149,22 @@ QByteArray fetchUrlBytes(const QUrl& url, const QMap<QString, QString>& headers,
     cancelTimer.stop();
     if (reply->isRunning()) {
         reply->abort();
-        loop.exec();
+        // abort() can emit finished synchronously. Never enter a second loop
+        // after that signal has already been delivered; a delayed abort still
+        // has a finite drain deadline.
+        if (reply->isRunning()) {
+            timer.start(2000);
+            loop.exec();
+        }
     }
     timer.stop();
     const QByteArray body = reply->readAll();
     const QString error =
         reply->error() == QNetworkReply::NoError ? QString{} : reply->errorString();
     reply->deleteLater();
+    if (WorkCancellationScope::cancellationRequested()) {
+        throw std::runtime_error("the request was cancelled");
+    }
     if (!error.isEmpty()) {
         // `url` may carry a signed path or query; it never reaches the message
         // as the transport built it.
@@ -252,6 +264,11 @@ bool downloadToFile(const QUrl& url, const QString& destination, qint64 expected
         }
         const bool flushed = file.flush();
         file.close();
+        // A final progress publication can itself cancel the copy. There may
+        // be no next chunk on which to observe that request.
+        if ((cancelled && cancelled()) || WorkCancellationScope::cancellationRequested()) {
+            return fail(QStringLiteral("cancelled while copying %1").arg(namedDestination));
+        }
         if (!flushed || file.error() != QFileDevice::NoError) {
             return fail(QStringLiteral("could not write all of %1 to disk").arg(namedDestination));
         }

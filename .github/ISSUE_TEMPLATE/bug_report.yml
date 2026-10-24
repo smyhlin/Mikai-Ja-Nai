@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible problem in Mikai
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Before submitting, check existing issues and remove API keys, signed URLs, personal information, and private media from all details or logs. For suspected vulnerabilities, follow SECURITY.md instead of opening a public issue.
+  - type: input
+    id: version
+    attributes:
+      label: Mikai version or commit
+      placeholder: 0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and version
+      placeholder: Windows x64 / Linux x86_64, OS release
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest repeatable sequence. Do not include credentials or personal content.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized diagnostics
+      description: Optional. Review before posting; remove tokens, signed URLs, personal paths, and unrelated private data.
+    validations:
+      required: false

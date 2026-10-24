@@ -1,14 +1,17 @@
 #include "TestDownloads.hpp"
 
 #include <backend/Downloads.hpp>
+#include <backend/Cancellation.hpp>
 
 #include <cstdio>
 #include <functional>
+#include <stdexcept>
 
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QDebug>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QStringList>
@@ -457,6 +460,60 @@ void TestDownloads::aCancelledDownloadReportsThatItWasCancelled() {
   QVERIFY2(reason.contains(QStringLiteral("cancel"), Qt::CaseInsensitive),
            qPrintable(QStringLiteral("a cancelled transfer is reported as: %1").arg(reason)));
   QVERIFY2(!QFileInfo::exists(destination), "cancelling left the partial file behind");
+}
+
+void TestDownloads::cancellingTheFinalLocalChunkRemovesTheCopy() {
+  const QByteArray body = payload();
+  QTemporaryDir directory;
+  QVERIFY(directory.isValid());
+  const QString source = QDir(directory.path()).filePath(QStringLiteral("source.bin"));
+  const QString destination = QDir(directory.path()).filePath(QStringLiteral("copy.bin"));
+  QVERIFY(writeFile(source, body));
+
+  std::atomic_bool cancelled{false};
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  QString reason;
+  const bool ok = downloadToFile(
+      QUrl::fromLocalFile(source), destination, body.size(), sha256Of(body),
+      [&cancelled](qint64 received, qint64 total) {
+        if (received == total) cancelled.store(true);
+      },
+      {}, &reason);
+
+  QVERIFY(!ok);
+  QVERIFY(reason.contains(QStringLiteral("cancel"), Qt::CaseInsensitive));
+  QVERIFY(!QFileInfo::exists(destination));
+  QCOMPARE(readFile(source), body);
+}
+
+void TestDownloads::cancellingAQuietFetchReturnsWithoutWaitingForAnotherSignal() {
+  QTcpServer server;
+  QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+  std::atomic_bool cancelled{false};
+  bool requested = false;
+  connect(&server, &QTcpServer::newConnection, &server, [&] {
+    while (QTcpSocket* socket = server.nextPendingConnection()) {
+      connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+        socket->readAll();
+        requested = true;
+        cancelled.store(true);
+        // Intentionally no response: cancellation must stop a quiet reply.
+      });
+    }
+  });
+  const mikai::backend::WorkCancellationScope scope(&cancelled);
+  QElapsedTimer elapsed;
+  elapsed.start();
+  bool failed = false;
+  try {
+    mikai::backend::fetchUrlBytes(
+        QUrl(QStringLiteral("http://127.0.0.1:%1/quiet").arg(server.serverPort())), {}, 5000);
+  } catch (const std::runtime_error&) {
+    failed = true;
+  }
+  QVERIFY(requested);
+  QVERIFY(failed);
+  QVERIFY2(elapsed.elapsed() < 2000, "cancellation waited for the original request timeout");
 }
 
 int runTestDownloads(int argc, char** argv) {
