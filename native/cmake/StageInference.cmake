@@ -54,8 +54,9 @@ function(mikai_stage_canonical_path path out)
 endfunction()
 
 # The OS-resolved path, so a junction or symlink is compared as what it really
-# points at rather than as the name it was given.
-function(mikai_stage_real_path path out)
+# points at rather than as the name it was given. The result is a comparison
+# key: lower case, which a case-sensitive filesystem cannot open.
+function(mikai_stage_real_key path out)
   set(_real "")
   if(EXISTS "${path}")
     file(REAL_PATH "${path}" _real)
@@ -65,6 +66,31 @@ function(mikai_stage_real_path path out)
   endif()
   mikai_stage_canonical_path("${_real}" _key)
   set(${out} "${_key}" PARENT_SCOPE)
+endfunction()
+
+# The OS-resolved path spelled so it can be created, read and removed. Case is
+# preserved: /mnt/Data/Stage is a different name from /mnt/data/stage on Linux,
+# so a canonical key must never be used as an actual path.
+function(mikai_stage_filesystem_path path out)
+  set(_result "${path}")
+  if(NOT IS_ABSOLUTE "${_result}")
+    get_filename_component(_result "${_result}" ABSOLUTE)
+  endif()
+  get_filename_component(_result "${_result}" ABSOLUTE)
+  file(TO_CMAKE_PATH "${_result}" _result)
+  if(_result MATCHES "^[A-Za-z]:/*$")
+    string(SUBSTRING "${_result}" 0 1 _drive)
+    set(_result "${_drive}:/")
+  else()
+    string(REGEX REPLACE "([^/])/+$" "\\1" _result "${_result}")
+  endif()
+  if(EXISTS "${_result}")
+    file(REAL_PATH "${_result}" _resolved)
+    if(NOT _resolved STREQUAL "")
+      file(TO_CMAKE_PATH "${_resolved}" _result)
+    endif()
+  endif()
+  set(${out} "${_result}" PARENT_SCOPE)
 endfunction()
 
 # TRUE when child is inside parent, or is parent itself.
@@ -267,8 +293,8 @@ function(mikai_stage_inference_source)
 
   # --- Guard 1: the stage must not touch the source, by any spelling of the
   # same path. This runs before anything is created or removed.
-  mikai_stage_real_path("${_s_AJI_SOURCE_DIR}" _source_real)
-  mikai_stage_real_path("${_s_AJI_STAGE_DIR}" _stage_real)
+  mikai_stage_real_key("${_s_AJI_SOURCE_DIR}" _source_real)
+  mikai_stage_real_key("${_s_AJI_STAGE_DIR}" _stage_real)
   foreach(_candidate IN LISTS _stage _stage_real)
     foreach(_target IN LISTS _source _source_real)
       mikai_stage_overlaps("${_candidate}" "${_target}" _overlap)
@@ -285,10 +311,8 @@ function(mikai_stage_inference_source)
 
   # A stage that is a link to something outside the source is fine and is used
   # as its real path; one that merely re-spells the source is already refused.
-  set(_stage_path "${_stage}")
-  if(NOT _stage_real STREQUAL _stage)
-    set(_stage_path "${_stage_real}")
-  endif()
+  # This one is a real path, not the lower-case key, so it stays creatable.
+  mikai_stage_filesystem_path("${_s_AJI_STAGE_DIR}" _stage_path)
 
   # --- Identity: the whole copied tree, plus the series and the policy.
   mikai_stage_series_identity("${_patch_dir}" _series_lines _series_files)
