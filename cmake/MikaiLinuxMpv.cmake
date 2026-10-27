@@ -13,12 +13,12 @@ option(MIKAI_LINUX_BUNDLE_MPV
   "Bundle the pinned Linux libmpv runtime and its private dependencies into the install tree"
   OFF)
 
-set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-10-09-19c0fcf.tar.zst")
+set(MIKAI_LINUX_MPV_ARCHIVE_NAME "mpv-linux-x64-2026-10-24-c493f1c.tar.zst")
 set(MIKAI_LINUX_MPV_ARCHIVE_URL
-  "https://github.com/the-database/mpv/releases/download/2026-10-09-19c0fcf/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
+  "https://github.com/the-database/mpv/releases/download/2026-10-24-c493f1c/${MIKAI_LINUX_MPV_ARCHIVE_NAME}")
 set(MIKAI_LINUX_MPV_ARCHIVE_SHA256
-  "55af9ddbd694366ba016b9e421a6abae78f8559887b7591f7820eca8d5b2bf37")
-set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41531271")
+  "b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7")
+set(MIKAI_LINUX_MPV_ARCHIVE_SIZE "41650081")
 
 set(MIKAI_LINUX_MPV_ARCHIVE "" CACHE FILEPATH
   "Optional local copy of the pinned Linux mpv archive (its published SHA-256 is always checked)")
@@ -150,8 +150,13 @@ if(NOT _mikai_linux_mpv_cache_valid)
       OR IS_DIRECTORY "${_mikai_linux_mpv_module}")
     message(FATAL_ERROR "The pinned Linux mpv archive must contain a regular libmpv.so.2")
   endif()
-  file(REMOVE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/libmpv.so"
-              "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/libmpv.so.2.5.0")
+  file(REMOVE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/libmpv.so")
+  # The archive ships libmpv.so.2 and one full-version real file. Drop the real
+  # file by pattern so a release that renumbers it needs no pin-side edit; the
+  # SONAME module the loader needs is libmpv.so.2.
+  file(GLOB _mikai_linux_mpv_version_aliases
+    LIST_DIRECTORIES FALSE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/libmpv.so.2.*")
+  file(REMOVE ${_mikai_linux_mpv_version_aliases})
 
   file(GLOB _mikai_linux_mpv_so_files
     LIST_DIRECTORIES FALSE "${MIKAI_LINUX_MPV_EXTRACTED_DIR}/*.so*")
@@ -197,7 +202,7 @@ endif()
 set(MIKAI_LINUX_MPV_BUNDLE ON)
 set(MIKAI_LINUX_MPV_BUNDLE_ROOT "${MIKAI_LINUX_MPV_EXTRACTED_DIR}")
 set(MIKAI_LINUX_MPV_BUNDLE_MODE "bundled")
-set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-09-19c0fcf89595e6ab33908299207c555b67e81558")
+set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148")
 set(MIKAI_LINUX_MPV_PATCHED_RUNPATH "$ORIGIN")
 
 message(STATUS "Linux libmpv bundle enabled: ${MIKAI_LINUX_MPV_BUNDLE_ROOT}")

@@ -14,6 +14,18 @@
       "The project's own integration code and its recorded decisions are covered by the owner's 2026-10-04 unrestricted grant, recorded at ../../LICENSE (The Unlicense) and summarised in projectIntegrationGrant. That grant does not relicense any third-party component above, and any component whose licence imposes conditions is governed by those conditions regardless of this scope."
     ]
   },
+  "currentOfficialAjiRelease": {
+    "sourceRecord": "sources.json#sources[id=animejanai-inference].currentOfficialRelease",
+    "tag": "v0.17.1",
+    "sourceCommit": "263ff190a2227199a08292bb41508837382eb66d",
+    "abi": 9,
+    "platforms": ["windows-x64", "linux-x64"],
+    "scope": "Official runtime release assets are distinct from the historical private ABI-8 Native DLLs described by engine.aji-dispatcher, engine.aji-trt and engine.aji-dml below. ABI-9 runtime requires a compatible ABI-9 mpv filter; identity is not runtime proof.",
+    "acquisition": "Only after explicit user action into the per-machine component store; no startup download or public bundling.",
+    "redistribution": "blocked",
+    "blockerRef": "ESC-1",
+    "encoder": "The separate Linux aji-encode release asset is an optional offline CLI, not an app playback dependency and not automatically acquired or shipped. FFmpeg dependency and redistribution rights must be assessed separately."
+  },
   "blockerTaskBindings": {
     "principle": "A blocked component is not a blocked task. A blocker binds the tasks whose own acceptance needs the inference source, the built shim binaries, or a redistributed third-party artefact. Dependency ordering in native/README.md is a planning fact and is not a rights question. This section is retained so the historical binding and its grounds stay auditable.",
     "currentState": "ESC-1 (upstream inference source terms unverified), ESC-2 (CC BY-NC-SA spatial graph redistribution not cleared), ESC-3 (RIFE whole-graph redistribution unresolved), and ESC-5 (trtexec developer-tool redistribution on the official upstream-config path) are open. They leave public Native bundle redistribution blocked. ESC-4 is resolved and ESC-6 tracks GPL-family obligations. The owner's 2026-10-04 grant covers this project's own integration code only (see projectIntegrationGrant) and clears no third-party component.",
@@ -292,6 +304,7 @@
     },
     {
       "id": "engine.aji-dispatcher",
+      "cohort": "historical private Native ABI-8 and official v0.9.0; not the current official v0.17.1 runtime",
       "bundle": "native",
       "name": "aji.dll",
       "sourceIdentity": {
@@ -344,6 +357,7 @@
     },
     {
       "id": "engine.aji-trt",
+      "cohort": "historical private Native ABI-8; not the current official v0.17.1 runtime",
       "bundle": "native",
       "name": "aji_trt.dll",
       "sourceIdentity": {
@@ -386,6 +400,7 @@
     },
     {
       "id": "engine.aji-dml",
+      "cohort": "historical private Native ABI-8; not the current official v0.17.1 runtime",
       "bundle": "native",
       "name": "aji_dml.dll",
       "sourceIdentity": {

@@ -4,77 +4,60 @@
   "platform": "windows-x64",
   "releaseArtifact": "../../release-artifacts/windows-runtime-review/mikai-0.1.0-windows-x64-release.json",
   "releaseArtifactSha256": "7782b102b7096e4e8f00d51ad818a636b99e87231cb6a61260a82a944cce555d",
+  "historicalRun37965200722NotCurrentEvidence": "Superseded run metadata, dependency claims and GPL/FFmpeg findings are retained only as historical evidence; they do not describe the 2026-10-24 binary.",
   "publicReleaseReady": false,
   "blockers": [
-    "The exact dependency source-cache archive and checkout revisions are absent from the retained workflow logs; only configure summaries and selected dependency versions are available. Thus exact transitive package source identities, all patch bytes, complete linked closure and corresponding-source fulfillment remain unproven.",
-    "No retained corresponding-source bundle or source/relinking delivery mechanism is controlled by the distributor. Upstream binary assets, source repositories and a source archive URL are not a compliant source offer by themselves.",
+    "Current-run exact dependency source identities, source-cache contents, patch bytes, complete linked closure and corresponding-source fulfillment are not established by retained evidence.",
+    "No retained corresponding-source bundle or source delivery mechanism is controlled by the distributor. Upstream binary assets, source repositories and source archive URLs are not a compliant source offer by themselves.",
     "The final package provides no Qt source bundle, modifications/build scripts or a verified LGPL replacement/relink procedure and required installation information.",
     "The exact source/build correspondence of shipped MinGW runtime DLLs and any embedded compiler runtime portions is not established; w64devkit/Qt SDK notices are not a corresponding-source delivery route."
   ],
   "build": {
     "mpv": {
       "upstream": "https://github.com/the-database/mpv",
-      "sourceCommit": "19c0fcf89595e6ab33908299207c555b67e81558",
-      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-09-19c0fcf895",
-      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37965200722",
-      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/37965200722",
-      "runMetadataHeadSha": "597bab33931cbd2ec29abe9d44a29e6363da7499",
-      "workflow": "https://github.com/the-database/mpv-winbuild/blob/597bab33931cbd2ec29abe9d44a29e6363da7499/.github/workflows/mpv.yml",
-      "job": "Build MPV (64, false), job 113937766163; success, 2026-10-09T17:17:34Z–17:33:17Z",
-      "compiler": "Clang (run/workflow name); exact compiler version and final build flags unavailable",
-      "configuration": "The recovered job log confirms Meson 1.12.1, mpv 0.41.0-UNKNOWN, Clang 23.1.3 (LLVM commit 0d261d1ca552c95a8f007e061c787ac7132fbcbc), GCC 16.2.1 host compiler, x86_64-w64-mingw32 target, FFmpeg ABI 63/61/12/10/7, libplacebo 7.374.0, libass 0.17.5, and an enabled `gpl` feature. `Build MPV (64, false)` and the workflow's `-s false` mean this is not the separate LGPL build; actual license mode is GPL, not LGPL. mpv build features include libmpv shared, d3d11/d3d9, Vulkan, GL, CUDA hwaccel, ffmpeg, libass, curl, javascript, dvdnav, bluray, lua/luajit, openal, rubberband, SDL2, shaderc, sixel, vapoursynth and zimg. User options include b_lto=true/thin, b_ndebug=true, debug=true, optimization=3, default_library=shared, prefer_static=true; enabled feature set is recorded in retained `mpv-configure-out.log`. Full artifact at `.probe-out/release-tools/windows-run-37965200722-logs/logs.7z`.",
-      "patches": "The workflow itself applies its checked-out `patch/*.patch` series to the build-helper repository, adds `packages/libplacebo-present-queue.patch` and `packages/libplacebo-nvidia-rtx-hdr.patch`, redirects package recipes to the-database/mpv and the-database/libass, enables libass threads, removes `-DHAVE_OPENSSL=1` for libaribcaption, adds GNU mirror URLs, and modifies dependency recipe CMake files. Conditional run-level PR patches and custom commands were observed skipped. Exact patch-file bytes and helper/toolchain commit are not retained; workflow file: https://github.com/the-database/mpv-winbuild/blob/597bab33931cbd2ec29abe9d44a29e6363da7499/.github/workflows/mpv.yml. Logs show the user-provided/checked-in FFmpeg configure result is static-only, GPLv3, network-enabled, w32threads, with openssl and listed external codecs/libraries; exact input revisions and configure command line remain absent.",
-      "loggedDependencyVersions": {
-        "ffmpeg": "ABI: avcodec/avformat 63, avutil 61, avfilter 12, swscale 10, swresample 7; FFmpeg configure log says GPL version 3 or later, static=yes, shared=no, network=yes, threading=w32threads.",
-        "libplacebo": "7.374.0",
-        "libass": "0.17.5",
-        "libcurl": "8.23.0-DEV",
-        "dvdread": "7.1.1",
-        "dvdnav": "7.0.1",
-        "mujs": "1.3.8-25-g536b19c",
-        "lcms2": "2.19",
-        "libarchive": "3.9.0",
-        "libbluray": "1.5.1",
-        "luajit": "2.1.0-beta3",
-        "rubberband": "4.0.0",
-        "sdl2": "2.33.0",
-        "uchardet": "0.0.8",
-        "vapoursynth": "72",
-        "zimg": "3.0.6",
-        "zlib": "1.3.2.zlib-ng",
-        "shaderc": "2026.5.0",
-        "vulkan": "1.4.365",
-        "ffnvcodec": "13.1.15.1.0",
-        "libva": "1.25.0",
-        "libjpeg": "3.2.1",
-        "openssl": "Enabled among FFmpeg external libraries; exact version/linked mode remains unresolved."
-      },
+      "sourceCommit": "b4f9f5bfed18d5ce610af28024986410dd9bdaae",
+      "release": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-24-b4f9f5bfed",
+      "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/40115095739",
+      "runMetadata": "https://api.github.com/repos/the-database/mpv-winbuild/actions/runs/40115095739",
+      "workflow": null,
+      "job": null,
+      "compiler": "Not established from retained evidence for this run.",
+      "configuration": "For the 2026-10-24 release, retained evidence establishes the runtime-reported mpv version and FFmpeg revision only; Meson/compiler versions, build flags, feature configuration, dependency versions, patches and source-cache contents for this run are not yet available.",
+      "patches": "The 2026-10-24 run's patch bytes, downstream modifications and build recipe details have not been recovered; do not attribute older workflow patches to this binary.",
+      "loggedDependencyVersions": null,
       "ffmpeg": {
-        "revision": "Exact libmpv-2.dll startup/version probe reports FFmpeg N-127263-g3fe6c8dee; the primary FFmpeg GitHub commit API resolves 3fe6c8dee to 3fe6c8dee248df6732c400bced46d8d0557d3444. This establishes the runtime-reported source revision, not whether downstream patches or build-time modifications were applied.",
-        "versionProbe": "F:/ZKS/mikai-playback-acceptance-20261024/evidence/startup*.log (exact libmpv-2.dll startup recovery probe; mpv v0.41.0-dev-g19c0fcf89; FFmpeg N-127263-g3fe6c8dee)",
-        "primaryCommit": "https://api.github.com/repos/FFmpeg/FFmpeg/commits/3fe6c8dee",
-        "sourceArchive": "../../release-artifacts/corresponding-source/ffmpeg-3fe6c8dee248df6732c400bced46d8d0557d3444/ffmpeg-source.tar.gz",
-        "sourceArchiveSha256": "29a6a1e9985937f9c5b48e04784fb223eec5872f71fc6feae2c97403821b75cb",
-        "sourceArchiveBytes": 17850163,
-        "siblingDeveloperArchive": {
-          "url": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-09-19c0fcf895",
-          "sha256": "52ecb132577e770eb33d44fb3c45da325397435250b85805434cf1c29759dc72",
-          "role": "Developer archive corroborates the short revision but the binary's runtime-reported version is the direct identity evidence."
+        "revision": "The deployed DLL's strings report FFmpeg N-128018-ga881f0a9a. This is a runtime version marker only; it does not establish build-time source correspondence, patches or behavior.",
+        "versionProbe": "String markers extracted from the verified deployed libmpv-2.dll; marker evidence only, not runtime behavior proof.",
+        "primaryCommit": null,
+        "sourceArchive": null,
+        "sourceArchiveSha256": null,
+        "sourceArchiveBytes": null,
+        "siblingCliArchive": {
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-x86_64-20261024-git-b4f9f5bfed.7z",
+          "sha256": "3ba568335b83fa19f2b3c2a63b5264ffd57406e173e0401faebb1ac2f59b3154",
+          "bytes": 33755796,
+          "role": "Verified CLI sibling; not a usable build input because it contains no development headers or libmpv DLL."
+        },
+        "historicalRun37965200722NotCurrentEvidence": {
+          "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37965200722",
+          "historicalDependencyVersions": {"libplacebo":"7.374.0", "libass":"0.17.5", "libcurl":"8.23.0-DEV", "shaderc":"2026.5.0", "vulkan":"1.4.365"},
+          "historicalFFmpegMarker": "N-127263-g3fe6c8dee; applies only to the older DLL, not the current binary."
         }
       },
       "asset": {
-        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-09-19c0fcf895/mpv-dev-x86_64-20261009-git-19c0fcf895.7z",
-        "sha256": "8801c722b5174a751d03f1cb435092c61304cd8605302fe7cae2cc77872b2d83",
-        "bytes": 32845274,
+        "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z",
+        "sha256": "2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c",
+        "bytes": 32965168,
         "containsCorrespondingSource": false
       },
       "deployedFile": {
         "path": "mpv/libmpv-2.dll",
-        "version": "v0.41.0-dev-g19c0fcf89",
-        "sha256": "f7913c65750a53365a67ac0296baab5f8dcc1d406c697fa9249e83ed8391e090",
-        "bytes": 122173440
+        "version": "v0.41.0-dev-gb4f9f5bfe",
+        "sha256": "d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3",
+        "bytes": 122579968,
+        "abiMarker": "ABI-9 host entrypoint string markers observed: aji_ingest, aji_infer_seq, aji_temporal_radius, aji_temporal_reset, aji_rife_before_upscale, aji_pre_resize, aji_resize, aji_infer_rife. String markers only; not runtime behavior proof."
       },
-      "licenseStatus": "Recovered configure output establishes the built mpv features include `gpl`; the job is the non-LGPL matrix entry. Treat deployed libmpv as GPLv3-or-later combined with GPLv2-or-later mpv terms pending exact closure review; it is not an LGPL-only build. Full dependency source/license closure and distributor source delivery remain unresolved."
+      "licenseStatus": "Current-run license/build configuration is not established by the retained evidence. Do not infer LGPL-only status or claim a specific GPL configuration from the superseded run. Dependency license/source closure and distributor source delivery remain unresolved."
     },
     "qt": {
       "version": "6.12.0",
@@ -112,30 +95,31 @@
   "payloadEvidence": "Qt 6.12.0 DLLs/plugins/translations, TLS plugins, MinGW runtime hashes and deployed libmpv hash are recorded in the final release manifest payload; that payload is authoritative for exact full inventory.",
   "sourceAndRelinkingPlan": {
     "sourceAcquisition": {
-      "retainedLogArtifact": ".probe-out/release-tools/windows-run-37965200722-logs/logs.7z",
-      "retainedLogArtifactId": 11634536202,
-      "upstreamArtifactSha256": "9b1e5030380b62e6c01984463afd54fa66bf5b7b1932ce4af4164e80e20a9927",
-      "locallyExtractedConfigureEvidence": {
-        "mpv": ".probe-out/release-tools/windows-run-37965200722-logs/extracted/mpv-winbuild-cmake/build64/packages/mpv-prefix/src/mpv-stamp/mpv-configure-out.log",
-        "ffmpeg": ".probe-out/release-tools/windows-run-37965200722-logs/extracted/mpv-winbuild-cmake/build64/packages/ffmpeg-prefix/src/ffmpeg-stamp/ffmpeg-configure-out.log"
+      "historicalRun37965200722NotCurrentEvidence": {
+        "label": "Superseded historical run; not evidence about the current 2026-10-24 binary.",
+        "workflowRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37965200722",
+        "retainedLogArtifact": ".probe-out/release-tools/windows-run-37965200722-logs/logs.7z",
+        "retainedLogArtifactId": 11634536202,
+        "upstreamArtifactSha256": "9b1e5030380b62e6c01984463afd54fa66bf5b7b1932ce4af4164e80e20a9927",
+        "localConfigureEvidence": ".probe-out/release-tools/windows-run-37965200722-logs/extracted/ (mpv and FFmpeg configure logs)",
+        "historicalBuildFinding": "Older run logs described a GPL-enabled non-LGPL build and FFmpeg N-127263-g3fe6c8dee. Those facts do not identify or characterize the current binary."
       },
       "retainedSourceMaterials": [
-        "A codeload snapshot of the exact mpv commit selected by run 37965200722 is retained at ../../release-artifacts/corresponding-source/mpv-19c0fcf89595e6ab33908299207c555b67e81558/mpv-source.tar.gz (SHA-256 8b09edc8e4107595c2ed27ae57d30a18e65d19f5c64910856633f0f992bf1ecf). It includes upstream mpv copyright/license files but is not the dependency closure or proof of the produced DLL's exact source inputs.",
-        "The run's 64_logs artifact and extracted configure/build evidence are retained locally; they contain logs/stamps, not the source cache or actual source trees."
+        "Historical only: codeload snapshot for the older run's mpv commit 19c0fcf89595e6ab33908299207c555b67e81558 is retained at ../../release-artifacts/corresponding-source/mpv-19c0fcf89595e6ab33908299207c555b67e81558/mpv-source.tar.gz (SHA-256 8b09edc8e4107595c2ed27ae57d30a18e65d19f5c64910856633f0f992bf1ecf); it does not correspond to the current DLL.",
+        "Historical only: run 37965200722's 64_logs artifact and extracted configure evidence are retained locally; these are not current-run build evidence."
       ],
       "missingInputs": [
-        "Exact helper/toolchain repository commit, most downloaded external-project tarball/git revisions, configure command lines, full per-package feature/license configuration and patch file bytes are absent. FFmpeg's base source commit is now identified and retained, but the exact patch/build-modification status remains unresolved.",
-        "The output identifies many built packages and features but does not provide hashes, exact source identities or complete notices for every static dependency incorporated into libmpv."
+        "For the current run, the helper/toolchain revision, external source revisions, configure commands, per-package configuration, patches and source-cache contents are not retained.",
+        "Exact source identities and complete notices for current-run static dependencies incorporated into libmpv are not established."
       ],
       "assemblyCommands": [
-        "Extract `logs.7z` into an owned evidence folder (already done under `.probe-out/release-tools/windows-run-37965200722-logs/extracted/`).",
-        "Obtain the exact build-helper checkout, source cache and build/install scripts/patch bytes from the run owner or a matching rebuild; hash and license-map each dependency to its configure/build log before packaging any source bundle.",
-        "Include pinned mpv source commit plus all dependency sources, modifications, patches, scripts and required corresponding materials; deliver a distributor-controlled source bundle/offer and demonstrate GPL-compatible redistribution and any applicable source/relink rights before changing readiness."
+        "Obtain current-run build-helper checkout, source cache, build/install scripts and patch bytes; identify and hash/license-map each dependency before assembling corresponding materials.",
+        "Do not characterize current-build redistribution terms until the exact source/build/license closure and applicable rights have been reviewed."
       ]
     },
-    "mpv": "The source archive for the pinned upstream git commit https://github.com/the-database/mpv/tree/19c0fcf89595e6ab33908299207c555b67e81558 is now retained at ../../release-artifacts/corresponding-source/mpv-19c0fcf89595e6ab33908299207c555b67e81558/mpv-source.tar.gz. This is only the mpv repository source, not the exact upstream build cache, submodule/dependency sources, configure/build/install scripts, and patches for run 37965200722. Recover and match those materials, complete the license/source closure, then use a distributor-controlled corresponding-source delivery route; do not call the GPL-enabled DLL LGPL-only or infer LGPL-only replacement requirements for it.",
+    "mpv": "Current-run mpv and dependency source cache, build/install scripts, modifications, patches and complete license/source closure are not established. The verified developer archive is not corresponding source. Retain the unresolved distributor-controlled source-delivery blocker; do not transfer source/configuration/license conclusions from the historical run.",
     "qt": "Use the retained official source archive at ../../release-artifacts/corresponding-source/qt-everywhere-src-6.12.0.tar.xz; match final modules to the exact deployed SDK, collect source modifications and build/install scripts, provide a distributor-controlled corresponding-source bundle and demonstrate replacement/relinking under LGPL-3.0 with any applicable installation information.",
     "mingw": "Identify exact originating runtime package from the deployed hashes, then retain its matching source, modifications, build instructions and original applicable notices; document embedded-vs-separate runtime code.",
-    "status": "The Qt and runtime-reported FFmpeg official upstream sources plus workflow logs are retained, but no complete matching corresponding-source bundle or compliant source delivery/fulfillment is currently offered or delivered."
+    "status": "Qt source materials and historical workflow logs are retained, but no complete matching corresponding-source bundle or compliant source delivery/fulfillment is currently offered or delivered. Current-run mpv dependency sources and build evidence remain unresolved."
   }
 }

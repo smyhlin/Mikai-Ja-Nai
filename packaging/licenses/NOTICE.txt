@@ -97,8 +97,21 @@ fulfillment. The present payload does not claim those steps have occurred.
 MPV — PINNED AUTHOR-FORK DEVELOPER BUILDS
 Upstream: https://github.com/mpv-player/mpv
 Fork: https://github.com/the-database/mpv
-Pinned upstream mpv source commit for both release assets:
-19c0fcf89595e6ab33908299207c555b67e81558.
+Current Windows and Linux release assets are pinned to different mpv commits:
+Windows: `b4f9f5bfed18d5ce610af28024986410dd9bdaae`;
+Linux: `c493f1c7e10a6b2301653596e7deeb91295d3148`.
+
+The 19c0fcf89595e6ab33908299207c555b67e81558 materials described below
+belong to the superseded 2026-10-09 build, not either current pin. The
+retained `mpv/Copyright.txt`, `mpv/GPL-2.0.txt` and `mpv/LGPL-2.1.txt` are
+upstream copyright/license texts, not evidence of the current builds' actual
+configuration or linked dependency licenses. The current Windows binary
+reports FFmpeg `N-128018-ga881f0a9a` at runtime; this is the runtime-reported
+version string only, not independently verified source or build provenance.
+The current workflow logs, dependency versions, patch bytes, FFmpeg source and
+mpv source snapshots are not retained here. Current source/license closure
+and corresponding-source delivery remain outstanding; no current-build
+license mode or source completeness is asserted.
 mpv's upstream `Copyright` file is retained as `mpv/Copyright.txt`; the
 upstream GPL-2.0 and LGPL-2.1 license texts are in `mpv/GPL-2.0.txt` and
 `mpv/LGPL-2.1.txt`. Copyright explains that mpv is GPL-2.0-or-later by
@@ -107,7 +120,53 @@ GPL-only files. The actual build configuration and linked dependencies are
 not established here. These texts are not a determination of the deployed
 binary's license.
 
-WINDOWS DEV ARCHIVE (the in-process import)
+CURRENT WINDOWS DEV ARCHIVE (the in-process import)
+Release:
+https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-24-b4f9f5bfed
+Build run: https://github.com/the-database/mpv-winbuild/actions/runs/40115095739
+Upstream mpv commit: b4f9f5bfed18d5ce610af28024986410dd9bdaae
+Asset: mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z
+Publisher size: 32,965,168 bytes
+Publisher SHA-256:
+2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c
+The archive contains the development headers, import library and libmpv DLL.
+Extracted libmpv.dll.a: 53,308 bytes; SHA-256
+bef1b89f534bc86b33135e1f04fa2d5064b9d48b5de8bc9866665bbf43def793.
+Extracted libmpv-2.dll: 122,579,968 bytes; SHA-256
+d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3.
+The DLL identity string is `mpv v0.41.0-dev-gb4f9f5bfe` and its
+runtime-reported FFmpeg string is `N-128018-ga881f0a9a`. ABI 9 host entrypoint
+names (`animejanai`, `aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`,
+`aji_temporal_reset`, `aji_rife_before_upscale`, `aji_pre_resize`,
+`aji_resize`, `aji_infer_rife`) occur as string markers only; this is not
+proof that any entrypoint is exported or callable. Current workflow logs,
+dependency versions, patch bytes, FFmpeg source and mpv source snapshot are
+not retained here. Do not infer GPL/LGPL mode, dependency/source closure or
+redistribution clearance from the asset identity or runtime strings.
+
+CURRENT WINDOWS CLI SIBLING (not selected)
+Asset: mpv-x86_64-20261024-git-b4f9f5bfed.7z
+Publisher size: 33,755,796 bytes; SHA-256
+3ba568335b83fa19f2b3c2a63b5264ffd57406e173e0401faebb1ac2f59b3154.
+It contains mpv.exe/media/resources but no libmpv DLL; it is not the selected
+in-process development archive and is not bundled by this integration.
+
+CURRENT LINUX BUNDLED ARCHIVE (selected input, not standalone package)
+Release tag: 2026-10-24-c493f1c; upstream mpv commit:
+c493f1c7e10a6b2301653596e7deeb91295d3148.
+Asset: mpv-linux-x64-2026-10-24-c493f1c.tar.zst
+Publisher size: 41,650,081 bytes; SHA-256
+b6281a2c924157a01f4a66f49dda3029b11378ffd982a974cdcbdb474c0befc7.
+The archive has 78 members. The `libmpv.so`, `libmpv.so.2` and
+`libmpv.so.2.6.0` members total 3,708,024 bytes and have SHA-256
+f50c5195aececc060202c2128113d88a9fc0a463c2e5fc9694f8e40349e96768.
+The archive contains no headers or notices. It is not corresponding source and
+does not establish its dependency/source/license closure. Current workflow
+logs, dependency versions, patch bytes, FFmpeg source and mpv source snapshot
+are not retained here; corresponding-source delivery and closure remain
+outstanding.
+
+SUPERSEDED WINDOWS DEV ARCHIVE (the in-process import; 2026-10-09 build)
 Release:
 https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-09-19c0fcf895
 Asset: mpv-dev-x86_64-20261009-git-19c0fcf895.7z
@@ -121,7 +180,7 @@ f7913c65750a53365a67ac0296baab5f8dcc1d406c697fa9249e83ed8391e090.
 This developer binary/header archive is not corresponding source and does not
 establish its complete linked dependency/license closure.
 
-WINDOWS CLI ARCHIVE (not selected)
+SUPERSEDED WINDOWS CLI ARCHIVE (not selected; 2026-10-09 build)
 The separate mpv-x86_64-20261009-git-19c0fcf895.7z asset has publisher size
 33,627,201 bytes and SHA-256
 85134a3e4748b7ab2e9bdb0a2b445a012082c9afa97edc953f1ccfba191d09b6. It
@@ -129,7 +188,7 @@ contains mpv.exe/mpv.com and CLI resources, but no libmpv DLL. Mikai uses the
 DEV import in-process; the CLI archive is neither selected nor executed or
 bundled by this integration. Do not conflate the two release assets.
 
-The Windows run 37965200722 identifies workflow commit
+The superseded Windows run 37965200722 identifies workflow commit
 597bab33931cbd2ec29abe9d44a29e6363da7499, workflow `.github/workflows/mpv.yml`,
 and successful job 113937766163 (`Build MPV (64, false)`). Its exact `64_logs`
 artifact is retained privately at
@@ -162,15 +221,15 @@ archive (SHA-256
 52ecb132577e770eb33d44fb3c45da325397435250b85805434cf1c29759dc72) is only
 corroborative. The runtime-reported version identifies FFmpeg's source commit,
 but does not establish that no downstream patch/build modification was applied
-or identify the full static dependency closure. The pinned mpv source locator
-is
-https://github.com/the-database/mpv/tree/19c0fcf89595e6ab33908299207c555b67e81558;
-it is not a corresponding-source offer. Despite this newly matched FFmpeg
-source, exact dependency/cache revisions, remaining patch bytes, complete
-linked license closure and a distributor-controlled source delivery route
-remain outstanding.
+or identify the full static dependency closure. The mpv source locator
+https://github.com/the-database/mpv/tree/19c0fcf89595e6ab33908299207c555b67e81558
+and the matching FFmpeg source archive described above are superseded-build
+materials only, not current corresponding source or an offer. Current workflow
+logs, dependency versions, patch bytes, FFmpeg source and mpv source snapshot
+are not retained here. Current source/license closure and a distributor-
+controlled corresponding-source delivery route remain outstanding.
 
-LINUX BUNDLED ARCHIVE (selected input, not a standalone application package)
+SUPERSEDED LINUX BUNDLED ARCHIVE (2026-10-09 build; not the current input)
 Release:
 https://github.com/the-database/mpv/releases/tag/2026-10-09-19c0fcf
 Asset: mpv-linux-x64-2026-10-09-19c0fcf.tar.zst
@@ -205,11 +264,9 @@ on packaged owned libraries; this changes the extracted ELF bytes. Record and
 distinguish the publisher archive SHA-256 from the hashes of the final
 postprocessed payload. No global `LD_LIBRARY_PATH` is used; glibc/loader,
 graphics stack and GPU drivers remain host dependencies, so this is not
-self-contained or proof of runtime success. The Linux final package inventory
-is now recorded, but package hashes and `$ORIGIN` alone do not identify the
-complete dependency source/license closure or satisfy source obligations.
+self-contained or proof of runtime success. The Linux final package inventory is now recorded, but package hashes and `$ORIGIN` alone do not identify the complete dependency source/license closure or satisfy source obligations. The archive description above is for the superseded 2026-10-09 build; current Linux logs, dependency versions, patches and source snapshot are not retained.
 
-FFMPEG AND OTHER LIBMPV DEPENDENCIES
+SUPERSEDED FFMPEG AND OTHER LIBMPV DEPENDENCIES (2026-10-09 Windows build)
 The Windows run 37965200722 FFmpeg configure log identifies FFmpeg ABI
 63/61/12/10/7 and a static-only GPL-3.0-or-later build with network support,
 w32threads, OpenSSL and many external codec/library inputs. The exact deployed

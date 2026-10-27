@@ -108,11 +108,12 @@ machine observations are historical only, not an active path.
 
 | | |
 |---|---|
-| Source | <https://github.com/the-database/animejanai-inference> @ v0.9.0, commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3` |
-| Artefacts | `aji.dll`, `aji_trt.dll`, `aji_dml.dll` |
-| Licence | **none** |
+| Current official source | <https://github.com/the-database/animejanai-inference> @ v0.17.1, commit `263ff190a2227199a08292bb41508837382eb66d`, API/ABI 9 |
+| Historical private Native baseline | v0.9.0, commit `c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3`, ABI 8, with separately recorded local modifications and build |
+| Artefacts | Windows dispatcher and backends; Linux runtime is separately released |
+| Licence | **no upstream grant located; redistribution blocked** |
 
-Evidence that no licence exists:
+Evidence for the unresolved licence status:
 
 - the repository has no `LICENSE`/`COPYING` file —
   [`main/LICENSE` returns HTTP 404][aji-license-404]
@@ -121,6 +122,9 @@ Evidence that no licence exists:
 - the local reference copy at
   `C:/Users/myhli/Downloads/janai/animejanai-inference-main` has no licence
   file and no per-file licence headers
+- the inspected v0.17.1 source ZIP has no entry whose name contains
+  `license`, `licence`, `copying`, or `notice`; filename inspection alone
+  does not establish that no grant exists anywhere
 
 [aji-license-404]: https://raw.githubusercontent.com/the-database/animejanai-inference/main/LICENSE
 [aji-repo]: https://api.github.com/repos/the-database/animejanai-inference
@@ -145,7 +149,7 @@ adopted: this project is built around this specific implementation, and
 substituting a different one would change the product rather than its
 provenance.
 
-The official Windows release asset is `aji-windows-x64.zip` (657,798 bytes,
+The historical v0.9.0 official Windows release asset is `aji-windows-x64.zip` (657,798 bytes,
 SHA-256 `22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586`).
 The historical baseline comparison against the v0.9.0 tag, performed before
 authorized local edits, found the header, configuration parser and dispatcher
@@ -159,6 +163,23 @@ Unicode-path support is claimed. A local MSVC/CUDA compile/link and descriptive
 artifact hashes are recorded in
 `sources.json#sources[id=animejanai-inference].localBuildObservation`; runtime
 behavior is not established.
+
+The current [v0.17.1 release](https://github.com/the-database/animejanai-inference/releases/tag/v0.17.1)
+has an ABI-9 Windows runtime archive `aji-windows-x64.zip` (743,177 bytes,
+SHA-256 `9ddf6bb6da0ec52a2da0d9a13e59be99ff97a5c8c2e7156653dd154f6a4e40ad`)
+and Linux runtime archive `aji-linux-x64.tar.zst` (281,391 bytes,
+SHA-256 `89ca6cc961889eebfa326745d2c7d9b96ebc71700303335f87adf1995f7c7cdc`).
+These are separate from the private ABI-8 source and build above; an ABI-8
+mpv filter must not be paired with the ABI-9 runtime. Release identity is not
+runtime compatibility or operation evidence.
+
+The separate Linux `aji-encode-linux-x64.tar.zst` (80,255,083 bytes,
+SHA-256 `d979be62b8b7735b4b579ba7a6b68e3db7f50707b9aeb42c20da8f6ca31093fe`)
+is an optional offline CLI, not used for app playback, automatically acquired,
+or shipped. Its FFmpeg dependency and redistribution rights require separate
+assessment. Neither its publication nor the runtime release clears public
+distribution; ESC-1 remains open. Asset sizes and digests come from the release
+API; see `sources.json` for the source archive and cohort details.
 
 The official asset and its dispatcher/TensorRT/DirectML dependency closure may
 be acquired only into the user's per-machine component store after explicit

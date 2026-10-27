@@ -121,42 +121,44 @@
       "fileIntegrityReason": "The exact API-only mpv-dev archive was downloaded locally and its SHA-256 matches the publisher digest. The extracted DLL size and digest are local observations, not publisher-provided checksums.",
       "url": "https://github.com/the-database/mpv-winbuild",
       "ref": {
-        "type": "gitCommit",
-        "sha": "6ac50ae6b135c5c9b484c37cc47e5368d1f8b613",
-        "role": "Release tag commit for build run 37549675458"
+        "type": "releaseTag",
+        "tag": "2026-10-24-b4f9f5bfed",
+        "role": "Current API-only developer archive release; release publisher tag commit not separately verified here"
       },
       "release": {
-        "tag": "2026-10-07-d6d93599d5",
-        "tagCommit": "6ac50ae6b135c5c9b484c37cc47e5368d1f8b613",
-        "page": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-07-d6d93599d5",
-        "api": "https://api.github.com/repos/the-database/mpv-winbuild/releases/tags/2026-10-07-d6d93599d5",
-        "buildRun": "https://github.com/the-database/mpv-winbuild/actions/runs/37549675458"
+        "tag": "2026-10-24-b4f9f5bfed",
+        "tagCommit": null,
+        "page": "https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-24-b4f9f5bfed",
+        "api": null,
+        "buildRun": "https://github.com/the-database/mpv-winbuild/actions/runs/40115095739"
       },
       "mpvSource": {
         "url": "https://github.com/the-database/mpv",
-        "commit": "d6d93599d59069b715013a6e77e898056499b905",
-        "tree": "d69b8c428bb057743eef5aa4e33f6c92926fd393"
+        "commit": "b4f9f5bfed18d5ce610af28024986410dd9bdaae",
+        "tree": null
       },
       "files": [
         {
-          "file": "mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
-          "bytes": 32830217,
-          "sha256": "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c",
-          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
-          "contents": "API-only developer archive containing include/mpv/*, libmpv.dll.a and libmpv-2.dll; no mpv.exe"
+          "file": "mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z",
+          "bytes": 32965168,
+          "sha256": "2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c",
+          "url": "https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z",
+          "contents": "API developer archive containing include/mpv/{client.h,render.h,render_gl.h,stream_cb.h}, libmpv.dll.a and libmpv-2.dll; no mpv.exe"
         }
       ],
       "observedDll": {
         "file": "libmpv-2.dll",
-        "bytes": 122146816,
-        "sha256": "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649",
+        "bytes": 122579968,
+        "sha256": "d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3",
         "architecture": "x64",
-        "mpvApi": "2.5",
+        "runtimeVersionMarker": "v0.41.0-dev-gb4f9f5bfe",
+        "ffmpegVersionMarker": "N-128018-ga881f0a9a",
+        "abiMarker": "ABI-9 host entrypoint strings observed; marker evidence only, not behavior proof",
         "digestKind": "locallyObserved; not a publisher digest"
       },
       "acquisition": {
-        "ownedRoot": "F:/ZKS/mikai-native-sdks/mpv-author-2026-10-07",
-        "scope": "Pinned developer archive used as build input and to supply only libmpv-2.dll to local app/dist packages",
+        "ownedRoot": "F:/ZKS/mikai-native-sdks/mpv-author-2026-10-24",
+        "scope": "Pinned developer archive used as Windows build input and to supply libmpv-2.dll to local app/dist packages",
         "executableUse": "No mpv.exe is used; Mikai remains an in-process Qt/OpenGL libmpv player"
       },
       "integrationBoundary": "The official release DLL does not contain the project's native status/admission patches and is not a Native bundle. Preserve the separate mpv-fork source/build record at 63d127174d8f70336c82a22408929e2bc301edcb and its native/patches/mpv project patch series. The release publisher's build options, complete corresponding source/dependency licence closure and relinkability for this exact DLL are not established; third-party redistribution is blocked."
@@ -187,12 +189,12 @@
     },
     {
       "id": "animejanai-inference",
-      "role": "the C ABI-8 inference shim: aji.dll (dispatcher), aji_trt.dll (TensorRT), aji_dml.dll (DirectML)",
+      "role": "Historical private ABI-8 inference shim source and build record; the separate current official ABI-9 release is recorded in currentOfficialRelease.",
       "pinKind": "releasePin",
       "fileIntegrity": "digestInventory",
       "fileIntegrityReason": "The nine files below are hashed from the local read-only copy. Header, conf parser and dispatcher match the official v0.9.0 tag; TRT and CMake are locally modified. Pass --source-root animejanai-inference=<path> to mikai_manifest_check to recompute the local inventory.",
-      "inventoryCoverage": "The nine files below are every file that feeds the three shipped DLLs. The repository holds additional material this inventory deliberately excludes: docs/, .github/, sanity/, parity/, tools/, the *.md files and the conf fixture. Those are documentation, CI definitions and research scaffolding; none is compiled into aji.dll, aji_trt.dll or aji_dml.dll, so they cannot change a built artefact's identity.",
-      "coverageRule": "A file may be omitted from sourceDigestsMeasuredLocally only if it is not an input to any of the three shipped DLLs. That is a positive test, not a blanket exemption: adding a file to src/, include/ or any CMake-referenced path leaves the inventory incomplete until its digest is added here.",
+      "inventoryCoverage": "The nine files below are the historical private ABI-8 compile inputs for the three DLLs, not an inventory of the current official ABI-9 release. The repository holds additional material this inventory deliberately excludes: docs/, .github/, sanity/, parity/, tools/, the *.md files and the conf fixture. Those are documentation, CI definitions and research scaffolding; none is compiled into the recorded private aji.dll, aji_trt.dll or aji_dml.dll.",
+      "coverageRule": "A file may be omitted from sourceDigestsMeasuredLocally only if it is not an input to any of the three historical private DLLs. That is a positive test, not a blanket exemption: adding a file to src/, include/ or any CMake-referenced path leaves the inventory incomplete until its digest is added here.",
       "url": "https://github.com/the-database/animejanai-inference",
       "ref": {
         "type": "gitCommit",
@@ -201,7 +203,7 @@
         "pinRationale": "Pinned to the official v0.9.0 tag commit, not the moving `main` ref. Header, conf parser and dispatcher in the read-only local source copy match this tag byte-for-byte; the local TRT implementation and CMake files are fork-modified for Unicode argv/path handling.",
         "verifiedBy": "https://github.com/the-database/animejanai-inference/tree/c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3; local source reconciliation recorded in this entry"
       },
-      "latestRelease": {
+      "historicalOfficialRelease": {
         "tag": "v0.9.0",
         "publishedAt": "2026-09-14T00:58:33Z",
         "assets": [
@@ -216,6 +218,47 @@
             "sha256": "02dc66fb49a49c757bc3edb6153321150627a26b059fe92da6e063b31ee6bdf9"
           }
         ]
+      },
+      "currentOfficialRelease": {
+        "tag": "v0.17.1",
+        "publishedAt": "2026-10-27T17:25:04Z",
+        "releaseUrl": "https://github.com/the-database/animejanai-inference/releases/tag/v0.17.1",
+        "sourceCommit": "263ff190a2227199a08292bb41508837382eb66d",
+        "apiVersion": 9,
+        "sourceArchive": {
+          "url": "https://github.com/the-database/animejanai-inference/archive/263ff190a2227199a08292bb41508837382eb66d.zip",
+          "bytes": 218177,
+          "sha256": "20366466b43bf4db9ebe8d73f5e8746e26a65e2fa3c1169e5178931a024cc79e",
+          "licenceInspection": "The inspected source ZIP contains no member whose name includes license, licence, copying or notice. This filename inspection does not prove the absence of all possible grants."
+        },
+        "assets": [
+          {
+            "name": "aji-linux-x64.tar.zst",
+            "platform": "linux-x64",
+            "role": "official playback runtime",
+            "bytes": 281391,
+            "sha256": "89ca6cc961889eebfa326745d2c7d9b96ebc71700303335f87adf1995f7c7cdc"
+          },
+          {
+            "name": "aji-windows-x64.zip",
+            "platform": "windows-x64",
+            "role": "official playback runtime",
+            "bytes": 743177,
+            "sha256": "9ddf6bb6da0ec52a2da0d9a13e59be99ff97a5c8c2e7156653dd154f6a4e40ad"
+          },
+          {
+            "name": "aji-encode-linux-x64.tar.zst",
+            "platform": "linux-x64",
+            "role": "separate optional offline encoder CLI; not used for application playback, automatically acquired, or shipped",
+            "bytes": 80255083,
+            "sha256": "d979be62b8b7735b4b579ba7a6b68e3db7f50707b9aeb42c20da8f6ca31093fe",
+            "rights": "FFmpeg dependency and redistribution rights require separate assessment; no clearance is implied."
+          }
+        ],
+        "assetDigestEvidence": "GitHub release API asset digests and sizes; not a claim of independent verification of every archive.",
+        "compatibility": "ABI 9 must not be paired with an ABI-8 mpv filter. Release identity alone does not establish runtime compatibility or operation.",
+        "redistribution": "blocked pending an upstream grant; release publication is not permission to redistribute",
+        "cohortBoundary": "This official release is separate from the historical v0.9.0 ref, mutable locally patched source inventory, and private ABI-8 MSVC build observations on this record. It is not their source identity."
       },
       "windowsBuildRecord": {
         "file": "docs/BUILD-WINDOWS.md",
@@ -237,7 +280,7 @@
         "bytes": 657798,
         "sha256": "22828c41439ac2b165a18294ba3e15257e8df617ab1d7ab6fb0f96e3915c5586",
         "sourceCommit": "c7f56baf966064a7855db2f82a2f1b0d0c6cfdb3",
-        "acquisition": "Acquire the official asset and its dispatcher/TensorRT/DirectML dependency closure only into the user's per-machine component store after an explicit user action. Nothing is bundled, auto-downloaded at application startup, or publicly redistributed."
+        "acquisition": "Historical v0.9.0 policy record, not the current official runtime pin: acquisition into the user's per-machine component store only after explicit user action. Nothing is bundled, auto-downloaded at application startup, or publicly redistributed."
       },
       "localSourceReconciliation": {
         "basis": "The upstream tag baseline comparison is historical: it was performed before authorized local source edits. Current local inputs are mutable and their present hashes are listed in sourceDigestsMeasuredLocally.",
