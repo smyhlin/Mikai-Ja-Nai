@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace mplayer::native {
@@ -357,6 +358,157 @@ bool readProtoVarint(QFile& file, qint64 fileSize, qint64* scanned, quint64* val
     return false;
 }
 
+// A bounded, seek-based protobuf reader. Large tensor payloads are skipped,
+// while tags, lengths and names share the same metadata budget.
+class OnnxMetadataReader {
+public:
+    explicit OnnxMetadataReader(QFile& file) : file_(file) {}
+
+    bool field(qint64 end, quint64* number, quint64* wire, qint64* payloadEnd) {
+        quint64 tag = 0;
+        if (!readProtoVarint(file_, end, &scanned_, &tag) ||
+            (tag >> 3) == 0 || (tag >> 3) > 0x1fffffff) return false;
+        *number = tag >> 3;
+        *wire = tag & 7;
+        *payloadEnd = file_.pos();
+        if (*wire == 2) {
+            quint64 size = 0;
+            if (!readProtoVarint(file_, end, &scanned_, &size) ||
+                size > static_cast<quint64>(end - file_.pos())) return false;
+            *payloadEnd = file_.pos() + static_cast<qint64>(size);
+        } else if (*wire != 0 && *wire != 1 && *wire != 5) {
+            return false;
+        }
+        return true;
+    }
+
+    bool varint(qint64 end, quint64* value) {
+        return readProtoVarint(file_, end, &scanned_, value);
+    }
+
+    bool skip(quint64 wire, qint64 end, qint64 payloadEnd) {
+        if (wire == 0) {
+            quint64 ignored = 0;
+            return varint(end, &ignored);
+        }
+        const qint64 bytes = wire == 1 ? 8 : wire == 5 ? 4 : 0;
+        if (wire != 2 && file_.pos() > end - bytes) return false;
+        return file_.seek(wire == 2 ? payloadEnd : file_.pos() + bytes);
+    }
+
+    bool name(qint64 end, QByteArray* out) {
+        const qint64 size = end - file_.pos();
+        if (size < 0 || size > 1024 * 1024 - scanned_) return false;
+        *out = file_.read(size);
+        scanned_ += size;
+        return out->size() == size;
+    }
+
+    qint64 pos() const { return file_.pos(); }
+    bool seek(qint64 pos) { return file_.seek(pos); }
+
+private:
+    QFile& file_;
+    qint64 scanned_ = 0;
+};
+
+struct OnnxInputLocation {
+    QByteArray name;
+    qint64 start = 0;
+    qint64 end = 0;
+};
+
+bool onnxName(OnnxMetadataReader& reader, qint64 end, quint64 nameField,
+              QByteArray* name) {
+    bool found = false;
+    while (reader.pos() < end) {
+        quint64 field = 0, wire = 0;
+        qint64 payloadEnd = 0;
+        if (!reader.field(end, &field, &wire, &payloadEnd)) return false;
+        if (field == nameField) {
+            if (wire != 2 || found || !reader.name(payloadEnd, name)) return false;
+            found = true;
+        } else if (!reader.skip(wire, end, payloadEnd)) {
+            return false;
+        }
+    }
+    return found && !name->isEmpty();
+}
+
+// Follow the single message field at each level of ValueInfo -> tensor shape.
+// Repeated singular fields are ambiguous and therefore rejected.
+bool onnxChild(OnnxMetadataReader& reader, qint64 end, quint64 wanted,
+               qint64* start, qint64* childEnd) {
+    bool found = false;
+    while (reader.pos() < end) {
+        quint64 field = 0, wire = 0;
+        qint64 payloadEnd = 0;
+        if (!reader.field(end, &field, &wire, &payloadEnd)) return false;
+        if (field == wanted) {
+            if (wire != 2 || found) return false;
+            found = true;
+            *start = reader.pos();
+            *childEnd = payloadEnd;
+        }
+        if (!reader.skip(wire, end, payloadEnd)) return false;
+    }
+    return found;
+}
+
+std::optional<int> onnxInputFrames(OnnxMetadataReader& reader, const OnnxInputLocation& input) {
+    qint64 start = input.start, end = input.end;
+    // ValueInfo.type, TypeProto.tensor_type, Tensor.shape.
+    for (const quint64 field : {quint64(2), quint64(1), quint64(2)}) {
+        if (!reader.seek(start) || !onnxChild(reader, end, field, &start, &end))
+            return std::nullopt;
+    }
+    if (!reader.seek(start)) return std::nullopt;
+    QVector<quint64> dims;
+    QVector<bool> known;
+    while (reader.pos() < end) {
+        quint64 field = 0, wire = 0;
+        qint64 dimEnd = 0;
+        if (!reader.field(end, &field, &wire, &dimEnd)) return std::nullopt;
+        if (field != 1) {
+            if (!reader.skip(wire, end, dimEnd)) return std::nullopt;
+            continue;
+        }
+        if (wire != 2 || dims.size() >= 5) return std::nullopt;
+        quint64 value = 0;
+        bool hasValue = false, symbolic = false;
+        while (reader.pos() < dimEnd) {
+            quint64 dimField = 0, dimWire = 0;
+            qint64 payloadEnd = 0;
+            if (!reader.field(dimEnd, &dimField, &dimWire, &payloadEnd)) return std::nullopt;
+            if (dimField == 1) {
+                if (dimWire != 0 || hasValue || !reader.varint(dimEnd, &value))
+                    return std::nullopt;
+                hasValue = true;
+            } else if (dimField == 2) {
+                if (dimWire != 2 || symbolic) return std::nullopt;
+                symbolic = true;
+                if (!reader.skip(dimWire, dimEnd, payloadEnd)) return std::nullopt;
+            } else if (!reader.skip(dimWire, dimEnd, payloadEnd)) {
+                return std::nullopt;
+            }
+        }
+        dims.append(value);
+        known.append(hasValue && !symbolic && value > 0 &&
+                     value <= static_cast<quint64>(std::numeric_limits<qint64>::max()));
+    }
+    if ((dims.size() != 4 && dims.size() != 5) || !known[1] ||
+        (dims.size() == 5 && !known[2])) return std::nullopt;
+    quint64 frames = 0;
+    if (dims.size() == 5 && dims[2] == 3) {
+        frames = dims[1];
+    } else if (dims.size() == 4 && dims[1] >= 3 && dims[1] % 3 == 0) {
+        frames = dims[1] / 3;
+    }
+    if (frames == 0 || frames > 15 || (frames > 1 && frames % 2 == 0))
+        return std::nullopt;
+    return static_cast<int>(frames);
+}
+
 struct ParsedIni {
     QMap<QString, QMap<QString, QString>> sections;
 };
@@ -474,6 +626,14 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
                 keys.value(prefix + QStringLiteral("max_resolution"), QStringLiteral("0x0"));
             chain.minFps = toInt(keys.value(prefix + QStringLiteral("min_fps")), 0);
             chain.maxFps = toInt(keys.value(prefix + QStringLiteral("max_fps")), 0);
+            chain.upscaleEnabled = !keys.contains(prefix + QStringLiteral("upscale")) ||
+                                   isYes(keys.value(prefix + QStringLiteral("upscale")));
+            chain.temporalFixModel = keys.value(prefix + QStringLiteral("temporal_fix_model"));
+            chain.temporalFixBeforeUpscale =
+                isYes(keys.value(prefix + QStringLiteral("temporal_fix_before_upscale")));
+            chain.temporalFixSceneThreshold = std::clamp(
+                toDouble(keys.value(prefix + QStringLiteral("temporal_fix_scene_threshold")), 0.150),
+                0.0, 1.0);
             chain.rifeEnabled = isYes(keys.value(prefix + QStringLiteral("rife")));
             chain.rifeEnsemble = isYes(keys.value(prefix + QStringLiteral("rife_ensemble")));
             chain.rifeBeforeUpscale =
@@ -539,6 +699,10 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
                 step.resizeFactorBeforeUpscale = std::clamp(
                     toInt(keys.value(modelPrefix + QStringLiteral("resize_factor_before_upscale")), 100),
                     1, 400);
+                step.frames = toInt(keys.value(modelPrefix + QStringLiteral("frames")), 0);
+                step.temporalSceneThreshold = std::clamp(
+                    toDouble(keys.value(modelPrefix + QStringLiteral("temporal_scene_threshold")), 0.150),
+                    0.0, 1.0);
                 chain.steps.push_back(std::move(step));
             }
             if (parsedExtensionVersion == 1 && containsMixedStepKeys) {
@@ -594,6 +758,10 @@ QVector<AnimeJanaiSlot> parseSlotsFromIni(const ParsedIni& ini, bool profileOnly
                         fail(ConfigText::tr("The AnimeJaNai mixed-chain resize settings are invalid."));
                         return {};
                     }
+                    step.frames = toInt(keys.value(stepPrefix + QStringLiteral("frames")), 0);
+                    step.temporalSceneThreshold = std::clamp(
+                        toDouble(keys.value(stepPrefix + QStringLiteral("temporal_scene_threshold")), 0.150),
+                        0.0, 1.0);
                     mixedSteps.push_back(std::move(step));
                 }
                 if (mixedSteps.isEmpty()) {
@@ -652,6 +820,47 @@ QString replaceOrInsertSetting(QString settings, const QString& pattern,
 }
 
 }  // namespace
+
+std::optional<int> animeJanaiOnnxTemporalFrames(const QString& path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.isSequential()) return std::nullopt;
+    OnnxMetadataReader reader(file);
+    const qint64 fileEnd = file.size();
+    while (reader.pos() < fileEnd) {
+        quint64 field = 0, wire = 0;
+        qint64 graphEnd = 0;
+        if (!reader.field(fileEnd, &field, &wire, &graphEnd)) return std::nullopt;
+        if (field != 7) {
+            if (!reader.skip(wire, fileEnd, graphEnd)) return std::nullopt;
+            continue;
+        }
+        if (wire != 2) return std::nullopt;
+        QSet<QByteArray> initializers;
+        QVector<OnnxInputLocation> inputs;
+        while (reader.pos() < graphEnd) {
+            quint64 graphField = 0, graphWire = 0;
+            qint64 itemEnd = 0;
+            if (!reader.field(graphEnd, &graphField, &graphWire, &itemEnd))
+                return std::nullopt;
+            if (graphField == 5 || graphField == 11) {
+                if (graphWire != 2) return std::nullopt;
+                const qint64 start = reader.pos();
+                QByteArray name;
+                if (!onnxName(reader, itemEnd, graphField == 5 ? 8 : 1, &name))
+                    return std::nullopt;
+                if (graphField == 5) initializers.insert(name);
+                else inputs.append({name, start, itemEnd});
+            } else if (!reader.skip(graphWire, graphEnd, itemEnd)) {
+                return std::nullopt;
+            }
+        }
+        for (const auto& input : inputs) {
+            if (!initializers.contains(input.name)) return onnxInputFrames(reader, input);
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
 
 QString customAnimeJanaiModelsDir() {
     return QDir(animeJanaiRootDir()).filePath(QStringLiteral("models/custom"));
@@ -1607,6 +1816,13 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
                 chain.maxResolution.isEmpty() ? QStringLiteral("0x0") : chain.maxResolution);
         putLine(output, p + QStringLiteral("min_fps"), QString::number(chain.minFps));
         putLine(output, p + QStringLiteral("max_fps"), QString::number(chain.maxFps));
+        putLine(output, p + QStringLiteral("upscale"),
+                chain.upscaleEnabled ? QStringLiteral("yes") : QStringLiteral("no"));
+        putLine(output, p + QStringLiteral("temporal_fix_model"), chain.temporalFixModel);
+        putLine(output, p + QStringLiteral("temporal_fix_scene_threshold"),
+                QLocale::c().toString(chain.temporalFixSceneThreshold, 'g', 17));
+        putLine(output, p + QStringLiteral("temporal_fix_before_upscale"),
+                chain.temporalFixBeforeUpscale ? QStringLiteral("yes") : QStringLiteral("no"));
 
         const bool mixed = std::any_of(chain.steps.cbegin(), chain.steps.cend(),
                                        [](const AnimeJanaiChainStep& step) {
@@ -1628,6 +1844,9 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
                         QString::number(step.resizeHeightBeforeUpscale));
                 putLine(output, m + QStringLiteral("resize_factor_before_upscale"),
                         QString::number(step.resizeFactorBeforeUpscale));
+                putLine(output, m + QStringLiteral("frames"), QString::number(step.frames));
+                putLine(output, m + QStringLiteral("temporal_scene_threshold"),
+                        QLocale::c().toString(step.temporalSceneThreshold, 'g', 17));
                 putLine(output, m + QStringLiteral("name"), step.id);
             }
             if (mixed) {
@@ -1638,6 +1857,9 @@ QString AnimeJanaiConfigStore::serializeSlotSection(const AnimeJanaiSlot& slot,
                         QStringLiteral("unsupported"));
                 putLine(output, s + QStringLiteral("id"), step.id);
                 putLine(output, s + QStringLiteral("scale_factor"), QString::number(step.scaleFactor));
+                putLine(output, s + QStringLiteral("frames"), QString::number(step.frames));
+                putLine(output, s + QStringLiteral("temporal_scene_threshold"),
+                        QLocale::c().toString(step.temporalSceneThreshold, 'g', 17));
                 putLine(output, s + QStringLiteral("resize_height_before_upscale"),
                         QString::number(step.resizeHeightBeforeUpscale));
                 putLine(output, s + QStringLiteral("resize_factor_before_upscale"),
@@ -1947,6 +2169,11 @@ QString AnimeJanaiConfigStore::rifeLabelToValue(QStringView label) {
 
 bool AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(const AnimeJanaiChain& chain,
                                                           QString* error) {
+    if (!std::isfinite(chain.temporalFixSceneThreshold) ||
+        chain.temporalFixSceneThreshold < 0.0 || chain.temporalFixSceneThreshold > 1.0) {
+        if (error) *error = ConfigText::tr("The temporal fix scene threshold is out of range.");
+        return false;
+    }
     for (qsizetype index = 0; index < chain.steps.size(); ++index) {
         const AnimeJanaiChainStep& step = chain.steps[index];
         if (step.number != index + 1) {
@@ -1964,6 +2191,13 @@ bool AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(const AnimeJanaiChain& 
         }
         if (step.id.trimmed().isEmpty()) {
             if (error) *error = ConfigText::tr("The AnimeJaNai chain contains a step without an identifier.");
+            return false;
+        }
+        if (step.frames < 0 || step.frames > 15 ||
+            (step.frames > 1 && step.frames % 2 == 0) ||
+            !std::isfinite(step.temporalSceneThreshold) ||
+            step.temporalSceneThreshold < 0.0 || step.temporalSceneThreshold > 1.0) {
+            if (error) *error = ConfigText::tr("Temporal frames must be 0, 1, or an odd number up to 15, and the scene threshold must be between 0 and 1.");
             return false;
         }
         if (step.scaleFactor != 1 && step.scaleFactor != 2 && step.scaleFactor != 4) {

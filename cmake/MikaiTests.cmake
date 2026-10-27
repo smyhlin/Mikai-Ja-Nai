@@ -115,10 +115,10 @@ if(MIKAI_BUILD_PROBES)
   )
   set_tests_properties(NativeStageContracts PROPERTIES TIMEOUT 300)
 
+  add_library(mikai_test_aji_dispatcher SHARED EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/fixtures/aji_dispatcher_fixture.cpp
+  )
   if(WIN32)
-    add_library(mikai_test_aji_dispatcher SHARED EXCLUDE_FROM_ALL
-      ${CMAKE_SOURCE_DIR}/tests/fixtures/aji_dispatcher_fixture.cpp
-    )
     set_target_properties(mikai_test_aji_dispatcher PROPERTIES
       PREFIX ""
       OUTPUT_NAME "aji"

@@ -99,6 +99,7 @@ void VideoSurface::setAnimeJanaiPlan(const native::AnimeJanaiPlan& plan) {
         animeJanaiPlan_.presetId == plan.presetId &&
         animeJanaiPlan_.reasonKey == plan.reasonKey &&
         animeJanaiPlan_.reason == plan.reason &&
+        animeJanaiPlan_.note == plan.note &&
         animeJanaiPlan_.backend == plan.backend &&
         animeJanaiPlan_.slot == plan.slot &&
         animeJanaiPlan_.libraryPath == plan.libraryPath &&
@@ -582,9 +583,15 @@ void VideoSurface::setAnimeJanaiStatus(const QString& status) {
     if (animeJanaiObserved_ && animeJanaiObservedEpoch_ == (mpv_ ? mpv_->sourceEpoch() : 0) &&
         animeJanaiObservedGeneration_ == animeJanaiGeneration_ &&
         status != animeJanaiObservedStatus_) return;
-    if (animeJanaiStatus_ == status) return;
-    animeJanaiStatus_ = status;
-    emit animeJanaiStatusChanged(status);
+    QString display = status;
+    if (animeJanaiPlan_.enabled && animeJanaiPlan_.available &&
+        !animeJanaiSourceGated_ && !animeJanaiPlan_.note.isEmpty() &&
+        !status.startsWith(QStringLiteral("Processing failed"))) {
+        display += QStringLiteral(" · ") + animeJanaiPlan_.note;
+    }
+    if (animeJanaiStatus_ == display) return;
+    animeJanaiStatus_ = display;
+    emit animeJanaiStatusChanged(display);
 }
 
 bool VideoSurface::enginePauseHeld() const {

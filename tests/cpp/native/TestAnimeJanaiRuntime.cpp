@@ -8,6 +8,8 @@
 #include "native/components/AnimeJanaiCatalogWatcher.hpp"
 #include "native/components/AnimeJanaiConfig.hpp"
 #include "native/components/AnimeJanaiRuntime.hpp"
+#include "native/components/NativeComponentCatalog.hpp"
+#include "native/components/NativeGpuProbe.hpp"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
@@ -32,6 +34,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
@@ -43,7 +46,7 @@ namespace {
 
 QString fixtureRoot() {
     return QDir(nativeSubdirectory(QStringLiteral("components")))
-        .filePath(QStringLiteral("aji/v0.9.0"));
+        .filePath(QStringLiteral("aji/v0.17.1"));
 }
 
 QString runtimePath(Backend backend = Backend::TensorRT) {
@@ -103,6 +106,37 @@ QString sha(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
+QByteArray onnxShapeFixture(std::initializer_list<int> dimensions, bool initializerFirst = false) {
+    using namespace mikai::tests::fixtures::detail;
+    QByteArray shape;
+    for (const int value : dimensions) {
+        QByteArray dim;
+        if (value < 0) appendString(dim, 2, "dynamic");
+        else appendInteger(dim, 1, static_cast<quint64>(value));
+        appendBytes(shape, 1, dim);
+    }
+    QByteArray tensor;
+    appendInteger(tensor, 1, 10);
+    appendBytes(tensor, 2, shape);
+    QByteArray type;
+    appendBytes(type, 1, tensor);
+    QByteArray input;
+    appendString(input, 1, "X");
+    appendBytes(input, 2, type);
+    QByteArray graph;
+    if (initializerFirst) {
+        QByteArray initializer;
+        appendString(initializer, 8, "weight");
+        appendBytes(graph, 5, initializer);
+        appendBytes(graph, 11, tensorValueInfo("weight"));
+    }
+    appendBytes(graph, 11, input);
+    QByteArray model;
+    appendInteger(model, 1, 8);
+    appendBytes(model, 7, graph);
+    return model;
+}
+
 QByteArray minimalX64Pe() {
     QByteArray image(90, '\0');
     image[0] = 'M'; image[1] = 'Z';
@@ -113,7 +147,55 @@ QByteArray minimalX64Pe() {
     return image;
 }
 
+Backend fixtureBackend() {
+#ifdef Q_OS_WIN
+    return Backend::DirectML;
+#else
+    return Backend::TensorRT;
+#endif
+}
+
+QString fixtureDispatcher() {
+#ifdef Q_OS_WIN
+    return QStringLiteral("aji.dll");
+#else
+    return QStringLiteral("libaji.so");
+#endif
+}
+
+QString fixtureDependency() {
+#ifdef Q_OS_WIN
+    return QStringLiteral("DirectML.dll");
+#else
+    return QStringLiteral("libcudart.so.13");
+#endif
+}
+
+QByteArray fixtureImage() {
+#ifdef Q_OS_WIN
+    return minimalX64Pe();
+#else
+    QByteArray image(64, '\0');
+    image[0] = '\x7f'; image[1] = 'E'; image[2] = 'L'; image[3] = 'F';
+    image[4] = 2; image[5] = 1; image[18] = 0x3e;
+    return image;
+#endif
+}
+
 QStringList required(Backend backend) {
+#ifndef Q_OS_WIN
+    if (backend == Backend::TensorRT) {
+        const auto& capability = observeComputeCapability();
+        const ComponentPack* resource = capability.nvidia
+            ? tensorRtResourcePackFor(capability.smMajor, capability.smMinor)
+            : tensorRtResourcePackFor(12, 0);
+        if (!resource) return {};
+        return {QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so"),
+                QStringLiteral("libcudart.so.13"), QStringLiteral("libnvinfer.so.11"),
+                QStringLiteral("libnvinfer_plugin.so.11"), QStringLiteral("libnvonnxparser.so.11"),
+                resource->resourceFile, QStringLiteral("trtexec")};
+    }
+#endif
     QStringList files{QStringLiteral("aji.dll"), backend == Backend::TensorRT ? QStringLiteral("aji_trt.dll") : QStringLiteral("aji_dml.dll")};
     if (backend == Backend::TensorRT) {
         files << QStringLiteral("cudart64_13.dll") << QStringLiteral("nvinfer_11.dll")
@@ -132,22 +214,33 @@ bool writeRecord(Backend backend, const QString& recordedBackend = {},
     const QString root = runtimePath(backend);
     QJsonArray entries;
     for (const QString& name : required(backend)) {
-        QByteArray bytes = minimalX64Pe();
+        QByteArray bytes = backend == fixtureBackend() ? fixtureImage() : minimalX64Pe();
 #ifdef MIKAI_TEST_AJI_DISPATCHER
-        if (abiExportingDispatcher && name == QLatin1String("aji.dll")) {
+        if (abiExportingDispatcher && (name == fixtureDispatcher() ||
+#ifdef Q_OS_WIN
+                                      name == (backend == Backend::TensorRT ? QLatin1String("aji_trt.dll") : QLatin1String("aji_dml.dll")))) {
+#else
+                                      name == QLatin1String("libaji_trt.so"))) {
+#endif
             QFile dispatcher(QString::fromUtf8(MIKAI_TEST_AJI_DISPATCHER));
             if (!dispatcher.open(QIODevice::ReadOnly)) return false;
             bytes = dispatcher.readAll();
         }
 #endif
         if (!writeFile(QDir(root).filePath(name), bytes)) return false;
+#ifndef Q_OS_WIN
+        if (name == QLatin1String("trtexec") &&
+            !QFile::setPermissions(QDir(root).filePath(name),
+                                   QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
+            return false;
+#endif
         QJsonObject e; e.insert(QStringLiteral("path"), name); e.insert(QStringLiteral("bytes"), bytes.size()); e.insert(QStringLiteral("sha256"), sha(bytes)); entries.append(e);
     }
     QJsonObject record;
-    record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/2"));
-    record.insert(QStringLiteral("version"), QStringLiteral("v0.9.0"));
+    record.insert(QStringLiteral("schema"), QStringLiteral("mikai.native.animejanai/3"));
+    record.insert(QStringLiteral("version"), QStringLiteral("v0.17.1"));
     record.insert(QStringLiteral("backend"), recordedBackend.isEmpty() ? (backend == Backend::TensorRT ? QStringLiteral("trt") : QStringLiteral("dml")) : recordedBackend);
-    record.insert(QStringLiteral("abi"), 8);
+    record.insert(QStringLiteral("abi"), 9);
     record.insert(QStringLiteral("provenance"), QStringLiteral("local"));
     record.insert(QStringLiteral("archiveBytes"), 0);
     record.insert(QStringLiteral("archiveSha256"), QString());
@@ -208,6 +301,139 @@ void TestAnimeJanaiRuntime::cleanupTestCase() {
     ownsFixture_ = false;
 }
 
+void TestAnimeJanaiRuntime::archiveListingValidatesTarMembersAndLinks() {
+    const QString header = QStringLiteral("7-Zip\n----------\n");
+    const auto valid = [&](const QString& entries, bool symlinks = true, bool tar = true) {
+        QString error;
+        return detail::validateAnimeJanaiArchiveListing(header + entries, symlinks, tar, &error);
+    };
+    const QString root = QStringLiteral("Path = ./\nFolder = +\n\n");
+    const QString library = QStringLiteral("Path = ./libaji.so\nFolder = -\nSize = 123\n\n");
+    QVERIFY(valid(root + library));
+    QVERIFY(valid(QStringLiteral("Path = \nFolder = +\n\n") + library));
+    QVERIFY(!valid(QStringLiteral("Path = /\nFolder = +\n\n") + library));
+    QVERIFY(!valid(QStringLiteral("Path = \\\nFolder = +\n\n") + library));
+    QVERIFY(!valid(QStringLiteral("Path = //\nFolder = +\n\n") + library));
+    QVERIFY(!valid(QStringLiteral("Path = \nFolder = -\nSize = 1\n\n") + library));
+    QVERIFY(!valid(root + QStringLiteral("Path = ./../escape\nFolder = -\n\n")));
+    QVERIFY(!valid(root + library + QStringLiteral("Path = libaji.so\nFolder = -\n\n")));
+    QVERIFY(!valid(root + QStringLiteral("Path = ./link\nFolder = -\nSymbolic Link = ../escape\n\n")));
+    QVERIFY(valid(root + library +
+                  QStringLiteral("Path = ./alias.so\nFolder = -\nSymbolic Link = libaji.so\n\n")));
+    QVERIFY(!valid(root + QStringLiteral("Path = ./link\nFolder = -\nSymbolic Link = dir\n\n"
+                                         "Path = ./link/evil\nFolder = -\n\n")));
+    QVERIFY(!valid(root + QStringLiteral("Path = ./file\nFolder = -\nHard Link = target\n\n")));
+    QVERIFY(!valid(root + library +
+                   QStringLiteral("Path = ./alias.so\nFolder = -\nSymbolic Link = libaji.so\n\n"), false));
+    QVERIFY(!valid(root));
+    QString error;
+    const QSet<QString> expected{QStringLiteral("libaji.so"), QStringLiteral("libaji_trt.so")};
+    const QString backend = QStringLiteral("Path = ./libaji_trt.so\nFolder = -\nSize = 456\n\n");
+    QVERIFY(detail::validateAnimeJanaiArchiveListing(header + root + library + backend, false, true, &error, expected));
+    QVERIFY(!detail::validateAnimeJanaiArchiveListing(header + root + library, false, true, &error, expected));
+    QVERIFY(!detail::validateAnimeJanaiArchiveListing(header + root + library + backend +
+        QStringLiteral("Path = ./unexpected\nFolder = -\nSize = 1\n\n"), false, true, &error, expected));
+    QVERIFY(!detail::validateAnimeJanaiArchiveListing(header + root + library + backend +
+        QStringLiteral("Path = ./extra/\nFolder = +\n\n"), false, true, &error, expected));
+}
+
+void TestAnimeJanaiRuntime::linuxRejectsDirectMlBeforeAcquisition() {
+#ifndef Q_OS_WIN
+    const auto provisioned = provisionAnimeJanaiRuntime(Backend::DirectML, {}, {});
+    QCOMPARE(provisioned.reasonKey, QStringLiteral("animejanai.provision.platformUnsupported"));
+    QVERIFY(!provisioned.ok);
+    const auto imported = importAnimeJanaiRuntime(QString(), Backend::DirectML, {}, {});
+    QCOMPARE(imported.reasonKey, QStringLiteral("animejanai.provision.platformUnsupported"));
+    QVERIFY(!imported.ok);
+#endif
+}
+
+void TestAnimeJanaiRuntime::linuxRejectsWindowsRuntimeAndPeDisguisedAsElf() {
+#ifndef Q_OS_WIN
+    // The backend field alone must not make a Windows inventory runnable.
+    QVERIFY(writeRecord(Backend::DirectML, QStringLiteral("trt")));
+    QVERIFY(QDir().rename(runtimePath(Backend::DirectML), runtimePath(Backend::TensorRT)));
+    auto windowsRecord = describeAnimeJanaiInstallation(Backend::TensorRT);
+    QVERIFY(!windowsRecord.installed);
+    QCOMPARE(windowsRecord.reasonKey, QStringLiteral("animejanai.installation.platformMismatch"));
+
+    QTemporaryDir source;
+    QVERIFY(source.isValid());
+    QVERIFY(writeFile(QDir(source.path()).filePath(QStringLiteral("aji.dll")), minimalX64Pe()));
+    const auto imported = importAnimeJanaiRuntime(source.path(), Backend::TensorRT, {}, {});
+    QVERIFY(!imported.ok);
+    QCOMPARE(imported.reasonKey, QStringLiteral("animejanai.installation.platformMismatch"));
+
+    QVERIFY(QDir(runtimePath(Backend::TensorRT)).removeRecursively());
+    QVERIFY(writeRecord(Backend::TensorRT));
+    const QString root = runtimePath(Backend::TensorRT);
+    const QByteArray pe = minimalX64Pe();
+    QVERIFY(writeFile(QDir(root).filePath(QStringLiteral("libaji.so")), pe));
+    QVERIFY(updateRecordFile(root, QStringLiteral("libaji.so"), pe));
+    const auto disguised = describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY(!disguised.installed);
+    QCOMPARE(disguised.reasonKey, QStringLiteral("animejanai.installation.peInvalid"));
+#endif
+}
+
+void TestAnimeJanaiRuntime::linuxImportsAbiExportingElfClosure() {
+#if !defined(Q_OS_WIN) && defined(MIKAI_TEST_AJI_DISPATCHER)
+    QTemporaryDir source;
+    QVERIFY(source.isValid());
+    QFile dispatcher(QString::fromUtf8(MIKAI_TEST_AJI_DISPATCHER));
+    QVERIFY(dispatcher.open(QIODevice::ReadOnly));
+    const QByteArray dispatcherBytes = dispatcher.readAll();
+    QVERIFY(!dispatcherBytes.isEmpty());
+    for (const QString& name : required(Backend::TensorRT)) {
+        const QByteArray bytes = (name == QLatin1String("libaji.so") ||
+                                  name == QLatin1String("libaji_trt.so")) ? dispatcherBytes : fixtureImage();
+        QVERIFY(writeFile(QDir(source.path()).filePath(name), bytes));
+    }
+    const auto imported = importAnimeJanaiRuntime(source.path(), Backend::TensorRT, {}, {});
+    QVERIFY2(imported.ok, qPrintable(imported.reason));
+    const auto installed = describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY2(installed.installed, qPrintable(installed.reason));
+    QVERIFY(installed.heavyRifeSupported);
+    const QString backendName = QStringLiteral("libaji_trt.so");
+    const QByteArray wrongBackend = fixtureImage();
+    QVERIFY(writeFile(QDir(installed.root).filePath(backendName), wrongBackend));
+    QVERIFY(updateRecordFile(installed.root, backendName, wrongBackend));
+    const auto wrongPair = describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY(!wrongPair.installed);
+    QCOMPARE(wrongPair.reasonKey, QStringLiteral("animejanai.installation.abiInvalid"));
+    QVERIFY(writeFile(QDir(installed.root).filePath(backendName), dispatcherBytes));
+    QVERIFY(updateRecordFile(installed.root, backendName, dispatcherBytes));
+    const QFileInfo trtexec(QDir(installed.root).filePath(QStringLiteral("trtexec")));
+    QVERIFY(trtexec.isExecutable());
+    // An unrecorded Windows executable must never override the verified Linux one.
+    QVERIFY(writeFile(QDir(installed.root).filePath(QStringLiteral("trtexec.exe")), minimalX64Pe()));
+    const auto plan = prepareAnimeJanaiPlan(QStringLiteral("builtin1002"), Backend::TensorRT);
+    QCOMPARE(plan.libraryPath, QDir(installed.root).filePath(QStringLiteral("libaji.so")));
+    QCOMPARE(plan.trtexecPath, trtexec.filePath());
+    if (plan.cacheLease) plan.cacheLease->release();
+
+    QVERIFY(QFile::setPermissions(trtexec.filePath(), QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    const auto notExecutable = describeAnimeJanaiInstallation(Backend::TensorRT, true);
+    QVERIFY(!notExecutable.installed);
+    QCOMPARE(notExecutable.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
+#else
+    QSKIP("Linux ELF ABI fixture is unavailable on this platform.");
+#endif
+}
+
+void TestAnimeJanaiRuntime::linuxOfficialPairRequiresBothPinnedDigests() {
+    const QString dispatcher = QStringLiteral("0d3d15db020c0732cfa2ee448c619db61072c7dab9e54efa74f9bed4d84fe03b");
+    const QString backend = QStringLiteral("19c6f6dde3b1a6307ec60adf34bee13aab7aa31af5db1e9a129d911a4da109d0");
+    QVERIFY(detail::matchesPinnedLinuxAjiPair(dispatcher, backend));
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(QString(64, QLatin1Char('0')), backend));
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(dispatcher, QString(64, QLatin1Char('0'))));
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(backend, dispatcher));
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(
+        QStringLiteral("2a54258a77f2fb8562516252456b6e6514781388b195d66b004d833d8e93f8a6"), backend));
+    QVERIFY(!detail::matchesPinnedLinuxAjiPair(
+        dispatcher, QStringLiteral("586f47e6cc1d33859ae7279e94c822d193836e86fc6a4ac07515502c8d68df76")));
+}
+
 void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() {
     QTemporaryDir installed;
     QVERIFY(installed.isValid());
@@ -259,24 +485,24 @@ void TestAnimeJanaiRuntime::directRunRefusesExistingNativeTreeWithoutMutation() 
 }
 
 void TestAnimeJanaiRuntime::missingInstallIsNotReady() {
-    const auto result = describeAnimeJanaiInstallation(Backend::DirectML);
+    const auto result = describeAnimeJanaiInstallation(fixtureBackend());
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.recordMissing"));
 }
 
 void TestAnimeJanaiRuntime::missingRequiredBackendDependencyIsNotReady() {
-    QVERIFY(writeRecord(Backend::DirectML));
-    QVERIFY(QFile::remove(QDir(runtimePath(Backend::DirectML)).filePath(QStringLiteral("DirectML.dll"))));
-    const auto result = describeAnimeJanaiInstallation(Backend::DirectML);
+    QVERIFY(writeRecord(fixtureBackend()));
+    QVERIFY(QFile::remove(QDir(runtimePath(fixtureBackend())).filePath(fixtureDependency())));
+    const auto result = describeAnimeJanaiInstallation(fixtureBackend());
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
-    QVERIFY(result.reason.contains(QStringLiteral("DirectML.dll")));
+    QVERIFY(result.reason.contains(fixtureDependency()));
 }
 
 void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() {
-    QVERIFY(writeRecord(Backend::DirectML));
-    const QString dependency = QDir(runtimePath(Backend::DirectML))
-        .filePath(QStringLiteral("DirectML.dll"));
+    QVERIFY(writeRecord(fixtureBackend()));
+    const QString dependency = QDir(runtimePath(fixtureBackend()))
+        .filePath(fixtureDependency());
     QVERIFY(QFile::remove(dependency));
 
     QSettings settings;
@@ -291,7 +517,9 @@ void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() 
         else settings.remove(backendKey);
     });
     settings.setValue(presetKey, QStringLiteral("builtin1002"));
-    settings.setValue(backendKey, QStringLiteral("directml"));
+    const QString backendSetting = fixtureBackend() == Backend::DirectML
+        ? QStringLiteral("directml") : QStringLiteral("tensorrt");
+    settings.setValue(backendKey, backendSetting);
 
 #ifdef Q_OS_WIN
     // The worker deliberately loads a fake PE; keep its expected loader refusal
@@ -315,9 +543,9 @@ void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() 
                  QStringLiteral("animejanai.installation.fileInvalid"));
     QVERIFY(surface->animeJanaiPlan().enabled);
     QVERIFY(!surface->animeJanaiPlan().available);
-    QVERIFY(surface->animeJanaiPlan().reason.contains(QStringLiteral("DirectML.dll")));
+    QVERIFY(surface->animeJanaiPlan().reason.contains(fixtureDependency()));
 
-    QVERIFY(writeFile(dependency, minimalX64Pe()));
+    QVERIFY(writeFile(dependency, fixtureImage()));
     dialog.refreshStoredSettings();
 
     // The fake dispatcher cannot load, but restoring its dependency must expose
@@ -328,7 +556,7 @@ void TestAnimeJanaiRuntime::storedFailedRequestReprobesAfterDependencyInstall() 
     QVERIFY(!surface->animeJanaiPlan().available);
     QCOMPARE(surface->animeJanaiPlan().presetId, QStringLiteral("builtin1002"));
     QCOMPARE(settings.value(presetKey).toString(), QStringLiteral("builtin1002"));
-    QCOMPARE(settings.value(backendKey).toString(), QStringLiteral("directml"));
+    QCOMPARE(settings.value(backendKey).toString(), backendSetting);
 }
 
 void TestAnimeJanaiRuntime::backendMismatchIsNotReady() {
@@ -339,26 +567,26 @@ void TestAnimeJanaiRuntime::backendMismatchIsNotReady() {
 }
 
 void TestAnimeJanaiRuntime::sizeAndDigestCorruptionAreRejected() {
-    QVERIFY(writeRecord(Backend::DirectML));
-    const QString dispatcher = QDir(runtimePath(Backend::DirectML)).filePath(QStringLiteral("aji.dll"));
-    const QByteArray original = minimalX64Pe();
+    QVERIFY(writeRecord(fixtureBackend()));
+    const QString dispatcher = QDir(runtimePath(fixtureBackend())).filePath(fixtureDispatcher());
+    const QByteArray original = fixtureImage();
     QVERIFY(writeFile(dispatcher, original + 'x'));
-    auto sizeChanged = describeAnimeJanaiInstallation(Backend::DirectML);
+    auto sizeChanged = describeAnimeJanaiInstallation(fixtureBackend());
     QVERIFY(!sizeChanged.installed);
     QCOMPARE(sizeChanged.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
     QVERIFY(writeFile(dispatcher, QByteArrayLiteral("corrupt PE fixture:aji.dll")));
-    auto digestChanged = describeAnimeJanaiInstallation(Backend::DirectML, true);
+    auto digestChanged = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!digestChanged.installed);
     QCOMPARE(digestChanged.reasonKey, QStringLiteral("animejanai.installation.fileInvalid"));
 }
 
 void TestAnimeJanaiRuntime::badPeAndUnsafeRecordPathAreRejected() {
-    QVERIFY(writeRecord(Backend::DirectML));
-    const QString root = runtimePath(Backend::DirectML);
-    const QByteArray invalidPe = QByteArrayLiteral("not a PE image");
-    QVERIFY(writeFile(QDir(root).filePath(QStringLiteral("aji.dll")), invalidPe));
-    QVERIFY(updateRecordFile(root, QStringLiteral("aji.dll"), invalidPe));
-    auto badPe = describeAnimeJanaiInstallation(Backend::DirectML, true);
+    QVERIFY(writeRecord(fixtureBackend()));
+    const QString root = runtimePath(fixtureBackend());
+    const QByteArray invalidPe = QByteArrayLiteral("not a valid binary image");
+    QVERIFY(writeFile(QDir(root).filePath(fixtureDispatcher()), invalidPe));
+    QVERIFY(updateRecordFile(root, fixtureDispatcher(), invalidPe));
+    auto badPe = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!badPe.installed);
     QCOMPARE(badPe.reasonKey, QStringLiteral("animejanai.installation.peInvalid"));
 
@@ -372,20 +600,25 @@ void TestAnimeJanaiRuntime::badPeAndUnsafeRecordPathAreRejected() {
     files.replace(0, first);
     object.insert(QStringLiteral("files"), files);
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
-    const auto unsafe = describeAnimeJanaiInstallation(Backend::DirectML);
+    const auto unsafe = describeAnimeJanaiInstallation(fixtureBackend());
     QVERIFY(!unsafe.installed);
     QCOMPARE(unsafe.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
 }
 
 void TestAnimeJanaiRuntime::wrongArchitectureIsRejected() {
-    QVERIFY(writeRecord(Backend::DirectML));
+    QVERIFY(writeRecord(fixtureBackend()));
+#ifdef Q_OS_WIN
     QByteArray image(70, '\0');
     image[0] = 'M'; image[1] = 'Z';
     image[0x3c] = 64;
     image[64] = 'P'; image[65] = 'E';
     image[68] = 0x4c; image[69] = 0x01;
-    const QString root = runtimePath(Backend::DirectML);
-    QVERIFY(writeFile(QDir(root).filePath(QStringLiteral("aji.dll")), image));
+#else
+    QByteArray image = fixtureImage();
+    image[18] = char(0xb7); image[19] = 0; // EM_AARCH64, not x86-64
+#endif
+    const QString root = runtimePath(fixtureBackend());
+    QVERIFY(writeFile(QDir(root).filePath(fixtureDispatcher()), image));
     QFile record(QDir(root).filePath(QStringLiteral("install.json")));
     QVERIFY(record.open(QIODevice::ReadOnly));
     QJsonObject object = QJsonDocument::fromJson(record.readAll()).object();
@@ -397,7 +630,7 @@ void TestAnimeJanaiRuntime::wrongArchitectureIsRejected() {
     files.replace(0, dispatcher);
     object.insert(QStringLiteral("files"), files);
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
-    const auto result = describeAnimeJanaiInstallation(Backend::DirectML, true);
+    const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.peInvalid"));
 }
@@ -444,17 +677,17 @@ void TestAnimeJanaiRuntime::cancelledImportDoesNotPublish() {
     QCOMPARE(record.readAll(), sentinel);
 }
 void TestAnimeJanaiRuntime::cancelledReplacementPreservesPriorInstall() {
-    const QString root = runtimePath(Backend::DirectML);
+    const QString root = runtimePath(fixtureBackend());
     QVERIFY(QDir().mkpath(root));
     const QByteArray sentinel = QByteArrayLiteral("previous verified runtime record");
     QVERIFY(writeFile(QDir(root).filePath(QStringLiteral("install.json")), sentinel));
     QTemporaryDir source;
     QVERIFY(source.isValid());
-    for (const QString& name : required(Backend::DirectML))
+    for (const QString& name : required(fixtureBackend()))
         QVERIFY(writeFile(QDir(source.path()).filePath(name), QByteArrayLiteral("replacement candidate")));
 
     int cancellationChecks = 0;
-    const auto result = importAnimeJanaiRuntime(source.path(), Backend::DirectML, {},
+    const auto result = importAnimeJanaiRuntime(source.path(), fixtureBackend(), {},
         [&cancellationChecks] { return ++cancellationChecks >= 4; });
     QVERIFY(!result.ok);
     QVERIFY(result.cancelled);
@@ -464,14 +697,26 @@ void TestAnimeJanaiRuntime::cancelledReplacementPreservesPriorInstall() {
 }
 
 void TestAnimeJanaiRuntime::unsupportedDispatcherIsNotReady() {
-    QVERIFY(writeRecord(Backend::DirectML));
-    QFile record(QDir(runtimePath(Backend::DirectML)).filePath(QStringLiteral("install.json")));
+    QVERIFY(writeRecord(fixtureBackend()));
+    QFile record(QDir(runtimePath(fixtureBackend())).filePath(QStringLiteral("install.json")));
     QVERIFY(record.open(QIODevice::ReadOnly));
     QJsonObject object = QJsonDocument::fromJson(record.readAll()).object();
     record.close();
+    object.insert(QStringLiteral("abi"), 8);
+    QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
+    const auto oldAbi = describeAnimeJanaiInstallation(fixtureBackend(), true);
+    QVERIFY(!oldAbi.installed);
+    QCOMPARE(oldAbi.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
+    object.insert(QStringLiteral("abi"), 9);
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.9.0"));
+    QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
+    const auto oldVersion = describeAnimeJanaiInstallation(fixtureBackend(), true);
+    QVERIFY(!oldVersion.installed);
+    QCOMPARE(oldVersion.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
+    object.insert(QStringLiteral("version"), QStringLiteral("v0.17.1"));
     object.insert(QStringLiteral("schema"), QStringLiteral("unknown"));
     QVERIFY(writeFile(record.fileName(), QJsonDocument(object).toJson(QJsonDocument::Compact)));
-    const auto result = describeAnimeJanaiInstallation(Backend::DirectML, true);
+    const auto result = describeAnimeJanaiInstallation(fixtureBackend(), true);
     QVERIFY(!result.installed);
     QCOMPARE(result.reasonKey, QStringLiteral("animejanai.installation.recordInvalid"));
 }
@@ -630,10 +875,17 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
     firstChain.number = 1;
     firstChain.steps.append({1, AnimeJanaiStepKind::OnnxModel, first.fileName, 0, 100, 2});
     firstChain.steps.append({2, AnimeJanaiStepKind::OnnxModel, second.fileName, 0, 100, 2});
+    firstChain.steps[0].frames = 5;
+    firstChain.steps[0].temporalSceneThreshold = 0.25;
+    firstChain.temporalFixModel = third.fileName;
+    firstChain.temporalFixBeforeUpscale = true;
+    firstChain.temporalFixSceneThreshold = 0.25;
     AnimeJanaiChain secondChain;
     secondChain.number = 2;
     secondChain.maxFps = 24;
-    secondChain.steps.append({1, AnimeJanaiStepKind::OnnxModel, third.fileName, 0, 100, 2});
+    secondChain.steps.append({1, AnimeJanaiStepKind::OnnxModel, second.fileName, 0, 100, 2});
+    secondChain.upscaleEnabled = false;
+    secondChain.temporalFixModel = third.fileName;
     slot.chains = {firstChain, secondChain};
     config.customSlots.append(slot);
     QString saveError;
@@ -651,13 +903,15 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
     const QByteArray slotBytes = slotConfig.readAll();
     QVERIFY(slotBytes.contains(QByteArrayLiteral("config_version=3")));
     QVERIFY(slotBytes.contains(QByteArrayLiteral("backend=DirectML")));
-    for (const CustomAnimeJanaiModel* model : {&first, &second}) {
-        QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_") +
-                                   (model == &first ? QByteArrayLiteral("1") : QByteArrayLiteral("2")) +
-                                   QByteArrayLiteral("_name=") + model->sha256.toUtf8()));
-    }
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_1_name=") + third.sha256.toUtf8()));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_1_temporal_scene_threshold=0.25")));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_2_name=") + first.sha256.toUtf8()));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_2_frames=5")));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_2_temporal_scene_threshold=0.25")));
+    QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_1_model_3_name=") + second.sha256.toUtf8()));
     QVERIFY(slotBytes.contains(QByteArrayLiteral("chain_2_model_1_name=") +
                                third.sha256.toUtf8()));
+    QVERIFY(!slotBytes.contains(QByteArrayLiteral("chain_2_model_2_name=")));
 
     QVERIFY(slotPlan.cacheLease != nullptr);
     slotPlan.cacheLease->release();
@@ -670,6 +924,29 @@ void TestAnimeJanaiRuntime::customModelsPrepareAndStagePinnedContent() {
         prepareAnimeJanaiPlan(QStringLiteral("builtin_slot:1"), Backend::DirectML);
     QVERIFY(!missingEnsemble.available);
     QCOMPARE(missingEnsemble.reasonKey, QStringLiteral("animejanai.model.pinMissing"));
+
+    QByteArray dynamicGraph = onnxShapeFixture({1, -1, 64, 64});
+    mikai::tests::fixtures::detail::appendBytes(dynamicGraph, 14, QByteArray(64, 'x'));
+    const QString dynamicPath = QDir(sourceDir.path()).filePath(QStringLiteral("dynamic.onnx"));
+    QVERIFY(writeFile(dynamicPath, dynamicGraph));
+    CustomAnimeJanaiModel dynamicModel;
+    QVERIFY2(importCustomAnimeJanaiModel(dynamicPath, &dynamicModel, &importError),
+             qPrintable(importError));
+    AnimeJanaiChain mixed;
+    mixed.rifeEnabled = true;
+    mixed.rifeBeforeUpscale = true;
+    mixed.steps = {
+        {1, AnimeJanaiStepKind::Anime4K, QStringLiteral("fast_a"), 0, 100, 1},
+        {2, AnimeJanaiStepKind::OnnxModel, dynamicModel.id, 0, 100, 2}};
+    slot.chains = {mixed};
+    config.customSlots[0] = slot;
+    QVERIFY2(AnimeJanaiConfigStore::save(config, &saveError), qPrintable(saveError));
+    const auto resolver = [](const QString&, QString*) { return QByteArrayLiteral("shader"); };
+    const AnimeJanaiPlan unknownShape = prepareAnimeJanaiPlan(
+        QStringLiteral("builtin_slot:1"), Backend::DirectML, {}, {1920, 1080, 24.0}, resolver);
+    QVERIFY(!unknownShape.available);
+    QCOMPARE(unknownShape.reasonKey, QStringLiteral("animejanai.profile.temporalShapeUnknown"));
+    QVERIFY(unknownShape.reason.contains(dynamicModel.id));
 
     QVERIFY(removeCustomAnimeJanaiModel(second.id));
     QVERIFY(!findCustomAnimeJanaiModel(second.id).has_value());
@@ -849,6 +1126,12 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
                         QStringLiteral("2x_Custom_Compact"), 720, 75, 2});
     chain.steps.append({2, AnimeJanaiStepKind::OnnxModel,
                         QStringLiteral("4x_Custom_Sharp"), 1080, 80, 2});
+    chain.upscaleEnabled = false;
+    chain.temporalFixModel = QStringLiteral("temporal_fix");
+    chain.temporalFixBeforeUpscale = true;
+    chain.temporalFixSceneThreshold = 0.25;
+    chain.steps[0].frames = 5;
+    chain.steps[0].temporalSceneThreshold = 0.375;
     chain.rifeEnabled = true;
     chain.rifeModel = QStringLiteral("RIFE 4.26");
     chain.rifeFactorNumerator = 2;
@@ -894,6 +1177,12 @@ void TestAnimeJanaiRuntime::managerConfigParsesAndSerializesMultiChainSlotsAndTr
     QCOMPARE(roundTrip.customSlots.first().chains.first().rifeSceneDetectThreshold, 0.150);
     QVERIFY(roundTrip.customSlots.first().chains.first().rifeEnsemble);
     QVERIFY(!roundTrip.customSlots.first().chains.first().rifeBeforeUpscale);
+    QVERIFY(!roundTrip.customSlots.first().chains.first().upscaleEnabled);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().temporalFixModel, QStringLiteral("temporal_fix"));
+    QVERIFY(roundTrip.customSlots.first().chains.first().temporalFixBeforeUpscale);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().temporalFixSceneThreshold, 0.25);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.first().frames, 5);
+    QCOMPARE(roundTrip.customSlots.first().chains.first().steps.first().temporalSceneThreshold, 0.375);
     QCOMPARE(roundTrip.customSlots.first().chains.at(1).steps.first().id,
              QStringLiteral("2x_Other_Model"));
     const AnimeJanaiConfig unsafeSlots =
@@ -1011,6 +1300,37 @@ void TestAnimeJanaiRuntime::stageCacheLeasesRefuseOverlapAndReleaseAtTerminal() 
 }
 
 void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
+    using detail::MixedRifeOrder;
+    QCOMPARE(detail::mixedRifeOrder(true, {1, 1, 5}), MixedRifeOrder::After);
+    QCOMPARE(detail::mixedRifeOrder(true, {std::nullopt, 1, 5}), MixedRifeOrder::After);
+    QCOMPARE(detail::mixedRifeOrder(true, {1, 1}), MixedRifeOrder::Before);
+    QCOMPARE(detail::mixedRifeOrder(true, {1, std::nullopt}), MixedRifeOrder::Unknown);
+    QCOMPARE(detail::mixedRifeOrder(false, {std::nullopt}), MixedRifeOrder::After);
+    QTemporaryDir shapeDir;
+    QVERIFY(shapeDir.isValid());
+    const QString shapePath = QDir(shapeDir.path()).filePath(QStringLiteral("shape.onnx"));
+    for (const auto& entry : {
+             std::pair{onnxShapeFixture({1, 3, 64, 64}), 1},
+             std::pair{onnxShapeFixture({1, 15, 64, 64}, true), 5},
+             std::pair{onnxShapeFixture({1, 7, 3, 64, 64}), 7}}) {
+        QVERIFY(writeFile(shapePath, entry.first));
+        const auto frames = animeJanaiOnnxTemporalFrames(shapePath);
+        QVERIFY(frames.has_value());
+        QCOMPARE(*frames, entry.second);
+    }
+    QVERIFY(writeFile(shapePath, onnxShapeFixture({1, -1, 64, 64})));
+    QVERIFY(!animeJanaiOnnxTemporalFrames(shapePath).has_value());
+    for (const auto& bytes : {
+             onnxShapeFixture({1, 4, 64, 64}),
+             onnxShapeFixture({1, 6, 64, 64}),
+             onnxShapeFixture({1, 48, 64, 64}),
+             onnxShapeFixture({1, 5, -1, 64, 64}),
+             onnxShapeFixture({1, 5, 4, 64, 64})}) {
+        QVERIFY(writeFile(shapePath, bytes));
+        QVERIFY(!animeJanaiOnnxTemporalFrames(shapePath).has_value());
+    }
+    QVERIFY(writeFile(shapePath, QByteArrayLiteral("\x3a\x7f\x00")));
+    QVERIFY(!animeJanaiOnnxTemporalFrames(shapePath).has_value());
     QString legacyError;
     const AnimeJanaiConfig legacy = AnimeJanaiConfigStore::parse(
         QStringLiteral("[slot_1]\nprofile_name=Legacy\n"
@@ -1026,6 +1346,10 @@ void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
     QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).id, QStringLiteral("second"));
     QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeHeightBeforeUpscale, 540);
     QCOMPARE(legacy.customSlots.first().chains.first().steps.at(1).resizeFactorBeforeUpscale, 75);
+    QVERIFY(legacy.customSlots.first().chains.first().rifeBeforeUpscale);
+    QVERIFY(legacy.customSlots.first().chains.first().upscaleEnabled);
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.first().frames, 0);
+    QCOMPARE(legacy.customSlots.first().chains.first().steps.first().temporalSceneThreshold, 0.150);
 
     AnimeJanaiSlot slot;
     slot.profileName = QStringLiteral("Mixed");
@@ -1035,6 +1359,10 @@ void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
         {2, AnimeJanaiStepKind::Anime4K, QStringLiteral("fast_b"), 480, 80, 4},
         {3, AnimeJanaiStepKind::OnnxModel, QStringLiteral("custom_sha"), 0, 100, 2},
     };
+    chain.steps[0].frames = 7;
+    chain.steps[0].temporalSceneThreshold = 0.25;
+    chain.temporalFixModel = QStringLiteral("fix");
+    chain.temporalFixBeforeUpscale = true;
     slot.chains.append(chain);
     AnimeJanaiChain secondChain;
     secondChain.number = 2;
@@ -1049,6 +1377,16 @@ void TestAnimeJanaiRuntime::mixedConfigStepsRoundTripAndRejectInvalidData() {
     const AnimeJanaiSlot imported = AnimeJanaiConfigStore::parseProfile(exported, &ok, &error);
     QVERIFY2(ok, qPrintable(error));
     QCOMPARE(imported, slot);
+    for (const int validFrames : {0, 1, 3, 15}) {
+        AnimeJanaiChain valid = chain;
+        valid.steps[0].frames = validFrames;
+        QVERIFY(AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(valid, &error));
+    }
+    for (const int invalidFrames : {-1, 2, 16}) {
+        AnimeJanaiChain invalid = chain;
+        invalid.steps[0].frames = invalidFrames;
+        QVERIFY(!AnimeJanaiConfigStore::validateAnimeJanaiChainSteps(invalid, &error));
+    }
 
     (void)AnimeJanaiConfigStore::parse(
         QStringLiteral("[global]\nconfig_version=3\nmikai_chain_steps_version=7\n"), &error);

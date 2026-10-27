@@ -56,6 +56,10 @@ private:
         QSpinBox* resizeFactorSpin = nullptr;
         QLabel* scaleLabel = nullptr;
         QComboBox* scaleCombo = nullptr;
+        QLabel* framesLabel = nullptr;
+        QSpinBox* framesSpin = nullptr;
+        QLabel* temporalSceneLabel = nullptr;
+        QDoubleSpinBox* temporalSceneSpin = nullptr;
         QPushButton* moveUpButton = nullptr;
         QPushButton* moveDownButton = nullptr;
         QPushButton* removeButton = nullptr;
@@ -180,6 +184,12 @@ private:
     QWidget* modelStepsContainer_ = nullptr;
     QVBoxLayout* modelStepsLayout_ = nullptr;
     QVector<ModelStepRow> modelStepRows_;
+    QCheckBox* chainUpscaleEnableCheck_ = nullptr;
+    QLabel* temporalFixModelLabel_ = nullptr;
+    QLineEdit* temporalFixModelEdit_ = nullptr;
+    QLabel* temporalFixSceneLabel_ = nullptr;
+    QDoubleSpinBox* temporalFixSceneSpin_ = nullptr;
+    QCheckBox* temporalFixBeforeCheck_ = nullptr;
     QCheckBox* chainRifeEnableCheck_ = nullptr;
     QWidget* chainRifeContainer_ = nullptr;
     QLabel* chainRifeModelLabel_ = nullptr;

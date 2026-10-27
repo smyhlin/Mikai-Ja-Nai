@@ -3,6 +3,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
+#include <QtCore/QSet>
 #include <QtCore/QVector>
 
 #include <functional>
@@ -47,6 +48,17 @@ struct AnimeJanaiMissingDownload {
 /// rehashes nor downloads.
 QVector<AnimeJanaiMissingDownload> animeJanaiMissingDownloads(Backend backend);
 qint64 animeJanaiMissingDownloadBytes(Backend backend);
+
+namespace detail {
+/// Validate the actual members of a 7-Zip technical listing before extraction.
+bool validateAnimeJanaiArchiveListing(const QString& listing, bool allowInternalSymlinks,
+                                      bool tarMembers, QString* error,
+                                      const QSet<QString>& expectedFiles = {});
+bool matchesPinnedLinuxAjiPair(const QString& dispatcherSha256, const QString& backendSha256);
+enum class MixedRifeOrder { Before, After, Unknown };
+/// Resolve upstream's chain-wide RIFE order from all ONNX temporal windows.
+MixedRifeOrder mixedRifeOrder(bool requestedBefore, const QVector<std::optional<int>>& windows);
+}
 
 AnimeJanaiInstallation describeAnimeJanaiInstallation(Backend backend, bool rehash = false);
 ComponentProvisionResult provisionAnimeJanaiRuntime(
@@ -107,6 +119,7 @@ struct AnimeJanaiPlan {
     QString presetId;
     QString reasonKey;
     QString reason;
+    QString note; ///< Non-error description of an effective plan adjustment.
     Backend backend = Backend::TensorRT;
     int slot = 0;
     QString libraryPath;

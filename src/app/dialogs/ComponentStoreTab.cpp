@@ -336,8 +336,10 @@ void ComponentStoreTab::buildUi() {
     animeJanaiBackendCombo_->setAccessibleName(tr("AnimeJaNai backend used by Apply changes and Verify"));
     animeJanaiBackendCombo_->addItem(tr("TensorRT (CUDA / NVDEC)"),
                                      static_cast<int>(Backend::TensorRT));
+#ifdef Q_OS_WIN
     animeJanaiBackendCombo_->addItem(tr("DirectML (D3D11VA)"),
                                      static_cast<int>(Backend::DirectML));
+#endif
     animeJanaiBackendLabel_->setBuddy(animeJanaiBackendCombo_);
     backendRow->addWidget(animeJanaiBackendCombo_, 1, Qt::AlignVCenter);
     headerLayout->addLayout(backendRow);
@@ -446,8 +448,13 @@ void ComponentStoreTab::buildUi() {
         card->findChild<QLabel*>(cardId + QStringLiteral("Description"))
             ->setText(descriptionText);
     };
+#ifdef Q_OS_WIN
     setCardText(runtimeCard, tr("TensorRT runtime"),
                 tr("Fastest NVIDIA upscaling engine; without it NVIDIA falls back to DirectML."));
+#else
+    setCardText(runtimeCard, tr("TensorRT runtime"),
+                tr("Required for AnimeJaNai on Linux with an NVIDIA GPU; DirectML is Windows-only."));
+#endif
     setCardText(rifeCard, tr("RIFE interpolation models"),
                 tr("Frame interpolation, not needed for upscale only."));
     setCardText(spatialCard, tr("AnimeJaNai upscaling models"),
@@ -579,8 +586,13 @@ void ComponentStoreTab::retranslateUi() {
         findChild<QLabel*>(objectName + QStringLiteral("Title"))->setText(title);
         findChild<QLabel*>(objectName + QStringLiteral("Description"))->setText(description);
     };
+#ifdef Q_OS_WIN
     setCardText(QStringLiteral("tensorRtRuntimeCard"), tr("TensorRT runtime"),
                 tr("Fastest NVIDIA upscaling engine; without it NVIDIA falls back to DirectML."));
+#else
+    setCardText(QStringLiteral("tensorRtRuntimeCard"), tr("TensorRT runtime"),
+                tr("Required for AnimeJaNai on Linux with an NVIDIA GPU; DirectML is Windows-only."));
+#endif
     setCardText(QStringLiteral("rifeModelsCard"), tr("RIFE interpolation models"),
                 tr("Frame interpolation, not needed for upscale only."));
     setCardText(QStringLiteral("animeJanaiModelsCard"), tr("AnimeJaNai upscaling models"),
@@ -606,7 +618,9 @@ void ComponentStoreTab::retranslateUi() {
     animeJanaiBackendCombo_->setAccessibleName(
         tr("AnimeJaNai backend used by Apply changes and Verify"));
     animeJanaiBackendCombo_->setItemText(0, tr("TensorRT (CUDA / NVDEC)"));
+#ifdef Q_OS_WIN
     animeJanaiBackendCombo_->setItemText(1, tr("DirectML (D3D11VA)"));
+#endif
     if (animeJanaiBackendLabel_ != nullptr) {
         animeJanaiBackendLabel_->setText(tr("AnimeJaNai backend:"));
     }
@@ -1010,7 +1024,7 @@ QString ComponentStoreTab::progressCardForPack(const QString& pack) const {
     if (pack == rife.name || pack == rife.asset)
         return QStringLiteral("rifeModelsCard");
 
-    if (pack == QLatin1String("aji-v0.9.0") ||
+    if (pack == QLatin1String("aji-v0.17.1") ||
         pack == QLatin1String("onnxruntime-directml-1.24.4") ||
         pack == QLatin1String("directml-1.15.4") ||
         pack == QLatin1String("trt-runtime-trtexec") ||
@@ -1030,11 +1044,11 @@ QString ComponentStoreTab::progressDisplayName(const QString& pack) const {
         if (component.files.contains(pack)) return pack;
     }
 
-    if (pack == QLatin1String("aji-v0.9.0")) {
+    if (pack == QLatin1String("aji-v0.17.1")) {
 #ifdef Q_OS_WIN
-        return QStringLiteral("aji-v0.9.0 (aji-windows-x64.zip)");
+        return QStringLiteral("aji-v0.17.1 (aji-windows-x64.zip)");
 #else
-        return QStringLiteral("aji-v0.9.0 (aji-linux-x64.tar.zst)");
+        return QStringLiteral("aji-v0.17.1 (aji-linux-x64.tar.zst)");
 #endif
     }
     if (pack == QLatin1String("onnxruntime-directml-1.24.4"))

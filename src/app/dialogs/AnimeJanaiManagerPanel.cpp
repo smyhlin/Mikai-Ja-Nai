@@ -63,9 +63,17 @@ bool isOwnedModelPath(const QString& filePath, const QString& ownedRoot) {
     QString modelPath = QFileInfo(filePath).canonicalFilePath();
     if (modelPath.isEmpty()) modelPath = QDir::cleanPath(filePath);
     if (ownedRoot.isEmpty() || modelPath.isEmpty()) return false;
-    return modelPath.compare(ownedRoot, Qt::CaseInsensitive) == 0 ||
-           modelPath.startsWith(ownedRoot + QLatin1Char('/'), Qt::CaseInsensitive) ||
-           modelPath.startsWith(ownedRoot + QLatin1Char('\\'), Qt::CaseInsensitive);
+#ifdef Q_OS_WIN
+    constexpr Qt::CaseSensitivity sensitivity = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity sensitivity = Qt::CaseSensitive;
+#endif
+    return modelPath.compare(ownedRoot, sensitivity) == 0 ||
+           modelPath.startsWith(ownedRoot + QLatin1Char('/'), sensitivity)
+#ifdef Q_OS_WIN
+           || modelPath.startsWith(ownedRoot + QLatin1Char('\\'), sensitivity)
+#endif
+        ;
 }
 
 /// The widget that should receive focus after a rebuild. A step combo's focus
@@ -556,6 +564,29 @@ void AnimeJanaiManagerPanel::buildUi() {
     condForm->addRow(maxFpsLabel_, maxFpsSpin_);
     editorLayout->addLayout(condForm);
 
+    chainUpscaleEnableCheck_ = new QCheckBox(tr("Enable ONNX upscale steps"), slotEditorContainer_);
+    polishInteractiveControl(chainUpscaleEnableCheck_, 0);
+    editorLayout->addWidget(chainUpscaleEnableCheck_);
+
+    auto* temporalForm = new QFormLayout();
+    temporalForm->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    temporalFixModelEdit_ = new QLineEdit(slotEditorContainer_);
+    temporalFixModelEdit_->setToolTip(tr("Registered ONNX model identifier; leave empty to disable the temporal fix."));
+    temporalFixModelLabel_ = makeFieldLabel(tr("Temporal fix ONNX model"), slotEditorContainer_, temporalFixModelEdit_);
+    temporalFixSceneSpin_ = new QDoubleSpinBox(slotEditorContainer_);
+    temporalFixSceneSpin_->setDecimals(15);
+    temporalFixSceneSpin_->setRange(0.0, 1.0);
+    temporalFixSceneSpin_->setSingleStep(0.010);
+    temporalFixSceneLabel_ = makeFieldLabel(tr("Temporal fix scene threshold"), slotEditorContainer_, temporalFixSceneSpin_);
+    temporalFixBeforeCheck_ = new QCheckBox(tr("Temporal fix before upscaling"), slotEditorContainer_);
+    polishInteractiveControl(temporalFixModelEdit_);
+    polishInteractiveControl(temporalFixSceneSpin_);
+    polishInteractiveControl(temporalFixBeforeCheck_, 0);
+    temporalForm->addRow(temporalFixModelLabel_, temporalFixModelEdit_);
+    temporalForm->addRow(temporalFixSceneLabel_, temporalFixSceneSpin_);
+    temporalForm->addRow(temporalFixBeforeCheck_);
+    editorLayout->addLayout(temporalForm);
+
     auto* stepsHeaderRow = new QHBoxLayout();
     stepsHeaderRow->setContentsMargins(0, 0, 0, 0);
     stepsHeaderRow->setSpacing(theme::kSpacingSmall);
@@ -806,6 +837,10 @@ void AnimeJanaiManagerPanel::buildUi() {
     connect(maxResEdit_, &QLineEdit::textEdited, this, bindChainFieldEdit);
     connect(minFpsSpin_, &QSpinBox::valueChanged, this, bindChainFieldEdit);
     connect(maxFpsSpin_, &QSpinBox::valueChanged, this, bindChainFieldEdit);
+    connect(chainUpscaleEnableCheck_, &QCheckBox::toggled, this, bindChainFieldEdit);
+    connect(temporalFixModelEdit_, &QLineEdit::textEdited, this, bindChainFieldEdit);
+    connect(temporalFixSceneSpin_, &QDoubleSpinBox::valueChanged, this, bindChainFieldEdit);
+    connect(temporalFixBeforeCheck_, &QCheckBox::toggled, this, bindChainFieldEdit);
     connect(chainRifeEnableCheck_, &QCheckBox::toggled, this, [this](bool checked) {
         if (chainRifeContainer_ != nullptr) chainRifeContainer_->setVisible(checked);
         if (updatingUi_) return;
@@ -1155,6 +1190,10 @@ void AnimeJanaiManagerPanel::loadSelectedChainIntoEditor() {
     maxResEdit_->setText(chain.maxResolution);
     minFpsSpin_->setValue(chain.minFps);
     maxFpsSpin_->setValue(chain.maxFps);
+    chainUpscaleEnableCheck_->setChecked(chain.upscaleEnabled);
+    temporalFixModelEdit_->setText(chain.temporalFixModel);
+    temporalFixSceneSpin_->setValue(chain.temporalFixSceneThreshold);
+    temporalFixBeforeCheck_->setChecked(chain.temporalFixBeforeUpscale);
 
     chainRifeEnableCheck_->setChecked(chain.rifeEnabled);
     chainRifeContainer_->setVisible(chain.rifeEnabled);
@@ -1288,12 +1327,32 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
         row.resizeFactorLabel = makeFieldLabel(tr("Input resize percentage"), row.frame);
         row.resizeFactorSpin = new QSpinBox(row.frame);
         row.resizeFactorSpin->setObjectName(QStringLiteral("animeJanaiStepResizePercent_%1").arg(i + 1));
-        row.resizeFactorSpin->setRange(1, 100);
+        row.resizeFactorSpin->setRange(1, 400);
         row.resizeFactorSpin->setSuffix(QStringLiteral("%"));
-        row.resizeFactorSpin->setValue(std::clamp(step.resizeFactorBeforeUpscale, 1, 100));
+        row.resizeFactorSpin->setValue(std::clamp(step.resizeFactorBeforeUpscale, 1, 400));
         row.resizeFactorSpin->setAccessibleName(tr("Step %1 input resize percentage").arg(i + 1));
         polishInteractiveControl(row.resizeFactorSpin);
         row.resizeFactorLabel->setBuddy(row.resizeFactorSpin);
+
+        row.framesSpin = new QSpinBox(row.frame);
+        row.framesSpin->setRange(0, 15);
+        row.framesSpin->setSpecialValueText(tr("0 (Auto)"));
+        row.framesSpin->setToolTip(tr("Use 0 to detect the window from ONNX, 1 for a single frame, or an odd number up to 15."));
+        row.framesSpin->setValue(step.frames);
+        row.framesLabel = makeFieldLabel(tr("Temporal window frames"), row.frame, row.framesSpin);
+        row.temporalSceneSpin = new QDoubleSpinBox(row.frame);
+        row.temporalSceneSpin->setDecimals(15);
+        row.temporalSceneSpin->setRange(0.0, 1.0);
+        row.temporalSceneSpin->setSingleStep(0.010);
+        row.temporalSceneSpin->setToolTip(tr("Set to 0 to disable scene-cut protection."));
+        row.temporalSceneSpin->setValue(step.temporalSceneThreshold);
+        row.temporalSceneLabel = makeFieldLabel(tr("Temporal scene threshold"), row.frame, row.temporalSceneSpin);
+        polishInteractiveControl(row.framesSpin);
+        polishInteractiveControl(row.temporalSceneSpin);
+        row.framesLabel->setVisible(!isA4k);
+        row.framesSpin->setVisible(!isA4k);
+        row.temporalSceneLabel->setVisible(!isA4k);
+        row.temporalSceneSpin->setVisible(!isA4k);
 
         row.scaleLabel = makeFieldLabel(tr("Anime4K output scale"), row.frame);
         row.scaleCombo = new QComboBox(row.frame);
@@ -1344,6 +1403,8 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
         stepForm->addRow(row.modelLabel, row.modelCombo);
         stepForm->addRow(row.resizeHeightLabel, row.resizeHeightSpin);
         stepForm->addRow(row.resizeFactorLabel, row.resizeFactorSpin);
+        stepForm->addRow(row.framesLabel, row.framesSpin);
+        stepForm->addRow(row.temporalSceneLabel, row.temporalSceneSpin);
         stepForm->addRow(row.scaleLabel, row.scaleCombo);
         rowLayout->addLayout(stepForm);
 
@@ -1380,6 +1441,16 @@ void AnimeJanaiManagerPanel::rebuildModelStepRows() {
             markDirty();
         });
         connect(row.resizeFactorSpin, &QSpinBox::valueChanged, this, [this](int) {
+            if (updatingUi_) return;
+            commitCurrentChainFromEditor();
+            markDirty();
+        });
+        connect(row.framesSpin, &QSpinBox::valueChanged, this, [this](int) {
+            if (updatingUi_) return;
+            commitCurrentChainFromEditor();
+            markDirty();
+        });
+        connect(row.temporalSceneSpin, &QDoubleSpinBox::valueChanged, this, [this](double) {
             if (updatingUi_) return;
             commitCurrentChainFromEditor();
             markDirty();
@@ -1421,6 +1492,10 @@ void AnimeJanaiManagerPanel::commitCurrentChainFromEditor() {
                                : maxResEdit_->text().trimmed();
     chain->minFps = minFpsSpin_->value();
     chain->maxFps = maxFpsSpin_->value();
+    chain->upscaleEnabled = chainUpscaleEnableCheck_->isChecked();
+    chain->temporalFixModel = temporalFixModelEdit_->text().trimmed();
+    chain->temporalFixSceneThreshold = temporalFixSceneSpin_->value();
+    chain->temporalFixBeforeUpscale = temporalFixBeforeCheck_->isChecked();
 
     chain->steps.clear();
     for (int i = 0; i < modelStepRows_.size(); ++i) {
@@ -1439,6 +1514,8 @@ void AnimeJanaiManagerPanel::commitCurrentChainFromEditor() {
         step.resizeHeightBeforeUpscale = row.resizeHeightSpin->value();
         step.resizeFactorBeforeUpscale = row.resizeFactorSpin->value();
         step.scaleFactor = row.scaleCombo->currentData().toInt();
+        step.frames = row.framesSpin->value();
+        step.temporalSceneThreshold = row.temporalSceneSpin->value();
         chain->steps.append(step);
     }
 
@@ -1990,6 +2067,11 @@ void AnimeJanaiManagerPanel::retranslateUi() {
     maxResLabel_->setText(tr("Max resolution (WxH)"));
     minFpsLabel_->setText(tr("Min FPS"));
     maxFpsLabel_->setText(tr("Max FPS"));
+    chainUpscaleEnableCheck_->setText(tr("Enable ONNX upscale steps"));
+    temporalFixModelLabel_->setText(tr("Temporal fix ONNX model"));
+    temporalFixModelEdit_->setToolTip(tr("Registered ONNX model identifier; leave empty to disable the temporal fix."));
+    temporalFixSceneLabel_->setText(tr("Temporal fix scene threshold"));
+    temporalFixBeforeCheck_->setText(tr("Temporal fix before upscaling"));
     upscaleStepsHeading_->setText(tr("Processing steps in this chain"));
     addModelStepButton_->setText(tr("Add Processing Step"));
     chainRifeEnableCheck_->setText(tr("RIFE interpolation"));

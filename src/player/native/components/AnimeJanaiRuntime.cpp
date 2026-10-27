@@ -17,6 +17,7 @@
 #include <QtCore/QSaveFile>
 #include <QtCore/QSet>
 #include <QtCore/QHash>
+#include <QtCore/QTemporaryDir>
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,17 @@
 #include <QtCore/QMap>
 
 namespace mplayer::native {
+namespace detail {
+MixedRifeOrder mixedRifeOrder(bool requestedBefore, const QVector<std::optional<int>>& windows) {
+    if (!requestedBefore) return MixedRifeOrder::After;
+    bool unknown = false;
+    for (const auto& frames : windows) {
+        if (!frames) unknown = true;
+        else if (*frames > 1) return MixedRifeOrder::After;
+    }
+    return unknown ? MixedRifeOrder::Unknown : MixedRifeOrder::Before;
+}
+}  // namespace detail
 namespace {
 
 QHash<QString, QString>& activeAnimeJanaiStageCaches() {
@@ -468,6 +480,28 @@ QVector<AnimeJanaiPreset> animeJanaiPresets() {
 }
 
 namespace {
+// Expand upstream's optional temporal-fix model into the same verified staging
+// path as other ONNX models. The original profile remains unchanged.
+void expandTemporalFix(AnimeJanaiChain& chain) {
+    if (!chain.upscaleEnabled) {
+        chain.steps.erase(std::remove_if(chain.steps.begin(), chain.steps.end(),
+            [](const AnimeJanaiChainStep& step) {
+                return step.kind == AnimeJanaiStepKind::OnnxModel;
+            }), chain.steps.end());
+    }
+    if (!chain.temporalFixModel.trimmed().isEmpty()) {
+        AnimeJanaiChainStep fix;
+        fix.id = chain.temporalFixModel;
+        fix.scaleFactor = 1;
+        fix.temporalSceneThreshold = chain.temporalFixSceneThreshold;
+        if (chain.temporalFixBeforeUpscale) chain.steps.prepend(fix);
+        else chain.steps.append(fix);
+    }
+    for (qsizetype i = 0; i < chain.steps.size(); ++i)
+        chain.steps[i].number = static_cast<int>(i) + 1;
+    chain.upscaleEnabled = true;
+    chain.temporalFixModel.clear();
+}
 AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                                    const std::function<bool()>& cancelled,
                                    const AnimeJanaiSourceContext& source,
@@ -547,6 +581,9 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         QCryptographicHash::hash(presetId.toUtf8() + QByteArrayLiteral("\n") + serializedSelection,
                                  QCryptographicHash::Sha256).toHex().left(24));
 
+    AnimeJanaiChain effectiveChain = *selected;
+    expandTemporalFix(effectiveChain);
+    selected = &effectiveChain;
     const bool hasAji = selected->rifeEnabled ||
                         std::any_of(selected->steps.cbegin(), selected->steps.cend(),
                                     [](const AnimeJanaiChainStep& step) {
@@ -595,9 +632,11 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         }
     }
     if (backend == Backend::TensorRT && hasAji) {
-        const QString winTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
-        const QString linuxTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec"));
-        plan.trtexecPath = regularFile(winTrtexec) ? winTrtexec : linuxTrtexec;
+#ifdef Q_OS_WIN
+        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
+#else
+        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec"));
+#endif
         if (!regularFile(plan.trtexecPath)) {
             fail(plan, QStringLiteral("animejanai.runtime.trtexecMissing"),
                  RuntimeText::tr("The installed TensorRT closure does not include its verified upstream trtexec executable."));
@@ -605,9 +644,11 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         }
     }
     if (hasAji) {
-        const QString linuxLibPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
-        plan.libraryPath = regularFile(linuxLibPath) ? linuxLibPath
-                                                    : QDir(installation.root).filePath(QStringLiteral("aji.dll"));
+#ifdef Q_OS_WIN
+        plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("aji.dll"));
+#else
+        plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
+#endif
         plan.trtexecLibDir = installation.root;
     }
 
@@ -739,6 +780,80 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         }
     }
 
+    // A single AJI chain moves RIFE after every model if any input is
+    // temporal. Mixed chains split that chain around shaders, so resolve the
+    // same whole-chain decision before attaching RIFE to a segment.
+    std::unique_ptr<QTemporaryDir> shapeDir;
+    QHash<QString, QString> verifiedSnapshots;
+    QSet<QString> verifiedSources;
+    const bool selectedHasShader = std::any_of(
+        selected->steps.cbegin(), selected->steps.cend(),
+        [](const AnimeJanaiChainStep& step) { return step.kind == AnimeJanaiStepKind::Anime4K; });
+    if (selectedHasShader && selected->rifeEnabled && selected->rifeBeforeUpscale) {
+        QVector<std::optional<int>> windows;
+        const bool temporal = std::any_of(spatialItems.cbegin(), spatialItems.cend(),
+                                          [](const SpatialItem& item) { return item.step.frames > 1; });
+        if (temporal) windows.append(3);
+        QString unknownModel;
+        QHash<QString, std::optional<int>> inspectedFrames;
+        for (const SpatialItem& item : spatialItems) {
+            if (temporal) break;
+            if (item.step.frames == 1) {
+                windows.append(1);
+                continue;
+            }
+            const auto prior = inspectedFrames.constFind(item.digest);
+            if (prior != inspectedFrames.cend()) {
+                windows.append(prior.value());
+                if (!prior.value() && unknownModel.isEmpty()) unknownModel = item.step.id;
+                if (prior.value() && *prior.value() > 1) break;
+                continue;
+            }
+            if (!shapeDir) {
+                if (!pathInside(ownedRoot, ownedRoot) || !QDir().mkpath(ownedRoot) ||
+                    !pathInside(ownedRoot, ownedRoot)) {
+                    fail(plan, QStringLiteral("animejanai.model.directory"),
+                         RuntimeText::tr("The app-owned AnimeJaNai model directory is unavailable or redirected."));
+                    return plan;
+                }
+                shapeDir = std::make_unique<QTemporaryDir>(
+                    QDir(ownedRoot).filePath(QStringLiteral(".shape-XXXXXX")));
+                if (!shapeDir->isValid() || !pathInside(ownedRoot, shapeDir->path())) {
+                    fail(plan, QStringLiteral("animejanai.model.directory"),
+                         RuntimeText::tr("The app-owned AnimeJaNai model directory is unavailable or redirected."));
+                    return plan;
+                }
+            }
+            const QString verifiedPath =
+                QDir(shapeDir->path()).filePath(item.digest + QStringLiteral(".onnx"));
+            QString copyError;
+            if (!copyVerified(item.graph, verifiedPath, item.bytes, item.digest,
+                              ownedRoot, cancelled, &copyError)) {
+                fail(plan, QStringLiteral("animejanai.model.stage"), copyError);
+                return plan;
+            }
+            verifiedSnapshots.insert(item.digest, verifiedPath);
+            verifiedSources.insert(item.graph + QLatin1Char('\n') + item.digest);
+            const auto frames = animeJanaiOnnxTemporalFrames(verifiedPath);
+            inspectedFrames.insert(item.digest, frames);
+            windows.append(frames);
+            if (!frames && unknownModel.isEmpty()) unknownModel = item.step.id;
+            if (frames && *frames > 1) break;
+        }
+        const auto order = detail::mixedRifeOrder(true, windows);
+        if (order == detail::MixedRifeOrder::After) {
+            effectiveChain.rifeBeforeUpscale = false;
+            plan.note = RuntimeText::tr(
+                "RIFE runs after the mixed chain because it contains a temporal model.");
+        } else if (order == detail::MixedRifeOrder::Unknown) {
+            fail(plan, QStringLiteral("animejanai.profile.temporalShapeUnknown"),
+                 RuntimeText::tr("Cannot read a supported temporal input shape from model '%1' for RIFE ordering. "
+                                 "Set an explicit frame count or choose RIFE after upscaling.")
+                     .arg(unknownModel));
+            return plan;
+        }
+    }
+
     const auto appendAji = [&](const QVector<SpatialItem>& items, bool includeRife, int stageNumber,
                                int firstStep, int lastStep, AnimeJanaiPlan* target) -> bool {
         if (items.isEmpty() && !includeRife) return true;
@@ -777,7 +892,47 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
         for (const SpatialItem& item : items) {
             const QString targetPath = QDir(modelDir).filePath(item.digest + QStringLiteral(".onnx"));
             QString copyError;
-            if (!copyVerified(item.graph, targetPath, item.bytes, item.digest, ownedRoot, cancelled, &copyError)) {
+            const auto snapshot = verifiedSnapshots.constFind(item.digest);
+            if (snapshot != verifiedSnapshots.cend()) {
+                const QString sourceKey = item.graph + QLatin1Char('\n') + item.digest;
+                if (!verifiedSources.contains(sourceKey)) {
+                    if (!hashMatches(item.graph, item.bytes, item.digest, cancelled)) {
+                        fail(*target, QStringLiteral("animejanai.model.stage"),
+                             cancelled && cancelled()
+                                 ? RuntimeText::tr("AnimeJaNai preparation was cancelled.")
+                                 : RuntimeText::tr("The selected model graph does not match its pinned content digest."));
+                        return false;
+                    }
+                    verifiedSources.insert(sourceKey);
+                }
+                if (!pathInside(ownedRoot, targetPath) ||
+                    !QDir().mkpath(QFileInfo(targetPath).absolutePath()) ||
+                    !pathInside(ownedRoot, targetPath)) {
+                    fail(*target, QStringLiteral("animejanai.model.directory"),
+                         RuntimeText::tr("The app-owned AnimeJaNai model directory is unavailable or redirected."));
+                    return false;
+                }
+                if (QFileInfo::exists(targetPath)) {
+                    if (!hashMatches(targetPath, item.bytes, item.digest, cancelled)) {
+                        fail(*target, QStringLiteral("animejanai.model.stage"),
+                             cancelled && cancelled()
+                                 ? RuntimeText::tr("AnimeJaNai preparation was cancelled.")
+                                 : RuntimeText::tr("An existing staged AnimeJaNai graph is corrupt and will not be replaced."));
+                        return false;
+                    }
+                } else if (shapeDir && pathWithinRoot(shapeDir->path(), *snapshot)) {
+                    if (!QFile::rename(*snapshot, targetPath)) {
+                        fail(*target, QStringLiteral("animejanai.model.stage"),
+                             RuntimeText::tr("The verified AnimeJaNai model could not be moved into its stage."));
+                        return false;
+                    }
+                } else if (!copyVerified(*snapshot, targetPath, item.bytes, item.digest,
+                                         ownedRoot, cancelled, &copyError)) {
+                    fail(*target, QStringLiteral("animejanai.model.stage"), copyError);
+                    return false;
+                }
+                verifiedSnapshots.insert(item.digest, targetPath);
+            } else if (!copyVerified(item.graph, targetPath, item.bytes, item.digest, ownedRoot, cancelled, &copyError)) {
                 fail(*target, QStringLiteral("animejanai.model.stage"), copyError);
                 return false;
             }
@@ -795,6 +950,11 @@ AnimeJanaiPlan prepareMixedProfile(const QString& presetId, Backend backend,
                 models.append(QStringLiteral("chain_1_model_%1_resize_height_before_upscale=%2\n").arg(modelNumber).arg(item.step.resizeHeightBeforeUpscale));
             if (item.step.resizeFactorBeforeUpscale != 100)
                 models.append(QStringLiteral("chain_1_model_%1_resize_factor_before_upscale=%2\n").arg(modelNumber).arg(item.step.resizeFactorBeforeUpscale));
+            models.append(QStringLiteral("chain_1_model_%1_frames=%2\n")
+                              .arg(modelNumber).arg(item.step.frames));
+            models.append(QStringLiteral("chain_1_model_%1_temporal_scene_threshold=%2\n")
+                              .arg(modelNumber)
+                              .arg(QLocale::c().toString(item.step.temporalSceneThreshold, 'g', 17)));
         }
         QString rifeConfig;
         if (includeRife) {
@@ -1026,10 +1186,11 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
     }
 
     const QString ownedRoot = configRoot();
-    const QString linuxLibPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
-    plan.libraryPath = regularFile(linuxLibPath)
-                           ? linuxLibPath
-                           : QDir(installation.root).filePath(QStringLiteral("aji.dll"));
+#ifdef Q_OS_WIN
+    plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("aji.dll"));
+#else
+    plan.libraryPath = QDir(installation.root).filePath(QStringLiteral("libaji.so"));
+#endif
     plan.configPath = QDir(ownedRoot).filePath(QStringLiteral("config/") + safeConfigName(presetId) + QStringLiteral(".ini"));
     plan.modelDir = QDir(ownedRoot).filePath(QStringLiteral("models/spatial"));
     plan.rifeModelDir = QDir(ownedRoot).filePath(QStringLiteral("models/rife"));
@@ -1051,9 +1212,11 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         return plan;
     }
     if (backend == Backend::TensorRT) {
-        const QString winTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
-        const QString linuxTrtexec = QDir(installation.root).filePath(QStringLiteral("trtexec"));
-        plan.trtexecPath = regularFile(winTrtexec) ? winTrtexec : linuxTrtexec;
+#ifdef Q_OS_WIN
+        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec.exe"));
+#else
+        plan.trtexecPath = QDir(installation.root).filePath(QStringLiteral("trtexec"));
+#endif
         if (!regularFile(plan.trtexecPath)) {
             fail(plan, QStringLiteral("animejanai.runtime.trtexecMissing"),
                  RuntimeText::tr("The installed TensorRT closure does not include its verified upstream trtexec executable."));
@@ -1063,7 +1226,8 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
 
     QString managerError;
     const AnimeJanaiConfig managerConf = AnimeJanaiConfigStore::load(&managerError);
-    if (!managerError.isEmpty()) {
+    if (!managerError.isEmpty() ||
+        !AnimeJanaiConfigStore::validateAnimeJanaiConfig(managerConf, &managerError)) {
         fail(plan, QStringLiteral("animejanai.config.invalid"), managerError);
         return plan;
     }
@@ -1087,6 +1251,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
         QSet<QString> stagedRifeFiles;
 
         for (AnimeJanaiChain& chain : stagedSlot.chains) {
+            expandTemporalFix(chain);
             if (chain.steps.isEmpty() && !chain.rifeEnabled) {
                 fail(plan, QStringLiteral("animejanai.profile.chainEmpty"),
                      RuntimeText::tr("Chain %1 in custom profile '%2' has no model or RIFE step.")
@@ -1249,7 +1414,7 @@ AnimeJanaiPlan prepareAnimeJanaiPlan(const QString& presetId, Backend backend,
             fail(plan, QStringLiteral("animejanai.model.missing"), stored.reason.isEmpty() ? RuntimeText::tr("The selected pinned RIFE graph is missing or corrupt.") : stored.reason);
             return plan;
         }
-        // ABI 8 resolves RIFE filenames from its numeric model code.
+        // AJI resolves RIFE filenames from its numeric model code.
         const QString safeName = pin->fileName;
         QString copyError;
         if (!copyVerified(stored.path, QDir(plan.rifeModelDir).filePath(safeName), pin->bytes, pin->graphSha256,

@@ -11,6 +11,11 @@ class TestAnimeJanaiRuntime : public QObject {
   void cleanup();
   void cleanupTestCase();
   void directRunRefusesExistingNativeTreeWithoutMutation();
+  void archiveListingValidatesTarMembersAndLinks();
+  void linuxRejectsDirectMlBeforeAcquisition();
+  void linuxRejectsWindowsRuntimeAndPeDisguisedAsElf();
+  void linuxImportsAbiExportingElfClosure();
+  void linuxOfficialPairRequiresBothPinnedDigests();
   void missingInstallIsNotReady();
   void missingRequiredBackendDependencyIsNotReady();
   void storedFailedRequestReprobesAfterDependencyInstall();

@@ -27,6 +27,10 @@ struct CustomAnimeJanaiModel {
 /// (`<nativeRoot>/animejanai/models/custom`).
 QString customAnimeJanaiModelsDir();
 
+/// Reads the first non-initializer ONNX input's temporal window. Call on a worker;
+/// returns nullopt when the temporal shape cannot be determined safely.
+std::optional<int> animeJanaiOnnxTemporalFrames(const QString& path);
+
 /// Validates whether a candidate file is a plausible ONNX binary graph.
 bool validateCustomOnnxFile(const QString& filePath, qint64* bytesOut = nullptr,
                             QString* reasonOut = nullptr);
@@ -84,6 +88,8 @@ struct AnimeJanaiChainStep {
     int resizeHeightBeforeUpscale = 0;    ///< px (0 = disabled)
     int resizeFactorBeforeUpscale = 100;  ///< percent (100 = no pre-resize)
     int scaleFactor = 2;
+    int frames = 0;                        ///< 0 = infer temporal window from ONNX
+    double temporalSceneThreshold = 0.150; ///< 0 disables scene-cut protection
 
     bool operator==(const AnimeJanaiChainStep&) const = default;
 };
@@ -95,6 +101,10 @@ struct AnimeJanaiChain {
     int minFps = 0;
     int maxFps = 0;
     QVector<AnimeJanaiChainStep> steps;
+    bool upscaleEnabled = true;
+    QString temporalFixModel;
+    double temporalFixSceneThreshold = 0.150;
+    bool temporalFixBeforeUpscale = false;
     bool rifeEnabled = false;
     QString rifeModel = QStringLiteral("RIFE 4.26");
     int rifeFactorNumerator = 2;
