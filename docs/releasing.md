@@ -91,20 +91,22 @@ The default system profile remains valid: `MIKAI_LINUX_BUNDLE_MPV=OFF` uses dist
 
 ### AppImage (single file, local)
 
-An AppImage is a packaging format, not a portability guarantee: it carries Qt and the private libmpv closure, while glibc, the dynamic loader, graphics drivers, Vulkan/EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS.
+An AppImage is a packaging format, not a portability guarantee: it carries Qt, while glibc, the dynamic loader, graphics drivers, Vulkan/EGL and the audio subsystem stay host dependencies. The image inherits the build host's glibc baseline through the bundled Qt, so a build produced on a rolling distribution does not run on an older LTS.
+
+The pinned Linux libmpv archive is built without an FFmpeg TLS backend, so it cannot open any `https` URL: every provider stream and every HLS URL over https fails with "No protocol handler found", while local files still play. Configure detects that in the archive (`MIKAI_LINUX_MPV_TLS`) and AppImage packaging refuses to bundle it, instead of shipping a player that fails on real catalogue playback. The image then uses the host's `libmpv.so.2` (client API 2, built with a TLS backend); that is a dependency of the image, not a bundled copy. Bundling works again once a runtime archive is published with TLS enabled.
 
 ```bash
 cmake -S . -B build/appimage -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
   -DMIKAI_LINUX_DEPLOY_QT=ON \
-  -DMIKAI_LINUX_BUNDLE_MPV=ON
+  -DMIKAI_LINUX_BUNDLE_MPV=OFF
 cmake --build build/appimage --target appimage
 ```
 
 For a tree that is already built, `bash packaging/linux/appimage.sh --build-dir build/appimage --output-dir /fresh/output` runs the same packaging step.
 
-Requirements: `patchelf` and `appimagetool` on `PATH`, or `-DMIKAI_APPIMAGE_TOOL=/path/to/appimagetool`. Packaging refuses a build configured without Qt deployment or without the pinned mpv bundle, because either would make the image depend on the distribution's package versions, and refuses an output directory that already exists. The artifact and its `SHA256SUMS` are written under `build/appimage/_appimage/`.
+Requirements: `patchelf` and `appimagetool` on `PATH`, or `-DMIKAI_APPIMAGE_TOOL=/path/to/appimagetool`. Packaging refuses a build configured without Qt deployment, refuses a pinned mpv bundle whose FFmpeg has no TLS backend, and refuses an output directory that already exists. The artifact and its `SHA256SUMS` are written under `build/appimage/_appimage/`.
 
 Qt's deployment omits the QPA platform plugins when the distribution Qt carries no qpa description (as on Arch), so the packaging copies the Qt plugin tree and gives every plugin an `$ORIGIN`-relative RUNPATH. The image deliberately excludes the C library, the loader and the GL/EGL driver libraries: a private libc beside the host loader is not portable, and GL dispatch belongs to the installed driver.
 

@@ -47,10 +47,23 @@ if(NOT MIKAI_LINUX_DEPLOY_QT)
     "Configure the build with -DMIKAI_LINUX_DEPLOY_QT=ON so the image carries Qt "
     "instead of requiring the host's Qt 6.12.")
 endif()
-if(NOT MIKAI_LINUX_MPV_BUNDLE)
-  message(FATAL_ERROR
-    "Configure the build with -DMIKAI_LINUX_BUNDLE_MPV=ON so the image carries the "
-    "pinned libmpv closure instead of requiring the host's libmpv.")
+# libmpv may come from the host instead. The pinned Linux archive is built
+# without an FFmpeg TLS backend, so a bundled image cannot open any https
+# stream - which is every provider stream - and carrying it would ship a player
+# that fails on real catalogue playback. A host libmpv is then a dependency of
+# the image rather than a bundled copy, and that is stated instead of hidden.
+if(MIKAI_LINUX_MPV_BUNDLE)
+  if(DEFINED MIKAI_LINUX_MPV_TLS AND NOT MIKAI_LINUX_MPV_TLS)
+    message(FATAL_ERROR
+      "The pinned Linux libmpv has no FFmpeg TLS backend, so the image could not "
+      "play https streams. Rebuild without -DMIKAI_LINUX_BUNDLE_MPV=ON to use the "
+      "host's libmpv.so.2, or use a runtime archive that was built with TLS.")
+  endif()
+else()
+  message(WARNING
+    "This image carries Qt but not libmpv: it requires libmpv.so.2 (client API 2, "
+    "built with a TLS backend) on the host. That dependency is what makes https "
+    "playback possible at all.")
 endif()
 
 if(EXISTS "${OUTPUT_DIR}" OR IS_SYMLINK "${OUTPUT_DIR}")
@@ -88,12 +101,15 @@ if(NOT install_result EQUAL 0)
   message(FATAL_ERROR "Install into ${appdir} failed (${install_result}):\n${install_error}")
 endif()
 
-foreach(required_path
+set(required_paths
     "${appdir}/usr/bin/mikai"
-    "${appdir}/usr/bin/mpv/libmpv.so.2"
     "${appdir}/usr/share/applications/mikai.desktop"
     "${appdir}/usr/share/icons/hicolor/512x512/apps/mikai.png"
     "${appdir}/usr/share/metainfo/mikai.metainfo.xml")
+if(MIKAI_LINUX_MPV_BUNDLE)
+  list(APPEND required_paths "${appdir}/usr/bin/mpv/libmpv.so.2")
+endif()
+foreach(required_path IN LISTS required_paths)
   if(NOT EXISTS "${required_path}")
     message(FATAL_ERROR "The install tree is incomplete, missing ${required_path}")
   endif()

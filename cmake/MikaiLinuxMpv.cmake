@@ -205,7 +205,30 @@ set(MIKAI_LINUX_MPV_BUNDLE_MODE "bundled")
 set(MIKAI_LINUX_MPV_RUNTIME_IDENTITY "mpv-linux-x64-2026-10-24-c493f1c7e10a6b2301653596e7deeb91295d3148")
 set(MIKAI_LINUX_MPV_PATCHED_RUNPATH "$ORIGIN")
 
-message(STATUS "Linux libmpv bundle enabled: ${MIKAI_LINUX_MPV_BUNDLE_ROOT}")
+# HTTPS needs a TLS backend inside the bundled FFmpeg; without one every
+# provider stream fails with "No protocol handler found", and no host library
+# can supply it after the fact. Detect it from the build itself rather than
+# assuming the archive was configured usefully.
+set(MIKAI_LINUX_MPV_TLS ON)
+file(GLOB _mikai_mpv_avformat "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/libavformat.so.*")
+if(_mikai_mpv_avformat)
+  list(GET _mikai_mpv_avformat 0 _mikai_mpv_avformat_first)
+  execute_process(
+    COMMAND grep -q -c "recompile FFmpeg with openssl" "${_mikai_mpv_avformat_first}"
+    RESULT_VARIABLE _mikai_mpv_tls_probe OUTPUT_QUIET ERROR_QUIET)
+  if(_mikai_mpv_tls_probe EQUAL 0)
+    set(MIKAI_LINUX_MPV_TLS OFF)
+  endif()
+endif()
+if(NOT MIKAI_LINUX_MPV_TLS)
+  message(WARNING
+    "The pinned Linux libmpv was built without an FFmpeg TLS backend: https "
+    "streams (every provider stream and HLS URL over https) cannot be opened by "
+    "this bundle. Playback of local files still works. Use a runtime with TLS "
+    "(for example the distribution libmpv) if https playback is required.")
+endif()
+
+message(STATUS "Linux libmpv bundle enabled: ${MIKAI_LINUX_MPV_BUNDLE_ROOT} (https/TLS: ${MIKAI_LINUX_MPV_TLS})")
 
 file(GLOB MIKAI_LINUX_MPV_INSTALL_LIBRARIES LIST_DIRECTORIES FALSE
   "${MIKAI_LINUX_MPV_BUNDLE_ROOT}/*.so*")
