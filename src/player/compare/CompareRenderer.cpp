@@ -18,7 +18,6 @@
 #include <QThread>
 
 #include <algorithm>
-#include <clocale>
 #include <cmath>
 
 namespace mplayer::shell {
@@ -46,7 +45,8 @@ public:
     }
 
     ~ScopedCurrent() {
-        if (!bound_ || previous_ == &context_) return;
+        if (!bound_) return;
+        if (previous_ == &context_ && previousSurface_ == context_.surface()) return;
         if (previous_ != nullptr && previousSurface_ != nullptr) {
             if (previous_->makeCurrent(previousSurface_)) return;
             qWarning() << "CompareRenderer: could not restore the prior OpenGL context";
@@ -104,7 +104,6 @@ struct CompareRenderer::State {
     }
 
     bool initialize(const QSize& size, double timestamp) {
-        std::setlocale(LC_NUMERIC, "C");
         if (!files.isValid() || size.isEmpty() || !std::isfinite(timestamp)) {
             error = QCoreApplication::translate("CompareRenderer", "The comparison frame storage or geometry is unavailable.");
             return false;
@@ -352,7 +351,6 @@ CompareRenderer::~CompareRenderer() = default;
 
 bool CompareRenderer::capture(const QString& source, double timestamp, const QSize& outputSize,
                               const Cancelled& cancelled, const Progress& progress) {
-    std::setlocale(LC_NUMERIC, "C");
     State& state = *state_;
     state.error.clear();
     state.sourceFrame = {};
@@ -371,10 +369,15 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
         const QImage settledSource = state.settle(true, false, cancelled, progress);
         if (settledSource.isNull()) return false;
         state.framePath = state.files.filePath(QStringLiteral("source.png"));
-        if (!state.waitForCommand(state.command({"screenshot-to-file", state.framePath.toStdString(), "video"}), cancelled) ||
-            !QFileInfo::exists(state.framePath)) {
+        const bool screenshotComplete = state.waitForCommand(
+            state.command({"screenshot-to-file", state.framePath.toStdString(), "video"}), cancelled);
+        if (cancelled()) return false;
+        if (!screenshotComplete || !QFileInfo::exists(state.framePath)) {
             state.error.clear();
-            settledSource.save(state.framePath, "PNG");
+            if (!settledSource.save(state.framePath, "PNG")) {
+                state.error = QCoreApplication::translate("CompareRenderer", "The decoded comparison source frame could not be read.");
+                return false;
+            }
         }
         state.sourceFrame = QImage(state.framePath);
         if (state.sourceFrame.isNull() && !settledSource.isNull()) {
@@ -397,7 +400,6 @@ bool CompareRenderer::capture(const QString& source, double timestamp, const QSi
 
 QImage CompareRenderer::render(const QString& shaderId, const native::AnimeJanaiPlan& plan,
                                const Cancelled& cancelled, const Progress& progress) {
-    std::setlocale(LC_NUMERIC, "C");
     State& state = *state_;
     state.error.clear();
     state.buildDetail.clear();

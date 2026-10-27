@@ -2232,6 +2232,27 @@ int main(int argc, char** argv) {
             guardWindow->captureNow();
             check(!guardWindow->captureError().isEmpty() || !guardWindow->frozenFrame().isNull(),
                   "the second surface produced a real frame before the guard check");
+
+            // Delete the window from the nested event loop while captureFrame's
+            // active guard is on the stack. Its cleanup must not touch freed memory.
+            QPointer<CompareWindow> dyingWindow =
+                new CompareWindow(borrowed, selectablePresetIds.value(0));
+            bool captureReturned = false;
+            bool deletedDuringCapture = false;
+            QTimer windowKill;
+            windowKill.setSingleShot(true);
+            QObject::connect(&windowKill, &QTimer::timeout, [&] {
+                deletedDuringCapture = !captureReturned;
+                delete dyingWindow.data();
+            });
+            windowKill.start(0);
+            dyingWindow->captureNow();
+            captureReturned = true;
+            windowKill.stop();
+            check(deletedDuringCapture && dyingWindow.isNull(),
+                  "destroying Compare during capture unwinds safely");
+            delete dyingWindow.data();
+
             QTimer guardChurn;
             bool guardFlip = false;
             QObject::connect(&guardChurn, &QTimer::timeout, [&] {

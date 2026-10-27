@@ -1591,13 +1591,15 @@ std::optional<double> CompareWindow::readPlaybackTimestamp() {
 }
 
 void CompareWindow::captureFrame() {
+    QPointer<CompareWindow> self(this);
     struct ActiveGuard {
-        bool& active;
-        ~ActiveGuard() { active = false; }
+        QPointer<CompareWindow> owner;
+        ~ActiveGuard() {
+            if (owner) owner->captureFrameActive_ = false;
+        }
     };
     captureFrameActive_ = true;
-    ActiveGuard activeGuard{captureFrameActive_};
-    QPointer<CompareWindow> self(this);
+    ActiveGuard activeGuard{self};
     // Capture the current settled frame without seeking; failure is visible.
     frame_ = QImage();
     isolatedOriginal_ = QImage();
