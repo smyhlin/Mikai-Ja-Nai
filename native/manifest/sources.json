@@ -1211,7 +1211,7 @@
       "builderResources": "nvinfer_builder_resource_{ptx,sm75,sm80,sm86,sm89,sm90,sm100,sm120}_11.dll, resolved by the TensorRT builder next to aji_trt.dll",
       "tacticSuppression": "--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT",
       "tacticSuppressionEffect": "changes which tactics the builder may select, so it changes the numerics inside a generated engine and therefore the engine's digest. An engine is interchangeable only with another built under the same tactic set; this is why components.json#runtime.cuda-cudart records cuDNN and cuBLAS as deliberately absent.",
-      "noTrtexec": "The private prepared-helper path builds engines in-process and avoids trtexec.exe. The official v0.9.0 upstream-config path invokes trtexec.exe for TensorRT first-build; this path-specific distinction leaves ESC-5 unresolved for upstream-config use."
+      "noTrtexec": "The private prepared-helper path builds engines in-process and avoids trtexec.exe. The official upstream-config path invokes trtexec.exe for TensorRT first-build; this path-specific distinction leaves ESC-5 unresolved for upstream-config use."
     },
     "shippedBinaries": [
       "aji.dll",
@@ -1325,7 +1325,6 @@
         "notInOfficialAsset": true
       }
     ],
-    "identityScopeNote": "This identity covers the shim series under native/patches/ that native/CMakeLists.txt applies to the staged inference tree. It does NOT cover native/patches/mpv/, which is a separate directory applied to a separate base (the fork) and is not a shim build input; its per-file digests are recorded under mpvForkPatchSeries.",
     "mpvForkPatchSeries": {
       "baseCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
       "targetDir": "native/patches/mpv/",

@@ -24,9 +24,9 @@
 # Every block is skippable with a clear message when the toolchain is
 # missing: a nonexistent ffmpeg, or an ffmpeg build without the block's
 # encoder, prints a SKIP line and the matrix continues. A summary at the
-# end lists every expected output, so a caller can decide - the nightly
-# lane checks for the file it needs and falls back to a lavfi source when
-# this script could not produce it.
+# end lists every expected output, so a caller can decide - and acceptance
+# jobs fail when the file they need is absent rather than substituting a
+# synthetic lavfi source.
 # ---------------------------------------------------------------------------
 
 FFMPEG="${FFMPEG:-ffmpeg}"

@@ -125,7 +125,7 @@ Replace the final suite with `TestLayering`, `TestNativeManifest`, `TestI18n`, o
 
 ### AJI Manager UI Smoke
 
-Build `native_settings_probe` and follow the [Windows manager smoke command](readme.md#windows-manager-smoke). It exercises real Settings actions, config/profile persistence, player/Compare menus, Benchmark catalogue entries, Standard/Native visibility, and compact/wide English/Ukrainian layouts. Its JSON/screenshots are functional evidence, not native inference or throughput proof. The generated Identity ONNX and Windows test dispatcher are described in [`tests/fixtures/README.md`](tests/fixtures/README.md).
+Build `native_settings_probe` and follow the [Windows manager smoke command](tests/fixtures/README.md#windows-manager-smoke). It exercises real Settings actions, config/profile persistence, player/Compare menus, Benchmark catalogue entries, Standard/Native visibility, and compact/wide English/Ukrainian layouts. Its JSON/screenshots are functional evidence, not native inference or throughput proof. The generated Identity ONNX and Windows test dispatcher are described in [`tests/fixtures/README.md`](tests/fixtures/README.md).
 
 Do not launch new TensorRT builds or RIFE benchmarks merely to verify manager documentation. Native inference and performance require separate, explicitly recorded model/backend/GPU runs; see [`bench_results.md`](bench_results.md).
 

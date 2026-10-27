@@ -8,7 +8,7 @@ This directory contains the provenance manifests, license notices, standalone CL
 
 The application supports two distinct neural enhancement contracts alongside the built-in **Anime4K** GLSL shaders:
 
-1. **Standard AnimeJaNai current official runtime (v0.17.1, API/ABI 9):** The Qt app's manager/configuration and runtime planning live in `src/app/dialogs/AnimeJanaiManagerPanel.cpp` and `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}` / `AnimeJanaiRuntime.cpp`. It uses `vf_animejanai` in the pinned `the-database/mpv` source/runtime pair alongside CUDA 13/TensorRT 11 dependencies. The updated Windows DEV and Linux runtime builds contain ABI-9 host entrypoint name markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, `aji_temporal_reset`, `aji_rife_before_upscale`, `aji_pre_resize`, `aji_resize`); these strings are marker evidence only and do not establish executed behavior, hardware operation or inference. The official Linux and Windows runtime archives are distinct release assets; pinned archive identity and source compatibility do not establish hardware operation or inference. The historical official v0.9.0 ABI-8 pair and separately patched private MSVC Native ABI-8 cohort are not substitutes for this runtime. The separate Linux `aji-encode` archive (~80 MB) is an optional offline tool, not a playback dependency; it is not automatically downloaded or adopted, and its FFmpeg dependency and redistribution rights remain unresolved. User-defined model/profile setup is described in [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
+1. **Standard AnimeJaNai current official runtime (v0.17.1, API/ABI 9):** The Qt app's manager/configuration and runtime planning live in `src/app/dialogs/AnimeJanaiManagerPanel.cpp` and `src/player/native/components/AnimeJanaiConfig.{hpp,cpp}` / `AnimeJanaiRuntime.cpp`. It uses `vf_animejanai` in the pinned mpv runtimes alongside CUDA 13/TensorRT 11 dependencies. The `mpv-fork` source entry still identifies ABI-8 commit `63d127174d8f70336c82a22408929e2bc301edcb`, not the source identity for the current runtimes. The separate Windows DEV archive record identifies mpv commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`; the Linux archive is pinned by `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`, but its build/source correspondence is not established. The updated Windows DEV archive contains ABI-9 host entrypoint name markers (`aji_ingest`, `aji_infer_seq`, `aji_temporal_radius`, `aji_temporal_reset`, `aji_rife_before_upscale`, `aji_pre_resize`, `aji_resize`, `aji_infer_rife`); these strings are marker evidence only and do not establish that entrypoints are exported or callable, executed behavior, hardware operation or inference. The Linux runtime is separately pinned, but matching ABI-9 markers have not been recorded for its binary. The official Linux and Windows runtime archives are distinct release assets; archive identity alone does not establish source correspondence, hardware operation or inference. The historical official v0.9.0 ABI-8 pair and separately patched private MSVC AJI ABI-8 build are not substitutes for this runtime. The separate Linux `aji-encode` archive (~80 MB) is an optional offline tool, not a playback dependency; it is not automatically downloaded or adopted, and its FFmpeg dependency and redistribution rights remain unresolved. User-defined model/profile setup is described in [Standard AnimeJaNai Custom Models & Profiles](#2-standard-animejanai-custom-models--profiles).
 2. **Prepared Native Bundle Track (`mikai_native_support`, `NativePlaybackController`, `NativeBuilder`):**
    - Uses a versioned, manifest-verified bundle under `<nativeRoot>/runtime/<bundle-id>/` (`manifest.json` schema `mikai.native.bundle/1`) together with out-of-process preparation tools (`mikai_native_prep`, `mikai_native_verify`, `native_inspect`) that build and numerically verify TensorRT plans against an ONNX Runtime CPU reference before admitting them into playback.
 
@@ -23,7 +23,7 @@ The **Standard** AnimeJaNai integration is managed by the Qt application in
 optional MSVC shim build described in [`build-msvc.md`](./build-msvc.md):
 the manager is part of the normal MinGW/Qt application build and does not
 require recompiling that shim. For the GUI workflow, see
-[AnimeJaNai Custom Models & Profiles](../readme.md#animejanai-custom-models--profiles);
+[AnimeJaNai Custom Models & Profiles](../docs/user-guide.md#optional-video-processing-and-components);
 this section records the storage and runtime boundaries.
 
 ### Catalog, storage, and staging
@@ -120,7 +120,7 @@ The manager supports custom profile IDs `builtin_slot:<1..10>` and imported mode
 contain ordered model steps and optional pre-upscale height/percentage
 resizing, and may include RIFE settings (model, interpolation ratio, scene
 threshold, ensemble, and before/after-upscale position). Settings expose temporal
-frame count (Auto or 1/odd 3–15), scene threshold, upscale enable/disable and
+frame count (Auto, 1, or odd 3–15), scene threshold, upscale enable/disable and
 temporal-fix controls. Sharp selects the corresponding HD model variant; it does
 not replace the SD branch. Official v0.17.1 source maps RIFE code 4262 to
 `rife_v4.26`, not `rife_v4.26_heavy`; this source mapping does not prove model
@@ -155,9 +155,9 @@ positive chain and model-step numbers, also serialized in numeric order.
 | `chain_C_` | `rife`, `rife_model` | Interpolation switch and AJI model code, for example `426` for RIFE 4.26. |
 | `chain_C_` | `rife_factor_numerator`, `rife_factor_denominator`, `rife_scene_detect_threshold` | Interpolation ratio and scene threshold. |
 | `chain_C_` | `rife_ensemble`, `rife_before_upscale` | `yes`/`no` ensemble and interpolation-order controls. |
-| `chain_C_` | `upscale` | `yes`/`no` controls whether the chain's upscale models execute (`no` runs only temporal fix and RIFE). |
-| `chain_C_` | `temporal_fix_model`, `temporal_fix_scene_threshold`, `temporal_fix_before_upscale` | Optional temporal fix model name, cut detection threshold (`0.0`–`1.0`, default `0.150`), and `yes`/`no` ordering before upscale. |
-| `chain_C_model_M_` | `frames`, `temporal_scene_threshold` | Temporal window size (`0` = auto-detect from ONNX, `1` = single frame, or odd `3`–`15`), and temporal scene threshold (`0.0`–`1.0`). |
+| `chain_C_` | `upscale` | `yes`/`no` controls whether ONNX model steps are kept in the chain; when `no`, runtime preparation removes ONNX model steps, including a configured temporal-fix model, but leaves RIFE enabled if configured. |
+| `chain_C_` | `temporal_fix_model`, `temporal_fix_scene_threshold`, `temporal_fix_before_upscale` | Optional temporal-fix model name, scene threshold (`0.0`–`1.0`, default `0.150`), and `yes`/`no` ordering before upscale. |
+| `chain_C_model_M_` / ONNX `chain_C_step_S_` | `frames`, `temporal_scene_threshold` | ONNX model temporal window (`0` = detect from its input shape, `1` = single frame, or odd `3`–`15`) and scene threshold (`0.0`–`1.0`, default `0.150`). |
 
 The manager store does not persist a backend selector. Runtime preparation
 emits `backend=TensorRT` or `backend=DirectML` in the generated plan INI from
@@ -209,11 +209,11 @@ or engine performance.
 
 ## 3. Pinned Release Manifests (`native/manifest/`)
 
-The upstream runtime dependencies, stock model graphs, and source revisions below are pinned by cryptographic SHA-256 digest. User-imported graphs have separate local digest records; they are not added to these release manifests:
+Release archives and model graphs are pinned by SHA-256 where indicated; source commits and trees use their recorded revision identities and do not by themselves prove binary correspondence. User-imported graphs have separate local digest records; they are not added to these release manifests:
 
 | Manifest File | Schema / Purpose |
 |---|---|
-| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream git revisions, trees, and release asset digests for `mpv-fork` (`2026-10-24`), `animejanai-inference` (official `v0.17.1` and historical `v0.9.0` baseline), `tensorrt-11.3-sdk` (`11.3.0.99` / CUDA `13.4`), `onnxruntime-directml` (`1.24.4`), `directml` (`1.15.4`), 5 spatial ONNX models, and RIFE `v4.14` checkpoints. |
+| `native/manifest/sources.json` | (`mikai.native.sources/1`) Pinned upstream identities and release asset digests, including `mpv-fork` (ABI-8 source commit `63d127174d8f70336c82a22408929e2bc301edcb`), Windows `mpv-author-winbuild` DEV archive (`2026-10-24`; separate source commit `b4f9f5bfed18d5ce610af28024986410dd9bdaae`), and `animejanai-inference` (official `v0.17.1`, historical `v0.9.0`); TensorRT SDK (`11.3.0.99` / CUDA `13.4`), ONNX Runtime DirectML (`1.24.4`), DirectML (`1.15.4`), 5 spatial ONNX models, and RIFE `v4.14` checkpoints. The Linux mpv archive pin is recorded in `cmake/MikaiLinuxMpv.cmake` and `packaging/provenance/linux-runtime.json`. |
 | `native/manifest/components.json` | (`mikai.native.components/1`) Per-component licensing, provenance, and redistribution status (`cleared`, `external`, or `blocked` under `ESC-1..6`). |
 | `native/manifest/animejanai-release.json` | Pinned Windows x64 (`component-trt-*.7z`, `component-rife.7z`) and Linux x64 (`component-trt-*-linux-x64.7z`, `component-rife-linux-x64.7z`) asset inventory and file mappings for [`the-database/mpv-AnimeJaNai` `3.7.0`](https://github.com/the-database/mpv-AnimeJaNai/releases/tag/3.7.0). |
 | `native/manifest/videojanai-release.json` | Negative-control record for `VideoJaNai 2.1.0` (TensorRT `11.0.0.114` / CUDA `13.2.75`), documenting why cross-release TensorRT engines and builder resources are binary-incompatible with TensorRT `11.3.0.99`. |

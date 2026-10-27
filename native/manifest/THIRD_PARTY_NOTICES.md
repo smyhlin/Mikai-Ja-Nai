@@ -74,20 +74,23 @@ only `libmpv-2.dll` into private local app/dist packages. It uses no `mpv.exe`,
 IPC, or app-launch mpv download.
 
 The pinned `the-database/mpv-winbuild` release is
-[`2026-10-07-d6d93599d5`](https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-07-d6d93599d5),
-tag commit `6ac50ae6b135c5c9b484c37cc47e5368d1f8b613`, build run
-[37549675458](https://github.com/the-database/mpv-winbuild/actions/runs/37549675458).
-Its source mpv commit is
-[`d6d93599d59069b715013a6e77e898056499b905`](https://github.com/the-database/mpv/tree/d6d93599d59069b715013a6e77e898056499b905),
-tree `d69b8c428bb057743eef5aa4e33f6c92926fd393`. The API-only archive
-[`mpv-dev-x86_64-20261007-git-d6d93599d5.7z`](https://github.com/the-database/mpv-winbuild/releases/download/2026-10-07-d6d93599d5/mpv-dev-x86_64-20261007-git-d6d93599d5.7z)
-is 32,830,217 bytes with publisher SHA-256
-`077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c`. It
+[`2026-10-24-b4f9f5bfed`](https://github.com/the-database/mpv-winbuild/releases/tag/2026-10-24-b4f9f5bfed),
+build run
+[40115095739](https://github.com/the-database/mpv-winbuild/actions/runs/40115095739);
+its publisher tag commit is not separately verified here. Its source mpv commit is
+[`b4f9f5bfed18d5ce610af28024986410dd9bdaae`](https://github.com/the-database/mpv/tree/b4f9f5bfed18d5ce610af28024986410dd9bdaae).
+The API-only archive
+[`mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z`](https://github.com/the-database/mpv-winbuild/releases/download/2026-10-24-b4f9f5bfed/mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z)
+is 32,965,168 bytes with publisher SHA-256
+`2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c`. It
 contains `include/mpv/*`, `libmpv.dll.a` and `libmpv-2.dll`; it contains no
-`mpv.exe`. The locally extracted DLL was observed as x64, mpv API 2.5,
-122,146,816 bytes, SHA-256
-`90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649`
-(local measurement, not a publisher digest).
+`mpv.exe`. The locally extracted DLL was observed as x64, mpv API 2.6,
+122,579,968 bytes, SHA-256
+`d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3`
+(local measurement, not a publisher digest); its version is
+`mpv v0.41.0-dev-gb4f9f5bfe` (FFmpeg `N-128018-ga881f0a9a`). The superseded
+2026-10-07 archive (`d6d93599d5`, 32,830,217 bytes) is retained here only as
+history.
 
 This official release DLL does **not** contain this project's Native
 status/admission patches and is not a Native bundle. The separate Native fork

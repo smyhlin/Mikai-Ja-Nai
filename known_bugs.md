@@ -319,9 +319,9 @@ Evidence: `src/player/VideoSurface.cpp:294-300`; `src/app/CrashLog.cpp:207-230,1
 | Plain source/path mentions | 101 mentions / 47 distinct strings; 20 non-literal repository-path candidates examined in context, not counted as 20 broken links: external shim paths, runtime-created records, shorthand and explicitly proposed interfaces account for them |
 | Root CMake source/header/script references | 282 parsed actual path entries found; comment examples excluded from file-existence accounting |
 | Manifest source/component references | No dangling inspected `sourceId` or bundle component ID |
-| Individually recorded patch hashes | All six recorded shim/mpv patch-file digests match their present files; inventory incompleteness is KB-16 |
-| Packaged API DLL identity | Present `dist-mikai/mpv/libmpv-2.dll` is 122,146,816 bytes and matches the recorded author-module SHA-256 `90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649` |
-| Public/private contract | Current top-level native guidance correctly separates official ABI-9 filtering (v0.17.1), explicit local custom import and private prepared-Native admission (historical ABI-8 cohort) |
+| Individually recorded patch hashes (audit-date set) | The six digests recorded on the audit date matched their then-present files; the current series records nine (five shim patches, four fork patches) and was not re-verified here. Inventory incompleteness is KB-16 |
+| Packaged API DLL identity (audit-date observation) | The then-present `dist-mikai/mpv/libmpv-2.dll` was 122,146,816 bytes and matched the then-recorded author-module SHA-256 `90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649`. The current deployment carries a different binary; this row is not a claim about it |
+| Public/private contract | Current top-level native guidance separates official ABI-9 AnimeJaNai (v0.17.1), explicit local custom AJI import, and Prepared Native bundle admission; historical private MSVC AJI ABI-8 is a separate cohort, not Prepared Native |
 
 These checks do not establish that every external URL is live, every third-party dependency is redistributable, every source path was audited exhaustively, or the current application passes a new runtime check.
 

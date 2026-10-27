@@ -186,7 +186,7 @@
       "finding": "The TensorRT Supplement makes the runtime .so/.dll files distributable. trtexec.exe is a developer tool, and SLA 1.2.1.4 states that unless a developer tool is identified in the Agreement as distributable it is delivered for internal use only. The Agreement text located does not identify trtexec.exe as distributable.",
       "consequence": "The official upstream configuration invokes trtexec.exe for TensorRT engine first-build. The private prepared-helper path builds engines in-process and does not need trtexec, but that alternative architecture does not describe the upstream-config path. No NVIDIA developer-tool redistribution clearance has been established; do not ship trtexec or claim it is cleared.",
       "missingEvidence": "written confirmation from NVIDIA that trtexec.exe may be redistributed, or an upstream-config design that avoids invoking it while preserving the required first-build behavior.",
-      "designNote": "The ESC-5 architecture resolution applies ONLY to the private in-process prepared-helper path. It is NOT a general answer. The official v0.9.0 conf/config path still invokes trtexec for TensorRT first-build, so that path retains an unresolved developer-tool redistribution question, and the phrase 'ESC-5 is resolved' is only ever true when it names the private helper specifically.",
+      "designNote": "The ESC-5 architecture resolution applies ONLY to the private in-process prepared-helper path. It is NOT a general answer. The official upstream conf/config path invokes trtexec for TensorRT first-build, so that path retains an unresolved developer-tool redistribution question, and the phrase 'ESC-5 is resolved' is only ever true when it names the private helper specifically.",
       "resolution": "UNRESOLVED FOR THE OFFICIAL UPSTREAM-CONFIG PATH. tool.trtexec remains external and not in a public bundle; the private prepared-helper path can avoid it but does not clear the upstream-config path.",
       "privateHelperScope": "The in-process helper builds engines through the TensorRT builder API and launches no external process, so on that path alone trtexec is not used. This is a statement about the private helper's implementation, not a third-party redistribution clearance and not a property of the official config path.",
       "whatDidNotChange": "The located TensorRT Supplement makes runtime .dll files distributable; it does not establish trtexec.exe redistribution. No NVIDIA developer-tool clearance has been obtained.",
@@ -208,7 +208,7 @@
       "kind": "standard",
       "purpose": "Plain mpv playback and the Anime4K GLSL chain. No inference, no CUDA filter.",
       "shippingDecision": "privateLocal",
-      "rationale": "The Standard in-process Qt/OpenGL player uses the pinned 2026-10-07 author-fork API-only developer archive as its build input and copies only libmpv-2.dll into private local app/dist packages. No mpv.exe, IPC, or app-launch download is used. Third-party redistribution of this exact binary remains blocked until complete corresponding source, dependency licences and relinkability are established.",
+      "rationale": "The Standard in-process Qt/OpenGL player uses the pinned 2026-10-24 author-fork API-only developer archive as its build input and copies only libmpv-2.dll into private local app/dist packages. No mpv.exe, IPC, or app-launch download is used. Third-party redistribution of this exact binary remains blocked until complete corresponding source, dependency licences and relinkability are established.",
       "components": [
         "core.author-mpv"
       ],
@@ -244,16 +244,16 @@
       "name": "libmpv-2.dll",
       "sourceIdentity": {
         "sourceId": "mpv-author-winbuild",
-        "release": "2026-10-07-d6d93599d5",
-        "archive": "mpv-dev-x86_64-20261007-git-d6d93599d5.7z",
+        "release": "2026-10-24-b4f9f5bfed",
+        "archive": "mpv-dev-x86_64-20261024-git-b4f9f5bfed.7z",
         "pinKind": "releasePin",
-        "mpvCommit": "d6d93599d59069b715013a6e77e898056499b905",
-        "mpvTree": "d69b8c428bb057743eef5aa4e33f6c92926fd393",
-        "archiveSha256": "077cb75fed47b185428f97224e1d798e2d4c2f4063fd8cda2662b74f2892327c",
-        "observedDllBytes": 122146816,
-        "observedDllSha256": "90de8f89fa1421eaec510e5cfe11de75846b445489864220ec811fd0f08b4649",
+        "mpvCommit": "b4f9f5bfed18d5ce610af28024986410dd9bdaae",
+        "mpvTree": null,
+        "archiveSha256": "2efe77b9e3028c32cd74c9d871c5d2cd8315758d0da3f59bf64c867c8e7e6d0c",
+        "observedDllBytes": 122579968,
+        "observedDllSha256": "d22a8a765abe26ac94614b0f09d1d78b3ceafb4f2d70fd904909232e0784c4a3",
         "architecture": "x64",
-        "mpvApi": "2.5",
+        "mpvApi": "2.6",
         "patchStatus": "official release DLL does not contain this project's Native status/admission patches; not a Native bundle"
       },
       "licence": {
@@ -270,7 +270,7 @@
       "privateLocalPackage": true,
       "blockScope": "third-party redistribution",
       "blockReason": "Complete corresponding source, dependency licences and relinkability for this exact release binary have not been established.",
-      "notes": "The API-only archive supplies matching headers and import library; only libmpv-2.dll is copied into private local app/dist packages. The pinned fetched DLL was observed as x64 PE32+ with a hard static vulkan-1.dll import, even with OpenGL vo=libmpv; the target GPU driver supplies the loader, and a missing loader prevents DLL load. Exact GPL/dependency/relink obligations for this binary remain unestablished, so private local packages only. No mpv.exe, IPC, or app-launch mpv download is used. Historical stock shinchiro runtime observations are not an active path."
+      "notes": "The API-only archive supplies matching headers and import library; only libmpv-2.dll is copied into private local app/dist packages. The superseded 2026-10-07 DLL was observed as x64 PE32+ with a hard static vulkan-1.dll import, even with OpenGL vo=libmpv; the target GPU driver supplies the loader, and a missing loader prevents DLL load. That import observation is not carried over to the current DLL. Exact GPL/dependency/relink obligations for this binary remain unestablished, so private local packages only. No mpv.exe, IPC, or app-launch mpv download is used. Historical stock shinchiro runtime observations are not an active path."
     },
     {
       "id": "core.fork-mpv",
@@ -598,7 +598,7 @@
       },
       "redistribution": "external",
       "inBundle": false,
-      "architecturePath": "The private prepared-helper path builds engines in-process via the TensorRT builder API and avoids trtexec.exe. The official upstream v0.9.0 configuration path invokes trtexec.exe for TensorRT first-build, so this architecture exception does not apply there. The private path's implementation is not a licence and clears nothing for the official path.",
+      "architecturePath": "The private prepared-helper path builds engines in-process via the TensorRT builder API and avoids trtexec.exe. The official upstream configuration path invokes trtexec.exe for TensorRT first-build, so this architecture exception does not apply there. The private path's implementation is not a licence and clears nothing for the official path.",
       "resolution": "No NVIDIA developer-tool redistribution clearance is established. The official upstream-config path invokes trtexec.exe on TensorRT first-build. The private prepared-helper path avoids trtexec by building in-process; that does not resolve or clear the upstream-config path. trtexec remains external, not included in public bundles.",
       "privateHelperNotices": "The private helper is this repository's own integration code (projectIntegrationGrant). It neither bundles nor redistributes trtexec, and it does not alter what the located TensorRT SLA permits for the developer tool."
     },
@@ -2887,7 +2887,7 @@
     "coreSha": {
       "sourceCommit": "63d127174d8f70336c82a22408929e2bc301edcb",
       "gitTree": "5e68e27afefea4a79ac4736853b5db9a32601581",
-      "patchSeriesIdentity": "6c95b14e97c76ae24076331559974dd8894030e265cb705ed88134627fcce4c4 - the sha256 of the three-line 'name=sha256' composition of native/patches/*.patch in sorted order, the same composition native/CMakeLists.txt writes to its .mikai-patched stamp. The fork's own series under native/patches/mpv/ is recorded separately at sources.json#patchSeries.mpvForkPatchSeries; it is applied to a different base and is not a shim build input.",
+      "patchSeriesIdentity": "64c1a45046af72012a116f8a58778942b863e9f78f9326570081cf5d02fcb2c2 - the sha256 of the five 'name=sha256' lines native/cmake/StageInference.cmake writes into the .mikai-patched stamp, recorded in file order at sources.json#patchSeries.seriesFiles. The superseded three-file record 6c95b14e97c76ae24076331559974dd8894030e265cb705ed88134627fcce4c4 omitted patches 0004 and 0005. The fork's own series under native/patches/mpv/ is recorded separately at sources.json#patchSeries.mpvForkPatchSeries; it is applied to a different base and is not a shim build input.",
       "buildToolchain": "w64devkit GCC at C:/temp/w64dev/w64devkit, meson, configure-native-static.cmd options as recorded at sources.json#sources[id=mpv-fork] and confirmed against mpv-native-static-build/meson-info/intro-buildoptions.json (gpl=true, libmpv=true, cplayer=false, animejanai=enabled, gl=enabled, vulkan=disabled, cuda-hwaccel=enabled, cuda-interop=enabled, default_library=shared, prefer_static=true, build-date=false)."
     },
     "inferenceSourceSha": {

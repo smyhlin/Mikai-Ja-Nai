@@ -69,6 +69,34 @@ gate consumes it.
 
 The two `hdr_*` clips are generated on demand, not committed. Both are 10-bit HEVC Main10 with BT.2020 primaries and SMPTE ST 2084 (PQ) transfer. The authored gradient fixture combines slowly changing dark levels with a right-edge highlight ramp spanning approximately 150–1000 nits, exercising tone mapping below the peak rather than relying on a flat peak patch. The companion fixture is lossless near-black temporal shadow-noise; lossless encoding preserves its signal. Do not claim these source shapes prove a particular flicker mechanism or root cause. Their presence is mandatory for HDR acceptance; do not substitute a generic source. Generated media resides outside the source tree in the acceptance setup.
 
+### Windows manager smoke
+
+The Standard AnimeJaNai manager smoke runs the real Settings, player, Compare
+and Benchmark surfaces through `native_settings_probe` with no flags. It needs
+a desktop session, the built Standard mpv runtime module and the built
+Ukrainian catalog; it imports a generated Identity ONNX graph and a test-only
+dispatcher, and runs no inference, TensorRT compilation or RIFE benchmark. The
+probe's isolation launcher copies the executable into owned scratch with an
+empty native store, so it must not be run beside a populated application
+`native` store. Evidence lands in the working directory the probe runs from.
+
+```powershell
+cmake --build build/release --target native_settings_probe --parallel 4
+$probe = (Resolve-Path build/release/native_settings_probe.exe).Path
+$env:MIKAI_MPV_MODULE = (Resolve-Path build/release/mpv/libmpv-2.dll).Path
+$env:MIKAI_PROBE_TRANSLATION = (Resolve-Path build/release/mikai_uk.qm).Path
+$env:QT_QPA_PLATFORM = 'windows'
+$env:QT_OPENGL = 'desktop'
+New-Item -ItemType Directory -Force .probe-out/aji-manager | Out-Null
+Push-Location .probe-out/aji-manager
+& $probe
+Pop-Location
+```
+
+It writes `native-animejanai-smoke-evidence.json` and screenshots; that JSON is
+functional evidence of the manager surfaces, not native inference or
+throughput proof.
+
 ### Native HDR Settings UI capture (Windows)
 
 Use the real Windows Qt platform and the built Ukrainian catalog so font
